@@ -628,7 +628,8 @@ TriState EditingStyle::triStateOfStyle(const VisibleSelection& selection) const
     for (Node* node = selection.start().deprecatedNode(); node; node = node->traverseNextNode()) {
         RefPtr<CSSComputedStyleDeclaration> nodeStyle = computedStyle(node);
         if (nodeStyle) {
-            TriState nodeState = triStateOfStyle(nodeStyle.get(), node->isTextNode() ? EditingStyle::DoNotIgnoreTextOnlyProperties : EditingStyle::IgnoreTextOnlyProperties);
+            // SHEZ: always use DoNotIgnoreTextOnlyProperties
+            TriState nodeState = triStateOfStyle(nodeStyle.get(), EditingStyle::DoNotIgnoreTextOnlyProperties);
             if (node == selection.start().deprecatedNode())
                 state = nodeState;
             else if (state != nodeState && node->isTextNode()) {

@@ -6406,7 +6406,7 @@ LayoutRect RenderBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
         }
     }
 
-    LayoutUnit y = paddingTop(false) + borderTop();
+    LayoutUnit y = paddingTop() + borderTop();
 
     return LayoutRect(x, y, caretWidth, height);
 }

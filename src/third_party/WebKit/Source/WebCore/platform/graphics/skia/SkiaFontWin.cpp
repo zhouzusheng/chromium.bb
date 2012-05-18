@@ -151,14 +151,8 @@ static bool disableTextLCD(PlatformContextSkia* skiaContext)
     // rendered text cannot be compositied correctly when the layer is
     // collapsed. Therefore, subpixel text is disabled when we are drawing
     // onto a layer or when the compositor is being used.
-
-    // SHEZ: enableTextLCD regardless of whether we are drawing to an image
-    // SHEZ: buffer or not.
-    return isCanvasMultiLayered(skiaContext->canvas());
-
-    // SHEZ: previous logic was:
-    // return isCanvasMultiLayered(skiaContext->canvas())
-    //        || skiaContext->isDrawingToImageBuffer();
+    return isCanvasMultiLayered(skiaContext->canvas())
+           || skiaContext->isDrawingToImageBuffer();
 }
 
 // Lookup the current system settings for font smoothing.

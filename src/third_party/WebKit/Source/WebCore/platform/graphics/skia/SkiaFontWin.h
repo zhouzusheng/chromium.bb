@@ -82,6 +82,19 @@ void paintSkiaText(GraphicsContext*,
 
 // Note that the offsets parameter is optional. If not null it represents a
 // per glyph offset (such as returned by ScriptPlace Windows API function).
+// Note: use this function if you need to use a different quality from the one
+// that is set in the FontPlatformData.
+void paintSkiaText(GraphicsContext*,
+                   const FontPlatformData&,
+                   int quality,
+                   int numGlyphs,
+                   const WORD* glyphs,
+                   const int* advances,
+                   const GOFFSET* offsets,
+                   const SkPoint* origin);
+
+// Note that the offsets parameter is optional. If not null it represents a
+// per glyph offset (such as returned by ScriptPlace Windows API function).
 // Note: this is less efficient than calling the version with FontPlatformData,
 // as that caches the SkTypeface object.
 void paintSkiaText(GraphicsContext*,

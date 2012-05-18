@@ -434,7 +434,24 @@ void Font::drawGlyphs(GraphicsContext* graphicsContext,
 
         SkPoint origin = point;
         origin.fX += SkFloatToScalar(horizontalOffset - point.x() - currentWidth);
-        paintSkiaText(graphicsContext, font->platformData(), curLen, &glyphs[0], &advances[0], 0, &origin);
+
+        int quality;
+        switch (m_fontDescription.fontSmoothing()) {
+            case NoSmoothing:
+                quality = NONANTIALIASED_QUALITY;
+                break;
+            case Antialiased:
+                quality = ANTIALIASED_QUALITY;
+                break;
+            case SubpixelAntialiased:
+                quality = CLEARTYPE_QUALITY;
+                break;
+            default:
+                quality = font->platformData().lfQuality();
+                break;
+        }
+
+        paintSkiaText(graphicsContext, font->platformData(), quality, curLen, &glyphs[0], &advances[0], 0, &origin);
     }
 }
 #else

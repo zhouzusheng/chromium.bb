@@ -297,6 +297,19 @@ void paintSkiaText(GraphicsContext* context,
 }
 
 void paintSkiaText(GraphicsContext* context,
+                   const FontPlatformData& data,
+                   int quality,
+                   int numGlyphs,
+                   const WORD* glyphs,
+                   const int* advances,
+                   const GOFFSET* offsets,
+                   const SkPoint* origin)
+{
+    paintSkiaText(context, data.hfont(), data.typeface(), data.size(), quality,
+                  numGlyphs, glyphs, advances, offsets, origin);
+}
+
+void paintSkiaText(GraphicsContext* context,
                    HFONT hfont,
                    int numGlyphs,
                    const WORD* glyphs,

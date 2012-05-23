@@ -50,6 +50,8 @@
 #include <wtf/AlwaysInline.h>
 #include <wtf/text/CString.h>
 
+#include "CSSParser.h"
+
 using namespace std;
 
 namespace WebCore {
@@ -1052,7 +1054,48 @@ void InlineTextBox::paintSpellingOrGrammarMarker(GraphicsContext* pt, const Floa
         // In larger fonts, though, place the underline up near the baseline to prevent a big gap.
         underlineOffset = baseline + 2;
     }
-    pt->drawLineForTextChecking(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, textCheckingLineStyleForMarkerType(marker->type()));
+
+    Color markerColor(255,0,0,255);
+    if (textRenderer()->node()) {
+        Element *element = textRenderer()->node()->rootEditableElement();
+        if (element && element->hasAttributes()) {
+            static const String fallback = "data-marker-color-default";
+            static const String spelling = "data-marker-color-spelling";
+            static const String grammar = "data-marker-color-grammar";
+
+            Attribute* colorAttr = 0;
+
+            if (!colorAttr && marker->type() & DocumentMarker::Spelling) {
+                size_t index = element->getAttributeItemIndex(spelling, false);
+                if (index != notFound) {
+                    colorAttr = element->attributeItem(index);
+                    ASSERT(colorAttr);
+                }
+            }
+            if (!colorAttr && marker->type() & DocumentMarker::Grammar) {
+                size_t index = element->getAttributeItemIndex(grammar, false);
+                if (index != notFound) {
+                    colorAttr = element->attributeItem(index);
+                    ASSERT(colorAttr);
+                }
+            }
+            if (!colorAttr) {
+                size_t index = element->getAttributeItemIndex(fallback, false);
+                if (index != notFound) {
+                    colorAttr = element->attributeItem(index);
+                    ASSERT(colorAttr);
+                }
+            }
+
+            if (colorAttr) {
+                RGBA32 rgba;
+                if (CSSParser::fastParseColor(rgba, colorAttr->value(), false)) {
+                    markerColor.setRGB(rgba);
+                }
+            }
+        }
+    }
+    pt->drawLineForTextChecking(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, textCheckingLineStyleForMarkerType(marker->type()), markerColor);
 }
 
 void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPoint& boxOrigin, DocumentMarker* marker, RenderStyle* style, const Font& font)

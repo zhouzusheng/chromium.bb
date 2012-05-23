@@ -356,7 +356,7 @@ namespace WebCore {
             TextCheckingGrammarLineStyle,
             TextCheckingReplacementLineStyle
         };
-        void drawLineForTextChecking(const FloatPoint&, float width, TextCheckingLineStyle);
+        void drawLineForTextChecking(const FloatPoint&, float width, TextCheckingLineStyle, const Color& markerColor);
 
         bool paintingDisabled() const;
         void setPaintingDisabled(bool);

@@ -1057,39 +1057,27 @@ void InlineTextBox::paintSpellingOrGrammarMarker(GraphicsContext* pt, const Floa
 
     Color markerColor(255,0,0,255);
     if (textRenderer()->node()) {
-        Element *element = textRenderer()->node()->rootEditableElement();
+        const Element *element = textRenderer()->node()->rootEditableElement();
         if (element && element->hasAttributes()) {
             static const String fallback = "data-marker-color-default";
             static const String spelling = "data-marker-color-spelling";
             static const String grammar = "data-marker-color-grammar";
 
-            Attribute* colorAttr = 0;
+            AtomicString colorAttr = nullAtom;
 
-            if (!colorAttr && marker->type() & DocumentMarker::Spelling) {
-                size_t index = element->getAttributeItemIndex(spelling, false);
-                if (index != notFound) {
-                    colorAttr = element->attributeItem(index);
-                    ASSERT(colorAttr);
-                }
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Spelling) {
+                colorAttr = element->getAttribute(spelling);
             }
-            if (!colorAttr && marker->type() & DocumentMarker::Grammar) {
-                size_t index = element->getAttributeItemIndex(grammar, false);
-                if (index != notFound) {
-                    colorAttr = element->attributeItem(index);
-                    ASSERT(colorAttr);
-                }
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Grammar) {
+                colorAttr = element->getAttribute(grammar);
             }
-            if (!colorAttr) {
-                size_t index = element->getAttributeItemIndex(fallback, false);
-                if (index != notFound) {
-                    colorAttr = element->attributeItem(index);
-                    ASSERT(colorAttr);
-                }
+            if (colorAttr == nullAtom) {
+                colorAttr = element->getAttribute(fallback);
             }
 
-            if (colorAttr) {
+            if (colorAttr != nullAtom) {
                 RGBA32 rgba;
-                if (CSSParser::fastParseColor(rgba, colorAttr->value(), false)) {
+                if (CSSParser::fastParseColor(rgba, colorAttr, false)) {
                     markerColor.setRGB(rgba);
                 }
             }

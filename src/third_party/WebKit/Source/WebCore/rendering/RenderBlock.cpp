@@ -153,7 +153,7 @@ RenderBlock::MarginInfo::MarginInfo(RenderBlock* block, LayoutUnit beforeBorderP
     m_canCollapseWithChildren = !block->isRenderView() && !block->isRoot() && !block->isPositioned()
         && !block->isFloating() && !block->isTableCell() && !block->hasOverflowClip() && !block->isInlineBlockOrInlineTable()
         && !block->isWritingModeRoot() && blockStyle->hasAutoColumnCount() && blockStyle->hasAutoColumnWidth()
-        && !blockStyle->columnSpan();
+        && !blockStyle->hasSpanAllColumns();
 
     m_canCollapseMarginBeforeWithChildren = m_canCollapseWithChildren && !beforeBorderPadding && blockStyle->marginBeforeCollapse() != MSEPARATE;
 
@@ -406,9 +406,9 @@ void RenderBlock::addChildToContinuation(RenderObject* newChild, RenderObject* b
 
     // A continuation always consists of two potential candidates: a block or an anonymous
     // column span box holding column span children.
-    bool childIsNormal = newChild->isInline() || !newChild->style()->columnSpan();
-    bool bcpIsNormal = beforeChildParent->isInline() || !beforeChildParent->style()->columnSpan();
-    bool flowIsNormal = flow->isInline() || !flow->style()->columnSpan();
+    bool childIsNormal = newChild->isInline() || !newChild->style()->hasSpanAllColumns();
+    bool bcpIsNormal = beforeChildParent->isInline() || !beforeChildParent->style()->hasSpanAllColumns();
+    bool flowIsNormal = flow->isInline() || !flow->style()->hasSpanAllColumns();
 
     if (flow == beforeChildParent) {
         flow->addChildIgnoringContinuation(newChild, beforeChild);
@@ -452,7 +452,7 @@ void RenderBlock::addChildToAnonymousColumnBlocks(RenderObject* newChild, Render
     }
 
     // See if the child can be placed in the box.
-    bool newChildHasColumnSpan = newChild->style()->columnSpan() && !newChild->isInline();
+    bool newChildHasColumnSpan = newChild->style()->hasSpanAllColumns() && !newChild->isInline();
     bool beforeChildParentHoldsColumnSpans = beforeChildParent->isAnonymousColumnSpanBlock();
 
     if (newChildHasColumnSpan == beforeChildParentHoldsColumnSpans) {
@@ -753,7 +753,7 @@ RenderBlock* RenderBlock::columnsBlockForSpanningElement(RenderObject* newChild)
     // cross the streams and have to cope with both types of continuations mixed together).
     // This function currently supports (1) and (2).
     RenderBlock* columnsBlockAncestor = 0;
-    if (!newChild->isText() && newChild->style()->columnSpan() && !newChild->isBeforeOrAfterContent()
+    if (!newChild->isText() && newChild->style()->hasSpanAllColumns() && !newChild->isBeforeOrAfterContent()
         && !newChild->isFloatingOrPositioned() && !newChild->isInline() && !isAnonymousColumnSpanBlock()) {
         columnsBlockAncestor = containingColumnsBlock(false);
         if (columnsBlockAncestor) {
@@ -3158,7 +3158,7 @@ GapRects RenderBlock::selectionGaps(RenderBlock* rootBlock, const LayoutPoint& r
     if (!isBlockFlow()) // FIXME: Make multi-column selection gap filling work someday.
         return result;
 
-    if (hasColumns() || hasTransform() || style()->columnSpan()) {
+    if (hasColumns() || hasTransform() || style()->hasSpanAllColumns()) {
         // FIXME: We should learn how to gap fill multiple columns and transforms eventually.
         lastLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + logicalHeight();
         lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, logicalHeight());
@@ -7314,7 +7314,7 @@ RenderBlock* RenderBlock::createAnonymousColumnsWithParentRenderer(const RenderO
 RenderBlock* RenderBlock::createAnonymousColumnSpanWithParentRenderer(const RenderObject* parent)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), BLOCK);
-    newStyle->setColumnSpan(ColumnSpanAll);
+    newStyle->setHasSpanAllColumns();
 
     RenderBlock* newBox = new (parent->renderArena()) RenderBlock(parent->document() /* anonymous box */);
     newBox->setStyle(newStyle.release());

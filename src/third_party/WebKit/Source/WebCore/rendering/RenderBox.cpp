@@ -1363,6 +1363,10 @@ LayoutUnit RenderBox::shrinkLogicalWidthToAvoidFloats(LayoutUnit childMarginStar
 LayoutUnit RenderBox::containingBlockLogicalWidthForContent() const
 {
     RenderBlock* cb = containingBlock();
+    if (style()->columnSpan() > 1 && !style()->hasSpanAllColumns() && cb->columnInfo()) {
+        unsigned columnSpan = min((unsigned)style()->columnSpan(), cb->columnInfo()->desiredColumnCount());
+        return cb->availableLogicalWidth() * columnSpan + cb->columnGap() * (columnSpan - 1);
+    }
     return cb->availableLogicalWidth();
 }
 

@@ -1489,11 +1489,6 @@ void RenderBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeigh
     
     statePusher.pop();
 
-    if (renderView->layoutState()->m_columnInfo && style()->columnSpan() > 1 && !style()->hasSpanAllColumns()) {
-        renderView->layoutState()->m_columnInfo->setSpanningHeaderColumnCount(style()->columnSpan());
-        renderView->layoutState()->m_columnInfo->setSpanningHeaderHeight(logicalHeight() + marginHeight());
-    }
-
     if (renderView->layoutState()->m_pageLogicalHeight)
         setPageLogicalOffset(renderView->layoutState()->pageLogicalOffset(logicalTop()));
 
@@ -2168,6 +2163,8 @@ void RenderBlock::layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloa
     maxFloatLogicalBottom = 0;
 
     RenderBox* next = firstChildBox();
+    RenderBox* previous = 0;
+    ColumnInfo* columnInfo = view()->layoutState()->m_columnInfo;
 
     while (next) {
         RenderBox* child = next;
@@ -2193,6 +2190,17 @@ void RenderBlock::layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloa
 
         // Lay out the child.
         layoutBlockChild(child, marginInfo, previousFloatLogicalBottom, maxFloatLogicalBottom);
+
+        // If the previous child was a spanning header in a multi-column layout, then store the logical top
+        // of the current child as the header "height".  The first line in any column within the column span
+        // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
+        // from the previous child).
+        if (columnInfo && previous && previous->style()->columnSpan() > 1 && !previous->style()->hasSpanAllColumns()) {
+            columnInfo->setSpanningHeaderColumnCount(previous->style()->columnSpan());
+            columnInfo->setSpanningHeaderHeight(child->logicalTop());
+        }
+
+        previous = child;
     }
     
     // Now do the handling of the bottom of the block, adding in our bottom border/padding and

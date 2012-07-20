@@ -2657,6 +2657,21 @@ void RenderBlock::paintColumnRules(PaintInfo& paintInfo, const LayoutPoint& pain
     }
 }
 
+void adjustColRectForSpanningHeader(const RenderBlock* columnBlock, ColumnInfo* colInfo, unsigned columnIndex, LayoutRect& colRect)
+{
+    if (colInfo && colInfo->spanningHeaderColumnCount() > 1) {
+        if (columnIndex == 0) {
+            unsigned columnSpan = min(colInfo->spanningHeaderColumnCount(), colInfo->desiredColumnCount());
+            LayoutUnit expansion = (columnSpan - 1) * (columnBlock->columnGap() + colInfo->desiredColumnWidth());
+            colRect.expand(expansion, 0);
+        }
+        else if (columnIndex < colInfo->spanningHeaderColumnCount()) {
+            colRect.setHeight(colRect.height()-colInfo->spanningHeaderHeight());
+            colRect.move(0, colInfo->spanningHeaderHeight());
+        }
+    }
+}
+
 void RenderBlock::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& paintOffset, bool paintingFloats)
 {
     // We need to do multiple passes, breaking up our child painting into strips.
@@ -2670,7 +2685,9 @@ void RenderBlock::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& p
         // For each rect, we clip to the rect, and then we adjust our coords.
         LayoutRect colRect = columnRectAt(colInfo, i);
         flipForWritingMode(colRect);
+        LayoutUnit blockDelta = (isHorizontalWritingMode() ? colRect.height() : colRect.width());
         LayoutUnit logicalLeftOffset = (isHorizontalWritingMode() ? colRect.x() : colRect.y()) - logicalLeftOffsetForContent();
+        adjustColRectForSpanningHeader(this, colInfo, i, colRect);
         LayoutSize offset = isHorizontalWritingMode() ? LayoutSize(logicalLeftOffset, currLogicalTopOffset) : LayoutSize(currLogicalTopOffset, logicalLeftOffset);
         if (colInfo->progressionAxis() == ColumnInfo::BlockAxis) {
             if (isHorizontalWritingMode())
@@ -2687,15 +2704,7 @@ void RenderBlock::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& p
             
             // Each strip pushes a clip, since column boxes are specified as being
             // like overflow:hidden.
-            if (0 == i && colInfo->spanningHeaderColumnCount() > 1) {
-                unsigned columnSpan = min(colInfo->spanningHeaderColumnCount(), colInfo->desiredColumnCount());
-                LayoutRect spanningRect = colRect;
-                LayoutUnit expansion = (columnSpan - 1) * (columnGap() + colInfo->desiredColumnWidth());
-                spanningRect.expand(expansion, 0);
-                context->clip(spanningRect);
-            }
-            else
-                context->clip(colRect);
+            context->clip(colRect);
 
             // Adjust our x and y when painting.
             LayoutPoint adjustedPaintOffset = paintOffset + offset;
@@ -2705,7 +2714,6 @@ void RenderBlock::paintColumnContents(PaintInfo& paintInfo, const LayoutPoint& p
                 paintContents(info, adjustedPaintOffset);
         }
 
-        LayoutUnit blockDelta = (isHorizontalWritingMode() ? colRect.height() : colRect.width());
         if (style()->isFlippedBlocksWritingMode())
             currLogicalTopOffset += blockDelta;
         else
@@ -4554,6 +4562,7 @@ public:
 
     LayoutRect columnRect() const { return m_colRect; }
     bool hasMore() const { return m_colIndex >= 0; }
+    int columnIndex() const { return m_colIndex; }
 
     void adjust(LayoutSize& offset) const
     {
@@ -4594,9 +4603,11 @@ bool RenderBlock::hitTestColumns(const HitTestRequest& request, HitTestResult& r
     if (!hasColumns())
         return false;
 
+    ColumnInfo* colInfo = columnInfo();
     for (ColumnRectIterator it(*this); it.hasMore(); it.advance()) {
         LayoutRect hitRect = result.rectForPoint(pointInContainer);
         LayoutRect colRect = it.columnRect();
+        adjustColRectForSpanningHeader(this, colInfo, it.columnIndex(), colRect);
         colRect.moveBy(accumulatedOffset);
         if (colRect.intersects(hitRect)) {
             // The point is inside this column.
@@ -5113,6 +5124,7 @@ void RenderBlock::adjustRectForColumns(LayoutRect& r) const
         // and repaint only that portion.
         LayoutUnit logicalLeftOffset = logicalLeftOffsetForContent();
         LayoutRect colRect = columnRectAt(colInfo, startColumn);
+        adjustColRectForSpanningHeader(this, colInfo, startColumn, colRect);
         LayoutRect repaintRect = r;
 
         if (colInfo->progressionAxis() == ColumnInfo::InlineAxis) {

@@ -568,12 +568,12 @@ PassRefPtr<Range> extendRangeToWrappingNodes(PassRefPtr<Range> range, const Rang
     return extendedRange.release();
 }
 
-bool isListElement(Node *n)
+bool isListElement(const Node *n)
 {
     return (n && (n->hasTagName(ulTag) || n->hasTagName(olTag) || n->hasTagName(dlTag)));
 }
 
-bool isListItem(Node *n)
+bool isListItem(const Node *n)
 {
     return n && n->renderer() && n->renderer()->isListItem();
 }

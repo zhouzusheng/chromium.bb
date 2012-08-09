@@ -567,14 +567,6 @@ void RenderBlock::splitBlocks(RenderBlock* fromBlock, RenderBlock* toBlock,
     if (beforeChild && childrenInline())
         deleteLineBoxTree();
 
-    // We have to remove the descendant child from our positioned objects list
-    // before we do the split and move some of the children to cloneBlock. Since
-    // we are doing layout anyway, it is easier to blow away the entire list, than
-    // traversing down the subtree looking for positioned childs and then remove them
-    // from our positioned objects list.
-    if (beforeChild)
-        removePositionedObjects(0);
-
     // Now take all of the children from beforeChild to the end and remove
     // them from |this| and place them in the clone.
     moveChildrenTo(cloneBlock, beforeChild, 0, true);
@@ -627,12 +619,6 @@ void RenderBlock::splitBlocks(RenderBlock* fromBlock, RenderBlock* toBlock,
         if (isLastChild && currChildNextSibling != blockCurr->lastChild())
             currChildNextSibling = 0; // We destroyed the last child, so now we need to update
                                       // the value of currChildNextSibling.
-
-        // It is possible that positioned objects under blockCurr are going to be moved to cloneBlock.
-        // Since we are doing layout anyway, it is easier to blow away the entire list, than
-        // traversing down the subtree looking for positioned children and then remove them
-        // from our positioned objects list.
-        blockCurr->removePositionedObjects(0);
 
         // Now we need to take all of the children starting from the first child
         // *after* currChild and append them all to the clone.
@@ -3872,16 +3858,48 @@ HashSet<RenderBox*>* RenderBlock::percentHeightDescendants() const
     return gPercentHeightDescendantsMap ? gPercentHeightDescendantsMap->get(this) : 0;
 }
 
-#if !ASSERT_DISABLED
+bool RenderBlock::hasPercentHeightContainerMap()
+{
+    return gPercentHeightContainerMap;
+}
+
 bool RenderBlock::hasPercentHeightDescendant(RenderBox* descendant)
 {
-    ASSERT(descendant);
-    if (!gPercentHeightContainerMap)
-        return false;
-    HashSet<RenderBlock*>* containerSet = gPercentHeightContainerMap->take(descendant);
-    return containerSet && containerSet->size();
+    // We don't null check gPercentHeightContainerMap since the caller
+    // already ensures this and we need to call this function on every
+    // descendant in clearPercentHeightDescendantsFrom().
+    ASSERT(gPercentHeightContainerMap);
+    return gPercentHeightContainerMap->contains(descendant);
 }
-#endif
+
+void RenderBlock::removePercentHeightDescendantIfNeeded(RenderBox* descendant)
+{
+    // We query the map directly, rather than looking at style's
+    // logicalHeight()/logicalMinHeight()/logicalMaxHeight() since those
+    // can change with writing mode/directional changes.
+    if (!hasPercentHeightContainerMap())
+        return;
+
+    if (!hasPercentHeightDescendant(descendant))
+        return;
+
+    removePercentHeightDescendant(descendant);
+}
+
+void RenderBlock::clearPercentHeightDescendantsFrom(RenderBox* parent)
+{
+    ASSERT(gPercentHeightContainerMap);
+    for (RenderObject* curr = parent->firstChild(); curr; curr = curr->nextInPreOrder(parent)) {
+        if (!curr->isBox())
+            continue;
+ 
+        RenderBox* box = toRenderBox(curr);
+        if (!hasPercentHeightDescendant(box))
+            continue;
+
+        removePercentHeightDescendant(box);
+    }
+}
 
 template <RenderBlock::FloatingObject::Type FloatTypeValue>
 inline void RenderBlock::FloatIntervalSearchAdapter<FloatTypeValue>::collectIfNeeded(const IntervalType& interval) const

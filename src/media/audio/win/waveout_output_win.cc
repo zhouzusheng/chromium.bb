@@ -15,6 +15,8 @@
 #include "media/audio/audio_util.h"
 #include "media/audio/win/audio_manager_win.h"
 
+namespace media {
+
 // Some general thoughts about the waveOut API which is badly documented :
 // - We use CALLBACK_EVENT mode in which XP signals events such as buffer
 //   releases.
@@ -344,7 +346,7 @@ void PCMWaveOutAudioOutputStream::QueueNextPacket(WAVEHDR *buffer) {
                                 format_.Format.nChannels;
   // TODO(sergeyu): Specify correct hardware delay for AudioBuffersState.
   uint32 used = callback_->OnMoreData(
-      this, reinterpret_cast<uint8*>(buffer->lpData), buffer_size_,
+      reinterpret_cast<uint8*>(buffer->lpData), buffer_size_,
       AudioBuffersState(scaled_pending_bytes, 0));
   if (used <= buffer_size_) {
     buffer->dwBufferLength = used * format_.Format.nChannels / channels_;
@@ -411,3 +413,5 @@ void NTAPI PCMWaveOutAudioOutputStream::BufferCallback(PVOID lpParameter,
     }
   }
 }
+
+}  // namespace media

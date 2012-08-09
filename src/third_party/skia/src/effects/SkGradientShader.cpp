@@ -38,17 +38,6 @@ static void sk_memset32_dither(uint32_t dst[], uint32_t v0, uint32_t v1,
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Can't use a two-argument function with side effects like this in a
-// constructor's initializer's argument list because the order of
-// evaluations in that context is undefined (and backwards on linux/gcc).
-static SkPoint unflatten_point(SkReader32& buffer) {
-    SkPoint retval;
-    retval.fX = buffer.readScalar();
-    retval.fY = buffer.readScalar();
-    return retval;
-}
-
 //  Clamp
 
 static SkFixed clamp_tileproc(SkFixed x) {
@@ -174,6 +163,8 @@ public:
 
 protected:
     Gradient_Shader(SkFlattenableReadBuffer& );
+    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+
     SkUnitMapper* fMapper;
     SkMatrix    fPtsToUnit;     // set by subclass
     SkMatrix    fDstToIndex;
@@ -190,7 +181,6 @@ protected:
     };
     Rec*        fRecs;
 
-    virtual void flatten(SkFlattenableWriteBuffer& );
     const uint16_t*     getCache16() const;
     const SkPMColor*    getCache32() const;
 
@@ -222,16 +212,6 @@ private:
 
     typedef SkShader INHERITED;
 };
-
-static inline unsigned scalarToU16(SkScalar x) {
-    SkASSERT(x >= 0 && x <= SK_Scalar1);
-
-#ifdef SK_SCALAR_IS_FLOAT
-    return (unsigned)(x * 0xFFFF);
-#else
-    return x - (x >> 16);   // probably should be x - (x > 0x7FFF) but that is slower
-#endif
-}
 
 Gradient_Shader::Gradient_Shader(const SkColor colors[], const SkScalar pos[],
              int colorCount, SkShader::TileMode mode, SkUnitMapper* mapper) {
@@ -380,7 +360,7 @@ Gradient_Shader::Gradient_Shader(SkFlattenableReadBuffer& buffer) :
             recs[i].fScale = buffer.readU32();
         }
     }
-    SkReadMatrix(&buffer, &fPtsToUnit);
+    buffer.readMatrix(&fPtsToUnit);
     this->initCommon();
 }
 
@@ -404,7 +384,7 @@ void Gradient_Shader::initCommon() {
     fColorsAreOpaque = colorAlpha == 0xFF;
 }
 
-void Gradient_Shader::flatten(SkFlattenableWriteBuffer& buffer) {
+void Gradient_Shader::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
     buffer.writeFlattenable(fMapper);
     buffer.write32(fColorCount);
@@ -417,7 +397,7 @@ void Gradient_Shader::flatten(SkFlattenableWriteBuffer& buffer) {
             buffer.write32(recs[i].fScale);
         }
     }
-    SkWriteMatrix(&buffer, fPtsToUnit);
+    buffer.writeMatrix(fPtsToUnit);
 }
 
 bool Gradient_Shader::isOpaque() const {
@@ -470,38 +450,6 @@ void Gradient_Shader::setCacheAlpha(U8CPU alpha) const {
             fCache32PixelRef->notifyPixelsChanged();
         }
     }
-}
-
-static inline int blend8(int a, int b, int scale) {
-    SkASSERT(a == SkToU8(a));
-    SkASSERT(b == SkToU8(b));
-    SkASSERT(scale >= 0 && scale <= 256);
-    return a + ((b - a) * scale >> 8);
-}
-
-static inline uint32_t dot8_blend_packed32(uint32_t s0, uint32_t s1,
-                                           int blend) {
-#if 0
-    int a = blend8(SkGetPackedA32(s0), SkGetPackedA32(s1), blend);
-    int r = blend8(SkGetPackedR32(s0), SkGetPackedR32(s1), blend);
-    int g = blend8(SkGetPackedG32(s0), SkGetPackedG32(s1), blend);
-    int b = blend8(SkGetPackedB32(s0), SkGetPackedB32(s1), blend);
-
-    return SkPackARGB32(a, r, g, b);
-#else
-    int otherBlend = 256 - blend;
-
-#if 0
-    U32 t0 = (((s0 & 0xFF00FF) * blend + (s1 & 0xFF00FF) * otherBlend) >> 8) & 0xFF00FF;
-    U32 t1 = (((s0 >> 8) & 0xFF00FF) * blend + ((s1 >> 8) & 0xFF00FF) * otherBlend) & 0xFF00FF00;
-    SkASSERT((t0 & t1) == 0);
-    return t0 | t1;
-#else
-    return  ((((s0 & 0xFF00FF) * blend + (s1 & 0xFF00FF) * otherBlend) >> 8) & 0xFF00FF) |
-            ((((s0 >> 8) & 0xFF00FF) * blend + ((s1 >> 8) & 0xFF00FF) * otherBlend) & 0xFF00FF00);
-#endif
-
-#endif
 }
 
 #define Fixed_To_Dot8(x)        (((x) + 0x80) >> 8)
@@ -849,21 +797,18 @@ public:
                              SkScalar* twoPointRadialParams) const SK_OVERRIDE;
     virtual GradientType asAGradient(GradientInfo* info) const SK_OVERRIDE;
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
-        this->INHERITED::flatten(buffer);
-        buffer.writeScalar(fStart.fX);
-        buffer.writeScalar(fStart.fY);
-        buffer.writeScalar(fEnd.fX);
-        buffer.writeScalar(fEnd.fY);
-    }
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Linear_Gradient)
 
 protected:
     Linear_Gradient(SkFlattenableReadBuffer& buffer)
-        : Gradient_Shader(buffer),
-          fStart(unflatten_point(buffer)),
-          fEnd(unflatten_point(buffer)) {
+        : INHERITED(buffer),
+          fStart(buffer.readPoint()),
+          fEnd(buffer.readPoint()) {
+    }
+    virtual void flatten(SkFlattenableWriteBuffer& buffer)  const SK_OVERRIDE {
+        this->INHERITED::flatten(buffer);
+        buffer.writePoint(fStart);
+        buffer.writePoint(fEnd);
     }
 
 private:
@@ -1507,20 +1452,18 @@ public:
         return kRadial_GradientType;
     }
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
-        this->INHERITED::flatten(buffer);
-        buffer.writeScalar(fCenter.fX);
-        buffer.writeScalar(fCenter.fY);
-        buffer.writeScalar(fRadius);
-    }
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Radial_Gradient)
 
 protected:
     Radial_Gradient(SkFlattenableReadBuffer& buffer)
-        : Gradient_Shader(buffer),
-          fCenter(unflatten_point(buffer)),
+        : INHERITED(buffer),
+          fCenter(buffer.readPoint()),
           fRadius(buffer.readScalar()) {
+    }
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
+        this->INHERITED::flatten(buffer);
+        buffer.writePoint(fCenter);
+        buffer.writeScalar(fRadius);
     }
 
 private:
@@ -2039,27 +1982,25 @@ public:
         return true;
     }
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
-        this->INHERITED::flatten(buffer);
-        buffer.writeScalar(fCenter1.fX);
-        buffer.writeScalar(fCenter1.fY);
-        buffer.writeScalar(fCenter2.fX);
-        buffer.writeScalar(fCenter2.fY);
-        buffer.writeScalar(fRadius1);
-        buffer.writeScalar(fRadius2);
-    }
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Two_Point_Radial_Gradient)
 
 protected:
     Two_Point_Radial_Gradient(SkFlattenableReadBuffer& buffer)
-            : Gradient_Shader(buffer),
-              fCenter1(unflatten_point(buffer)),
-              fCenter2(unflatten_point(buffer)),
+            : INHERITED(buffer),
+              fCenter1(buffer.readPoint()),
+              fCenter2(buffer.readPoint()),
               fRadius1(buffer.readScalar()),
               fRadius2(buffer.readScalar()) {
         init();
     };
+
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
+        this->INHERITED::flatten(buffer);
+        buffer.writePoint(fCenter1);
+        buffer.writePoint(fCenter2);
+        buffer.writeScalar(fRadius1);
+        buffer.writeScalar(fRadius2);
+    }
 
 private:
     typedef Gradient_Shader INHERITED;
@@ -2125,18 +2066,16 @@ public:
         return kSweep_GradientType;
     }
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
-        this->INHERITED::flatten(buffer);
-        buffer.writeScalar(fCenter.fX);
-        buffer.writeScalar(fCenter.fY);
-    }
-
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Sweep_Gradient)
 
 protected:
     Sweep_Gradient(SkFlattenableReadBuffer& buffer)
-        : Gradient_Shader(buffer),
-          fCenter(unflatten_point(buffer)) {
+        : INHERITED(buffer),
+          fCenter(buffer.readPoint()) {
+    }
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
+        this->INHERITED::flatten(buffer);
+        buffer.writePoint(fCenter);
     }
 
 private:

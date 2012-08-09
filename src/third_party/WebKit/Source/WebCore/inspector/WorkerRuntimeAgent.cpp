@@ -48,14 +48,23 @@ WorkerRuntimeAgent::~WorkerRuntimeAgent()
 {
 }
 
-ScriptState* WorkerRuntimeAgent::scriptStateForFrameId(const String&)
+ScriptState* WorkerRuntimeAgent::scriptStateForEval(ErrorString* error, const String* frameId)
 {
-    return 0;
+    if (frameId) {
+        *error = "Frame id is not supported for workers.";
+        return 0;
+    }
+    return scriptStateFromWorkerContext(m_workerContext);
 }
 
-ScriptState* WorkerRuntimeAgent::getDefaultInspectedState()
+void WorkerRuntimeAgent::muteConsole()
 {
-    return scriptStateFromWorkerContext(m_workerContext);
+    // We don't need to mute console for workers.
+}
+
+void WorkerRuntimeAgent::unmuteConsole()
+{
+    // We don't need to mute console for workers.
 }
 
 } // namespace WebCore

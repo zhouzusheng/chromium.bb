@@ -6,11 +6,14 @@
 #define WEBKIT_MEDIA_WEBMEDIAPLAYER_PROXY_H_
 
 #include <list>
+#include <string>
 
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "media/base/pipeline.h"
+#include "media/filters/chunk_demuxer.h"
 #include "media/filters/chunk_demuxer_client.h"
+#include "media/filters/ffmpeg_video_decoder.h"
 #include "webkit/media/buffered_data_source.h"
 #include "webkit/media/skcanvas_video_renderer.h"
 
@@ -54,6 +57,14 @@ class WebMediaPlayerProxy
     frame_provider_ = frame_provider;
   }
 
+  void set_video_decoder(
+      const scoped_refptr<media::FFmpegVideoDecoder>& video_decoder) {
+    video_decoder_ = video_decoder;
+  }
+  const scoped_refptr<media::FFmpegVideoDecoder>& video_decoder() {
+    return video_decoder_;
+  }
+
   // Methods for Filter -> WebMediaPlayerImpl communication.
   void Repaint();
   void SetOpaque(bool opaque);
@@ -64,6 +75,8 @@ class WebMediaPlayerProxy
   void GetCurrentFrame(scoped_refptr<media::VideoFrame>* frame_out);
   void PutCurrentFrame(scoped_refptr<media::VideoFrame> frame);
   bool HasSingleOrigin();
+  bool DidPassCORSAccessCheck() const;
+
   void AbortDataSource();
 
   // Methods for Pipeline -> WebMediaPlayerImpl communication.
@@ -76,15 +89,24 @@ class WebMediaPlayerProxy
   // ChunkDemuxerClient implementation.
   virtual void DemuxerOpened(media::ChunkDemuxer* demuxer) OVERRIDE;
   virtual void DemuxerClosed() OVERRIDE;
+  virtual void KeyNeeded(scoped_array<uint8> init_data,
+                         int init_data_size) OVERRIDE;
 
   // Methods for Demuxer communication.
   void DemuxerFlush();
-  bool DemuxerAppend(const uint8* data, size_t length);
+  media::ChunkDemuxer::Status DemuxerAddId(const std::string& id,
+                                           const std::string& type);
+  void DemuxerRemoveId(const std::string& id);
+  bool DemuxerBufferedRange(const std::string& id,
+                            media::ChunkDemuxer::Ranges* ranges_out);
+  bool DemuxerAppend(const std::string& id, const uint8* data, size_t length);
+  void DemuxerAbort(const std::string& id);
   void DemuxerEndOfStream(media::PipelineStatus status);
   void DemuxerShutdown();
 
   void DemuxerOpenedTask(const scoped_refptr<media::ChunkDemuxer>& demuxer);
   void DemuxerClosedTask();
+  void KeyNeededTask(scoped_array<uint8> init_data, int init_data_size);
 
  private:
   friend class base::RefCountedThreadSafe<WebMediaPlayerProxy>;
@@ -119,6 +141,7 @@ class WebMediaPlayerProxy
   scoped_refptr<BufferedDataSource> data_source_;
   scoped_refptr<media::VideoRendererBase> frame_provider_;
   SkCanvasVideoRenderer video_renderer_;
+  scoped_refptr<media::FFmpegVideoDecoder> video_decoder_;
 
   base::Lock lock_;
   int outstanding_repaints_;

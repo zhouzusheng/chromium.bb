@@ -218,7 +218,7 @@ public:
         fCanvas = canvas;
         canvas->updateDeviceCMCache();
 
-        fClipStack = &canvas->getTotalClipStack();
+        fClipStack = &canvas->fClipStack;
         fBounder = canvas->getBounder();
         fCurrLayer = canvas->fMCRec->fTopLayer;
         fSkipEmptyClips = skipEmptyClips;
@@ -439,7 +439,7 @@ SkDevice* SkCanvas::init(SkDevice* device) {
     fLocalBoundsCompareTypeDirtyBW = true;
     fLastDeviceToGainFocus = NULL;
     fDeviceCMDirty = false;
-    fLayerCount = 0;
+    fSaveLayerCount = 0;
 
     fMCRec = (MCRec*)fMCStack.push_back();
     new (fMCRec) MCRec(NULL, 0);
@@ -479,7 +479,7 @@ SkCanvas::SkCanvas(const SkBitmap& bitmap)
 SkCanvas::~SkCanvas() {
     // free up the contents of our deque
     this->restoreToCount(1);    // restore everything but the last
-    SkASSERT(0 == fLayerCount);
+    SkASSERT(0 == fSaveLayerCount);
 
     this->internalRestore();    // restore the last, since we're going away
 
@@ -571,24 +571,18 @@ SkDevice* SkCanvas::setDevice(SkDevice* device) {
         accurately take advantage of the new device bounds.
     */
 
-    if (NULL == device) {
-        rec->fRasterClip->setEmpty();
-        while ((rec = (MCRec*)iter.next()) != NULL) {
-            (void)rec->fRasterClip->setEmpty();
-        }
-        fClipStack.reset();
-    } else {
-        // compute our total bounds for all devices
-        SkIRect bounds;
-
+    SkIRect bounds;
+    if (device) {
         bounds.set(0, 0, device->width(), device->height());
-
-        // now jam our 1st clip to be bounds, and intersect the rest with that
-        rec->fRasterClip->setRect(bounds);
-        while ((rec = (MCRec*)iter.next()) != NULL) {
-            (void)rec->fRasterClip->op(bounds, SkRegion::kIntersect_Op);
-        }
+    } else {
+        bounds.setEmpty();
     }
+    // now jam our 1st clip to be bounds, and intersect the rest with that
+    rec->fRasterClip->setRect(bounds);
+    while ((rec = (MCRec*)iter.next()) != NULL) {
+        (void)rec->fRasterClip->op(bounds, SkRegion::kIntersect_Op);
+    }
+
     return device;
 }
 
@@ -610,6 +604,9 @@ bool SkCanvas::readPixels(SkBitmap* bitmap,
 
 bool SkCanvas::readPixels(const SkIRect& srcRect, SkBitmap* bitmap) {
     SkDevice* device = this->getDevice();
+    if (!device) {
+        return false;
+    }
 
     SkIRect bounds;
     bounds.set(0, 0, device->width(), device->height());
@@ -837,7 +834,7 @@ int SkCanvas::internalSaveLayer(const SkRect* bounds, const SkPaint* paint,
     fMCRec->fLayer = layer;
     fMCRec->fTopLayer = layer;    // this field is NOT an owner of layer
 
-    fLayerCount += 1;
+    fSaveLayerCount += 1;
     return count;
 }
 
@@ -889,8 +886,8 @@ void SkCanvas::internalRestore() {
             // reset this, since internalDrawDevice will have set it to true
             fDeviceCMDirty = true;
 
-            SkASSERT(fLayerCount > 0);
-            fLayerCount -= 1;
+            SkASSERT(fSaveLayerCount > 0);
+            fSaveLayerCount -= 1;
         }
         SkDELETE(layer);
     }
@@ -915,7 +912,7 @@ void SkCanvas::restoreToCount(int count) {
 }
 
 bool SkCanvas::isDrawingToLayer() const {
-    return fLayerCount > 0;
+    return fSaveLayerCount > 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -984,9 +981,9 @@ void SkCanvas::internalDrawDevice(SkDevice* srcDev, int x, int y,
             SkBitmap dst;
             const SkBitmap& src = srcDev->accessBitmap(false);
             if (filter->filterImage(&proxy, src, *iter.fMatrix, &dst, &pos)) {
-                SkPaint tmp(*paint);
-                tmp.setImageFilter(NULL);
-                dstDev->drawSprite(iter, dst, pos.x(), pos.y(), tmp);
+                SkPaint tmpUnfiltered(*paint);
+                tmpUnfiltered.setImageFilter(NULL);
+                dstDev->drawSprite(iter, dst, pos.x(), pos.y(), tmpUnfiltered);
             }
         } else {
             dstDev->drawDevice(iter, srcDev, pos.x(), pos.y(), *paint);
@@ -1017,10 +1014,12 @@ void SkCanvas::drawSprite(const SkBitmap& bitmap, int x, int y,
         if (filter && !iter.fDevice->canHandleImageFilter(filter)) {
             DeviceImageFilterProxy proxy(iter.fDevice);
             SkBitmap dst;
-            if (filter->filterImage(&proxy, bitmap, *iter.fMatrix, &dst, &pos)) {
-                SkPaint tmp(*paint);
-                tmp.setImageFilter(NULL);
-                iter.fDevice->drawSprite(iter, dst, pos.x(), pos.y(), tmp);
+            if (filter->filterImage(&proxy, bitmap, *iter.fMatrix,
+                                    &dst, &pos)) {
+                SkPaint tmpUnfiltered(*paint);
+                tmpUnfiltered.setImageFilter(NULL);
+                iter.fDevice->drawSprite(iter, dst, pos.x(), pos.y(),
+                                         tmpUnfiltered);
             }
         } else {
             iter.fDevice->drawSprite(iter, bitmap, pos.x(), pos.y(), *paint);
@@ -1133,6 +1132,10 @@ static bool clipPathHelper(const SkCanvas* canvas, SkRasterClip* currClip,
         }
     } else {
         const SkDevice* device = canvas->getDevice();
+        if (!device) {
+            return currClip->setEmpty();
+        }
+
         base.setRect(0, 0, device->width(), device->height());
 
         if (SkRegion::kReplace_Op == op) {
@@ -1189,6 +1192,11 @@ bool SkCanvas::clipRegion(const SkRegion& rgn, SkRegion::Op op) {
 void SkCanvas::validateClip() const {
     // construct clipRgn from the clipstack
     const SkDevice* device = this->getDevice();
+    if (!device) {
+        SkASSERT(this->getTotalClip().isEmpty());
+        return;
+    }
+
     SkIRect ir;
     ir.set(0, 0, device->width(), device->height());
     SkRasterClip tmpClip(ir);
@@ -1213,6 +1221,22 @@ void SkCanvas::validateClip() const {
 #endif
 }
 #endif
+
+void SkCanvas::replayClips(ClipVisitor* visitor) const {
+    SkClipStack::B2FIter                iter(fClipStack);
+    const SkClipStack::B2FIter::Clip*   clip;
+
+    SkRect empty = { 0, 0, 0, 0 };
+    while ((clip = iter.next()) != NULL) {
+        if (clip->fPath) {
+            visitor->clipPath(*clip->fPath, clip->fOp, clip->fDoAA);
+        } else if (clip->fRect) {
+            visitor->clipRect(*clip->fRect, clip->fOp, clip->fDoAA);
+        } else {
+            visitor->clipRect(empty, SkRegion::kIntersect_Op, false);
+        }
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1346,10 +1370,6 @@ const SkRegion& SkCanvas::getTotalClip() const {
     return fMCRec->fRasterClip->forceGetBW();
 }
 
-const SkClipStack& SkCanvas::getTotalClipStack() const {
-    return fClipStack;
-}
-
 void SkCanvas::setExternalMatrix(const SkMatrix* matrix) {
     if (NULL == matrix || matrix->isIdentity()) {
         if (fUseExternalMatrix) {
@@ -1357,11 +1377,11 @@ void SkCanvas::setExternalMatrix(const SkMatrix* matrix) {
         }
         fUseExternalMatrix = false;
     } else {
-        fUseExternalMatrix = true;
-        fDeviceCMDirty = true;  // |= (fExternalMatrix != *matrix)
-
-        fExternalMatrix = *matrix;
-        matrix->invert(&fExternalInverse);
+        if (matrix->invert(&fExternalInverse)) {
+            fExternalMatrix = *matrix;
+            fUseExternalMatrix = true;
+            fDeviceCMDirty = true;  // |= (fExternalMatrix != *matrix)
+        }
     }
 }
 

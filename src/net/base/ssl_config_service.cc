@@ -9,7 +9,6 @@
 #include "base/synchronization/lock.h"
 #include "net/base/crl_set.h"
 #include "net/base/ssl_config_service_defaults.h"
-#include "net/base/ssl_false_start_blacklist.h"
 
 namespace net {
 
@@ -57,13 +56,8 @@ SSLConfigService::SSLConfigService()
     : observer_list_(ObserverList<Observer>::NOTIFY_EXISTING_ONLY) {
 }
 
-// static
-bool SSLConfigService::IsKnownFalseStartIncompatibleServer(
-    const std::string& hostname) {
-  return SSLFalseStartBlacklist::IsMember(hostname);
-}
-
 static bool g_cached_info_enabled = false;
+static bool g_domain_bound_certs_trial = false;
 
 // GlobalCRLSet holds a reference to the global CRLSet. It simply wraps a lock
 // around a scoped_refptr so that getting a reference doesn't race with
@@ -107,6 +101,11 @@ bool SSLConfigService::cached_info_enabled() {
   return g_cached_info_enabled;
 }
 
+// static
+void SSLConfigService::EnableDomainBoundCertsTrial() {
+  g_domain_bound_certs_trial = true;
+}
+
 void SSLConfigService::AddObserver(Observer* observer) {
   observer_list_.AddObserver(observer);
 }
@@ -121,6 +120,8 @@ SSLConfigService::~SSLConfigService() {
 // static
 void SSLConfigService::SetSSLConfigFlags(SSLConfig* ssl_config) {
   ssl_config->cached_info_enabled = g_cached_info_enabled;
+  if (g_domain_bound_certs_trial)
+    ssl_config->domain_bound_certs_enabled = true;
 }
 
 void SSLConfigService::ProcessConfigUpdate(const SSLConfig& orig_config,

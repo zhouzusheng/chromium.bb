@@ -11,7 +11,7 @@
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
 #if defined(OS_MACOSX)
-#include "ui/gfx/surface/io_surface_support_mac.h"
+#include "ui/surface/io_surface_support_mac.h"
 #endif
 
 namespace gpu {
@@ -114,12 +114,13 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   AddExtensionString("GL_CHROMIUM_resource_safe");
   AddExtensionString("GL_CHROMIUM_resize");
   AddExtensionString("GL_CHROMIUM_strict_attribs");
-  AddExtensionString("GL_CHROMIUM_swapbuffers_complete_callback");
   AddExtensionString("GL_CHROMIUM_rate_limit_offscreen_context");
   AddExtensionString("GL_CHROMIUM_set_visibility");
   AddExtensionString("GL_CHROMIUM_gpu_memory_manager");
   AddExtensionString("GL_CHROMIUM_discard_framebuffer");
   AddExtensionString("GL_CHROMIUM_command_buffer_query");
+  AddExtensionString("GL_CHROMIUM_copy_texture");
+  AddExtensionString("GL_CHROMIUM_texture_mailbox");
   AddExtensionString("GL_ANGLE_translated_shader_source");
 
   if (ext.Have("GL_ANGLE_translated_shader_source")) {
@@ -461,6 +462,8 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
     validators_.vertex_attribute.AddValue(GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
   }
 
+  if (!disallowed_features_.swap_buffer_complete_callback)
+    AddExtensionString("GL_CHROMIUM_swapbuffers_complete_callback");
 }
 
 void FeatureInfo::AddExtensionString(const std::string& str) {

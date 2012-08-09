@@ -40,6 +40,10 @@ namespace WebCore {
 
 class CCActiveGestureAnimation;
 class CCCompletionEvent;
+class CCDebugRectHistory;
+class CCFontAtlas;
+class CCFrameRateCounter;
+class CCHeadsUpDisplay;
 class CCPageScaleAnimation;
 class CCLayerImpl;
 class CCLayerTreeHostImplTimeSourceAdapter;
@@ -56,6 +60,7 @@ public:
     virtual void setNeedsRedrawOnImplThread() = 0;
     virtual void setNeedsCommitOnImplThread() = 0;
     virtual void postAnimationEventsToMainThreadOnImplThread(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime) = 0;
+    virtual void postSetContentsMemoryAllocationLimitBytesToMainThreadOnImplThread(size_t) = 0;
 };
 
 // CCLayerTreeHostImpl owns the CCLayerImpl tree as well as associated rendering state
@@ -100,17 +105,19 @@ public:
     void didDrawAllLayers(const FrameData&);
 
     // LayerRendererChromiumClient implementation
-    virtual const IntSize& viewportSize() const { return m_viewportSize; }
-    virtual const CCSettings& settings() const { return m_settings; }
-    virtual CCLayerImpl* rootLayer() { return m_rootLayerImpl.get(); }
-    virtual const CCLayerImpl* rootLayer() const  { return m_rootLayerImpl.get(); }
-    virtual void didLoseContext();
-    virtual void onSwapBuffersComplete();
-    virtual void setFullRootLayerDamage();
+    virtual const IntSize& viewportSize() const OVERRIDE { return m_viewportSize; }
+    virtual const CCSettings& settings() const OVERRIDE { return m_settings; }
+    virtual void didLoseContext() OVERRIDE;
+    virtual void onSwapBuffersComplete() OVERRIDE;
+    virtual void setFullRootLayerDamage() OVERRIDE;
+    virtual void setContentsMemoryAllocationLimitBytes(size_t) OVERRIDE;
 
     // Implementation
     bool canDraw();
     GraphicsContext3D* context();
+
+    String layerTreeAsText() const;
+    void setFontAtlas(PassOwnPtr<CCFontAtlas>);
 
     void finishAllRendering();
     int frameNumber() const { return m_frameNumber; }
@@ -127,6 +134,7 @@ public:
 
     void setRootLayer(PassOwnPtr<CCLayerImpl>);
     PassOwnPtr<CCLayerImpl> releaseRootLayer() { return m_rootLayerImpl.release(); }
+    CCLayerImpl* rootLayer() { return m_rootLayerImpl.get(); }
 
     CCLayerImpl* scrollLayer() const { return m_scrollLayerImpl; }
 
@@ -135,6 +143,9 @@ public:
 
     int sourceFrameNumber() const { return m_sourceFrameNumber; }
     void setSourceFrameNumber(int frameNumber) { m_sourceFrameNumber = frameNumber; }
+
+    bool sourceFrameCanBeDrawn() const { return m_sourceFrameCanBeDrawn; }
+    void setSourceFrameCanBeDrawn(bool sourceFrameCanBeDrawn) { m_sourceFrameCanBeDrawn = sourceFrameCanBeDrawn; }
 
     void setViewportSize(const IntSize&);
 
@@ -152,6 +163,9 @@ public:
     void setNeedsAnimateLayers() { m_needsAnimateLayers = true; }
 
     void setNeedsRedraw();
+
+    CCFrameRateCounter* fpsCounter() const { return m_fpsCounter.get(); }
+    CCDebugRectHistory* debugRectHistory() const { return m_debugRectHistory.get(); }
 
 protected:
     CCLayerTreeHostImpl(const CCSettings&, CCLayerTreeHostImplClient*);
@@ -176,6 +190,7 @@ private:
     void adjustScrollsForPageScaleChange(float);
     void updateMaxScrollPosition();
     void trackDamageForAllSurfaces(CCLayerImpl* rootDrawLayer, const CCLayerList& renderSurfaceLayerList);
+    void calculateRenderSurfaceLayerList(CCLayerList&);
 
     // Returns false if the frame should not be displayed. This function should
     // only be called from prepareToDraw, as didDrawAllLayers must be called
@@ -184,6 +199,9 @@ private:
     void animateLayersRecursive(CCLayerImpl*, double monotonicTime, double wallClockTime, CCAnimationEventsVector*, bool& didAnimate, bool& needsAnimateLayers);
     IntSize contentSize() const;
     void sendDidLoseContextRecursive(CCLayerImpl*);
+    void clearRenderSurfacesOnCCLayerImplRecursive(CCLayerImpl*);
+
+    void dumpRenderSurfaces(TextStream&, int indent, const CCLayerImpl*) const;
 
     OwnPtr<LayerRendererChromium> m_layerRenderer;
     OwnPtr<CCLayerImpl> m_rootLayerImpl;
@@ -191,6 +209,9 @@ private:
     CCSettings m_settings;
     IntSize m_viewportSize;
     bool m_visible;
+    bool m_sourceFrameCanBeDrawn;
+
+    OwnPtr<CCHeadsUpDisplay> m_headsUpDisplay;
 
     float m_pageScale;
     float m_pageScaleDelta;
@@ -213,6 +234,9 @@ private:
     CCLayerSorter m_layerSorter;
 
     FloatRect m_rootDamageRect;
+
+    OwnPtr<CCFrameRateCounter> m_fpsCounter;
+    OwnPtr<CCDebugRectHistory> m_debugRectHistory;
 };
 
 };

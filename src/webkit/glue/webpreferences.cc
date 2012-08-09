@@ -82,7 +82,6 @@ WebPreferences::WebPreferences()
       threaded_animation_enabled(false),
       accelerated_compositing_enabled(false),
       force_compositing_mode(false),
-      composite_to_texture_enabled(false),
       fixed_position_compositing_enabled(false),
       accelerated_layers_enabled(false),
       accelerated_animation_enabled(false),
@@ -104,7 +103,8 @@ WebPreferences::WebPreferences()
       hixie76_websocket_protocol_enabled(false),
       visual_word_movement_enabled(false),
       per_tile_painting_enabled(false),
-      css_regions_enabled(false) {
+      css_regions_enabled(false),
+      css_shaders_enabled(false) {
 }
 
 WebPreferences::~WebPreferences() {
@@ -278,9 +278,6 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Always enter compositing if requested on the command line.
   settings->setForceCompositingMode(force_compositing_mode);
 
-  // Enable composite to offscreen texture if requested on the command line.
-  settings->setCompositeToTextureEnabled(composite_to_texture_enabled);
-
   // Enable compositing for fixed position elements if requested
   // on the command line.
   settings->setAcceleratedCompositingForFixedPositionEnabled(
@@ -351,6 +348,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
 
   settings->setExperimentalCSSRegionsEnabled(css_regions_enabled);
+  settings->setExperimentalCSSCustomFilterEnabled(css_shaders_enabled);
 
   WebNetworkStateNotifier::setOnLine(is_online);
 }

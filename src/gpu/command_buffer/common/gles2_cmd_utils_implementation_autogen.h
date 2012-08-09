@@ -224,7 +224,7 @@ static GLES2Util::EnumToString enum_to_string_table[] = {
   { 0x00000400, "GL_STENCIL_BUFFER_BIT", },
   { 0x800A, "GL_FUNC_SUBTRACT", },
   { 0x8E2C, "GL_DEPTH_COMPONENT16_NONLINEAR_NV", },
-  { 0x889F, "GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING", },
+  { 0x8508, "GL_DECR_WRAP", },
   { 0x8006, "GL_FUNC_ADD", },
   { 0x8007, "GL_MIN_EXT", },
   { 0x8004, "GL_ONE_MINUS_CONSTANT_ALPHA", },
@@ -289,9 +289,11 @@ static GLES2Util::EnumToString enum_to_string_table[] = {
   { 0x8DF2, "GL_HIGH_FLOAT", },
   { 0x8826, "GL_DRAW_BUFFER1_NV", },
   { 0x8827, "GL_DRAW_BUFFER2_NV", },
+  { 0x9243, "GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM", },
   { 0x8DF3, "GL_LOW_INT", },
   { 0x8B53, "GL_INT_VEC2", },
   { 0x0C02, "GL_READ_BUFFER_NV", },
+  { 0x9241, "GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM", },
   { 0x8B52, "GL_FLOAT_VEC4", },
   { 0x9240, "GL_UNPACK_FLIP_Y_CHROMIUM", },
   { 0x8B51, "GL_FLOAT_VEC3", },
@@ -376,6 +378,7 @@ static GLES2Util::EnumToString enum_to_string_table[] = {
   { 0x0502, "GL_INVALID_OPERATION", },
   { 0x0501, "GL_INVALID_VALUE", },
   { 0x0500, "GL_INVALID_ENUM", },
+  { 64, "GL_MAILBOX_SIZE_CHROMIUM", },
   { 0x0506, "GL_INVALID_FRAMEBUFFER_OPERATION", },
   { 0x0505, "GL_OUT_OF_MEMORY", },
   { 0x8B5F, "GL_SAMPLER_3D_OES", },
@@ -497,7 +500,7 @@ static GLES2Util::EnumToString enum_to_string_table[] = {
   { 0x8CD6, "GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT", },
   { 0x8253, "GL_GUILTY_CONTEXT_RESET_EXT", },
   { 0x8872, "GL_MAX_TEXTURE_IMAGE_UNITS", },
-  { 0x8508, "GL_DECR_WRAP", },
+  { 0x889F, "GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING", },
   { 0x8507, "GL_INCR_WRAP", },
   { 0x8895, "GL_ELEMENT_ARRAY_BUFFER_BINDING", },
   { 0x8894, "GL_ARRAY_BUFFER_BINDING", },
@@ -887,6 +890,9 @@ std::string GLES2Util::GetStringPixelStore(uint32 value) {
   static EnumToString string_table[] = {
     { GL_PACK_ALIGNMENT, "GL_PACK_ALIGNMENT" },
     { GL_UNPACK_ALIGNMENT, "GL_UNPACK_ALIGNMENT" },
+    { GL_UNPACK_FLIP_Y_CHROMIUM, "GL_UNPACK_FLIP_Y_CHROMIUM" },
+    { GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
+    "GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM" },
   };
   return GLES2Util::GetQualifiedEnumString(
       string_table, arraysize(string_table), value);

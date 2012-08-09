@@ -249,8 +249,12 @@ class NET_EXPORT SocketStream
     STATE_SOCKS_CONNECT_COMPLETE,
     STATE_SECURE_PROXY_CONNECT,
     STATE_SECURE_PROXY_CONNECT_COMPLETE,
+    STATE_SECURE_PROXY_HANDLE_CERT_ERROR,
+    STATE_SECURE_PROXY_HANDLE_CERT_ERROR_COMPLETE,
     STATE_SSL_CONNECT,
     STATE_SSL_CONNECT_COMPLETE,
+    STATE_SSL_HANDLE_CERT_ERROR,
+    STATE_SSL_HANDLE_CERT_ERROR_COMPLETE,
     STATE_READ_WRITE,
     STATE_AUTH_REQUIRED,
     STATE_CLOSE,
@@ -276,7 +280,6 @@ class NET_EXPORT SocketStream
   // notifications will be sent to delegate.
   void Finish(int result);
 
-  int DidEstablishSSL(int result, SSLConfig* ssl_config);
   int DidEstablishConnection();
   int DidReceiveData(int result);
   int DidSendData(int result);
@@ -303,17 +306,22 @@ class NET_EXPORT SocketStream
   int DoSOCKSConnectComplete(int result);
   int DoSecureProxyConnect();
   int DoSecureProxyConnectComplete(int result);
+  int DoSecureProxyHandleCertError(int result);
+  int DoSecureProxyHandleCertErrorComplete(int result);
   int DoSSLConnect();
   int DoSSLConnectComplete(int result);
+  int DoSSLHandleCertError(int result);
+  int DoSSLHandleCertErrorComplete(int result);
   int DoReadWrite(int result);
 
   GURL ProxyAuthOrigin() const;
   int HandleAuthChallenge(const HttpResponseHeaders* headers);
-  int HandleCertificateRequest(int result);
+  int HandleCertificateRequest(int result, SSLConfig* ssl_config);
   void DoAuthRequired();
   void DoRestartWithAuth();
 
   int HandleCertificateError(int result);
+  int AllowCertErrorForReconnection(SSLConfig* ssl_config);
 
   SSLConfigService* ssl_config_service() const;
   ProxyService* proxy_service() const;

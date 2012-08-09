@@ -38,6 +38,9 @@ class ReceivedHeadersParameters : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~ReceivedHeadersParameters() {}
+
  private:
   const NetLog::Source source_;
   const std::string feedback_;
@@ -54,6 +57,9 @@ class StreamClosedParameters : public NetLog::EventParameters {
     dict->SetBoolean("not_reusable", not_reusable_);
     return dict;
   }
+
+ protected:
+  virtual ~StreamClosedParameters() {}
 
  private:
   const NetLog::Source source_;
@@ -129,7 +135,7 @@ void HttpPipelinedConnectionImpl::InitializeParser(
   CHECK(!stream_info_map_[pipeline_id].parser.get());
   stream_info_map_[pipeline_id].state = STREAM_BOUND;
   stream_info_map_[pipeline_id].parser.reset(new HttpStreamParser(
-      connection_.get(), request, read_buf_.get(), net_log_));
+      connection_.get(), request, read_buf_.get(), net_log));
   stream_info_map_[pipeline_id].source = net_log.source();
 
   // In case our first stream doesn't SendRequest() immediately, we should still

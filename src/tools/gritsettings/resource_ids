@@ -146,6 +146,9 @@
   "chrome/app/theme/theme_resources_2x.grd": {
     "includes": [21000],
   },
+  "chrome/app/theme/theme_resources_touch_1x.grd": {
+    "includes": [21000],
+  },
   # This file is generated during the build.
   "chrome/browser/debugger/frontend/devtools_discovery_page_resources.grd": {
     "includes": [21500],
@@ -166,6 +169,9 @@
   "ui/resources/ui_resources_standard.grd": {
     "includes": [24000],
   },
+  "ui/resources/ui_resources_touch.grd": {
+    "includes": [24000],
+  },
   "ui/resources/ui_resources_2x.grd": {
     "includes": [24000],
   },
@@ -177,5 +183,8 @@
   },
   "ash/ash_strings.grd": {
     "messages": [25500],
+  },
+  "chrome/common/extensions_api_resources.grd": {
+    "includes": [26000],
   },
 }

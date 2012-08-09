@@ -7,6 +7,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/default_server_bound_cert_store.h"
@@ -148,7 +149,8 @@ void TestURLRequestContext::Init() {
   if (!server_bound_cert_service()) {
     context_storage_.set_server_bound_cert_service(
         new net::ServerBoundCertService(
-            new net::DefaultServerBoundCertStore(NULL)));
+            new net::DefaultServerBoundCertStore(NULL),
+            base::MessageLoopProxy::current()));
   }
   if (accept_language().empty())
     set_accept_language("en-us,fr");
@@ -493,8 +495,8 @@ net::NetworkDelegate::AuthRequiredResponse TestNetworkDelegate::OnAuthRequired(
   return net::NetworkDelegate::AUTH_REQUIRED_RESPONSE_NO_ACTION;
 }
 
-bool TestNetworkDelegate::CanGetCookies(const net::URLRequest* request,
-                                        const net::CookieList& cookie_list) {
+bool TestNetworkDelegate::OnCanGetCookies(const net::URLRequest& request,
+                                          const net::CookieList& cookie_list) {
   bool allow = true;
   if (cookie_options_bit_mask_ & NO_GET_COOKIES)
     allow = false;
@@ -506,9 +508,9 @@ bool TestNetworkDelegate::CanGetCookies(const net::URLRequest* request,
   return allow;
 }
 
-bool TestNetworkDelegate::CanSetCookie(const net::URLRequest* request,
-                                       const std::string& cookie_line,
-                                       net::CookieOptions* options) {
+bool TestNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
+                                         const std::string& cookie_line,
+                                         net::CookieOptions* options) {
   bool allow = true;
   if (cookie_options_bit_mask_ & NO_SET_COOKIE)
     allow = false;
@@ -523,6 +525,11 @@ bool TestNetworkDelegate::CanSetCookie(const net::URLRequest* request,
   }
 
   return allow;
+}
+
+bool TestNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
+                                          const FilePath& path) const {
+  return true;
 }
 
 // static

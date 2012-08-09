@@ -28,7 +28,6 @@
 #include "AXObjectCache.h"
 #include "AccessibilityMenuList.h"
 #include "CSSFontSelector.h"
-#include "CSSStyleSelector.h"
 #include "Chrome.h"
 #include "FontCache.h"
 #include "Frame.h"
@@ -44,6 +43,7 @@
 #include "RenderScrollbar.h"
 #include "RenderTheme.h"
 #include "Settings.h"
+#include "StyleResolver.h"
 #include "TextRun.h"
 #include <math.h>
 
@@ -119,6 +119,9 @@ void RenderMenuList::addChild(RenderObject* newChild, RenderObject* beforeChild)
     createInnerBlock();
     m_innerBlock->addChild(newChild, beforeChild);
     ASSERT(m_innerBlock == firstChild());
+
+    if (AXObjectCache::accessibilityEnabled())
+        document()->axObjectCache()->childrenChanged(this);
 }
 
 void RenderMenuList::removeChild(RenderObject* oldChild)
@@ -495,7 +498,7 @@ PassRefPtr<Scrollbar> RenderMenuList::createScrollbar(ScrollableArea* scrollable
     RefPtr<Scrollbar> widget;
     bool hasCustomScrollbarStyle = style()->hasPseudoStyle(SCROLLBAR);
     if (hasCustomScrollbarStyle)
-        widget = RenderScrollbar::createCustomScrollbar(scrollableArea, orientation, this);
+        widget = RenderScrollbar::createCustomScrollbar(scrollableArea, orientation, this->node());
     else
         widget = Scrollbar::createNativeScrollbar(scrollableArea, orientation, controlSize);
     return widget.release();
@@ -576,7 +579,7 @@ void RenderMenuList::setTextFromItem(unsigned listIndex)
 
 FontSelector* RenderMenuList::fontSelector() const
 {
-    return document()->styleSelector()->fontSelector();
+    return document()->styleResolver()->fontSelector();
 }
 
 }

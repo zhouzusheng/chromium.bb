@@ -11,8 +11,9 @@
 #ifndef GrSamplerState_DEFINED
 #define GrSamplerState_DEFINED
 
-#include "GrTypes.h"
+#include "GrCustomStage.h"
 #include "GrMatrix.h"
+#include "GrTypes.h"
 
 #define MAX_KERNEL_WIDTH 25
 
@@ -112,8 +113,35 @@ public:
     GrSamplerState()
     : fRadial2CenterX1()
     , fRadial2Radius0()
-    , fRadial2PosRoot() {
+    , fRadial2PosRoot()
+    , fCustomStage (NULL) {
         this->reset();
+    }
+
+    ~GrSamplerState() {
+        GrSafeUnref(fCustomStage);
+    }
+
+    bool operator ==(const GrSamplerState& s) const {
+        /* We must be bit-identical as far as the CustomStage;
+           there may be multiple CustomStages that will produce
+           the same shader code and so are equivalent. 
+           Can't take the address of fWrapX because it's :8 */
+        int bitwiseRegion = (intptr_t) &fCustomStage - (intptr_t) this;
+        GrAssert(sizeof(GrSamplerState) ==
+                 bitwiseRegion + sizeof(fCustomStage));
+        return !memcmp(this, &s, bitwiseRegion) &&
+               ((fCustomStage == s.fCustomStage) ||
+                (fCustomStage && s.fCustomStage &&
+                 (fCustomStage->getGLFactory() ==
+                     s.fCustomStage->getGLFactory()) &&
+                 fCustomStage->isEquivalent(s.fCustomStage)));
+    }
+    bool operator !=(const GrSamplerState& s) const { return !(*this == s); }
+
+    GrSamplerState& operator =(const GrSamplerState s) {
+        memcpy(this, &s, sizeof(GrSamplerState));
+        return *this;
     }
 
     WrapMode getWrapX() const { return fWrapX; }
@@ -188,6 +216,7 @@ public:
         fMatrix = matrix;
         fTextureDomain.setEmpty();
         fSwapRAndB = false;
+        GrSafeSetNull(fCustomStage);
     }
     void reset(WrapMode wrapXAndY, Filter filter, const GrMatrix& matrix) {
         this->reset(wrapXAndY, filter, kDefault_FilterDirection, matrix);
@@ -236,6 +265,11 @@ public:
         fKernelWidth = radius;
     }
 
+    void setCustomStage(GrCustomStage* stage) {
+        GrSafeAssign(fCustomStage, stage);
+    }
+    GrCustomStage* getCustomStage() const { return fCustomStage; }
+
 private:
     WrapMode            fWrapX : 8;
     WrapMode            fWrapY : 8;
@@ -254,6 +288,12 @@ private:
     // These are undefined unless fFilter == kConvolution_Filter
     uint8_t             fKernelWidth;
     float               fKernel[MAX_KERNEL_WIDTH];
+
+    /// BUG! Ganesh only works correctly so long as fCustomStage is  
+    /// NULL; we need to have a complex ID system here so that we can
+    /// have an equality-like comparison to determine whether two
+    /// fCustomStages are equal.
+    GrCustomStage*      fCustomStage;
 };
 
 #endif

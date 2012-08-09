@@ -12,29 +12,37 @@
 #include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
+#include "base/string_number_conversions.h"
+#include "base/synchronization/waitable_event.h"
+#include "media/audio/null_audio_sink.h"
 #include "media/base/filter_collection.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
-#include "media/filters/null_audio_renderer.h"
+#include "media/filters/audio_renderer_impl.h"
 #include "media/filters/video_renderer_base.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebVideoFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "v8/include/v8.h"
 #include "webkit/media/buffered_data_source.h"
 #include "webkit/media/filter_helpers.h"
+#include "webkit/media/key_systems.h"
 #include "webkit/media/webmediaplayer_delegate.h"
 #include "webkit/media/webmediaplayer_proxy.h"
+#include "webkit/media/webmediaplayer_util.h"
 #include "webkit/media/webvideoframe_impl.h"
 
 using WebKit::WebCanvas;
+using WebKit::WebMediaPlayer;
 using WebKit::WebRect;
 using WebKit::WebSize;
+using WebKit::WebString;
 using media::NetworkEvent;
 using media::PipelineStatus;
 
@@ -69,28 +77,18 @@ const int kPlayerExtraMemory = 1024 * 1024;
 const float kMinRate = 0.0625f;
 const float kMaxRate = 16.0f;
 
-// Platform independent method for converting and rounding floating point
-// seconds to an int64 timestamp.
-//
-// Refer to https://bugs.webkit.org/show_bug.cgi?id=52697 for details.
-base::TimeDelta ConvertSecondsToTimestamp(float seconds) {
-  float microseconds = seconds * base::Time::kMicrosecondsPerSecond;
-  float integer = ceilf(microseconds);
-  float difference = integer - microseconds;
-
-  // Round down if difference is large enough.
-  if ((microseconds > 0 && difference > 0.5f) ||
-      (microseconds <= 0 && difference >= 0.5f)) {
-    integer -= 1.0f;
-  }
-
-  // Now we can safely cast to int64 microseconds.
-  return base::TimeDelta::FromMicroseconds(static_cast<int64>(integer));
-}
-
 }  // namespace
 
 namespace webkit_media {
+
+#define COMPILE_ASSERT_MATCHING_ENUM(name)                              \
+  COMPILE_ASSERT(static_cast<int>(WebKit::WebMediaPlayer::CORSMode ## name) == \
+                 static_cast<int>(BufferedResourceLoader::k ## name),   \
+                 mismatching_enums)
+COMPILE_ASSERT_MATCHING_ENUM(Unspecified);
+COMPILE_ASSERT_MATCHING_ENUM(Anonymous);
+COMPILE_ASSERT_MATCHING_ENUM(UseCredentials);
+#undef COMPILE_ASSERT_MATCHING_ENUM
 
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     WebKit::WebFrame* frame,
@@ -102,8 +100,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
     MediaStreamClient* media_stream_client,
     media::MediaLog* media_log)
     : frame_(frame),
-      network_state_(WebKit::WebMediaPlayer::Empty),
-      ready_state_(WebKit::WebMediaPlayer::HaveNothing),
+      network_state_(WebMediaPlayer::NetworkStateEmpty),
+      ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       main_loop_(MessageLoop::current()),
       filter_collection_(collection),
       started_(false),
@@ -152,7 +150,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
   proxy_->set_frame_provider(video_renderer);
 
   // Create default audio renderer.
-  filter_collection_->AddAudioRenderer(new media::NullAudioRenderer());
+  filter_collection_->AddAudioRenderer(
+      new media::AudioRendererImpl(new media::NullAudioSink()));
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
@@ -185,7 +184,8 @@ enum URLSchemeForHistogram {
   kFileURLScheme,
   kBlobURLScheme,
   kDataURLScheme,
-  kMaxURLScheme = kDataURLScheme  // Must be equal to highest enum value.
+  kFileSystemScheme,
+  kMaxURLScheme = kFileSystemScheme  // Must be equal to highest enum value.
 };
 
 URLSchemeForHistogram URLScheme(const GURL& url) {
@@ -198,12 +198,17 @@ URLSchemeForHistogram URLScheme(const GURL& url) {
   if (url.SchemeIs("file")) return kFileURLScheme;
   if (url.SchemeIs("blob")) return kBlobURLScheme;
   if (url.SchemeIs("data")) return kDataURLScheme;
+  if (url.SchemeIs("filesystem")) return kFileSystemScheme;
   return kUnknownURLScheme;
 }
 
 }  // anonymous namespace
 
 void WebMediaPlayerImpl::load(const WebKit::WebURL& url) {
+  load(url, CORSModeUnspecified);
+}
+
+void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
   GURL gurl(url);
@@ -213,32 +218,48 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url) {
   setVolume(GetClient()->volume());
   setPreload(GetClient()->preload());
 
-  SetNetworkState(WebKit::WebMediaPlayer::Loading);
-  SetReadyState(WebKit::WebMediaPlayer::HaveNothing);
+  SetNetworkState(WebMediaPlayer::NetworkStateLoading);
+  SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
 
   // Media streams pipelines can start immediately.
   if (BuildMediaStreamCollection(url, media_stream_client_,
                                  message_loop_factory_.get(),
                                  filter_collection_.get())) {
-    StartPipeline(gurl);
+    StartPipeline();
     return;
   }
 
   // Media source pipelines can start immediately.
+  scoped_refptr<media::FFmpegVideoDecoder> video_decoder;
   if (BuildMediaSourceCollection(url, GetClient()->sourceURL(), proxy_,
                                  message_loop_factory_.get(),
-                                 filter_collection_.get())) {
-    StartPipeline(gurl);
+                                 filter_collection_.get(),
+                                 &video_decoder)) {
+    proxy_->set_video_decoder(video_decoder);
+    StartPipeline();
     return;
   }
 
   // Otherwise it's a regular request which requires resolving the URL first.
   proxy_->set_data_source(
       new BufferedDataSource(main_loop_, frame_, media_log_));
-  proxy_->data_source()->Initialize(url, base::Bind(
-      &WebMediaPlayerImpl::DataSourceInitialized,
-      base::Unretained(this), gurl));
+  proxy_->data_source()->Initialize(
+      url, static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
+      base::Bind(
+          &WebMediaPlayerImpl::DataSourceInitialized,
+          base::Unretained(this), gurl));
+
+  // TODO(scherkus): this is leftover from removing DemuxerFactory -- instead
+  // our DataSource should report this information. See http://crbug.com/120426
+  bool local_source = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
+
+  BuildDefaultCollection(proxy_->data_source(),
+                         local_source,
+                         message_loop_factory_.get(),
+                         filter_collection_.get(),
+                         &video_decoder);
+  proxy_->set_video_decoder(video_decoder);
 }
 
 void WebMediaPlayerImpl::cancelLoad() {
@@ -282,18 +303,6 @@ bool WebMediaPlayerImpl::supportsSave() const {
 
 void WebMediaPlayerImpl::seek(float seconds) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-
-  // WebKit fires a seek(0) at the very start, however pipeline already does a
-  // seek(0) internally.  Avoid doing seek(0) the second time because this will
-  // cause extra pre-rolling and will break servers without range request
-  // support.
-  //
-  // We still have to notify WebKit that time has changed otherwise
-  // HTMLMediaElement gets into an inconsistent state.
-  if (pipeline_->GetCurrentTime().ToInternalValue() == 0 && seconds == 0) {
-    GetClient()->timeChanged();
-    return;
-  }
 
   if (seeking_) {
     pending_seek_ = true;
@@ -363,17 +372,22 @@ void WebMediaPlayerImpl::setVisible(bool visible) {
 }
 
 #define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
-    COMPILE_ASSERT(static_cast<int>(WebKit::WebMediaPlayer::webkit_name) == \
-                   static_cast<int>(media::chromium_name), \
+    COMPILE_ASSERT(static_cast<int>(WebMediaPlayer::webkit_name) == \
+                   static_cast<int>(webkit_media::chromium_name), \
                    mismatching_enums)
-COMPILE_ASSERT_MATCHING_ENUM(None, NONE);
-COMPILE_ASSERT_MATCHING_ENUM(MetaData, METADATA);
-COMPILE_ASSERT_MATCHING_ENUM(Auto, AUTO);
+COMPILE_ASSERT_MATCHING_ENUM(PreloadNone, NONE);
+COMPILE_ASSERT_MATCHING_ENUM(PreloadMetaData, METADATA);
+COMPILE_ASSERT_MATCHING_ENUM(PreloadAuto, AUTO);
+#undef COMPILE_ASSERT_MATCHING_ENUM
 
-void WebMediaPlayerImpl::setPreload(WebKit::WebMediaPlayer::Preload preload) {
+void WebMediaPlayerImpl::setPreload(WebMediaPlayer::Preload preload) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
-  pipeline_->SetPreload(static_cast<media::Preload>(preload));
+  if (proxy_ && proxy_->data_source()) {
+    // XXX: Why do I need to use webkit_media:: prefix? clang complains!
+    proxy_->data_source()->SetPreload(
+        static_cast<webkit_media::Preload>(preload));
+  }
 }
 
 bool WebMediaPlayerImpl::totalBytesKnown() {
@@ -411,7 +425,7 @@ bool WebMediaPlayerImpl::paused() const {
 bool WebMediaPlayerImpl::seeking() const {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
-  if (ready_state_ == WebKit::WebMediaPlayer::HaveNothing)
+  if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing)
     return false;
 
   return seeking_;
@@ -444,11 +458,11 @@ int WebMediaPlayerImpl::dataRate() const {
   return 0;
 }
 
-WebKit::WebMediaPlayer::NetworkState WebMediaPlayerImpl::networkState() const {
+WebMediaPlayer::NetworkState WebMediaPlayerImpl::networkState() const {
   return network_state_;
 }
 
-WebKit::WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
+WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
   return ready_state_;
 }
 
@@ -572,16 +586,19 @@ bool WebMediaPlayerImpl::hasSingleSecurityOrigin() const {
   return true;
 }
 
-WebKit::WebMediaPlayer::MovieLoadType
-    WebMediaPlayerImpl::movieLoadType() const {
+bool WebMediaPlayerImpl::didPassCORSAccessCheck() const {
+  return proxy_ && proxy_->DidPassCORSAccessCheck();
+}
+
+WebMediaPlayer::MovieLoadType WebMediaPlayerImpl::movieLoadType() const {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
   // TODO(hclam): If the pipeline is performing streaming, we say that this is
   // a live stream. But instead it should be a StoredStream if we have proper
   // caching.
   if (pipeline_->IsStreaming())
-    return WebKit::WebMediaPlayer::LiveStream;
-  return WebKit::WebMediaPlayer::Unknown;
+    return WebMediaPlayer::MovieLoadTypeLiveStream;
+  return WebMediaPlayer::MovieLoadTypeUnknown;
 }
 
 float WebMediaPlayerImpl::mediaTimeForTimeValue(float timeValue) const {
@@ -641,24 +658,72 @@ void WebMediaPlayerImpl::putCurrentFrame(
   }
 }
 
+#define COMPILE_ASSERT_MATCHING_STATUS_ENUM(webkit_name, chromium_name) \
+    COMPILE_ASSERT(static_cast<int>(WebKit::WebMediaPlayer::webkit_name) == \
+                   static_cast<int>(media::ChunkDemuxer::chromium_name), \
+                   mismatching_status_enums)
+COMPILE_ASSERT_MATCHING_STATUS_ENUM(AddIdStatusOk, kOk);
+COMPILE_ASSERT_MATCHING_STATUS_ENUM(AddIdStatusNotSupported, kNotSupported);
+COMPILE_ASSERT_MATCHING_STATUS_ENUM(AddIdStatusReachedIdLimit, kReachedIdLimit);
+
+WebKit::WebMediaPlayer::AddIdStatus WebMediaPlayerImpl::sourceAddId(
+    const WebKit::WebString& id,
+    const WebKit::WebString& type) {
+    DCHECK_EQ(main_loop_, MessageLoop::current());
+    return static_cast<WebKit::WebMediaPlayer::AddIdStatus>(
+        proxy_->DemuxerAddId(id.utf8().data(), type.utf8().data()));
+}
+
+bool WebMediaPlayerImpl::sourceRemoveId(const WebKit::WebString& id) {
+  DCHECK(!id.isEmpty());
+  proxy_->DemuxerRemoveId(id.utf8().data());
+  return true;
+}
+
+WebKit::WebTimeRanges WebMediaPlayerImpl::sourceBuffered(
+    const WebKit::WebString& id) {
+  media::ChunkDemuxer::Ranges buffered_ranges;
+  if (!proxy_->DemuxerBufferedRange(id.utf8().data(), &buffered_ranges))
+    return WebKit::WebTimeRanges();
+
+  WebKit::WebTimeRanges ranges(buffered_ranges.size());
+  for (size_t i = 0; i < buffered_ranges.size(); i++) {
+    ranges[i].start = buffered_ranges[i].first.InSecondsF();
+    ranges[i].end = buffered_ranges[i].second.InSecondsF();
+  }
+  return ranges;
+}
+
 bool WebMediaPlayerImpl::sourceAppend(const unsigned char* data,
                                       unsigned length) {
+  return sourceAppend(WebKit::WebString::fromUTF8("DefaultSourceId"),
+                      data, length);
+}
+
+bool WebMediaPlayerImpl::sourceAppend(const WebKit::WebString& id,
+                                      const unsigned char* data,
+                                      unsigned length) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-  return proxy_->DemuxerAppend(data, length);
+  return proxy_->DemuxerAppend(id.utf8().data(), data, length);
+}
+
+bool WebMediaPlayerImpl::sourceAbort(const WebKit::WebString& id) {
+  proxy_->DemuxerAbort(id.utf8().data());
+  return true;
 }
 
 void WebMediaPlayerImpl::sourceEndOfStream(
-    WebKit::WebMediaPlayer::EndOfStreamStatus status) {
+    WebMediaPlayer::EndOfStreamStatus status) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
   media::PipelineStatus pipeline_status = media::PIPELINE_OK;
 
   switch(status) {
-    case WebKit::WebMediaPlayer::EosNoError:
+    case WebMediaPlayer::EndOfStreamStatusNoError:
       break;
-    case WebKit::WebMediaPlayer::EosNetworkError:
+    case WebMediaPlayer::EndOfStreamStatusNetworkError:
       pipeline_status = media::PIPELINE_ERROR_NETWORK;
       break;
-    case WebKit::WebMediaPlayer::EosDecodeError:
+    case WebMediaPlayer::EndOfStreamStatusDecodeError:
       pipeline_status = media::PIPELINE_ERROR_DECODE;
       break;
     default:
@@ -666,6 +731,114 @@ void WebMediaPlayerImpl::sourceEndOfStream(
   }
 
   proxy_->DemuxerEndOfStream(pipeline_status);
+}
+
+WebKit::WebMediaPlayer::MediaKeyException
+WebMediaPlayerImpl::generateKeyRequest(const WebString& key_system,
+                                       const unsigned char* init_data,
+                                       unsigned init_data_length) {
+  if (!IsSupportedKeySystem(key_system))
+    return WebKit::WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
+
+  // Every request call creates a unique ID.
+  // TODO(ddorwin): Move this to the CDM implementations since the CDMs may
+  // create their own IDs and since CDMs supporting multiple renderer processes
+  // need globally unique IDs.
+  // Everything from here until the return should probably be handled by
+  // the decryptor - see http://crbug.com/123260.
+  static uint32_t next_available_session_id = 1;
+  uint32_t session_id = next_available_session_id++;
+
+  WebString session_id_string(base::UintToString16(session_id));
+
+  DVLOG(1) << "generateKeyRequest: " << key_system.utf8().data() << ": "
+           << std::string(reinterpret_cast<const char*>(init_data),
+                          static_cast<size_t>(init_data_length))
+           << " [" << session_id_string.utf8().data() << "]";
+
+  // TODO(ddorwin): Generate a key request in the decryptor and fire
+  // keyMessage when it completes.
+  // For now, just fire the event with the init_data as the request.
+  const unsigned char* message = init_data;
+  unsigned message_length = init_data_length;
+
+  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+      &WebKit::WebMediaPlayerClient::keyMessage,
+      base::Unretained(GetClient()),
+      key_system,
+      session_id_string,
+      message,
+      message_length));
+
+  return WebKit::WebMediaPlayer::MediaKeyExceptionNoError;
+}
+
+WebKit::WebMediaPlayer::MediaKeyException WebMediaPlayerImpl::addKey(
+    const WebString& key_system,
+    const unsigned char* key,
+    unsigned key_length,
+    const unsigned char* init_data,
+    unsigned init_data_length,
+    const WebString& session_id) {
+  DCHECK(key);
+  DCHECK_GT(key_length, 0u);
+
+  if (!IsSupportedKeySystem(key_system))
+    return WebKit::WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
+
+
+  DVLOG(1) << "addKey: " << key_system.utf8().data() << ": "
+           << std::string(reinterpret_cast<const char*>(key),
+                          static_cast<size_t>(key_length)) << ", "
+           << std::string(reinterpret_cast<const char*>(init_data),
+                          static_cast<size_t>(init_data_length))
+           << " [" << session_id.utf8().data() << "]";
+
+  // TODO(ddorwin): Everything from here until the return should probably be
+  // handled by the decryptor - see http://crbug.com/123260.
+  // Temporarily, fire an error for invalid key length so we can test the error
+  // event and fire the keyAdded event in all other cases.
+  const unsigned kSupportedKeyLength = 16;  // 128-bit key.
+  if (key_length != kSupportedKeyLength) {
+    DLOG(ERROR) << "addKey: invalid key length: " << key_length;
+    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+        &WebKit::WebMediaPlayerClient::keyError,
+        base::Unretained(GetClient()),
+        key_system,
+        session_id,
+        WebKit::WebMediaPlayerClient::MediaKeyErrorCodeUnknown,
+        0));
+  } else {
+    // TODO(ddorwin): Fix the decryptor to accept no |init_data|. See
+    // http://crbug.com/123265. Until then, ensure a non-empty value is passed.
+    static const unsigned char kDummyInitData[1] = {0};
+    if (!init_data) {
+      init_data = kDummyInitData;
+      init_data_length = arraysize(kDummyInitData);
+    }
+
+    proxy_->video_decoder()->decryptor()->AddKey(init_data, init_data_length,
+                                                 key, key_length);
+
+    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+        &WebKit::WebMediaPlayerClient::keyAdded,
+        base::Unretained(GetClient()),
+        key_system,
+        session_id));
+  }
+
+  return WebKit::WebMediaPlayer::MediaKeyExceptionNoError;
+}
+
+WebKit::WebMediaPlayer::MediaKeyException WebMediaPlayerImpl::cancelKeyRequest(
+    const WebString& key_system,
+    const WebString& session_id) {
+  if (!IsSupportedKeySystem(key_system))
+    return WebKit::WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
+
+  // TODO(ddorwin): Cancel the key request in the decryptor.
+
+  return WebKit::WebMediaPlayer::MediaKeyExceptionNoError;
 }
 
 void WebMediaPlayerImpl::WillDestroyCurrentMessageLoop() {
@@ -680,33 +853,31 @@ void WebMediaPlayerImpl::Repaint() {
 
 void WebMediaPlayerImpl::OnPipelineInitialize(PipelineStatus status) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-  if (status == media::PIPELINE_OK) {
-    // Only keep one time range starting from 0.
-    WebKit::WebTimeRanges new_buffered(static_cast<size_t>(1));
-    new_buffered[0].start = 0.0f;
-    new_buffered[0].end =
-        static_cast<float>(pipeline_->GetMediaDuration().InSecondsF());
-    buffered_.swap(new_buffered);
-
-    if (!hasVideo())
-      GetClient()->disableAcceleratedCompositing();
-
-    if (pipeline_->IsLocalSource())
-      SetNetworkState(WebKit::WebMediaPlayer::Loaded);
-
-    SetReadyState(WebKit::WebMediaPlayer::HaveMetadata);
-    // Fire canplaythrough immediately after playback begins because of
-    // crbug.com/106480.
-    // TODO(vrk): set ready state to HaveFutureData when bug above is fixed.
-    SetReadyState(WebKit::WebMediaPlayer::HaveEnoughData);
-  } else {
-    // TODO(hclam): should use |status| to determine the state
-    // properly and reports error using MediaError.
-    // WebKit uses FormatError to indicate an error for bogus URL or bad file.
-    // Since we are at the initialization stage we can safely treat every error
-    // as format error. Should post a task to call to |webmediaplayer_|.
-    SetNetworkState(WebKit::WebMediaPlayer::FormatError);
+  if (status != media::PIPELINE_OK) {
+    OnPipelineError(status);
+    // Repaint to trigger UI update.
+    Repaint();
+    return;
   }
+
+  // Only keep one time range starting from 0.
+  WebKit::WebTimeRanges new_buffered(static_cast<size_t>(1));
+  new_buffered[0].start = 0.0f;
+  new_buffered[0].end =
+      static_cast<float>(pipeline_->GetMediaDuration().InSecondsF());
+  buffered_.swap(new_buffered);
+
+  if (!hasVideo())
+    GetClient()->disableAcceleratedCompositing();
+
+  if (pipeline_->IsLocalSource())
+    SetNetworkState(WebMediaPlayer::NetworkStateLoaded);
+
+  SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
+  // Fire canplaythrough immediately after playback begins because of
+  // crbug.com/106480.
+  // TODO(vrk): set ready state to HaveFutureData when bug above is fixed.
+  SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
 
   // Repaint to trigger UI update.
   Repaint();
@@ -721,19 +892,25 @@ void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
     return;
   }
 
-  if (status == media::PIPELINE_OK) {
-    // Update our paused time.
-    if (paused_)
-      paused_time_ = pipeline_->GetCurrentTime();
-
-    GetClient()->timeChanged();
+  if (status != media::PIPELINE_OK) {
+    OnPipelineError(status);
+    return;
   }
+
+  // Update our paused time.
+  if (paused_)
+    paused_time_ = pipeline_->GetCurrentTime();
+
+  GetClient()->timeChanged();
 }
 
 void WebMediaPlayerImpl::OnPipelineEnded(PipelineStatus status) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-  if (status == media::PIPELINE_OK)
-    GetClient()->timeChanged();
+  if (status != media::PIPELINE_OK) {
+    OnPipelineError(status);
+    return;
+  }
+  GetClient()->timeChanged();
 }
 
 void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
@@ -744,32 +921,33 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
       break;
 
     case media::PIPELINE_ERROR_NETWORK:
-      SetNetworkState(WebMediaPlayer::NetworkError);
+    case media::PIPELINE_ERROR_READ:
+      SetNetworkState(WebMediaPlayer::NetworkStateNetworkError);
       break;
 
     case media::PIPELINE_ERROR_INITIALIZATION_FAILED:
     case media::PIPELINE_ERROR_REQUIRED_FILTER_MISSING:
     case media::PIPELINE_ERROR_COULD_NOT_RENDER:
     case media::PIPELINE_ERROR_URL_NOT_FOUND:
-    case media::PIPELINE_ERROR_READ:
     case media::DEMUXER_ERROR_COULD_NOT_OPEN:
     case media::DEMUXER_ERROR_COULD_NOT_PARSE:
     case media::DEMUXER_ERROR_NO_SUPPORTED_STREAMS:
-    case media::DEMUXER_ERROR_COULD_NOT_CREATE_THREAD:
     case media::DECODER_ERROR_NOT_SUPPORTED:
-    case media::DATASOURCE_ERROR_URL_NOT_SUPPORTED:
-      // Format error.
-      SetNetworkState(WebMediaPlayer::FormatError);
+      SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
       break;
 
     case media::PIPELINE_ERROR_DECODE:
     case media::PIPELINE_ERROR_ABORT:
-    case media::PIPELINE_ERROR_OUT_OF_MEMORY:
-    case media::PIPELINE_ERROR_AUDIO_HARDWARE:
     case media::PIPELINE_ERROR_OPERATION_PENDING:
     case media::PIPELINE_ERROR_INVALID_STATE:
-      // Decode error.
-      SetNetworkState(WebMediaPlayer::DecodeError);
+      SetNetworkState(WebMediaPlayer::NetworkStateDecodeError);
+      break;
+
+    case media::PIPELINE_ERROR_DECRYPT:
+      // Decrypt error.
+      // TODO(xhwang): Change to use NetworkStateDecryptError once it's added in
+      // Webkit (see http://crbug.com/124486).
+      SetNetworkState(WebMediaPlayer::NetworkStateDecodeError);
       break;
   }
 
@@ -781,16 +959,16 @@ void WebMediaPlayerImpl::OnNetworkEvent(NetworkEvent type) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
   switch(type) {
     case media::DOWNLOAD_CONTINUED:
-      SetNetworkState(WebKit::WebMediaPlayer::Loading);
+      SetNetworkState(WebMediaPlayer::NetworkStateLoading);
       break;
     case media::DOWNLOAD_PAUSED:
-      SetNetworkState(WebKit::WebMediaPlayer::Idle);
+      SetNetworkState(WebMediaPlayer::NetworkStateIdle);
       break;
     case media::CAN_PLAY_THROUGH:
       // Temporarily disable delayed firing of CAN_PLAY_THROUGH due to
       // crbug.com/106480.
       // TODO(vrk): uncomment code below when bug above is fixed.
-      // SetReadyState(WebKit::WebMediaPlayer::HaveEnoughData);
+      // SetReadyState(WebMediaPlayer::NetworkStateHaveEnoughData);
       break;
     default:
       NOTREACHED();
@@ -801,6 +979,13 @@ void WebMediaPlayerImpl::OnDemuxerOpened() {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
   GetClient()->sourceOpened();
+}
+
+void WebMediaPlayerImpl::OnKeyNeeded(scoped_array<uint8> init_data,
+                                     int init_data_size) {
+  DCHECK_EQ(main_loop_, MessageLoop::current());
+
+  GetClient()->keyNeeded("", "", init_data.get(), init_data_size);
 }
 
 void WebMediaPlayerImpl::SetOpaque(bool opaque) {
@@ -816,22 +1001,18 @@ void WebMediaPlayerImpl::DataSourceInitialized(
 
   if (status != media::PIPELINE_OK) {
     DVLOG(1) << "DataSourceInitialized status: " << status;
-    SetNetworkState(WebKit::WebMediaPlayer::FormatError);
+    SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
     Repaint();
     return;
   }
 
-  BuildDefaultCollection(proxy_->data_source(),
-                         message_loop_factory_.get(),
-                         filter_collection_.get());
-  StartPipeline(gurl);
+  StartPipeline();
 }
 
-void WebMediaPlayerImpl::StartPipeline(const GURL& gurl) {
+void WebMediaPlayerImpl::StartPipeline() {
   started_ = true;
   pipeline_->Start(
       filter_collection_.Pass(),
-      gurl.spec(),
       base::Bind(&WebMediaPlayerProxy::PipelineEndedCallback, proxy_.get()),
       base::Bind(&WebMediaPlayerProxy::PipelineErrorCallback, proxy_.get()),
       base::Bind(&WebMediaPlayerProxy::NetworkEventCallback, proxy_.get()),
@@ -839,8 +1020,7 @@ void WebMediaPlayerImpl::StartPipeline(const GURL& gurl) {
                  proxy_.get()));
 }
 
-void WebMediaPlayerImpl::SetNetworkState(
-    WebKit::WebMediaPlayer::NetworkState state) {
+void WebMediaPlayerImpl::SetNetworkState(WebMediaPlayer::NetworkState state) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
   DVLOG(1) << "SetNetworkState: " << state;
   network_state_ = state;
@@ -848,8 +1028,7 @@ void WebMediaPlayerImpl::SetNetworkState(
   GetClient()->networkStateChanged();
 }
 
-void WebMediaPlayerImpl::SetReadyState(
-    WebKit::WebMediaPlayer::ReadyState state) {
+void WebMediaPlayerImpl::SetReadyState(WebMediaPlayer::ReadyState state) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
   DVLOG(1) << "SetReadyState: " << state;
   ready_state_ = state;

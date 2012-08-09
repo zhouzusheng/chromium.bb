@@ -27,7 +27,6 @@
 #include "RenderSVGInlineText.h"
 
 #include "CSSFontSelector.h"
-#include "CSSStyleSelector.h"
 #include "FloatConversion.h"
 #include "FloatQuad.h"
 #include "RenderBlock.h"
@@ -37,6 +36,7 @@
 #include "SVGInlineTextBox.h"
 #include "SVGRenderingContext.h"
 #include "SVGRootInlineBox.h"
+#include "StyleResolver.h"
 #include "VisiblePosition.h"
 
 namespace WebCore {
@@ -72,36 +72,11 @@ RenderSVGInlineText::RenderSVGInlineText(Node* n, PassRefPtr<StringImpl> string)
 {
 }
 
-void RenderSVGInlineText::willBeDestroyed()
-{
-    RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(this);
-    if (!textRenderer) {
-        RenderText::willBeDestroyed();
-        return;
-    }
-
-    Vector<SVGTextLayoutAttributes*> affectedAttributes;
-    textRenderer->layoutAttributesWillBeDestroyed(this, affectedAttributes);
-
-    RenderText::willBeDestroyed();
-    if (affectedAttributes.isEmpty())
-        return;
-
-    textRenderer->rebuildLayoutAttributes(affectedAttributes);
-}
-
 void RenderSVGInlineText::setTextInternal(PassRefPtr<StringImpl> text)
 {
     RenderText::setTextInternal(text);
-
-    // When the underlying text content changes, call both textDOMChanged() & layoutAttributesChanged()
-    // The former will clear the SVGTextPositioningElement cache, which depends on the textLength() of
-    // the RenderSVGInlineText objects, and thus needs to be rebuild. The latter will assure that the
-    // SVGTextLayoutAttributes associated with the RenderSVGInlineText will be updated.
-    if (RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(this)) {
-        textRenderer->invalidateTextPositioningElements();
-        textRenderer->layoutAttributesChanged(this);
-    }
+    if (RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(this))
+        textRenderer->subtreeTextDidChange(this);
 }
 
 void RenderSVGInlineText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -126,7 +101,7 @@ void RenderSVGInlineText::styleDidChange(StyleDifference diff, const RenderStyle
 
     // The text metrics may be influenced by style changes.
     if (RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(this))
-        textRenderer->layoutAttributesChanged(this);
+        textRenderer->subtreeStyleDidChange(this);
 }
 
 InlineTextBox* RenderSVGInlineText::createTextBox()
@@ -253,8 +228,8 @@ void RenderSVGInlineText::computeNewScaledFontForStyle(RenderObject* renderer, c
     Document* document = renderer->document();
     ASSERT(document);
     
-    CSSStyleSelector* styleSelector = document->styleSelector();
-    ASSERT(styleSelector);
+    StyleResolver* styleResolver = document->styleResolver();
+    ASSERT(styleResolver);
 
     // Alter font-size to the right on-screen value to avoid scaling the glyphs themselves, except when GeometricPrecision is specified
     AffineTransform ctm;
@@ -269,10 +244,10 @@ void RenderSVGInlineText::computeNewScaledFontForStyle(RenderObject* renderer, c
     FontDescription fontDescription(style->fontDescription());
 
     // FIXME: We need to better handle the case when we compute very small fonts below (below 1pt).
-    fontDescription.setComputedSize(CSSStyleSelector::getComputedSizeFromSpecifiedSize(document, scalingFactor, fontDescription.isAbsoluteSize(), fontDescription.computedSize(), DoNotUseSmartMinimumForFontSize));
+    fontDescription.setComputedSize(StyleResolver::getComputedSizeFromSpecifiedSize(document, scalingFactor, fontDescription.isAbsoluteSize(), fontDescription.computedSize(), DoNotUseSmartMinimumForFontSize));
 
     scaledFont = Font(fontDescription, 0, 0);
-    scaledFont.update(styleSelector->fontSelector());
+    scaledFont.update(styleResolver->fontSelector());
 }
 
 }

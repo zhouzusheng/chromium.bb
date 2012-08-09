@@ -21,6 +21,7 @@
 #include "media/base/filter_collection.h"
 #include "media/base/filters.h"
 #include "media/base/media_log.h"
+#include "media/base/video_decoder.h"
 
 namespace media {
 
@@ -89,7 +90,6 @@ Pipeline::~Pipeline() {
 }
 
 void Pipeline::Start(scoped_ptr<FilterCollection> collection,
-                     const std::string& url,
                      const PipelineStatusCB& ended_cb,
                      const PipelineStatusCB& error_cb,
                      const NetworkEventCB& network_cb,
@@ -100,7 +100,7 @@ void Pipeline::Start(scoped_ptr<FilterCollection> collection,
   running_ = true;
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &Pipeline::StartTask, this, base::Passed(&collection),
-      url, ended_cb, error_cb, network_cb, start_cb));
+      ended_cb, error_cb, network_cb, start_cb));
 }
 
 void Pipeline::Stop(const base::Closure& stop_cb) {
@@ -187,20 +187,6 @@ void Pipeline::SetVolume(float volume) {
   if (running_ && !tearing_down_) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
         &Pipeline::VolumeChangedTask, this, volume));
-  }
-}
-
-Preload Pipeline::GetPreload() const {
-  base::AutoLock auto_lock(lock_);
-  return preload_;
-}
-
-void Pipeline::SetPreload(Preload preload) {
-  base::AutoLock auto_lock(lock_);
-  preload_ = preload;
-  if (running_ && !tearing_down_) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &Pipeline::PreloadChangedTask, this, preload));
   }
 }
 
@@ -324,7 +310,6 @@ void Pipeline::ResetState() {
   total_bytes_      = 0;
   natural_size_.SetSize(0, 0);
   volume_           = 1.0f;
-  preload_          = AUTO;
   playback_rate_    = 0.0f;
   pending_playback_rate_ = 0.0f;
   status_           = PIPELINE_OK;
@@ -452,7 +437,7 @@ base::TimeDelta Pipeline::GetDuration() const {
 }
 
 void Pipeline::OnAudioTimeUpdate(base::TimeDelta time,
-                                     base::TimeDelta max_time) {
+                                 base::TimeDelta max_time) {
   DCHECK(time <= max_time);
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
@@ -608,7 +593,6 @@ void Pipeline::OnUpdateStatistics(const PipelineStatistics& stats) {
 }
 
 void Pipeline::StartTask(scoped_ptr<FilterCollection> filter_collection,
-                         const std::string& url,
                          const PipelineStatusCB& ended_cb,
                          const PipelineStatusCB& error_cb,
                          const NetworkEventCB& network_cb,
@@ -616,7 +600,6 @@ void Pipeline::StartTask(scoped_ptr<FilterCollection> filter_collection,
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(kCreated, state_);
   filter_collection_ = filter_collection.Pass();
-  url_ = url;
   ended_cb_ = ended_cb;
   error_cb_ = error_cb;
   network_cb_ = network_cb;
@@ -732,15 +715,15 @@ void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
 
     // Initialization was successful, we are now considered paused, so it's safe
     // to set the initial playback rate and volume.
-    PreloadChangedTask(GetPreload());
     PlaybackRateChangedTask(GetPlaybackRate());
     VolumeChangedTask(GetVolume());
 
-    // Fire the seek request to get the filters to preroll.
+    // Fire a seek request to get the renderers to preroll. We don't need to
+    // tell the demuxer to seek since it should already be at the start.
     seek_pending_ = true;
     SetState(kSeeking);
     seek_timestamp_ = demuxer_->GetStartTime();
-    DoSeek(seek_timestamp_);
+    OnDemuxerSeekDone(seek_timestamp_, PIPELINE_OK);
   }
 }
 
@@ -842,15 +825,6 @@ void Pipeline::VolumeChangedTask(float volume) {
 
   if (audio_renderer_)
     audio_renderer_->SetVolume(volume);
-}
-
-void Pipeline::PreloadChangedTask(Preload preload) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  if (!running_ || tearing_down_)
-    return;
-
-  if (demuxer_)
-    demuxer_->SetPreload(preload);
 }
 
 void Pipeline::SeekTask(base::TimeDelta time,
@@ -1113,25 +1087,26 @@ void Pipeline::InitializeDemuxer() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineOk());
 
-  filter_collection_->GetDemuxerFactory()->Build(
-      url_, base::Bind(&Pipeline::OnDemuxerBuilt, this));
-}
-
-void Pipeline::OnDemuxerBuilt(PipelineStatus status, Demuxer* demuxer) {
-  if (!message_loop_->BelongsToCurrentThread()) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &Pipeline::OnDemuxerBuilt, this, status, make_scoped_refptr(demuxer)));
+  demuxer_ = filter_collection_->GetDemuxer();
+  if (!demuxer_) {
+    SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
     return;
   }
 
-  demuxer_ = demuxer;
+  demuxer_->Initialize(this, base::Bind(&Pipeline::OnDemuxerInitialized, this));
+}
+
+void Pipeline::OnDemuxerInitialized(PipelineStatus status) {
+  if (!message_loop_->BelongsToCurrentThread()) {
+    message_loop_->PostTask(FROM_HERE, base::Bind(
+        &Pipeline::OnDemuxerInitialized, this, status));
+    return;
+  }
+
   if (status != PIPELINE_OK) {
     SetError(status);
     return;
   }
-
-  CHECK(demuxer_) << "Null demuxer encountered despite PIPELINE_OK.";
-  demuxer_->set_host(this);
 
   {
     base::AutoLock auto_lock(lock_);
@@ -1339,7 +1314,7 @@ void Pipeline::OnDemuxerStopDone(const base::Closure& callback) {
 }
 
 void Pipeline::DoSeek(base::TimeDelta seek_timestamp) {
-  // TODO(acolwell) : We might be able to convert this if (demuxer_) into a
+  // TODO(acolwell): We might be able to convert this if (demuxer_) into a
   // DCHECK(). Further investigation is needed to make sure this won't introduce
   // a bug.
   if (demuxer_) {

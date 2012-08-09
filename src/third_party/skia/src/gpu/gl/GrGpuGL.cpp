@@ -181,6 +181,8 @@ GrGpuGL::GrGpuGL(const GrGLContextInfo& ctxInfo) : fGLContextInfo(ctxInfo) {
 
     GrAssert(ctxInfo.isInitialized());
 
+    fillInConfigRenderableTable();
+
     fPrintedCaps = false;
 
     GrGLClearErr(fGLContextInfo.interface());
@@ -228,10 +230,6 @@ void GrGpuGL::initCaps() {
     const GrGLInterface* gl = this->glInterface();
     GR_GL_GetIntegerv(gl, GR_GL_MAX_TEXTURE_IMAGE_UNITS, &maxTextureUnits);
     GrAssert(maxTextureUnits > GrDrawState::kNumStages);
-    if (kES2_GrGLBinding != this->glBinding()) {
-        GR_GL_GetIntegerv(gl, GR_GL_MAX_TEXTURE_UNITS, &maxTextureUnits);
-        GrAssert(maxTextureUnits > GrDrawState::kNumStages);
-    }
 
     GrGLint numFormats;
     GR_GL_GetIntegerv(gl, GR_GL_NUM_COMPRESSED_TEXTURE_FORMATS, &numFormats);
@@ -279,11 +277,6 @@ void GrGpuGL::initCaps() {
 
     fCaps.fHWAALineSupport = (kDesktop_GrGLBinding == this->glBinding());
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Experiments to determine limitations that can't be queried.
-    // TODO: Make these a preprocess that generate some compile time constants.
-    // TODO: probe once at startup, rather than once per context creation.
-
     GR_GL_GetIntegerv(gl, GR_GL_MAX_TEXTURE_SIZE, &fCaps.fMaxTextureSize);
     GR_GL_GetIntegerv(gl, GR_GL_MAX_RENDERBUFFER_SIZE, &fCaps.fMaxRenderTargetSize);
     // Our render targets are always created with textures as the color
@@ -291,6 +284,71 @@ void GrGpuGL::initCaps() {
     fCaps.fMaxRenderTargetSize = GrMin(fCaps.fMaxTextureSize, fCaps.fMaxRenderTargetSize);
 
     fCaps.fFSAASupport = GrGLCaps::kNone_MSFBOType != this->glCaps().msFBOType();
+}
+
+void GrGpuGL::fillInConfigRenderableTable() {
+
+    // OpenGL < 3.0
+    //  no support for render targets unless the GL_ARB_framebuffer_object 
+    //  extension is supported (in which case we get ALPHA, RED, RG, RGB, 
+    //  RGBA (ALPHA8, RGBA4, RGBA8) for OpenGL > 1.1). Note that we 
+    //  probably don't get R8 in this case.
+
+    // OpenGL 3.0
+    //  base color renderable: ALPHA, RED, RG, RGB, and RGBA
+    //  sized derivatives: ALPHA8, R8, RGBA4, RGBA8
+
+    // >= OpenGL 3.1
+    //  base color renderable: RED, RG, RGB, and RGBA
+    //  sized derivatives: R8, RGBA4, RGBA8
+    //  if the GL_ARB_compatibility extension is supported then we get back
+    //  support for GL_ALPHA and ALPHA8
+
+    // GL_EXT_bgra adds BGRA render targets to any version
+
+    // ES 2.0
+    //  color renderable: RGBA4, RGB5_A1, RGB565
+    //  GL_EXT_texture_rg adds support for R8 as a color render target
+    //  GL_OES_rgb8_rgba8 and/or GL_ARM_rgba8 adds support for RGBA8
+    //  GL_EXT_texture_format_BGRA8888 and/or GL_APPLE_texture_format_BGRA8888
+    //          added BGRA support
+
+    if (kDesktop_GrGLBinding == this->glBinding()) {
+        // Post 3.0 we will get R8
+        // Prior to 3.0 we will get ALPHA8 (with GL_ARB_framebuffer_object)
+        if (this->glVersion() >= GR_GL_VER(3,0) ||
+            this->hasExtension("GL_ARB_framebuffer_object")) {
+            fConfigRenderSupport[kAlpha_8_GrPixelConfig] = true;
+        }
+    } else {
+        // On ES we can only hope for R8
+        fConfigRenderSupport[kAlpha_8_GrPixelConfig] = 
+                                this->glCaps().textureRedSupport();
+    }
+
+    if (kDesktop_GrGLBinding != this->glBinding()) {
+        // only available in ES
+        fConfigRenderSupport[kRGB_565_GrPixelConfig] = true;
+    }
+
+    // Pre 3.0, Ganesh relies on either GL_ARB_framebuffer_object or 
+    // GL_EXT_framebuffer_object for FBO support. Both of these
+    // allow RGBA4 render targets so this is always supported.
+    fConfigRenderSupport[kRGBA_4444_GrPixelConfig] = true;
+
+    if (this->glCaps().rgba8RenderbufferSupport()) {
+        fConfigRenderSupport[kRGBA_8888_PM_GrPixelConfig] = true;
+    }
+
+    if (this->glCaps().bgraFormatSupport()) {
+        fConfigRenderSupport[kBGRA_8888_PM_GrPixelConfig] = true;
+    }
+
+    // the un-premultiplied formats just inherit the premultiplied setting
+    fConfigRenderSupport[kRGBA_8888_UPM_GrPixelConfig] = 
+                fConfigRenderSupport[kRGBA_8888_PM_GrPixelConfig];
+    fConfigRenderSupport[kBGRA_8888_UPM_GrPixelConfig] = 
+                fConfigRenderSupport[kBGRA_8888_PM_GrPixelConfig];
 }
 
 bool GrGpuGL::canPreserveReadWriteUnpremulPixels() {
@@ -319,7 +377,7 @@ bool GrGpuGL::canPreserveReadWriteUnpremulPixels() {
                          kNoStencil_GrTextureFlagBit;
         dstDesc.fWidth = 256;
         dstDesc.fHeight = 256;
-        dstDesc.fConfig = kRGBA_8888_GrPixelConfig;
+        dstDesc.fConfig = kRGBA_8888_PM_GrPixelConfig;
         dstDesc.fSampleCnt = 0;
 
         SkAutoTUnref<GrTexture> dstTex(this->createTexture(dstDesc, NULL, 0));
@@ -449,13 +507,18 @@ void GrGpuGL::onResetContext() {
     }
 
     fHWBounds.fScissorRect.invalidate();
-    fHWBounds.fScissorEnabled = false;
-    GL_CALL(Disable(GR_GL_SCISSOR_TEST));
+    // set to true to force disableScissor to make a GL call.
+    fHWBounds.fScissorEnabled = true;
+    this->disableScissor();
+
     fHWBounds.fViewportRect.invalidate();
 
     fHWDrawState.stencil()->invalidate();
     fHWStencilClip = false;
-    fClipInStencil = false;
+
+    // TODO: I believe this should actually go in GrGpu::onResetContext
+    // rather than here
+    fClipMaskManager.resetMask();
 
     fHWGeometryState.fIndexBuffer = NULL;
     fHWGeometryState.fVertexBuffer = NULL;
@@ -778,6 +841,40 @@ bool GrGpuGL::uploadTexData(const GrGLTexture::Desc& desc,
     return succeeded;
 }
 
+namespace {
+bool renderbuffer_storage_msaa(GrGLContextInfo& ctxInfo,
+                               int sampleCount,
+                               GrGLenum format,
+                               int width, int height) {
+    CLEAR_ERROR_BEFORE_ALLOC(ctxInfo.interface());
+    GrAssert(GrGLCaps::kNone_MSFBOType != ctxInfo.caps().msFBOType());
+    bool created = false;
+    if (GrGLCaps::kNVDesktop_CoverageAAType ==
+        ctxInfo.caps().coverageAAType()) {
+        const GrGLCaps::MSAACoverageMode& mode =
+            ctxInfo.caps().getMSAACoverageMode(sampleCount);
+        GL_ALLOC_CALL(ctxInfo.interface(),
+                      RenderbufferStorageMultisampleCoverage(GR_GL_RENDERBUFFER,
+                                                        mode.fCoverageSampleCnt,
+                                                        mode.fColorSampleCnt,
+                                                        format,
+                                                        width, height));
+        created = (GR_GL_NO_ERROR == CHECK_ALLOC_ERROR(ctxInfo.interface()));
+    }
+    if (!created) {
+        // glRBMS will fail if requested samples is > max samples.
+        sampleCount = GrMin(sampleCount, ctxInfo.caps().maxSampleCount());
+        GL_ALLOC_CALL(ctxInfo.interface(),
+                      RenderbufferStorageMultisample(GR_GL_RENDERBUFFER,
+                                                     sampleCount,
+                                                     format,
+                                                     width, height));
+        created = (GR_GL_NO_ERROR == CHECK_ALLOC_ERROR(ctxInfo.interface()));
+    }
+    return created;
+}
+}
+
 bool GrGpuGL::createRenderTargetObjects(int width, int height,
                                         GrGLuint texID,
                                         GrGLRenderTarget::Desc* desc) {
@@ -787,7 +884,6 @@ bool GrGpuGL::createRenderTargetObjects(int width, int height,
     desc->fOwnIDs = true;
 
     GrGLenum status;
-    GrGLint err;
 
     GrGLenum msColorFormat = 0; // suppress warning
 
@@ -823,14 +919,10 @@ bool GrGpuGL::createRenderTargetObjects(int width, int height,
         GrAssert(desc->fSampleCnt > 1);
         GL_CALL(BindRenderbuffer(GR_GL_RENDERBUFFER,
                                desc->fMSColorRenderbufferID));
-        CLEAR_ERROR_BEFORE_ALLOC(this->glInterface());
-        GL_ALLOC_CALL(this->glInterface(),
-                      RenderbufferStorageMultisample(GR_GL_RENDERBUFFER, 
-                                                     desc->fSampleCnt,
-                                                     msColorFormat,
-                                                     width, height));
-        err = CHECK_ALLOC_ERROR(this->glInterface());
-        if (err != GR_GL_NO_ERROR) {
+        if (!renderbuffer_storage_msaa(fGLContextInfo,
+                                       desc->fSampleCnt,
+                                       msColorFormat,
+                                       width, height)) {
             goto FAILED;
         }
         GL_CALL(BindFramebuffer(GR_GL_FRAMEBUFFER, desc->fRTFBOID));
@@ -1061,23 +1153,23 @@ bool GrGpuGL::createStencilBufferForRenderTarget(GrRenderTarget* rt,
         CLEAR_ERROR_BEFORE_ALLOC(this->glInterface());
         // we do this "if" so that we don't call the multisample
         // version on a GL that doesn't have an MSAA extension.
-        if (samples > 1) {
-            GL_ALLOC_CALL(this->glInterface(),
-                          RenderbufferStorageMultisample(GR_GL_RENDERBUFFER,
-                                                         samples,
-                                                         sFmt.fInternalFormat,
-                                                         width, height));
+        bool created;
+        if (samples > 0) {
+            created = renderbuffer_storage_msaa(fGLContextInfo,
+                                                samples,
+                                                sFmt.fInternalFormat,
+                                                width, height);
         } else {
             GL_ALLOC_CALL(this->glInterface(),
                           RenderbufferStorage(GR_GL_RENDERBUFFER,
                                               sFmt.fInternalFormat,
                                               width, height));
+            created =
+                (GR_GL_NO_ERROR == CHECK_ALLOC_ERROR(this->glInterface()));
         }
-
-        GrGLenum err = CHECK_ALLOC_ERROR(this->glInterface());
-        if (err == GR_GL_NO_ERROR) {
-            // After sized formats we attempt an unsized format and take whatever
-            // sizes GL gives us. In that case we query for the size.
+        if (created) {
+            // After sized formats we attempt an unsized format and take
+            // whatever sizes GL gives us. In that case we query for the size.
             GrGLStencilBuffer::Format format = sFmt;
             get_stencil_rb_sizes(this->glInterface(), sbID, &format);
             sb = new GrGLStencilBuffer(this, sbID, width, height, 
@@ -1217,7 +1309,7 @@ GrIndexBuffer* GrGpuGL::onCreateIndexBuffer(uint32_t size, bool dynamic) {
     return NULL;
 }
 
-void GrGpuGL::flushScissor(const GrIRect* rect) {
+void GrGpuGL::enableScissoring(const GrIRect& rect) {
     const GrDrawState& drawState = this->getDrawState();
     const GrGLRenderTarget* rt =
         static_cast<const GrGLRenderTarget*>(drawState.getRenderTarget());
@@ -1226,28 +1318,27 @@ void GrGpuGL::flushScissor(const GrIRect* rect) {
     const GrGLIRect& vp = rt->getViewport();
 
     GrGLIRect scissor;
-    if (NULL != rect) {
-        scissor.setRelativeTo(vp, rect->fLeft, rect->fTop,
-                              rect->width(), rect->height());
-        if (scissor.contains(vp)) {
-            rect = NULL;
-        }
+    scissor.setRelativeTo(vp, rect.fLeft, rect.fTop,
+                          rect.width(), rect.height());
+    if (scissor.contains(vp)) {
+        disableScissor();
+        return;
     }
 
-    if (NULL != rect) {
-        if (fHWBounds.fScissorRect != scissor) {
-            scissor.pushToGLScissor(this->glInterface());
-            fHWBounds.fScissorRect = scissor;
-        }
-        if (!fHWBounds.fScissorEnabled) {
-            GL_CALL(Enable(GR_GL_SCISSOR_TEST));
-            fHWBounds.fScissorEnabled = true;
-        }
-    } else {
-        if (fHWBounds.fScissorEnabled) {
-            GL_CALL(Disable(GR_GL_SCISSOR_TEST));
-            fHWBounds.fScissorEnabled = false;
-        }
+    if (fHWBounds.fScissorRect != scissor) {
+        scissor.pushToGLScissor(this->glInterface());
+        fHWBounds.fScissorRect = scissor;
+    }
+    if (!fHWBounds.fScissorEnabled) {
+        GL_CALL(Enable(GR_GL_SCISSOR_TEST));
+        fHWBounds.fScissorEnabled = true;
+    }
+}
+
+void GrGpuGL::disableScissor() {
+    if (fHWBounds.fScissorEnabled) {
+        GL_CALL(Disable(GR_GL_SCISSOR_TEST));
+        fHWBounds.fScissorEnabled = false;
     }
 }
 
@@ -1269,7 +1360,10 @@ void GrGpuGL::onClear(const GrIRect* rect, GrColor color) {
         }
     }
     this->flushRenderTarget(rect);
-    this->flushScissor(rect);
+    if (NULL != rect)
+        this->enableScissoring(*rect);
+    else
+        this->disableScissor();
 
     GrGLfloat r, g, b, a;
     static const GrGLfloat scale255 = 1.f / 255.f;
@@ -1295,10 +1389,8 @@ void GrGpuGL::clearStencil() {
     
     this->flushRenderTarget(&GrIRect::EmptyIRect());
 
-    if (fHWBounds.fScissorEnabled) {
-        GL_CALL(Disable(GR_GL_SCISSOR_TEST));
-        fHWBounds.fScissorEnabled = false;
-    }
+    this->disableScissor();
+
     GL_CALL(StencilMask(0xffffffff));
     GL_CALL(ClearStencil(0));
     GL_CALL(Clear(GR_GL_STENCIL_BUFFER_BIT));
@@ -1332,7 +1424,7 @@ void GrGpuGL::clearStencilClip(const GrIRect& rect, bool insideClip) {
         value = 0;
     }
     this->flushRenderTarget(&GrIRect::EmptyIRect());
-    this->flushScissor(&rect);
+    this->enableScissoring(rect);
     GL_CALL(StencilMask(clipStencilMask));
     GL_CALL(ClearStencil(value));
     GL_CALL(Clear(GR_GL_STENCIL_BUFFER_BIT));
@@ -1639,18 +1731,23 @@ void GrGpuGL::onResolveRenderTarget(GrRenderTarget* target) {
 
         if (GrGLCaps::kAppleES_MSFBOType == this->glCaps().msFBOType()) {
             // Apple's extension uses the scissor as the blit bounds.
+#if 1
             GL_CALL(Enable(GR_GL_SCISSOR_TEST));
             GL_CALL(Scissor(r.fLeft, r.fBottom,
                             r.fWidth, r.fHeight));
             GL_CALL(ResolveMultisampleFramebuffer());
             fHWBounds.fScissorRect.invalidate();
             fHWBounds.fScissorEnabled = true;
+#else
+            this->enableScissoring(dirtyRect);
+            GL_CALL(ResolveMultisampleFramebuffer());
+#endif
         } else {
             if (GrGLCaps::kDesktopARB_MSFBOType != this->glCaps().msFBOType()) {
                 // this respects the scissor during the blit, so disable it.
                 GrAssert(GrGLCaps::kDesktopEXT_MSFBOType ==
                          this->glCaps().msFBOType());
-                this->flushScissor(NULL);
+                this->disableScissor();
             }
             int right = r.fLeft + r.fWidth;
             int top = r.fBottom + r.fHeight;
@@ -1709,7 +1806,7 @@ void GrGpuGL::flushStencil() {
 
     // use stencil for clipping if clipping is enabled and the clip
     // has been written into the stencil.
-    bool stencilClip = fClipInStencil && drawState.isClipState();
+    bool stencilClip = fClipMaskManager.isClipInStencil() && drawState.isClipState();
     bool drawClipToStencil =
         drawState.isStateFlagEnabled(kModifyStencilClip_StateBit);
     bool stencilChange = (fHWDrawState.getStencil() != *settings) ||
@@ -1947,12 +2044,20 @@ unsigned gr_to_gl_filter(GrSamplerState::Filter filter) {
     }
 }
 
-const GrGLenum* get_swizzle(GrPixelConfig config,
-                            const GrSamplerState& sampler) {
+// get_swizzle is only called from this .cpp so it is OK to inline it here
+inline const GrGLenum* get_swizzle(GrPixelConfig config,
+                                   const GrSamplerState& sampler,
+                                   const GrGLCaps& glCaps) {
     if (GrPixelConfigIsAlphaOnly(config)) {
-        static const GrGLenum gAlphaSmear[] = { GR_GL_ALPHA, GR_GL_ALPHA,
-                                                GR_GL_ALPHA, GR_GL_ALPHA };
-        return gAlphaSmear;
+        if (glCaps.textureRedSupport()) {
+            static const GrGLenum gRedSmear[] = { GR_GL_RED, GR_GL_RED,
+                                                  GR_GL_RED, GR_GL_RED };
+            return gRedSmear;
+        } else {
+            static const GrGLenum gAlphaSmear[] = { GR_GL_ALPHA, GR_GL_ALPHA,
+                                                    GR_GL_ALPHA, GR_GL_ALPHA };
+            return gAlphaSmear;
+        }
     } else if (sampler.swapsRAndB()) {
         static const GrGLenum gRedBlueSwap[] = { GR_GL_BLUE, GR_GL_GREEN,
                                                  GR_GL_RED,  GR_GL_ALPHA };
@@ -2032,7 +2137,7 @@ bool GrGpuGL::flushGLStateCommon(GrPrimitiveType type) {
             newTexParams.fWrapS = wraps[sampler.getWrapX()];
             newTexParams.fWrapT = wraps[sampler.getWrapY()];
             memcpy(newTexParams.fSwizzleRGBA,
-                   get_swizzle(nextTexture->config(), sampler),
+                   get_swizzle(nextTexture->config(), sampler, this->glCaps()),
                    sizeof(newTexParams.fSwizzleRGBA));
             if (setAll || newTexParams.fFilter != oldTexParams.fFilter) {
                 setTextureUnit(s);
@@ -2274,14 +2379,25 @@ bool GrGpuGL::configToGLFormats(GrPixelConfig config,
             }
             break;
         case kAlpha_8_GrPixelConfig:
-            *internalFormat = GR_GL_ALPHA;
-            *externalFormat = GR_GL_ALPHA;
-            if (getSizedInternalFormat) {
-                *internalFormat = GR_GL_ALPHA8;
+            if (this->glCaps().textureRedSupport()) {
+                *internalFormat = GR_GL_RED;
+                *externalFormat = GR_GL_RED;
+                if (getSizedInternalFormat) {
+                    *internalFormat = GR_GL_R8;
+                } else {
+                    *internalFormat = GR_GL_RED;
+                }
+                *externalType = GR_GL_UNSIGNED_BYTE;
             } else {
                 *internalFormat = GR_GL_ALPHA;
+                *externalFormat = GR_GL_ALPHA;
+                if (getSizedInternalFormat) {
+                    *internalFormat = GR_GL_ALPHA8;
+                } else {
+                    *internalFormat = GR_GL_ALPHA;
+                }
+                *externalType = GR_GL_UNSIGNED_BYTE;
             }
-            *externalType = GR_GL_UNSIGNED_BYTE;
             break;
         default:
             return false;

@@ -22,7 +22,6 @@
 #include "webkit/plugins/ppapi/ppb_file_system_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_message_loop_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_net_connector_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/ppb_host_resolver_private_impl.h"
@@ -39,6 +38,7 @@
 #include "webkit/plugins/ppapi/ppb_video_decoder_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_layer_impl.h"
 #include "webkit/plugins/ppapi/ppb_websocket_impl.h"
+#include "webkit/plugins/ppapi/ppb_x509_certificate_private_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 
 using ppapi::InputEventData;
@@ -53,11 +53,6 @@ ResourceCreationImpl::ResourceCreationImpl(PluginInstance* instance) {
 }
 
 ResourceCreationImpl::~ResourceCreationImpl() {
-}
-
-::ppapi::thunk::ResourceCreationAPI*
-ResourceCreationImpl::AsResourceCreationAPI() {
-  return this;
 }
 
 PP_Resource ResourceCreationImpl::CreateAudio(
@@ -152,11 +147,6 @@ PP_Resource ResourceCreationImpl::CreateFlashMenu(
 
 PP_Resource ResourceCreationImpl::CreateFlashMessageLoop(PP_Instance instance) {
   return PPB_Flash_MessageLoop_Impl::Create(instance);
-}
-
-PP_Resource ResourceCreationImpl::CreateFlashNetConnector(
-    PP_Instance instance) {
-  return (new PPB_Flash_NetConnector_Impl(instance))->GetReference();
 }
 
 PP_Resource ResourceCreationImpl::CreateGraphics2D(
@@ -350,6 +340,11 @@ PP_Resource ResourceCreationImpl::CreateWheelInputEvent(
 
   return (new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL,
                                     instance, data))->GetReference();
+}
+
+PP_Resource ResourceCreationImpl::CreateX509CertificatePrivate(
+    PP_Instance instance) {
+  return PPB_X509Certificate_Private_Impl::CreateResource(instance);
 }
 
 }  // namespace ppapi

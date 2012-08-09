@@ -6,6 +6,7 @@
 
 #include <list>
 
+#include "base/debug/alias.h"
 #include "base/memory/singleton.h"
 #include "base/string_number_conversions.h"
 #include "base/win/wrapped_window_proc.h"
@@ -120,10 +121,15 @@ WindowImpl::WindowImpl()
     : window_style_(0),
       window_ex_style_(kWindowDefaultExStyle),
       class_style_(CS_DBLCLKS),
-      hwnd_(NULL) {
+      hwnd_(NULL),
+      got_create_(false),
+      got_valid_hwnd_(false),
+      destroyed_(NULL) {
 }
 
 WindowImpl::~WindowImpl() {
+  if (destroyed_)
+    *destroyed_ = true;
   if (::IsWindow(hwnd_))
     ui::SetWindowUserData(hwnd_, NULL);
 }
@@ -132,11 +138,15 @@ void WindowImpl::Init(HWND parent, const gfx::Rect& bounds) {
   if (window_style_ == 0)
     window_style_ = parent ? kWindowDefaultChildStyle : kWindowDefaultStyle;
 
-  // Ensures the parent we have been passed is valid, otherwise CreateWindowEx
-  // will fail.
-  if (parent && !::IsWindow(parent)) {
-    NOTREACHED() << "invalid parent window specified.";
-    parent = NULL;
+  if (parent == HWND_DESKTOP) {
+    // Only non-child windows can have HWND_DESKTOP (0) as their parent.
+    CHECK((window_style_ & WS_CHILD) == 0);
+    parent = GetWindowToParentTo(false);
+  } else if (parent == ::GetDesktopWindow()) {
+    // Any type of window can have the "Desktop Window" as their parent.
+    parent = GetWindowToParentTo(true);
+  } else if (parent != HWND_MESSAGE) {
+    CHECK(::IsWindow(parent));
   }
 
   int x, y, width, height;
@@ -150,13 +160,36 @@ void WindowImpl::Init(HWND parent, const gfx::Rect& bounds) {
   }
 
   std::wstring name(GetWindowClassName());
-  hwnd_ = CreateWindowEx(window_ex_style_, name.c_str(), NULL,
-                         window_style_, x, y, width, height,
-                         parent, NULL, NULL, this);
+  bool destroyed = false;
+  destroyed_ = &destroyed;
+  HWND hwnd = CreateWindowEx(window_ex_style_, name.c_str(), NULL,
+                             window_style_, x, y, width, height,
+                             parent, NULL, NULL, this);
+  if (!hwnd_ && GetLastError() == 0) {
+    base::debug::Alias(&destroyed);
+    base::debug::Alias(&hwnd);
+    bool got_create = got_create_;
+    base::debug::Alias(&got_create);
+    bool got_valid_hwnd = got_valid_hwnd_;
+    base::debug::Alias(&got_valid_hwnd);
+    WNDCLASSEX class_info;
+    memset(&class_info, 0, sizeof(WNDCLASSEX));
+    class_info.cbSize = sizeof(WNDCLASSEX);
+    BOOL got_class = GetClassInfoEx(
+        GetModuleHandle(NULL), name.c_str(), &class_info);
+    base::debug::Alias(&got_class);
+    bool procs_match = got_class && class_info.lpfnWndProc ==
+        base::win::WrappedWindowProc<&WindowImpl::WndProc>;
+    base::debug::Alias(&procs_match);
+    CHECK(false);
+  }
+  if (!destroyed)
+    destroyed_ = NULL;
+
   CheckWindowCreated(hwnd_);
 
   // The window procedure should have set the data for us.
-  CHECK_EQ(this, ui::GetWindowUserData(hwnd_));
+  CHECK_EQ(this, ui::GetWindowUserData(hwnd));
 }
 
 HICON WindowImpl::GetDefaultWindowIcon() const {
@@ -185,6 +218,9 @@ LRESULT CALLBACK WindowImpl::WndProc(HWND hwnd,
     DCHECK(window);
     ui::SetWindowUserData(hwnd, window);
     window->hwnd_ = hwnd;
+    window->got_create_ = true;
+    if (hwnd)
+      window->got_valid_hwnd_ = true;
     return TRUE;
   }
 
@@ -211,7 +247,7 @@ std::wstring WindowImpl::GetWindowClassName() {
     base::win::WrappedWindowProc<&WindowImpl::WndProc>,
     0,
     0,
-    NULL,
+    GetModuleHandle(NULL),
     icon,
     NULL,
     reinterpret_cast<HBRUSH>(background + 1),

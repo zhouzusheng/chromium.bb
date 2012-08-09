@@ -1,12 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/gfx/gl/gl_context_egl.h"
 
-#include "build/build_config.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "third_party/angle/include/EGL/egl.h"
 #include "ui/gfx/gl/egl_util.h"
 #include "ui/gfx/gl/gl_surface.h"
@@ -83,6 +84,7 @@ void GLContextEGL::Destroy() {
 }
 
 bool GLContextEGL::MakeCurrent(GLSurface* surface) {
+  TRACE_EVENT0("gpu", "GLContextEGL::MakeCurrent");
   DCHECK(context_);
   if (IsCurrent(surface))
       return true;
@@ -91,8 +93,8 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
                       surface->GetHandle(),
                       surface->GetHandle(),
                       context_)) {
-    VLOG(1) << "eglMakeCurrent failed with error "
-            << GetLastEGLErrorString();
+    DVLOG(1) << "eglMakeCurrent failed with error "
+             << GetLastEGLErrorString();
     return false;
   }
 

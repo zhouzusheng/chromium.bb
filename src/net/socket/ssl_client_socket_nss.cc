@@ -116,12 +116,6 @@
 
 static const int kRecvBufferSize = 4096;
 
-// kCorkTimeoutMs is the number of milliseconds for which we'll wait for a
-// Write to an SSL socket which we're False Starting. Since corking stops the
-// Finished message from being sent, the server sees an incomplete handshake
-// and some will time out such sockets quite aggressively.
-static const int kCorkTimeoutMs = 200;
-
 #if defined(OS_WIN)
 // CERT_OCSP_RESPONSE_PROP_ID is only implemented on Vista+, but it can be
 // set on Windows XP without error. There is some overhead from the server
@@ -437,7 +431,7 @@ SSLClientSocketNSS::SSLClientSocketNSS(ClientSocketHandle* transport_socket,
                                        const SSLClientSocketContext& context)
     : transport_send_busy_(false),
       transport_recv_busy_(false),
-      corked_(false),
+      transport_recv_eof_(false),
       transport_(transport_socket),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
@@ -641,6 +635,7 @@ void SSLClientSocketNSS::Disconnect() {
   user_write_callback_.Reset();
   transport_send_busy_   = false;
   transport_recv_busy_   = false;
+  transport_recv_eof_    = false;
   user_read_buf_         = NULL;
   user_read_buf_len_     = 0;
   user_write_buf_        = NULL;
@@ -791,10 +786,6 @@ int SSLClientSocketNSS::Write(IOBuffer* buf, int buf_len,
   user_write_buf_ = buf;
   user_write_buf_len_ = buf_len;
 
-  if (corked_) {
-    corked_ = false;
-    uncork_timer_.Reset();
-  }
   int rv = DoWriteLoop(OK);
 
   if (rv == ERR_IO_PENDING) {
@@ -917,12 +908,9 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_DEFLATE");
 #endif
 
-  PRBool false_start_enabled =
-      ssl_config_.false_start_enabled &&
-      !SSLConfigService::IsKnownFalseStartIncompatibleServer(
-          host_and_port_.host());
 #ifdef SSL_ENABLE_FALSE_START
-  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START, false_start_enabled);
+  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START,
+                     ssl_config_.false_start_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_FALSE_START");
 #endif
@@ -949,7 +937,8 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
   }
 
 #ifdef SSL_CBC_RANDOM_IV
-  rv = SSL_OptionSet(nss_fd_, SSL_CBC_RANDOM_IV, false_start_enabled);
+  rv = SSL_OptionSet(nss_fd_, SSL_CBC_RANDOM_IV,
+                     ssl_config_.false_start_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_CBC_RANDOM_IV");
 #endif
@@ -972,10 +961,14 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
 #endif
 
 #ifdef SSL_ENABLE_OB_CERTS
+  UMA_HISTOGRAM_BOOLEAN("DBC.Advertised",
+                        ssl_config_.domain_bound_certs_enabled);
   rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_OB_CERTS,
                      ssl_config_.domain_bound_certs_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_OB_CERTS");
+#else
+  UMA_HISTOGRAM_BOOLEAN("DBC.Advertised", false);
 #endif
 
 #ifdef SSL_ENCRYPT_CLIENT_CERTS
@@ -1231,6 +1224,7 @@ void SSLClientSocketNSS::OnSendComplete(int result) {
       network_moved = DoTransportIO();
   } while (rv_read == ERR_IO_PENDING &&
            rv_write == ERR_IO_PENDING &&
+           (user_read_buf_ || user_write_buf_) &&
            network_moved);
 
   if (user_read_buf_ && rv_read != ERR_IO_PENDING)
@@ -1539,9 +1533,6 @@ int SSLClientSocketNSS::DoHandshake() {
     if (net_error == ERR_IO_PENDING) {
       GotoState(STATE_HANDSHAKE);
     } else {
-      LOG(ERROR) << "handshake with server " << host_and_port_.ToString()
-                 << " failed; NSS error code " << prerr
-                 << ", net_error " << net_error;
       net_log_.AddEvent(
           NetLog::TYPE_SSL_HANDSHAKE_ERROR,
           make_scoped_refptr(new SSLErrorParams(net_error, prerr)));
@@ -1732,56 +1723,6 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
         UMA_HISTOGRAM_TIMES("Net.SSLCertVerificationTimeError", verify_time);
   }
 
-  PeerCertificateChain chain(nss_fd_);
-  for (unsigned i = 1; i < chain.size(); i++) {
-    if (strcmp(chain[i]->subjectName, "CN=meta") != 0)
-      continue;
-
-    base::StringPiece leaf_der(
-        reinterpret_cast<char*>(server_cert_nss_->derCert.data),
-        server_cert_nss_->derCert.len);
-    base::StringPiece leaf_spki;
-    if (!asn1::ExtractSPKIFromDERCert(leaf_der, &leaf_spki))
-      break;
-
-    static SECOidTag side_data_tag;
-    static bool side_data_tag_valid;
-    if (!side_data_tag_valid) {
-      // It's harmless if multiple threads enter this block concurrently.
-      static const uint8 kSideDataOID[] =
-          // 1.3.6.1.4.1.11129.2.1.4
-          // (iso.org.dod.internet.private.enterprises.google.googleSecurity.
-          //  certificateExtensions.sideData)
-          {0x2b, 0x06, 0x01, 0x04, 0x01, 0xd6, 0x79, 0x02, 0x01, 0x05};
-      SECOidData oid_data;
-      memset(&oid_data, 0, sizeof(oid_data));
-      oid_data.oid.data = const_cast<uint8*>(kSideDataOID);
-      oid_data.oid.len = sizeof(kSideDataOID);
-      oid_data.desc = "Certificate side data";
-      oid_data.supportedExtension = SUPPORTED_CERT_EXTENSION;
-      side_data_tag = SECOID_AddEntry(&oid_data);
-      DCHECK_NE(SEC_OID_UNKNOWN, side_data_tag);
-      side_data_tag_valid = true;
-    }
-
-    SECItem side_data_item;
-    SECStatus rv = CERT_FindCertExtension(chain[i],
-        side_data_tag, &side_data_item);
-    if (rv != SECSuccess)
-      continue;
-
-    base::StringPiece side_data(
-        reinterpret_cast<char*>(side_data_item.data),
-        side_data_item.len);
-
-    if (!TransportSecurityState::ParseSidePin(
-             leaf_spki, side_data, &side_pinned_public_keys_)) {
-      LOG(WARNING) << "Side pinning data failed to parse: "
-                   << host_and_port_.host();
-    }
-    break;
-  }
-
   // We used to remember the intermediate CA certs in the NSS database
   // persistently.  However, NSS opens a connection to the SQLite database
   // during NSS initialization and doesn't close the connection until NSS
@@ -1825,8 +1766,9 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
     const std::string& host = host_and_port_.host();
 
     TransportSecurityState::DomainState domain_state;
-    if (transport_security_state_->HasPinsForHost(
-            &domain_state, host, sni_available)) {
+    if (transport_security_state_->GetDomainState(host, sni_available,
+                                                  &domain_state) &&
+        domain_state.HasPins()) {
       if (!domain_state.IsChainOfPublicKeysPermitted(
                server_cert_verify_result_->public_key_hashes)) {
         const base::Time build_time = base::GetBuildTime();
@@ -1965,14 +1907,6 @@ void SSLClientSocketNSS::SaveSSLHostInfo() {
   ssl_host_info_->Persist();
 }
 
-void SSLClientSocketNSS::UncorkAfterTimeout() {
-  corked_ = false;
-  int nsent;
-  do {
-    nsent = BufferSend();
-  } while (nsent > 0);
-}
-
 // Do as much network I/O as possible between the buffer and the
 // transport socket. Return true if some I/O performed, false
 // otherwise (error or ERR_IO_PENDING).
@@ -1988,7 +1922,7 @@ bool SSLClientSocketNSS::DoTransportIO() {
       if (rv > 0)
         network_moved = true;
     } while (rv > 0);
-    if (BufferRecv() >= 0)
+    if (!transport_recv_eof_ && BufferRecv() >= 0)
       network_moved = true;
   }
   LeaveFunction(network_moved);
@@ -1998,7 +1932,7 @@ bool SSLClientSocketNSS::DoTransportIO() {
 // Return 0 for EOF,
 // > 0 for bytes transferred immediately,
 // < 0 for error (or the non-error ERR_IO_PENDING).
-int SSLClientSocketNSS::BufferSend(void) {
+int SSLClientSocketNSS::BufferSend() {
   if (transport_send_busy_)
     return ERR_IO_PENDING;
 
@@ -2008,9 +1942,6 @@ int SSLClientSocketNSS::BufferSend(void) {
   unsigned int len1, len2;
   memio_GetWriteParams(nss_bufs_, &buf1, &len1, &buf2, &len2);
   const unsigned int len = len1 + len2;
-
-  if (corked_ && len < kRecvBufferSize / 2)
-    return 0;
 
   int rv = 0;
   if (len) {
@@ -2040,7 +1971,7 @@ void SSLClientSocketNSS::BufferSendComplete(int result) {
   LeaveFunction("");
 }
 
-int SSLClientSocketNSS::BufferRecv(void) {
+int SSLClientSocketNSS::BufferRecv() {
   if (transport_recv_busy_) return ERR_IO_PENDING;
 
   char* buf;
@@ -2059,8 +1990,11 @@ int SSLClientSocketNSS::BufferRecv(void) {
     if (rv == ERR_IO_PENDING) {
       transport_recv_busy_ = true;
     } else {
-      if (rv > 0)
+      if (rv > 0) {
         memcpy(buf, recv_buffer_->data(), rv);
+      } else if (rv == 0) {
+        transport_recv_eof_ = true;
+      }
       memio_PutReadResult(nss_bufs_, MapErrorToNSS(rv));
       recv_buffer_ = NULL;
     }
@@ -2075,6 +2009,8 @@ void SSLClientSocketNSS::BufferRecvComplete(int result) {
     char* buf;
     memio_GetReadParams(nss_bufs_, &buf);
     memcpy(buf, recv_buffer_->data(), result);
+  } else if (result == 0) {
+    transport_recv_eof_ = true;
   }
   recv_buffer_ = NULL;
   memio_PutReadResult(nss_bufs_, MapErrorToNSS(result));
@@ -2126,46 +2062,21 @@ SECStatus SSLClientSocketNSS::OwnAuthCertHandler(void* arg,
                                                  PRBool checksig,
                                                  PRBool is_server) {
 #ifdef SSL_ENABLE_FALSE_START
-  // In the event that we are False Starting this connection, we wish to send
-  // out the Finished message and first application data record in the same
-  // packet. This prevents non-determinism when talking to False Start
-  // intolerant servers which, otherwise, might see the two messages in
-  // different reads or not, depending on network conditions.
-  PRBool false_start = 0;
-  SECStatus rv = SSL_OptionGet(socket, SSL_ENABLE_FALSE_START, &false_start);
-  DCHECK_EQ(SECSuccess, rv);
-
   SSLClientSocketNSS* that = reinterpret_cast<SSLClientSocketNSS*>(arg);
-  CERTCertificate* cert = SSL_PeerCertificate(that->nss_fd_);
-  if (cert) {
-    char* common_name = CERT_GetCommonName(&cert->issuer);
-    if (common_name) {
-      if (false_start && strcmp(common_name, "ESET_RootSslCert") == 0) {
-        // ESET anti-virus is capable of intercepting HTTPS connections on
-        // Windows.  However, it is False Start intolerant and causes the
-        // connections to hang forever. We detect ESET by the issuer of the
-        // leaf certificate and set a flag to return a specific error, giving
-        // the user instructions for reconfiguring ESET.
-        that->eset_mitm_detected_ = true;
-      }
-      if (false_start &&
-          strcmp(common_name, "ContentWatch Root Certificate Authority") == 0) {
-        // This is NetNanny. NetNanny are updating their product so we
-        // silently disable False Start for now.
-        rv = SSL_OptionSet(socket, SSL_ENABLE_FALSE_START, PR_FALSE);
-        DCHECK_EQ(SECSuccess, rv);
-        false_start = 0;
-      }
-      PORT_Free(common_name);
+  if (!that->server_cert_nss_) {
+    // Only need to turn off False Start in the initial handshake. Also, it is
+    // unsafe to call SSL_OptionSet in a renegotiation because the "first
+    // handshake" lock isn't already held, which will result in an assertion
+    // failure in the ssl_Get1stHandshakeLock call in SSL_OptionSet.
+    PRBool npn;
+    SECStatus rv = SSL_HandshakeNegotiatedExtension(socket,
+                                                    ssl_next_proto_nego_xtn,
+                                                    &npn);
+    if (rv != SECSuccess || !npn) {
+      // If the server doesn't support NPN, then we don't do False Start with
+      // it.
+      SSL_OptionSet(socket, SSL_ENABLE_FALSE_START, PR_FALSE);
     }
-    CERT_DestroyCertificate(cert);
-  }
-
-  if (false_start && !that->handshake_callback_called_) {
-    that->corked_ = true;
-    that->uncork_timer_.Start(FROM_HERE,
-        base::TimeDelta::FromMilliseconds(kCorkTimeoutMs),
-        that, &SSLClientSocketNSS::UncorkAfterTimeout);
   }
 #endif
 

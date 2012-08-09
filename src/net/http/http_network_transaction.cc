@@ -1020,10 +1020,10 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
     }
   }
 
-  // Currently, non-zero priority requests are frame or sub-frame resource
+  // Currently, non-HIGHEST priority requests are frame or sub-frame resource
   // types.  This will change when we also prioritize certain subresources like
   // css, js, etc.
-  if (request_->priority) {
+  if (request_->priority != HIGHEST) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
         "Net.Priority_High_Latency_b",
         total_duration,
@@ -1168,8 +1168,10 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         // This could be a TLS-intolerant server, an SSL 3.0 server that
         // chose a TLS-only cipher suite or a server with buggy DEFLATE
         // support. Turn off TLS 1.0, DEFLATE support and retry.
-        session_->http_stream_factory()->AddTLSIntolerantServer(
-            HostPortPair::FromURL(request_->url));
+        LOG(WARNING) << "Falling back to SSLv3 because host is TLS intolerant: "
+                     << GetHostAndPort(request_->url);
+        server_ssl_config_.tls1_enabled = false;
+        server_ssl_config_.ssl3_fallback = true;
         ResetConnectionAndRequestForResend();
         error = OK;
       }

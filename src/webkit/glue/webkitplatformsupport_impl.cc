@@ -140,6 +140,16 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
     case WebLocalizedString::AXWebAreaText:
       return IDS_AX_ROLE_WEB_AREA;
+    case WebLocalizedString::CalendarClear:
+      return IDS_FORM_CALENDAR_CLEAR;
+    case WebLocalizedString::CalendarToday:
+      return IDS_FORM_CALENDAR_TODAY;
+    case WebLocalizedString::DateFormatDayInMonthLabel:
+      return IDS_FORM_DATE_FORMAT_DAY_IN_MONTH;
+    case WebLocalizedString::DateFormatMonthLabel:
+      return IDS_FORM_DATE_FORMAT_MONTH;
+    case WebLocalizedString::DateFormatYearLabel:
+      return IDS_FORM_DATE_FORMAT_YEAR;
     case WebLocalizedString::DetailsLabel:
       return IDS_DETAILS_WITHOUT_SUMMARY_LABEL;
     case WebLocalizedString::FileButtonChooseFileLabel:
@@ -393,10 +403,9 @@ const DataResource kDataResources[] = {
   { "mediaplayerPlayHover", IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER },
   { "mediaplayerPlayDown", IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN },
   { "mediaplayerPlayDisabled", IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED },
-  { "mediaplayerSoundDisabled", IDR_MEDIAPLAYER_SOUND_DISABLED },
-  { "mediaplayerSoundFull", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON },
-  { "mediaplayerSoundFullHover", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON_HOVER },
-  { "mediaplayerSoundFullDown", IDR_MEDIAPLAYER_SOUND_FULL_BUTTON_DOWN },
+  { "mediaplayerSoundLevel3", IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON },
+  { "mediaplayerSoundLevel3Hover", IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_HOVER },
+  { "mediaplayerSoundLevel3Down", IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_DOWN },
   { "mediaplayerSoundLevel2", IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON },
   { "mediaplayerSoundLevel2Hover",
     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER },
@@ -405,9 +414,11 @@ const DataResource kDataResources[] = {
   { "mediaplayerSoundLevel1Hover",
     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER },
   { "mediaplayerSoundLevel1Down", IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN },
-  { "mediaplayerSoundNone", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON },
-  { "mediaplayerSoundNoneHover", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON_HOVER },
-  { "mediaplayerSoundNoneDown", IDR_MEDIAPLAYER_SOUND_NONE_BUTTON_DOWN },
+  { "mediaplayerSoundLevel0", IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON },
+  { "mediaplayerSoundLevel0Hover",
+    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_HOVER },
+  { "mediaplayerSoundLevel0Down", IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_DOWN },
+  { "mediaplayerSoundDisabled", IDR_MEDIAPLAYER_SOUND_DISABLED },
   { "mediaplayerSliderThumb", IDR_MEDIAPLAYER_SLIDER_THUMB },
   { "mediaplayerSliderThumbHover", IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER },
   { "mediaplayerSliderThumbDown", IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN },
@@ -416,6 +427,13 @@ const DataResource kDataResources[] = {
     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER },
   { "mediaplayerVolumeSliderThumbDown",
     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN },
+  { "mediaplayerVolumeSliderThumbDisabled",
+    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED },
+  { "mediaplayerFullscreen", IDR_MEDIAPLAYER_FULLSCREEN_BUTTON },
+  { "mediaplayerFullscreenHover", IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER },
+  { "mediaplayerFullscreenDown", IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN },
+  { "mediaplayerFullscreenDisabled",
+    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED },
 #if defined(OS_MACOSX)
   { "overhangPattern", IDR_OVERHANG_PATTERN },
 #endif

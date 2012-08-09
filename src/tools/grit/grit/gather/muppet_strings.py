@@ -138,6 +138,6 @@ class MuppetStrings(regexp.RegexpGatherer):
         print "MuppetStrings reading file %s, encoding %s" % (
           filename_or_stream, encoding)
       filename_or_stream = util.WrapInputStream(file(filename_or_stream, 'r'), encoding)
-    return MuppetStrings(filename_or_stream.read())
+    return MuppetStrings(filename_or_stream.read().encode(encoding))
   FromFile = staticmethod(FromFile)
 

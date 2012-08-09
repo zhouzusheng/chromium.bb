@@ -246,6 +246,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const base::Time& delete_end,
       const DeleteCallback& callback) OVERRIDE;
 
+  virtual void DeleteSessionCookiesAsync(const DeleteCallback&) OVERRIDE;
+
   virtual CookieMonster* GetCookieMonster() OVERRIDE;
 
   // Enables writing session cookies into the cookie database. If this this
@@ -281,6 +283,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   class GetCookiesWithInfoTask;
   class SetCookieWithDetailsTask;
   class SetCookieWithOptionsTask;
+  class DeleteSessionCookiesTask;
 
   // Testing support.
   // For SetCookieWithCreationTime.
@@ -411,6 +414,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
   bool SetCookieWithCreationTime(const GURL& url,
                                  const std::string& cookie_line,
                                  const base::Time& creation_time);
+
+  int DeleteSessionCookies();
 
   // Called by all non-static functions to ensure that the cookies store has
   // been initialized. This is not done during creating so it doesn't block
@@ -804,7 +809,7 @@ class CookieMonster::Delegate
   // Will be called when a cookie is added or removed. The function is passed
   // the respective |cookie| which was added to or removed from the cookies.
   // If |removed| is true, the cookie was deleted, and |cause| will be set
-  // to the reason for it's removal. If |removed| is false, the cookie was
+  // to the reason for its removal. If |removed| is false, the cookie was
   // added, and |cause| will be set to CHANGE_COOKIE_EXPLICIT.
   //
   // As a special case, note that updating a cookie's properties is implemented
@@ -927,8 +932,6 @@ typedef base::RefCountedThreadSafe<CookieMonster::PersistentCookieStore>
 class CookieMonster::PersistentCookieStore
     : public RefcountedPersistentCookieStore {
  public:
-  virtual ~PersistentCookieStore() {}
-
   typedef base::Callback<void(const std::vector<
       CookieMonster::CanonicalCookie*>&)> LoadedCallback;
 
@@ -958,8 +961,10 @@ class CookieMonster::PersistentCookieStore
 
  protected:
   PersistentCookieStore() {}
+  virtual ~PersistentCookieStore() {}
 
  private:
+  friend class base::RefCountedThreadSafe<PersistentCookieStore>;
   DISALLOW_COPY_AND_ASSIGN(PersistentCookieStore);
 };
 

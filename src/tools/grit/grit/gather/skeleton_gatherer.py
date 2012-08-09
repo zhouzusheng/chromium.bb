@@ -66,7 +66,7 @@ class SkeletonGatherer(interface.GathererBase):
   def GetCliques(self):
     '''Returns the message cliques for each translateable message in the
     resource section.'''
-    return filter(lambda x: isinstance(x, clique.MessageClique), self.skeleton_)
+    return [x for x in self.skeleton_ if isinstance(x, clique.MessageClique)]
 
   def Translate(self, lang, pseudo_if_not_available=True,
                 skeleton_gatherer=None, fallback_to_english=False):
@@ -125,3 +125,24 @@ class SkeletonGatherer(interface.GathererBase):
       self.skeleton_.append(self.uberclique.MakeClique(
         tclib.Message(text=unescaped_text)))
       self.translatable_chunk_ = True
+
+  def SubstituteMessages(self, substituter):
+    '''Applies substitutions to all messages in the tree.
+
+    Goes through the skeleton and finds all MessageCliques.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    if self.single_message_:
+      self.single_message_ = substituter.SubstituteMessage(self.single_message_)
+    new_skel = []
+    for chunk in self.skeleton_:
+      if isinstance(chunk, clique.MessageClique):
+        old_message = chunk.GetMessage()
+        new_message = substituter.SubstituteMessage(old_message)
+        if new_message is not old_message:
+          new_skel.append(self.uberclique.MakeClique(new_message))
+          continue
+      new_skel.append(chunk)
+    self.skeleton_ = new_skel

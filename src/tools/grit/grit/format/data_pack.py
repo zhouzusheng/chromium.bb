@@ -34,10 +34,7 @@ class DataPackContents:
 
 class DataPack(interface.ItemFormatter):
   '''Writes out the data pack file format (platform agnostic resource file).'''
-  def Format(self, item, lang='en', begin_item=True, output_dir='.'):
-    if not begin_item:
-      return ''
-
+  def Format(self, item, lang='en', output_dir='.'):
     assert isinstance(item, misc.ReleaseNode)
 
     nodes = DataPack.GetDataNodes(item)
@@ -157,12 +154,20 @@ class DataPack(interface.ItemFormatter):
     DataPack.WriteDataPack(resources, output_file, encoding)
 
 def main():
-  # Just write a simple file.
-  data = { 1: "", 4: "this is id 4", 6: "this is id 6", 10: "" }
-  DataPack.WriteDataPack(data, "datapack1.pak", UTF8)
-  data2 = { 1000: "test", 5: "five" }
-  DataPack.WriteDataPack(data2, "datapack2.pak", UTF8)
-  print "wrote datapack1 and datapack2 to current directory."
+  if len(sys.argv):
+    # When an argument is given, read and explode the file to text
+    # format, for easier diffing.
+    data = DataPack.ReadDataPack(sys.argv[1])
+    print data.encoding
+    for (resource_id, text) in data.resources.iteritems():
+      print "%s: %s" % (resource_id, text)
+  else:
+    # Just write a simple file.
+    data = { 1: "", 4: "this is id 4", 6: "this is id 6", 10: "" }
+    DataPack.WriteDataPack(data, "datapack1.pak", UTF8)
+    data2 = { 1000: "test", 5: "five" }
+    DataPack.WriteDataPack(data2, "datapack2.pak", UTF8)
+    print "wrote datapack1 and datapack2 to current directory."
 
 if __name__ == '__main__':
   main()

@@ -50,7 +50,7 @@ public:
     bool isModeValid() const { return ILLEGAL_XFERMODE_MODE != fMode; }
 
 protected:
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) {
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.write32(fColor);
         buffer.write32(fMode);
@@ -193,7 +193,7 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Proc_SkModeColorFilter)
 
 protected:
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) {
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.writeFunctionPtr((void*)fProc);
         buffer.writeFunctionPtr((void*)fProc16);
@@ -270,17 +270,6 @@ static inline unsigned pin(unsigned value, unsigned max) {
     return value;
 }
 
-static inline unsigned SkUClampMax(unsigned value, unsigned max) {
-    SkASSERT((int32_t)value >= 0);
-    SkASSERT((int32_t)max >= 0);
-
-    int diff = max - value;
-    // clear diff if diff is positive
-    diff &= diff >> 31;
-
-    return value + diff;
-}
-
 class SkLightingColorFilter : public SkColorFilter {
 public:
     SkLightingColorFilter(SkColor mul, SkColor add) : fMul(mul), fAdd(add) {}
@@ -312,7 +301,7 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLightingColorFilter)
 
 protected:
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) {
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.write32(fMul);
         buffer.write32(fAdd);
@@ -489,7 +478,7 @@ protected:
         }
     }
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) {}
+    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {}
 
     virtual Factory getFactory() {
         return CreateProc;

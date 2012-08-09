@@ -150,7 +150,7 @@ GR_STATIC_CONST_SAME_STENCIL(gDirectToStencil,
 
 #define STENCIL_OFF     0   // Always disable stencil (even when needed)
 
-static inline bool single_pass_path(const GrPath& path, GrPathFill fill) {
+static inline bool single_pass_path(const SkPath& path, GrPathFill fill) {
 #if STENCIL_OFF
     return true;
 #else
@@ -340,7 +340,6 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
     GrMatrix viewM = target->getDrawState().getViewMatrix();
     GrScalar tol = GR_Scalar1;
     tol = GrPathUtils::scaleToleranceToSrc(tol, viewM, path.getBounds());
-    GrDrawState* drawState = target->drawState();
 
     int vertexCnt;
     int indexCnt;
@@ -360,7 +359,8 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
     }
 
     GrAssert(NULL != target);
-    GrDrawTarget::AutoStateRestore asr(target);
+    GrDrawTarget::AutoStateRestore asr(target, GrDrawTarget::kPreserve_ASRInit);
+    GrDrawState* drawState = target->drawState();
     bool colorWritesWereDisabled = drawState->isColorWriteDisabled();
     // face culling doesn't make sense here
     GrAssert(GrDrawState::kBoth_DrawFace == drawState->getDrawFace());

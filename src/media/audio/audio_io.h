@@ -45,6 +45,9 @@
 // as the data is written to the audio device. Size of each packet is determined
 // by |samples_per_packet| specified in AudioParameters  when the stream is
 // created.
+
+namespace media {
+
 class MEDIA_EXPORT AudioOutputStream {
  public:
   // Audio sources must implement AudioSourceCallback. This interface will be
@@ -62,9 +65,9 @@ class MEDIA_EXPORT AudioOutputStream {
     // platform and format specific.
     // |buffers_state| contains current state of the buffers, and can be used
     // by the source to calculate delay.
-    virtual uint32 OnMoreData(
-        AudioOutputStream* stream, uint8* dest, uint32 max_size,
-        AudioBuffersState buffers_state) = 0;
+    virtual uint32 OnMoreData(uint8* dest,
+                              uint32 max_size,
+                              AudioBuffersState buffers_state) = 0;
 
     // There was an error while playing a buffer. Audio source cannot be
     // destroyed yet. No direct action needed by the AudioStream, but it is
@@ -122,7 +125,8 @@ class MEDIA_EXPORT AudioInputStream {
     // available. This is called from a special audio thread and the
     // implementation should return as soon as possible.
     virtual void OnData(AudioInputStream* stream, const uint8* src,
-                        uint32 size, uint32 hardware_delay_bytes) = 0;
+                        uint32 size, uint32 hardware_delay_bytes,
+                        double volume) = 0;
 
     // The stream is done with this callback, the last call received by this
     // audio sink.
@@ -164,6 +168,14 @@ class MEDIA_EXPORT AudioInputStream {
 
   // Returns the microphone analog volume, with range [0, max_volume] inclusive.
   virtual double GetVolume() = 0;
+
+  // Sets the Automatic Gain Control (AGC) state.
+  virtual void SetAutomaticGainControl(bool enabled) = 0;
+
+  // Returns the Automatic Gain Control (AGC) state.
+  virtual bool GetAutomaticGainControl() = 0;
 };
+
+}  // namespace media
 
 #endif  // MEDIA_AUDIO_AUDIO_IO_H_

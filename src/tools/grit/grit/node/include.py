@@ -3,8 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-'''Handling of the <include> element.
-'''
+"""Handling of the <include> element.
+"""
 
 import os
 
@@ -16,7 +16,7 @@ from grit.node import base
 from grit import util
 
 class IncludeNode(base.Node):
-  '''An <include> element.'''
+  """An <include> element."""
   def __init__(self):
     base.Node.__init__(self)
 
@@ -43,12 +43,13 @@ class IncludeNode(base.Node):
 
   def DefaultAttributes(self):
     return {'translateable' : 'true',
-      'generateid': 'true',
-      'filenameonly': 'false',
-      'flattenhtml': 'false',
-      'allowexternalscript': 'false',
-      'relativepath': 'false',
-      }
+            'generateid': 'true',
+            'filenameonly': 'false',
+            'mkoutput': 'false',
+            'flattenhtml': 'false',
+            'allowexternalscript': 'false',
+            'relativepath': 'false',
+           }
 
   def ItemFormatter(self, t):
     if t == 'rc_header':
@@ -56,9 +57,9 @@ class IncludeNode(base.Node):
     elif (t in ['rc_all', 'rc_translateable', 'rc_nontranslateable'] and
           self.SatisfiesOutputCondition()):
       return grit.format.rc.RcInclude(self.attrs['type'].upper(),
-        self.attrs['filenameonly'] == 'true',
-        self.attrs['relativepath'] == 'true',
-        self.attrs['flattenhtml'] == 'true')
+                                      self.attrs['filenameonly'] == 'true',
+                                      self.attrs['relativepath'] == 'true',
+                                      self.attrs['flattenhtml'] == 'true')
     elif t == 'resource_map_source':
       from grit.format import resource_map
       return resource_map.SourceInclude()
@@ -69,15 +70,15 @@ class IncludeNode(base.Node):
       return super(type(self), self).ItemFormatter(t)
 
   def FileForLanguage(self, lang, output_dir):
-    '''Returns the file for the specified language.  This allows us to return
+    """Returns the file for the specified language.  This allows us to return
     different files for different language variants of the include file.
-    '''
+    """
     return self.FilenameToOpen()
 
   def GetDataPackPair(self, lang, encoding):
-    '''Returns a (id, string) pair that represents the resource id and raw
+    """Returns a (id, string) pair that represents the resource id and raw
     bytes of the data.  This is used to generate the data pack data file.
-    '''
+    """
     from grit.format import rc_header
     id_map = rc_header.Item.tids_
     id = id_map[self.GetTextualIds()[0]]
@@ -95,8 +96,8 @@ class IncludeNode(base.Node):
     return id, data
 
   def Flatten(self, output_dir):
-    '''Rewrite file references to be base64 encoded data URLs.  The new file
-    will be written to output_dir and the name of the new file is returned.'''
+    """Rewrite file references to be base64 encoded data URLs.  The new file
+    will be written to output_dir and the name of the new file is returned."""
     filename = self.FilenameToOpen()
     flat_filename = os.path.join(output_dir,
         self.attrs['name'] + '_' + os.path.basename(filename))
@@ -118,15 +119,20 @@ class IncludeNode(base.Node):
     return grit.format.html_inline.GetResourceFilenames(self.FilenameToOpen(),
          allow_external_script=allow_external_script)
 
-  # static method
+  def GetFilePath(self):
+    """Returns the file path for the current language."""
+    return self.FilenameToOpen()
+
+  @staticmethod
   def Construct(parent, name, type, file, translateable=True,
-      filenameonly=False, relativepath=False):
-    '''Creates a new node which is a child of 'parent', with attributes set
+                filenameonly=False, mkoutput=False, relativepath=False):
+    """Creates a new node which is a child of 'parent', with attributes set
     by parameters of the same name.
-    '''
+    """
     # Convert types to appropriate strings
     translateable = util.BoolToString(translateable)
     filenameonly = util.BoolToString(filenameonly)
+    mkoutput = util.BoolToString(mkoutput)
     relativepath = util.BoolToString(relativepath)
 
     node = IncludeNode()
@@ -136,7 +142,7 @@ class IncludeNode(base.Node):
     node.HandleAttribute('file', file)
     node.HandleAttribute('translateable', translateable)
     node.HandleAttribute('filenameonly', filenameonly)
+    node.HandleAttribute('mkoutput', mkoutput)
     node.HandleAttribute('relativepath', relativepath)
     node.EndParsing()
     return node
-  Construct = staticmethod(Construct)

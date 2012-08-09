@@ -577,20 +577,15 @@ bool EntryImpl::SanityCheck() {
     return false;
 
   Addr rankings_addr(stored->rankings_node);
-  if (!rankings_addr.is_initialized() || rankings_addr.is_separate_file() ||
-      rankings_addr.file_type() != RANKINGS || rankings_addr.num_blocks() != 1)
+  if (!rankings_addr.SanityCheckForRankings())
     return false;
 
   Addr next_addr(stored->next);
-  if (next_addr.is_initialized() &&
-      (next_addr.is_separate_file() || next_addr.file_type() != BLOCK_256)) {
+  if (next_addr.is_initialized() && !next_addr.SanityCheckForEntry()) {
     STRESS_NOTREACHED();
     return false;
   }
   STRESS_DCHECK(next_addr.value() != entry_.address().value());
-
-  if (!rankings_addr.SanityCheck() || !next_addr.SanityCheck())
-    return false;
 
   if (stored->state > ENTRY_DOOMED || stored->state < ENTRY_NORMAL)
     return false;
@@ -696,13 +691,12 @@ void EntryImpl::ReportIOTime(Operation op, const base::TimeTicks& start) {
   if (!backend_)
     return;
 
-  int group = backend_->GetSizeGroup();
   switch (op) {
     case kRead:
-      CACHE_UMA(AGE_MS, "ReadTime", group, start);
+      CACHE_UMA(AGE_MS, "ReadTime", 0, start);
       break;
     case kWrite:
-      CACHE_UMA(AGE_MS, "WriteTime", group, start);
+      CACHE_UMA(AGE_MS, "WriteTime", 0, start);
       break;
     case kSparseRead:
       CACHE_UMA(AGE_MS, "SparseReadTime", 0, start);
@@ -711,13 +705,13 @@ void EntryImpl::ReportIOTime(Operation op, const base::TimeTicks& start) {
       CACHE_UMA(AGE_MS, "SparseWriteTime", 0, start);
       break;
     case kAsyncIO:
-      CACHE_UMA(AGE_MS, "AsyncIOTime", group, start);
+      CACHE_UMA(AGE_MS, "AsyncIOTime", 0, start);
       break;
     case kReadAsync1:
-      CACHE_UMA(AGE_MS, "AsyncReadDispatchTime", group, start);
+      CACHE_UMA(AGE_MS, "AsyncReadDispatchTime", 0, start);
       break;
     case kWriteAsync1:
-      CACHE_UMA(AGE_MS, "AsyncWriteDispatchTime", group, start);
+      CACHE_UMA(AGE_MS, "AsyncWriteDispatchTime", 0, start);
       break;
     default:
       NOTREACHED();

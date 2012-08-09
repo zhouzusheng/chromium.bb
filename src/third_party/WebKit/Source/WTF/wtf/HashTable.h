@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2007, 2008, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006, 2007, 2008, 2011, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2008 David Levin <levin@chromium.org>
  *
  * This library is free software; you can redistribute it and/or
@@ -29,6 +29,12 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/Threading.h>
 #include <wtf/ValueCheck.h>
+
+#ifndef NDEBUG
+// Required for CHECK_HASHTABLE_ITERATORS.
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
+#endif
 
 namespace WTF {
 
@@ -296,6 +302,12 @@ namespace WTF {
         template<typename T, typename U> static void translate(T& location, const U&, const T& value) { location = value; }
     };
 
+    template<typename IteratorType> struct HashTableAddResult {
+        HashTableAddResult(IteratorType iter, bool isNewEntry) : iterator(iter), isNewEntry(isNewEntry) { }
+        IteratorType iterator;
+        bool isNewEntry;
+    };
+
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     class HashTable {
     public:
@@ -305,6 +317,7 @@ namespace WTF {
         typedef Key KeyType;
         typedef Value ValueType;
         typedef IdentityHashTranslator<HashFunctions> IdentityTranslatorType;
+        typedef HashTableAddResult<iterator> AddResult;
 
         HashTable();
         ~HashTable() 
@@ -330,13 +343,13 @@ namespace WTF {
         int capacity() const { return m_tableSize; }
         bool isEmpty() const { return !m_keyCount; }
 
-        pair<iterator, bool> add(const ValueType& value) { return add<IdentityTranslatorType>(Extractor::extract(value), value); }
+        AddResult add(const ValueType& value) { return add<IdentityTranslatorType>(Extractor::extract(value), value); }
 
         // A special version of add() that finds the object by hashing and comparing
         // with some other type, to avoid the cost of type conversion if the object is already
         // in the table.
-        template<typename HashTranslator, typename T, typename Extra> pair<iterator, bool> add(const T& key, const Extra&);
-        template<typename HashTranslator, typename T, typename Extra> pair<iterator, bool> addPassingHashCode(const T& key, const Extra&);
+        template<typename HashTranslator, typename T, typename Extra> AddResult add(const T& key, const Extra&);
+        template<typename HashTranslator, typename T, typename Extra> AddResult addPassingHashCode(const T& key, const Extra&);
 
         iterator find(const KeyType& key) { return find<IdentityTranslatorType>(key); }
         const_iterator find(const KeyType& key) const { return find<IdentityTranslatorType>(key); }
@@ -352,7 +365,7 @@ namespace WTF {
         void removeWithoutEntryConsistencyCheck(const_iterator);
         void clear();
 
-        static bool isEmptyBucket(const ValueType& value) { return Extractor::extract(value) == KeyTraits::emptyValue(); }
+        static bool isEmptyBucket(const ValueType& value) { return isHashTraitsEmptyValue<KeyTraits>(Extractor::extract(value)); }
         static bool isDeletedBucket(const ValueType& value) { return KeyTraits::isDeletedValue(Extractor::extract(value)); }
         static bool isEmptyOrDeletedBucket(const ValueType& value) { return isEmptyBucket(value) || isDeletedBucket(value); }
 
@@ -434,7 +447,8 @@ namespace WTF {
     public:
         // All access to m_iterators should be guarded with m_mutex.
         mutable const_iterator* m_iterators;
-        mutable Mutex m_mutex;
+        // Use OwnPtr so HashTable can still be memmove'd or memcpy'ed.
+        mutable OwnPtr<Mutex> m_mutex;
 #endif
     };
 
@@ -447,6 +461,7 @@ namespace WTF {
         , m_deletedCount(0)
 #if CHECK_HASHTABLE_ITERATORS
         , m_iterators(0)
+        , m_mutex(adoptPtr(new Mutex))
 #endif
     {
     }
@@ -665,7 +680,7 @@ namespace WTF {
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     template<typename HashTranslator, typename T, typename Extra>
-    inline pair<typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::iterator, bool> HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::add(const T& key, const Extra& extra)
+    inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::add(const T& key, const Extra& extra)
     {
         checkKey<HashTranslator>(key);
 
@@ -700,7 +715,7 @@ namespace WTF {
                     break;
                 
                 if (HashTranslator::equal(Extractor::extract(*entry), key))
-                    return std::make_pair(makeKnownGoodIterator(entry), false);
+                    return AddResult(makeKnownGoodIterator(entry), false);
                 
                 if (isDeletedBucket(*entry))
                     deletedEntry = entry;
@@ -711,7 +726,7 @@ namespace WTF {
                 if (isDeletedBucket(*entry))
                     deletedEntry = entry;
                 else if (HashTranslator::equal(Extractor::extract(*entry), key))
-                    return std::make_pair(makeKnownGoodIterator(entry), false);
+                    return AddResult(makeKnownGoodIterator(entry), false);
             }
 #if DUMP_HASHTABLE_STATS
             ++probeCount;
@@ -738,19 +753,19 @@ namespace WTF {
             // follow a pivot entry and return the new position.
             KeyType enteredKey = Extractor::extract(*entry);
             expand();
-            pair<iterator, bool> p = std::make_pair(find(enteredKey), true);
-            ASSERT(p.first != end());
-            return p;
+            AddResult result(find(enteredKey), true);
+            ASSERT(result.iterator != end());
+            return result;
         }
         
         internalCheckTableConsistency();
         
-        return std::make_pair(makeKnownGoodIterator(entry), true);
+        return AddResult(makeKnownGoodIterator(entry), true);
     }
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     template<typename HashTranslator, typename T, typename Extra>
-    inline pair<typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::iterator, bool> HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::addPassingHashCode(const T& key, const Extra& extra)
+    inline typename HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::AddResult HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::addPassingHashCode(const T& key, const Extra& extra)
     {
         checkKey<HashTranslator>(key);
 
@@ -768,7 +783,7 @@ namespace WTF {
         unsigned h = lookupResult.second;
         
         if (found)
-            return std::make_pair(makeKnownGoodIterator(entry), false);
+            return AddResult(makeKnownGoodIterator(entry), false);
         
         if (isDeletedBucket(*entry)) {
             initializeBucket(*entry);
@@ -783,14 +798,14 @@ namespace WTF {
             // follow a pivot entry and return the new position.
             KeyType enteredKey = Extractor::extract(*entry);
             expand();
-            pair<iterator, bool> p = std::make_pair(find(enteredKey), true);
-            ASSERT(p.first != end());
-            return p;
+            AddResult result(find(enteredKey), true);
+            ASSERT(result.iterator != end());
+            return result;
         }
 
         internalCheckTableConsistency();
 
-        return std::make_pair(makeKnownGoodIterator(entry), true);
+        return AddResult(makeKnownGoodIterator(entry), true);
     }
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
@@ -999,6 +1014,7 @@ namespace WTF {
         , m_deletedCount(0)
 #if CHECK_HASHTABLE_ITERATORS
         , m_iterators(0)
+        , m_mutex(adoptPtr(new Mutex))
 #endif
     {
         // Copy the hash table the dumb way, by adding each element to the new table.
@@ -1092,7 +1108,7 @@ namespace WTF {
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits>
     void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits>::invalidateIterators()
     {
-        MutexLocker lock(m_mutex);
+        MutexLocker lock(*m_mutex);
         const_iterator* next;
         for (const_iterator* p = m_iterators; p; p = next) {
             next = p->m_next;
@@ -1114,7 +1130,7 @@ namespace WTF {
         if (!table) {
             it->m_next = 0;
         } else {
-            MutexLocker lock(table->m_mutex);
+            MutexLocker lock(*table->m_mutex);
             ASSERT(table->m_iterators != it);
             it->m_next = table->m_iterators;
             table->m_iterators = it;
@@ -1136,7 +1152,7 @@ namespace WTF {
             ASSERT(!it->m_next);
             ASSERT(!it->m_previous);
         } else {
-            MutexLocker lock(it->m_table->m_mutex);
+            MutexLocker lock(*it->m_table->m_mutex);
             if (it->m_next) {
                 ASSERT(it->m_next->m_previous == it);
                 it->m_next->m_previous = it->m_previous;

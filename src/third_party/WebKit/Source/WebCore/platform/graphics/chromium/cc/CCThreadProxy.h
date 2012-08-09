@@ -51,44 +51,49 @@ public:
     virtual ~CCThreadProxy();
 
     // CCProxy implementation
-    virtual bool compositeAndReadback(void *pixels, const IntRect&);
-    virtual void startPageScaleAnimation(const IntSize& targetPosition, bool useAnchor, float scale, double duration);
-    virtual GraphicsContext3D* context();
-    virtual void finishAllRendering();
-    virtual bool isStarted() const;
-    virtual bool initializeContext();
+    virtual bool compositeAndReadback(void *pixels, const IntRect&) OVERRIDE;
+    virtual void startPageScaleAnimation(const IntSize& targetPosition, bool useAnchor, float scale, double duration) OVERRIDE;
+    virtual GraphicsContext3D* context() OVERRIDE;
+    virtual void finishAllRendering() OVERRIDE;
+    virtual bool isStarted() const OVERRIDE;
+    virtual bool initializeContext() OVERRIDE;
     virtual void setSurfaceReady() OVERRIDE;
-    virtual bool initializeLayerRenderer();
-    virtual bool recreateContext();
-    virtual int compositorIdentifier() const;
-    virtual const LayerRendererCapabilities& layerRendererCapabilities() const;
-    virtual void loseContext();
-    virtual void setNeedsAnimate();
-    virtual void setNeedsCommit();
-    virtual void setNeedsRedraw();
-    virtual bool commitRequested() const;
-    virtual void setVisible(bool);
-    virtual void start();
-    virtual void stop();
-    virtual size_t maxPartialTextureUpdates() const;
+    virtual bool initializeLayerRenderer() OVERRIDE;
+    virtual bool recreateContext() OVERRIDE;
+    virtual int compositorIdentifier() const OVERRIDE;
+    virtual const LayerRendererCapabilities& layerRendererCapabilities() const OVERRIDE;
+    virtual void loseContext() OVERRIDE;
+    virtual void setNeedsAnimate() OVERRIDE;
+    virtual void setNeedsCommit() OVERRIDE;
+    virtual void setNeedsForcedCommit() OVERRIDE;
+    virtual void setNeedsRedraw() OVERRIDE;
+    virtual bool commitRequested() const OVERRIDE;
+    virtual void didAddAnimation() OVERRIDE { }
+    virtual void start() OVERRIDE;
+    virtual void stop() OVERRIDE;
+    virtual size_t maxPartialTextureUpdates() const OVERRIDE;
+    virtual void acquireLayerTextures() OVERRIDE;
+    virtual void setFontAtlas(PassOwnPtr<CCFontAtlas>) OVERRIDE;
     virtual void forceSerializeOnSwapBuffers() OVERRIDE;
 
     // CCLayerTreeHostImplClient implementation
-    virtual void didLoseContextOnImplThread();
-    virtual void onSwapBuffersCompleteOnImplThread();
-    virtual void setNeedsRedrawOnImplThread();
-    virtual void setNeedsCommitOnImplThread();
-    virtual void postAnimationEventsToMainThreadOnImplThread(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime);
+    virtual void didLoseContextOnImplThread() OVERRIDE;
+    virtual void onSwapBuffersCompleteOnImplThread() OVERRIDE;
+    virtual void setNeedsRedrawOnImplThread() OVERRIDE;
+    virtual void setNeedsCommitOnImplThread() OVERRIDE;
+    virtual void postAnimationEventsToMainThreadOnImplThread(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime) OVERRIDE;
+    virtual void postSetContentsMemoryAllocationLimitBytesToMainThreadOnImplThread(size_t) OVERRIDE;
 
     // CCSchedulerClient implementation
-    virtual bool canDraw();
-    virtual bool hasMoreResourceUpdates() const;
-    virtual void scheduledActionBeginFrame();
-    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapIfPossible();
-    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapForced();
-    virtual void scheduledActionUpdateMoreResources();
-    virtual void scheduledActionCommit();
-    virtual void scheduledActionBeginContextRecreation();
+    virtual bool canDraw() OVERRIDE;
+    virtual bool hasMoreResourceUpdates() const OVERRIDE;
+    virtual void scheduledActionBeginFrame() OVERRIDE;
+    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapIfPossible() OVERRIDE;
+    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapForced() OVERRIDE;
+    virtual void scheduledActionUpdateMoreResources() OVERRIDE;
+    virtual void scheduledActionCommit() OVERRIDE;
+    virtual void scheduledActionBeginContextRecreation() OVERRIDE;
+    virtual void scheduledActionAcquireLayerTexturesForMainThread() OVERRIDE;
 
 private:
     explicit CCThreadProxy(CCLayerTreeHost*);
@@ -96,9 +101,15 @@ private:
 
     // Set on impl thread, read on main thread.
     struct BeginFrameAndCommitState {
-        BeginFrameAndCommitState() : monotonicFrameBeginTime() { }
+        BeginFrameAndCommitState()
+            : monotonicFrameBeginTime(0)
+            , updater(0)
+        {
+        }
+
         double monotonicFrameBeginTime;
         OwnPtr<CCScrollAndScaleSet> scrollInfo;
+        CCTextureUpdater* updater;
     };
     OwnPtr<BeginFrameAndCommitState> m_pendingBeginFrameRequest;
 
@@ -107,6 +118,7 @@ private:
     void didCommitAndDrawFrame();
     void didCompleteSwapBuffers();
     void setAnimationEvents(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime);
+    void setContentsMemoryAllocationLimitBytes(size_t);
     void beginContextRecreation();
     void tryToRecreateContext();
 
@@ -126,16 +138,19 @@ private:
     void setSurfaceReadyOnImplThread();
     void initializeContextOnImplThread(GraphicsContext3D*);
     void initializeLayerRendererOnImplThread(CCCompletionEvent*, bool* initializeSucceeded, LayerRendererCapabilities*);
-    void setVisibleOnImplThread(CCCompletionEvent*, bool visible);
     void layerTreeHostClosedOnImplThread(CCCompletionEvent*);
     void setFullRootLayerDamageOnImplThread();
+    void acquireLayerTexturesForMainThreadOnImplThread(CCCompletionEvent*);
     void recreateContextOnImplThread(CCCompletionEvent*, GraphicsContext3D*, bool* recreateSucceeded, LayerRendererCapabilities*);
     CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapInternal(bool forcedDraw);
+    void setFontAtlasOnImplThread(PassOwnPtr<CCFontAtlas>);
     void forceSerializeOnSwapBuffersOnImplThread(CCCompletionEvent*);
+    void setNeedsForcedCommitOnImplThread();
 
     // Accessed on main thread only.
     bool m_animateRequested;
     bool m_commitRequested;
+    bool m_forcedCommitRequested;
     bool m_contextLost;
     OwnPtr<CCThreadProxyContextRecreationTimer> m_contextRecreationTimer;
     CCLayerTreeHost* m_layerTreeHost;
@@ -143,8 +158,8 @@ private:
     bool m_layerRendererInitialized;
     LayerRendererCapabilities m_layerRendererCapabilitiesMainThreadCopy;
     bool m_started;
+    bool m_texturesAcquired;
 
-    // Used on the CCThread only.
     OwnPtr<CCLayerTreeHostImpl> m_layerTreeHostImpl;
 
     OwnPtr<CCInputHandler> m_inputHandlerOnImplThread;
@@ -160,7 +175,7 @@ private:
     // Set when the main thread is waiting on a scheduledActionBeginFrame to be issued.
     CCCompletionEvent* m_beginFrameCompletionEventOnImplThread;
 
-    // Set when the main thread is waiing on a readback.
+    // Set when the main thread is waiting on a readback.
     ReadbackRequest* m_readbackRequestOnImplThread;
 
     // Set when the main thread is waiting on a finishAllRendering call.
@@ -168,6 +183,10 @@ private:
 
     // Set when the main thread is waiting on a commit to complete.
     CCCompletionEvent* m_commitCompletionEventOnImplThread;
+
+    // Set when the main thread is waiting on layers to be drawn.
+    CCCompletionEvent* m_textureAcquisitionCompletionEventOnImplThread;
+
     OwnPtr<CCTextureUpdater> m_currentTextureUpdaterOnImplThread;
 
     // Set when the next draw should post didCommitAndDrawFrame to the main thread.

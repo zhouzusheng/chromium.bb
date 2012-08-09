@@ -12,13 +12,16 @@
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
-#include "base/platform_file.h"
 #include "webkit/fileapi/file_system_types.h"
 
 class GURL;
 
 namespace base {
 class MessageLoopProxy;
+}
+
+namespace webkit_blob {
+class FileReader;
 }
 
 namespace fileapi {
@@ -91,6 +94,17 @@ class FileSystemMountPointProvider {
       const FilePath& virtual_path,
       base::MessageLoopProxy* file_proxy,
       FileSystemContext* context) const = 0;
+
+  // Creates a new file reader for a given filesystem URL |url| with a offset
+  // |offset|.
+  // The returned object must be owned and managed by the caller.
+  // This method itself does *not* check if the given path exists and is a
+  // regular file.
+  virtual webkit_blob::FileReader* CreateFileReader(
+    const GURL& url,
+    int64 offset,
+    base::MessageLoopProxy* file_proxy,
+    FileSystemContext* context) const = 0;
 };
 
 // An interface to control external file system access permissions.

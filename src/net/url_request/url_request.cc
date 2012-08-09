@@ -12,6 +12,7 @@
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
+#include "base/stl_util.h"
 #include "base/synchronization/lock.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
@@ -63,6 +64,12 @@ uint64 GenerateURLRequestIdentifier() {
   base::AutoLock lock(g_next_url_request_identifier_lock.Get());
   return g_next_url_request_identifier++;
 }
+
+// True once the first URLRequest was started.
+bool g_url_requests_started = false;
+
+// True if cookies are accepted by default.
+bool g_default_can_use_cookies = true;
 
 }  // namespace
 
@@ -321,6 +328,12 @@ int URLRequest::GetResponseCode() {
 }
 
 // static
+void URLRequest::SetDefaultCookiePolicyToBlock() {
+  CHECK(!g_url_requests_started);
+  g_default_can_use_cookies = false;
+}
+
+// static
 bool URLRequest::IsHandledProtocol(const std::string& scheme) {
   return URLRequestJobManager::GetInstance()->SupportsScheme(scheme);
 }
@@ -333,16 +346,6 @@ bool URLRequest::IsHandledURL(const GURL& url) {
   }
 
   return IsHandledProtocol(url.scheme());
-}
-
-// static
-void URLRequest::AllowFileAccess() {
-  URLRequestJobManager::GetInstance()->set_enable_file_access(true);
-}
-
-// static
-bool URLRequest::IsFileAccessAllowed() {
-  return URLRequestJobManager::GetInstance()->enable_file_access();
 }
 
 void URLRequest::set_first_party_for_cookies(
@@ -379,22 +382,20 @@ void URLRequest::set_delegate(Delegate* delegate) {
 }
 
 void URLRequest::Start() {
+  g_url_requests_started = true;
   response_info_.request_time = Time::Now();
 
   // Only notify the delegate for the initial request.
   if (context_ && context_->network_delegate()) {
     int error = context_->network_delegate()->NotifyBeforeURLRequest(
         this, before_request_callback_, &delegate_redirect_url_);
-    if (error != net::OK) {
-      if (error == net::ERR_IO_PENDING) {
-        // Paused on the delegate, will invoke |before_request_callback_| later.
-        SetBlockedOnDelegate();
-      } else {
-        // The delegate immediately returned some error code.
-        BeforeRequestComplete(error);
-      }
-      return;
+    if (error == net::ERR_IO_PENDING) {
+      // Paused on the delegate, will invoke |before_request_callback_| later.
+      SetBlockedOnDelegate();
+    } else {
+      BeforeRequestComplete(error);
     }
+    return;
   }
 
   StartJob(URLRequestJobManager::GetInstance()->CreateJob(this));
@@ -409,7 +410,8 @@ void URLRequest::BeforeRequestComplete(int error) {
   // Check that there are no callbacks to already canceled requests.
   DCHECK_NE(URLRequestStatus::CANCELED, status_.status());
 
-  SetUnblockedOnDelegate();
+  if (blocked_on_delegate_)
+    SetUnblockedOnDelegate();
 
   if (error != OK) {
     net_log_.AddEvent(NetLog::TYPE_CANCELLED,
@@ -714,6 +716,19 @@ const URLRequestContext* URLRequest::context() const {
 }
 
 void URLRequest::set_context(const URLRequestContext* context) {
+  // Update the URLRequest lists in the URLRequestContext.
+  if (context_) {
+    std::set<const URLRequest*>* url_requests = context_->url_requests();
+    CHECK(ContainsKey(*url_requests, this));
+    url_requests->erase(this);
+  }
+
+  if (context) {
+    std::set<const URLRequest*>* url_requests = context->url_requests();
+    CHECK(!ContainsKey(*url_requests, this));
+    url_requests->insert(this);
+  }
+
   scoped_refptr<const URLRequestContext> prev_context = context_;
 
   context_ = context;
@@ -742,6 +757,27 @@ int64 URLRequest::GetExpectedContentSize() const {
     expected_content_size = job_->expected_content_size();
 
   return expected_content_size;
+}
+
+bool URLRequest::GetHSTSRedirect(GURL* redirect_url) const {
+  const GURL& url = this->url();
+  if (!url.SchemeIs("http"))
+    return false;
+  TransportSecurityState::DomainState domain_state;
+  if (context()->transport_security_state() &&
+      context()->transport_security_state()->GetDomainState(
+          url.host(),
+          SSLConfigService::IsSNIAvailable(context()->ssl_config_service()),
+          &domain_state) &&
+      domain_state.ShouldRedirectHTTPToHTTPS()) {
+    url_canon::Replacements<char> replacements;
+    const char kNewScheme[] = "https";
+    replacements.SetScheme(kNewScheme,
+                           url_parse::Component(0, strlen(kNewScheme)));
+    *redirect_url = url.ReplaceComponents(replacements);
+    return true;
+  }
+  return false;
 }
 
 void URLRequest::NotifyAuthRequired(AuthChallengeInfo* auth_info) {
@@ -816,21 +852,21 @@ void URLRequest::NotifySSLCertificateError(const SSLInfo& ssl_info,
 bool URLRequest::CanGetCookies(const CookieList& cookie_list) const {
   DCHECK(!(load_flags_ & LOAD_DO_NOT_SEND_COOKIES));
   if (context_ && context_->network_delegate()) {
-    return context_->network_delegate()->NotifyReadingCookies(this,
+    return context_->network_delegate()->CanGetCookies(*this,
                                                               cookie_list);
   }
-  return false;
+  return g_default_can_use_cookies;
 }
 
 bool URLRequest::CanSetCookie(const std::string& cookie_line,
                               CookieOptions* options) const {
   DCHECK(!(load_flags_ & LOAD_DO_NOT_SAVE_COOKIES));
   if (context_ && context_->network_delegate()) {
-    return context_->network_delegate()->NotifySettingCookie(this,
+    return context_->network_delegate()->CanSetCookie(*this,
                                                              cookie_line,
                                                              options);
   }
-  return false;
+  return g_default_can_use_cookies;
 }
 
 

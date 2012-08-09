@@ -32,10 +32,10 @@
 #include "webkit/quota/quota_types.h"
 
 class GURL;
-struct PP_HostResolver_Private_Hint;
-struct PP_NetAddress_Private;
 class SkBitmap;
 class TransportDIB;
+struct PP_HostResolver_Private_Hint;
+struct PP_NetAddress_Private;
 
 namespace base {
 class MessageLoopProxy;
@@ -56,6 +56,7 @@ class CommandBuffer;
 
 namespace ppapi {
 class PPB_HostResolver_Shared;
+class PPB_X509Certificate_Fields;
 struct DeviceRefData;
 struct HostPortPair;
 struct Preferences;
@@ -68,6 +69,7 @@ class PlatformCanvas;
 namespace WebKit {
 class WebFileChooserCompletion;
 class WebGamepads;
+class WebPlugin;
 struct WebCursorInfo;
 struct WebFileChooserParams;
 }
@@ -88,7 +90,6 @@ class PluginInstance;
 class PluginModule;
 class PPB_Broker_Impl;
 class PPB_Flash_Menu_Impl;
-class PPB_Flash_NetConnector_Impl;
 class PPB_TCPSocket_Private_Impl;
 class PPB_UDPSocket_Private_Impl;
 
@@ -333,6 +334,11 @@ class PluginDelegate {
   // sad plugin screen with. Returns NULL on failure.
   virtual SkBitmap* GetSadPluginBitmap() = 0;
 
+  // Creates a replacement plug-in that is shown when the plug-in at |file_path|
+  // couldn't be loaded.
+  virtual WebKit::WebPlugin* CreatePluginReplacement(
+      const FilePath& file_path) = 0;
+
   // The caller will own the pointer returned from this.
   virtual PlatformImage2D* CreateImage2D(int width, int height) = 0;
 
@@ -459,14 +465,6 @@ class PluginDelegate {
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy() = 0;
 
-  virtual int32_t ConnectTcp(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const char* host,
-      uint16_t port) = 0;
-  virtual int32_t ConnectTcpAddress(
-      webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const PP_NetAddress_Private* addr) = 0;
-
   // For PPB_TCPSocket_Private.
   virtual uint32 TCPSocketCreate() = 0;
   virtual void TCPSocketConnect(PPB_TCPSocket_Private_Impl* socket,
@@ -477,9 +475,12 @@ class PluginDelegate {
       PPB_TCPSocket_Private_Impl* socket,
       uint32 socket_id,
       const PP_NetAddress_Private& addr) = 0;
-  virtual void TCPSocketSSLHandshake(uint32 socket_id,
-                                     const std::string& server_name,
-                                     uint16_t server_port) = 0;
+  virtual void TCPSocketSSLHandshake(
+      uint32 socket_id,
+      const std::string& server_name,
+      uint16_t server_port,
+      const std::vector<std::vector<char> >& trusted_certs,
+      const std::vector<std::vector<char> >& untrusted_certs) = 0;
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
@@ -522,6 +523,11 @@ class PluginDelegate {
   virtual void RemoveNetworkListObserver(
       webkit_glue::NetworkListObserver* observer) = 0;
 
+  // For PPB_X509Certificate_Private.
+  virtual bool X509CertificateParseDER(
+      const std::vector<char>& der,
+      ::ppapi::PPB_X509Certificate_Fields* fields) = 0;
+
   // Show the given context menu at the given position (in the plugin's
   // coordinates).
   virtual int32_t ShowContextMenu(
@@ -563,10 +569,6 @@ class PluginDelegate {
   virtual webkit_glue::P2PTransport* CreateP2PTransport() = 0;
 
   virtual double GetLocalTimeZoneOffset(base::Time t) = 0;
-
-  // TODO(viettrungluu): Generalize this for use with other plugins if it proves
-  // necessary.
-  virtual std::string GetFlashCommandLineArgs() = 0;
 
   // Create an anonymous shared memory segment of size |size| bytes, and return
   // a pointer to it, or NULL on error.  Caller owns the returned pointer.
@@ -623,6 +625,9 @@ class PluginDelegate {
   // Create a ClipboardClient for writing to the clipboard. The caller will own
   // the pointer to this.
   virtual webkit_glue::ClipboardClient* CreateClipboardClient() const = 0;
+
+  // Returns a Device ID
+  virtual std::string GetDeviceID() = 0;
 };
 
 }  // namespace ppapi

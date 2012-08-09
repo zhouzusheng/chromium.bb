@@ -620,7 +620,6 @@ button-bevel
 default-button
 inner-spin-button
 -webkit-input-speech-button
-list-button
 listbox
 listitem
 media-enter-fullscreen-button
@@ -876,9 +875,6 @@ off
 //optimizeSpeed
 optimizeQuality
 -webkit-optimize-contrast
-
-// Positioned Floats
--webkit-positioned
 
 // -webkit-wrap-shape
 nonzero

@@ -5,6 +5,7 @@
 #include "webkit/tools/test_shell/simple_file_writer.h"
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
 #include "net/url_request/url_request_context.h"
@@ -37,9 +38,6 @@ class SimpleFileWriter::IOThreadProxy
     SimpleResourceLoaderBridge::EnsureIOThread();
     io_thread_ = SimpleResourceLoaderBridge::GetIoThread();
     main_thread_ = base::MessageLoopProxy::current();
-  }
-
-  virtual ~IOThreadProxy() {
   }
 
   void Truncate(const GURL& path, int64 offset) {
@@ -84,6 +82,9 @@ class SimpleFileWriter::IOThreadProxy
   }
 
  private:
+  friend class base::RefCountedThreadSafe<IOThreadProxy>;
+  virtual ~IOThreadProxy() {}
+
   FileSystemOperationInterface* GetNewOperation(const GURL& path) {
     return file_system_context_->CreateFileSystemOperation(path, io_thread_);
   }

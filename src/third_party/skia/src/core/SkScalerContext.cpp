@@ -13,6 +13,7 @@
 #include "SkDraw.h"
 #include "SkFontHost.h"
 #include "SkMaskFilter.h"
+#include "SkOrderedReadBuffer.h"
 #include "SkPathEffect.h"
 #include "SkRasterizer.h"
 #include "SkRasterClip.h"
@@ -64,7 +65,7 @@ static SkFlattenable* load_flattenable(const SkDescriptor* desc, uint32_t tag) {
     const void*     data = desc->findEntry(tag, &len);
 
     if (data) {
-        SkFlattenableReadBuffer   buffer(data, len);
+        SkOrderedReadBuffer   buffer(data, len);
         obj = buffer.readFlattenable();
         SkASSERT(buffer.offset() == buffer.size());
     }
@@ -617,7 +618,10 @@ void SkScalerContext::internalGetPath(const SkGlyph& glyph, SkPath* fillPath,
         SkMatrix    matrix, inverse;
 
         fRec.getMatrixFrom2x2(&matrix);
-        matrix.invert(&inverse);
+        if (!matrix.invert(&inverse)) {
+            // assume fillPath and devPath are already empty.
+            return;
+        }
         path.transform(inverse, &localPath);
         // now localPath is only affected by the paint settings, and not the canvas matrix
 

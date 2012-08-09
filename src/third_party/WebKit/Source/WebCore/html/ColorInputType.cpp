@@ -44,7 +44,7 @@
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/WTFString.h>
 
-#if ENABLE(INPUT_COLOR)
+#if ENABLE(INPUT_TYPE_COLOR)
 
 namespace WebCore {
 
@@ -155,6 +155,11 @@ void ColorInputType::detach()
     endColorChooser();
 }
 
+bool ColorInputType::shouldRespectListAttribute()
+{
+    return InputType::themeSupportsDataListUI(this);
+}
+
 void ColorInputType::didChooseColor(const Color& color)
 {
     if (element()->disabled() || element()->readOnly() || color == valueAsColor())
@@ -192,4 +197,4 @@ HTMLElement* ColorInputType::shadowColorSwatch() const
 
 } // namespace WebCore
 
-#endif // ENABLE(INPUT_COLOR)
+#endif // ENABLE(INPUT_TYPE_COLOR)

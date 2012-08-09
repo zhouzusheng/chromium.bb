@@ -879,26 +879,27 @@ public:
     ClipType getClipType() const;
 
     /** Return the current device clip (concatenation of all clip calls).
-        This does not account for the translate in any of the devices.
-        @return the current device clip (concatenation of all clip calls).
-    */
+     *  This does not account for the translate in any of the devices.
+     *  @return the current device clip (concatenation of all clip calls).
+     *
+     *  DEPRECATED -- call getClipDeviceBounds() instead.
+     */
     const SkRegion& getTotalClip() const;
 
-    /**
-     *  Return true if the current clip is non-empty.
-     *
-     *  If bounds is not NULL, set it to the bounds of the current clip
-     *  in global coordinates.
-     */
-    bool getTotalClipBounds(SkIRect* bounds) const;
-
-    /**
-     *  Return the current clipstack. This mirrors the result in getTotalClip()
-     *  but is represented as a stack of geometric clips + region-ops.
-     */
-    const SkClipStack& getTotalClipStack() const;
-
     void setExternalMatrix(const SkMatrix* = NULL);
+
+    class ClipVisitor {
+    public:
+        virtual void clipRect(const SkRect&, SkRegion::Op, bool antialias) = 0;
+        virtual void clipPath(const SkPath&, SkRegion::Op, bool antialias) = 0;
+    };
+
+    /**
+     *  Replays the clip operations, back to front, that have been applied to
+     *  the canvas, calling the appropriate method on the visitor for each
+     *  clip. All clips have already been transformed into device space.
+     */
+    void replayClips(ClipVisitor*) const;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -968,7 +969,7 @@ private:
 
     SkBounder*  fBounder;
     SkDevice*   fLastDeviceToGainFocus;
-    int         fLayerCount;    // number of successful saveLayer calls
+    int         fSaveLayerCount;    // number of successful saveLayer calls
 
     void prepareForDeviceDraw(SkDevice*, const SkMatrix&, const SkRegion&,
                               const SkClipStack& clipStack);

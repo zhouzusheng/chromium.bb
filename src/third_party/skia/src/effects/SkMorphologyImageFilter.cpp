@@ -10,8 +10,8 @@
 
 SkMorphologyImageFilter::SkMorphologyImageFilter(SkFlattenableReadBuffer& buffer)
   : INHERITED(buffer) {
-    fRadius.fWidth = buffer.readScalar();
-    fRadius.fHeight = buffer.readScalar();
+    fRadius.fWidth = buffer.readInt();
+    fRadius.fHeight = buffer.readInt();
 }
 
 SkMorphologyImageFilter::SkMorphologyImageFilter(int radiusX, int radiusY)
@@ -19,10 +19,10 @@ SkMorphologyImageFilter::SkMorphologyImageFilter(int radiusX, int radiusY)
 }
 
 
-void SkMorphologyImageFilter::flatten(SkFlattenableWriteBuffer& buffer) {
+void SkMorphologyImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-    buffer.writeScalar(fRadius.fWidth);
-    buffer.writeScalar(fRadius.fHeight);
+    buffer.writeInt(fRadius.fWidth);
+    buffer.writeInt(fRadius.fHeight);
 }
 
 static void erode(const SkPMColor* src, SkPMColor* dst,

@@ -68,11 +68,7 @@ const unsigned kNegativeCacheEntryTTLSeconds = 0;
 // too many simultaneous resolutions are pending.  This number needs to be
 // further optimized, but 8 is what FF currently does. We found some routers
 // that limit this to 6, so we're temporarily holding it at that level.
-#if defined(OS_CHROMEOS)
 static const size_t kDefaultMaxProcTasks = 6u;
-#else
-static const size_t kDefaultMaxProcTasks = 8u;
-#endif
 
 // Helper to mutate the linked list contained by AddressList to the given
 // port. Note that in general this is dangerous since the AddressList's
@@ -179,6 +175,9 @@ class CallSystemHostResolverProc : public HostResolverProc {
                                   addr_list,
                                   os_error);
   }
+
+ protected:
+  virtual ~CallSystemHostResolverProc() {}
 };
 
 // Extra parameters to attach to the NetLog when the resolve failed.
@@ -220,6 +219,9 @@ class ProcTaskFailedParams : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~ProcTaskFailedParams() {}
+
  private:
   const uint32 attempt_number_;
   const int net_error_;
@@ -240,6 +242,9 @@ class DnsTaskFailedParams : public NetLog::EventParameters {
       dict->SetInteger("dns_error", dns_error_);
     return dict;
   }
+
+ protected:
+  virtual ~DnsTaskFailedParams() {}
 
  private:
   const int net_error_;
@@ -269,6 +274,9 @@ class RequestInfoParameters : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~RequestInfoParameters() {}
+
  private:
   const HostResolver::RequestInfo info_;
   const NetLog::Source source_;
@@ -287,6 +295,9 @@ class JobCreationParameters : public NetLog::EventParameters {
     dict->Set("source_dependency", source_.ToValue());
     return dict;
   }
+
+ protected:
+  virtual ~JobCreationParameters() {}
 
  private:
   const std::string host_;
@@ -307,6 +318,9 @@ class JobAttachParameters : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~JobAttachParameters() {}
+
  private:
   const NetLog::Source source_;
   const RequestPriority priority_;
@@ -321,32 +335,17 @@ class DnsConfigParameters : public NetLog::EventParameters {
   }
 
   virtual Value* ToValue() const OVERRIDE {
-    DictionaryValue* dict = new DictionaryValue();
-
-    ListValue* list = new ListValue();
-    for (size_t i = 0; i < config_.nameservers.size(); ++i) {
-      list->Append(Value::CreateStringValue(
-          config_.nameservers[i].ToString()));
-    }
-    dict->Set("nameservers", list);
-
-    list = new ListValue();
-    for (size_t i = 0; i < config_.search.size(); ++i) {
-      list->Append(Value::CreateStringValue(config_.search[i]));
-    }
-    dict->Set("search", list);
-
-    dict->SetBoolean("append_to_multi_label_name",
-                     config_.append_to_multi_label_name);
-    dict->SetInteger("ndots", config_.ndots);
-    dict->SetDouble("timeout", config_.timeout.InSecondsF());
-    dict->SetInteger("attempts", config_.attempts);
-    dict->SetBoolean("rotate", config_.rotate);
-    dict->SetBoolean("edns0", config_.edns0);
-    dict->SetInteger("num_hosts", num_hosts_);
-
-    return dict;
+    Value* value = config_.ToValue();
+    if (!value)
+      return NULL;
+    DictionaryValue* dict;
+    if (value->GetAsDictionary(&dict))
+      dict->SetInteger("num_hosts", num_hosts_);
+    return value;
   }
+
+ protected:
+  virtual ~DnsConfigParameters() {}
 
  private:
   DnsConfig config_;  // Does not include DnsHosts to save memory and work.
@@ -411,7 +410,7 @@ class PriorityTracker {
   void Add(RequestPriority req_priority) {
     ++total_count_;
     ++counts_[req_priority];
-    if (highest_priority_ > req_priority)
+    if (highest_priority_ < req_priority)
       highest_priority_ = req_priority;
   }
 
@@ -421,14 +420,12 @@ class PriorityTracker {
     --total_count_;
     --counts_[req_priority];
     size_t i;
-    for (i = highest_priority_; i < NUM_PRIORITIES && !counts_[i]; ++i);
+    for (i = highest_priority_; i > MINIMUM_PRIORITY && !counts_[i]; --i);
     highest_priority_ = static_cast<RequestPriority>(i);
 
-    // In absence of requests set default.
-    if (highest_priority_ == NUM_PRIORITIES) {
-      DCHECK_EQ(0u, total_count_);
-      highest_priority_ = IDLE;
-    }
+    // In absence of requests, default to MINIMUM_PRIORITY.
+    if (total_count_ == 0)
+      DCHECK_EQ(MINIMUM_PRIORITY, highest_priority_);
   }
 
  private:
@@ -659,6 +656,9 @@ class HostResolverImpl::ProcTask
   }
 
  private:
+  friend class base::RefCountedThreadSafe<ProcTask>;
+  ~ProcTask() {}
+
   void StartLookupAttempt() {
     DCHECK(origin_loop_->BelongsToCurrentThread());
     base::TimeTicks start_time = base::TimeTicks::Now();
@@ -1174,7 +1174,6 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
       LogCancelRequest(req->source_net_log(), req->request_net_log(),
                        req->info());
     }
-    STLDeleteElements(&requests_);
   }
 
   // Add this job to the dispatcher.
@@ -1267,7 +1266,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     DCHECK_GT(num_active_requests(), 0u);
     AddressList addr_list;
     if (resolver_->ServeFromHosts(key(),
-                                  requests_.front()->info(),
+                                  requests_->front()->info(),
                                   &addr_list)) {
       // This will destroy the Job.
       CompleteRequests(OK, addr_list, base::TimeDelta());
@@ -1431,7 +1430,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
     // We are the only consumer of |list|, so we can safely change the port
     // without copy-on-write. This pays off, when job has only one request.
     if (net_error == OK)
-      MutableSetPort(requests_.front()->info().port(), &list);
+      MutableSetPort(requests_->front()->info().port(), &list);
 
     if ((net_error != ERR_ABORTED) &&
         (net_error != ERR_HOST_RESOLVER_QUEUE_TOO_LARGE)) {
@@ -1725,6 +1724,20 @@ HostCache* HostResolverImpl::GetHostCache() {
   return cache_.get();
 }
 
+base::Value* HostResolverImpl::GetDnsConfigAsValue() const {
+  // Check if async DNS is disabled.
+  if (!dns_client_.get())
+    return NULL;
+
+  // Check if async DNS is enabled, but we currently have no configuration
+  // for it.
+  const DnsConfig* dns_config = dns_client_->GetConfig();
+  if (dns_config == NULL)
+    return new DictionaryValue();
+
+  return dns_config->ToValue();
+}
+
 bool HostResolverImpl::ResolveAsIP(const Key& key,
                                    const RequestInfo& info,
                                    int* net_error,
@@ -1858,7 +1871,7 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
 void HostResolverImpl::AbortAllInProgressJobs() {
   // In Abort, a Request callback could spawn new Jobs with matching keys, so
   // first collect and remove all running jobs from |jobs_|.
-  std::vector<Job*> jobs_to_abort;
+  ScopedVector<Job> jobs_to_abort;
   for (JobMap::iterator it = jobs_.begin(); it != jobs_.end(); ) {
     Job* job = it->second;
     if (job->is_running()) {
@@ -1879,6 +1892,7 @@ void HostResolverImpl::AbortAllInProgressJobs() {
   // Then Abort them.
   for (size_t i = 0; self && i < jobs_to_abort.size(); ++i) {
     jobs_to_abort[i]->Abort();
+    jobs_to_abort[i] = NULL;
   }
 }
 

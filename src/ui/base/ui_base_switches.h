@@ -13,6 +13,8 @@
 
 namespace switches {
 
+UI_EXPORT extern const char kDefaultDeviceScaleFactor[];
+UI_EXPORT extern const char kEnableTouchEvents[];
 UI_EXPORT extern const char kLang[];
 UI_EXPORT extern const char kLocalePak[];
 UI_EXPORT extern const char kNoMessageBox[];
@@ -25,6 +27,7 @@ UI_EXPORT extern const char kTouchOptimizedUI[];
 // convenient place where it can be shared between
 // src/webkit/plugins/npapi/ and src/content/plugin/ .
 UI_EXPORT extern const char kDisableCompositedCoreAnimationPlugins[];
+UI_EXPORT extern const char kDisableCoreAnimationPlugins[];
 #endif
 
 }  // namespace switches

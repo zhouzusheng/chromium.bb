@@ -37,8 +37,9 @@ class ImageMacTest;
 }
 
 namespace gfx {
+class ImageSkia;
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 class CairoCachedSurface;
 #endif
 
@@ -73,7 +74,7 @@ class UI_EXPORT Image {
   // of bitmaps, one for each resolution.
   explicit Image(const std::vector<const SkBitmap*>& bitmaps);
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   // Does not increase |pixbuf|'s reference count; expects to take ownership.
   explicit Image(GdkPixbuf* pixbuf);
 #elif defined(OS_MACOSX)
@@ -97,7 +98,8 @@ class UI_EXPORT Image {
   // The returned result is a weak pointer owned by and scoped to the life of
   // the Image.
   const SkBitmap* ToSkBitmap() const;
-#if defined(TOOLKIT_USES_GTK)
+  const ImageSkia* ToImageSkia() const;
+#if defined(TOOLKIT_GTK)
   GdkPixbuf* ToGdkPixbuf() const;
   CairoCachedSurface* const ToCairo() const;
 #elif defined(OS_MACOSX)
@@ -111,7 +113,7 @@ class UI_EXPORT Image {
   // converted representations, rather than a limitation imposed by Image) and
   // so the result should be considered immutable.
   SkBitmap* CopySkBitmap() const;
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   GdkPixbuf* CopyGdkPixbuf() const;
 #elif defined(OS_MACOSX)
   NSImage* CopyNSImage() const;
@@ -123,16 +125,6 @@ class UI_EXPORT Image {
   operator NSImage*() const;
 #endif
   // ---------------------------------------------------------------------------
-
-  // Gets the number of bitmaps in this image. This may cause a conversion
-  // to a bitmap representation. Note, this function and GetSkBitmapAtIndex()
-  // are primarily meant to be used by the theme provider.
-  size_t GetNumberOfSkBitmaps() const;
-
-  // Gets the bitmap at the given index. This may cause a conversion
-  // to a bitmap representation. Note, the internal ordering of bitmaps is not
-  // guaranteed.
-  const SkBitmap* GetSkBitmapAtIndex(size_t index) const;
 
   // Inspects the representations map to see if the given type exists.
   bool HasRepresentation(RepresentationType type) const;

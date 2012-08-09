@@ -17,6 +17,11 @@ const char kGLImplementationMockName[]        = "mock";
 
 namespace switches {
 
+// Disable dynamic switching between integrated and discrete GPU on
+// systems that would otherwise support it (currently, only a limited
+// number of MacBook Pros).
+const char kDisableGpuSwitching[]           = "disable-gpu-switching";
+
 // Stop the GPU from synchronizing on the vsync before presenting.
 const char kDisableGpuVsync[]               = "disable-gpu-vsync";
 
@@ -38,6 +43,10 @@ const char kSwiftShaderPath[]               = "swiftshader-path";
 // screen saving mode, etc.  Note that this flag does not ensure that a GPU
 // context will never be lost in any situations, say, a GPU reset.
 const char kGpuNoContextLost[]              = "gpu-no-context-lost";
+
+// Add a delay in milliseconds to the gpu swap buffer completion signal.
+// Simulates a slow GPU.
+const char kGpuSwapDelay[]                  = "gpu-swap-delay";
 
 // Flag used for Linux tests: for desktop GL bindings, try to load this GL
 // library first, but fall back to regular library if loading fails.

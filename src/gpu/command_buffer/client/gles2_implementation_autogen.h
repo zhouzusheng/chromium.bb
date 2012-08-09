@@ -206,8 +206,8 @@ GLuint CreateProgram() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << this << "] glCreateProgram(" << ")");
   GLuint client_id;
-  id_handlers_[id_namespaces::kProgramsAndShaders]->
-      MakeIds(0, 1, &client_id);
+  GetIdHandler(id_namespaces::kProgramsAndShaders)->
+      MakeIds(this, 0, 1, &client_id);
   helper_->CreateProgram(client_id);
   GPU_CLIENT_LOG("returned " << client_id);
   return client_id;
@@ -217,8 +217,8 @@ GLuint CreateShader(GLenum type) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << this << "] glCreateShader(" << GLES2Util::GetStringShaderType(type) << ")");  // NOLINT
   GLuint client_id;
-  id_handlers_[id_namespaces::kProgramsAndShaders]->
-      MakeIds(0, 1, &client_id);
+  GetIdHandler(id_namespaces::kProgramsAndShaders)->
+      MakeIds(this, 0, 1, &client_id);
   helper_->CreateShader(type, client_id);
   GPU_CLIENT_LOG("returned " << client_id);
   return client_id;
@@ -402,8 +402,8 @@ void GenBuffers(GLsizei n, GLuint* buffers) {
     return;
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::kBuffers]->
-      MakeIds(0, n, buffers);
+  GetIdHandler(id_namespaces::kBuffers)->
+      MakeIds(this, 0, n, buffers);
   helper_->GenBuffersImmediate(n, buffers);
   GPU_CLIENT_LOG_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
@@ -425,8 +425,8 @@ void GenFramebuffers(GLsizei n, GLuint* framebuffers) {
     return;
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::kFramebuffers]->
-      MakeIds(0, n, framebuffers);
+  GetIdHandler(id_namespaces::kFramebuffers)->
+      MakeIds(this, 0, n, framebuffers);
   helper_->GenFramebuffersImmediate(n, framebuffers);
   GPU_CLIENT_LOG_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
@@ -442,8 +442,8 @@ void GenRenderbuffers(GLsizei n, GLuint* renderbuffers) {
     return;
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::kRenderbuffers]->
-      MakeIds(0, n, renderbuffers);
+  GetIdHandler(id_namespaces::kRenderbuffers)->
+      MakeIds(this, 0, n, renderbuffers);
   helper_->GenRenderbuffersImmediate(n, renderbuffers);
   GPU_CLIENT_LOG_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
@@ -459,8 +459,8 @@ void GenTextures(GLsizei n, GLuint* textures) {
     return;
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::kTextures]->
-      MakeIds(0, n, textures);
+  GetIdHandler(id_namespaces::kTextures)->
+      MakeIds(this, 0, n, textures);
   helper_->GenTexturesImmediate(n, textures);
   GPU_CLIENT_LOG_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
@@ -1416,8 +1416,8 @@ void GenQueriesEXT(GLsizei n, GLuint* queries) {
     return;
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  id_handlers_[id_namespaces::kQueries]->
-      MakeIds(0, n, queries);
+  GetIdHandler(id_namespaces::kQueries)->
+      MakeIds(this, 0, n, queries);
   helper_->GenQueriesEXTImmediate(n, queries);
   GPU_CLIENT_LOG_CODE_BLOCK({
     for (GLsizei i = 0; i < n; ++i) {
@@ -1546,6 +1546,15 @@ void TexImageIOSurface2DCHROMIUM(
       target, width, height, ioSurfaceId, plane);
 }
 
+void CopyTextureCHROMIUM(
+    GLenum target, GLenum source_id, GLenum dest_id, GLint level,
+    GLint internalformat) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << this << "] glCopyTextureCHROMIUM(" << GLES2Util::GetStringEnum(target) << ", " << GLES2Util::GetStringEnum(source_id) << ", " << GLES2Util::GetStringEnum(dest_id) << ", " << level << ", " << internalformat << ")");  // NOLINT
+  helper_->CopyTextureCHROMIUM(
+      target, source_id, dest_id, level, internalformat);
+}
+
 void DrawArraysInstancedANGLE(
     GLenum mode, GLint first, GLsizei count, GLsizei primcount);
 
@@ -1555,5 +1564,20 @@ void DrawElementsInstancedANGLE(
 
 void VertexAttribDivisorANGLE(GLuint index, GLuint divisor);
 
-#endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_AUTOGEN_H_
+void GenMailboxCHROMIUM(GLbyte* mailbox);
 
+void ProduceTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << this << "] glProduceTextureCHROMIUM(" << GLES2Util::GetStringTextureTarget(target) << ", " << static_cast<const void*>(mailbox) << ")");  // NOLINT
+  GPU_CLIENT_LOG("values: " << mailbox[0] << ", " << mailbox[1] << ", " << mailbox[2] << ", " << mailbox[3] << ", " << mailbox[4] << ", " << mailbox[5] << ", " << mailbox[6] << ", " << mailbox[7] << ", " << mailbox[8] << ", " << mailbox[9] << ", " << mailbox[10] << ", " << mailbox[11] << ", " << mailbox[12] << ", " << mailbox[13] << ", " << mailbox[14] << ", " << mailbox[15] << ", " << mailbox[16] << ", " << mailbox[17] << ", " << mailbox[18] << ", " << mailbox[19] << ", " << mailbox[20] << ", " << mailbox[21] << ", " << mailbox[22] << ", " << mailbox[23] << ", " << mailbox[24] << ", " << mailbox[25] << ", " << mailbox[26] << ", " << mailbox[27] << ", " << mailbox[28] << ", " << mailbox[29] << ", " << mailbox[30] << ", " << mailbox[31] << ", " << mailbox[32] << ", " << mailbox[33] << ", " << mailbox[34] << ", " << mailbox[35] << ", " << mailbox[36] << ", " << mailbox[37] << ", " << mailbox[38] << ", " << mailbox[39] << ", " << mailbox[40] << ", " << mailbox[41] << ", " << mailbox[42] << ", " << mailbox[43] << ", " << mailbox[44] << ", " << mailbox[45] << ", " << mailbox[46] << ", " << mailbox[47] << ", " << mailbox[48] << ", " << mailbox[49] << ", " << mailbox[50] << ", " << mailbox[51] << ", " << mailbox[52] << ", " << mailbox[53] << ", " << mailbox[54] << ", " << mailbox[55] << ", " << mailbox[56] << ", " << mailbox[57] << ", " << mailbox[58] << ", " << mailbox[59] << ", " << mailbox[60] << ", " << mailbox[61] << ", " << mailbox[62] << ", " << mailbox[63]);  // NOLINT
+  helper_->ProduceTextureCHROMIUMImmediate(target, mailbox);
+}
+
+void ConsumeTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << this << "] glConsumeTextureCHROMIUM(" << GLES2Util::GetStringTextureTarget(target) << ", " << static_cast<const void*>(mailbox) << ")");  // NOLINT
+  GPU_CLIENT_LOG("values: " << mailbox[0] << ", " << mailbox[1] << ", " << mailbox[2] << ", " << mailbox[3] << ", " << mailbox[4] << ", " << mailbox[5] << ", " << mailbox[6] << ", " << mailbox[7] << ", " << mailbox[8] << ", " << mailbox[9] << ", " << mailbox[10] << ", " << mailbox[11] << ", " << mailbox[12] << ", " << mailbox[13] << ", " << mailbox[14] << ", " << mailbox[15] << ", " << mailbox[16] << ", " << mailbox[17] << ", " << mailbox[18] << ", " << mailbox[19] << ", " << mailbox[20] << ", " << mailbox[21] << ", " << mailbox[22] << ", " << mailbox[23] << ", " << mailbox[24] << ", " << mailbox[25] << ", " << mailbox[26] << ", " << mailbox[27] << ", " << mailbox[28] << ", " << mailbox[29] << ", " << mailbox[30] << ", " << mailbox[31] << ", " << mailbox[32] << ", " << mailbox[33] << ", " << mailbox[34] << ", " << mailbox[35] << ", " << mailbox[36] << ", " << mailbox[37] << ", " << mailbox[38] << ", " << mailbox[39] << ", " << mailbox[40] << ", " << mailbox[41] << ", " << mailbox[42] << ", " << mailbox[43] << ", " << mailbox[44] << ", " << mailbox[45] << ", " << mailbox[46] << ", " << mailbox[47] << ", " << mailbox[48] << ", " << mailbox[49] << ", " << mailbox[50] << ", " << mailbox[51] << ", " << mailbox[52] << ", " << mailbox[53] << ", " << mailbox[54] << ", " << mailbox[55] << ", " << mailbox[56] << ", " << mailbox[57] << ", " << mailbox[58] << ", " << mailbox[59] << ", " << mailbox[60] << ", " << mailbox[61] << ", " << mailbox[62] << ", " << mailbox[63]);  // NOLINT
+  helper_->ConsumeTextureCHROMIUMImmediate(target, mailbox);
+}
+
+#endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_AUTOGEN_H_

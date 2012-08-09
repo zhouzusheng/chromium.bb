@@ -7,11 +7,11 @@
 #pragma once
 
 #include <map>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
@@ -143,16 +143,10 @@ class NET_EXPORT HostResolverImpl
   virtual AddressFamily GetDefaultAddressFamily() const OVERRIDE;
   virtual void ProbeIPv6Support() OVERRIDE;
   virtual HostCache* GetHostCache() OVERRIDE;
+  virtual base::Value* GetDnsConfigAsValue() const OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(HostResolverImplTest,
-                           CanceledRequestsReleaseJobSlots);
-  FRIEND_TEST_ALL_PREFIXES(HostResolverImplTest,
-                           ObeyPoolConstraintsAfterIPAddressChange);
-  FRIEND_TEST_ALL_PREFIXES(HostResolverImplTest,
-                           AbortOnlyExistingRequestsOnIPAddressChange);
-  FRIEND_TEST_ALL_PREFIXES(HostResolverImplTest, DnsTask);
-  FRIEND_TEST_ALL_PREFIXES(HostResolverImplTest, ServeFromHosts);
+  friend class HostResolverImplTest;
   class Job;
   class ProcTask;
   class IPv6ProbeJob;
@@ -160,7 +154,7 @@ class NET_EXPORT HostResolverImpl
   class Request;
   typedef HostCache::Key Key;
   typedef std::map<Key, Job*> JobMap;
-  typedef std::vector<Request*> RequestsList;
+  typedef ScopedVector<Request> RequestsList;
 
   void set_dns_client_for_tests(scoped_ptr<DnsClient> client) {
     dns_client_ = client.Pass();

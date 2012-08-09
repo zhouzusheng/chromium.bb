@@ -8,7 +8,9 @@
 
 
 #include "../GrBinHashKey.h"
+#include "GrCustomStage.h"
 #include "GrGLProgram.h"
+#include "GrGLProgramStage.h"
 #include "GrGLSL.h"
 #include "GrGpuGLShaders.h"
 #include "../GrGpuVertex.h"
@@ -82,13 +84,14 @@ public:
         }
     }
 
-    GrGLProgram::CachedData* getProgramData(const GrGLProgram& desc) {
+    GrGLProgram::CachedData* getProgramData(const GrGLProgram& desc,
+                                            GrCustomStage** stages) {
         Entry newEntry;
         newEntry.fKey.setKeyData(desc.keyData());
         
         Entry* entry = fHashCache.find(newEntry.fKey);
         if (NULL == entry) {
-            if (!desc.genProgram(fGL, &newEntry.fProgramData)) {
+            if (!desc.genProgram(fGL, stages, &newEntry.fProgramData)) {
                 return NULL;
             }
             if (fCount < kMaxEntries) {
@@ -178,6 +181,7 @@ bool GrGpuGLShaders::programUnitTest() {
         StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag,
         StageDesc::kMulRGBByAlpha_RoundDown_InConfigFlag,
         StageDesc::kSmearAlpha_InConfigFlag,
+        StageDesc::kSmearRed_InConfigFlag,
     };
     GrGLProgram program;
     ProgramDesc& pdesc = program.fProgramDesc;
@@ -241,6 +245,8 @@ bool GrGpuGLShaders::programUnitTest() {
             pdesc.fDualSrcOutput = ProgramDesc::kNone_DualSrcOutput;
         }
 
+        GrCustomStage* customStages[GrDrawState::kNumStages];
+
         for (int s = 0; s < GrDrawState::kNumStages; ++s) {
             // enable the stage?
             if (random_bool(&random)) {
@@ -271,6 +277,7 @@ bool GrGpuGLShaders::programUnitTest() {
             static const uint32_t kMulByAlphaMask =
                 StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag |
                 StageDesc::kMulRGBByAlpha_RoundDown_InConfigFlag;
+
             switch (stage.fFetchMode) {
                 case StageDesc::kSingle_FetchMode:
                     stage.fKernelWidth = 0;
@@ -286,9 +293,13 @@ bool GrGpuGLShaders::programUnitTest() {
                     stage.fInConfigFlags &= ~kMulByAlphaMask;
                     break;
             }
+
+            stage.fCustomStageKey = 0;
+            customStages[s] = NULL;
         }
         CachedData cachedData;
-        if (!program.genProgram(this->glContextInfo(), &cachedData)) {
+        if (!program.genProgram(this->glContextInfo(), customStages,
+                                &cachedData)) {
             return false;
         }
         DeleteProgram(this->glInterface(), &cachedData);
@@ -661,7 +672,7 @@ void GrGpuGLShaders::flushColor(GrColor color) {
     const ProgramDesc& desc = fCurrentProgram.getDesc();
     const GrDrawState& drawState = this->getDrawState();
 
-    if (this->getGeomSrc().fVertexLayout & kColor_VertexLayoutBit) {
+    if (this->getVertexLayout() & kColor_VertexLayoutBit) {
         // color will be specified per-vertex as an attribute
         // invalidate the const vertex attrib color
         fHWDrawState.setColor(GrColor_ILLEGAL);
@@ -711,7 +722,7 @@ void GrGpuGLShaders::flushCoverage(GrColor coverage) {
     const GrDrawState& drawState = this->getDrawState();
 
 
-    if (this->getGeomSrc().fVertexLayout & kCoverage_VertexLayoutBit) {
+    if (this->getVertexLayout() & kCoverage_VertexLayoutBit) {
         // coverage will be specified per-vertex as an attribute
         // invalidate the const vertex attrib coverage
         fHWDrawState.setCoverage4(GrColor_ILLEGAL);
@@ -770,8 +781,10 @@ bool GrGpuGLShaders::flushGraphicsState(GrPrimitiveType type) {
         return false;
     }
 
-    this->buildProgram(type, blendOpts, dstCoeff);
-    fProgramData = fProgramCache->getProgramData(fCurrentProgram);
+    GrCustomStage* customStages [GrDrawState::kNumStages];
+    this->buildProgram(type, blendOpts, dstCoeff, customStages);
+    fProgramData = fProgramCache->getProgramData(fCurrentProgram,
+                                                 customStages);
     if (NULL == fProgramData) {
         GrAssert(!"Failed to create program!");
         return false;
@@ -812,6 +825,13 @@ bool GrGpuGLShaders::flushGraphicsState(GrPrimitiveType type) {
             this->flushTexelSize(s);
 
             this->flushTextureDomain(s);
+
+            if (NULL != fProgramData->fCustomStage[s]) {
+                const GrSamplerState& sampler =
+                    this->getDrawState().getSampler(s);
+                fProgramData->fCustomStage[s]->setData(
+                    this->glInterface(), sampler.getCustomStage());
+            }
         }
     }
     this->flushEdgeAAData();
@@ -833,8 +853,10 @@ void GrGpuGLShaders::setupGeometry(int* startVertex,
     int newTexCoordOffsets[GrDrawState::kMaxTexCoords];
     int newEdgeOffset;
 
+    GrVertexLayout currLayout = this->getVertexLayout();
+
     GrGLsizei newStride = VertexSizeAndOffsetsByIdx(
-                                            this->getGeomSrc().fVertexLayout,
+                                            currLayout,
                                             newTexCoordOffsets,
                                             &newColorOffset,
                                             &newCoverageOffset,
@@ -858,7 +880,7 @@ void GrGpuGLShaders::setupGeometry(int* startVertex,
 
     GrGLenum scalarType;
     bool texCoordNorm;
-    if (this->getGeomSrc().fVertexLayout & kTextFormat_VertexLayoutBit) {
+    if (currLayout & kTextFormat_VertexLayoutBit) {
         scalarType = GrGLTextType;
         texCoordNorm = GR_GL_TEXT_TEXTURE_NORMALIZED;
     } else {
@@ -882,8 +904,7 @@ void GrGpuGLShaders::setupGeometry(int* startVertex,
     bool posAndTexChange = allOffsetsChange ||
                            (((GrGLTextType != GrGLType) || GR_GL_TEXT_TEXTURE_NORMALIZED) &&
                                 (kTextFormat_VertexLayoutBit &
-                                  (fHWGeometryState.fVertexLayout ^
-                                   this->getGeomSrc().fVertexLayout)));
+                                  (fHWGeometryState.fVertexLayout ^ currLayout)));
 
     if (posAndTexChange) {
         int idx = GrGLProgram::PositionAttributeIdx();
@@ -955,13 +976,33 @@ void GrGpuGLShaders::setupGeometry(int* startVertex,
         GL_CALL(DisableVertexAttribArray(GrGLProgram::EdgeAttributeIdx()));
     }
 
-    fHWGeometryState.fVertexLayout = this->getGeomSrc().fVertexLayout;
+    fHWGeometryState.fVertexLayout = currLayout;
     fHWGeometryState.fArrayPtrsDirty = false;
+}
+
+namespace {
+
+void setup_custom_stage(GrGLProgram::ProgramDesc::StageDesc* stage,
+                        const GrSamplerState& sampler,
+                        GrCustomStage** customStages,
+                        GrGLProgram* program, int index) {
+    GrCustomStage* customStage = sampler.getCustomStage();
+    if (customStage) {
+        GrGLProgramStageFactory* factory = customStage->getGLFactory();
+        stage->fCustomStageKey = factory->stageKey(customStage);
+        customStages[index] = customStage;
+    } else {
+        stage->fCustomStageKey = 0;
+        customStages[index] = NULL;
+    }
+}
+
 }
 
 void GrGpuGLShaders::buildProgram(GrPrimitiveType type,
                                   BlendOptFlags blendOpts,
-                                  GrBlendCoeff dstCoeff) {
+                                  GrBlendCoeff dstCoeff,
+                                  GrCustomStage** customStages) {
     ProgramDesc& desc = fCurrentProgram.fProgramDesc;
     const GrDrawState& drawState = this->getDrawState();
 
@@ -979,7 +1020,7 @@ void GrGpuGLShaders::buildProgram(GrPrimitiveType type,
     // to a canonical value to avoid duplicate programs with different keys.
 
     // Must initialize all fields or cache will have false negatives!
-    desc.fVertexLayout = this->getGeomSrc().fVertexLayout;
+    desc.fVertexLayout = this->getVertexLayout();
 
     desc.fEmitsPointSize = kPoints_PrimitiveType == type;
 
@@ -1131,9 +1172,17 @@ void GrGpuGLShaders::buildProgram(GrPrimitiveType type,
             if (!this->glCaps().textureSwizzleSupport()) {
                 if (GrPixelConfigIsAlphaOnly(texture->config())) {
                     // if we don't have texture swizzle support then
-                    // the shader must do an alpha smear after reading
-                    // the texture
-                    stage.fInConfigFlags |= StageDesc::kSmearAlpha_InConfigFlag;
+                    // the shader must smear the single channel after
+                    // reading the texture
+                    if (this->glCaps().textureRedSupport()) {
+                        // we can use R8 textures so use kSmearRed
+                        stage.fInConfigFlags |= 
+                                        StageDesc::kSmearRed_InConfigFlag;
+                    } else {
+                        // we can use A8 textures so use kSmearAlpha
+                        stage.fInConfigFlags |= 
+                                        StageDesc::kSmearAlpha_InConfigFlag;
+                    }
                 } else if (sampler.swapsRAndB()) {
                     stage.fInConfigFlags |= StageDesc::kSwapRAndB_InConfigFlag;
                 }
@@ -1159,12 +1208,18 @@ void GrGpuGLShaders::buildProgram(GrPrimitiveType type,
             } else {
                 stage.fKernelWidth = 0;
             }
+
+            setup_custom_stage(&stage, sampler, customStages,
+                               &fCurrentProgram, s);
+
         } else {
             stage.fOptFlags         = 0;
             stage.fCoordMapping     = (StageDesc::CoordMapping) 0;
             stage.fInConfigFlags    = 0;
             stage.fFetchMode        = (StageDesc::FetchMode) 0;
             stage.fKernelWidth      = 0;
+            stage.fCustomStageKey   = 0;
+            customStages[s] = NULL;
         }
     }
 

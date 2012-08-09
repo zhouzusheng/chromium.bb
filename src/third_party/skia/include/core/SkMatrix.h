@@ -336,7 +336,7 @@ public:
         set inverse to be the inverse of this matrix. If this matrix cannot be
         inverted, ignore inverse and return false
     */
-    bool invert(SkMatrix* inverse) const;
+    bool SK_WARN_UNUSED_RESULT invert(SkMatrix* inverse) const;
 
     /** Fills the passed array with affine identity values
         in column major order.
@@ -549,7 +549,7 @@ private:
     enum {
         /** Set if the matrix will map a rectangle to another rectangle. This
             can be true if the matrix is scale-only, or rotates a multiple of
-            90 degrees. This bit is not set if the matrix is identity.
+            90 degrees.
              
             This bit will be set on identity matrices
         */

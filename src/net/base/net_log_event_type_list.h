@@ -971,7 +971,7 @@ EVENT_TYPE(SPDY_SESSION_SYN_REPLY)
 // On sending a SPDY SETTINGS frame.
 // The following parameters are attached:
 //   {
-//     "settings": <The list of setting id:value pairs>,
+//     "settings": <The list of setting id, flags and value>,
 //   }
 EVENT_TYPE(SPDY_SESSION_SEND_SETTINGS)
 
@@ -1070,38 +1070,50 @@ EVENT_TYPE(SPDY_SESSION_CLOSE)
 // the maximum number of concurrent streams.
 EVENT_TYPE(SPDY_SESSION_STALLED_MAX_STREAMS)
 
+// Received a negative value for initial window size in SETTINGS frame.
+//   {
+//     "initial_window_size"  : <The initial window size>,
+//   }
+EVENT_TYPE(SPDY_SESSION_NEGATIVE_INITIAL_WINDOW_SIZE)
+
+// Updating streams send window size by the delta window size.
+//   {
+//     "delta_window_size"    : <The delta window size>,
+//   }
+EVENT_TYPE(SPDY_SESSION_UPDATE_STREAMS_SEND_WINDOW_SIZE)
+
 // ------------------------------------------------------------------------
 // SpdySessionPool
 // ------------------------------------------------------------------------
 
 // This event indicates the pool is reusing an existing session
 //   {
-//     "id": <The session id>,
+//     "source_dependency": <The session id>,
 //   }
 EVENT_TYPE(SPDY_SESSION_POOL_FOUND_EXISTING_SESSION)
 
 // This event indicates the pool is reusing an existing session from an
 // IP pooling match.
 //   {
-//     "id": <The session id>,
+//     "source_dependency": <The session id>,
 //   }
 EVENT_TYPE(SPDY_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL)
 
 // This event indicates the pool created a new session
 //   {
-//     "id": <The session id>,
+//     "source_dependency": <The session id>,
 //   }
 EVENT_TYPE(SPDY_SESSION_POOL_CREATED_NEW_SESSION)
 
 // This event indicates that a SSL socket has been upgraded to a SPDY session.
 //   {
-//     "id": <The session id>,
+//     "source_dependency": <The session id>,
 //   }
 EVENT_TYPE(SPDY_SESSION_POOL_IMPORTED_SESSION_FROM_SOCKET)
 
 // This event indicates that the session has been removed.
 //   {
-//     "id": <The session id>,
+//     "source_dependency": <The session id>,
 //   }
 EVENT_TYPE(SPDY_SESSION_POOL_REMOVE_SESSION)
 
@@ -1273,13 +1285,6 @@ EVENT_TYPE(THROTTLING_DISABLED_FOR_HOST)
 //     "release_after_ms": <Number of milliseconds until URL will be unblocked>
 //   }
 EVENT_TYPE(THROTTLING_REJECTED_REQUEST)
-
-// Emitted when throttling entry receives an X-Retry-After header.
-//   {
-//     "url":               <URL that was being requested>,
-//     "retry_after_ms":    <Milliseconds until retry-after expires>
-//   }
-EVENT_TYPE(THROTTLING_GOT_CUSTOM_RETRY_AFTER)
 
 // ------------------------------------------------------------------------
 // DnsTransaction

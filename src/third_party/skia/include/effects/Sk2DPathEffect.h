@@ -21,8 +21,6 @@ public:
     // overrides
     virtual bool filterPath(SkPath*, const SkPath&, SkScalar* width) SK_OVERRIDE;
 
-    // overrides from SkFlattenable
-    virtual void flatten(SkFlattenableWriteBuffer&) SK_OVERRIDE;
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Sk2DPathEffect)
 
 protected:
@@ -46,9 +44,12 @@ protected:
 
     // protected so that subclasses can call this during unflattening
     Sk2DPathEffect(SkFlattenableReadBuffer&);
+    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
 
 private:
     SkMatrix    fMatrix, fInverse;
+    bool        fMatrixIsInvertible;
+
     // illegal
     Sk2DPathEffect(const Sk2DPathEffect&);
     Sk2DPathEffect& operator=(const Sk2DPathEffect&);
@@ -69,8 +70,8 @@ public:
 
 protected:
     SkPath2DPathEffect(SkFlattenableReadBuffer& buffer);
+    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
 
-    virtual void flatten(SkFlattenableWriteBuffer&) SK_OVERRIDE;
     virtual void next(const SkPoint&, int u, int v, SkPath* dst) SK_OVERRIDE;
 
 private:

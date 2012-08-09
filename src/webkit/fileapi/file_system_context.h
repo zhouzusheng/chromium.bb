@@ -5,10 +5,13 @@
 #ifndef WEBKIT_FILEAPI_FILE_SYSTEM_CONTEXT_H_
 #define WEBKIT_FILEAPI_FILE_SYSTEM_CONTEXT_H_
 
+#include <string>
+
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/quota/special_storage_policy.h"
 
@@ -23,6 +26,10 @@ namespace quota {
 class QuotaManagerProxy;
 }
 
+namespace webkit_blob {
+class FileReader;
+}
+
 namespace fileapi {
 
 class ExternalFileSystemMountPointProvider;
@@ -32,6 +39,7 @@ class FileSystemOperationInterface;
 class FileSystemOptions;
 class FileSystemPathManager;
 class FileSystemQuotaUtil;
+class IsolatedMountPointProvider;
 class SandboxMountPointProvider;
 
 struct DefaultContextDeleter;
@@ -49,7 +57,6 @@ class FileSystemContext
       quota::QuotaManagerProxy* quota_manager_proxy,
       const FilePath& profile_path,
       const FileSystemOptions& options);
-  ~FileSystemContext();
 
   // This method can be called on any thread.
   bool DeleteDataForOriginOnFileThread(const GURL& origin_url);
@@ -111,8 +118,22 @@ class FileSystemContext
       const GURL& url,
       base::MessageLoopProxy* file_proxy);
 
+  // Creates new FileReader instance to read a file pointed by the given
+  // filesystem URL |url| starting from |offset|.
+  // This method internally cracks the |url|, get an appropriate
+  // MountPointProvider for the URL and call the provider's CreateFileReader.
+  // The resolved MountPointProvider could perform further specialization
+  // depending on the filesystem type pointed by the |url|.
+  webkit_blob::FileReader* CreateFileReader(
+      const GURL& url,
+      int64 offset,
+      base::MessageLoopProxy* file_proxy);
+
  private:
   friend struct DefaultContextDeleter;
+  friend class base::DeleteHelper<FileSystemContext>;
+  ~FileSystemContext();
+
   void DeleteOnCorrectThread() const;
 
   scoped_refptr<base::MessageLoopProxy> file_message_loop_;
@@ -122,6 +143,7 @@ class FileSystemContext
 
   // Mount point providers.
   scoped_ptr<SandboxMountPointProvider> sandbox_provider_;
+  scoped_ptr<IsolatedMountPointProvider> isolated_provider_;
   scoped_ptr<ExternalFileSystemMountPointProvider> external_provider_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FileSystemContext);

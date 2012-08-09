@@ -54,10 +54,14 @@ static PluginInstance* FindInstance(NPP id) {
 }
 
 #if defined(OS_MACOSX)
-// Returns true if the OS supports shared accelerated surfaces via IOSurface.
-// This is true on Snow Leopard and higher.
-static bool SupportsSharingAcceleratedSurfaces() {
+// Returns true if Core Animation plugins are supported. This requires that the
+// OS supports shared accelerated surfaces via IOSurface. This is true on Snow
+// Leopard and higher.
+static bool SupportsCoreAnimationPlugins() {
   if (base::mac::IsOSLeopardOrEarlier())
+    return false;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableCoreAnimationPlugins))
     return false;
   // We also need to be running with desktop GL and not the software
   // OSMesa renderer in order to share accelerated surfaces between
@@ -757,7 +761,7 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       rv = NPERR_NO_ERROR;
       break;
     }
-  #if defined(TOOLKIT_USES_GTK)
+  #if defined(TOOLKIT_GTK)
     case NPNVToolkit:
       // Tell them we are GTK2.  (The alternative is GTK 1.2.)
       *reinterpret_cast<int*>(value) = NPNVGtk2;
@@ -821,23 +825,10 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       rv = NPERR_NO_ERROR;
       break;
     }
+    case NPNVsupportsInvalidatingCoreAnimationBool:
     case NPNVsupportsCoreAnimationBool: {
-      // We only support the Core Animation model on 10.6 and higher
-      // TODO(stuartmorgan): Once existing CA plugins have implemented the
-      // invalidating version, remove support for this one.
       NPBool* supports_model = reinterpret_cast<NPBool*>(value);
-      *supports_model = webkit::npapi::SupportsSharingAcceleratedSurfaces() ?
-          true : false;
-      rv = NPERR_NO_ERROR;
-      break;
-    }
-    case NPNVsupportsInvalidatingCoreAnimationBool: {
-      // The composited code path for this model only works on 10.6 and higher.
-      // The old direct-to-screen code path supports 10.5.
-      NPBool* supports_model = reinterpret_cast<NPBool*>(value);
-      bool composited = webkit::npapi::UsingCompositedCoreAnimationPlugins();
-      *supports_model = composited ?
-          webkit::npapi::SupportsSharingAcceleratedSurfaces() : true;
+      *supports_model = webkit::npapi::SupportsCoreAnimationPlugins();
       rv = NPERR_NO_ERROR;
       break;
     }
@@ -852,6 +843,7 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
     case NPNVsupportsCompositingCoreAnimationPluginsBool: {
       NPBool* supports_compositing = reinterpret_cast<NPBool*>(value);
       *supports_compositing =
+          webkit::npapi::SupportsCoreAnimationPlugins() &&
           webkit::npapi::UsingCompositedCoreAnimationPlugins();
       rv = NPERR_NO_ERROR;
       break;
@@ -918,11 +910,9 @@ NPError NPN_SetValue(NPP id, NPPVariable variable, void* value) {
     case NPPVpluginDrawingModel: {
       int model = reinterpret_cast<int>(value);
       if (model == NPDrawingModelCoreGraphics ||
-          (model == NPDrawingModelInvalidatingCoreAnimation &&
-           (webkit::npapi::SupportsSharingAcceleratedSurfaces() ||
-            !webkit::npapi::UsingCompositedCoreAnimationPlugins())) ||
-          (model == NPDrawingModelCoreAnimation &&
-           webkit::npapi::SupportsSharingAcceleratedSurfaces())) {
+          ((model == NPDrawingModelInvalidatingCoreAnimation ||
+            model == NPDrawingModelCoreAnimation) &&
+           webkit::npapi::SupportsCoreAnimationPlugins())) {
         plugin->set_drawing_model(static_cast<NPDrawingModel>(model));
         return NPERR_NO_ERROR;
       }

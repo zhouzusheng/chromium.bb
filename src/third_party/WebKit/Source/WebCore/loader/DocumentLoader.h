@@ -116,15 +116,13 @@ namespace WebCore {
         void finishedLoading();
         const ResourceResponse& response() const { return m_response; }
         const ResourceError& mainDocumentError() const { return m_mainDocumentError; }
-        void mainReceivedError(const ResourceError&, bool isComplete);
+        void mainReceivedError(const ResourceError&);
         void setResponse(const ResourceResponse& response) { m_response = response; }
-        void prepareForLoadStart();
         bool isClientRedirect() const { return m_isClientRedirect; }
         void setIsClientRedirect(bool isClientRedirect) { m_isClientRedirect = isClientRedirect; }
         void handledOnloadEvents();
         bool wasOnloadHandled() { return m_wasOnloadHandled; }
         bool isLoadingInAPISense() const;
-        void setPrimaryLoadComplete(bool);
         void setTitle(const StringWithDirection&);
         const String& overrideEncoding() const { return m_overrideEncoding; }
 
@@ -134,14 +132,12 @@ namespace WebCore {
 #endif
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
+        void setArchive(PassRefPtr<Archive>);
         void addAllArchiveResources(Archive*);
         void addArchiveResource(PassRefPtr<ArchiveResource>);
-        
         PassRefPtr<Archive> popArchiveForSubframe(const String& frameName, const KURL&);
-        void clearArchiveResources();
-        void setParsedArchiveData(PassRefPtr<SharedBuffer>);
         SharedBuffer* parsedArchiveData() const;
-        
+
         bool scheduleArchiveLoad(ResourceLoader*, const ResourceRequest&, const KURL&);
 #endif // ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
 
@@ -254,11 +250,16 @@ namespace WebCore {
     private:
         void setupForReplace();
         void commitIfReady();
-        void clearErrors();
         void setMainDocumentError(const ResourceError&);
         void commitLoad(const char*, int);
         bool doesProgressiveLoad(const String& MIMEType) const;
         void checkLoadComplete();
+        void clearMainResourceLoader();
+        
+        bool maybeCreateArchive();
+#if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
+        void clearArchiveResources();
+#endif
 
         void deliverSubstituteResourcesAfterDelay();
         void substituteResourceDeliveryTimerFired(Timer<DocumentLoader>*);
@@ -298,7 +299,6 @@ namespace WebCore {
         bool m_committed;
         bool m_isStopping;
         bool m_gotFirstByte;
-        bool m_primaryLoadComplete;
         bool m_isClientRedirect;
 
         // FIXME: Document::m_processingLoadEvent and DocumentLoader::m_wasOnloadHandled are roughly the same
@@ -329,6 +329,7 @@ namespace WebCore {
 
         OwnPtr<ArchiveResourceCollection> m_archiveResourceCollection;
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
+        RefPtr<Archive> m_archive;
         RefPtr<SharedBuffer> m_parsedArchiveData;
 #endif
 

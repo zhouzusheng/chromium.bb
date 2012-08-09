@@ -1,6 +1,9 @@
+../Modules/battery/BatteryManager.idl
+../Modules/battery/NavigatorBattery.idl
 ../Modules/filesystem/DOMFileSystem.idl
 ../Modules/filesystem/DOMFileSystemSync.idl
 ../Modules/filesystem/DOMWindowFileSystem.idl
+../Modules/filesystem/DataTransferItemFileSystem.idl
 ../Modules/filesystem/DirectoryEntry.idl
 ../Modules/filesystem/DirectoryEntrySync.idl
 ../Modules/filesystem/DirectoryReader.idl
@@ -35,7 +38,6 @@
 ../Modules/indexeddb/IDBAny.idl
 ../Modules/indexeddb/IDBCursor.idl
 ../Modules/indexeddb/IDBCursorWithValue.idl
-../Modules/indexeddb/IDBDatabaseError.idl
 ../Modules/indexeddb/IDBDatabaseException.idl
 ../Modules/indexeddb/IDBDatabase.idl
 ../Modules/indexeddb/IDBFactory.idl
@@ -101,8 +103,10 @@
 ../Modules/webaudio/JavaScriptAudioNode.idl
 ../Modules/webaudio/MediaElementAudioSourceNode.idl
 ../Modules/webaudio/OfflineAudioCompletionEvent.idl
+../Modules/webaudio/Oscillator.idl
 ../Modules/webaudio/RealtimeAnalyserNode.idl
 ../Modules/webaudio/WaveShaperNode.idl
+../Modules/webaudio/WaveTable.idl
 ../Modules/webdatabase/DOMWindowWebDatabase.idl
 ../Modules/webdatabase/Database.idl
 ../Modules/webdatabase/DatabaseCallback.idl
@@ -303,6 +307,8 @@
 ../html/ImageData.idl
 ../html/MediaController.idl
 ../html/MediaError.idl
+../html/MediaKeyError.idl
+../html/MediaKeyEvent.idl
 ../html/TextMetrics.idl
 ../html/TimeRanges.idl
 ../html/ValidityState.idl
@@ -310,7 +316,6 @@
 ../html/canvas/ArrayBufferView.idl
 ../html/canvas/CanvasGradient.idl
 ../html/canvas/CanvasPattern.idl
-../html/canvas/CanvasPixelArray.idl
 ../html/canvas/CanvasRenderingContext.idl
 ../html/canvas/CanvasRenderingContext2D.idl
 ../html/canvas/DataView.idl
@@ -340,6 +345,7 @@
 ../html/canvas/WebGLRenderbuffer.idl
 ../html/canvas/WebGLRenderingContext.idl
 ../html/canvas/WebGLShader.idl
+../html/canvas/WebGLShaderPrecisionFormat.idl
 ../html/canvas/WebGLTexture.idl
 ../html/canvas/WebGLUniformLocation.idl
 ../html/canvas/WebGLVertexArrayObjectOES.idl
@@ -359,6 +365,7 @@
 ../notifications/DOMWindowNotifications.idl
 ../notifications/Notification.idl
 ../notifications/NotificationCenter.idl
+../notifications/NotificationPermissionCallback.idl
 ../notifications/WorkerContextNotifications.idl
 ../page/BarInfo.idl
 ../page/Console.idl
@@ -373,6 +380,8 @@
 ../page/Navigator.idl
 ../page/NavigatorRegisterProtocolHandler.idl
 ../page/Performance.idl
+../page/PerformanceEntry.idl
+../page/PerformanceEntryList.idl
 ../page/PerformanceNavigation.idl
 ../page/PerformanceTiming.idl
 ../page/PointerLock.idl

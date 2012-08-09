@@ -9,10 +9,9 @@
 #include <list>
 #include <map>
 
-#include "media/base/filters.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/video_decoder.h"
 #include "media/video/video_decode_accelerator.h"
-#include "ui/gfx/size.h"
 
 class MessageLoop;
 template <class T> class scoped_refptr;
@@ -36,7 +35,7 @@ class MEDIA_EXPORT GpuVideoDecoder
    public:
     // Caller owns returned pointer.
     virtual VideoDecodeAccelerator* CreateVideoDecodeAccelerator(
-        VideoDecodeAccelerator::Profile, VideoDecodeAccelerator::Client*) = 0;
+        VideoCodecProfile, VideoDecodeAccelerator::Client*) = 0;
 
     // Allocate & delete native textures.
     virtual bool CreateTextures(int32 count, const gfx::Size& size,
@@ -58,17 +57,13 @@ class MEDIA_EXPORT GpuVideoDecoder
                   const scoped_refptr<Factories>& factories);
   virtual ~GpuVideoDecoder();
 
-  // Filter implementation.
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
-  virtual void Pause(const base::Closure& callback) OVERRIDE;
-  virtual void Flush(const base::Closure& callback) OVERRIDE;
-
   // VideoDecoder implementation.
-  virtual void Initialize(DemuxerStream* demuxer_stream,
+  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
                           const PipelineStatusCB& status_cb,
                           const StatisticsCB& statistics_cb) OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual void Reset(const base::Closure& closure) OVERRIDE;
+  virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual const gfx::Size& natural_size() OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
   virtual void PrepareForShutdownHack() OVERRIDE;
@@ -207,6 +202,9 @@ class MEDIA_EXPORT GpuVideoDecoder
   // Indicates PrepareForShutdownHack()'s been called.  Makes further calls to
   // this class not require the render thread's loop to be processing.
   bool shutting_down_;
+
+  // Indicates decoding error occurred.
+  bool error_occured_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuVideoDecoder);
 };

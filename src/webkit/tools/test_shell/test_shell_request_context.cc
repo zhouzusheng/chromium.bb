@@ -8,6 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
+#include "base/threading/worker_pool.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/default_server_bound_cert_store.h"
 #include "net/base/host_resolver.h"
@@ -50,7 +51,8 @@ void TestShellRequestContext::Init(
     bool no_proxy) {
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
   storage_.set_server_bound_cert_service(new net::ServerBoundCertService(
-      new net::DefaultServerBoundCertStore(NULL)));
+      new net::DefaultServerBoundCertStore(NULL),
+      base::WorkerPool::GetTaskRunner(true)));
 
   // hard-code A-L and A-C for test shells
   set_accept_language("en-us,en");
@@ -96,15 +98,16 @@ void TestShellRequestContext::Init(
       new net::HttpCache(host_resolver(),
                          cert_verifier(),
                          server_bound_cert_service(),
-                         NULL, // transport_security_state
+                         NULL, /* transport_security_state */
                          proxy_service(),
-                         "",  // ssl_session_cache_shard
+                         "",  /* ssl_session_cache_shard */
                          ssl_config_service(),
                          http_auth_handler_factory(),
-                         NULL,  // network_delegate
+                         NULL,  /* network_delegate */
                          http_server_properties(),
-                         NULL,  // netlog
-                         backend);
+                         NULL,  /* netlog */
+                         backend,
+                         "" /* trusted_spdy_proxy */ );
 
   cache->set_mode(cache_mode);
   storage_.set_http_transaction_factory(cache);

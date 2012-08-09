@@ -368,11 +368,6 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ControlPart e)
         case ListboxPart:
             m_value.ident = CSSValueListbox;
             break;
-        case ListButtonPart:
-#if ENABLE(DATALIST)
-            m_value.ident = CSSValueListButton;
-#endif
-            break;
         case ListItemPart:
             m_value.ident = CSSValueListitem;
             break;
@@ -1392,9 +1387,6 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EFloat e)
         case RightFloat:
             m_value.ident = CSSValueRight;
             break;
-        case PositionedFloat:
-            m_value.ident = CSSValueWebkitPositioned;
-            break;
     }
 }
 
@@ -1408,8 +1400,6 @@ template<> inline CSSPrimitiveValue::operator EFloat() const
         case CSSValueNone:
         case CSSValueCenter:  // Non-standard CSS value
             return NoFloat;
-        case CSSValueWebkitPositioned:
-            return PositionedFloat;
         default:
             ASSERT_NOT_REACHED();
             return NoFloat;
@@ -3704,11 +3694,11 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(WrapFlow wrapFlow)
     case WrapFlowBoth:
         m_value.ident = CSSValueBoth;
         break;
-    case WrapFlowLeft:
-        m_value.ident = CSSValueLeft;
+    case WrapFlowStart:
+        m_value.ident = CSSValueStart;
         break;
-    case WrapFlowRight:
-        m_value.ident = CSSValueRight;
+    case WrapFlowEnd:
+        m_value.ident = CSSValueEnd;
         break;
     case WrapFlowMaximum:
         m_value.ident = CSSValueMaximum;
@@ -3726,10 +3716,10 @@ template<> inline CSSPrimitiveValue::operator WrapFlow() const
         return WrapFlowAuto;
     case CSSValueBoth:
         return WrapFlowBoth;
-    case CSSValueLeft:
-        return WrapFlowLeft;
-    case CSSValueRight:
-        return WrapFlowRight;
+    case CSSValueStart:
+        return WrapFlowStart;
+    case CSSValueEnd:
+        return WrapFlowEnd;
     case CSSValueMaximum:
         return WrapFlowMaximum;
     case CSSValueClear:
@@ -3775,7 +3765,7 @@ enum LengthConversion {
     PercentConversion = 1 << 3,
     FractionConversion = 1 << 4,
     CalculatedConversion = 1 << 5,
-    ViewportRelativeConversion = 1 << 6
+    ViewportPercentageConversion = 1 << 6
 };
 
 template<int supported> Length CSSPrimitiveValue::convertToLength(RenderStyle* style, RenderStyle* rootStyle, double multiplier, bool computingFontSize)
@@ -3794,8 +3784,8 @@ template<int supported> Length CSSPrimitiveValue::convertToLength(RenderStyle* s
         return Length(Auto);
     if ((supported & CalculatedConversion) && isCalculated())
         return Length(cssCalcValue()->toCalcValue(style, rootStyle, multiplier));
-    if ((supported & ViewportRelativeConversion) && isViewportRelativeLength())
-        return viewportRelativeLength();
+    if ((supported & ViewportPercentageConversion) && isViewportPercentageLength())
+        return viewportPercentageLength();
     return Length(Undefined);
 }
 

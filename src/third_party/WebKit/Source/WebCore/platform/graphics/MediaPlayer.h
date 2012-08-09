@@ -101,6 +101,8 @@ class TimeRanges;
 
 class MediaPlayerClient {
 public:
+    enum CORSMode { Unspecified, Anonymous, UseCredentials };
+
     virtual ~MediaPlayerClient() { }
 
     // Get the document which the media player is owned by
@@ -168,8 +170,17 @@ public:
     virtual String mediaPlayerSourceURL() const { return "x-media-source-unsupported:"; }
 #endif
 
+#if ENABLE(ENCRYPTED_MEDIA)
+    enum MediaKeyErrorCode { UnknownError = 1, ClientError, ServiceError, OutputError, HardwareChangeError, DomainError };
+    virtual void mediaPlayerKeyAdded(MediaPlayer*, const String& keySystem, const String& sessionId) { }
+    virtual void mediaPlayerKeyError(MediaPlayer*, const String& keySystem, const String& sessionId, MediaKeyErrorCode errorCode, unsigned short systemCode) { }
+    virtual void mediaPlayerKeyMessage(MediaPlayer*, const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength) { }
+    virtual void mediaPlayerKeyNeeded(MediaPlayer*, const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength) { }
+#endif
+
     virtual String mediaPlayerReferrer() const { return String(); }
     virtual String mediaPlayerUserAgent() const { return String(); }
+    virtual CORSMode mediaPlayerCORSMode() const { return Unspecified; }
 };
 
 class MediaPlayer {
@@ -184,7 +195,7 @@ public:
 
     // Media engine support.
     enum SupportsType { IsNotSupported, IsSupported, MayBeSupported };
-    static MediaPlayer::SupportsType supportsType(const ContentType&);
+    static MediaPlayer::SupportsType supportsType(const ContentType&, const String& keySystem);
     static void getSupportedTypes(HashSet<String>&);
     static bool isAvailable();
     static void getSitesInMediaCache(Vector<String>&);
@@ -210,7 +221,7 @@ public:
     IntSize size() const { return m_size; }
     void setSize(const IntSize& size);
 
-    bool load(const KURL& url, const ContentType&);
+    bool load(const KURL&, const ContentType&, const String& keySystem);
     void cancelLoad();
 
     bool visible() const;
@@ -221,9 +232,22 @@ public:
     void pause();    
 
 #if ENABLE(MEDIA_SOURCE)
+    enum AddIdStatus { Ok, NotSupported, ReachedIdLimit };
+    AddIdStatus sourceAddId(const String& id, const String& type);
+    bool sourceRemoveId(const String& id);
     bool sourceAppend(const unsigned char* data, unsigned length);
     enum EndOfStreamStatus { EosNoError, EosNetworkError, EosDecodeError };
     void sourceEndOfStream(EndOfStreamStatus);
+#endif
+
+#if ENABLE(ENCRYPTED_MEDIA)
+    // Represents synchronous exceptions that can be thrown from the Encrypted Media methods.
+    // This is different from the asynchronous MediaKeyError.
+    enum MediaKeyException { NoError, InvalidPlayerState, KeySystemNotSupported };
+
+    MediaKeyException generateKeyRequest(const String& keySystem, const unsigned char* initData, unsigned initDataLength);
+    MediaKeyException addKey(const String& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const String& sessionId);
+    MediaKeyException cancelKeyRequest(const String& keySystem, const String& sessionId);
 #endif
 
     bool paused() const;
@@ -303,7 +327,10 @@ public:
     void deliverNotification(MediaPlayerProxyNotificationType notification);
     void setMediaPlayerProxy(WebMediaPlayerProxy* proxy);
     void setControls(bool);
-    void enterFullscreen();
+#endif
+
+#if ENABLE(PLUGIN_PROXY_FOR_VIDEO) || USE(NATIVE_FULLSCREEN_VIDEO)
+    bool enterFullscreen() const;
     void exitFullscreen();
 #endif
 
@@ -315,6 +342,8 @@ public:
 #endif
 
     bool hasSingleSecurityOrigin() const;
+
+    bool didPassCORSAccessCheck() const;
 
     float mediaTimeForTimeValue(float) const;
 
@@ -336,6 +365,13 @@ public:
     String sourceURL() const;
 #endif
 
+#if ENABLE(ENCRYPTED_MEDIA)
+    void keyAdded(const String& keySystem, const String& sessionId);
+    void keyError(const String& keySystem, const String& sessionId, MediaPlayerClient::MediaKeyErrorCode, unsigned short systemCode);
+    void keyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength);
+    void keyNeeded(const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength);
+#endif
+
     String referrer() const;
     String userAgent() const;
 
@@ -353,6 +389,7 @@ private:
     String m_url;
     String m_contentMIMEType;
     String m_contentTypeCodecs;
+    String m_keySystem;
     FrameView* m_frameView;
     IntSize m_size;
     Preload m_preload;
@@ -370,7 +407,11 @@ private:
 
 typedef PassOwnPtr<MediaPlayerPrivateInterface> (*CreateMediaEnginePlayer)(MediaPlayer*);
 typedef void (*MediaEngineSupportedTypes)(HashSet<String>& types);
+#if ENABLE(ENCRYPTED_MEDIA)
+typedef MediaPlayer::SupportsType (*MediaEngineSupportsType)(const String& type, const String& codecs, const String& keySystem);
+#else
 typedef MediaPlayer::SupportsType (*MediaEngineSupportsType)(const String& type, const String& codecs);
+#endif
 typedef void (*MediaEngineGetSitesInMediaCache)(Vector<String>&);
 typedef void (*MediaEngineClearMediaCache)();
 typedef void (*MediaEngineClearMediaCacheForSite)(const String&);

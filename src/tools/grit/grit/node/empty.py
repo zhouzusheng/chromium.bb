@@ -42,6 +42,9 @@ class MessagesNode(GroupingNode):
     if t in ['rc_all', 'rc_translateable', 'rc_nontranslateable']:
       from grit.format import rc  # avoid circular dep by importing here
       return rc.StringTable()
+    elif t == 'c_format':
+      from grit.format import c_format
+      return c_format.StringTable()
     elif t == 'js_map_format':
       from grit.format import js_map_format
       return js_map_format.StringTable()

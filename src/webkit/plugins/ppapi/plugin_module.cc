@@ -56,6 +56,7 @@
 #include "ppapi/c/ppb_image_data.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_messaging.h"
+#include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/ppb_mouse_lock.h"
 #include "ppapi/c/ppb_opengles2.h"
 #include "ppapi/c/ppb_url_loader.h"
@@ -83,6 +84,7 @@
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
+#include "ppapi/c/private/ppb_x509_certificate_private.h"
 #include "ppapi/c/trusted/ppb_audio_input_trusted_dev.h"
 #include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
@@ -107,11 +109,8 @@
 #include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_clipboard_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_file_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_net_connector_impl.h"
 #include "webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
@@ -295,6 +294,7 @@ const void* GetInterface(const char* name) {
   #include "ppapi/thunk/interfaces_ppb_public_stable.h"
   #include "ppapi/thunk/interfaces_ppb_public_dev.h"
   #include "ppapi/thunk/interfaces_ppb_private.h"
+  #include "ppapi/thunk/interfaces_ppb_private_flash.h"
 
   #undef UNPROXIED_API
   #undef PROXIED_IFACE
@@ -309,30 +309,6 @@ const void* GetInterface(const char* name) {
     return ::ppapi::thunk::GetPPB_BufferTrusted_0_1_Thunk();
   if (strcmp(name, PPB_CORE_INTERFACE_1_0) == 0)
     return &core_interface;
-  if (strcmp(name, PPB_FILECHOOSER_TRUSTED_INTERFACE_0_5) == 0)
-    return ::ppapi::thunk::GetPPB_FileChooser_Trusted_0_5_Thunk();
-  if (strcmp(name, PPB_FLASH_INTERFACE_11_0) == 0)
-    return PPB_Flash_Impl::GetInterface11();
-  if (strcmp(name, PPB_FLASH_INTERFACE_12_0) == 0)
-    return PPB_Flash_Impl::GetInterface12_0();
-  if (strcmp(name, PPB_FLASH_INTERFACE_12_1) == 0)
-    return PPB_Flash_Impl::GetInterface12_1();
-  if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_4_0) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_Clipboard_4_0_Thunk();
-  if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_3_0) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_Clipboard_3_0_Thunk();
-  if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_3_LEGACY) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_Clipboard_3_0_Thunk();
-  if (strcmp(name, PPB_FLASH_FILE_FILEREF_INTERFACE) == 0)
-    return PPB_Flash_File_FileRef_Impl::GetInterface();
-  if (strcmp(name, PPB_FLASH_FILE_MODULELOCAL_INTERFACE) == 0)
-    return PPB_Flash_File_ModuleLocal_Impl::GetInterface();
-  if (strcmp(name, PPB_FLASH_MENU_INTERFACE_0_2) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_Menu_0_2_Thunk();
-  if (strcmp(name, PPB_FLASH_MESSAGELOOP_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_MessageLoop_0_1_Thunk();
-  if (strcmp(name, PPB_FLASH_TCPSOCKET_INTERFACE_0_2) == 0)
-    return ::ppapi::thunk::GetPPB_TCPSocket_Private_0_3_Thunk();
   if (strcmp(name, PPB_FULLSCREEN_DEV_INTERFACE_0_5) == 0)
     return ::ppapi::thunk::GetPPB_Fullscreen_1_0_Thunk();
   if (strcmp(name, PPB_GPU_BLACKLIST_INTERFACE) == 0)
@@ -373,11 +349,6 @@ const void* GetInterface(const char* name) {
     return ::ppapi::PPB_Var_Shared::GetVarInterface1_1();
   if (strcmp(name, PPB_VAR_ARRAY_BUFFER_INTERFACE_1_0) == 0)
     return ::ppapi::PPB_Var_Shared::GetVarArrayBufferInterface1_0();
-
-#ifdef ENABLE_FLAPPER_HACKS
-  if (strcmp(name, PPB_FLASH_NETCONNECTOR_INTERFACE) == 0)
-    return ::ppapi::thunk::GetPPB_Flash_NetConnector_0_2_Thunk();
-#endif  // ENABLE_FLAPPER_HACKS
 
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface

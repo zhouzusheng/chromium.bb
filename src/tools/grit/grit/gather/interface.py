@@ -22,6 +22,17 @@ class GathererBase(object):
     # we should not do some types of processing on the translateable bits.
     self.is_skeleton = False
 
+  def SetAttributes(self, attrs):
+    '''Sets node attributes used by the gatherer.
+
+    By default, this does nothing.  If special handling is desired, it should be
+    overridden by the child gatherer.
+
+    Args:
+      attrs: The mapping of node attributes.
+    '''
+    pass
+
   def SetUberClique(self, uberclique):
     '''Overrides the default uberclique so that cliques created by this object
     become part of the uberclique supplied by the user.
@@ -88,6 +99,7 @@ class GathererBase(object):
     '''
     raise NotImplementedError()
 
+  @staticmethod
   def FromFile(rc_file, extkey=None, encoding = 'cp1252'):
     '''Loads the resource from the file 'rc_file'.  Optionally an external key
     (which gets passed to the gatherer's constructor) can be specified.
@@ -104,5 +116,12 @@ class GathererBase(object):
       grit.gather.interface.GathererBase subclass
     '''
     raise NotImplementedError()
-  FromFile = staticmethod(FromFile)
+
+  def SubstituteMessages(self, substituter):
+    '''Applies substitutions to all messages in the gatherer.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    pass
 

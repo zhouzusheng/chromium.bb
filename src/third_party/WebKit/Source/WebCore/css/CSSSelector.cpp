@@ -43,7 +43,7 @@ void CSSSelector::createRareData()
     if (m_hasRareData)
         return;
     // Move the value to the rare data stucture.
-    m_data.m_rareData = new RareData(adoptRef(m_data.m_value));
+    m_data.m_rareData = RareData::create(adoptRef(m_data.m_value)).leakRef();
     m_hasRareData = true;
 }
 
@@ -81,10 +81,9 @@ inline unsigned CSSSelector::specificityForOneSelector() const
     case End:
         // FIXME: PsuedoAny should base the specificity on the sub-selectors.
         // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
-        if (pseudoType() == PseudoNot) {
-            ASSERT(selectorList());
+        if (pseudoType() == PseudoNot && selectorList())
             s += selectorList()->first()->specificityForOneSelector();
-        } else
+        else
             s += 0x100;
     case None:
         break;
@@ -149,11 +148,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
         return FULL_SCREEN_ANCESTOR;
     case PseudoAnimatingFullScreenTransition:
         return ANIMATING_FULL_SCREEN_TRANSITION;
-#endif
-
-    case PseudoInputListButton:
-#if ENABLE(DATALIST)
-        return INPUT_LIST_BUTTON;
 #endif
     case PseudoUnknown:
     case PseudoEmpty:
@@ -252,9 +246,6 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
     DEFINE_STATIC_LOCAL(AtomicString, focus, ("focus"));
     DEFINE_STATIC_LOCAL(AtomicString, hover, ("hover"));
     DEFINE_STATIC_LOCAL(AtomicString, indeterminate, ("indeterminate"));
-#if ENABLE(DATALIST)
-    DEFINE_STATIC_LOCAL(AtomicString, inputListButton, ("-webkit-input-list-button"));
-#endif
     DEFINE_STATIC_LOCAL(AtomicString, lastChild, ("last-child"));
     DEFINE_STATIC_LOCAL(AtomicString, lastOfType, ("last-of-type"));
     DEFINE_STATIC_LOCAL(AtomicString, link, ("link"));
@@ -322,9 +313,6 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
         nameToPseudoType->set(empty.impl(), CSSSelector::PseudoEmpty);
         nameToPseudoType->set(firstChild.impl(), CSSSelector::PseudoFirstChild);
         nameToPseudoType->set(fullPageMedia.impl(), CSSSelector::PseudoFullPageMedia);
-#if ENABLE(DATALIST)
-        nameToPseudoType->set(inputListButton.impl(), CSSSelector::PseudoInputListButton);
-#endif
         nameToPseudoType->set(lastChild.impl(), CSSSelector::PseudoLastChild);
         nameToPseudoType->set(lastOfType.impl(), CSSSelector::PseudoLastOfType);
         nameToPseudoType->set(onlyChild.impl(), CSSSelector::PseudoOnlyChild);
@@ -413,7 +401,6 @@ void CSSSelector::extractPseudoType() const
     case PseudoFirstLetter:
     case PseudoFirstLine:
         compat = true;
-    case PseudoInputListButton:
     case PseudoResizer:
     case PseudoScrollbar:
     case PseudoScrollbarCorner:
@@ -556,8 +543,8 @@ String CSSSelector::selectorText() const
 
             switch (cs->pseudoType()) {
             case PseudoNot:
-                ASSERT(cs->selectorList());
-                str += cs->selectorList()->first()->selectorText();
+                if (CSSSelectorList* selectorList = cs->selectorList())
+                    str += selectorList->first()->selectorText();
                 str += ")";
                 break;
             case PseudoLang:

@@ -2509,7 +2509,7 @@ error::Error GLES2DecoderImpl::HandleViewport(
     SetGLError(GL_INVALID_VALUE, "glViewport: height < 0");
     return error::kNoError;
   }
-  glViewport(x, y, width, height);
+  DoViewport(x, y, width, height);
   return error::kNoError;
 }
 
@@ -2723,6 +2723,115 @@ error::Error GLES2DecoderImpl::HandleTexImageIOSurface2DCHROMIUM(
     return error::kNoError;
   }
   DoTexImageIOSurface2DCHROMIUM(target, width, height, ioSurfaceId, plane);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
+    uint32 immediate_data_size, const gles2::CopyTextureCHROMIUM& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum source_id = static_cast<GLenum>(c.source_id);
+  GLenum dest_id = static_cast<GLenum>(c.dest_id);
+  GLint level = static_cast<GLint>(c.level);
+  GLint internalformat = static_cast<GLint>(c.internalformat);
+  if (!validators_->texture_internal_format.IsValid(internalformat)) {
+    SetGLError(
+        GL_INVALID_VALUE,
+        "glCopyTextureCHROMIUM: internalformat GL_INVALID_VALUE");
+    return error::kNoError;
+  }
+  DoCopyTextureCHROMIUM(target, source_id, dest_id, level, internalformat);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleProduceTextureCHROMIUM(
+    uint32 immediate_data_size, const gles2::ProduceTextureCHROMIUM& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  uint32 data_size;
+  if (!ComputeDataSize(1, sizeof(GLbyte), 64, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLbyte* mailbox = GetSharedMemoryAs<const GLbyte*>(
+      c.mailbox_shm_id, c.mailbox_shm_offset, data_size);
+  if (!validators_->texture_target.IsValid(target)) {
+    SetGLError(
+        GL_INVALID_ENUM, "glProduceTextureCHROMIUM: target GL_INVALID_ENUM");
+    return error::kNoError;
+  }
+  if (mailbox == NULL) {
+    return error::kOutOfBounds;
+  }
+  DoProduceTextureCHROMIUM(target, mailbox);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleProduceTextureCHROMIUMImmediate(
+    uint32 immediate_data_size,
+    const gles2::ProduceTextureCHROMIUMImmediate& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  uint32 data_size;
+  if (!ComputeDataSize(1, sizeof(GLbyte), 64, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLbyte* mailbox = GetImmediateDataAs<const GLbyte*>(
+      c, data_size, immediate_data_size);
+  if (!validators_->texture_target.IsValid(target)) {
+    SetGLError(
+        GL_INVALID_ENUM, "glProduceTextureCHROMIUM: target GL_INVALID_ENUM");
+    return error::kNoError;
+  }
+  if (mailbox == NULL) {
+    return error::kOutOfBounds;
+  }
+  DoProduceTextureCHROMIUM(target, mailbox);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleConsumeTextureCHROMIUM(
+    uint32 immediate_data_size, const gles2::ConsumeTextureCHROMIUM& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  uint32 data_size;
+  if (!ComputeDataSize(1, sizeof(GLbyte), 64, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLbyte* mailbox = GetSharedMemoryAs<const GLbyte*>(
+      c.mailbox_shm_id, c.mailbox_shm_offset, data_size);
+  if (!validators_->texture_target.IsValid(target)) {
+    SetGLError(
+        GL_INVALID_ENUM, "glConsumeTextureCHROMIUM: target GL_INVALID_ENUM");
+    return error::kNoError;
+  }
+  if (mailbox == NULL) {
+    return error::kOutOfBounds;
+  }
+  DoConsumeTextureCHROMIUM(target, mailbox);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleConsumeTextureCHROMIUMImmediate(
+    uint32 immediate_data_size,
+    const gles2::ConsumeTextureCHROMIUMImmediate& c) {
+  GLenum target = static_cast<GLenum>(c.target);
+  uint32 data_size;
+  if (!ComputeDataSize(1, sizeof(GLbyte), 64, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLbyte* mailbox = GetImmediateDataAs<const GLbyte*>(
+      c, data_size, immediate_data_size);
+  if (!validators_->texture_target.IsValid(target)) {
+    SetGLError(
+        GL_INVALID_ENUM, "glConsumeTextureCHROMIUM: target GL_INVALID_ENUM");
+    return error::kNoError;
+  }
+  if (mailbox == NULL) {
+    return error::kOutOfBounds;
+  }
+  DoConsumeTextureCHROMIUM(target, mailbox);
   return error::kNoError;
 }
 

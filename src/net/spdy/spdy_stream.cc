@@ -42,6 +42,7 @@ class NetLogSpdyStreamWindowUpdateParameter : public NetLog::EventParameters {
                                         int32 delta,
                                         int32 window_size)
       : stream_id_(stream_id), delta_(delta), window_size_(window_size) {}
+
   virtual Value* ToValue() const {
     DictionaryValue* dict = new DictionaryValue();
     dict->SetInteger("id", static_cast<int>(stream_id_));
@@ -49,7 +50,10 @@ class NetLogSpdyStreamWindowUpdateParameter : public NetLog::EventParameters {
     dict->SetInteger("window_size", window_size_);
     return dict;
   }
+
  private:
+  virtual ~NetLogSpdyStreamWindowUpdateParameter() {}
+
   const SpdyStreamId stream_id_;
   const int32 delta_;
   const int32 window_size_;
@@ -73,7 +77,7 @@ SpdyStream::SpdyStream(SpdySession* session,
                        const BoundNetLog& net_log)
     : continue_buffering_data_(true),
       stream_id_(stream_id),
-      priority_(0),
+      priority_(HIGHEST),
       slot_(0),
       stalled_by_flow_control_(false),
       send_window_size_(kSpdyStreamInitialWindowSize),
@@ -166,8 +170,17 @@ void SpdyStream::set_initial_recv_window_size(int32 window_size) {
   session_->set_initial_recv_window_size(window_size);
 }
 
+void SpdyStream::PossiblyResumeIfStalled() {
+  if (send_window_size_ > 0 && stalled_by_flow_control_) {
+    stalled_by_flow_control_ = false;
+    io_state_ = STATE_SEND_BODY;
+    DoLoop(OK);
+  }
+}
+
 void SpdyStream::AdjustSendWindowSize(int32 delta_window_size) {
   send_window_size_ += delta_window_size;
+  PossiblyResumeIfStalled();
 }
 
 void SpdyStream::IncreaseSendWindowSize(int32 delta_window_size) {
@@ -201,11 +214,7 @@ void SpdyStream::IncreaseSendWindowSize(int32 delta_window_size) {
       NetLog::TYPE_SPDY_STREAM_UPDATE_SEND_WINDOW,
       make_scoped_refptr(new NetLogSpdyStreamWindowUpdateParameter(
           stream_id_, delta_window_size, send_window_size_)));
-  if (send_window_size_ > 0 && stalled_by_flow_control_) {
-    stalled_by_flow_control_ = false;
-    io_state_ = STATE_SEND_BODY;
-    DoLoop(OK);
-  }
+  PossiblyResumeIfStalled();
 }
 
 void SpdyStream::DecreaseSendWindowSize(int32 delta_window_size) {
@@ -658,7 +667,7 @@ int SpdyStream::DoSendDomainBoundCert() {
   origin.erase(origin.length() - 1);  // trim trailing slash
   int rv =  session_->WriteCredentialFrame(
       origin, domain_bound_cert_type_, domain_bound_private_key_,
-      domain_bound_cert_, static_cast<RequestPriority>(priority_));
+      domain_bound_cert_, priority_);
   if (rv != ERR_IO_PENDING)
     return rv;
   return OK;
@@ -681,7 +690,7 @@ int SpdyStream::DoSendHeaders() {
 
   CHECK(request_.get());
   int result = session_->WriteSynStream(
-      stream_id_, static_cast<RequestPriority>(priority_), slot_, flags,
+      stream_id_, priority_, slot_, flags,
       request_);
   if (result != ERR_IO_PENDING)
     return result;

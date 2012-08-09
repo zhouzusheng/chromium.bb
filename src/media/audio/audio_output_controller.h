@@ -147,8 +147,7 @@ class MEDIA_EXPORT AudioOutputController
 
   ///////////////////////////////////////////////////////////////////////////
   // AudioSourceCallback methods.
-  virtual uint32 OnMoreData(AudioOutputStream* stream,
-                            uint8* dest,
+  virtual uint32 OnMoreData(uint8* dest,
                             uint32 max_size,
                             AudioBuffersState buffers_state) OVERRIDE;
   virtual void OnError(AudioOutputStream* stream, int code) OVERRIDE;
@@ -184,7 +183,7 @@ class MEDIA_EXPORT AudioOutputController
   void PollAndStartIfDataReady();
   void DoPause();
   void DoFlush();
-  void DoClose(const base::Closure& closed_task);
+  void DoClose();
   void DoSetVolume(double volume);
   void DoReportError(int code);
 
@@ -226,6 +225,9 @@ class MEDIA_EXPORT AudioOutputController
   // shutdown and force it to wait for the most delayed task.
   // Also, if we're shutting down, we do not want to poll for more data.
   base::WeakPtrFactory<AudioOutputController> weak_this_;
+
+  // Workaround for Mac OS X bug, see crbug.com/128128.
+  base::Time previous_stop_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioOutputController);
 };

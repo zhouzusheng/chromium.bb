@@ -10,6 +10,8 @@
 #include "GrGLProgram.h"
 
 #include "../GrAllocator.h"
+#include "GrCustomStage.h"
+#include "GrGLProgramStage.h"
 #include "GrGLShaderVar.h"
 #include "SkTrace.h"
 #include "SkXfermode.h"
@@ -87,29 +89,8 @@ inline void tex_attr_name(int coordIdx, GrStringBuilder* s) {
     s->appendS32(coordIdx);
 }
 
-inline GrGLShaderVar::Type float_vector_type(int count) {
-    GR_STATIC_ASSERT(GrGLShaderVar::kFloat_Type == 0);
-    GR_STATIC_ASSERT(GrGLShaderVar::kVec2f_Type == 1);
-    GR_STATIC_ASSERT(GrGLShaderVar::kVec3f_Type == 2);
-    GR_STATIC_ASSERT(GrGLShaderVar::kVec4f_Type == 3);
-    GrAssert(count > 0 && count <= 4);
-    return (GrGLShaderVar::Type)(count - 1);
-}
-
 inline const char* float_vector_type_str(int count) {
-    return GrGLShaderVar::TypeString(float_vector_type(count));
-}
-
-inline const char* vector_homog_coord(int count) {
-    static const char* HOMOGS[] = {"ERROR", "", ".y", ".z", ".w"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(HOMOGS));
-    return HOMOGS[count];
-}
-
-inline const char* vector_nonhomog_coords(int count) {
-    static const char* NONHOMOGS[] = {"ERROR", "", ".x", ".xy", ".xyz"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(NONHOMOGS));
-    return NONHOMOGS[count];
+    return GrGLShaderVar::TypeString(GrSLFloatVectorType(count));
 }
 
 inline const char* vector_all_coords(int count) {
@@ -370,7 +351,7 @@ namespace {
 
 // Adds a var that is computed in the VS and read in FS.
 // If there is a GS it will just pass it through.
-void append_varying(GrGLShaderVar::Type type,
+void append_varying(GrSLType type,
                     const char* name,
                     ShaderCodeSegments* segments,
                     const char** vsOutName = NULL,
@@ -416,7 +397,7 @@ void append_varying(GrGLShaderVar::Type type,
 
 // version of above that adds a stage number to the
 // the var name (for uniqueness)
-void append_varying(GrGLShaderVar::Type type,
+void append_varying(GrSLType type,
                     const char* name,
                     int stageNum,
                     ShaderCodeSegments* segments,
@@ -434,7 +415,7 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
                                   GrStringBuilder* coverageVar,
                                   ShaderCodeSegments* segments) const {
     if (fProgramDesc.fEdgeAANumEdges > 0) {
-        segments->fFSUnis.push_back().set(GrGLShaderVar::kVec3f_Type,
+        segments->fFSUnis.push_back().set(kVec3f_GrSLType,
                                           GrGLShaderVar::kUniform_TypeModifier,
                                           EDGES_UNI_NAME,
                                           fProgramDesc.fEdgeAANumEdges);
@@ -485,15 +466,17 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
         *coverageVar = "edgeAlpha";
     } else  if (layout & GrDrawTarget::kEdge_VertexLayoutBit) {
         const char *vsName, *fsName;
-        append_varying(GrGLShaderVar::kVec4f_Type, "Edge", segments,
+        append_varying(kVec4f_GrSLType, "Edge", segments,
             &vsName, &fsName);
-        segments->fVSAttrs.push_back().set(GrGLShaderVar::kVec4f_Type,
+        segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
             GrGLShaderVar::kAttribute_TypeModifier, EDGE_ATTR_NAME);
         segments->fVSCode.appendf("\t%s = " EDGE_ATTR_NAME ";\n", vsName);
-        if (GrDrawState::kHairLine_EdgeType == fProgramDesc.fVertexEdgeType) {
+        switch (fProgramDesc.fVertexEdgeType) {
+        case GrDrawState::kHairLine_EdgeType:
             segments->fFSCode.appendf("\tfloat edgeAlpha = abs(dot(vec3(gl_FragCoord.xy,1), %s.xyz));\n", fsName);
             segments->fFSCode.append("\tedgeAlpha = max(1.0 - edgeAlpha, 0.0);\n");
-        } else if (GrDrawState::kQuad_EdgeType == fProgramDesc.fVertexEdgeType) {
+            break;
+        case GrDrawState::kQuad_EdgeType:
             segments->fFSCode.append("\tfloat edgeAlpha;\n");
             // keep the derivative instructions outside the conditional 
             segments->fFSCode.appendf("\tvec2 duvdx = dFdx(%s.xy);\n", fsName);
@@ -511,8 +494,8 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
             if (kES2_GrGLBinding == gl.binding()) {
                 segments->fHeader.printf("#extension GL_OES_standard_derivatives: enable\n");
             }
-        } else {
-            GrAssert(GrDrawState::kHairQuad_EdgeType == fProgramDesc.fVertexEdgeType);
+            break;
+        case GrDrawState::kHairQuad_EdgeType:
             segments->fFSCode.appendf("\tvec2 duvdx = dFdx(%s.xy);\n", fsName);
             segments->fFSCode.appendf("\tvec2 duvdy = dFdy(%s.xy);\n", fsName);
             segments->fFSCode.appendf("\tvec2 gF = vec2(2.0*%s.x*duvdx.x - duvdx.y,\n"
@@ -524,6 +507,17 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
             if (kES2_GrGLBinding == gl.binding()) {
                 segments->fHeader.printf("#extension GL_OES_standard_derivatives: enable\n");
             }
+            break;
+        case GrDrawState::kCircle_EdgeType:
+            segments->fFSCode.append("\tfloat edgeAlpha;\n");
+            segments->fFSCode.appendf("\tfloat d = distance(gl_FragCoord.xy, %s.xy);\n", fsName);
+            segments->fFSCode.appendf("\tfloat outerAlpha = smoothstep(d - 0.5, d + 0.5, %s.z);\n", fsName);
+            segments->fFSCode.appendf("\tfloat innerAlpha = %s.w == 0.0 ? 1.0 : smoothstep(%s.w - 0.5, %s.w + 0.5, d);\n", fsName, fsName, fsName);
+            segments->fFSCode.append("\tedgeAlpha = outerAlpha * innerAlpha;\n");
+            break;
+        default:
+            GrCrash("Unknown Edge Type!");
+            break;
         }
         *coverageVar = "edgeAlpha";
     } else {
@@ -539,16 +533,16 @@ void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
                    GrStringBuilder* inColor) {
     switch (colorInput) {
         case GrGLProgram::ProgramDesc::kAttribute_ColorInput: {
-            segments->fVSAttrs.push_back().set(GrGLShaderVar::kVec4f_Type,
+            segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
                 GrGLShaderVar::kAttribute_TypeModifier,
                 COL_ATTR_NAME);
             const char *vsName, *fsName;
-            append_varying(GrGLShaderVar::kVec4f_Type, "Color", segments, &vsName, &fsName);
+            append_varying(kVec4f_GrSLType, "Color", segments, &vsName, &fsName);
             segments->fVSCode.appendf("\t%s = " COL_ATTR_NAME ";\n", vsName);
             *inColor = fsName;
             } break;
         case GrGLProgram::ProgramDesc::kUniform_ColorInput:
-            segments->fFSUnis.push_back().set(GrGLShaderVar::kVec4f_Type,
+            segments->fFSUnis.push_back().set(kVec4f_GrSLType,
                 GrGLShaderVar::kUniform_TypeModifier,
                 COL_UNI_NAME);
             programData->fUniLocations.fColorUni = kUseUniform;
@@ -567,11 +561,11 @@ void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
 
 void genAttributeCoverage(ShaderCodeSegments* segments,
                           GrStringBuilder* inOutCoverage) {
-    segments->fVSAttrs.push_back().set(GrGLShaderVar::kVec4f_Type,
+    segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
                                        GrGLShaderVar::kAttribute_TypeModifier,
                                        COV_ATTR_NAME);
     const char *vsName, *fsName;
-    append_varying(GrGLShaderVar::kVec4f_Type, "Coverage", 
+    append_varying(kVec4f_GrSLType, "Coverage", 
                    segments, &vsName, &fsName);
     segments->fVSCode.appendf("\t%s = " COV_ATTR_NAME ";\n", vsName);
     if (inOutCoverage->size()) {
@@ -586,7 +580,7 @@ void genAttributeCoverage(ShaderCodeSegments* segments,
 void genUniformCoverage(ShaderCodeSegments* segments,
                         GrGLProgram::CachedData* programData,
                         GrStringBuilder* inOutCoverage) {
-    segments->fFSUnis.push_back().set(GrGLShaderVar::kVec4f_Type,
+    segments->fFSUnis.push_back().set(kVec4f_GrSLType,
                                       GrGLShaderVar::kUniform_TypeModifier,
                                       COV_UNI_NAME);
     programData->fUniLocations.fCoverageUni = kUseUniform;
@@ -641,8 +635,17 @@ const char* GrGLProgram::adjustInColor(const GrStringBuilder& inColor) const {
     }
 }
 
+// If this destructor is in the header file, we must include GrGLProgramStage
+// instead of just forward-declaring it.
+GrGLProgram::CachedData::~CachedData() {
+    for (int i = 0; i < GrDrawState::kNumStages; ++i) {
+        delete fCustomStage[i];
+    }
+}
+
 
 bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
+                             GrCustomStage** customStages,
                              GrGLProgram::CachedData* programData) const {
 
     ShaderCodeSegments segments;
@@ -711,15 +714,15 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     }
 
 #if GR_GL_ATTRIBUTE_MATRICES
-    segments.fVSAttrs.push_back().set(GrGLShaderVar::kMat33f_Type,
+    segments.fVSAttrs.push_back().set(kMat33f_GrSLType,
         GrGLShaderVar::kAttribute_TypeModifier, VIEW_MATRIX_NAME);
     programData->fUniLocations.fViewMatrixUni = kSetAsAttribute;
 #else
-    segments.fVSUnis.push_back().set(GrGLShaderVar::kMat33f_Type,
+    segments.fVSUnis.push_back().set(kMat33f_GrSLType,
         GrGLShaderVar::kUniform_TypeModifier, VIEW_MATRIX_NAME);
     programData->fUniLocations.fViewMatrixUni = kUseUniform;
 #endif
-    segments.fVSAttrs.push_back().set(GrGLShaderVar::kVec2f_Type,
+    segments.fVSAttrs.push_back().set(kVec2f_GrSLType,
         GrGLShaderVar::kAttribute_TypeModifier, POS_ATTR_NAME);
 
     segments.fVSCode.append(
@@ -747,9 +750,24 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     for (int t = 0; t < GrDrawState::kMaxTexCoords; ++t) {
         if (GrDrawTarget::VertexUsesTexCoordIdx(t, layout)) {
             tex_attr_name(t, texCoordAttrs + t);
-            segments.fVSAttrs.push_back().set(GrGLShaderVar::kVec2f_Type,
+            segments.fVSAttrs.push_back().set(kVec2f_GrSLType,
                 GrGLShaderVar::kAttribute_TypeModifier,
                 texCoordAttrs[t].c_str());
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // Convert generic effect representation to GL-specific backend so they
+    // can be accesseed in genStageCode() and in subsequent uses of
+    // programData.
+    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
+        GrCustomStage* customStage = customStages[s];
+        if (NULL != customStage) {
+            GrGLProgramStageFactory* factory = customStage->getGLFactory();
+            programData->fCustomStage[s] =
+                factory->createGLInstance(customStage);
+        } else {
+            programData->fCustomStage[s] = NULL;
         }
     }
 
@@ -787,7 +805,8 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                                    outColor.c_str(),
                                    inCoords,
                                    &segments,
-                                   &programData->fUniLocations.fStages[s]);
+                                   &programData->fUniLocations.fStages[s],
+                                   programData->fCustomStage[s]);
                 inColor = outColor;
             }
         }
@@ -807,7 +826,7 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
         }
     }
     if (needColorFilterUniform) {
-        segments.fFSUnis.push_back().set(GrGLShaderVar::kVec4f_Type,
+        segments.fFSUnis.push_back().set(kVec4f_GrSLType,
                                          GrGLShaderVar::kUniform_TypeModifier,
                                          COL_FILTER_UNI_NAME);
         programData->fUniLocations.fColorFilterUni = kUseUniform;
@@ -828,10 +847,10 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
         inColor = "filteredColor";
     }
     if (applyColorMatrix) {
-        segments.fFSUnis.push_back().set(GrGLShaderVar::kMat44f_Type,
+        segments.fFSUnis.push_back().set(kMat44f_GrSLType,
                                          GrGLShaderVar::kUniform_TypeModifier,
                                          COL_MATRIX_UNI_NAME);
-        segments.fFSUnis.push_back().set(GrGLShaderVar::kVec4f_Type,
+        segments.fFSUnis.push_back().set(kVec4f_GrSLType,
                                          GrGLShaderVar::kUniform_TypeModifier,
                                          COL_MATRIX_VEC_UNI_NAME);
         programData->fUniLocations.fColorMatrixUni = kUseUniform;
@@ -899,19 +918,20 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                         inCoords = texCoordAttrs[tcIdx].c_str();
                     }
 
-                    genStageCode(gl, s,
-                                 fProgramDesc.fStages[s],
-                                 inCoverage.size() ? inCoverage.c_str() : NULL,
-                                 outCoverage.c_str(),
-                                 inCoords,
-                                 &segments,
-                                 &programData->fUniLocations.fStages[s]);
+                    this->genStageCode(gl, s,
+                        fProgramDesc.fStages[s],
+                        inCoverage.size() ? inCoverage.c_str() : NULL,
+                        outCoverage.c_str(),
+                        inCoords,
+                        &segments,
+                        &programData->fUniLocations.fStages[s],
+                        programData->fCustomStage[s]);
                     inCoverage = outCoverage;
                 }
             }
         }
         if (ProgramDesc::kNone_DualSrcOutput != fProgramDesc.fDualSrcOutput) {
-            segments.fFSOutputs.push_back().set(GrGLShaderVar::kVec4f_Type,
+            segments.fFSOutputs.push_back().set(kVec4f_GrSLType,
                 GrGLShaderVar::kOut_TypeModifier,
                 dual_source_output_name());
             bool outputIsZero = coverageIsZero;
@@ -1369,6 +1389,11 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
                                                imageIncrementName.c_str()));
                 GrAssert(kUnusedUniform != locations.fImageIncrementUni);
             }
+
+            if (NULL != programData->fCustomStage[s]) {
+                programData->fCustomStage[s]->
+                    initUniforms(gl.interface(), progID);
+            }
         }
     }
     GL_CALL(UseProgram(progID));
@@ -1384,6 +1409,7 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
         programData->fTextureWidth[s] = -1;
         programData->fTextureHeight[s] = -1;
         programData->fTextureDomain[s].setEmpty();
+        // Must not reset fStageOverride[] here.
     }
     programData->fViewMatrix = GrMatrix::InvalidMatrix();
     programData->fColor = GrColor_ILLEGAL;
@@ -1411,7 +1437,7 @@ GrGLShaderVar* genRadialVS(int stageNum,
                         int varyingDims, int coordDims) {
 
     GrGLShaderVar* radial2FSParams = &segments->fFSUnis.push_back();
-    radial2FSParams->setType(GrGLShaderVar::kFloat_Type);
+    radial2FSParams->setType(kFloat_GrSLType);
     radial2FSParams->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
     radial2FSParams->setArrayCount(6);
     radial2_param_name(stageNum, radial2FSParams->accessName());
@@ -1423,7 +1449,7 @@ GrGLShaderVar* genRadialVS(int stageNum,
     // part of the quadratic as a varying.
     if (varyingDims == coordDims) {
         GrAssert(2 == coordDims);
-        append_varying(GrGLShaderVar::kFloat_Type,
+        append_varying(kFloat_GrSLType,
                        "Radial2BCoeff",
                        stageNum,
                        segments,
@@ -1601,11 +1627,11 @@ void genConvolutionVS(int stageNum,
                       const char* varyingVSName) {
     //GrGLShaderVar* kernel = &segments->fFSUnis.push_back();
     *kernel = &segments->fFSUnis.push_back();
-    (*kernel)->setType(GrGLShaderVar::kFloat_Type);
+    (*kernel)->setType(kFloat_GrSLType);
     (*kernel)->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
     (*kernel)->setArrayCount(desc.fKernelWidth);
     GrGLShaderVar* imgInc = &segments->fFSUnis.push_back();
-    imgInc->setType(GrGLShaderVar::kVec2f_Type);
+    imgInc->setType(kVec2f_GrSLType);
     imgInc->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
 
     convolve_param_names(stageNum,
@@ -1669,7 +1695,7 @@ void genMorphologyVS(int stageNum,
                      const char** imageIncrementName,
                      const char* varyingVSName) {
     GrGLShaderVar* imgInc = &segments->fFSUnis.push_back();
-    imgInc->setType(GrGLShaderVar::kVec2f_Type);
+    imgInc->setType(kVec2f_GrSLType);
     imgInc->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
 
     image_increment_param_name(stageNum, imgInc->accessName());
@@ -1733,7 +1759,8 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
                                const char* fsOutColor,
                                const char* vsInCoord,
                                ShaderCodeSegments* segments,
-                               StageUniLocations* locations) const {
+                               StageUniLocations* locations,
+                               GrGLProgramStage* customStage) const {
 
     GrAssert(stageNum >= 0 && stageNum <= GrDrawState::kNumStages);
     GrAssert((desc.fInConfigFlags & StageDesc::kInConfigBitMask) ==
@@ -1744,7 +1771,12 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
     // gradients.
     static const int coordDims = 2;
     int varyingDims;
+
     /// Vertex Shader Stuff
+
+    if (NULL != customStage) {
+        customStage->setupVSUnis(segments->fVSUnis, stageNum);
+    }
 
     // decide whether we need a matrix to transform texture coords
     // and whether the varying needs a perspective coord.
@@ -1763,7 +1795,7 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
         locations->fTextureMatrixUni = kUseUniform;
     #endif
         tex_matrix_name(stageNum, mat->accessName());
-        mat->setType(GrGLShaderVar::kMat33f_Type);
+        mat->setType(kMat33f_GrSLType);
         matName = mat->getName().c_str();
 
         if (desc.fOptFlags & StageDesc::kNoPerspective_OptFlagBit) {
@@ -1773,7 +1805,7 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
         }
     }
 
-    segments->fFSUnis.push_back().set(GrGLShaderVar::kSampler2D_Type,
+    segments->fFSUnis.push_back().set(kSampler2D_GrSLType,
         GrGLShaderVar::kUniform_TypeModifier, "");
     sampler_name(stageNum, segments->fFSUnis.back().accessName());
     locations->fSamplerUni = kUseUniform;
@@ -1781,14 +1813,14 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
 
     const char* texelSizeName = NULL;
     if (StageDesc::k2x2_FetchMode == desc.fFetchMode) {
-        segments->fFSUnis.push_back().set(GrGLShaderVar::kVec2f_Type,
+        segments->fFSUnis.push_back().set(kVec2f_GrSLType,
             GrGLShaderVar::kUniform_TypeModifier, "");
         normalized_texel_size_name(stageNum, segments->fFSUnis.back().accessName());
         texelSizeName = segments->fFSUnis.back().getName().c_str();
     }
 
     const char *varyingVSName, *varyingFSName;
-    append_varying(float_vector_type(varyingDims),
+    append_varying(GrSLFloatVectorType(varyingDims),
                     "Stage",
                    stageNum,
                    segments,
@@ -1829,7 +1861,20 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
                         &imageIncrementName, varyingVSName);
     }
 
+    if (NULL != customStage) {
+        GrStringBuilder vertexShader;
+        customStage->emitVS(&vertexShader, varyingVSName);
+        segments->fVSCode.appendf("{\n");
+        segments->fVSCode.append(vertexShader);
+        segments->fVSCode.appendf("}\n");
+    }
+
     /// Fragment Shader Stuff
+
+    if (NULL != customStage) {
+        customStage->setupFSUnis(segments->fFSUnis, stageNum);
+    }
+
     GrStringBuilder fsCoordName;
     // function used to access the shader, may be made projective
     GrStringBuilder texFunc("texture2D");
@@ -1849,12 +1894,12 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
             fsCoordName = "inCoord";
             fsCoordName.appendS32(stageNum);
             segments->fFSCode.appendf("\t%s %s = %s%s / %s%s;\n",
-                                GrGLShaderVar::TypeString(float_vector_type(coordDims)),
-                                fsCoordName.c_str(),
-                                varyingFSName,
-                                vector_nonhomog_coords(varyingDims),
-                                varyingFSName,
-                                vector_homog_coord(varyingDims));
+                GrGLShaderVar::TypeString(GrSLFloatVectorType(coordDims)),
+                fsCoordName.c_str(),
+                varyingFSName,
+                GrGLSLVectorNonhomogCoords(varyingDims),
+                varyingFSName,
+                GrGLSLVectorHomogCoord(varyingDims));
         }
     }
 
@@ -1897,11 +1942,17 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
     const char* swizzle = "";
     if (desc.fInConfigFlags & StageDesc::kSwapRAndB_InConfigFlag) {
         GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag));
+        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag));
         swizzle = ".bgra";
     } else if (desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag) {
         GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
+        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag));
         swizzle = ".aaaa";
-    } 
+    } else if (desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag) {
+        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
+        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag));
+        swizzle = ".rrrr";
+    }
 
     GrStringBuilder modulate;
     if (NULL != fsInColor) {
@@ -1912,7 +1963,7 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
         StageDesc::kCustomTextureDomain_OptFlagBit) {
         GrStringBuilder texDomainName;
         tex_domain_name(stageNum, &texDomainName);
-        segments->fFSUnis.push_back().set(GrGLShaderVar::kVec4f_Type,
+        segments->fFSUnis.push_back().set(kVec4f_GrSLType,
             GrGLShaderVar::kUniform_TypeModifier, texDomainName);
         GrStringBuilder coordVar("clampCoord");
         segments->fFSCode.appendf("\t%s %s = clamp(%s, %s.xy, %s.zw);\n",
@@ -1951,6 +2002,8 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
             GrAssert(GrIsPow2(kMulByAlphaMask & desc.fInConfigFlags));
             GrAssert(!(desc.fInConfigFlags & 
                        StageDesc::kSmearAlpha_InConfigFlag));
+            GrAssert(!(desc.fInConfigFlags & 
+                       StageDesc::kSmearRed_InConfigFlag));
             segments->fFSCode.appendf("\t%s = %s(%s, %s)%s;\n",
                                       fsOutColor, texFunc.c_str(), 
                                       samplerName, sampleCoords.c_str(),
@@ -1971,6 +2024,31 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
                                       samplerName, sampleCoords.c_str(),
                                       swizzle, modulate.c_str());
         }
+    }
+
+    if (NULL != customStage) {
+        if (desc.fOptFlags & (StageDesc::kIdentityMatrix_OptFlagBit |
+                              StageDesc::kNoPerspective_OptFlagBit)) {
+            customStage->setSamplerMode(GrGLProgramStage::kDefault_SamplerMode);
+        } else if (StageDesc::kIdentity_CoordMapping == desc.fCoordMapping &&
+                   StageDesc::kSingle_FetchMode == desc.fFetchMode) {
+            customStage->setSamplerMode(GrGLProgramStage::kProj_SamplerMode);
+        } else {
+            customStage->setSamplerMode(
+                GrGLProgramStage::kExplicitDivide_SamplerMode);
+        }
+
+        GrStringBuilder fragmentShader;
+        fsCoordName = customStage->emitTextureSetup(
+                          &fragmentShader, varyingFSName,
+                          stageNum, coordDims, varyingDims);
+        customStage->emitFS(&fragmentShader, fsOutColor, fsInColor,
+                            samplerName, fsCoordName.c_str());
+      
+        // Enclose custom code in a block to avoid namespace conflicts
+        segments->fFSCode.appendf("{\n");
+        segments->fFSCode.append(fragmentShader);
+        segments->fFSCode.appendf("}\n");
     }
 }
 

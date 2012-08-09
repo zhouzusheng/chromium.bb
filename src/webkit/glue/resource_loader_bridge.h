@@ -32,8 +32,8 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_status.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebReferrerPolicy.h"
 #include "webkit/glue/resource_type.h"
 #include "webkit/glue/webkit_glue_export.h"
 
@@ -109,7 +109,6 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
       HeadersVector;
 
   WEBKIT_GLUE_EXPORT ResourceDevToolsInfo();
-  WEBKIT_GLUE_EXPORT ~ResourceDevToolsInfo();
 
   int32 http_status_code;
   std::string http_status_text;
@@ -117,6 +116,10 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
   HeadersVector response_headers;
   std::string request_headers_text;
   std::string response_headers_text;
+
+ private:
+  friend class base::RefCounted<ResourceDevToolsInfo>;
+  WEBKIT_GLUE_EXPORT ~ResourceDevToolsInfo();
 };
 
 struct ResourceResponseInfo {

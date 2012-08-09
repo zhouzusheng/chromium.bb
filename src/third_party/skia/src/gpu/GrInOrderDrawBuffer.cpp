@@ -7,7 +7,6 @@
  */
 
 
-
 #include "GrInOrderDrawBuffer.h"
 #include "GrRenderTarget.h"
 #include "GrTexture.h"
@@ -51,11 +50,6 @@ GrInOrderDrawBuffer::~GrInOrderDrawBuffer() {
     this->releaseGeometry();
     GrSafeUnref(fQuadIndexBuffer);
     GrSafeUnref(fAutoFlushTarget);
-}
-
-void GrInOrderDrawBuffer::initializeDrawStateAndClip(const GrDrawTarget& target) {
-    this->copyDrawState(target);
-    this->setClip(target.getClip());
 }
 
 void GrInOrderDrawBuffer::setQuadIndexBuffer(const GrIndexBuffer* indexBuffer) {
@@ -356,7 +350,7 @@ void GrInOrderDrawBuffer::onDrawIndexed(GrPrimitiveType primitiveType,
         this->pushState();
     }
 
-    draw.fVertexLayout = this->getGeomSrc().fVertexLayout;
+    draw.fVertexLayout = this->getVertexLayout();
     switch (this->getGeomSrc().fVertexSrc) {
     case kBuffer_GeometrySrcType:
         draw.fVertexBuffer = this->getGeomSrc().fVertexBuffer;
@@ -364,7 +358,7 @@ void GrInOrderDrawBuffer::onDrawIndexed(GrPrimitiveType primitiveType,
     case kReserved_GeometrySrcType: // fallthrough
     case kArray_GeometrySrcType: {
         size_t vertexBytes = (vertexCount + startVertex) *
-                             VertexSize(this->getGeomSrc().fVertexLayout);
+                             VertexSize(draw.fVertexLayout);
         poolState.fUsedPoolVertexBytes = 
                             GrMax(poolState.fUsedPoolVertexBytes, vertexBytes);
         draw.fVertexBuffer = poolState.fPoolVertexBuffer;
@@ -423,7 +417,7 @@ void GrInOrderDrawBuffer::onDrawNonIndexed(GrPrimitiveType primitiveType,
         this->pushState();
     }
 
-    draw.fVertexLayout = this->getGeomSrc().fVertexLayout;
+    draw.fVertexLayout = this->getVertexLayout();
     switch (this->getGeomSrc().fVertexSrc) {
     case kBuffer_GeometrySrcType:
         draw.fVertexBuffer = this->getGeomSrc().fVertexBuffer;
@@ -431,7 +425,7 @@ void GrInOrderDrawBuffer::onDrawNonIndexed(GrPrimitiveType primitiveType,
     case kReserved_GeometrySrcType: // fallthrough
     case kArray_GeometrySrcType: {
         size_t vertexBytes = (vertexCount + startVertex) *
-                             VertexSize(this->getGeomSrc().fVertexLayout);
+                             VertexSize(draw.fVertexLayout);
         poolState.fUsedPoolVertexBytes = 
                             GrMax(poolState.fUsedPoolVertexBytes, vertexBytes);
         draw.fVertexBuffer = poolState.fPoolVertexBuffer;
@@ -468,11 +462,10 @@ void GrInOrderDrawBuffer::reset() {
     this->resetIndexSource();
     uint32_t numStates = fStates.count();
     for (uint32_t i = 0; i < numStates; ++i) {
-        const GrDrawState& dstate = this->accessSavedDrawState(fStates[i]);
         for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-            GrSafeUnref(dstate.getTexture(s));
+            GrSafeUnref(fStates[i].getTexture(s));
         }
-        GrSafeUnref(dstate.getRenderTarget());
+        GrSafeUnref(fStates[i].getRenderTarget());
     }
     int numDraws = fDraws.count();
     for (int d = 0; d < numDraws; ++d) {
@@ -528,8 +521,7 @@ void GrInOrderDrawBuffer::playback(GrDrawTarget* target) {
         const Draw& draw = fDraws[i];
         if (draw.fStateChanged) {
             ++currState;
-            GrDrawState* ds = &GrDrawTarget::accessSavedDrawState(fStates[currState]);
-            target->setDrawState(ds);
+            target->setDrawState(&fStates[currState]);
         }
         if (draw.fClipChanged) {
             ++currClip;
@@ -706,7 +698,7 @@ void GrInOrderDrawBuffer::onSetVertexSourceToArray(const void* vertexArray,
 #if GR_DEBUG
     bool success =
 #endif
-    fVertexPool.appendVertices(this->getGeomSrc().fVertexLayout,
+    fVertexPool.appendVertices(this->getVertexLayout(),
                                vertexCount,
                                vertexArray,
                                &poolState.fPoolVertexBuffer,
@@ -779,8 +771,7 @@ bool GrInOrderDrawBuffer::needsNewState() const {
      if (fStates.empty()) {
         return true;
      } else {
-        const GrDrawState& old = this->accessSavedDrawState(fStates.back());
-        return old != this->getDrawState();
+        return fStates.back() != this->getDrawState();
      }
 }
 
@@ -790,7 +781,7 @@ void GrInOrderDrawBuffer::pushState() {
         GrSafeRef(drawState.getTexture(s));
     }
     GrSafeRef(drawState.getRenderTarget());
-    this->saveCurrentDrawState(&fStates.push_back());
+    fStates.push_back(this->getDrawState());
  }
 
 bool GrInOrderDrawBuffer::needsNewClip() const {

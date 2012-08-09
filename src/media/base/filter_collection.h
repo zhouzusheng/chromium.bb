@@ -8,12 +8,13 @@
 #include <list>
 
 #include "base/memory/ref_counted.h"
-#include "media/base/demuxer_factory.h"
+#include "media/base/demuxer.h"
 #include "media/base/filters.h"
 
 namespace media {
 
 class AudioDecoder;
+class VideoDecoder;
 
 // This is a collection of Filter objects used to form a media playback
 // pipeline. See src/media/base/pipeline.h for more information.
@@ -22,9 +23,9 @@ class MEDIA_EXPORT FilterCollection {
   FilterCollection();
   ~FilterCollection();
 
-  // DemuxerFactory accessor methods.
-  void SetDemuxerFactory(scoped_ptr<DemuxerFactory> factory);
-  DemuxerFactory* GetDemuxerFactory();
+  // Demuxer accessor methods.
+  void SetDemuxer(const scoped_refptr<Demuxer>& demuxer);
+  const scoped_refptr<Demuxer>& GetDemuxer();
 
   // Adds a filter to the collection.
   void AddAudioDecoder(AudioDecoder* audio_decoder);
@@ -60,7 +61,7 @@ class MEDIA_EXPORT FilterCollection {
   typedef std::pair<FilterType, scoped_refptr<Filter> > FilterListElement;
   typedef std::list<FilterListElement> FilterList;
   FilterList filters_;
-  scoped_ptr<DemuxerFactory> demuxer_factory_;
+  scoped_refptr<Demuxer> demuxer_;
   std::list<scoped_refptr<AudioDecoder> > audio_decoders_;
   std::list<scoped_refptr<VideoDecoder> > video_decoders_;
 

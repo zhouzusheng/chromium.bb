@@ -37,7 +37,7 @@ using namespace std;
 
 namespace WebCore {
 
-bool CSSParser::parseSVGValue(int propId, bool important)
+bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
 {
     CSSParserValue* value = m_valueList->current();
     if (!value)
@@ -199,17 +199,6 @@ bool CSSParser::parseSVGValue(int propId, bool important)
             if (parsedValue)
                 m_valueList->next();
         }
-        break;
-
-    case CSSPropertyColor:                // <color> | inherit
-        if ((id >= CSSValueAqua && id <= CSSValueWindowtext) ||
-           (id >= CSSValueAliceblue && id <= CSSValueYellowgreen))
-            parsedValue = SVGColor::createFromString(value->string);
-        else
-            parsedValue = parseSVGColor();
-
-        if (parsedValue)
-            m_valueList->next();
         break;
 
     case CSSPropertyStopColor: // TODO : icccolor

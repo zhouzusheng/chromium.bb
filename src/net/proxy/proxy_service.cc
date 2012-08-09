@@ -348,6 +348,9 @@ class ProxyConfigChangedNetLogParam : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~ProxyConfigChangedNetLogParam() {}
+
  private:
   const ProxyConfig old_config_;
   const ProxyConfig new_config_;
@@ -374,10 +377,27 @@ class BadProxyListNetLogParam : public NetLog::EventParameters {
     return dict;
   }
 
+ protected:
+  virtual ~BadProxyListNetLogParam() {}
+
  private:
   std::vector<std::string> proxy_list_;
   DISALLOW_COPY_AND_ASSIGN(BadProxyListNetLogParam);
 };
+
+#if defined(OS_CHROMEOS)
+class UnsetProxyConfigService : public ProxyConfigService {
+ public:
+  UnsetProxyConfigService() {}
+  virtual ~UnsetProxyConfigService() {}
+
+  virtual void AddObserver(Observer* observer) {}
+  virtual void RemoveObserver(Observer* observer) {}
+  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) {
+    return CONFIG_UNSET;
+  }
+};
+#endif
 
 }  // namespace
 
@@ -1405,9 +1425,10 @@ ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
 #elif defined(OS_MACOSX)
   return new ProxyConfigServiceMac(io_loop);
 #elif defined(OS_CHROMEOS)
-  NOTREACHED() << "ProxyConfigService for ChromeOS should be created in "
-               << "profile_io_data.cc::CreateProxyConfigService.";
-  return NULL;
+  LOG(ERROR) << "ProxyConfigService for ChromeOS should be created in "
+             << "profile_io_data.cc::CreateProxyConfigService and this should "
+             << "be used only for examples.";
+  return new UnsetProxyConfigService;
 #elif defined(OS_LINUX)
   ProxyConfigServiceLinux* linux_config_service =
       new ProxyConfigServiceLinux();
@@ -1424,7 +1445,9 @@ ProxyConfigService* ProxyService::CreateSystemProxyConfigService(
   // running on glib_default_loop). Additionally register for
   // notifications (delivered in either |glib_default_loop| or
   // |file_loop|) to keep us updated when the proxy config changes.
-  linux_config_service->SetupAndFetchInitialConfig(glib_default_loop, io_loop,
+  linux_config_service->SetupAndFetchInitialConfig(
+      glib_default_loop->message_loop_proxy(),
+      io_loop->message_loop_proxy(),
       static_cast<MessageLoopForIO*>(file_loop));
 
   return linux_config_service;

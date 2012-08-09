@@ -23,12 +23,15 @@ enum FileSystemType {
   kFileSystemTypeTemporary = WebKit::WebFileSystem::TypeTemporary,
   kFileSystemTypePersistent = WebKit::WebFileSystem::TypePersistent,
 
+  // Indicates non-sandboxed isolated filesystem.
+  kFileSystemTypeIsolated = WebKit::WebFileSystem::TypeIsolated,
+
   // Indicates non-sandboxed filesystem where files are placed outside the
   // profile directory (thus called 'external' filesystem).
   // This filesystem is used only by Chrome OS as of writing.
   kFileSystemTypeExternal = WebKit::WebFileSystem::TypeExternal,
 };
 
-}
+}  // namespace fileapi
 
 #endif  // WEBKIT_FILEAPI_FILE_SYSTEM_TYPES_H_

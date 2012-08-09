@@ -6,6 +6,12 @@
 
 #include "base/logging.h"
 
+namespace {
+
+bool g_enable_compression_default = true;
+
+}  // namespace
+
 namespace net {
 
 BufferedSpdyFramer::BufferedSpdyFramer(int version)
@@ -15,6 +21,7 @@ BufferedSpdyFramer::BufferedSpdyFramer(int version)
       header_buffer_valid_(false),
       header_stream_id_(SpdyFramer::kInvalidStream),
       frames_received_(0) {
+  spdy_framer_.set_enable_compression(g_enable_compression_default);
   memset(header_buffer_, 0, sizeof(header_buffer_));
 }
 
@@ -171,7 +178,7 @@ bool BufferedSpdyFramer::HasError() {
 SpdySynStreamControlFrame* BufferedSpdyFramer::CreateSynStream(
     SpdyStreamId stream_id,
     SpdyStreamId associated_stream_id,
-    int priority,
+    SpdyPriority priority,
     uint8 credential_slot,
     SpdyControlFlags flags,
     bool compressed,
@@ -196,7 +203,7 @@ SpdyRstStreamControlFrame* BufferedSpdyFramer::CreateRstStream(
 }
 
 SpdySettingsControlFrame* BufferedSpdyFramer::CreateSettings(
-    const SpdySettings& values) const {
+    const SettingsMap& values) const {
   return spdy_framer_.CreateSettings(values);
 }
 
@@ -241,12 +248,18 @@ SpdyPriority BufferedSpdyFramer::GetHighestPriority() const {
   return spdy_framer_.GetHighestPriority();
 }
 
-SpdyFrame* BufferedSpdyFramer::CompressFrame(const SpdyFrame& frame) {
-  return spdy_framer_.CompressFrame(frame);
-}
-
 bool BufferedSpdyFramer::IsCompressible(const SpdyFrame& frame) const {
   return spdy_framer_.IsCompressible(frame);
+}
+
+SpdyControlFrame* BufferedSpdyFramer::CompressControlFrame(
+    const SpdyControlFrame& frame) {
+  return spdy_framer_.CompressControlFrame(frame);
+}
+
+// static
+void BufferedSpdyFramer::set_enable_compression_default(bool value) {
+  g_enable_compression_default = value;
 }
 
 void BufferedSpdyFramer::InitHeaderStreaming(const SpdyControlFrame* frame) {

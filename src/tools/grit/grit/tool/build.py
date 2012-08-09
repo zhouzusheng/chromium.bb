@@ -20,22 +20,6 @@ from grit.tool import interface
 from grit import shortcuts
 
 
-def ParseDefine(define):
-  '''Parses a define that is either like "NAME" or "NAME=VAL" and
-  returns its components, using True as the default value.  Values of
-  "1" and "0" are transformed to True and False respectively.
-  '''
-  parts = [part.strip() for part in define.split('=')]
-  assert len(parts) >= 1
-  name = parts[0]
-  val = True
-  if len(parts) > 1:
-    val = parts[1]
-  if val == "1": val = True
-  elif val == "0": val = False
-  return (name, val)
-
-
 class RcBuilder(interface.Tool):
   '''A tool that builds RC files and resource header files for compilation.
 
@@ -56,10 +40,10 @@ Options:
 
   -E NAME=VALUE     Set environment variable NAME to VALUE (within grit).
 
-  -f FIRSTIDFILE    Path to a python file that specifies the first id of
-                    value to use for resources.  Defaults to the file
-                    resources_ids next to grit.py.  Set to an empty string
-                    if you don't want to use a first id file.
+  -f FIRSTIDSFILE   Path to a python file that specifies the first id of
+                    value to use for resources.  A non-empty value here will
+                    override the value specified in the <grit> node's
+                    first_ids_file.
 
   -w WHITELISTFILE  Path to a file containing the string names of the
                     resources to include.  Anything not listed is dropped.
@@ -77,25 +61,28 @@ are exported to translation interchange files (e.g. XMB files), etc.
 
   def Run(self, opts, args):
     self.output_directory = '.'
-    first_id_filename = None
+    first_ids_file = None
     whitelist_filenames = []
     (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:')
     for (key, val) in own_opts:
       if key == '-o':
         self.output_directory = val
       elif key == '-D':
-        name, val = ParseDefine(val)
+        name, val = util.ParseDefine(val)
         self.defines[name] = val
       elif key == '-E':
         (env_name, env_value) = val.split('=')
         os.environ[env_name] = env_value
       elif key == '-f':
-        first_id_filename = val
+        # TODO(joi@chromium.org): Remove this override once change
+        # lands in WebKit.grd to specify the first_ids_file in the
+        # .grd itself.
+        first_ids_file = val
       elif key == '-w':
         whitelist_filenames.append(val)
 
     if len(args):
-      print "This tool takes no tool-specific arguments."
+      print 'This tool takes no tool-specific arguments.'
       return 2
     self.SetOptions(opts)
     if self.scons_targets:
@@ -113,20 +100,26 @@ are exported to translation interchange files (e.g. XMB files), etc.
         self.whitelist_names |= set(whitelist_file.read().strip().split('\n'))
         whitelist_file.close()
 
-    self.res = grd_reader.Parse(opts.input, first_id_filename=first_id_filename,
-                                debug=opts.extra_verbose, defines=self.defines)
+    self.res = grd_reader.Parse(opts.input,
+                                debug=opts.extra_verbose,
+                                first_ids_file=first_ids_file,
+                                defines=self.defines)
+    # Set an output context so that conditionals can use defines during the
+    # gathering stage; we use a dummy language here since we are not outputting
+    # a specific language.
+    self.res.SetOutputContext('en', self.defines)
     self.res.RunGatherers(recursive = True)
     self.Process()
     return 0
 
-  def __init__(self):
+  def __init__(self, defines=None):
     # Default file-creation function is built-in file().  Only done to allow
     # overriding by unit test.
     self.fo_create = file
 
     # key/value pairs of C-preprocessor like defines that are used for
     # conditional output of resources
-    self.defines = {}
+    self.defines = defines or {}
 
     # self.res is a fully-populated resource tree if Run()
     # has been called, otherwise None.
@@ -180,11 +173,11 @@ are exported to translation interchange files (e.g. XMB files), etc.
       formatter = node.ItemFormatter(output_node.GetType())
       if formatter:
         formatted = formatter.Format(node, output_node.GetLanguage(),
-                                     begin_item=True, output_dir=base_dir)
+                                     output_dir=base_dir)
         if should_write:
           outfile.write(formatted)
     except:
-      print u"Error processing node %s" % unicode(node)
+      print u'Error processing node %s' % unicode(node)
       raise
 
     for child in node.children:
@@ -192,12 +185,12 @@ are exported to translation interchange files (e.g. XMB files), etc.
 
     try:
       if formatter:
-        formatted = formatter.Format(node, output_node.GetLanguage(),
-                                     begin_item=False, output_dir=base_dir)
+        formatted = formatter.FormatEnd(node, output_node.GetLanguage(),
+                                        output_dir=base_dir)
         if should_write:
           outfile.write(formatted)
     except:
-      print u"Error processing node %s" % unicode(node)
+      print u'Error processing node %s' % unicode(node)
       raise
   ProcessNode = staticmethod(ProcessNode)
 
@@ -232,8 +225,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
       if output.GetType() in ('rc_header', 'resource_map_header',
           'resource_map_source', 'resource_file_map_source'):
         encoding = 'cp1252'
-      elif output.GetType() in ('js_map_format', 'plist', 'plist_strings',
-          'doc', 'json'):
+      elif output.GetType() in ('c_format', 'js_map_format', 'plist',
+                                'plist_strings', 'doc', 'json'):
         encoding = 'utf_8'
       else:
         # TODO(gfeher) modify here to set utf-8 encoding for admx/adml
@@ -297,4 +290,5 @@ are exported to translation interchange files (e.g. XMB files), etc.
     if warnings and self.defines.get('_google_chrome', False):
       print warnings
     if self.res.UberClique().HasMissingTranslations():
+      print self.res.UberClique().missing_translations_
       sys.exit(-1)

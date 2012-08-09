@@ -117,6 +117,11 @@ public:
             m_height = minimumSize.height();
     }
 
+    int area() const
+    {
+        return m_width * m_height;
+    }
+
     int diagonalLengthSquared() const
     {
         return m_width * m_width + m_height * m_height;

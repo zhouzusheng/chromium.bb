@@ -15,7 +15,6 @@
 #include "media/base/filter_host.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/preload.h"
 #include "ui/gfx/size.h"
 
 class MessageLoop;
@@ -118,8 +117,8 @@ class MEDIA_EXPORT Pipeline
   // Constructs a media pipeline that will execute on |message_loop|.
   Pipeline(MessageLoop* message_loop, MediaLog* media_log);
 
-  // Build a pipeline to render the given URL using the given filter collection
-  // to construct a filter chain.
+  // Build a pipeline to using the given filter collection to construct a filter
+  // chain.
   //
   // Pipeline initialization is an inherently asynchronous process.  Clients can
   // either poll the IsInitialized() method (discouraged) or optionally pass in
@@ -139,7 +138,6 @@ class MEDIA_EXPORT Pipeline
   //
   // TODO(scherkus): remove IsInitialized() and force clients to use callbacks.
   void Start(scoped_ptr<FilterCollection> filter_collection,
-             const std::string& url,
              const PipelineStatusCB& ended_cb,
              const PipelineStatusCB& error_cb,
              const NetworkEventCB& network_cb,
@@ -207,9 +205,6 @@ class MEDIA_EXPORT Pipeline
   // range from 0.0f (muted) to 1.0f (full volume).  This value affects all
   // channels proportionately for multi-channel audio streams.
   void SetVolume(float volume);
-
-  // Set the preload value for the pipeline.
-  void SetPreload(Preload preload);
 
   // Gets the current pipeline time. For a pipeline "time" progresses from 0 to
   // the end of the media.
@@ -355,7 +350,6 @@ class MEDIA_EXPORT Pipeline
   // methods are run as the result of posting a task to the PipelineInternal's
   // message loop.
   void StartTask(scoped_ptr<FilterCollection> filter_collection,
-                 const std::string& url,
                  const PipelineStatusCB& ended_cb,
                  const PipelineStatusCB& error_cb,
                  const NetworkEventCB& network_cb,
@@ -380,12 +374,6 @@ class MEDIA_EXPORT Pipeline
 
   // Carries out notifying filters that the volume has changed.
   void VolumeChangedTask(float volume);
-
-  // Returns media preload value.
-  virtual Preload GetPreload() const;
-
-  // Carries out notifying filters that the preload value has changed.
-  void PreloadChangedTask(Preload preload);
 
   // Carries out notifying filters that we are seeking to a new timestamp.
   void SeekTask(base::TimeDelta time, const PipelineStatusCB& seek_cb);
@@ -415,9 +403,9 @@ class MEDIA_EXPORT Pipeline
   // of these methods are only called on the pipeline thread.
 
   // The following initialize methods are used to select a specific type of
-  // Filter object from FilterCollection and initialize it asynchronously.
+  // object from FilterCollection and initialize it asynchronously.
   void InitializeDemuxer();
-  void OnDemuxerBuilt(PipelineStatus status, Demuxer* demuxer);
+  void OnDemuxerInitialized(PipelineStatus status);
 
   // Returns true if the asynchronous action of creating decoder has started.
   // Returns false if this method did nothing because the corresponding
@@ -528,11 +516,6 @@ class MEDIA_EXPORT Pipeline
   // filters.
   float volume_;
 
-  // Current value of preload attribute. This value is set immediately via
-  // SetPreload() and a task is dispatched on the message loop to notify the
-  // filters.
-  Preload preload_;
-
   // Current playback rate (>= 0.0f).  This value is set immediately via
   // SetPlaybackRate() and a task is dispatched on the message loop to notify
   // the filters.
@@ -588,9 +571,6 @@ class MEDIA_EXPORT Pipeline
 
   // Filter collection as passed in by Start().
   scoped_ptr<FilterCollection> filter_collection_;
-
-  // URL for the data source as passed in by Start().
-  std::string url_;
 
   // Callbacks for various pipeline operations.
   PipelineStatusCB seek_cb_;

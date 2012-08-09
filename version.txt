@@ -1,11 +1,11 @@
-win stable release 19.0.1084.52
-released 23/May/2012
-trunk revision 129376
-branch revision 138391
-webkit revision 112327
-webkit version: 536.5
-v8 version 3.9.24.28
+win stable release 20.0.1132.47
+released 06/28/12
+trunk revision 135598
+branch revision 144678
+webkit revision 116185
+webkit version: 536.11
+v8 version 3.10.8.19
 
-created from true branch 1084
+created from true branch 1132_43
 http://src.chromium.org/svn/releases/19.0.1084.52/
 

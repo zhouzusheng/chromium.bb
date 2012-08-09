@@ -24,7 +24,6 @@
 
 #include "config.h"
 
-#include "CSSMediaRule.h"
 #include "CSSParser.h"
 #include "CSSParserMode.h"
 #include "CSSPrimitiveValue.h"
@@ -36,6 +35,7 @@
 #include "HTMLNames.h"
 #include "MediaList.h"
 #include "MediaQueryExp.h"
+#include "StyleRule.h"
 #include "WebKitCSSKeyframeRule.h"
 #include "WebKitCSSKeyframesRule.h"
 #include <wtf/FastMalloc.h>
@@ -68,8 +68,8 @@ using namespace HTMLNames;
     double number;
     CSSParserString string;
 
-    CSSRule* rule;
-    Vector<RefPtr<CSSRule> >* ruleList;
+    StyleRuleBase* rule;
+    Vector<RefPtr<StyleRuleBase> >* ruleList;
     CSSParserSelector* selector;
     Vector<OwnPtr<CSSParserSelector> >* selectorList;
     CSSSelector::MarginBoxType marginBox;
@@ -81,9 +81,10 @@ using namespace HTMLNames;
     CSSParserValue value;
     CSSParserValueList* valueList;
     Vector<OwnPtr<MediaQueryExp> >* mediaQueryExpList;
-    WebKitCSSKeyframeRule* keyframeRule;
-    WebKitCSSKeyframesRule* keyframesRule;
+    StyleKeyframe* keyframe;
+    StyleRuleKeyframes* keyframesRule;
     float val;
+    CSSPropertyID id;
 }
 
 %{
@@ -245,12 +246,12 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 %type <mediaQueryExpList> maybe_and_media_query_exp_list
 
 %type <string> keyframe_name
-%type <keyframeRule> keyframe_rule
+%type <keyframe> keyframe_rule
 %type <keyframesRule> keyframes_rule
 %type <valueList> key_list
 %type <value> key
 
-%type <integer> property
+%type <id> property
 
 %type <selector> specifier
 %type <selector> specifier_list
@@ -392,6 +393,9 @@ charset:
 ignored_charset:
     CHARSET_SYM maybe_space STRING maybe_space ';' {
         // Ignore any @charset rule not at the beginning of the style sheet.
+        $$ = 0;
+    }
+    | CHARSET_SYM maybe_space ';' {
         $$ = 0;
     }
 ;
@@ -602,6 +606,9 @@ media:
     | MEDIA_SYM maybe_space '{' maybe_space block_rule_list save_block {
         $$ = static_cast<CSSParser*>(parser)->createMediaRule(0, $5);
     }
+    | MEDIA_SYM maybe_space ';' {
+        $$ = 0;
+    }
     ;
 
 medium:
@@ -613,7 +620,7 @@ medium:
 keyframes:
     WEBKIT_KEYFRAMES_SYM maybe_space keyframe_name maybe_space '{' maybe_space keyframes_rule '}' {
         $$ = $7;
-        $7->setNameInternal($3);
+        $7->setName($3);
     }
     ;
   
@@ -627,13 +634,13 @@ keyframes_rule:
     | keyframes_rule keyframe_rule maybe_space {
         $$ = $1;
         if ($2)
-            $$->append($2);
+            $$->parserAppendKeyframe($2);
     }
     ;
 
 keyframe_rule:
     key_list maybe_space '{' maybe_space declaration_list '}' {
-        $$ = static_cast<CSSParser*>(parser)->createKeyframeRule($1);
+        $$ = static_cast<CSSParser*>(parser)->createKeyframe($1);
     }
     ;
 
@@ -994,8 +1001,7 @@ element_name:
     IDENT {
         CSSParserString& str = $1;
         CSSParser* p = static_cast<CSSParser*>(parser);
-        Document* doc = p->findDocument();
-        if (doc && doc->isHTMLDocument())
+        if (p->m_context.isHTMLDocument)
             str.lower();
         $$ = str;
     }
@@ -1026,7 +1032,7 @@ specifier:
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         $$->setMatch(CSSSelector::Id);
-        if (p->m_cssParserMode == CSSQuirksMode || p->m_cssParserMode == SVGAttributeMode)
+        if (p->m_context.mode == CSSQuirksMode)
             $1.lower();
         $$->setValue($1);
     }
@@ -1037,7 +1043,7 @@ specifier:
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = p->createFloatingSelector();
             $$->setMatch(CSSSelector::Id);
-            if (p->m_cssParserMode == CSSQuirksMode || p->m_cssParserMode == SVGAttributeMode)
+            if (p->m_context.mode == CSSQuirksMode)
                 $1.lower();
             $$->setValue($1);
         }
@@ -1052,7 +1058,7 @@ class:
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         $$->setMatch(CSSSelector::Class);
-        if (p->m_cssParserMode == CSSQuirksMode || p->m_cssParserMode == SVGAttributeMode)
+        if (p->m_context.mode == CSSQuirksMode)
             $2.lower();
         $$->setValue($2);
     }
@@ -1062,8 +1068,7 @@ attr_name:
     IDENT maybe_space {
         CSSParserString& str = $1;
         CSSParser* p = static_cast<CSSParser*>(parser);
-        Document* doc = p->findDocument();
-        if (doc && doc->isHTMLDocument())
+        if (p->m_context.isHTMLDocument)
             str.lower();
         $$ = str;
     }
@@ -1307,7 +1312,7 @@ declaration:
         if ($1 && $4) {
             p->m_valueList = p->sinkFloatingValueList($4);
             int oldParsedProperties = p->m_parsedProperties.size();
-            $$ = p->parseValue($1, $5);
+            $$ = p->parseValue(static_cast<CSSPropertyID>($1), $5);
             if (!$$)
                 p->rollbackLastProperties(p->m_parsedProperties.size() - oldParsedProperties);
             else
@@ -1473,8 +1478,8 @@ unary_term:
       $$.fValue = $1;
       $$.unit = CSSPrimitiveValue::CSS_REMS;
       CSSParser* p = static_cast<CSSParser*>(parser);
-      if (Document* doc = p->findDocument())
-          doc->setUsesRemUnits(true);
+      if (p->m_styleSheet)
+          p->m_styleSheet->parserSetUsesRemUnits(true);
   }
   | VW maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VW; }
   | VH maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VH; }

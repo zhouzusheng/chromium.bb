@@ -44,7 +44,7 @@ public:
 
     virtual bool isFlexibleBox() const { return true; }
     virtual void computePreferredLogicalWidths();
-    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0, BlockLayoutPass = NormalLayoutPass);
+    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0);
 
     bool isHorizontalFlow() const;
 
@@ -69,7 +69,7 @@ private:
     bool isLeftToRightFlow() const;
     bool isMultiline() const;
     Length crossAxisLength() const;
-    Length mainAxisLengthForChild(RenderBox* child) const;
+    Length preferredLengthForChild(RenderBox* child) const;
     void setCrossAxisExtent(LayoutUnit);
     LayoutUnit crossAxisExtentForChild(RenderBox* child);
     LayoutUnit mainAxisExtentForChild(RenderBox* child);
@@ -103,9 +103,6 @@ private:
     void layoutFlexItems(FlexOrderIterator&, WTF::Vector<LineContext>&);
     void repositionLogicalHeightDependentFlexItems(FlexOrderIterator&, WTF::Vector<LineContext>&, LayoutUnit& oldClientAfterEdge);
 
-    float positiveFlexForChild(RenderBox* child) const;
-    float negativeFlexForChild(RenderBox* child) const;
-
     LayoutUnit availableAlignmentSpaceForChild(LayoutUnit lineCrossAxisExtent, RenderBox*);
     LayoutUnit marginBoxAscentForChild(RenderBox*);
 
@@ -122,10 +119,11 @@ private:
     void prepareChildForPositionedLayout(RenderBox* child, LayoutUnit mainAxisOffset, LayoutUnit crossAxisOffset);
     void layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, const OrderedFlexItemList&, const WTF::Vector<LayoutUnit>& childSizes, LayoutUnit availableFreeSpace, WTF::Vector<LineContext>&);
     void layoutColumnReverse(const OrderedFlexItemList&, const WTF::Vector<LayoutUnit>& childSizes, LayoutUnit crossAxisOffset, LayoutUnit availableFreeSpace);
+    void packFlexLines(FlexOrderIterator&, WTF::Vector<LineContext>&);
     void alignChildren(FlexOrderIterator&, const WTF::Vector<LineContext>&);
     void applyStretchAlignmentToChild(RenderBox*, LayoutUnit lineCrossAxisExtent);
     void flipForRightToLeftColumn(FlexOrderIterator&);
-    void flipForWrapReverse(FlexOrderIterator&, const WTF::Vector<LineContext>&);
+    void flipForWrapReverse(FlexOrderIterator&, const WTF::Vector<LineContext>&, LayoutUnit crossAxisStartEdge);
 };
 
 } // namespace WebCore

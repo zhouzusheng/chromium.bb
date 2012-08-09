@@ -6,6 +6,8 @@
 #define UI_GFX_CANVAS_H_
 #pragma once
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
@@ -24,6 +26,7 @@ class Brush;
 class Rect;
 class Font;
 class Point;
+class ShadowValue;
 class Size;
 
 // Canvas is a SkCanvas wrapper that provides a number of methods for
@@ -168,12 +171,29 @@ class UI_EXPORT Canvas {
   // call Restore() more times than Save*().
   void Restore() ;
 
-  // Returns true if the clip is non-empty.
+  // Adds |rect| to the current clip. Returns true if the resulting clip is
+  // non-empty.
   bool ClipRect(const gfx::Rect& rect);
+
+  // Adds |path| to the current clip. Returns true if the resulting clip is
+  // non-empty.
+  bool ClipPath(const SkPath& path);
+
+  // Returns the bounds of the current clip (in local coordinates) in the
+  // |bounds| parameter, and returns true if it is non empty.
+  bool GetClipBounds(gfx::Rect* bounds);
 
   void Translate(const gfx::Point& point);
 
   void Scale(int x_scale, int y_scale);
+
+  // Fills the entire canvas' bitmap (restricted to current clip) with
+  // specified |color| using a transfer mode of SkXfermode::kSrcOver_Mode.
+  void DrawColor(SkColor color);
+
+  // Fills the entire canvas' bitmap (restricted to current clip) with
+  // specified |color| and |mode|.
+  void DrawColor(SkColor color, SkXfermode::Mode mode);
 
   // Fills |rect| with |color| using a transfer mode of
   // SkXfermode::kSrcOver_Mode.
@@ -194,11 +214,31 @@ class UI_EXPORT Canvas {
   // NOTE: if you need a single pixel line, use DrawLine.
   void DrawRect(const gfx::Rect& rect, SkColor color, SkXfermode::Mode mode);
 
-  // Draws the given rectangle with the given paint's parameters.
+  // Draws the given rectangle with the given |paint| parameters.
   void DrawRect(const gfx::Rect& rect, const SkPaint& paint);
+
+  // Draw the given point with the given |paint| parameters.
+  void DrawPoint(const gfx::Point& p, const SkPaint& paint);
 
   // Draws a single pixel line with the specified color.
   void DrawLine(const gfx::Point& p1, const gfx::Point& p2, SkColor color);
+
+  // Draws a line with the given |paint| parameters.
+  void DrawLine(const gfx::Point& p1,
+                const gfx::Point& p2,
+                const SkPaint& paint);
+
+  // Draws a circle with the given |paint| parameters.
+  void DrawCircle(const gfx::Point& center_point,
+                  int radius,
+                  const SkPaint& paint);
+
+  // Draws the given rectangle with rounded corners of |radius| using the
+  // given |paint| parameters.
+  void DrawRoundRect(const gfx::Rect& rect, int radius, const SkPaint& paint);
+
+  // Draws the given path using the given |paint| parameters.
+  void DrawPath(const SkPath& path, const SkPaint& paint);
 
   // Draws a bitmap with the origin at the specified location. The upper left
   // corner of the bitmap is rendered at the specified location.
@@ -233,6 +273,14 @@ class UI_EXPORT Canvas {
                      bool filter,
                      const SkPaint& paint);
 
+  // TODO(pkotwicz): make this function private once gfx::ImageSkia stops
+  // calling this method.
+  void DrawBitmapFloat(const SkBitmap& bitmap,
+                       float src_x, float src_y, float src_w, float src_h,
+                       float dest_x, float dest_y, float dest_w, float dest_h,
+                       bool filter,
+                       const SkPaint& paint);
+
   // Draws text with the specified color, font and location. The text is
   // aligned to the left, vertically centered, clipped to the region. If the
   // text is too big, it is truncated and '...' is added to the end.
@@ -253,6 +301,15 @@ class UI_EXPORT Canvas {
                      SkColor color,
                      int x, int y, int w, int h,
                      int flags);
+
+  // Similar to above DrawStringInt method but with text shadows support.
+  // Currently it's only implemented for canvas skia.
+  void DrawStringWithShadows(const string16& text,
+                             const gfx::Font& font,
+                             SkColor color,
+                             const gfx::Rect& text_bounds,
+                             int flags,
+                             const std::vector<ShadowValue>& shadows);
 
   // Draws a dotted gray rectangle used for focus purposes.
   void DrawFocusRect(const gfx::Rect& rect);
@@ -295,6 +352,7 @@ class UI_EXPORT Canvas {
  private:
   // Test whether the provided rectangle intersects the current clip rect.
   bool IntersectsClipRectInt(int x, int y, int w, int h);
+  bool IntersectsClipRect(const gfx::Rect& rect);
 
 #if defined(OS_WIN)
   // Draws text with the specified color, font and location. The text is
@@ -303,7 +361,7 @@ class UI_EXPORT Canvas {
   void DrawStringInt(const string16& text,
                      HFONT font,
                      SkColor color,
-                     int x, int y, int w, int h,
+                     const gfx::Rect& text_bounds,
                      int flags);
 #endif
 

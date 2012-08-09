@@ -28,10 +28,14 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 Sk2DPathEffect::Sk2DPathEffect(const SkMatrix& mat) : fMatrix(mat) {
-    mat.invert(&fInverse);
+    fMatrixIsInvertible = mat.invert(&fInverse);
 }
 
 bool Sk2DPathEffect::filterPath(SkPath* dst, const SkPath& src, SkScalar* width) {
+    if (!fMatrixIsInvertible) {
+        return false;
+    }
+
     Sk2DPathEffectBlitter   blitter(this, dst);
     SkPath                  tmp;
     SkIRect                 ir;
@@ -47,6 +51,10 @@ bool Sk2DPathEffect::filterPath(SkPath* dst, const SkPath& src, SkScalar* width)
 }
 
 void Sk2DPathEffect::nextSpan(int x, int y, int count, SkPath* path) {
+    if (!fMatrixIsInvertible) {
+        return;
+    }
+
     const SkMatrix& mat = this->getMatrix();
     SkPoint src, dst;
 
@@ -64,7 +72,8 @@ void Sk2DPathEffect::end(SkPath* dst) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void Sk2DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) {
+void Sk2DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
+    this->INHERITED::flatten(buffer);
     char storage[SkMatrix::kMaxFlattenSize];
     uint32_t size = fMatrix.flatten(storage);
     buffer.write32(size);
@@ -77,7 +86,7 @@ Sk2DPathEffect::Sk2DPathEffect(SkFlattenableReadBuffer& buffer) {
     SkASSERT(size <= sizeof(storage));
     buffer.read(storage, size);
     fMatrix.unflatten(storage);
-    fMatrix.invert(&fInverse);
+    fMatrixIsInvertible = fMatrix.invert(&fInverse);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -89,12 +98,12 @@ SkPath2DPathEffect::SkPath2DPathEffect(const SkMatrix& m, const SkPath& p)
 
 SkPath2DPathEffect::SkPath2DPathEffect(SkFlattenableReadBuffer& buffer)
         : INHERITED(buffer) {
-    fPath.unflatten(buffer);
+    buffer.readPath(&fPath);
 }
 
-void SkPath2DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) {
+void SkPath2DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-    fPath.flatten(buffer);
+    buffer.writePath(fPath);
 }
 
 void SkPath2DPathEffect::next(const SkPoint& loc, int u, int v, SkPath* dst) {

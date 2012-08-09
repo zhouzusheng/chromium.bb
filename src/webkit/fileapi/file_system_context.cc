@@ -13,6 +13,7 @@
 #include "webkit/fileapi/file_system_options.h"
 #include "webkit/fileapi/file_system_quota_client.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/isolated_mount_point_provider.h"
 #include "webkit/fileapi/sandbox_mount_point_provider.h"
 #include "webkit/quota/quota_manager.h"
 #include "webkit/quota/special_storage_policy.h"
@@ -57,7 +58,8 @@ FileSystemContext::FileSystemContext(
           new SandboxMountPointProvider(
               file_message_loop,
               profile_path,
-              options)) {
+              options)),
+      isolated_provider_(new IsolatedMountPointProvider) {
   if (quota_manager_proxy) {
     quota_manager_proxy->RegisterClient(CreateQuotaClient(
         file_message_loop, this, options.is_incognito()));
@@ -66,9 +68,6 @@ FileSystemContext::FileSystemContext(
   external_provider_.reset(
       new chromeos::CrosMountPointProvider(special_storage_policy));
 #endif
-}
-
-FileSystemContext::~FileSystemContext() {
 }
 
 bool FileSystemContext::DeleteDataForOriginOnFileThread(
@@ -123,6 +122,8 @@ FileSystemMountPointProvider* FileSystemContext::GetMountPointProvider(
       return sandbox_provider_.get();
     case kFileSystemTypeExternal:
       return external_provider_.get();
+    case kFileSystemTypeIsolated:
+      return isolated_provider_.get();
     case kFileSystemTypeUnknown:
     default:
       NOTREACHED();
@@ -138,14 +139,6 @@ FileSystemContext::sandbox_provider() const {
 ExternalFileSystemMountPointProvider*
 FileSystemContext::external_provider() const {
   return external_provider_.get();
-}
-
-void FileSystemContext::DeleteOnCorrectThread() const {
-  if (!io_message_loop_->BelongsToCurrentThread() && 
-      io_message_loop_->DeleteSoon(FROM_HERE, this)) {
-    return;
-  }
-  delete this;
 }
 
 void FileSystemContext::OpenFileSystem(
@@ -184,6 +177,32 @@ FileSystemOperationInterface* FileSystemContext::CreateFileSystemOperation(
     return NULL;
   return mount_point_provider->CreateFileSystemOperation(
       origin_url, file_system_type, file_path, file_proxy, this);
+}
+
+webkit_blob::FileReader* FileSystemContext::CreateFileReader(
+    const GURL& url,
+    int64 offset,
+    base::MessageLoopProxy* file_proxy) {
+  GURL origin_url;
+  FileSystemType file_system_type = kFileSystemTypeUnknown;
+  FilePath file_path;
+  if (!CrackFileSystemURL(url, &origin_url, &file_system_type, &file_path))
+    return NULL;
+  FileSystemMountPointProvider* mount_point_provider =
+      GetMountPointProvider(file_system_type);
+  if (!mount_point_provider)
+    return NULL;
+  return mount_point_provider->CreateFileReader(url, offset, file_proxy, this);
+}
+
+FileSystemContext::~FileSystemContext() {}
+
+void FileSystemContext::DeleteOnCorrectThread() const {
+  if (!io_message_loop_->BelongsToCurrentThread() &&
+      io_message_loop_->DeleteSoon(FROM_HERE, this)) {
+    return;
+  }
+  delete this;
 }
 
 }  // namespace fileapi

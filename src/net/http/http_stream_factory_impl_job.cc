@@ -51,10 +51,14 @@ class HttpStreamJobParameters : public NetLog::EventParameters {
 
   virtual Value* ToValue() const;
 
+ protected:
+  virtual ~HttpStreamJobParameters() {}
+
  private:
   HttpStreamJobParameters(const GURL& original_url, const GURL& url)
       : original_url_(original_url.GetOrigin().spec()),
-        url_(url.GetOrigin().spec()) {}
+        url_(url.GetOrigin().spec()) {
+  }
 
   const std::string original_url_;
   const std::string url_;
@@ -80,13 +84,17 @@ class HttpStreamProtoParameters : public NetLog::EventParameters {
 
   virtual Value* ToValue() const;
 
+ protected:
+  virtual ~HttpStreamProtoParameters() {}
+
  private:
   HttpStreamProtoParameters(const SSLClientSocket::NextProtoStatus status,
                             const std::string& proto,
                             const std::string& server_protos)
       : status_(status),
         proto_(proto),
-        server_protos_(server_protos) {}
+        server_protos_(server_protos) {
+  }
 
   const SSLClientSocket::NextProtoStatus status_;
   const std::string proto_;
@@ -717,7 +725,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   if (proxy_info_.is_http() || proxy_info_.is_https())
     establishing_tunnel_ = using_ssl_;
 
-  bool want_spdy_over_npn = original_url_.get() ? true : false;
+  bool want_spdy_over_npn = original_url_ != NULL;
 
   if (proxy_info_.is_https()) {
     InitSSLConfig(proxy_info_.proxy_server().host_port_pair(),
@@ -902,7 +910,6 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
   if (!using_spdy_) {
     bool using_proxy = (proxy_info_.is_http() || proxy_info_.is_https()) &&
         request_info_.url.SchemeIs("http");
-    // TODO(simonjam): Support proxies.
     if (stream_factory_->http_pipelined_host_pool_.
             IsExistingPipelineAvailableForKey(*http_pipelining_key_.get())) {
       stream_.reset(stream_factory_->http_pipelined_host_pool_.
@@ -910,6 +917,7 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
                         *http_pipelining_key_.get()));
       CHECK(stream_.get());
     } else if (!using_proxy && IsRequestEligibleForPipelining()) {
+      // TODO(simonjam): Support proxies.
       stream_.reset(
           stream_factory_->http_pipelined_host_pool_.CreateStreamOnNewPipeline(
               *http_pipelining_key_.get(),
@@ -1051,13 +1059,6 @@ bool HttpStreamFactoryImpl::Job::IsHttpsProxyAndHttpUrl() {
 void HttpStreamFactoryImpl::Job::InitSSLConfig(
     const HostPortPair& origin_server,
     SSLConfig* ssl_config) const {
-  if (stream_factory_->IsTLSIntolerantServer(origin_server)) {
-    LOG(WARNING) << "Falling back to SSLv3 because host is TLS intolerant: "
-        << origin_server.ToString();
-    ssl_config->ssl3_fallback = true;
-    ssl_config->tls1_enabled = false;
-  }
-
   if (proxy_info_.is_https() && ssl_config->send_client_cert) {
     // When connecting through an HTTPS proxy, disable TLS False Start so
     // that client authentication errors can be distinguished between those
@@ -1244,6 +1245,12 @@ bool HttpStreamFactoryImpl::Job::IsRequestEligibleForPipelining() {
     return false;
   }
   if (request_info_.method != "GET" && request_info_.method != "HEAD") {
+    return false;
+  }
+  if (request_info_.load_flags &
+      (net::LOAD_MAIN_FRAME | net::LOAD_SUB_FRAME | net::LOAD_PREFETCH |
+       net::LOAD_IS_DOWNLOAD)) {
+    // Avoid pipelining resources that may be streamed for a long time.
     return false;
   }
   return stream_factory_->http_pipelined_host_pool_.IsKeyEligibleForPipelining(

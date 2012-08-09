@@ -30,7 +30,6 @@
 
 #define MAX_BLUR_SIGMA 4.0f
 
-
 // When we're using coverage AA but the blend is incompatible (given gpu
 // limitations) should we disable AA or draw wrong?
 #define DISABLE_COVERAGE_AA_FOR_BLEND 1
@@ -70,6 +69,7 @@ GrContext::~GrContext() {
     GrSafeUnref(fAAStrokeRectIndexBuffer);
     fGpu->unref();
     GrSafeUnref(fPathRendererChain);
+    fDrawState->unref();
 }
 
 void GrContext::contextLost() {
@@ -240,10 +240,10 @@ void build_kernel(float sigma, float* kernel, int kernelWidth) {
 }
 
 void scale_rect(SkRect* rect, float xScale, float yScale) {
-    rect->fLeft *= xScale;
-    rect->fTop *= yScale;
-    rect->fRight *= xScale;
-    rect->fBottom *= yScale;
+    rect->fLeft = SkScalarMul(rect->fLeft, SkFloatToScalar(xScale));
+    rect->fTop = SkScalarMul(rect->fTop, SkFloatToScalar(yScale));
+    rect->fRight = SkScalarMul(rect->fRight, SkFloatToScalar(xScale));
+    rect->fBottom = SkScalarMul(rect->fBottom, SkFloatToScalar(yScale));
 }
 
 float adjust_sigma(float sigma, int *scaleFactor, int *halfWidth,
@@ -267,10 +267,9 @@ void apply_morphology(GrGpu* gpu,
     GrAssert(filter == GrSamplerState::kErode_Filter ||
              filter == GrSamplerState::kDilate_Filter);
 
-    GrDrawTarget::AutoStateRestore asr(gpu);
+    GrRenderTarget* target = gpu->drawState()->getRenderTarget();
+    GrDrawTarget::AutoStateRestore asr(gpu, GrDrawTarget::kReset_ASRInit);
     GrDrawState* drawState = gpu->drawState();
-    GrRenderTarget* target = drawState->getRenderTarget();
-    drawState->reset();
     drawState->setRenderTarget(target);
     GrMatrix sampleM;
     sampleM.setIDiv(texture->width(), texture->height());
@@ -288,10 +287,9 @@ void convolve(GrGpu* gpu,
               const float* kernel,
               int kernelWidth,
               GrSamplerState::FilterDirection direction) {
-    GrDrawTarget::AutoStateRestore asr(gpu);
+    GrRenderTarget* target = gpu->drawState()->getRenderTarget();
+    GrDrawTarget::AutoStateRestore asr(gpu, GrDrawTarget::kReset_ASRInit);
     GrDrawState* drawState = gpu->drawState();
-    GrRenderTarget* target = drawState->getRenderTarget();
-    drawState->reset();
     drawState->setRenderTarget(target);
     GrMatrix sampleM;
     sampleM.setIDiv(texture->width(), texture->height());
@@ -427,9 +425,9 @@ GrContext::TextureCacheEntry GrContext::createAndLockTexture(
         GrTexture* texture = fGpu->createTexture(rtDesc, NULL, 0);
 
         if (NULL != texture) {
-            GrDrawTarget::AutoStateRestore asr(fGpu);
+            GrDrawTarget::AutoStateRestore asr(fGpu,
+                                               GrDrawTarget::kReset_ASRInit);
             GrDrawState* drawState = fGpu->drawState();
-            drawState->reset();
             drawState->setRenderTarget(texture->asRenderTarget());
             drawState->setTexture(0, clampEntry.texture());
 
@@ -655,7 +653,7 @@ const GrClip& GrContext::getClip() const { return fGpu->getClip(); }
 
 void GrContext::setClip(const GrClip& clip) {
     fGpu->setClip(clip);
-    fGpu->drawState()->enableState(GrDrawState::kClip_StateBit);
+    fDrawState->enableState(GrDrawState::kClip_StateBit);
 }
 
 void GrContext::setClip(const GrIRect& rect) {
@@ -681,21 +679,20 @@ void GrContext::drawPaint(const GrPaint& paint) {
     GrMatrix inverse;
     SkTLazy<GrPaint> tmpPaint;
     const GrPaint* p = &paint;
-    GrDrawState* drawState = fGpu->drawState();
     GrAutoMatrix am;
 
     // We attempt to map r by the inverse matrix and draw that. mapRect will
     // map the four corners and bound them with a new rect. This will not
     // produce a correct result for some perspective matrices.
     if (!this->getMatrix().hasPerspective()) {
-        if (!drawState->getViewInverse(&inverse)) {
+        if (!fDrawState->getViewInverse(&inverse)) {
             GrPrintf("Could not invert matrix");
             return;
         }
         inverse.mapRect(&r);
     } else {
         if (paint.getActiveMaskStageMask() || paint.getActiveStageMask()) {
-            if (!drawState->getViewInverse(&inverse)) {
+            if (!fDrawState->getViewInverse(&inverse)) {
                 GrPrintf("Could not invert matrix");
                 return;
             }
@@ -1271,175 +1268,128 @@ void GrContext::drawVertices(const GrPaint& paint,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-#include "SkDraw.h"
-#include "SkRasterClip.h"
-
 namespace {
 
-SkPath::FillType gr_fill_to_sk_fill(GrPathFill fill) {
-    switch (fill) {
-        case kWinding_PathFill:
-            return SkPath::kWinding_FillType;
-        case kEvenOdd_PathFill:
-            return SkPath::kEvenOdd_FillType;
-        case kInverseWinding_PathFill:
-            return SkPath::kInverseWinding_FillType;
-        case kInverseEvenOdd_PathFill:
-            return SkPath::kInverseEvenOdd_FillType;
-        default:
-            GrCrash("Unexpected fill.");
-            return SkPath::kWinding_FillType;
-    }
-}
+struct CircleVertex {
+    GrPoint fPos;
+    GrPoint fCenter;
+    GrScalar fOuterRadius;
+    GrScalar fInnerRadius;
+};
 
-// gets device coord bounds of path (not considering the fill) and clip. The
-// path bounds will be a subset of the clip bounds. returns false if path bounds
-// would be empty.
-bool get_path_and_clip_bounds(const GrDrawTarget* target,
-                              const GrPath& path,
-                              const GrVec* translate,
-                              GrIRect* pathBounds,
-                              GrIRect* clipBounds) {
-    // compute bounds as intersection of rt size, clip, and path
-    const GrRenderTarget* rt = target->getDrawState().getRenderTarget();
-    if (NULL == rt) {
-        return false;
-    }
-    *pathBounds = GrIRect::MakeWH(rt->width(), rt->height());
-    const GrClip& clip = target->getClip();
-    if (clip.hasConservativeBounds()) {
-        clip.getConservativeBounds().roundOut(clipBounds);
-        if (!pathBounds->intersect(*clipBounds)) {
-            return false;
-        }
-    } else {
-        // pathBounds is currently the rt extent, set clip bounds to that rect.
-        *clipBounds = *pathBounds;
-    }
-    GrRect pathSBounds = path.getBounds();
-    if (!pathSBounds.isEmpty()) {
-        if (NULL != translate) {
-            pathSBounds.offset(*translate);
-        }
-        target->getDrawState().getViewMatrix().mapRect(&pathSBounds,
-                                                        pathSBounds);
-        GrIRect pathIBounds;
-        pathSBounds.roundOut(&pathIBounds);
-        if (!pathBounds->intersect(pathIBounds)) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-    return true;
-}
-
-/**
- * sw rasterizes path to A8 mask using the context's matrix and uploads to a 
- * scratch texture.
+/* Returns true if will map a circle to another circle. This can be true
+ * if the matrix only includes square-scale, rotation, translation.
  */
-
-bool sw_draw_path_to_mask_texture(const GrPath& clientPath,
-                                  const GrIRect& pathDevBounds,
-                                  GrPathFill fill,
-                                  GrContext* context,
-                                  const GrPoint* translate,
-                                  GrAutoScratchTexture* tex) {
-    SkPaint paint;
-    SkPath tmpPath;
-    const SkPath* pathToDraw = &clientPath;
-    if (kHairLine_PathFill == fill) {
-        paint.setStyle(SkPaint::kStroke_Style);
-        paint.setStrokeWidth(SK_Scalar1);
-    } else {
-        paint.setStyle(SkPaint::kFill_Style);
-        SkPath::FillType skfill = gr_fill_to_sk_fill(fill);
-        if (skfill != pathToDraw->getFillType()) {
-            tmpPath = *pathToDraw;
-            tmpPath.setFillType(skfill);
-            pathToDraw = &tmpPath;
-        }
+inline bool isSimilarityTransformation(const SkMatrix& matrix,
+                                       SkScalar tol = SK_ScalarNearlyZero) {
+    if (matrix.isIdentity() || matrix.getType() == SkMatrix::kTranslate_Mask) {
+        return true;
     }
-    paint.setAntiAlias(true);
-    paint.setColor(SK_ColorWHITE);
-
-    GrMatrix matrix = context->getMatrix();
-    if (NULL != translate) {
-        matrix.postTranslate(translate->fX, translate->fY);
-    }
-
-    matrix.postTranslate(-pathDevBounds.fLeft * SK_Scalar1,
-                         -pathDevBounds.fTop * SK_Scalar1);
-    GrIRect bounds = GrIRect::MakeWH(pathDevBounds.width(),
-                                     pathDevBounds.height());
-
-    SkBitmap bm;
-    bm.setConfig(SkBitmap::kA8_Config, bounds.fRight, bounds.fBottom);
-    if (!bm.allocPixels()) {
+    if (matrix.hasPerspective()) {
         return false;
     }
-    sk_bzero(bm.getPixels(), bm.getSafeSize());
 
-    SkDraw  draw;
-    sk_bzero(&draw, sizeof(draw));
-    SkRasterClip rc(bounds);
-    draw.fRC    = &rc;
-    draw.fClip  = &rc.bwRgn();
-    draw.fMatrix = &matrix;
-    draw.fBitmap = &bm;
-    draw.drawPath(*pathToDraw, paint);
+    SkScalar mx = matrix.get(SkMatrix::kMScaleX);
+    SkScalar sx = matrix.get(SkMatrix::kMSkewX);
+    SkScalar my = matrix.get(SkMatrix::kMScaleY);
+    SkScalar sy = matrix.get(SkMatrix::kMSkewY);
 
-    const GrTextureDesc desc = {
-        kNone_GrTextureFlags,
-        bounds.fRight,
-        bounds.fBottom,
-        kAlpha_8_GrPixelConfig,
-        {0} // samples
-    };
-
-    tex->set(context, desc);
-    GrTexture* texture = tex->texture();
-
-    if (NULL == texture) {
+    if (mx == 0 && sx == 0 && my == 0 && sy == 0) {
         return false;
     }
-    SkAutoLockPixels alp(bm);
-    texture->writePixels(0, 0, desc.fWidth, desc.fHeight, desc.fConfig,
-                         bm.getPixels(), bm.rowBytes());
-    return true;
-}
 
-void draw_around_inv_path(GrDrawTarget* target,
-                          GrDrawState::StageMask stageMask,
-                          const GrIRect& clipBounds,
-                          const GrIRect& pathBounds) {
-    GrDrawTarget::AutoDeviceCoordDraw adcd(target, stageMask);
-    GrRect rect;
-    if (clipBounds.fTop < pathBounds.fTop) {
-        rect.iset(clipBounds.fLeft, clipBounds.fTop, 
-                    clipBounds.fRight, pathBounds.fTop);
-        target->drawSimpleRect(rect, NULL, stageMask);
-    }
-    if (clipBounds.fLeft < pathBounds.fLeft) {
-        rect.iset(clipBounds.fLeft, pathBounds.fTop, 
-                    pathBounds.fLeft, pathBounds.fBottom);
-        target->drawSimpleRect(rect, NULL, stageMask);
-    }
-    if (clipBounds.fRight > pathBounds.fRight) {
-        rect.iset(pathBounds.fRight, pathBounds.fTop, 
-                    clipBounds.fRight, pathBounds.fBottom);
-        target->drawSimpleRect(rect, NULL, stageMask);
-    }
-    if (clipBounds.fBottom > pathBounds.fBottom) {
-        rect.iset(clipBounds.fLeft, pathBounds.fBottom, 
-                    clipBounds.fRight, clipBounds.fBottom);
-        target->drawSimpleRect(rect, NULL, stageMask);
-    }
+    // it has scales or skews, but it could also be rotation, check it out.
+    SkVector vec[2];
+    vec[0].set(mx, sx);
+    vec[1].set(sy, my);
+
+    return SkScalarNearlyZero(vec[0].dot(vec[1]), SkScalarSquare(tol)) &&
+           SkScalarNearlyEqual(vec[0].lengthSqd(), vec[1].lengthSqd(),
+                SkScalarSquare(tol));
 }
 
 }
 
-void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
+// TODO: strokeWidth can't be larger than zero right now.
+// It will be fixed when drawPath() can handle strokes.
+void GrContext::drawOval(const GrPaint& paint,
+                         const GrRect& rect,
+                         SkScalar strokeWidth) {
+    DrawCategory category = (DEFER_PATHS) ? kBuffered_DrawCategory :
+                                            kUnbuffered_DrawCategory;
+    GrDrawTarget* target = this->prepareToDraw(paint, category);
+    GrDrawState* drawState = target->drawState();
+    GrMatrix vm = drawState->getViewMatrix();
+
+    if (!isSimilarityTransformation(vm) ||
+        !paint.fAntiAlias ||
+        rect.height() != rect.width()) {
+        SkPath path;
+        path.addOval(rect);
+        GrPathFill fill = (strokeWidth == 0) ?
+                            kHairLine_PathFill : kWinding_PathFill;
+        this->internalDrawPath(paint, path, fill, NULL);
+        return;
+    }
+
+    const GrRenderTarget* rt = drawState->getRenderTarget();
+    if (NULL == rt) {
+        return;
+    }
+
+    GrDrawTarget::AutoDeviceCoordDraw adcd(target, paint.getActiveStageMask());
+
+    GrVertexLayout layout = PaintStageVertexLayoutBits(paint, NULL);
+    layout |= GrDrawTarget::kEdge_VertexLayoutBit;
+    GrAssert(sizeof(CircleVertex) == GrDrawTarget::VertexSize(layout));
+
+    GrPoint center = GrPoint::Make(rect.centerX(), rect.centerY());
+    GrScalar radius = SkScalarHalf(rect.width());
+
+    vm.mapPoints(&center, 1);
+    radius = vm.mapRadius(radius);
+
+    GrScalar outerRadius = radius;
+    GrScalar innerRadius = 0;
+    SkScalar halfWidth = 0;
+    if (strokeWidth == 0) {
+        halfWidth = SkScalarHalf(SK_Scalar1);
+
+        outerRadius += halfWidth;
+        innerRadius = SkMaxScalar(0, radius - halfWidth);
+    }
+
+    GrDrawTarget::AutoReleaseGeometry geo(target, layout, 4, 0);
+    if (!geo.succeeded()) {
+        GrPrintf("Failed to get space for vertices!\n");
+        return;
+    }
+
+    CircleVertex* verts = reinterpret_cast<CircleVertex*>(geo.vertices());
+
+    SkScalar L = center.fX - outerRadius;
+    SkScalar R = center.fX + outerRadius;
+    SkScalar T = center.fY - outerRadius;
+    SkScalar B = center.fY + outerRadius;
+
+    verts[0].fPos = SkPoint::Make(L, T);
+    verts[1].fPos = SkPoint::Make(R, T);
+    verts[2].fPos = SkPoint::Make(L, B);
+    verts[3].fPos = SkPoint::Make(R, B);
+
+    for (int i = 0; i < 4; ++i) {
+        // this goes to fragment shader, it should be in y-points-up space.
+        verts[i].fCenter = SkPoint::Make(center.fX, rt->height() - center.fY);
+
+        verts[i].fOuterRadius = outerRadius;
+        verts[i].fInnerRadius = innerRadius;
+    }
+
+    drawState->setVertexEdgeType(GrDrawState::kCircle_EdgeType);
+    target->drawNonIndexed(kTriangleStrip_PrimitiveType, 0, 4);
+}
+
+void GrContext::drawPath(const GrPaint& paint, const SkPath& path,
                          GrPathFill fill, const GrPoint* translate) {
 
     if (path.isEmpty()) {
@@ -1448,6 +1398,22 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
        }
        return;
     }
+
+    SkRect ovalRect;
+    if (!GrIsFillInverted(fill) && path.isOval(&ovalRect)) {
+        if (translate) {
+            ovalRect.offset(*translate);
+        }
+        SkScalar width = (fill == kHairLine_PathFill) ? 0 : -SK_Scalar1;
+        this->drawOval(paint, ovalRect, width);
+        return;
+    }
+
+    internalDrawPath(paint, path, fill, translate);
+}
+
+void GrContext::internalDrawPath(const GrPaint& paint, const SkPath& path,
+                                 GrPathFill fill, const GrPoint* translate) {
 
     // Note that below we may sw-rasterize the path into a scratch texture.
     // Scratch textures can be recycled after they are returned to the texture
@@ -1472,52 +1438,7 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
         prAA = false;
     }
 
-    GrPathRenderer* pr = NULL;
-    if (prAA) {
-        pr = this->getPathRenderer(path, fill, target, true);
-        if (NULL == pr) {
-            GrAutoScratchTexture ast;
-            GrIRect pathBounds, clipBounds;
-            if (!get_path_and_clip_bounds(target, path, translate,
-                                          &pathBounds, &clipBounds)) {
-                return;
-            }
-            if (NULL == pr && sw_draw_path_to_mask_texture(path, pathBounds,
-                                                           fill, this,
-                                                           translate, &ast)) {
-                GrTexture* texture = ast.texture();
-                GrAssert(NULL != texture);
-                GrDrawTarget::AutoDeviceCoordDraw adcd(target, stageMask);
-                enum {
-                    kPathMaskStage = GrPaint::kTotalStages,
-                };
-                target->drawState()->setTexture(kPathMaskStage, texture);
-                target->drawState()->sampler(kPathMaskStage)->reset();
-                GrScalar w = GrIntToScalar(pathBounds.width());
-                GrScalar h = GrIntToScalar(pathBounds.height());
-                GrRect maskRect = GrRect::MakeWH(w / texture->width(),
-                                                 h / texture->height());
-                const GrRect* srcRects[GrDrawState::kNumStages] = {NULL};
-                srcRects[kPathMaskStage] = &maskRect;
-                stageMask |= 1 << kPathMaskStage;
-                GrRect dstRect = GrRect::MakeLTRB(
-                    SK_Scalar1* pathBounds.fLeft,
-                    SK_Scalar1* pathBounds.fTop,
-                    SK_Scalar1* pathBounds.fRight,
-                    SK_Scalar1* pathBounds.fBottom);
-                target->drawRect(dstRect, NULL, stageMask, srcRects, NULL);
-                target->drawState()->setTexture(kPathMaskStage, NULL);
-                if (GrIsFillInverted(fill)) {
-                    draw_around_inv_path(target, stageMask,
-                                         clipBounds, pathBounds);
-                }
-                return;
-            }
-        }
-    } else {
-        pr = this->getPathRenderer(path, fill, target, false);
-    }
-
+    GrPathRenderer* pr = this->getPathRenderer(path, fill, target, prAA);
     if (NULL == pr) {
 #if GR_DEBUG
         GrPrintf("Unable to find path renderer compatible with path.\n");
@@ -1541,18 +1462,10 @@ void GrContext::flush(int flagsBitfield) {
     }
 }
 
-void GrContext::flushText() {
-    if (kText_DrawCategory == fLastDrawCategory) {
-        flushDrawBuffer();
-    }
-}
-
 void GrContext::flushDrawBuffer() {
-#if BATCH_RECT_TO_RECT || DEFER_TEXT_RENDERING
     if (fDrawBuffer) {
         fDrawBuffer->flushTo(fGpu);
     }
-#endif
 }
 
 void GrContext::internalWriteTexturePixels(GrTexture* texture,
@@ -1640,7 +1553,7 @@ bool GrContext::internalReadRenderTargetPixels(GrRenderTarget* target,
     ASSERT_OWNED_RESOURCE(target);
 
     if (NULL == target) { 
-        target = fGpu->drawState()->getRenderTarget();
+        target = fDrawState->getRenderTarget();
         if (NULL == target) {
             return false;
         }
@@ -1705,7 +1618,7 @@ bool GrContext::internalReadRenderTargetPixels(GrRenderTarget* target,
             kRenderTarget_GrTextureFlagBit,
             width, height,
             config,
-            {0}, // samples
+            0 // samples
         };
 
         // When a full readback is faster than a partial we could always make
@@ -1729,9 +1642,9 @@ bool GrContext::internalReadRenderTargetPixels(GrRenderTarget* target,
         target = texture->asRenderTarget();
         GrAssert(NULL != target);
 
-        GrDrawTarget::AutoStateRestore asr(fGpu);
+        GrDrawTarget::AutoStateRestore asr(fGpu,
+                                           GrDrawTarget::kReset_ASRInit);
         GrDrawState* drawState = fGpu->drawState();
-        drawState->reset();
         drawState->setRenderTarget(target);
 
         GrMatrix matrix;
@@ -1773,9 +1686,14 @@ void GrContext::copyTexture(GrTexture* src, GrRenderTarget* dst) {
     }
     ASSERT_OWNED_RESOURCE(src);
 
-    GrDrawTarget::AutoStateRestore asr(fGpu);
+    // Writes pending to the source texture are not tracked, so a flush
+    // is required to ensure that the copy captures the most recent contents
+    // of the source texture. See similar behaviour in
+    // GrContext::resolveRenderTarget.
+    this->flush();
+
+    GrDrawTarget::AutoStateRestore asr(fGpu, GrDrawTarget::kReset_ASRInit);
     GrDrawState* drawState = fGpu->drawState();
-    drawState->reset();
     drawState->setRenderTarget(dst);
     GrMatrix sampleM;
     sampleM.setIDiv(src->width(), src->height());
@@ -1798,7 +1716,7 @@ void GrContext::internalWriteRenderTargetPixels(GrRenderTarget* target,
     ASSERT_OWNED_RESOURCE(target);
 
     if (NULL == target) { 
-        target = fGpu->drawState()->getRenderTarget();
+        target = fDrawState->getRenderTarget();
         if (NULL == target) {
             return;
         }
@@ -1855,7 +1773,7 @@ void GrContext::internalWriteRenderTargetPixels(GrRenderTarget* target,
     }
 
     const GrTextureDesc desc = {
-        kNone_GrTextureFlags, width, height, config, {0}
+        kNone_GrTextureFlags, width, height, config, 0
     };
     GrAutoScratchTexture ast(this, desc);
     GrTexture* texture = ast.texture();
@@ -1865,9 +1783,8 @@ void GrContext::internalWriteRenderTargetPixels(GrRenderTarget* target,
     this->internalWriteTexturePixels(texture, 0, 0, width, height,
                                      config, buffer, rowBytes, flags);
 
-    GrDrawTarget::AutoStateRestore  asr(fGpu);
+    GrDrawTarget::AutoStateRestore  asr(fGpu, GrDrawTarget::kReset_ASRInit);
     GrDrawState* drawState = fGpu->drawState();
-    drawState->reset();
 
     GrMatrix matrix;
     matrix.setTranslate(GrIntToScalar(left), GrIntToScalar(top));
@@ -1894,59 +1811,57 @@ void GrContext::internalWriteRenderTargetPixels(GrRenderTarget* target,
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrContext::setPaint(const GrPaint& paint, GrDrawTarget* target) {
-    GrDrawState* drawState = target->drawState();
+void GrContext::setPaint(const GrPaint& paint) {
 
     for (int i = 0; i < GrPaint::kMaxTextures; ++i) {
         int s = i + GrPaint::kFirstTextureStage;
-        drawState->setTexture(s, paint.getTexture(i));
+        fDrawState->setTexture(s, paint.getTexture(i));
         ASSERT_OWNED_RESOURCE(paint.getTexture(i));
         if (paint.getTexture(i)) {
-            *drawState->sampler(s) = paint.getTextureSampler(i);
+            *fDrawState->sampler(s) = paint.getTextureSampler(i);
         }
     }
 
-    drawState->setFirstCoverageStage(GrPaint::kFirstMaskStage);
+    fDrawState->setFirstCoverageStage(GrPaint::kFirstMaskStage);
 
     for (int i = 0; i < GrPaint::kMaxMasks; ++i) {
         int s = i + GrPaint::kFirstMaskStage;
-        drawState->setTexture(s, paint.getMask(i));
+        fDrawState->setTexture(s, paint.getMask(i));
         ASSERT_OWNED_RESOURCE(paint.getMask(i));
         if (paint.getMask(i)) {
-            *drawState->sampler(s) = paint.getMaskSampler(i);
+            *fDrawState->sampler(s) = paint.getMaskSampler(i);
         }
     }
     
     // disable all stages not accessible via the paint
     for (int s = GrPaint::kTotalStages; s < GrDrawState::kNumStages; ++s) {
-        drawState->setTexture(s, NULL);
+        fDrawState->setTexture(s, NULL);
     }
 
-    drawState->setColor(paint.fColor);
+    fDrawState->setColor(paint.fColor);
 
     if (paint.fDither) {
-        drawState->enableState(GrDrawState::kDither_StateBit);
+        fDrawState->enableState(GrDrawState::kDither_StateBit);
     } else {
-        drawState->disableState(GrDrawState::kDither_StateBit);
+        fDrawState->disableState(GrDrawState::kDither_StateBit);
     }
     if (paint.fAntiAlias) {
-        drawState->enableState(GrDrawState::kHWAntialias_StateBit);
+        fDrawState->enableState(GrDrawState::kHWAntialias_StateBit);
     } else {
-        drawState->disableState(GrDrawState::kHWAntialias_StateBit);
+        fDrawState->disableState(GrDrawState::kHWAntialias_StateBit);
     }
     if (paint.fColorMatrixEnabled) {
-        drawState->enableState(GrDrawState::kColorMatrix_StateBit);
-        drawState->setColorMatrix(paint.fColorMatrix);
+        fDrawState->enableState(GrDrawState::kColorMatrix_StateBit);
+        fDrawState->setColorMatrix(paint.fColorMatrix);
     } else {
-        drawState->disableState(GrDrawState::kColorMatrix_StateBit);
+        fDrawState->disableState(GrDrawState::kColorMatrix_StateBit);
     }
-    drawState->setBlendFunc(paint.fSrcBlendCoeff, paint.fDstBlendCoeff);
-    drawState->setColorFilter(paint.fColorFilterColor, paint.fColorFilterXfermode);
-    drawState->setCoverage(paint.fCoverage);
-
-#if 0 // this code is broken. canApplyCoverage incorrectly looks at the
-      // the vertex layout when the vertex src hasn't been set yet
-    if (paint.getActiveMaskStageMask() && !target->canApplyCoverage()) {
+    fDrawState->setBlendFunc(paint.fSrcBlendCoeff, paint.fDstBlendCoeff);
+    fDrawState->setColorFilter(paint.fColorFilterColor, paint.fColorFilterXfermode);
+    fDrawState->setCoverage(paint.fCoverage);
+#if GR_DEBUG
+    if ((paint.getActiveMaskStageMask() || 0xff != paint.fCoverage) &&
+        !fGpu->canApplyCoverage()) {
         GrPrintf("Partial pixel coverage will be incorrectly blended.\n");
     }
 #endif
@@ -1958,29 +1873,24 @@ GrDrawTarget* GrContext::prepareToDraw(const GrPaint& paint,
         this->flushDrawBuffer();
         fLastDrawCategory = category;
     }
-    this->setPaint(paint, fGpu);
+    this->setPaint(paint);
     GrDrawTarget* target = fGpu;
     switch (category) {
-    case kText_DrawCategory:
-#if DEFER_TEXT_RENDERING
-        target = fDrawBuffer;
-        fDrawBuffer->initializeDrawStateAndClip(*fGpu);
-#else
-        target = fGpu;
-#endif
-        break;
-    case kUnbuffered_DrawCategory:
-        target = fGpu;
-        break;
-    case kBuffered_DrawCategory:
-        target = fDrawBuffer;
-        fDrawBuffer->initializeDrawStateAndClip(*fGpu);
-        break;
+        case kUnbuffered_DrawCategory:
+            target = fGpu;
+            break;
+        case kBuffered_DrawCategory:
+            target = fDrawBuffer;
+            fDrawBuffer->setClip(fGpu->getClip());
+            break;
+        default:
+            GrCrash("Unexpected DrawCategory.");
+            break;
     }
     return target;
 }
 
-GrPathRenderer* GrContext::getPathRenderer(const GrPath& path,
+GrPathRenderer* GrContext::getPathRenderer(const SkPath& path,
                                            GrPathFill fill,
                                            const GrDrawTarget* target,
                                            bool antiAlias) {
@@ -1995,30 +1905,34 @@ GrPathRenderer* GrContext::getPathRenderer(const GrPath& path,
 
 void GrContext::setRenderTarget(GrRenderTarget* target) {
     ASSERT_OWNED_RESOURCE(target);
-    if (fGpu->drawState()->getRenderTarget() != target) {
+    if (fDrawState->getRenderTarget() != target) {
         this->flush(false);
-        fGpu->drawState()->setRenderTarget(target);
+        fDrawState->setRenderTarget(target);
     }
 }
 
 GrRenderTarget* GrContext::getRenderTarget() {
-    return fGpu->drawState()->getRenderTarget();
+    return fDrawState->getRenderTarget();
 }
 
 const GrRenderTarget* GrContext::getRenderTarget() const {
-    return fGpu->getDrawState().getRenderTarget();
+    return fDrawState->getRenderTarget();
+}
+
+bool GrContext::isConfigRenderable(GrPixelConfig config) const {
+    return fGpu->isConfigRenderable(config);
 }
 
 const GrMatrix& GrContext::getMatrix() const {
-    return fGpu->getDrawState().getViewMatrix();
+    return fDrawState->getViewMatrix();
 }
 
 void GrContext::setMatrix(const GrMatrix& m) {
-    fGpu->drawState()->setViewMatrix(m);
+    fDrawState->setViewMatrix(m);
 }
 
 void GrContext::concatMatrix(const GrMatrix& m) const {
-    fGpu->drawState()->preConcatViewMatrix(m);
+    fDrawState->preConcatViewMatrix(m);
 }
 
 static inline intptr_t setOrClear(intptr_t bits, int shift, intptr_t pred) {
@@ -2048,6 +1962,9 @@ GrContext::GrContext(GrGpu* gpu) {
     fGpu->ref();
     fGpu->setContext(this);
 
+    fDrawState = new GrDrawState();
+    fGpu->setDrawState(fDrawState);
+
     fPathRendererChain = NULL;
 
     fTextureCache = new GrResourceCache(MAX_TEXTURE_CACHE_COUNT,
@@ -2062,7 +1979,7 @@ GrContext::GrContext(GrGpu* gpu) {
 
     fAAFillRectIndexBuffer = NULL;
     fAAStrokeRectIndexBuffer = NULL;
-    
+
     this->setupDrawBuffer();
 }
 
@@ -2072,7 +1989,7 @@ void GrContext::setupDrawBuffer() {
     GrAssert(NULL == fDrawBufferVBAllocPool);
     GrAssert(NULL == fDrawBufferIBAllocPool);
 
-#if DEFER_TEXT_RENDERING || BATCH_RECT_TO_RECT
+#if DEFER_TEXT_RENDERING || BATCH_RECT_TO_RECT || DEFER_PATHS
     fDrawBufferVBAllocPool =
         new GrVertexBufferAllocPool(fGpu, false,
                                     DRAW_BUFFER_VBPOOL_BUFFER_SIZE,
@@ -2091,17 +2008,15 @@ void GrContext::setupDrawBuffer() {
     fDrawBuffer->setQuadIndexBuffer(this->getQuadIndexBuffer());
 #endif
     fDrawBuffer->setAutoFlushTarget(fGpu);
+    fDrawBuffer->setDrawState(fDrawState);
 }
 
 GrDrawTarget* GrContext::getTextTarget(const GrPaint& paint) {
-    GrDrawTarget* target;
 #if DEFER_TEXT_RENDERING
-    target = prepareToDraw(paint, kText_DrawCategory);
+    return prepareToDraw(paint, kBuffered_DrawCategory);
 #else
-    target = prepareToDraw(paint, kUnbuffered_DrawCategory);
+    return prepareToDraw(paint, kUnbuffered_DrawCategory);
 #endif
-    this->setPaint(paint, target);
-    return target;
 }
 
 const GrIndexBuffer* GrContext::getQuadIndexBuffer() const {
@@ -2127,19 +2042,26 @@ GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
     SkRect srcRect(rect);
     scale_rect(&srcRect, 1.0f / scaleFactorX, 1.0f / scaleFactorY);
     srcRect.roundOut();
-    scale_rect(&srcRect, scaleFactorX, scaleFactorY);
+    scale_rect(&srcRect, static_cast<float>(scaleFactorX), 
+                         static_cast<float>(scaleFactorY));
     this->setClip(srcRect);
+
+    GrAssert(kBGRA_8888_PM_GrPixelConfig == srcTexture->config() ||
+             kRGBA_8888_PM_GrPixelConfig == srcTexture->config() ||
+             kAlpha_8_GrPixelConfig == srcTexture->config());
 
     const GrTextureDesc desc = {
         kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit,
         SkScalarFloorToInt(srcRect.width()),
         SkScalarFloorToInt(srcRect.height()),
-        kRGBA_8888_GrPixelConfig,
-        {0} // samples 
+        srcTexture->config(), 
+        0 // samples 
     };
 
     temp1->set(this, desc);
-    if (temp2) temp2->set(this, desc);
+    if (temp2) {
+        temp2->set(this, desc);
+    }
 
     GrTexture* dstTexture = temp1->texture();
     GrPaint paint;
@@ -2178,7 +2100,9 @@ GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
         convolve(fGpu, srcTexture, srcRect, kernelX, kernelWidthX,
                  GrSamplerState::kX_FilterDirection);
         SkTSwap(srcTexture, dstTexture);
-        if (temp2 && dstTexture == origTexture) dstTexture = temp2->texture();
+        if (temp2 && dstTexture == origTexture) {
+            dstTexture = temp2->texture();
+        }
     }
 
     if (sigmaY > 0.0f) {
@@ -2198,7 +2122,9 @@ GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
         convolve(fGpu, srcTexture, srcRect, kernelY, kernelWidthY,
                  GrSamplerState::kY_FilterDirection);
         SkTSwap(srcTexture, dstTexture);
-        if (temp2 && dstTexture == origTexture) dstTexture = temp2->texture();
+        if (temp2 && dstTexture == origTexture) {
+            dstTexture = temp2->texture();
+        }
     }
 
     if (scaleFactorX > 1 || scaleFactorY > 1) {

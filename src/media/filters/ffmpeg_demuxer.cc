@@ -10,9 +10,11 @@
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/time.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/data_buffer.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
+#include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/bitstream_converter.h"
 #include "media/filters/ffmpeg_demuxer.h"
@@ -169,21 +171,19 @@ void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
     return;
   }
 
-  if (!buffer_queue_.empty()) {
-    // Dequeue a buffer send back.
-    scoped_refptr<Buffer> buffer = buffer_queue_.front();
-    buffer_queue_.pop_front();
+  // Buffers are only queued when there are no pending reads.
+  DCHECK(buffer_queue_.empty() || read_queue_.empty());
 
-    // Execute the callback.
-    read_cb.Run(buffer);
-
-    if (!read_queue_.empty())
-      demuxer_->PostDemuxTask();
-
-  } else {
+  if (buffer_queue_.empty()) {
     demuxer_->message_loop()->PostTask(FROM_HERE, base::Bind(
         &FFmpegDemuxerStream::ReadTask, this, read_cb));
+    return;
   }
+
+  // Send the oldest buffer back.
+  scoped_refptr<Buffer> buffer = buffer_queue_.front();
+  buffer_queue_.pop_front();
+  read_cb.Run(buffer);
 }
 
 void FFmpegDemuxerStream::ReadTask(const ReadCB& read_cb) {
@@ -230,15 +230,15 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
   // Currently we assume that converter is determined by codec_id;
   DCHECK(stream_);
 
-  const char* filter_name = NULL;
   if (stream_->codec->codec_id == CODEC_ID_H264) {
-    filter_name = "h264_mp4toannexb";
     // Use Chromium bitstream converter in case of H.264
     bitstream_converter_.reset(
         new FFmpegH264BitstreamConverter(stream_->codec));
     CHECK(bitstream_converter_->Initialize());
     return;
   }
+
+  const char* filter_name = NULL;
   if (stream_->codec->codec_id == CODEC_ID_MPEG4) {
     filter_name = "mpeg4video_es";
   } else if (stream_->codec->codec_id == CODEC_ID_WMV3) {
@@ -276,20 +276,24 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 //
 // FFmpegDemuxer
 //
-FFmpegDemuxer::FFmpegDemuxer(MessageLoop* message_loop, bool local_source)
-    : message_loop_(message_loop),
+FFmpegDemuxer::FFmpegDemuxer(
+    MessageLoop* message_loop,
+    const scoped_refptr<DataSource>& data_source,
+    bool local_source)
+    : host_(NULL),
+      message_loop_(message_loop),
       local_source_(local_source),
       format_context_(NULL),
+      data_source_(data_source),
       read_event_(false, false),
       read_has_failed_(false),
       last_read_bytes_(0),
       read_position_(0),
-      max_duration_(base::TimeDelta::FromMicroseconds(-1)),
-      deferred_status_(PIPELINE_OK),
-      first_seek_hack_(true),
+      bitrate_(0),
       start_time_(kNoTimestamp()),
       audio_disabled_(false) {
   DCHECK(message_loop_);
+  DCHECK(data_source_);
 }
 
 FFmpegDemuxer::~FFmpegDemuxer() {
@@ -329,34 +333,15 @@ void FFmpegDemuxer::SetPlaybackRate(float playback_rate) {
   data_source_->SetPlaybackRate(playback_rate);
 }
 
-void FFmpegDemuxer::SetPreload(Preload preload) {
-  DCHECK(data_source_.get());
-  data_source_->SetPreload(preload);
-}
-
 void FFmpegDemuxer::OnAudioRendererDisabled() {
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &FFmpegDemuxer::DisableAudioStreamTask, this));
 }
 
-void FFmpegDemuxer::set_host(DemuxerHost* demuxer_host) {
-  Demuxer::set_host(demuxer_host);
-  if (data_source_)
-    data_source_->set_host(demuxer_host);
-  if (max_duration_.InMicroseconds() >= 0)
-    host()->SetDuration(max_duration_);
-  if (read_position_ > 0)
-    host()->SetCurrentReadPosition(read_position_);
-  if (deferred_status_ != PIPELINE_OK)
-    host()->OnDemuxerError(deferred_status_);
-}
-
-void FFmpegDemuxer::Initialize(DataSource* data_source,
+void FFmpegDemuxer::Initialize(DemuxerHost* host,
                                const PipelineStatusCB& status_cb) {
-  message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&FFmpegDemuxer::InitializeTask, this,
-                 make_scoped_refptr(data_source), status_cb));
+  message_loop_->PostTask(FROM_HERE, base::Bind(
+      &FFmpegDemuxer::InitializeTask, this, host, status_cb));
 }
 
 scoped_refptr<DemuxerStream> FFmpegDemuxer::GetStream(
@@ -375,6 +360,7 @@ base::TimeDelta FFmpegDemuxer::GetStartTime() const {
 }
 
 size_t FFmpegDemuxer::Read(size_t size, uint8* data) {
+  DCHECK(host_);
   DCHECK(data_source_);
 
   // If read has ever failed, return with an error.
@@ -397,29 +383,26 @@ size_t FFmpegDemuxer::Read(size_t size, uint8* data) {
   // let FFmpeg demuxer methods to run on.
   int last_read_bytes = WaitForRead();
   if (last_read_bytes == DataSource::kReadError) {
-    if (host())
-      host()->OnDemuxerError(PIPELINE_ERROR_READ);
-    else
-      deferred_status_ = PIPELINE_ERROR_READ;
+    host_->OnDemuxerError(PIPELINE_ERROR_READ);
 
     // Returns with a negative number to signal an error to FFmpeg.
     read_has_failed_ = true;
     return AVERROR(EIO);
   }
   read_position_ += last_read_bytes;
-
-  if (host())
-    host()->SetCurrentReadPosition(read_position_);
+  host_->SetCurrentReadPosition(read_position_);
 
   return last_read_bytes;
 }
 
 bool FFmpegDemuxer::GetPosition(int64* position_out) {
+  DCHECK(host_);
   *position_out = read_position_;
   return true;
 }
 
 bool FFmpegDemuxer::SetPosition(int64 position) {
+  DCHECK(host_);
   DCHECK(data_source_);
 
   int64 file_size;
@@ -433,14 +416,14 @@ bool FFmpegDemuxer::SetPosition(int64 position) {
 }
 
 bool FFmpegDemuxer::GetSize(int64* size_out) {
+  DCHECK(host_);
   DCHECK(data_source_);
-
   return data_source_->GetSize(size_out);
 }
 
 bool FFmpegDemuxer::IsStreaming() {
+  DCHECK(host_);
   DCHECK(data_source_);
-
   return data_source_->IsStreaming();
 }
 
@@ -448,20 +431,63 @@ MessageLoop* FFmpegDemuxer::message_loop() {
   return message_loop_;
 }
 
-void FFmpegDemuxer::InitializeTask(DataSource* data_source,
+// Helper for calculating the bitrate of the media based on information stored
+// in |format_context| or failing that the size and duration of the media.
+//
+// Returns 0 if a bitrate could not be determined.
+static int CalculateBitrate(
+    AVFormatContext* format_context,
+    const base::TimeDelta& duration,
+    int64 filesize_in_bytes) {
+  // If there is a bitrate set on the container, use it.
+  if (format_context->bit_rate > 0)
+    return format_context->bit_rate;
+
+  // Then try to sum the bitrates individually per stream.
+  int bitrate = 0;
+  for (size_t i = 0; i < format_context->nb_streams; ++i) {
+    AVCodecContext* codec_context = format_context->streams[i]->codec;
+    bitrate += codec_context->bit_rate;
+  }
+  if (bitrate > 0)
+    return bitrate;
+
+  // See if we can approximate the bitrate as long as we have a filesize and
+  // valid duration.
+  if (duration.InMicroseconds() <= 0 ||
+      duration == kInfiniteDuration() ||
+      filesize_in_bytes == 0) {
+    return 0;
+  }
+
+  // Do math in floating point as we'd overflow an int64 if the filesize was
+  // larger than ~1073GB.
+  double bytes = filesize_in_bytes;
+  double duration_us = duration.InMicroseconds();
+  return bytes * 8000000.0 / duration_us;
+}
+
+void FFmpegDemuxer::InitializeTask(DemuxerHost* host,
                                    const PipelineStatusCB& status_cb) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
+  host_ = host;
 
-  data_source_ = data_source;
-  if (host())
-    data_source_->set_host(host());
+  // TODO(scherkus): DataSource should have a host by this point,
+  // see http://crbug.com/122071
+  data_source_->set_host(host);
 
   // Add ourself to Protocol list and get our unique key.
   std::string key = FFmpegGlue::GetInstance()->AddProtocol(this);
 
   // Open FFmpeg AVFormatContext.
   DCHECK(!format_context_);
-  AVFormatContext* context = NULL;
+  AVFormatContext* context = avformat_alloc_context();
+
+  // Disable ID3v1 tag reading to avoid costly seeks to end of file for data we
+  // don't use.  FFmpeg will only read ID3v1 tags if no other metadata is
+  // available, so add a metadata entry to ensure some is always present.
+  av_dict_set(&context->metadata, "skip_id3v1_tags", "", 0);
+
   int result = avformat_open_input(&context, key.c_str(), NULL, NULL);
 
   // Remove ourself from protocol list.
@@ -495,9 +521,15 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
       if (found_audio_stream)
         continue;
+      // Ensure the codec is supported.
+      if (CodecIDToAudioCodec(codec_context->codec_id) == kUnknownAudioCodec)
+        continue;
       found_audio_stream = true;
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
       if (found_video_stream)
+        continue;
+      // Ensure the codec is supported.
+      if (CodecIDToVideoCodec(codec_context->codec_id) == kUnknownVideoCodec)
         continue;
       found_video_stream = true;
     } else {
@@ -543,47 +575,21 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
 
   // Good to go: set the duration and bitrate and notify we're done
   // initializing.
-  if (host())
-    host()->SetDuration(max_duration);
-  max_duration_ = max_duration;
+  host_->SetDuration(max_duration);
 
-  int bitrate = GetBitrate();
-  if (bitrate > 0)
-    data_source_->SetBitrate(bitrate);
+  int64 filesize_in_bytes = 0;
+  GetSize(&filesize_in_bytes);
+  bitrate_ = CalculateBitrate(format_context_, max_duration, filesize_in_bytes);
+  if (bitrate_ > 0)
+    data_source_->SetBitrate(bitrate_);
 
   status_cb.Run(PIPELINE_OK);
 }
 
+
 int FFmpegDemuxer::GetBitrate() {
-  DCHECK(format_context_);
-
-  // If there is a bitrate set on the container, use it.
-  if (format_context_->bit_rate > 0)
-    return format_context_->bit_rate;
-
-  // Then try to sum the bitrates individually per stream.
-  int bitrate = 0;
-  for (size_t i = 0; i < format_context_->nb_streams; ++i) {
-    AVCodecContext* codec_context = format_context_->streams[i]->codec;
-    bitrate += codec_context->bit_rate;
-  }
-  if (bitrate > 0)
-    return bitrate;
-
-  // See if we can approximate the bitrate as long as we have a filesize and
-  // valid duration.
-  int64 filesize_in_bytes;
-  if (max_duration_.InMicroseconds() <= 0 ||
-      max_duration_ == kInfiniteDuration() ||
-      !GetSize(&filesize_in_bytes)) {
-    return 0;
-  }
-
-  // Do math in floating point as we'd overflow an int64 if the filesize was
-  // larger than ~1073GB.
-  double bytes = filesize_in_bytes;
-  double duration = max_duration_.InMicroseconds();
-  return bytes * 8000000.0 / duration;
+  DCHECK(format_context_) << "Initialize() has not been called";
+  return bitrate_;
 }
 
 bool FFmpegDemuxer::IsLocalSource() {
@@ -596,17 +602,6 @@ bool FFmpegDemuxer::IsSeekable() {
 
 void FFmpegDemuxer::SeekTask(base::TimeDelta time, const PipelineStatusCB& cb) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-
-  // TODO(scherkus): remove this by separating Seek() from Flush() from
-  // Preroll() states (i.e., the implicit Seek(0) should really be a Preroll()).
-  if (first_seek_hack_) {
-    first_seek_hack_ = false;
-
-    if (time == start_time_) {
-      cb.Run(PIPELINE_OK);
-      return;
-    }
-  }
 
   // Tell streams to flush buffers due to seeking.
   StreamVector::iterator iter;

@@ -70,6 +70,13 @@ bool WebMediaPlayerProxy::HasSingleOrigin() {
   return true;
 }
 
+bool WebMediaPlayerProxy::DidPassCORSAccessCheck() const {
+  DCHECK(render_loop_->BelongsToCurrentThread());
+  if (data_source_)
+    return data_source_->DidPassCORSAccessCheck();
+  return false;
+}
+
 void WebMediaPlayerProxy::AbortDataSource() {
   DCHECK(render_loop_->BelongsToCurrentThread());
   if (data_source_)
@@ -81,6 +88,7 @@ void WebMediaPlayerProxy::Detach() {
   webmediaplayer_ = NULL;
   data_source_ = NULL;
   frame_provider_ = NULL;
+  video_decoder_ = NULL;
 }
 
 void WebMediaPlayerProxy::PipelineInitializationCallback(
@@ -181,20 +189,46 @@ void WebMediaPlayerProxy::DemuxerClosed() {
       &WebMediaPlayerProxy::DemuxerClosedTask, this));
 }
 
+void WebMediaPlayerProxy::KeyNeeded(scoped_array<uint8> init_data,
+                                    int init_data_size) {
+  render_loop_->PostTask(FROM_HERE, base::Bind(
+      &WebMediaPlayerProxy::KeyNeededTask, this,
+      base::Passed(&init_data), init_data_size));
+}
+
 void WebMediaPlayerProxy::DemuxerFlush() {
   if (chunk_demuxer_.get())
     chunk_demuxer_->FlushData();
 }
 
-bool WebMediaPlayerProxy::DemuxerAppend(const uint8* data, size_t length) {
-  if (chunk_demuxer_.get())
-    return chunk_demuxer_->AppendData(data, length);
-  return false;
+media::ChunkDemuxer::Status WebMediaPlayerProxy::DemuxerAddId(
+    const std::string& id,
+    const std::string& type) {
+  return chunk_demuxer_->AddId(id, type);
+}
+
+void WebMediaPlayerProxy::DemuxerRemoveId(const std::string& id) {
+  chunk_demuxer_->RemoveId(id);
+}
+
+bool WebMediaPlayerProxy::DemuxerBufferedRange(
+    const std::string& id,
+    media::ChunkDemuxer::Ranges* ranges_out) {
+  return chunk_demuxer_->GetBufferedRanges(id, ranges_out);
+}
+
+bool WebMediaPlayerProxy::DemuxerAppend(const std::string& id,
+                                        const uint8* data,
+                                        size_t length) {
+  return chunk_demuxer_->AppendData(id, data, length);
+}
+
+void WebMediaPlayerProxy::DemuxerAbort(const std::string& id) {
+  chunk_demuxer_->Abort(id);
 }
 
 void WebMediaPlayerProxy::DemuxerEndOfStream(media::PipelineStatus status) {
-  if (chunk_demuxer_.get())
-    chunk_demuxer_->EndOfStream(status);
+  chunk_demuxer_->EndOfStream(status);
 }
 
 void WebMediaPlayerProxy::DemuxerShutdown() {
@@ -212,6 +246,13 @@ void WebMediaPlayerProxy::DemuxerOpenedTask(
 
 void WebMediaPlayerProxy::DemuxerClosedTask() {
   chunk_demuxer_ = NULL;
+}
+
+void WebMediaPlayerProxy::KeyNeededTask(scoped_array<uint8> init_data,
+                                        int init_data_size) {
+  DCHECK(render_loop_->BelongsToCurrentThread());
+  if (webmediaplayer_)
+    webmediaplayer_->OnKeyNeeded(init_data.Pass(), init_data_size);
 }
 
 }  // namespace webkit_media

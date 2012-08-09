@@ -30,18 +30,9 @@ class MEDIA_EXPORT FileDataSource : public DataSource {
                     const DataSource::ReadCB& read_cb) OVERRIDE;
   virtual bool GetSize(int64* size_out) OVERRIDE;
   virtual bool IsStreaming() OVERRIDE;
-  virtual void SetPreload(Preload preload) OVERRIDE;
   virtual void SetBitrate(int bitrate) OVERRIDE;
 
  private:
-  // Only allow factories and tests to create this object.
-  //
-  // TODO(scherkus): I'm getting tired of these factories getting in the way
-  // of my tests!!!
-  FRIEND_TEST_ALL_PREFIXES(FileDataSourceTest, OpenFile);
-  FRIEND_TEST_ALL_PREFIXES(FileDataSourceTest, ReadData);
-  FRIEND_TEST_ALL_PREFIXES(FileDataSourceTest, Seek);
-
   // Informs the host of changes in total and buffered bytes.
   void UpdateHostBytes();
 

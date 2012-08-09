@@ -285,20 +285,14 @@ public:
     //  Factory methods for stock shaders
 
     /** Call this to create a new shader that will draw with the specified bitmap.
-     *
-     *  If the bitmap cannot be used (e.g. has no pixels, or its dimensions
-     *  exceed implementation limits (currently at 64K - 1)) then SkEmptyShader
-     *  may be returned.
-     *
-     *  @param src  The bitmap to use inside the shader
-     *  @param tmx  The tiling mode to use when sampling the bitmap in the x-direction.
-     *  @param tmy  The tiling mode to use when sampling the bitmap in the y-direction.
-     *  @return     Returns a new shader object. Note: this function never returns null.
+        @param src  The bitmap to use inside the shader
+        @param tmx  The tiling mode to use when sampling the bitmap in the x-direction.
+        @param tmy  The tiling mode to use when sampling the bitmap in the y-direction.
+        @return     Returns a new shader object. Note: this function never returns null.
     */
     static SkShader* CreateBitmapShader(const SkBitmap& src,
                                         TileMode tmx, TileMode tmy);
 
-    virtual void flatten(SkFlattenableWriteBuffer& ) SK_OVERRIDE;
 protected:
     enum MatrixClass {
         kLinear_MatrixClass,            // no perspective
@@ -314,6 +308,7 @@ protected:
     MatrixClass         getInverseClass() const { return (MatrixClass)fTotalInverseClass; }
 
     SkShader(SkFlattenableReadBuffer& );
+    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
 private:
     SkMatrix*           fLocalMatrix;
     SkMatrix            fTotalInverse;

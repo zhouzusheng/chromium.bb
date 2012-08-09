@@ -65,6 +65,7 @@ class WebGLProgram;
 class WebGLRenderbuffer;
 class WebGLShader;
 class WebGLSharedObject;
+class WebGLShaderPrecisionFormat;
 class WebGLTexture;
 class WebGLUniformLocation;
 class WebGLVertexArrayObjectOES;
@@ -166,10 +167,7 @@ public:
     WebGLGetInfo getRenderbufferParameter(GC3Denum target, GC3Denum pname, ExceptionCode&);
     WebGLGetInfo getShaderParameter(WebGLShader*, GC3Denum pname, ExceptionCode&);
     String getShaderInfoLog(WebGLShader*, ExceptionCode&);
-
-    // TBD
-    // void glGetShaderPrecisionFormat (GC3Denum shadertype, GC3Denum precisiontype, GC3Dint* range, GC3Dint* precision);
-
+    PassRefPtr<WebGLShaderPrecisionFormat> getShaderPrecisionFormat(GC3Denum shaderType, GC3Denum precisionType, ExceptionCode&);
     String getShaderSource(WebGLShader*, ExceptionCode&);
     Vector<String> getSupportedExtensions();
     WebGLGetInfo getTexParameter(GC3Denum target, GC3Denum pname, ExceptionCode&);
@@ -485,7 +483,7 @@ public:
     GC3Dboolean m_colorMask[4];
     GC3Dboolean m_depthMask;
 
-    long m_stencilBits;
+    bool m_stencilEnabled;
     GC3Duint m_stencilMask, m_stencilMaskBack;
     GC3Dint m_stencilFuncRef, m_stencilFuncRefBack; // Note that these are the user specified values, not the internal clamped value.
     GC3Duint m_stencilFuncMask, m_stencilFuncMaskBack;
@@ -522,6 +520,9 @@ public:
     // clearMask is set to the bitfield of any clear that would happen anyway at this time
     // and the function returns true if that clear is now unnecessary.
     bool clearIfComposited(GC3Dbitfield clearMask = 0);
+
+    // Helper to restore state that clearing the framebuffer may destroy.
+    void restoreStateAfterClear();
 
     void texImage2DBase(GC3Denum target, GC3Dint level, GC3Denum internalformat,
                         GC3Dsizei width, GC3Dsizei height, GC3Dint border,
@@ -697,6 +698,13 @@ public:
     void synthesizeGLError(GC3Denum, const char* functionName, const char* description);
 
     String ensureNotNull(const String&) const;
+
+    // Enable or disable stencil test based on user setting and
+    // whether the current FBO has a stencil buffer.
+    void applyStencilTest();
+
+    // Helper for enabling or disabling a capability.
+    void enableOrDisable(GC3Denum capability, bool enable);
 
     friend class WebGLStateRestorer;
 };

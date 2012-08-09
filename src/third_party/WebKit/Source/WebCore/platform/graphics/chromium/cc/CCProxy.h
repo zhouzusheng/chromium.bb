@@ -33,13 +33,10 @@
 
 namespace WebCore {
 
+class CCFontAtlas;
 class CCThread;
-class CCLayerTreeHost;
-class CCLayerTreeHostImpl;
-class CCLayerTreeHostImplClient;
 class GraphicsContext3D;
 struct LayerRendererCapabilities;
-class TextureManager;
 
 // Abstract class responsible for proxying commands from the main-thread side of
 // the compositor over to the compositor implementation.
@@ -86,8 +83,10 @@ public:
 
     virtual void setNeedsAnimate() = 0;
     virtual void setNeedsCommit() = 0;
+    virtual void setNeedsForcedCommit() = 0;
     virtual void setNeedsRedraw() = 0;
-    virtual void setVisible(bool) = 0;
+
+    virtual void didAddAnimation() = 0;
 
     virtual bool commitRequested() const = 0;
 
@@ -100,6 +99,10 @@ public:
 
     // Maximum number of sub-region texture updates supported for each commit.
     virtual size_t maxPartialTextureUpdates() const = 0;
+
+    virtual void acquireLayerTextures() = 0;
+
+    virtual void setFontAtlas(PassOwnPtr<CCFontAtlas>) = 0;
 
     // Debug hooks
 #ifndef NDEBUG

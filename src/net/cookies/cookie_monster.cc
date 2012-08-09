@@ -532,9 +532,9 @@ class CookieMonster::CookieMonsterTask
     return cookie_monster_;
   }
 
+ private:
   friend class base::RefCountedThreadSafe<CookieMonsterTask>;
 
- private:
   CookieMonster* cookie_monster_;
   scoped_refptr<base::MessageLoopProxy> thread_;
 
@@ -544,9 +544,10 @@ class CookieMonster::CookieMonsterTask
 CookieMonster::CookieMonsterTask::CookieMonsterTask(
     CookieMonster* cookie_monster)
     : cookie_monster_(cookie_monster),
-      thread_(base::MessageLoopProxy::current()) { }
+      thread_(base::MessageLoopProxy::current()) {
+}
 
-CookieMonster::CookieMonsterTask::~CookieMonsterTask() { }
+CookieMonster::CookieMonsterTask::~CookieMonsterTask() {}
 
 // Unfortunately, one cannot re-bind a Callback with parameters into a closure.
 // Therefore, the closure passed to InvokeCallback is a clumsy binding of
@@ -586,9 +587,14 @@ class CookieMonster::SetCookieWithDetailsTask
         expiration_time_(expiration_time),
         secure_(secure),
         http_only_(http_only),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~SetCookieWithDetailsTask() {}
 
  private:
   GURL url_;
@@ -621,9 +627,14 @@ class CookieMonster::GetAllCookiesTask
   GetAllCookiesTask(CookieMonster* cookie_monster,
                     const CookieMonster::GetCookieListCallback& callback)
       : CookieMonsterTask(cookie_monster),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~GetAllCookiesTask() {}
 
  private:
   CookieMonster::GetCookieListCallback callback_;
@@ -651,9 +662,14 @@ class CookieMonster::GetAllCookiesForURLWithOptionsTask
       : CookieMonsterTask(cookie_monster),
         url_(url),
         options_(options),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~GetAllCookiesForURLWithOptionsTask() {}
 
  private:
   GURL url_;
@@ -678,9 +694,14 @@ class CookieMonster::DeleteAllTask : public CookieMonster::CookieMonsterTask {
   DeleteAllTask(CookieMonster* cookie_monster,
                 const CookieMonster::DeleteCallback& callback)
       : CookieMonsterTask(cookie_monster),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteAllTask() {}
 
  private:
   CookieMonster::DeleteCallback callback_;
@@ -708,9 +729,14 @@ class CookieMonster::DeleteAllCreatedBetweenTask
       : CookieMonsterTask(cookie_monster),
         delete_begin_(delete_begin),
         delete_end_(delete_end),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteAllCreatedBetweenTask() {}
 
  private:
   Time delete_begin_;
@@ -738,9 +764,14 @@ class CookieMonster::DeleteAllForHostTask
                        const CookieMonster::DeleteCallback& callback)
       : CookieMonsterTask(cookie_monster),
         url_(url),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteAllForHostTask() {}
 
  private:
   GURL url_;
@@ -767,9 +798,14 @@ class CookieMonster::DeleteCanonicalCookieTask
       const CookieMonster::DeleteCookieCallback& callback)
       : CookieMonsterTask(cookie_monster),
         cookie_(cookie),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteCanonicalCookieTask() {}
 
  private:
   CookieMonster::CanonicalCookie cookie_;
@@ -799,9 +835,14 @@ class CookieMonster::SetCookieWithOptionsTask
         url_(url),
         cookie_line_(cookie_line),
         options_(options),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~SetCookieWithOptionsTask() {}
 
  private:
   GURL url_;
@@ -832,9 +873,14 @@ class CookieMonster::GetCookiesWithOptionsTask
       : CookieMonsterTask(cookie_monster),
         url_(url),
         options_(options),
-        callback_(callback) { }
+        callback_(callback) {
+  }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~GetCookiesWithOptionsTask() {}
 
  private:
   GURL url_;
@@ -866,7 +912,11 @@ class CookieMonster::GetCookiesWithInfoTask
         options_(options),
         callback_(callback) { }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~GetCookiesWithInfoTask() {}
 
  private:
   GURL url_;
@@ -901,7 +951,11 @@ class CookieMonster::DeleteCookieTask
         cookie_name_(cookie_name),
         callback_(callback) { }
 
+  // CookieMonster::CookieMonsterTask:
   virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteCookieTask() {}
 
  private:
   GURL url_;
@@ -915,6 +969,37 @@ void CookieMonster::DeleteCookieTask::Run() {
   this->cookie_monster()->DeleteCookie(url_, cookie_name_);
   if (!callback_.is_null()) {
     this->InvokeCallback(callback_);
+  }
+}
+
+// Task class for DeleteSessionCookies call.
+class CookieMonster::DeleteSessionCookiesTask
+    : public CookieMonster::CookieMonsterTask {
+ public:
+  DeleteSessionCookiesTask(
+      CookieMonster* cookie_monster,
+      const CookieMonster::DeleteCallback& callback)
+      : CookieMonsterTask(cookie_monster),
+        callback_(callback) {
+  }
+
+  // CookieMonster::CookieMonsterTask:
+  virtual void Run() OVERRIDE;
+
+ protected:
+  virtual ~DeleteSessionCookiesTask() {}
+
+ private:
+  CookieMonster::DeleteCallback callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteSessionCookiesTask);
+};
+
+void CookieMonster::DeleteSessionCookiesTask::Run() {
+  int num_deleted = this->cookie_monster()->DeleteSessionCookies();
+  if (!callback_.is_null()) {
+    this->InvokeCallback(base::Bind(&CookieMonster::DeleteCallback::Run,
+                                    base::Unretained(&callback_), num_deleted));
   }
 }
 
@@ -1033,6 +1118,14 @@ void CookieMonster::DeleteCookieAsync(const GURL& url,
       new DeleteCookieTask(this, url, cookie_name, callback);
 
   DoCookieTaskForURL(task, url);
+}
+
+void CookieMonster::DeleteSessionCookiesAsync(
+    const CookieStore::DeleteCallback& callback) {
+  scoped_refptr<DeleteSessionCookiesTask> task =
+      new DeleteSessionCookiesTask(this, callback);
+
+  DoCookieTask(task);
 }
 
 void CookieMonster::DoCookieTask(
@@ -1388,6 +1481,26 @@ void CookieMonster::DeleteCookie(const GURL& url,
       InternalDeleteCookie(curit, true, DELETE_COOKIE_EXPLICIT);
     }
   }
+}
+
+int CookieMonster::DeleteSessionCookies() {
+  base::AutoLock autolock(lock_);
+
+  int num_deleted = 0;
+  for (CookieMap::iterator it = cookies_.begin(); it != cookies_.end();) {
+    CookieMap::iterator curit = it;
+    CanonicalCookie* cc = curit->second;
+    ++it;
+
+    if (!cc->IsPersistent()) {
+      InternalDeleteCookie(curit,
+                           true,  /*sync_to_store*/
+                           DELETE_COOKIE_EXPIRED);
+      ++num_deleted;
+    }
+  }
+
+  return num_deleted;
 }
 
 CookieMonster* CookieMonster::GetCookieMonster() {
@@ -2667,8 +2780,9 @@ bool CookieMonster::CanonicalCookie::IsOnPath(
   if (path_.empty())
     return false;
 
-  // The Mozilla code broke it into 3 cases, if it's strings lengths
-  // are less than, equal, or greater.  I think this is simpler:
+  // The Mozilla code broke this into three cases, based on if the cookie path
+  // was longer, the same length, or shorter than the length of the url path.
+  // I think the approach below is simpler.
 
   // Make sure the cookie path is a prefix of the url path.  If the
   // url path is shorter than the cookie path, then the cookie path

@@ -53,10 +53,9 @@ typedef SkTArray<Segment, true> SegmentArray;
 
 void center_of_mass(const SegmentArray& segments, SkPoint* c) {
     GrScalar area = 0;
-    SkPoint center;
-    center.set(0, 0);
+    SkPoint center = {0, 0};
     int count = segments.count();
-    SkPoint p0;
+    SkPoint p0 = {0, 0};
     if (count > 2) {
         // We translate the polygon so that the first point is at the origin.
         // This avoids some precision issues with small area polygons far away
@@ -201,7 +200,7 @@ void update_degenerate_test(DegenerateTestData* data, const GrPoint& pt) {
     }
 }
 
-inline SkPath::Direction get_direction(const GrPath& path, const GrMatrix& m) {
+inline SkPath::Direction get_direction(const SkPath& path, const GrMatrix& m) {
     SkPath::Direction dir;
     GR_DEBUGCODE(bool succeeded = )
     path.cheapComputeDirection(&dir);
@@ -221,7 +220,7 @@ inline SkPath::Direction get_direction(const GrPath& path, const GrMatrix& m) {
     return dir;
 }
 
-bool get_segments(const GrPath& path,
+bool get_segments(const SkPath& path,
                   const GrMatrix& m,
                   SegmentArray* segments,
                   SkPoint* fanPt,
@@ -455,14 +454,14 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
     if (path->isEmpty()) {
         return true;
     }
+    GrDrawTarget::AutoStateRestore asr(target,
+                                       GrDrawTarget::kPreserve_ASRInit);
     GrDrawState* drawState = target->drawState();
 
-    GrDrawTarget::AutoStateRestore asr;
     GrMatrix vm = drawState->getViewMatrix();
     if (NULL != translate) {
         vm.postTranslate(translate->fX, translate->fY);
     }
-    asr.set(target);
     GrMatrix ivm;
     if (vm.invert(&ivm)) {
         drawState->preConcatSamplerMatrices(stageMask, ivm);

@@ -56,32 +56,30 @@ static ConvertYUVToRGB32RowProc ChooseConvertYUVToRGB32RowProc() {
 }
 
 static ScaleYUVToRGB32RowProc ChooseScaleYUVToRGB32RowProc() {
-#if defined(ARCH_CPU_X86_FAMILY)
 #if defined(ARCH_CPU_X86_64)
   // Use 64-bits version if possible.
   return &ScaleYUVToRGB32Row_SSE2_X64;
-#endif
+#elif defined(ARCH_CPU_X86_FAMILY)
   // Choose the best one on 32-bits system.
   if (hasSSE())
     return &ScaleYUVToRGB32Row_SSE;
   if (hasMMX())
     return &ScaleYUVToRGB32Row_MMX;
-#endif
+#endif  // defined(ARCH_CPU_X86_64)
   return &ScaleYUVToRGB32Row_C;
 }
 
 static ScaleYUVToRGB32RowProc ChooseLinearScaleYUVToRGB32RowProc() {
-#if defined(ARCH_CPU_X86_FAMILY)
 #if defined(ARCH_CPU_X86_64)
   // Use 64-bits version if possible.
   return &LinearScaleYUVToRGB32Row_MMX_X64;
-#endif
+#elif defined(ARCH_CPU_X86_FAMILY)
   // 32-bits system.
   if (hasSSE())
     return &LinearScaleYUVToRGB32Row_SSE;
   if (hasMMX())
     return &LinearScaleYUVToRGB32Row_MMX;
-#endif
+#endif  // defined(ARCH_CPU_X86_64)
   return &LinearScaleYUVToRGB32Row_C;
 }
 
@@ -179,7 +177,6 @@ void ScaleYUVToRGB32(const uint8* y_buf,
   }
 
   int source_dx = source_width * kFractionMax / width;
-  int source_dy = source_height * kFractionMax / height;
 
   if ((view_rotate == ROTATE_90) ||
       (view_rotate == ROTATE_270)) {
@@ -189,10 +186,8 @@ void ScaleYUVToRGB32(const uint8* y_buf,
     tmp = source_height;
     source_height = source_width;
     source_width = tmp;
-    int original_dx = source_dx;
-    int original_dy = source_dy;
-    source_dx = ((original_dy >> kFractionBits) * y_pitch) << kFractionBits;
-    source_dy = original_dx;
+    int source_dy = source_height * kFractionMax / height;
+    source_dx = ((source_dy >> kFractionBits) * y_pitch) << kFractionBits;
     if (view_rotate == ROTATE_90) {
       y_pitch = -1;
       uv_pitch = -1;
@@ -510,6 +505,23 @@ void ConvertYUY2ToYUV(const uint8* src,
       src += 4;
       yplane += 2;
     }
+  }
+}
+
+void ConvertNV21ToYUV(const uint8* src,
+                      uint8* yplane,
+                      uint8* uplane,
+                      uint8* vplane,
+                      int width,
+                      int height) {
+  int y_plane_size = width * height;
+  memcpy(yplane, src, y_plane_size);
+
+  src += y_plane_size;
+  int u_plane_size = y_plane_size >> 2;
+  for (int i = 0; i < u_plane_size; ++i) {
+    *vplane++ = *src++;
+    *uplane++ = *src++;
   }
 }
 

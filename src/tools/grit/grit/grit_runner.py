@@ -3,9 +3,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-'''Command processor for GRIT.  This is the script you invoke to run the various
+"""Command processor for GRIT.  This is the script you invoke to run the various
 GRIT tools.
-'''
+"""
 
 import os
 import sys
@@ -19,16 +19,20 @@ from grit import util
 import grit.exception
 
 # Copyright notice
-_COPYRIGHT = '''\
+_COPYRIGHT = """\
 GRIT - the Google Resource and Internationalization Tool
 Copyright (c) Google Inc. %d
-''' % util.GetCurrentYear()
+""" % util.GetCurrentYear()
 
 # Tool info factories; these import only within each factory to avoid
 # importing most of the GRIT code until required.
 def ToolFactoryBuild():
   import grit.tool.build
   return grit.tool.build.RcBuilder()
+
+def ToolFactoryBuildInfo():
+  import grit.tool.buildinfo
+  return grit.tool.buildinfo.DetermineBuildInfo()
 
 def ToolFactoryCount():
   import grit.tool.count
@@ -75,6 +79,7 @@ _HIDDEN = 3  # optional key - presence indicates tool is hidden
 # instead of a map to preserve ordering.
 _TOOLS = [
   ['build', { _FACTORY : ToolFactoryBuild, _REQUIRES_INPUT : True }],
+  ['buildinfo', { _FACTORY : ToolFactoryBuildInfo, _REQUIRES_INPUT : True }],
   ['newgrd', { _FACTORY  : ToolFactoryNewGrd, _REQUIRES_INPUT : False }],
   ['rc2grd', { _FACTORY : ToolFactoryRc2Grd, _REQUIRES_INPUT : False }],
   ['transl2tc', { _FACTORY : ToolFactoryTranslationToTc,
@@ -108,7 +113,7 @@ def PrintUsage():
   #        e.g. Perforce.
   #
   #  -c    Use the specified Perforce CLIENT when talking to Perforce.
-  print '''Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
+  print """Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
 
 Global options:
 
@@ -130,11 +135,11 @@ Tools:
 %s
   For more information on how to use a particular tool, and the specific
   arguments you can send to that tool, execute 'grit help TOOL'
-''' % (tool_list)
+""" % (tool_list)
 
 
 class Options(object):
-  '''Option storage and parsing.'''
+  """Option storage and parsing."""
 
   def __init__(self):
     self.disconnected = False
@@ -144,10 +149,11 @@ class Options(object):
     self.extra_verbose = False
     self.output_stream = sys.stdout
     self.profile_dest = None
+    self.psyco = False
 
   def ReadOptions(self, args):
-    '''Reads options from the start of args and returns the remainder.'''
-    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:')
+    """Reads options from the start of args and returns the remainder."""
+    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:', ('psyco',))
     for (key, val) in opts:
       if key == '-d': self.disconnected = True
       elif key == '-c': self.client = val
@@ -161,6 +167,7 @@ class Options(object):
         self.extra_verbose = True
         util.extra_verbose = True
       elif key == '-p': self.profile_dest = val
+      elif key == '--psyco': self.psyco = True
 
     if not self.input:
       if 'GRIT_INPUT' in os.environ:
@@ -172,27 +179,27 @@ class Options(object):
 
   def __repr__(self):
     return '(disconnected: %d, verbose: %d, client: %s, input: %s)' % (
-      self.disconnected, self.verbose, self.client, self.input)
+        self.disconnected, self.verbose, self.client, self.input)
 
 
 def _GetToolInfo(tool):
-  '''Returns the info map for the tool named 'tool' or None if there is no
-  such tool.'''
-  matches = filter(lambda t: t[0] == tool, _TOOLS)
-  if not len(matches):
+  """Returns the info map for the tool named 'tool' or None if there is no
+  such tool."""
+  matches = [t for t in _TOOLS if t[0] == tool]
+  if not matches:
     return None
   else:
     return matches[0][1]
 
 
 def Main(args):
-  '''Parses arguments and does the appropriate thing.'''
+  """Parses arguments and does the appropriate thing."""
   util.ChangeStdoutEncoding()
 
   if sys.version_info < (2, 6):
     print "GRIT requires Python 2.6 or later."
     return 2
-  elif not len(args) or len(args) == 1 and args[0] == 'help':
+  elif not args or (len(args) == 1 and args[0] == 'help'):
     PrintUsage()
     return 0
   elif len(args) == 2 and args[0] == 'help':
@@ -229,6 +236,13 @@ def Main(args):
              "'resource.grd'\n"
              '     from the current directory.' % options.input)
       return 2
+
+    if options.psyco:
+      # Psyco is a specializing JIT for Python.  Early tests indicate that it
+      # could speed up GRIT (at the expense of more memory) for large GRIT
+      # compilations.  See http://psyco.sourceforge.net/
+      import psyco
+      psyco.profile()
 
     toolobject = _GetToolInfo(tool)[_FACTORY]()
     if options.profile_dest:

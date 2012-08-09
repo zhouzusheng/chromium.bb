@@ -76,14 +76,6 @@
 
 using base::Time;
 
-#if defined(OS_WIN)
-// Allow htons/ntohs to be called without requiring ws2_32.dll to be loaded,
-// which isn't available in Chrome's sandbox. See crbug.com/116591.
-// TODO(wez): Replace these calls with base::htons() etc when available.
-#define ntohs(x) _byteswap_ushort(x)
-#define htons(x) _byteswap_ushort(x)
-#endif // OS_WIN
-
 namespace net {
 
 namespace {
@@ -898,14 +890,6 @@ void AppendFormattedComponent(const std::string& spec,
   } else if (output_component) {
     output_component->reset();
   }
-}
-
-char* do_strdup(const char* src) {
-#if defined(OS_WIN)
-  return _strdup(src);
-#else
-  return strdup(src);
-#endif
 }
 
 void SanitizeGeneratedFileName(std::string& filename) {
@@ -1916,8 +1900,9 @@ string16 FormatUrl(const GURL& url,
 bool CanStripTrailingSlash(const GURL& url) {
   // Omit the path only for standard, non-file URLs with nothing but "/" after
   // the hostname.
-  return url.IsStandard() && !url.SchemeIsFile() && !url.has_query() &&
-      !url.has_ref() && url.path() == "/";
+  return url.IsStandard() && !url.SchemeIsFile() &&
+      !url.SchemeIsFileSystem() && !url.has_query() && !url.has_ref()
+      && url.path() == "/";
 }
 
 GURL SimplifyUrlForRequest(const GURL& url) {
@@ -2290,7 +2275,7 @@ struct addrinfo* CreateCopyOfAddrinfo(const struct addrinfo* info,
 
   // ai_canonname is a NULL-terminated string.
   if (info->ai_canonname) {
-    copy->ai_canonname = do_strdup(info->ai_canonname);
+    copy->ai_canonname = base::strdup(info->ai_canonname);
   }
 
   // ai_addr is a buffer of length ai_addrlen.
@@ -2344,7 +2329,7 @@ uint16 GetPortFromAddrinfo(const struct addrinfo* info) {
   const uint16* port_field = GetPortFieldFromAddrinfo(info);
   if (!port_field)
     return -1;
-  return ntohs(*port_field);
+  return base::NetToHost16(*port_field);
 }
 
 const uint16* GetPortFieldFromSockaddr(const struct sockaddr* address,
@@ -2369,7 +2354,7 @@ int GetPortFromSockaddr(const struct sockaddr* address, socklen_t address_len) {
   const uint16* port_field = GetPortFieldFromSockaddr(address, address_len);
   if (!port_field)
     return -1;
-  return ntohs(*port_field);
+  return base::NetToHost16(*port_field);
 }
 
 // Assign |port| to each address in the linked list starting from |head|.
@@ -2378,7 +2363,7 @@ void SetPortForAllAddrinfos(struct addrinfo* head, uint16 port) {
   for (struct addrinfo* ai = head; ai; ai = ai->ai_next) {
     uint16* port_field = GetPortFieldFromAddrinfo(ai);
     if (port_field)
-      *port_field = htons(port);
+      *port_field = base::HostToNet16(port);
   }
 }
 

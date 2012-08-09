@@ -7,7 +7,6 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ppapi/shared_impl/function_group_base.h"
 #include "ppapi/thunk/resource_creation_api.h"
 
 namespace webkit {
@@ -15,14 +14,10 @@ namespace ppapi {
 
 class PluginInstance;
 
-class ResourceCreationImpl : public ::ppapi::FunctionGroupBase,
-                             public ::ppapi::thunk::ResourceCreationAPI {
+class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
  public:
   explicit ResourceCreationImpl(PluginInstance* instance);
   virtual ~ResourceCreationImpl();
-
-  // FunctionGroupBase implementation.
-  virtual ::ppapi::thunk::ResourceCreationAPI* AsResourceCreationAPI();
 
   // ResourceCreationAPI implementation.
   virtual PP_Resource CreateAudio(PP_Instance instance,
@@ -58,7 +53,6 @@ class ResourceCreationImpl : public ::ppapi::FunctionGroupBase,
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) OVERRIDE;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateFlashNetConnector(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateGraphics2D(PP_Instance pp_instance,
                                        const PP_Size& size,
                                        PP_Bool is_always_opaque) OVERRIDE;
@@ -126,6 +120,8 @@ class ResourceCreationImpl : public ::ppapi::FunctionGroupBase,
       const PP_FloatPoint* wheel_delta,
       const PP_FloatPoint* wheel_ticks,
       PP_Bool scroll_by_page) OVERRIDE;
+  virtual PP_Resource CreateX509CertificatePrivate(
+      PP_Instance instance) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResourceCreationImpl);

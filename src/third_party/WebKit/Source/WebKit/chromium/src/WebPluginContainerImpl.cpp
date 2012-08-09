@@ -33,7 +33,6 @@
 
 #include "Chrome.h"
 #include "ChromeClientImpl.h"
-#include "PluginLayerChromium.h"
 #include "ScrollbarGroup.h"
 #include "platform/WebClipboard.h"
 #include "WebCursorInfo.h"
@@ -334,19 +333,25 @@ void WebPluginContainerImpl::reportGeometry()
     }
 }
 
-void WebPluginContainerImpl::setBackingTextureId(unsigned id)
+void WebPluginContainerImpl::setBackingTextureId(unsigned textureId)
 {
 #if USE(ACCELERATED_COMPOSITING)
-    unsigned currId = m_platformLayer->textureId();
-    if (currId == id)
+    if (m_textureId == textureId)
         return;
 
-    m_platformLayer->setTextureId(id);
+    ASSERT(m_ioSurfaceLayer.isNull());
+
+    if (m_textureLayer.isNull())
+        m_textureLayer = WebExternalTextureLayer::create();
+    m_textureLayer.setTextureId(textureId);
+
     // If anyone of the IDs is zero we need to switch between hardware
     // and software compositing. This is done by triggering a style recalc
     // on the container element.
-    if (!(currId * id))
+    if (!m_textureId || !textureId)
         m_element->setNeedsStyleRecalc(WebCore::SyntheticStyleChange);
+
+    m_textureId = textureId;
 #endif
 }
 
@@ -354,26 +359,34 @@ void WebPluginContainerImpl::setBackingIOSurfaceId(int width,
                                                    int height,
                                                    uint32_t ioSurfaceId)
 {
-#if OS(DARWIN) && USE(ACCELERATED_COMPOSITING)
-    uint32_t currentId = m_platformLayer->getIOSurfaceId();
-    if (ioSurfaceId == currentId)
+#if USE(ACCELERATED_COMPOSITING)
+    if (ioSurfaceId == m_ioSurfaceId)
         return;
 
-    m_platformLayer->setIOSurfaceProperties(width, height, ioSurfaceId);
+    ASSERT(m_textureLayer.isNull());
+
+    if (m_ioSurfaceLayer.isNull())
+        m_ioSurfaceLayer = WebIOSurfaceLayer::create();
+    m_ioSurfaceLayer.setIOSurfaceProperties(ioSurfaceId, WebSize(width, height));
 
     // If anyone of the IDs is zero we need to switch between hardware
     // and software compositing. This is done by triggering a style recalc
     // on the container element.
-    if (!(ioSurfaceId * currentId))
+    if (!ioSurfaceId || !m_ioSurfaceId)
         m_element->setNeedsStyleRecalc(WebCore::SyntheticStyleChange);
+
+    m_ioSurfaceId = ioSurfaceId;
 #endif
 }
 
 void WebPluginContainerImpl::commitBackingTexture()
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (m_platformLayer)
-        m_platformLayer->setNeedsDisplay();
+    if (!m_textureLayer.isNull())
+        m_textureLayer.invalidate();
+
+    if (!m_ioSurfaceLayer.isNull())
+        m_ioSurfaceLayer.invalidate();
 #endif
 }
 
@@ -440,8 +453,11 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 void WebPluginContainerImpl::setOpaque(bool opaque)
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (m_platformLayer)
-        m_platformLayer->setOpaque(opaque);
+    if (!m_textureLayer.isNull())
+        m_textureLayer.setOpaque(opaque);
+
+    if (!m_ioSurfaceLayer.isNull())
+        m_ioSurfaceLayer.setOpaque(opaque);
 #endif
 }
 
@@ -516,7 +532,11 @@ void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver
 #if USE(ACCELERATED_COMPOSITING)
 WebCore::LayerChromium* WebPluginContainerImpl::platformLayer() const
 {
-    return (m_platformLayer->textureId() || m_platformLayer->getIOSurfaceId()) ? m_platformLayer.get() : 0;
+    if (m_textureId)
+        return m_textureLayer.unwrap<LayerChromium>();
+    if (m_ioSurfaceId)
+        return m_ioSurfaceLayer.unwrap<LayerChromium>();
+    return 0;
 }
 #endif
 
@@ -556,7 +576,8 @@ WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* eleme
     , m_element(element)
     , m_webPlugin(webPlugin)
 #if USE(ACCELERATED_COMPOSITING)
-    , m_platformLayer(PluginLayerChromium::create())
+    , m_textureId(0)
+    , m_ioSurfaceId(0)
 #endif
 {
 }

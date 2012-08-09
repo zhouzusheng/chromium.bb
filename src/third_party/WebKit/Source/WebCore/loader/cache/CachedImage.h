@@ -65,7 +65,7 @@ public:
     
     // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
     IntSize imageSizeForRenderer(const RenderObject*, float multiplier); // returns the size of the complete image.
-    void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio, float scaleFactor = 1);
+    void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
 
     void removeClientForRenderer(RenderObject*);
     virtual void didAddClient(CachedResourceClient*);
@@ -98,6 +98,7 @@ private:
     void clear();
 
     void createImage();
+    void clearImage();
     size_t maximumDecodedImageSize();
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = 0);

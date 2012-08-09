@@ -15,30 +15,23 @@ from grit import constants
 from grit import exception
 from grit import util
 
-import grit.gather.rc
-import grit.gather.tr_html
 import grit.gather.admin_template
-import grit.gather.txt
+import grit.gather.igoogle_strings
 import grit.gather.muppet_strings
 import grit.gather.policy_json
+import grit.gather.rc
+import grit.gather.tr_html
+import grit.gather.txt
 
 import grit.format.rc
 import grit.format.rc_header
-
-# RTL languages
-# TODO(jennyz): remove this fixed set of RTL language array
-# when generic expand_variable code is added by grit team.
-_RTL_LANGS = [
-  'ar',
-  'iw',
-  'ur',
-]
 
 # Type of the gatherer to use for each type attribute
 _GATHERERS = {
   'accelerators' : grit.gather.rc.Accelerators,
   'admin_template' : grit.gather.admin_template.AdmGatherer,
   'dialog'  : grit.gather.rc.Dialog,
+  'igoogle' : grit.gather.igoogle_strings.IgoogleStrings,
   'menu'    : grit.gather.rc.Menu,
   'muppet'  : grit.gather.muppet_strings.MuppetStrings,
   'rcdata'  : grit.gather.rc.RCData,
@@ -55,6 +48,7 @@ _RC_FORMATTERS = {
   'accelerators' : grit.format.rc.RcSection(),
   'admin_template' : grit.format.rc.RcInclude('ADM'),
   'dialog'  : grit.format.rc.RcSection(),
+  'igoogle' : grit.format.rc.RcInclude('XML'),
   'menu'    : grit.format.rc.RcSection(),
   'muppet'  : grit.format.rc.RcInclude('XML'),
   'rcdata'  : grit.format.rc.RcSection(),
@@ -91,6 +85,8 @@ class StructureNode(base.Node):
              'generateid': 'true',
              'expand_variables' : 'false',
              'output_filename' : '',
+             'fold_whitespace': 'false',
+             'run_command' : '',
              # TODO(joi) this is a hack - should output all generated files
              # as SCons dependencies; however, for now there is a bug I can't
              # find where GRIT doesn't build the matching fileset, therefore
@@ -150,6 +146,7 @@ class StructureNode(base.Node):
                                         self.attrs['name'],
                                         self.attrs['encoding'])
     self.gatherer.SetUberClique(self.UberClique())
+    self.gatherer.SetAttributes(self.attrs)
     self.gatherer.Parse()
 
     for child in self.children:
@@ -176,7 +173,23 @@ class StructureNode(base.Node):
     return self.ToRealPath(self.attrs['file'])
 
   def HasFileForLanguage(self):
-    return self.attrs['type'] in ['tr_html', 'admin_template', 'txt', 'muppet']
+    return self.attrs['type'] in [
+        'tr_html', 'admin_template', 'txt', 'muppet', 'igoogle']
+
+  def ExpandVariables(self):
+    '''Variable expansion on structures is controlled by an XML attribute.
+
+    However, old files assume that expansion is always on for Rc files.
+
+    Returns:
+      A boolean.
+    '''
+    attrs = self.GetRoot().attrs
+    if 'grit_version' in attrs and attrs['grit_version'] > 1:
+      return self.attrs['expand_variables'] == 'true'
+    else:
+      return (self.attrs['expand_variables'] == 'true' or
+              self.attrs['file'].lower().endswith('.rc'))
 
   def FileForLanguage(self, lang, output_dir, create_file=True,
                       return_if_not_generated=True):
@@ -189,46 +202,53 @@ class StructureNode(base.Node):
       create_file: True
     '''
     assert self.HasFileForLanguage()
+    # If the source language is requested, and no extra changes are requested,
+    # use the existing file.
     if (lang == self.GetRoot().GetSourceLanguage() and
-        self.attrs['expand_variables'] != 'true'):
+        self.attrs['expand_variables'] != 'true' and
+        not self.attrs['run_command']):
       if return_if_not_generated:
         return self.GetFilePath()
       else:
         return None
-    else:
-      if self.attrs['output_filename'] != '':
-        filename = self.attrs['output_filename']
-      else:
-        filename = os.path.basename(self.attrs['file'])
-      assert len(filename)
-      filename = '%s_%s' % (lang, filename)
-      filename = os.path.join(output_dir, filename)
 
-      if create_file:
-        text = self.gatherer.Translate(
+    if self.attrs['output_filename'] != '':
+      filename = self.attrs['output_filename']
+    else:
+      filename = os.path.basename(self.attrs['file'])
+    assert len(filename)
+    filename = '%s_%s' % (lang, filename)
+    filename = os.path.join(output_dir, filename)
+
+    # Only create the output if it was requested by the call.
+    if create_file:
+      text = self.gatherer.Translate(
           lang,
           pseudo_if_not_available=self.PseudoIsAllowed(),
           fallback_to_english=self.ShouldFallbackToEnglish(),
           skeleton_gatherer=self.GetSkeletonGatherer())
 
-        file_object = util.WrapOutputStream(file(filename, 'wb'),
-                                            self._GetOutputEncoding())
-        file_contents = util.FixLineEnd(text, self.GetLineEnd())
-        if self.attrs['expand_variables'] == 'true':
-          file_contents = file_contents.replace('[GRITLANGCODE]', lang)
-          # TODO(jennyz): remove this hard coded logic for expanding
-          # [GRITDIR] variable for RTL languages when the generic
-          # expand_variable code is added by grit team.
-          if lang in _RTL_LANGS :
-            file_contents = file_contents.replace('[GRITDIR]', 'dir="RTL"')
-          else :
-            file_contents = file_contents.replace('[GRITDIR]', 'dir="LTR"')
-        if self._ShouldAddBom():
-          file_object.write(constants.BOM)
-        file_object.write(file_contents)
-        file_object.close()
+      file_object = util.WrapOutputStream(file(filename, 'wb'),
+                                          self._GetOutputEncoding())
+      file_contents = util.FixLineEnd(text, self.GetLineEnd())
+      if self.ExpandVariables():
+        # Note that we reapply substitution a second time here.
+        # This is because a) we need to look inside placeholders
+        # b) the substitution values are language-dependent
+        file_contents = self.GetRoot().substituter.Substitute(file_contents)
+      if self._ShouldAddBom():
+        file_object.write(constants.BOM)
+      file_object.write(file_contents)
+      file_object.close()
 
-      return filename
+      if self.attrs['run_command']:
+        # Run arbitrary commands after translation is complete so that it
+        # doesn't interfere with what's in translation console.
+        command = self.attrs['run_command'] % {'filename': filename}
+        result = os.system(command)
+        assert result == 0, '"%s" failed.' % command
+
+    return filename
 
   def _GetOutputEncoding(self):
     '''Python doesn't natively support UTF encodings with a BOM signature,
@@ -246,7 +266,7 @@ class StructureNode(base.Node):
     '''
     return self.attrs['output_encoding'].endswith('-sig')
 
-  # static method
+  @staticmethod
   def Construct(parent, name, type, file, encoding='cp1252'):
     '''Creates a new node which is a child of 'parent', with attributes set
     by parameters of the same name.
@@ -259,5 +279,14 @@ class StructureNode(base.Node):
     node.HandleAttribute('encoding', encoding)
     node.EndParsing()
     return node
-  Construct = staticmethod(Construct)
+
+  def SubstituteMessages(self, substituter):
+    '''Propagates substitution to gatherer.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    assert self.gatherer
+    if self.ExpandVariables():
+      self.gatherer.SubstituteMessages(substituter)
 

@@ -31,6 +31,7 @@
 
 #include "RenderFlowThread.h"
 
+#include "FlowThreadController.h"
 #include "HitTestRequest.h"
 #include "HitTestResult.h"
 #include "Node.h"
@@ -44,9 +45,8 @@
 
 namespace WebCore {
 
-RenderFlowThread::RenderFlowThread(Node* node, const AtomicString& flowThread)
+RenderFlowThread::RenderFlowThread(Node* node)
     : RenderBlock(node)
-    , m_flowThread(flowThread)
     , m_hasValidRegions(false)
     , m_regionsInvalidated(false)
     , m_regionsHaveUniformLogicalWidth(true)
@@ -83,63 +83,6 @@ void RenderFlowThread::styleDidChange(StyleDifference diff, const RenderStyle* o
         m_regionsInvalidated = true;
 }
 
-RenderObject* RenderFlowThread::nextRendererForNode(Node* node) const
-{
-    FlowThreadChildList::const_iterator it = m_flowThreadChildList.begin();
-    FlowThreadChildList::const_iterator end = m_flowThreadChildList.end();
-    
-    for (; it != end; ++it) {
-        RenderObject* child = *it;
-        ASSERT(child->node());
-        unsigned short position = node->compareDocumentPosition(child->node());
-        if (position & Node::DOCUMENT_POSITION_FOLLOWING)
-            return child;
-    }
-    
-    return 0;
-}
-
-RenderObject* RenderFlowThread::previousRendererForNode(Node* node) const
-{
-    if (m_flowThreadChildList.isEmpty())
-        return 0;
-    
-    FlowThreadChildList::const_iterator begin = m_flowThreadChildList.begin();
-    FlowThreadChildList::const_iterator end = m_flowThreadChildList.end();
-    FlowThreadChildList::const_iterator it = end;
-    
-    do {
-        --it;
-        RenderObject* child = *it;
-        ASSERT(child->node());
-        unsigned short position = node->compareDocumentPosition(child->node());
-        if (position & Node::DOCUMENT_POSITION_PRECEDING)
-            return child;
-    } while (it != begin);
-    
-    return 0;
-}
-
-void RenderFlowThread::addFlowChild(RenderObject* newChild, RenderObject* beforeChild)
-{
-    // The child list is used to sort the flow thread's children render objects 
-    // based on their corresponding nodes DOM order. The list is needed to avoid searching the whole DOM.
-
-    // Do not add anonymous objects.
-    if (!newChild->node())
-        return;
-
-    if (beforeChild)
-        m_flowThreadChildList.insertBefore(beforeChild, newChild);
-    else
-        m_flowThreadChildList.add(newChild);
-}
-
-void RenderFlowThread::removeFlowChild(RenderObject* child)
-{
-    m_flowThreadChildList.remove(child);
-}
-
 void RenderFlowThread::removeFlowChildInfo(RenderObject* child)
 {
     if (child->isBox()) {
@@ -149,147 +92,20 @@ void RenderFlowThread::removeFlowChildInfo(RenderObject* child)
     }
 }
 
-// Compare two regions to determine in which one the content should flow first.
-// The function returns true if the first passed region is "less" than the second passed region.
-// If the first region appears before second region in DOM,
-// the first region is "less" than the second region.
-// If the first region is "less" than the second region, the first region receives content before second region.
-static bool compareRenderRegions(const RenderRegion* firstRegion, const RenderRegion* secondRegion)
-{
-    ASSERT(firstRegion);
-    ASSERT(secondRegion);
-
-    // If the regions have the same region-index, compare their position in dom.
-    ASSERT(firstRegion->node());
-    ASSERT(secondRegion->node());
-
-    unsigned short position = firstRegion->node()->compareDocumentPosition(secondRegion->node());
-    return (position & Node::DOCUMENT_POSITION_FOLLOWING);
-}
-
-bool RenderFlowThread::dependsOn(RenderFlowThread* otherRenderFlowThread) const
-{
-    if (m_layoutBeforeThreadsSet.contains(otherRenderFlowThread))
-        return true;
-
-    // Recursively traverse the m_layoutBeforeThreadsSet.
-    RenderFlowThreadCountedSet::const_iterator iterator = m_layoutBeforeThreadsSet.begin();
-    RenderFlowThreadCountedSet::const_iterator end = m_layoutBeforeThreadsSet.end();
-    for (; iterator != end; ++iterator) {
-        const RenderFlowThread* beforeFlowThread = (*iterator).first;
-        if (beforeFlowThread->dependsOn(otherRenderFlowThread))
-            return true;
-    }
-
-    return false;
-}
-
 void RenderFlowThread::addRegionToThread(RenderRegion* renderRegion)
 {
     ASSERT(renderRegion);
-    if (m_regionList.isEmpty())
-        m_regionList.add(renderRegion);
-    else {
-        // Find the first region "greater" than renderRegion.
-        RenderRegionList::iterator it = m_regionList.begin();
-        while (it != m_regionList.end() && !compareRenderRegions(renderRegion, *it))
-            ++it;
-        m_regionList.insertBefore(it, renderRegion);
-    }
-
-    ASSERT(!renderRegion->isValid());
-    if (renderRegion->parentFlowThread()) {
-        if (renderRegion->parentFlowThread()->dependsOn(this)) {
-            // Register ourself to get a notification when the state changes.
-            renderRegion->parentFlowThread()->m_observerThreadsSet.add(this);
-            return;
-        }
-
-        addDependencyOnFlowThread(renderRegion->parentFlowThread());
-    }
-
+    m_regionList.add(renderRegion);
     renderRegion->setIsValid(true);
-
     invalidateRegions();
 }
 
 void RenderFlowThread::removeRegionFromThread(RenderRegion* renderRegion)
 {
     ASSERT(renderRegion);
-
     m_regionRangeMap.clear();
     m_regionList.remove(renderRegion);
-
-    if (renderRegion->parentFlowThread()) {
-        if (!renderRegion->isValid()) {
-            renderRegion->parentFlowThread()->m_observerThreadsSet.remove(this);
-            // No need to invalidate the regions rectangles. The removed region
-            // was not taken into account. Just return here.
-            return;
-        }
-        removeDependencyOnFlowThread(renderRegion->parentFlowThread());
-    }
-
     invalidateRegions();
-}
-
-void RenderFlowThread::checkInvalidRegions()
-{
-    for (RenderRegionList::iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
-        // The only reason a region would be invalid is because it has a parent flow thread.
-        ASSERT(region->isValid() || region->parentFlowThread());
-        if (region->isValid() || region->parentFlowThread()->dependsOn(this))
-            continue;
-
-        region->parentFlowThread()->m_observerThreadsSet.remove(this);
-        addDependencyOnFlowThread(region->parentFlowThread());
-        region->setIsValid(true);
-        invalidateRegions();
-    }
-
-    if (m_observerThreadsSet.isEmpty())
-        return;
-
-    // Notify all the flow threads that were dependent on this flow.
-
-    // Create a copy of the list first. That's because observers might change the list when calling checkInvalidRegions.
-    Vector<RenderFlowThread*> observers;
-    copyToVector(m_observerThreadsSet, observers);
-
-    for (size_t i = 0; i < observers.size(); ++i) {
-        RenderFlowThread* flowThread = observers.at(i);
-        flowThread->checkInvalidRegions();
-    }
-}
-
-void RenderFlowThread::addDependencyOnFlowThread(RenderFlowThread* otherFlowThread)
-{
-    std::pair<RenderFlowThreadCountedSet::iterator, bool> result = m_layoutBeforeThreadsSet.add(otherFlowThread);
-    if (result.second) {
-        // This is the first time we see this dependency. Make sure we recalculate all the dependencies.
-        view()->setIsRenderFlowThreadOrderDirty(true);
-    }
-}
-
-void RenderFlowThread::removeDependencyOnFlowThread(RenderFlowThread* otherFlowThread)
-{
-    bool removed = m_layoutBeforeThreadsSet.remove(otherFlowThread);
-    if (removed) {
-        checkInvalidRegions();
-        view()->setIsRenderFlowThreadOrderDirty(true);
-    }
-}
-
-void RenderFlowThread::pushDependencies(RenderFlowThreadList& list)
-{
-    for (RenderFlowThreadCountedSet::iterator iter = m_layoutBeforeThreadsSet.begin(); iter != m_layoutBeforeThreadsSet.end(); ++iter) {
-        RenderFlowThread* flowThread = (*iter).first;
-        if (list.contains(flowThread))
-            continue;
-        flowThread->pushDependencies(list);
-        list.add(flowThread);
-    }
 }
 
 class CurrentRenderFlowThreadMaintainer {
@@ -299,14 +115,14 @@ public:
         : m_renderFlowThread(renderFlowThread)
     {
         RenderView* view = m_renderFlowThread->view();
-        ASSERT(!view->currentRenderFlowThread());
-        view->setCurrentRenderFlowThread(m_renderFlowThread);
+        ASSERT(!view->flowThreadController()->currentRenderFlowThread());
+        view->flowThreadController()->setCurrentRenderFlowThread(m_renderFlowThread);
     }
     ~CurrentRenderFlowThreadMaintainer()
     {
         RenderView* view = m_renderFlowThread->view();
-        ASSERT(view->currentRenderFlowThread() == m_renderFlowThread);
-        view->setCurrentRenderFlowThread(0);
+        ASSERT(view->flowThreadController()->currentRenderFlowThread() == m_renderFlowThread);
+        view->flowThreadController()->setCurrentRenderFlowThread(0);
     }
 private:
     RenderFlowThread* m_renderFlowThread;
@@ -319,14 +135,14 @@ public:
         : m_view(view)
         , m_renderFlowThread(0)
     {
-        m_renderFlowThread = m_view->currentRenderFlowThread();
+        m_renderFlowThread = m_view->flowThreadController()->currentRenderFlowThread();
         if (m_renderFlowThread)
-            view->setCurrentRenderFlowThread(0);
+            view->flowThreadController()->setCurrentRenderFlowThread(0);
     }
     ~CurrentRenderFlowThreadDisabler()
     {
         if (m_renderFlowThread)
-            m_view->setCurrentRenderFlowThread(m_renderFlowThread);
+            m_view->flowThreadController()->setCurrentRenderFlowThread(m_renderFlowThread);
     }
 private:
     RenderView* m_view;
@@ -385,10 +201,10 @@ void RenderFlowThread::layout()
                     continue;
                 LayoutRect regionRect;
                 if (isHorizontalWritingMode()) {
-                    regionRect = LayoutRect(style()->direction() == LTR ? zeroLayoutUnit : logicalWidth() - region->contentWidth(), logicalHeight, region->contentWidth(), region->contentHeight());
+                    regionRect = LayoutRect(style()->direction() == LTR ? ZERO_LAYOUT_UNIT : logicalWidth() - region->contentWidth(), logicalHeight, region->contentWidth(), region->contentHeight());
                     logicalHeight += regionRect.height();
                 } else {
-                    regionRect = LayoutRect(logicalHeight, style()->direction() == LTR ? zeroLayoutUnit : logicalWidth() - region->contentHeight(), region->contentWidth(), region->contentHeight());
+                    regionRect = LayoutRect(logicalHeight, style()->direction() == LTR ? ZERO_LAYOUT_UNIT : logicalWidth() - region->contentHeight(), region->contentWidth(), region->contentHeight());
                     logicalHeight += regionRect.width();
                 }
                 region->setRegionRect(regionRect);
@@ -431,7 +247,7 @@ void RenderFlowThread::computeLogicalWidth()
         
         LayoutUnit regionLogicalWidth = isHorizontalWritingMode() ? region->contentWidth() : region->contentHeight();
         if (regionLogicalWidth != logicalWidth) {
-            LayoutUnit logicalLeft = style()->direction() == LTR ? zeroLayoutUnit : logicalWidth - regionLogicalWidth;
+            LayoutUnit logicalLeft = style()->direction() == LTR ? ZERO_LAYOUT_UNIT : logicalWidth - regionLogicalWidth;
             region->setRenderBoxRegionInfo(this, logicalLeft, regionLogicalWidth, false);
         }
     }
@@ -439,7 +255,7 @@ void RenderFlowThread::computeLogicalWidth()
 
 void RenderFlowThread::computeLogicalHeight()
 {
-    int logicalHeight = 0;
+    LayoutUnit logicalHeight = 0;
 
     for (RenderRegionList::iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
         RenderRegion* region = *iter;
@@ -686,7 +502,7 @@ void RenderFlowThread::removeRenderBoxRegionInfo(RenderBox* box)
     }
 
 #ifndef NDEBUG
-    // We have to make sure we did not left any boxes with region info attached in regions.
+    // We have to make sure we did not leave any RenderBoxRegionInfo attached.
     for (RenderRegionList::iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
         RenderRegion* region = *iter;
         if (!region->isValid())
@@ -874,14 +690,6 @@ void RenderFlowThread::getRegionRangeForBox(const RenderBox* box, RenderRegion*&
     startRegion = range.startRegion();
     endRegion = range.endRegion();
     ASSERT(m_regionList.contains(startRegion) && m_regionList.contains(endRegion));
-}
-
-WebKitNamedFlow* RenderFlowThread::ensureNamedFlow()
-{
-    if (!m_namedFlow)
-        m_namedFlow = WebKitNamedFlow::create(this);
-
-    return m_namedFlow.get();
 }
 
 void RenderFlowThread::computeOverflowStateForRegions(LayoutUnit oldClientAfterEdge)

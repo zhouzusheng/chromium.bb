@@ -13,6 +13,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/shadow_value.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
@@ -147,12 +148,31 @@ bool Canvas::ClipRect(const gfx::Rect& rect) {
   return canvas_->clipRect(gfx::RectToSkRect(rect));
 }
 
+bool Canvas::ClipPath(const SkPath& path) {
+  return canvas_->clipPath(path);
+}
+
+bool Canvas::GetClipBounds(gfx::Rect* bounds) {
+  SkRect out;
+  bool has_non_empty_clip = canvas_->getClipBounds(&out);
+  bounds->SetRect(out.left(), out.top(), out.width(), out.height());
+  return has_non_empty_clip;
+}
+
 void Canvas::Translate(const gfx::Point& point) {
   canvas_->translate(SkIntToScalar(point.x()), SkIntToScalar(point.y()));
 }
 
 void Canvas::Scale(int x_scale, int y_scale) {
   canvas_->scale(SkIntToScalar(x_scale), SkIntToScalar(y_scale));
+}
+
+void Canvas::DrawColor(SkColor color) {
+  DrawColor(color, SkXfermode::kSrcOver_Mode);
+}
+
+void Canvas::DrawColor(SkColor color, SkXfermode::Mode mode) {
+  canvas_->drawColor(color, mode);
 }
 
 void Canvas::FillRect(const gfx::Rect& rect, SkColor color) {
@@ -192,14 +212,42 @@ void Canvas::DrawRect(const gfx::Rect& rect, const SkPaint& paint) {
   canvas_->drawIRect(RectToSkIRect(rect), paint);
 }
 
+void Canvas::DrawPoint(const gfx::Point& p1, const SkPaint& paint) {
+  canvas_->drawPoint(SkIntToScalar(p1.x()), SkIntToScalar(p1.y()), paint);
+}
+
 void Canvas::DrawLine(const gfx::Point& p1,
                       const gfx::Point& p2,
                       SkColor color) {
   SkPaint paint;
   paint.setColor(color);
   paint.setStrokeWidth(SkIntToScalar(1));
+  DrawLine(p1, p2, paint);
+}
+
+void Canvas::DrawLine(const gfx::Point& p1,
+                      const gfx::Point& p2,
+                      const SkPaint& paint) {
   canvas_->drawLine(SkIntToScalar(p1.x()), SkIntToScalar(p1.y()),
                     SkIntToScalar(p2.x()), SkIntToScalar(p2.y()), paint);
+}
+
+void Canvas::DrawCircle(const gfx::Point& center_point,
+                        int radius,
+                        const SkPaint& paint) {
+  canvas_->drawCircle(SkIntToScalar(center_point.x()),
+      SkIntToScalar(center_point.y()), SkIntToScalar(radius), paint);
+}
+
+void Canvas::DrawRoundRect(const gfx::Rect& rect,
+                           int radius,
+                           const SkPaint& paint) {
+  canvas_->drawRoundRect(RectToSkRect(rect), SkIntToScalar(radius),
+                         SkIntToScalar(radius), paint);
+}
+
+void Canvas::DrawPath(const SkPath& path, const SkPaint& paint) {
+  canvas_->drawPath(path, paint);
 }
 
 void Canvas::DrawFocusRect(const gfx::Rect& rect) {
@@ -230,6 +278,18 @@ void Canvas::DrawBitmapInt(const SkBitmap& bitmap,
                            int dest_x, int dest_y, int dest_w, int dest_h,
                            bool filter,
                            const SkPaint& paint) {
+  DrawBitmapFloat(bitmap, static_cast<float>(src_x), static_cast<float>(src_y),
+                  static_cast<float>(src_w), static_cast<float>(src_h),
+                  static_cast<float>(dest_x), static_cast<float>(dest_y),
+                  static_cast<float>(dest_w), static_cast<float>(dest_h),
+                  filter, paint);
+}
+
+void Canvas::DrawBitmapFloat(const SkBitmap& bitmap,
+    float src_x, float src_y, float src_w, float src_h,
+    float dest_x, float dest_y, float dest_w, float dest_h,
+    bool filter,
+    const SkPaint& paint) {
   DLOG_ASSERT(src_x + src_w < std::numeric_limits<int16_t>::max() &&
               src_y + src_h < std::numeric_limits<int16_t>::max());
   if (src_w <= 0 || src_h <= 0) {
@@ -240,10 +300,10 @@ void Canvas::DrawBitmapInt(const SkBitmap& bitmap,
   if (!IntersectsClipRectInt(dest_x, dest_y, dest_w, dest_h))
     return;
 
-  SkRect dest_rect = { SkIntToScalar(dest_x),
-                       SkIntToScalar(dest_y),
-                       SkIntToScalar(dest_x + dest_w),
-                       SkIntToScalar(dest_y + dest_h) };
+  SkRect dest_rect = { SkFloatToScalar(dest_x),
+                       SkFloatToScalar(dest_y),
+                       SkFloatToScalar(dest_x + dest_w),
+                       SkFloatToScalar(dest_y + dest_h) };
 
   if (src_w == dest_w && src_h == dest_h) {
     // Workaround for apparent bug in Skia that causes image to occasionally
@@ -261,10 +321,10 @@ void Canvas::DrawBitmapInt(const SkBitmap& bitmap,
                                                   SkShader::kRepeat_TileMode,
                                                   SkShader::kRepeat_TileMode);
   SkMatrix shader_scale;
-  shader_scale.setScale(SkFloatToScalar(static_cast<float>(dest_w) / src_w),
-                        SkFloatToScalar(static_cast<float>(dest_h) / src_h));
-  shader_scale.preTranslate(SkIntToScalar(-src_x), SkIntToScalar(-src_y));
-  shader_scale.postTranslate(SkIntToScalar(dest_x), SkIntToScalar(dest_y));
+  shader_scale.setScale(SkFloatToScalar(dest_w / src_w),
+                        SkFloatToScalar(dest_h / src_h));
+  shader_scale.preTranslate(SkFloatToScalar(-src_x), SkFloatToScalar(-src_y));
+  shader_scale.postTranslate(SkFloatToScalar(dest_x), SkFloatToScalar(dest_y));
   shader->setLocalMatrix(shader_scale);
 
   // Set up our paint to use the shader & release our reference (now just owned
@@ -291,6 +351,19 @@ void Canvas::DrawStringInt(const string16& text,
                            const gfx::Rect& display_rect) {
   DrawStringInt(text, font, color, display_rect.x(), display_rect.y(),
                 display_rect.width(), display_rect.height());
+}
+
+void Canvas::DrawStringInt(const string16& text,
+                           const gfx::Font& font,
+                           SkColor color,
+                           int x, int y, int w, int h,
+                           int flags) {
+  DrawStringWithShadows(text,
+                        font,
+                        color,
+                        gfx::Rect(x, y, w, h),
+                        flags,
+                        std::vector<ShadowValue>());
 }
 
 void Canvas::TileImageInt(const SkBitmap& bitmap,
@@ -340,6 +413,11 @@ bool Canvas::IntersectsClipRectInt(int x, int y, int w, int h) {
   return canvas_->getClipBounds(&clip) &&
       clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),
                      SkIntToScalar(y + h));
+}
+
+bool Canvas::IntersectsClipRect(const gfx::Rect& rect) {
+  return IntersectsClipRectInt(rect.x(), rect.y(),
+                               rect.width(), rect.height());
 }
 
 }  // namespace gfx

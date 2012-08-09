@@ -7,11 +7,12 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/size.h"
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gdk/gdk.h>
 #include <glib-object.h>
@@ -33,7 +34,7 @@ namespace internal {
 bool NSImageToSkBitmaps(NSImage* image, std::vector<const SkBitmap*>* bitmaps);
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 const SkBitmap* GdkPixbufToSkBitmap(GdkPixbuf* pixbuf) {
   CHECK(pixbuf);
   gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf),
@@ -69,7 +70,7 @@ class ImageRep {
     return reinterpret_cast<ImageRepSkia*>(this);
   }
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   ImageRepGdk* AsImageRepGdk() {
     CHECK_EQ(type_, Image::kImageRepGdk);
     return reinterpret_cast<ImageRepGdk*>(this);
@@ -96,36 +97,23 @@ class ImageRep {
 
 class ImageRepSkia : public ImageRep {
  public:
-  explicit ImageRepSkia(const SkBitmap* bitmap)
-      : ImageRep(Image::kImageRepSkia) {
-    CHECK(bitmap);
-    // TODO(rohitrao): Add a CHECK to ensure that !bitmap->isNull().
-    bitmaps_.push_back(bitmap);
-  }
-
-  explicit ImageRepSkia(const std::vector<const SkBitmap*>& bitmaps)
+  explicit ImageRepSkia(ImageSkia* image)
       : ImageRep(Image::kImageRepSkia),
-        bitmaps_(bitmaps) {
-    CHECK(!bitmaps_.empty());
-    // TODO(rohitrao): Add a CHECK to ensure that !bitmap->isNull() for each
-    // vector element.
+        image_(image) {
   }
 
   virtual ~ImageRepSkia() {
-    STLDeleteElements(&bitmaps_);
   }
 
-  const SkBitmap* bitmap() const { return bitmaps_[0]; }
-
-  const std::vector<const SkBitmap*>& bitmaps() const { return bitmaps_; }
+  ImageSkia* image() { return image_.get(); }
 
  private:
-  std::vector<const SkBitmap*> bitmaps_;
+  scoped_ptr<ImageSkia> image_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageRepSkia);
 };
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 class ImageRepGdk : public ImageRep {
  public:
   explicit ImageRepGdk(GdkPixbuf* pixbuf)
@@ -170,7 +158,7 @@ class ImageRepCairoCached : public ImageRep {
 
   DISALLOW_COPY_AND_ASSIGN(ImageRepCairoCached);
 };
-#endif  // defined(TOOLKIT_USES_GTK)
+#endif  // defined(TOOLKIT_GTK)
 
 #if defined(OS_MACOSX)
 class ImageRepCocoa : public ImageRep {
@@ -238,24 +226,26 @@ Image::Image() {
 
 Image::Image(const SkBitmap* bitmap)
     : storage_(new internal::ImageStorage(Image::kImageRepSkia)) {
-  internal::ImageRepSkia* rep = new internal::ImageRepSkia(bitmap);
+  internal::ImageRepSkia* rep = new internal::ImageRepSkia(
+      new ImageSkia(bitmap));
   AddRepresentation(rep);
 }
 
 Image::Image(const SkBitmap& bitmap)
     : storage_(new internal::ImageStorage(Image::kImageRepSkia)) {
   internal::ImageRepSkia* rep =
-      new internal::ImageRepSkia(new SkBitmap(bitmap));
+      new internal::ImageRepSkia(new ImageSkia(new SkBitmap(bitmap)));
   AddRepresentation(rep);
 }
 
 Image::Image(const std::vector<const SkBitmap*>& bitmaps)
     : storage_(new internal::ImageStorage(Image::kImageRepSkia)) {
-  internal::ImageRepSkia* rep = new internal::ImageRepSkia(bitmaps);
+  internal::ImageRepSkia* rep = new internal::ImageRepSkia(
+    new ImageSkia(bitmaps));
   AddRepresentation(rep);
 }
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 Image::Image(GdkPixbuf* pixbuf)
     : storage_(new internal::ImageStorage(Image::kImageRepGdk)) {
   internal::ImageRepGdk* rep = new internal::ImageRepGdk(pixbuf);
@@ -284,10 +274,15 @@ Image::~Image() {
 
 const SkBitmap* Image::ToSkBitmap() const {
   internal::ImageRep* rep = GetRepresentation(Image::kImageRepSkia);
-  return rep->AsImageRepSkia()->bitmap();
+  return rep->AsImageRepSkia()->image()->bitmaps()[0];
 }
 
-#if defined(TOOLKIT_USES_GTK)
+const ImageSkia* Image::ToImageSkia() const {
+  internal::ImageRep* rep = GetRepresentation(Image::kImageRepSkia);
+  return rep->AsImageRepSkia()->image();
+}
+
+#if defined(TOOLKIT_GTK)
 GdkPixbuf* Image::ToGdkPixbuf() const {
   internal::ImageRep* rep = GetRepresentation(Image::kImageRepGdk);
   return rep->AsImageRepGdk()->pixbuf();
@@ -310,7 +305,7 @@ SkBitmap* Image::CopySkBitmap() const {
   return new SkBitmap(*ToSkBitmap());
 }
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 GdkPixbuf* Image::CopyGdkPixbuf() const {
   GdkPixbuf* pixbuf = ToGdkPixbuf();
   g_object_ref(pixbuf);
@@ -379,11 +374,11 @@ internal::ImageRep* Image::GetRepresentation(
   // Handle native-to-Skia conversion.
   if (rep_type == Image::kImageRepSkia) {
     internal::ImageRepSkia* rep = NULL;
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
     if (storage_->default_representation_type() == Image::kImageRepGdk) {
       internal::ImageRepGdk* pixbuf_rep = default_rep->AsImageRepGdk();
-      rep = new internal::ImageRepSkia(
-          internal::GdkPixbufToSkBitmap(pixbuf_rep->pixbuf()));
+      rep = new internal::ImageRepSkia(new ImageSkia(
+          internal::GdkPixbufToSkBitmap(pixbuf_rep->pixbuf())));
     }
     // We don't do conversions from CairoCachedSurfaces to Skia because the
     // data lives on the display server and we'll always have a GdkPixbuf if we
@@ -393,14 +388,14 @@ internal::ImageRep* Image::GetRepresentation(
       internal::ImageRepCocoa* nsimage_rep = default_rep->AsImageRepCocoa();
       std::vector<const SkBitmap*> bitmaps;
       CHECK(internal::NSImageToSkBitmaps(nsimage_rep->image(), &bitmaps));
-      rep = new internal::ImageRepSkia(bitmaps);
+      rep = new internal::ImageRepSkia(new ImageSkia(bitmaps));
     }
 #endif
     CHECK(rep);
     AddRepresentation(rep);
     return rep;
   }
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   else if (rep_type == Image::kImageRepCairoCache) {
     // Handle any-to-Cairo conversion. This may recursively create an
     // intermediate pixbuf before we send the data to the display server.
@@ -419,16 +414,16 @@ internal::ImageRep* Image::GetRepresentation(
     internal::ImageRep* native_rep = NULL;
 #if defined(USE_AURA)
     NOTIMPLEMENTED();
-#elif defined(TOOLKIT_USES_GTK)
+#elif defined(TOOLKIT_GTK)
     if (rep_type == Image::kImageRepGdk) {
       GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(
-          default_rep->AsImageRepSkia()->bitmap());
+          default_rep->AsImageRepSkia()->image()->bitmaps()[0]);
       native_rep = new internal::ImageRepGdk(pixbuf);
     }
 #elif defined(OS_MACOSX)
     if (rep_type == Image::kImageRepCocoa) {
       NSImage* image = gfx::SkBitmapsToNSImage(
-          default_rep->AsImageRepSkia()->bitmaps());
+          default_rep->AsImageRepSkia()->image()->bitmaps());
       base::mac::NSObjectRetain(image);
       native_rep = new internal::ImageRepCocoa(image);
     }
@@ -445,16 +440,6 @@ internal::ImageRep* Image::GetRepresentation(
 void Image::AddRepresentation(internal::ImageRep* rep) const {
   CHECK(storage_.get());
   storage_->representations().insert(std::make_pair(rep->type(), rep));
-}
-
-size_t Image::GetNumberOfSkBitmaps() const  {
-  return GetRepresentation(Image::kImageRepSkia)->AsImageRepSkia()->
-      bitmaps().size();
-}
-
-const SkBitmap* Image::GetSkBitmapAtIndex(size_t index) const {
-  return GetRepresentation(Image::kImageRepSkia)->AsImageRepSkia()->
-      bitmaps()[index];
 }
 
 }  // namespace gfx

@@ -19,12 +19,8 @@
 class GURL;
 class FilePath;
 
-namespace net {
-class FileStream;
-}
-
 namespace webkit_blob {
-class ShareableFileReference;
+class FileReader;
 }
 
 namespace fileapi {
@@ -60,21 +56,17 @@ class FileSystemURLRequestJob : public net::URLRequestJob {
   virtual ~FileSystemURLRequestJob();
 
   void StartAsync();
-  void DidCreateSnapshot(
+  void DidGetMetadata(
       base::PlatformFileError error_code,
       const base::PlatformFileInfo& file_info,
-      const FilePath& platform_path,
-      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
-  void DidOpen(base::PlatformFileError error_code,
-               base::PassPlatformFile file, bool created);
+      const FilePath& platform_path);
   void DidRead(int result);
   void NotifyFailed(int rv);
 
   FileSystemContext* file_system_context_;
   scoped_refptr<base::MessageLoopProxy> file_thread_proxy_;
   base::WeakPtrFactory<FileSystemURLRequestJob> weak_factory_;
-  scoped_ptr<net::FileStream> stream_;
-  scoped_refptr<webkit_blob::ShareableFileReference> snapshot_ref_;
+  scoped_ptr<webkit_blob::FileReader> reader_;
   bool is_directory_;
   scoped_ptr<net::HttpResponseInfo> response_info_;
   int64 remaining_bytes_;

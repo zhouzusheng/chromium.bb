@@ -18,6 +18,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
+#include "net/base/request_priority.h"
 #include "net/base/server_bound_cert_service.h"
 #include "net/base/ssl_client_cert_type.h"
 #include "net/base/upload_data.h"
@@ -122,8 +123,8 @@ class NET_EXPORT_PRIVATE SpdyStream
   const std::string& path() const { return path_; }
   void set_path(const std::string& path) { path_ = path; }
 
-  int priority() const { return priority_; }
-  void set_priority(int priority) { priority_ = priority; }
+  RequestPriority priority() const { return priority_; }
+  void set_priority(RequestPriority priority) { priority_ = priority; }
 
   int32 send_window_size() const { return send_window_size_; }
   void set_send_window_size(int32 window_size) {
@@ -138,11 +139,15 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Set session_'s initial_recv_window_size. Used by unittests.
   void set_initial_recv_window_size(int32 window_size);
 
+  bool stalled_by_flow_control() { return stalled_by_flow_control_; }
+
   void set_stalled_by_flow_control(bool stalled) {
     stalled_by_flow_control_ = stalled;
   }
 
-  // Adjust the |send_window_size_| by |delta_window_size|.
+  // Adjusts the |send_window_size_| by |delta_window_size|. |delta_window_size|
+  // is the difference between the SETTINGS_INITIAL_WINDOW_SIZE in SETTINGS
+  // frame and the previous initial_send_window_size.
   void AdjustSendWindowSize(int32 delta_window_size);
 
   // Increases |send_window_size_| with delta extracted from a WINDOW_UPDATE
@@ -274,6 +279,10 @@ class NET_EXPORT_PRIVATE SpdyStream
   friend class base::RefCounted<SpdyStream>;
   virtual ~SpdyStream();
 
+  // If the stream is stalled and if |send_window_size_| is positive, then set
+  // |stalled_by_flow_control_| to false and unstall the stream.
+  void PossiblyResumeIfStalled();
+
   void OnGetDomainBoundCertComplete(int result);
 
   // Try to make progress sending/receiving the request/response.
@@ -307,7 +316,7 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   SpdyStreamId stream_id_;
   std::string path_;
-  int priority_;
+  RequestPriority priority_;
   size_t slot_;
 
   // Flow control variables.

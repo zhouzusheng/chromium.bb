@@ -56,6 +56,7 @@ CCLayerImpl::CCLayerImpl(int id)
     , m_opaque(false)
     , m_opacity(1.0)
     , m_preserves3D(false)
+    , m_drawCheckerboardForMissingTiles(false)
     , m_usesLayerClipping(false)
     , m_isNonCompositedContent(false)
     , m_drawsContent(false)
@@ -384,6 +385,15 @@ void CCLayerImpl::setFilters(const FilterOperations& filters)
 
     m_filters = filters;
     noteLayerPropertyChangedForSubtree();
+}
+
+void CCLayerImpl::setBackgroundFilters(const FilterOperations& backgroundFilters)
+{
+    if (m_backgroundFilters == backgroundFilters)
+        return;
+
+    m_backgroundFilters = backgroundFilters;
+    m_layerPropertyChanged = true;
 }
 
 void CCLayerImpl::setMasksToBounds(bool masksToBounds)

@@ -19,7 +19,7 @@
 #include "build/build_config.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/gfx/compositor/layer_delegate.h"
+#include "ui/compositor/layer_delegate.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/background.h"
@@ -46,7 +46,6 @@ class TextInputClient;
 class Texture;
 class ThemeProvider;
 class Transform;
-enum TouchStatus;
 }
 
 #if defined(OS_WIN)
@@ -204,6 +203,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Returns the bounds of the view in its own coordinates (i.e. position is
   // 0, 0).
   gfx::Rect GetLocalBounds() const;
+
+  // Returns the bounds of the layer in its own pixel coordinates.
+  gfx::Rect GetLayerBoundsInPixel() const;
 
   // Returns the insets of the current border. If there is no border an empty
   // insets is returned.
@@ -516,8 +518,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Return the cursor that should be used for this view or the default cursor.
   // The event location is in the receiver's coordinate system. The caller is
   // responsible for managing the lifetime of the returned object, though that
-  // lifetime may vary from platform to platform. On Windows, the cursor is a
-  // shared resource, but Gtk destroys the returned cursor after setting it.
+  // lifetime may vary from platform to platform. On Windows and Aura,
+  // the cursor is a shared resource.
   virtual gfx::NativeCursor GetCursor(const MouseEvent& event);
 
   // Convenience to test whether a point is within this view's bounds
@@ -1203,6 +1205,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // this views location and possibly size are changed.
   void AddDescendantToNotify(View* view);
   void RemoveDescendantToNotify(View* view);
+
+  // Sets the layer's bounds given in DIP coordinates.
+  void SetLayerBounds(const gfx::Rect& bounds_in_dip);
 
   // Transformations -----------------------------------------------------------
 

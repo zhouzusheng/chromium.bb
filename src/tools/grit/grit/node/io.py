@@ -6,7 +6,6 @@
 '''The <output> and <file> elements.
 '''
 
-import os
 import re
 import grit.format.rc_header
 
@@ -62,7 +61,7 @@ class FileNode(base.Node):
             'by the \'lang\' attribute.')
 
   def GetFilePath(self):
-    return self.ToRealPath(os.path.expandvars(self.attrs['path']))
+    return self.ToRealPath(self.attrs['path'])
 
 
 class OutputNode(base.Node):
@@ -77,7 +76,10 @@ class OutputNode(base.Node):
              }
 
   def GetType(self):
-    return self.attrs['type']
+    if self.SatisfiesOutputCondition():
+      return self.attrs['type']
+    else:
+      return 'output_condition_not_satisfied_%s' % self.attrs['type']
 
   def GetLanguage(self):
     '''Returns the language ID, default 'en'.'''

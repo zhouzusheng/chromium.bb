@@ -291,6 +291,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // will not have any more of its methods called.
   virtual ~URLRequest();
 
+  // Changes the default cookie policy from allowing all cookies to blocking all
+  // cookies. Embedders that want to implement a more flexible policy should
+  // change the default to blocking all cookies, and provide a NetworkDelegate
+  // with the URLRequestContext that maintains the CookieStore.
+  // The cookie policy default has to be set before the first URLRequest is
+  // started. Once it was set to block all cookies, it cannot be changed back.
+  static void SetDefaultCookiePolicyToBlock();
+
   // Returns true if the scheme can be handled by URLRequest. False otherwise.
   static bool IsHandledProtocol(const std::string& scheme);
 
@@ -301,10 +309,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // ProtocolFactories that only work for requests that are scoped to a
   // Profile.
   static bool IsHandledURL(const GURL& url);
-
-  // Allow access to file:// on ChromeOS for tests.
-  static void AllowFileAccess();
-  static bool IsFileAccessAllowed();
 
   // The original url is the url used to initialize the request, and it may
   // differ from the url if the request was redirected.
@@ -572,14 +576,21 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
   void set_priority(RequestPriority priority) {
-    DCHECK_GE(priority, HIGHEST);
+    DCHECK_GE(priority, MINIMUM_PRIORITY);
     DCHECK_LT(priority, NUM_PRIORITIES);
     priority_ = priority;
   }
 
+  // Returns true iff this request would be internally redirected to HTTPS
+  // due to HSTS. If so, |redirect_url| is rewritten to the new HTTPS URL.
+  bool GetHSTSRedirect(GURL* redirect_url) const;
+
   // This method is intended only for unit tests, but it is being used by
   // unit tests outside of net :(.
   URLRequestJob* job() { return job_; }
+
+  // TODO(willchan): Undo this. Only temporarily public.
+  bool has_delegate() const { return delegate_ != NULL; }
 
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
@@ -654,8 +665,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Called by URLRequestJob to allow interception when the final response
   // occurs.
   void NotifyResponseStarted();
-
-  bool has_delegate() const { return delegate_ != NULL; }
 
   // These functions delegate to |delegate_| and may only be used if
   // |delegate_| is not NULL. See URLRequest::Delegate for the meaning

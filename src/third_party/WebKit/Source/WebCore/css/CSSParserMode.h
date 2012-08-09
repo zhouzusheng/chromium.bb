@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 Adobe Systems Incorporated. All rights reserved.
+ * Copyright (C) 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,11 +31,48 @@
 #ifndef CSSParserMode_h
 #define CSSParserMode_h
 
+#include "KURL.h"
+
+namespace WebCore {
+
+class Document;
+
 enum CSSParserMode {
     CSSQuirksMode,
     CSSStrictMode,
     // SVG should always be in strict mode. For SVG attributes, the rules differ to strict sometimes.
     SVGAttributeMode
+};
+
+inline CSSParserMode strictToCSSParserMode(bool inStrictMode)
+{
+    return inStrictMode ? CSSStrictMode : CSSQuirksMode;
+}
+
+inline bool isStrictParserMode(CSSParserMode cssParserMode)
+{
+    return cssParserMode == CSSStrictMode || cssParserMode == SVGAttributeMode;
+}
+
+struct CSSParserContext {
+    CSSParserContext(CSSParserMode, const KURL& baseURL = KURL());
+    CSSParserContext(Document*, const KURL& baseURL = KURL(), const String& charset = emptyString());
+
+    KURL baseURL;
+    String charset;
+    CSSParserMode mode;
+    bool isHTMLDocument;
+    bool isCSSCustomFilterEnabled;
+    bool isCSSRegionsEnabled;
+    bool needsSiteSpecificQuirks;
+    bool enforcesCSSMIMETypeInNoQuirksMode;
+};
+
+bool operator==(const CSSParserContext&, const CSSParserContext&);
+inline bool operator!=(const CSSParserContext& a, const CSSParserContext& b) { return !(a == b); }
+
+const CSSParserContext& strictCSSParserContext();
+
 };
 
 #endif // CSSParserMode_h

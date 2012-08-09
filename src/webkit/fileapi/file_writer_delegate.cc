@@ -52,6 +52,7 @@ class InitializeTask : public base::RefCountedThreadSafe<InitializeTask> {
 
  private:
   friend class base::RefCountedThreadSafe<InitializeTask>;
+  ~InitializeTask() {}
 
   void RunCallback() {
     callback_.Run(error_code_, file_info_);
@@ -180,7 +181,7 @@ void FileWriterDelegate::OnResponseStarted(net::URLRequest* request) {
     OnError(base::PLATFORM_FILE_ERROR_FAILED);
     return;
   }
-  int64 error = file_stream_->Seek(net::FROM_BEGIN, offset_);
+  int64 error = file_stream_->SeekSync(net::FROM_BEGIN, offset_);
   if (error != offset_) {
     OnError(base::PLATFORM_FILE_ERROR_FAILED);
     return;

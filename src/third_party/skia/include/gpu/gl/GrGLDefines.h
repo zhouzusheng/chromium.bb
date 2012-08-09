@@ -194,6 +194,10 @@
 #define GR_GL_SAMPLES                        0x80A9
 #define GR_GL_SAMPLE_COVERAGE_VALUE          0x80AA
 #define GR_GL_SAMPLE_COVERAGE_INVERT         0x80AB
+#define GR_GL_RENDERBUFFER_COVERAGE_SAMPLES  0x8CAB
+#define GR_GL_RENDERBUFFER_COLOR_SAMPLES     0x8E10
+#define GR_GL_MAX_MULTISAMPLE_COVERAGE_MODES 0x8E11
+#define GR_GL_MULTISAMPLE_COVERAGE_MODES     0x8E12
 
 /* GetTextureParameter */
 /*      GL_TEXTURE_MAG_FILTER */
@@ -295,6 +299,8 @@
 #define GR_GL_LUMINANCE_ALPHA                0x190A
 #define GR_GL_PALETTE8_RGBA8                 0x8B96
 #define GR_GL_ALPHA8                         0x803C
+
+#define GR_GL_R8                             0x8229
 
 /* PixelType */
 /*      GL_UNSIGNED_BYTE */

@@ -11,7 +11,6 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/preload.h"
 
 namespace media {
 
@@ -35,16 +34,16 @@ class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
   virtual void OnDemuxerError(PipelineStatus error) = 0;
 };
 
-class MEDIA_EXPORT Demuxer
-    : public base::RefCountedThreadSafe<Demuxer> {
+class MEDIA_EXPORT Demuxer : public base::RefCountedThreadSafe<Demuxer> {
  public:
   Demuxer();
 
-  // Sets the private member |host_|. This is the first method called by
-  // the DemuxerHost after a demuxer is created.  The host holds a strong
-  // reference to the demuxer.  The reference held by the host is guaranteed
-  // to be released before the host object is destroyed by the pipeline.
-  virtual void set_host(DemuxerHost* host);
+  // Completes initialization of the demuxer.
+  //
+  // The demuxer does not own |host| as it is guaranteed to outlive the
+  // lifetime of the demuxer. Don't delete it!
+  virtual void Initialize(DemuxerHost* host,
+                          const PipelineStatusCB& status_cb) = 0;
 
   // The pipeline playback rate has been changed.  Demuxers may implement this
   // method if they need to respond to this call.
@@ -68,9 +67,6 @@ class MEDIA_EXPORT Demuxer
   // Returns the given stream type, or NULL if that type is not present.
   virtual scoped_refptr<DemuxerStream> GetStream(DemuxerStream::Type type) = 0;
 
-  // Alert the Demuxer that the video preload value has been changed.
-  virtual void SetPreload(Preload preload) = 0;
-
   // Returns the starting time for the media file.
   virtual base::TimeDelta GetStartTime() const = 0;
 
@@ -80,25 +76,18 @@ class MEDIA_EXPORT Demuxer
 
   // Returns true if the source is from a local file or stream (such as a
   // webcam stream), false otherwise.
+  //
+  // TODO(scherkus): See http://crbug.com/120426 on why we should remove this.
   virtual bool IsLocalSource() = 0;
 
   // Returns true if seeking is possible; false otherwise.
   virtual bool IsSeekable() = 0;
 
  protected:
-  // Only allow derived objects access to the DemuxerHost. This is
-  // kept out of the public interface because demuxers need to be
-  // aware of all calls made to the host object so they can insure
-  // the state presented to the host is always consistent with its own
-  // state.
-  DemuxerHost* host() { return host_; }
-
   friend class base::RefCountedThreadSafe<Demuxer>;
   virtual ~Demuxer();
 
  private:
-  DemuxerHost* host_;
-
   DISALLOW_COPY_AND_ASSIGN(Demuxer);
 };
 

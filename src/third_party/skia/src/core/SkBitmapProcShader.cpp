@@ -68,7 +68,7 @@ SkShader::BitmapType SkBitmapProcShader::asABitmap(SkBitmap* texture,
     return kDefault_BitmapType;
 }
 
-void SkBitmapProcShader::flatten(SkFlattenableWriteBuffer& buffer) {
+void SkBitmapProcShader::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
 
     fRawBitmap.flatten(buffer);
@@ -271,22 +271,12 @@ static bool canUseColorShader(const SkBitmap& bm, SkColor* color) {
 
 #include "SkTemplatesPriv.h"
 
-static bool bitmapIsTooBig(const SkBitmap& bm) {
-    // SkBitmapProcShader stores bitmap coordinates in a 16bit buffer, as it
-    // communicates between its matrix-proc and its sampler-proc. Until we can
-    // widen that, we have to reject bitmaps that are larger.
-    //
-    const int maxSize = 65535;
-
-    return bm.width() > maxSize || bm.height() > maxSize;
-}
-
 SkShader* SkShader::CreateBitmapShader(const SkBitmap& src,
                                        TileMode tmx, TileMode tmy,
                                        void* storage, size_t storageSize) {
     SkShader* shader;
     SkColor color;
-    if (src.isNull() || bitmapIsTooBig(src)) {
+    if (src.isNull()) {
         SK_PLACEMENT_NEW(shader, SkEmptyShader, storage, storageSize);
     }
     else if (canUseColorShader(src, &color)) {

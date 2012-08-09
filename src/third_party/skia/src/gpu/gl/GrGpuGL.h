@@ -140,7 +140,9 @@ protected:
     virtual void onGpuDrawNonIndexed(GrPrimitiveType type,
                                      uint32_t vertexCount,
                                      uint32_t numVertices);
-    virtual void flushScissor(const GrIRect* rect);
+    virtual void enableScissoring(const GrIRect& rect);
+    virtual void disableScissor();
+
     virtual void clearStencil();
     virtual void clearStencilClip(const GrIRect& rect, bool insideClip);
     virtual int getMaxEdges() const;
@@ -232,6 +234,8 @@ private:
     bool createRenderTargetObjects(int width, int height,
                                    GrGLuint texID,
                                    GrGLRenderTarget::Desc* desc);
+
+    void fillInConfigRenderableTable();
 
     friend class GrGLVertexBuffer;
     friend class GrGLIndexBuffer;

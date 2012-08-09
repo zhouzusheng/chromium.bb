@@ -16,6 +16,7 @@
 #include "base/metrics/histogram.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
+#include "webkit/fileapi/file_system_file_reader.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_options.h"
@@ -433,6 +434,14 @@ SandboxMountPointProvider::CreateFileSystemOperation(
   return new FileSystemOperation(file_proxy, context);
 }
 
+webkit_blob::FileReader* SandboxMountPointProvider::CreateFileReader(
+    const GURL& url,
+    int64 offset,
+    base::MessageLoopProxy* file_proxy,
+    FileSystemContext* context) const {
+  return new FileSystemFileReader(file_proxy, context, url, offset);
+}
+
 FilePath SandboxMountPointProvider::old_base_path() const {
   return profile_path_.Append(kOldFileSystemDirectory);
 }
@@ -522,7 +531,7 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
       GetBaseDirectoryForOriginAndType(origin_url, type, false);
   if (base_path.empty() || !file_util::DirectoryExists(base_path)) return 0;
   FilePath usage_file_path =
-      base_path.AppendASCII(FileSystemUsageCache::kUsageFileName);
+      base_path.Append(FileSystemUsageCache::kUsageFileName);
 
   bool is_valid = FileSystemUsageCache::IsValid(usage_file_path);
   int32 dirty_status = FileSystemUsageCache::GetDirty(usage_file_path);
@@ -621,7 +630,7 @@ FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
       GetBaseDirectoryForOriginAndType(origin_url, type, false);
   if (base_path.empty())
     return FilePath();
-  return base_path.AppendASCII(FileSystemUsageCache::kUsageFileName);
+  return base_path.Append(FileSystemUsageCache::kUsageFileName);
 }
 
 FilePath SandboxMountPointProvider::OldCreateFileSystemRootPath(
@@ -654,6 +663,9 @@ bool SandboxMountPointProvider::IsAllowedScheme(const GURL& url) const {
   // only if --allow-file-access-from-files flag is given.
   if (url.SchemeIs("http") || url.SchemeIs("https"))
     return true;
+  if (url.SchemeIsFileSystem())
+    return url.inner_url() && IsAllowedScheme(*url.inner_url());
+
   for (size_t i = 0;
        i < file_system_options_.additional_allowed_schemes().size();
        ++i) {

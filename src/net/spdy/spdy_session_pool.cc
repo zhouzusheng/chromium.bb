@@ -40,13 +40,17 @@ size_t SpdySessionPool::g_max_sessions_per_domain = kMaxSessionsPerDomain;
 bool SpdySessionPool::g_force_single_domain = false;
 bool SpdySessionPool::g_enable_ip_pooling = true;
 
-SpdySessionPool::SpdySessionPool(HostResolver* resolver,
-                                 SSLConfigService* ssl_config_service,
-                                 HttpServerProperties* http_server_properties)
+SpdySessionPool::SpdySessionPool(
+    HostResolver* resolver,
+    SSLConfigService* ssl_config_service,
+    HttpServerProperties* http_server_properties,
+    const std::string& trusted_spdy_proxy)
     : http_server_properties_(http_server_properties),
       ssl_config_service_(ssl_config_service),
       resolver_(resolver),
-      verify_domain_authentication_(true) {
+      verify_domain_authentication_(true),
+      trusted_spdy_proxy_(
+          HostPortPair::FromString(trusted_spdy_proxy)) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
   if (ssl_config_service_)
     ssl_config_service_->AddObserver(this);
@@ -90,7 +94,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
       net_log.AddEvent(
           NetLog::TYPE_SPDY_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL,
           make_scoped_refptr(new NetLogSourceParameter(
-          "session", spdy_session->net_log().source())));
+          "source_dependency", spdy_session->net_log().source())));
       // Add this session to the map so that we can find it next time.
       list = AddSessionList(host_port_proxy_pair);
       list->push_back(spdy_session);
@@ -111,7 +115,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
     net_log.AddEvent(
       NetLog::TYPE_SPDY_SESSION_POOL_FOUND_EXISTING_SESSION,
       make_scoped_refptr(new NetLogSourceParameter(
-          "session", spdy_session->net_log().source())));
+          "source_dependency", spdy_session->net_log().source())));
     return spdy_session;
   }
 
@@ -120,6 +124,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
   spdy_session = new SpdySession(host_port_proxy_pair, this,
                                  http_server_properties_,
                                  verify_domain_authentication_,
+                                 trusted_spdy_proxy_,
                                  net_log.net_log());
   UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionGet",
                             CREATED_NEW,
@@ -128,7 +133,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
   net_log.AddEvent(
       NetLog::TYPE_SPDY_SESSION_POOL_CREATED_NEW_SESSION,
       make_scoped_refptr(new NetLogSourceParameter(
-          "session", spdy_session->net_log().source())));
+          "source_dependency", spdy_session->net_log().source())));
   DCHECK_LE(list->size(), g_max_sessions_per_domain);
   return spdy_session;
 }
@@ -147,6 +152,7 @@ net::Error SpdySessionPool::GetSpdySessionFromSocket(
   *spdy_session = new SpdySession(host_port_proxy_pair, this,
                                   http_server_properties_,
                                   verify_domain_authentication_,
+                                  trusted_spdy_proxy_,
                                   net_log.net_log());
   SpdySessionList* list = GetSessionList(host_port_proxy_pair);
   if (!list)
@@ -157,7 +163,7 @@ net::Error SpdySessionPool::GetSpdySessionFromSocket(
   net_log.AddEvent(
       NetLog::TYPE_SPDY_SESSION_POOL_IMPORTED_SESSION_FROM_SOCKET,
       make_scoped_refptr(new NetLogSourceParameter(
-          "session", (*spdy_session)->net_log().source())));
+          "source_dependency", (*spdy_session)->net_log().source())));
 
   // We have a new session.  Lookup the IP address for this session so that we
   // can match future Sessions (potentially to different domains) which can
@@ -192,7 +198,7 @@ void SpdySessionPool::Remove(const scoped_refptr<SpdySession>& session) {
   session->net_log().AddEvent(
       NetLog::TYPE_SPDY_SESSION_POOL_REMOVE_SESSION,
       make_scoped_refptr(new NetLogSourceParameter(
-          "session", session->net_log().source())));
+          "source_dependency", session->net_log().source())));
 
   const std::set<HostPortProxyPair>& aliases = session->pooled_aliases();
   for (std::set<HostPortProxyPair>::const_iterator it = aliases.begin();

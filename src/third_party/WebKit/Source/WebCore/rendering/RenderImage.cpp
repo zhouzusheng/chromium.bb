@@ -40,7 +40,7 @@
 #include "HTMLNames.h"
 #include "HitTestResult.h"
 #include "Page.h"
-#include "RenderLayer.h"
+#include "PaintInfo.h"
 #include "RenderView.h"
 #include "SVGImage.h"
 #include <wtf/UnusedParam.h>
@@ -188,29 +188,33 @@ bool RenderImage::updateIntrinsicSizeIfNeeded(const IntSize& newSize, bool image
 
 void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* rect)
 {
+    bool intrinsicSizeChanged = updateIntrinsicSizeIfNeeded(m_imageResource->imageSize(style()->effectiveZoom()), imageSizeChanged);
+
+    // In the case of generated image content using :before/:after/content, we might not be
+    // in the render tree yet. In that case, we just need to update our intrinsic size.
+    // layout() will be called after we are inserted in the tree which will take care of
+    // what we are doing here.
+    if (!containingBlock())
+        return;
+
     bool shouldRepaint = true;
-    if (updateIntrinsicSizeIfNeeded(m_imageResource->imageSize(style()->effectiveZoom()), imageSizeChanged)) {
-        // In the case of generated image content using :before/:after, we might not be in the
-        // render tree yet.  In that case, we don't need to worry about check for layout, since we'll get a
-        // layout when we get added in to the render tree hierarchy later.
-        if (containingBlock()) {
-            // lets see if we need to relayout at all..
-            int oldwidth = width();
-            int oldheight = height();
-            if (!preferredLogicalWidthsDirty())
-                setPreferredLogicalWidthsDirty(true);
-            computeLogicalWidth();
-            computeLogicalHeight();
+    if (intrinsicSizeChanged) {
+        // lets see if we need to relayout at all..
+        int oldwidth = width();
+        int oldheight = height();
+        if (!preferredLogicalWidthsDirty())
+            setPreferredLogicalWidthsDirty(true);
+        computeLogicalWidth();
+        computeLogicalHeight();
 
-            if (imageSizeChanged || width() != oldwidth || height() != oldheight) {
-                shouldRepaint = false;
-                if (!selfNeedsLayout())
-                    setNeedsLayout(true);
-            }
-
-            setWidth(oldwidth);
-            setHeight(oldheight);
+        if (imageSizeChanged || width() != oldwidth || height() != oldheight) {
+            shouldRepaint = false;
+            if (!selfNeedsLayout())
+                setNeedsLayout(true);
         }
+
+        setWidth(oldwidth);
+        setHeight(oldheight);
     }
 
     if (shouldRepaint) {
@@ -227,10 +231,8 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
         repaintRectangle(repaintRect);
 
 #if USE(ACCELERATED_COMPOSITING)
-        if (hasLayer()) {
-            // Tell any potential compositing layers that the image needs updating.
-            layer()->contentChanged(RenderLayer::ImageChanged);
-        }
+        // Tell any potential compositing layers that the image needs updating.
+        contentChanged(ImageChanged);
 #endif
     }
 }
@@ -244,10 +246,10 @@ void RenderImage::notifyFinished(CachedResource* newImage)
         return;
 
 #if USE(ACCELERATED_COMPOSITING)
-    if (newImage == m_imageResource->cachedImage() && hasLayer()) {
+    if (newImage == m_imageResource->cachedImage()) {
         // tell any potential compositing layers
         // that the image is done and they can reference it directly.
-        layer()->contentChanged(RenderLayer::ImageChanged);
+        contentChanged(ImageChanged);
     }
 #else
     UNUSED_PARAM(newImage);
@@ -307,7 +309,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
                 if (centerY < 0)
                     centerY = 0;
                 imageOffset = LayoutSize(leftBorder + leftPad + centerX + 1, topBorder + topPad + centerY + 1);
-                context->drawImage(image.get(), style()->colorSpace(), IntRect(roundedIntPoint(paintOffset + imageOffset), imageSize));
+                context->drawImage(image.get(), style()->colorSpace(), IntRect(roundedIntPoint(paintOffset + imageOffset), imageSize), CompositeSourceOver, shouldRespectImageOrientation());
                 errorPictureDrawn = true;
             }
 
@@ -429,7 +431,7 @@ void RenderImage::paintIntoRect(GraphicsContext* context, const LayoutRect& rect
     CompositeOperator compositeOperator = imageElt ? imageElt->compositeOperator() : CompositeSourceOver;
     Image* image = m_imageResource->image().get();
     bool useLowQualityScaling = shouldPaintAtLowQuality(context, image, image, alignedRect.size());
-    context->drawImage(m_imageResource->image(alignedRect.width(), alignedRect.height()).get(), style()->colorSpace(), alignedRect, compositeOperator, useLowQualityScaling);
+    context->drawImage(m_imageResource->image(alignedRect.width(), alignedRect.height()).get(), style()->colorSpace(), alignedRect, compositeOperator, shouldRespectImageOrientation(), useLowQualityScaling);
 }
 
 bool RenderImage::backgroundIsObscured() const
@@ -471,7 +473,7 @@ HTMLMapElement* RenderImage::imageMap() const
 
 bool RenderImage::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    HitTestResult tempResult(result.point(), result.topPadding(), result.rightPadding(), result.bottomPadding(), result.leftPadding());
+    HitTestResult tempResult(result.point(), result.topPadding(), result.rightPadding(), result.bottomPadding(), result.leftPadding(), result.shadowContentFilterPolicy());
     bool inside = RenderReplaced::nodeAtPoint(request, tempResult, pointInContainer, accumulatedOffset, hitTestAction);
 
     if (tempResult.innerNode() && node()) {

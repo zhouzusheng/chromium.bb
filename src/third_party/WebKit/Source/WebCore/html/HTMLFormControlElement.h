@@ -30,7 +30,9 @@
 namespace WebCore {
 
 class FormDataList;
+class HTMLFieldSetElement;
 class HTMLFormElement;
+class HTMLLegendElement;
 class ValidationMessage;
 class ValidityState;
 
@@ -49,6 +51,8 @@ public:
     void setFormMethod(const String&);
     bool formNoValidate() const;
 
+    void ancestorDisabledStateWasChanged();
+
     virtual void reset() { }
 
     virtual bool formControlValueMatchesRenderer() const { return m_valueMatchesRenderer; }
@@ -60,7 +64,7 @@ public:
     virtual void dispatchFormControlChangeEvent();
     virtual void dispatchFormControlInputEvent();
 
-    virtual bool disabled() const { return m_disabled; }
+    virtual bool disabled() const;
     void setDisabled(bool);
 
     virtual bool isFocusable() const;
@@ -104,6 +108,8 @@ public:
     bool hasAutofocused() { return m_hasAutofocused; }
     void setAutofocused() { m_hasAutofocused = true; }
 
+    static HTMLFormControlElement* enclosingFormControlElement(Node*);
+
     using TreeShared<ContainerNode>::ref;
     using TreeShared<ContainerNode>::deref;
 
@@ -112,11 +118,10 @@ protected:
 
     virtual void parseAttribute(Attribute*) OVERRIDE;
     virtual void requiredAttributeChanged();
+    virtual void disabledAttributeChanged();
     virtual void attach();
-    virtual void insertedIntoTree(bool deep);
-    virtual void removedFromTree(bool deep);
-    virtual void insertedIntoDocument();
-    virtual void removedFromDocument();
+    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
+    virtual void removedFrom(Node*) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     virtual bool supportsFocus() const;
@@ -144,12 +149,18 @@ private:
     virtual bool isDefaultButtonForForm() const;
     virtual bool isValidFormControlElement();
     String visibleValidationMessage() const;
+    void updateAncestorDisabledState() const;
 
     OwnPtr<ValidationMessage> m_validationMessage;
     bool m_disabled : 1;
     bool m_readOnly : 1;
     bool m_required : 1;
     bool m_valueMatchesRenderer : 1;
+
+    enum AncestorDisabledState { AncestorDisabledStateUnknown, AncestorDisabledStateEnabled, AncestorDisabledStateDisabled };
+    mutable AncestorDisabledState m_ancestorDisabledState;
+    enum DataListAncestorState { Unknown, InsideDataList, NotInsideDataList };
+    mutable enum DataListAncestorState m_dataListAncestorState;
 
     // The initial value of m_willValidate depends on the derived class. We can't
     // initialize it with a virtual function in the constructor. m_willValidate

@@ -58,7 +58,7 @@ public:
     virtual bool putObjectStoreRecord(int64_t databaseId, int64_t objectStoreId, const IDBKey&, const String& value, ObjectStoreRecordIdentifier*);
     virtual void clearObjectStore(int64_t databaseId, int64_t objectStoreId);
     virtual void deleteObjectStoreRecord(int64_t databaseId, int64_t objectStoreId, const ObjectStoreRecordIdentifier*);
-    virtual double nextAutoIncrementNumber(int64_t databaseId, int64_t objectStoreId);
+    virtual int64_t nextAutoIncrementNumber(int64_t databaseId, int64_t objectStoreId);
     virtual bool keyExistsInObjectStore(int64_t databaseId, int64_t objectStoreId, const IDBKey&, ObjectStoreRecordIdentifier* foundRecordIdentifier);
 
     virtual bool forEachObjectStoreRecord(int64_t databaseId, int64_t objectStoreId, ObjectStoreRecordCallback&);
@@ -80,9 +80,10 @@ public:
 
     static bool backingStoreExists(SecurityOrigin*, const String& name, const String& pathBase);
 
-private:
+protected:
     IDBLevelDBBackingStore(const String& identifier, IDBFactoryBackendImpl*, PassOwnPtr<LevelDBDatabase>);
 
+private:
     String m_identifier;
     RefPtr<IDBFactoryBackendImpl> m_factory;
     OwnPtr<LevelDBDatabase> m_db;
@@ -93,7 +94,7 @@ private:
     public:
         static PassRefPtr<Transaction> create(IDBLevelDBBackingStore*);
         virtual void begin();
-        virtual void commit();
+        virtual bool commit();
         virtual void rollback();
 
     private:

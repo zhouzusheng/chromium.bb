@@ -50,7 +50,7 @@ bool push_quad_index_data(GrIndexBuffer* qIdxBuffer) {
         //     a0              c0
         //      a            c
         //       a1       c1
-        // Each is drawn as three triagnles specified by these 9 indices:
+        // Each is drawn as three triangles specified by these 9 indices:
         int baseIdx = i * kIdxsPerQuad;
         uint16_t baseVert = (uint16_t)(i * kVertsPerQuad);
         data[0 + baseIdx] = baseVert + 0; // a0
@@ -164,7 +164,7 @@ int num_quad_subdivs(const SkPoint p[3]) {
     // maybe different when do this using gpu (geo or tess shaders)
     static const SkScalar gSubdivTol = 175 * SK_Scalar1;
 
-    if (dsqd <= gSubdivTol*gSubdivTol) {
+    if (dsqd <= SkScalarMul(gSubdivTol, gSubdivTol)) {
         return 0;
     } else {
         // subdividing the quad reduces d by 4. so we want x = log4(d/tol)
@@ -177,7 +177,9 @@ int num_quad_subdivs(const SkPoint p[3]) {
         log = GrMin(GrMax(0, log), kMaxSub);
         return log;
 #else
-        SkScalar log = SkScalarLog(SkScalarDiv(dsqd,gSubdivTol*gSubdivTol));
+        SkScalar log = SkScalarLog(
+                          SkScalarDiv(dsqd, 
+                                      SkScalarMul(gSubdivTol, gSubdivTol)));
         static const SkScalar conv = SkScalarInvert(SkScalarLog(2));
         log = SkScalarMul(log, conv);
         return  GrMin(GrMax(0, SkScalarCeilToInt(log)),kMaxSub);
@@ -609,17 +611,21 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
         return false;
     }
 
-    GrDrawState* drawState = target->drawState();
-
     GrDrawTarget::AutoStateRestore asr;
+    GrDrawState* drawState = target->drawState();
     if (!drawState->getViewMatrix().hasPerspective()) {
-        asr.set(target);
+        // we are going to whack the view matrix to identity to remove
+        // perspective.
+        asr.set(target,
+                GrDrawTarget::kPreserve_ASRInit);
+        drawState = target->drawState();
         GrMatrix ivm;
         if (drawState->getViewInverse(&ivm)) {
             drawState->preConcatSamplerMatrices(stageMask, ivm);
         }
         drawState->viewMatrix()->reset();
     }
+    
 
     // TODO: See whether rendering lines as degenerate quads improves perf
     // when we have a mix

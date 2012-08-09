@@ -24,6 +24,7 @@
 #define Length_h
 
 #include "AnimationUtilities.h"
+#include "LayoutTypes.h"
 #include <wtf/Assertions.h>
 #include <wtf/FastAllocBase.h>
 #include <wtf/Forward.h>
@@ -33,7 +34,7 @@
 
 namespace WebCore {
 
-enum LengthType { Auto, Relative, Percent, Fixed, Intrinsic, MinIntrinsic, Calculated, ViewportRelativeWidth, ViewportRelativeHeight, ViewportRelativeMin, Undefined };
+enum LengthType { Auto, Relative, Percent, Fixed, Intrinsic, MinIntrinsic, Calculated, ViewportPercentageWidth, ViewportPercentageHeight, ViewportPercentageMin, Undefined };
  
 class CalculationValue;    
     
@@ -48,16 +49,25 @@ public:
     Length(LengthType t)
         : m_intValue(0), m_quirk(false), m_type(t), m_isFloat(false)
     {
+        ASSERT(t != Calculated);
     }
 
     Length(int v, LengthType t, bool q = false)
         : m_intValue(v), m_quirk(q), m_type(t), m_isFloat(false)
     {
+        ASSERT(t != Calculated);
+    }
+    
+    Length(FractionalLayoutUnit v, LengthType t, bool q = false)
+        : m_floatValue(v.toFloat()), m_quirk(q), m_type(t), m_isFloat(true)
+    {
+        ASSERT(t != Calculated);
     }
     
     Length(float v, LengthType t, bool q = false)
-    : m_floatValue(v), m_quirk(q), m_type(t), m_isFloat(true)
+        : m_floatValue(v), m_quirk(q), m_type(t), m_isFloat(true)
     {
+        ASSERT(t != Calculated);
     }
 
     Length(double v, LengthType t, bool q = false)
@@ -85,7 +95,7 @@ public:
             decrementCalculatedRef();
     }  
     
-    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isUndefined() || (getFloatValue() == o.getFloatValue())); }
+    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isUndefined() || (getFloatValue() == o.getFloatValue()) || isCalculatedEqual(o)); }
     bool operator!=(const Length& o) const { return !(*this == o); }
 
     const Length& operator*=(float v)
@@ -103,8 +113,13 @@ public:
         return *this;
     }
     
-    int value() const
+    inline float value() const
     {
+        return getFloatValue();
+    }
+
+     int intValue() const
+     {
         if (isCalculated()) {
             ASSERT_NOT_REACHED();
             return 0;
@@ -145,6 +160,13 @@ public:
     }
 
     void setValue(LengthType t, float value)
+    {
+        m_type = t;
+        m_floatValue = value;
+        m_isFloat = true;    
+    }
+
+    void setValue(LengthType t, FractionalLayoutUnit value)
     {
         m_type = t;
         m_floatValue = value;
@@ -192,8 +214,9 @@ public:
     bool isPercent() const { return type() == Percent || type() == Calculated; }
     bool isFixed() const { return type() == Fixed; }
     bool isIntrinsicOrAuto() const { return type() == Auto || type() == MinIntrinsic || type() == Intrinsic; }
-    bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated; }
+    bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated || isViewportPercentage(); }
     bool isCalculated() const { return type() == Calculated; }
+    bool isCalculatedEqual(const Length&) const;
 
     Length blend(const Length& from, double progress) const
     {
@@ -202,6 +225,10 @@ public:
             return *this;
 
         if (from.isZero() && isZero())
+            return *this;
+
+        // FIXME http://webkit.org/b/86160 - Blending doesn't work with calculated expressions
+        if (from.type() == Calculated || type() == Calculated)
             return *this;
         
         LengthType resultType = type();
@@ -226,14 +253,14 @@ public:
     }
     float nonNanCalculatedValue(int maxValue) const;
 
-    bool isViewportRelative() const
+    bool isViewportPercentage() const
     {
         LengthType lengthType = type();
-        return lengthType >= ViewportRelativeWidth && lengthType <= ViewportRelativeMin;
+        return lengthType >= ViewportPercentageWidth && lengthType <= ViewportPercentageMin;
     }
-    float viewportRelativeLength() const
+    float viewportPercentageLength() const
     {
-        ASSERT(isViewportRelative());
+        ASSERT(isViewportPercentage());
         return getFloatValue();
     }
 private:

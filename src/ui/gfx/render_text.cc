@@ -10,11 +10,17 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
+#include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/effects/SkBlurMaskFilter.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
+#include "third_party/skia/include/effects/SkLayerDrawLooper.h"
 #include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/insets.h"
 #include "ui/gfx/native_theme.h"
+#include "ui/gfx/skia_util.h"
+#include "ui/gfx/shadow_value.h"
 
 namespace {
 
@@ -171,7 +177,8 @@ namespace gfx {
 namespace internal {
 
 SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
-    : canvas_skia_(canvas->sk_canvas()) {
+    : canvas_skia_(canvas->sk_canvas()),
+      started_drawing_(false) {
   DCHECK(canvas_skia_);
   paint_.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
   paint_.setStyle(SkPaint::kFill_Style);
@@ -181,6 +188,22 @@ SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
 }
 
 SkiaTextRenderer::~SkiaTextRenderer() {
+  // Work-around for http://crbug.com/122743, where non-ClearType text is
+  // rendered with incorrect gamma when using the fade shader. Draw the text
+  // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
+  //
+  // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
+  //                  http://code.google.com/p/skia/issues/detail?id=590
+  if (deferred_fade_shader_.get()) {
+    paint_.setShader(deferred_fade_shader_.get());
+    paint_.setXfermodeMode(SkXfermode::kDstIn_Mode);
+    canvas_skia_->drawRect(bounds_, paint_);
+    canvas_skia_->restore();
+  }
+}
+
+void SkiaTextRenderer::SetDrawLooper(SkDrawLooper* draw_looper) {
+  paint_.setLooper(draw_looper);
 }
 
 void SkiaTextRenderer::SetFontSmoothingSettings(bool enable_smoothing,
@@ -220,14 +243,35 @@ void SkiaTextRenderer::SetForegroundColor(SkColor foreground) {
   paint_.setColor(foreground);
 }
 
-void SkiaTextRenderer::SetShader(SkShader* shader) {
+void SkiaTextRenderer::SetShader(SkShader* shader, const Rect& bounds) {
+  bounds_ = RectToSkRect(bounds);
   paint_.setShader(shader);
 }
 
 void SkiaTextRenderer::DrawPosText(const SkPoint* pos,
                                    const uint16* glyphs,
                                    size_t glyph_count) {
-  size_t byte_length = glyph_count * sizeof(glyphs[0]);
+  if (!started_drawing_) {
+    started_drawing_ = true;
+    // Work-around for http://crbug.com/122743, where non-ClearType text is
+    // rendered with incorrect gamma when using the fade shader. Draw the text
+    // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
+    //
+    // Skip this when there is a looper which seems not working well with
+    // deferred paint. Currently a looper is only used for text shadows.
+    //
+    // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
+    //                  http://code.google.com/p/skia/issues/detail?id=590
+    if (!paint_.isLCDRenderText() &&
+        paint_.getShader() &&
+        !paint_.getLooper()) {
+      deferred_fade_shader_ = paint_.getShader();
+      paint_.setShader(NULL);
+      canvas_skia_->saveLayer(&bounds_, NULL);
+    }
+  }
+
+  const size_t byte_length = glyph_count * sizeof(glyphs[0]);
   canvas_skia_->drawPosText(&glyphs[0], byte_length, &pos[0], paint_);
 }
 
@@ -376,9 +420,10 @@ void RenderText::SetObscured(bool obscured) {
 }
 
 void RenderText::SetDisplayRect(const Rect& r) {
+  if (r.width() != display_rect_.width())
+    ResetLayout();
   display_rect_ = r;
   cached_bounds_and_offset_valid_ = false;
-  ResetLayout();
 }
 
 void RenderText::SetCursorPosition(size_t position) {
@@ -545,8 +590,11 @@ void RenderText::Draw(Canvas* canvas) {
     EnsureLayout();
   }
 
+  gfx::Rect clip_rect(display_rect());
+  clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
+
   canvas->Save();
-  canvas->ClipRect(display_rect());
+  canvas->ClipRect(clip_rect);
 
   if (!text().empty())
     DrawSelection(canvas);
@@ -605,6 +653,10 @@ SelectionModel RenderText::GetSelectionModelForSelectionStart() {
     return selection_model_;
   return SelectionModel(sel.start(),
                         sel.is_reversed() ? CURSOR_BACKWARD : CURSOR_FORWARD);
+}
+
+void RenderText::SetTextShadows(const std::vector<ShadowValue>& shadows) {
+  text_shadows_ = shadows;
 }
 
 RenderText::RenderText()
@@ -731,16 +783,12 @@ Point RenderText::GetAlignmentOffset() {
   return Point();
 }
 
-Point RenderText::GetOriginForSkiaDrawing() {
+Point RenderText::GetOriginForDrawing() {
   Point origin(GetTextOrigin());
-  // TODO(msw): Establish a vertical baseline for strings of mixed font heights.
-  const Font& font = GetFont();
-  int height = font.GetHeight();
+  const int height = GetStringSize().height();
   DCHECK_LE(height, display_rect().height());
   // Center the text vertically in the display area.
   origin.Offset(0, (display_rect().height() - height) / 2);
-  // Offset to account for Skia expecting y to be the baseline.
-  origin.Offset(0, font.GetBaseline());
   return origin;
 }
 
@@ -787,8 +835,48 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   SkAutoUnref auto_unref(shader);
   if (shader) {
     // |renderer| adds its own ref. So don't |release()| it from the ref ptr.
-    renderer->SetShader(shader);
+    renderer->SetShader(shader, display_rect());
   }
+}
+
+void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {
+  if (text_shadows_.empty()) {
+    renderer->SetDrawLooper(NULL);
+    return;
+  }
+
+  SkLayerDrawLooper* looper = new SkLayerDrawLooper;
+  SkAutoUnref auto_unref(looper);
+
+  looper->addLayer();  // top layer of the original.
+
+  SkLayerDrawLooper::LayerInfo layer_info;
+  layer_info.fPaintBits |= SkLayerDrawLooper::kMaskFilter_Bit;
+  layer_info.fPaintBits |= SkLayerDrawLooper::kColorFilter_Bit;
+  layer_info.fColorMode = SkXfermode::kSrc_Mode;
+
+  for (size_t i = 0; i < text_shadows_.size(); ++i) {
+    const ShadowValue& shadow = text_shadows_[i];
+
+    layer_info.fOffset.set(SkIntToScalar(shadow.x()),
+                           SkIntToScalar(shadow.y()));
+
+    // SkBlurMaskFilter's blur radius defines the range to extend the blur from
+    // original mask, which is half of blur amount as defined in ShadowValue.
+    SkMaskFilter* blur_mask = SkBlurMaskFilter::Create(
+        SkDoubleToScalar(shadow.blur() / 2),
+        SkBlurMaskFilter::kNormal_BlurStyle,
+        SkBlurMaskFilter::kHighQuality_BlurFlag);
+    SkColorFilter* color_filter = SkColorFilter::CreateModeFilter(
+        shadow.color(),
+        SkXfermode::kSrcIn_Mode);
+
+    SkPaint* paint = looper->addLayer(layer_info);
+    SkSafeUnref(paint->setMaskFilter(blur_mask));
+    SkSafeUnref(paint->setColorFilter(color_filter));
+  }
+
+  renderer->SetDrawLooper(looper);
 }
 
 // static

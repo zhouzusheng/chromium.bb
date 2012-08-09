@@ -35,7 +35,6 @@
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
 #include "ppapi/c/private/ppp_instance_private.h"
-#include "ppapi/shared_impl/function_group_base.h"
 #include "ppapi/shared_impl/ppb_instance_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -45,7 +44,9 @@
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
+#include "webkit/plugins/ppapi/ppb_flash_impl.h"
 #include "webkit/plugins/ppapi/ppp_pdf.h"
+#include "webkit/plugins/ppapi/resource_creation_impl.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
 struct PP_Point;
@@ -92,7 +93,6 @@ class PPB_URLRequestInfo_Impl;
 class WEBKIT_PLUGINS_EXPORT PluginInstance :
     public base::RefCounted<PluginInstance>,
     public base::SupportsWeakPtr<PluginInstance>,
-    public ::ppapi::FunctionGroupBase,
     public ::ppapi::PPB_Instance_Shared {
  public:
   // Create and return a PluginInstance object which supports the
@@ -118,6 +118,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Returns the PP_Instance uniquely identifying this instance. Guaranteed
   // nonzero.
   PP_Instance pp_instance() const { return pp_instance_; }
+
+  ResourceCreationImpl& resource_creation() { return resource_creation_; }
 
   // Does some pre-destructor cleanup on the instance. This is necessary
   // because some cleanup depends on the plugin instance still existing (like
@@ -156,11 +158,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   const GURL& plugin_url() const { return plugin_url_; }
   bool full_frame() const { return full_frame_; }
   const ::ppapi::ViewData& view_data() const { return view_data_; }
-  // If |type| is not PP_CURSORTYPE_CUSTOM, |custom_image| and |hot_spot| are
-  // ignored.
-  bool SetCursor(PP_CursorType_Dev type,
-                 PP_Resource custom_image,
-                 const PP_Point* hot_spot);
 
   // PPP_Instance and PPP_Instance_Private pass-through.
   bool Initialize(WebKit::WebPluginContainer* container,
@@ -183,14 +180,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
       int selection_end);
   bool HandleCompositionEnd(const string16& text);
   bool HandleTextInput(const string16& text);
-
-  // Implementation of composition API.
-  void UpdateCaretPosition(const gfx::Rect& caret,
-                           const gfx::Rect& bounding_box);
-  void SetTextInputType(ui::TextInputType type);
-  void SelectionChanged();
-  void UpdateSurroundingText(const std::string& text,
-                             size_t caret, size_t anchor);
 
   // Gets the current text input status.
   ui::TextInputType text_input_type() const { return text_input_type_; }
@@ -294,6 +283,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   //                       view_data_.is_fullscreen = true
   bool IsFullscreenOrPending();
 
+  bool flash_fullscreen() const { return flash_fullscreen_; }
+
   // Switches between fullscreen and normal mode. The transition is
   // asynchronous. WebKit will trigger corresponding VewChanged calls.
   // Returns true on success, false on failure (e.g. trying to enter fullscreen
@@ -334,11 +325,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // which sends it back up to the plugin as if it came from the user.
   void SimulateInputEvent(const ::ppapi::InputEventData& input_event);
 
-  // FunctionGroupBase overrides.
-  virtual ::ppapi::thunk::PPB_Instance_FunctionAPI*
-      AsPPB_Instance_FunctionAPI() OVERRIDE;
-
-  // PPB_Instance_FunctionAPI implementation.
+  // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
                                PP_Resource device) OVERRIDE;
   virtual PP_Bool IsFullFrame(PP_Instance instance) OVERRIDE;
@@ -359,15 +346,11 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                           PP_Bool final_result) OVERRIDE;
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) OVERRIDE;
-  virtual PP_Bool FlashIsFullscreen(PP_Instance instance) OVERRIDE;
-  virtual PP_Bool FlashSetFullscreen(PP_Instance instance,
-                                     PP_Bool fullscreen) OVERRIDE;
-  virtual PP_Bool FlashGetScreenSize(PP_Instance instance,
-                                     PP_Size* size) OVERRIDE;
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                      PP_Bool fullscreen) OVERRIDE;
   virtual PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size)
       OVERRIDE;
+  virtual ::ppapi::thunk::PPB_Flash_API* GetFlashAPI() OVERRIDE;
   virtual int32_t RequestInputEvents(PP_Instance instance,
                                      uint32_t event_classes) OVERRIDE;
   virtual int32_t RequestFilteringInputEvents(PP_Instance instance,
@@ -381,9 +364,24 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                  double minimum_factor,
                                  double maximium_factor) OVERRIDE;
   virtual void PostMessage(PP_Instance instance, PP_Var message) OVERRIDE;
+  virtual PP_Bool SetCursor(PP_Instance instance,
+                            PP_MouseCursor_Type type,
+                            PP_Resource image,
+                            const PP_Point* hot_spot) OVERRIDE;
   virtual int32_t LockMouse(PP_Instance instance,
                             PP_CompletionCallback callback) OVERRIDE;
   virtual void UnlockMouse(PP_Instance instance) OVERRIDE;
+  virtual void SetTextInputType(PP_Instance instance,
+                                PP_TextInput_Type type) OVERRIDE;
+  virtual void UpdateCaretPosition(PP_Instance instance,
+                                   const PP_Rect& caret,
+                                   const PP_Rect& bounding_box) OVERRIDE;
+  virtual void CancelCompositionText(PP_Instance instance) OVERRIDE;
+  virtual void SelectionChanged(PP_Instance instance) OVERRIDE;
+  virtual void UpdateSurroundingText(PP_Instance instance,
+                                     const char* text,
+                                     uint32_t caret,
+                                     uint32_t anchor) OVERRIDE;
   virtual PP_Var ResolveRelativeToDocument(
       PP_Instance instance,
       PP_Var relative,
@@ -431,20 +429,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   // Queries the plugin for supported print formats and sets |format| to the
   // best format to use. Returns false if the plugin does not support any
-  // print format that we can handle (we can handle raster and PDF).
+  // print format that we can handle (we can handle only PDF).
   bool GetPreferredPrintOutputFormat(PP_PrintOutputFormat_Dev* format);
   bool PrintPDFOutput(PP_Resource print_output, WebKit::WebCanvas* canvas);
-  bool PrintRasterOutput(PP_Resource print_output, WebKit::WebCanvas* canvas);
-#if defined(OS_WIN)
-  bool DrawJPEGToPlatformDC(const SkBitmap& bitmap,
-                            const gfx::Rect& printable_area,
-                            WebKit::WebCanvas* canvas);
-#elif defined(OS_MACOSX) && !defined(USE_SKIA)
-  // Draws the given kARGB_8888_Config bitmap to the specified canvas starting
-  // at the specified destination rect.
-  void DrawSkBitmapToCanvas(const SkBitmap& bitmap, WebKit::WebCanvas* canvas,
-                            const gfx::Rect& dest_rect, int canvas_height);
-#endif  // OS_MACOSX
 
   // Get the bound graphics context as a concrete 2D graphics context or returns
   // null if the context is not 2D.
@@ -534,6 +521,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   // The id of the current find operation, or -1 if none is in process.
   int find_identifier_;
+
+  // Helper object that creates resources.
+  ResourceCreationImpl resource_creation_;
 
   // The plugin-provided interfaces.
   const PPP_Find_Dev* plugin_find_interface_;
@@ -648,6 +638,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Track pending user gestures so out-of-process plugins can respond to
   // a user gesture after it has been processed.
   PP_TimeTicks pending_user_gesture_;
+
+  // The Flash proxy is associated with the instance.
+  PPB_Flash_Impl flash_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginInstance);
 };

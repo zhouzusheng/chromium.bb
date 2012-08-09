@@ -31,9 +31,7 @@
 #include "base/message_pump_libevent.h"
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
-#if defined(USE_WAYLAND)
-#include "base/message_pump_wayland.h"
-#elif defined(USE_AURA)
+#if defined(USE_AURA)
 #include "base/message_pump_x.h"
 #else
 #include "base/message_pump_gtk.h"
@@ -79,10 +77,8 @@ class Histogram;
 //
 class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
  public:
-#if defined(OS_WIN)
-  typedef base::MessagePumpWin::Dispatcher Dispatcher;
-  typedef base::MessagePumpObserver Observer;
-#elif !defined(OS_MACOSX) && !defined(OS_ANDROID)
+
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
   typedef base::MessagePumpDispatcher Dispatcher;
   typedef base::MessagePumpObserver Observer;
 #endif
@@ -509,10 +505,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   RunState* state_;
 
-  // The need for this variable is subtle. Please see implementation comments
-  // around where it is used.
-  bool should_leak_tasks_;
-
 #if defined(OS_WIN)
   base::TimeTicks high_resolution_timer_expiration_;
   // Should be set to true before calling Windows APIs like TrackPopupMenu, etc
@@ -558,6 +550,7 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   // Returns the MessageLoopForUI of the current thread.
   static MessageLoopForUI* current() {
     MessageLoop* loop = MessageLoop::current();
+    DCHECK(loop);
     DCHECK_EQ(MessageLoop::TYPE_UI, loop->type());
     return static_cast<MessageLoopForUI*>(loop);
   }

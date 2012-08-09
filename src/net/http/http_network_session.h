@@ -16,7 +16,6 @@
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
 #include "net/spdy/spdy_session_pool.h"
-#include "net/spdy/spdy_settings_storage.h"
 
 namespace base {
 class Value;
@@ -79,6 +78,7 @@ class NET_EXPORT HttpNetworkSession
     HttpServerProperties* http_server_properties;
     NetLog* net_log;
     bool force_http_pipelining;
+    std::string trusted_spdy_proxy;
   };
 
   enum SocketPoolType {

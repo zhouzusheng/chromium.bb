@@ -33,6 +33,7 @@
 #include "FrameLoaderClient.h"
 #include "FrameLoaderTypes.h"
 #include "FrameView.h"
+#include "Page.h"
 #include "RenderObject.h"
 #include "Settings.h"
 #include "SharedBuffer.h"
@@ -74,6 +75,7 @@ CachedImage::CachedImage(Image* image)
 
 CachedImage::~CachedImage()
 {
+    clearImage();
 }
 
 void CachedImage::decodedDataDeletionTimerFired(Timer<CachedImage>*)
@@ -202,7 +204,11 @@ void CachedImage::setContainerSizeForRenderer(const RenderObject* renderer, cons
         m_image->setContainerSize(containerSize);
         return;
     }
-    m_svgImageCache->setRequestedSizeAndZoom(renderer, SVGImageCache::SizeAndZoom(containerSize, containerZoom));
+
+    // FIXME (85335): This needs to take CSS transform scale into account as well.
+    float containerScale = renderer->document()->page()->deviceScaleFactor() * renderer->document()->page()->pageScaleFactor();
+
+    m_svgImageCache->setRequestedSizeAndScales(renderer, SVGImageCache::SizeAndScales(containerSize, containerZoom, containerScale));
 #else
     UNUSED_PARAM(renderer);
     UNUSED_PARAM(containerZoom);
@@ -241,18 +247,21 @@ IntSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float mu
     if (!m_image)
         return IntSize();
 
-    IntSize imageSize = m_image->size();
+    IntSize imageSize;
+
+    if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
+        imageSize = static_cast<BitmapImage*>(m_image.get())->sizeRespectingOrientation();
+    else
+        imageSize = m_image->size();
 
 #if ENABLE(SVG)
     if (m_image->isSVGImage()) {
-        SVGImageCache::SizeAndZoom sizeAndZoom = m_svgImageCache->requestedSizeAndZoom(renderer);
-        if (!sizeAndZoom.size.isEmpty()) {
-            imageSize.setWidth(sizeAndZoom.size.width() / sizeAndZoom.zoom);
-            imageSize.setHeight(sizeAndZoom.size.height() / sizeAndZoom.zoom);
+        SVGImageCache::SizeAndScales sizeAndScales = m_svgImageCache->requestedSizeAndScales(renderer);
+        if (!sizeAndScales.size.isEmpty()) {
+            imageSize.setWidth(sizeAndScales.size.width() / sizeAndScales.zoom);
+            imageSize.setHeight(sizeAndScales.size.height() / sizeAndScales.zoom);
         }
     }
-#else
-    UNUSED_PARAM(renderer);
 #endif
 
     if (multiplier == 1.0f)
@@ -267,10 +276,10 @@ IntSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float mu
     return imageSize;
 }
 
-void CachedImage::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio, float scaleFactor)
+void CachedImage::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
 {
     if (m_image)
-        m_image->computeIntrinsicDimensions(intrinsicWidth, intrinsicHeight, intrinsicRatio, scaleFactor);
+        m_image->computeIntrinsicDimensions(intrinsicWidth, intrinsicHeight, intrinsicRatio);
 }
 
 void CachedImage::notifyObservers(const IntRect* changeRect)
@@ -294,7 +303,7 @@ void CachedImage::clear()
 #if ENABLE(SVG)
     m_svgImageCache.clear();
 #endif
-    m_image = 0;
+    clearImage();
     setEncodedSize(0);
 }
 
@@ -318,6 +327,15 @@ inline void CachedImage::createImage()
     }
 #endif
     m_image = BitmapImage::create(this);
+}
+
+inline void CachedImage::clearImage()
+{
+    // If our Image has an observer, it's always us so we need to clear the back pointer
+    // before dropping our reference.
+    if (m_image)
+        m_image->setImageObserver(0);
+    m_image.clear();
 }
 
 size_t CachedImage::maximumDecodedImageSize()

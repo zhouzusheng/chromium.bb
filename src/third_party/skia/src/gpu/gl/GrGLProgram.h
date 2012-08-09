@@ -19,6 +19,7 @@
 #include "SkXfermode.h"
 
 class GrBinHashKeyBuilder;
+class GrGLProgramStage;
 
 struct ShaderCodeSegments;
 
@@ -49,6 +50,7 @@ public:
      *  but in a separate cacheable container.
      */
     bool genProgram(const GrGLContextInfo& gl,
+                    GrCustomStage** customStages,
                     CachedData* programData) const;
 
      /**
@@ -120,7 +122,7 @@ public:
               described are performed after reading a texel.
              */
             enum InConfigFlags {
-                kNone_InConfigFlag                      = 0x0,
+                kNone_InConfigFlag                      = 0x00,
 
                 /**
                   Swap the R and B channels. This is incompatible with
@@ -128,15 +130,24 @@ public:
                   the shader using GL_ARB_texture_swizzle if possible rather
                   than setting this flag.
                  */
-                kSwapRAndB_InConfigFlag                 = 0x1,
+                kSwapRAndB_InConfigFlag                 = 0x01,
 
                 /**
                  Smear alpha across all four channels. This is incompatible with
-                 kSwapRAndB and kMulRGBByAlpha*. It is prefereable to perform
-                 the smear outside the shader using GL_ARB_texture_swizzle if
-                 possible rather than setting this flag.
+                 kSwapRAndB, kMulRGBByAlpha* and kSmearRed. It is prefereable 
+                 to perform the smear outside the shader using 
+                 GL_ARB_texture_swizzle if possible rather than setting this 
+                 flag.
                 */
-                kSmearAlpha_InConfigFlag                = 0x2,
+                kSmearAlpha_InConfigFlag                = 0x02,
+
+                /**
+                 Smear the red channel across all four channels. This flag is 
+                 incompatible with kSwapRAndB, kMulRGBByAlpha*and kSmearAlpha. 
+                 It is preferable to use GL_ARB_texture_swizzle instead of this 
+                 flag.
+                */
+                kSmearRed_InConfigFlag                  = 0x04,
 
                 /**
                  Multiply r,g,b by a after texture reads. This flag incompatible
@@ -147,8 +158,8 @@ public:
                  of 1/255.0 and the other rounds down. At most one of these
                  flags may be set.
                  */
-                kMulRGBByAlpha_RoundUp_InConfigFlag     =  0x4,
-                kMulRGBByAlpha_RoundDown_InConfigFlag   =  0x8,
+                kMulRGBByAlpha_RoundUp_InConfigFlag     =  0x08,
+                kMulRGBByAlpha_RoundDown_InConfigFlag   =  0x10,
 
                 kDummyInConfigFlag,
                 kInConfigBitMask = (kDummyInConfigFlag-1) |
@@ -170,6 +181,10 @@ public:
             uint8_t fFetchMode;     // casts to enum FetchMode
             uint8_t fCoordMapping;  // casts to enum CoordMapping
             uint8_t fKernelWidth;
+
+            /** Non-zero if user-supplied code will write the stage's
+                contribution to the fragment shader. */
+            uint16_t fCustomStageKey;
 
             GR_STATIC_ASSERT((InConfigFlags)(uint8_t)kInConfigBitMask ==
                              kInConfigBitMask);
@@ -296,10 +311,12 @@ public:
     class CachedData : public ::GrNoncopyable {
     public:
         CachedData() {
+            for (int i = 0; i < GrDrawState::kNumStages; ++i) {
+                fCustomStage[i] = NULL;
+            }
         }
 
-        ~CachedData() {
-        }
+        ~CachedData();
 
         void copyAndTakeOwnership(CachedData& other) {
             memcpy(this, &other, sizeof(*this));
@@ -331,6 +348,8 @@ public:
         bool                        fRadial2PosRoot[GrDrawState::kNumStages];
         GrRect                      fTextureDomain[GrDrawState::kNumStages];
 
+        GrGLProgramStage*           fCustomStage[GrDrawState::kNumStages];
+
     private:
         enum Constants {
             kUniLocationPreAllocSize = 8
@@ -357,7 +376,8 @@ private:
                       const char* fsOutColor,
                       const char* vsInCoord,
                       ShaderCodeSegments* segments,
-                      StageUniLocations* locations) const;
+                      StageUniLocations* locations,
+                      GrGLProgramStage* override) const;
 
     void genGeometryShader(const GrGLContextInfo& gl,
                            ShaderCodeSegments* segments) const;

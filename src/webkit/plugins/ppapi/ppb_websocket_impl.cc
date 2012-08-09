@@ -223,17 +223,23 @@ int32_t PPB_WebSocket_Impl::Close(uint16_t code,
     return PP_ERROR_NOACCESS;
   }
 
-  // Validate |reason|.
-  // TODO(toyoshim): Returns PP_ERROR_BADARGUMENT if |reason| contains any
-  // surrogates.
-  scoped_refptr<StringVar> reason_string = StringVar::FromPPVar(reason);
-  if (!reason_string || reason_string->value().size() > kMaxReasonSizeInBytes)
-    return PP_ERROR_BADARGUMENT;
+  scoped_refptr<StringVar> reason_string;
+  WebString web_reason;
+  // |reason| must be ignored if it is PP_VARTYPE_UNDEFINED.
+  if (reason.type != PP_VARTYPE_UNDEFINED) {
+    // Validate |reason|.
+    reason_string = StringVar::FromPPVar(reason);
+    if (!reason_string ||
+        reason_string->value().size() > kMaxReasonSizeInBytes)
+      return PP_ERROR_BADARGUMENT;
+    web_reason = WebString::fromUTF8(reason_string->value());
+  }
 
   // Check state.
-  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSING ||
-      state_ == PP_WEBSOCKETREADYSTATE_CLOSED)
+  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSING)
     return PP_ERROR_INPROGRESS;
+  if (state_ == PP_WEBSOCKETREADYSTATE_CLOSED)
+    return PP_OK;
 
   // Validate |callback| (Doesn't support blocking callback)
   if (!callback.func)
@@ -265,7 +271,6 @@ int32_t PPB_WebSocket_Impl::Close(uint16_t code,
 
   // Close connection.
   state_ = PP_WEBSOCKETREADYSTATE_CLOSING;
-  WebString web_reason = WebString::fromUTF8(reason_string->value());
   websocket_->close(code, web_reason);
 
   return PP_OK_COMPLETIONPENDING;
@@ -507,10 +512,10 @@ void PPB_WebSocket_Impl::didClose(unsigned long unhandled_buffered_amount,
   if (wait_for_receive_) {
     wait_for_receive_ = false;
     receive_callback_var_ = NULL;
-    TrackedCallback::ClearAndAbort(&receive_callback_);
+    TrackedCallback::ClearAndRun(&receive_callback_, PP_ERROR_FAILED);
   }
 
-  if (state == PP_WEBSOCKETREADYSTATE_CLOSING)
+  if ((state == PP_WEBSOCKETREADYSTATE_CLOSING) && close_callback_.get())
     TrackedCallback::ClearAndRun(&close_callback_, PP_OK);
 
   // Disconnect.

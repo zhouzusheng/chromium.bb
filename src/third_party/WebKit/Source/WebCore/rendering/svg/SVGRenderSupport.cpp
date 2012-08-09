@@ -82,7 +82,7 @@ void SVGRenderSupport::mapLocalToContainer(const RenderObject* object, RenderBox
     if (parent->isSVGRoot())
         transformState.applyTransform(toRenderSVGRoot(parent)->localToBorderBoxTransform());
     
-    parent->mapLocalToContainer(repaintContainer, false, true, transformState, wasFixed);
+    parent->mapLocalToContainer(repaintContainer, false, true, transformState, RenderObject::DoNotApplyContainerFlip, wasFixed);
 }
 
 // Update a bounding box taking into account the validity of the other bounding box.
@@ -197,8 +197,10 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
                     // When the layout size changed and when using relative values tell the RenderSVGShape to update its shape object
                     if (child->isSVGShape())
                         toRenderSVGShape(child)->setNeedsShapeUpdate();
-                    else if (child->isSVGText())
+                    else if (child->isSVGText()) {
+                        toRenderSVGText(child)->setNeedsTextMetricsUpdate();
                         toRenderSVGText(child)->setNeedsPositioningValuesUpdate();
+                    }
 
                     needsLayout = true;
                 }
@@ -206,7 +208,7 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
         }
 
         if (needsLayout) {
-            child->setNeedsLayout(true, false);
+            child->setNeedsLayout(true, MarkOnlyThis);
             child->layout();
         } else {
             if (child->needsLayout())
@@ -234,7 +236,7 @@ bool SVGRenderSupport::isOverflowHidden(const RenderObject* object)
     // SVG doesn't support independent x/y overflow
     ASSERT(object->style()->overflowX() == object->style()->overflowY());
 
-    // OSCROLL is never set for SVG - see CSSStyleSelector::adjustRenderStyle
+    // OSCROLL is never set for SVG - see StyleResolver::adjustRenderStyle
     ASSERT(object->style()->overflowX() != OSCROLL);
 
     // RenderSVGRoot should never query for overflow state - it should always clip itself to the initial viewport size.

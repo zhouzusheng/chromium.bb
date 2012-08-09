@@ -5,11 +5,13 @@
 #include "net/url_request/url_request_context.h"
 
 #include "base/compiler_specific.h"
+#include "base/debug/alias.h"
 #include "base/string_util.h"
 #include "net/base/host_resolver.h"
 #include "net/cookies/cookie_store.h"
 #include "net/ftp/ftp_transaction_factory.h"
 #include "net/http/http_transaction_factory.h"
+#include "net/url_request/url_request.h"
 
 namespace net {
 
@@ -28,7 +30,9 @@ URLRequestContext::URLRequestContext()
       ftp_auth_cache_(new FtpAuthCache),
       http_transaction_factory_(NULL),
       ftp_transaction_factory_(NULL),
-      job_factory_(NULL) {
+      job_factory_(NULL),
+      throttler_manager_(NULL),
+      url_requests_(new std::set<const URLRequest*>) {
 }
 
 void URLRequestContext::CopyFrom(URLRequestContext* other) {
@@ -52,6 +56,7 @@ void URLRequestContext::CopyFrom(URLRequestContext* other) {
   set_http_transaction_factory(other->http_transaction_factory());
   set_ftp_transaction_factory(other->ftp_transaction_factory());
   set_job_factory(other->job_factory());
+  set_throttler_manager(other->throttler_manager());
 }
 
 void URLRequestContext::set_cookie_store(CookieStore* cookie_store) {
@@ -62,7 +67,26 @@ const std::string& URLRequestContext::GetUserAgent(const GURL& url) const {
   return EmptyString();
 }
 
+void URLRequestContext::AssertNoURLRequests() const {
+  int num_requests = url_requests_->size();
+  if (num_requests != 0) {
+    // We're leaking URLRequests :( Dump the URL of the first one and record how
+    // many we leaked so we have an idea of how bad it is.
+    char url_buf[128];
+    const URLRequest* request = *url_requests_->begin();
+    base::strlcpy(url_buf, request->url().spec().c_str(), arraysize(url_buf));
+    bool has_delegate = request->has_delegate();
+    int load_flags = request->load_flags();
+    base::debug::Alias(url_buf);
+    base::debug::Alias(&num_requests);
+    base::debug::Alias(&has_delegate);
+    base::debug::Alias(&load_flags);
+    CHECK(false);
+  }
+}
+
 URLRequestContext::~URLRequestContext() {
+  AssertNoURLRequests();
 }
 
 }  // namespace net

@@ -89,10 +89,7 @@ class Node(grit.format.interface.ItemFormatter):
     assert isinstance(child, Node)
     if (not self._IsValidChild(child) or
         self._ContentType() == self._CONTENT_TYPE_CDATA):
-      if child.parent:
-        explanation = 'child %s of parent %s' % (child.name, child.parent.name)
-      else:
-        explanation = 'node %s with no parent' % child.name
+      explanation = 'invalid child %s for parent %s' % (str(child), self.name)
       raise exception.UnexpectedChild(explanation)
     self.children.append(child)
     self.mixed_content.append(child)
@@ -212,8 +209,8 @@ class Node(grit.format.interface.ItemFormatter):
   def GetCdata(self):
     '''Returns all CDATA of this element, concatenated into a single
     string.  Note that this ignores any elements embedded in CDATA.'''
-    return ''.join(filter(lambda c: isinstance(c, types.StringTypes),
-                          self.mixed_content))
+    return ''.join([c for c in self.mixed_content
+                    if isinstance(c, types.StringTypes)])
 
   def __unicode__(self):
     '''Returns this node and all nodes below it as an XML document in a Unicode
@@ -222,11 +219,8 @@ class Node(grit.format.interface.ItemFormatter):
     return header + self.FormatXml()
 
   # Compliance with ItemFormatter interface.
-  def Format(self, item, lang_re = None, begin_item=True):
-    if not begin_item:
-      return ''
-    else:
-      return item.FormatXml()
+  def Format(self, item, lang_re = None):
+    return item.FormatXml()
 
   def FormatXml(self, indent = u'', one_line = False):
     '''Returns this node and all nodes below it as an XML
@@ -303,24 +297,27 @@ class Node(grit.format.interface.ItemFormatter):
 
     return u''.join(inside_parts)
 
-  def RunGatherers(self, recursive=0, debug=False):
+  def RunGatherers(self, recursive=0, debug=False, substitute_messages=False):
     '''Runs all gatherers on this object, which may add to the data stored
     by the object.  If 'recursive' is true, will call RunGatherers() recursively
     on all child nodes first.  If 'debug' is True, will print out information
     as it is running each nodes' gatherers.
-
-    Gatherers for <translations> child nodes will always be run after all other
-    child nodes have been gathered.
     '''
     if recursive:
-      process_last = []
       for child in self.children:
-        if child.name == 'translations':
-          process_last.append(child)
-        else:
-          child.RunGatherers(recursive=recursive, debug=debug)
-      for child in process_last:
+        assert child.name != 'translations'  # <grit> node overrides
         child.RunGatherers(recursive=recursive, debug=debug)
+
+  def SubstituteMessages(self, substituter):
+    '''Applies substitutions to all messages in the tree.
+
+    Called as a final step of RunGatherers.
+
+    Args:
+      substituter: a grit.util.Substituter object.
+    '''
+    for child in self.children:
+      child.SubstituteMessages(substituter)
 
   def ItemFormatter(self, type):
     '''Returns an instance of the item formatter for this object of the
@@ -338,18 +335,17 @@ class Node(grit.format.interface.ItemFormatter):
       return None
 
   def SatisfiesOutputCondition(self):
-    '''Returns true if this node is either not a child of an <if> element
-    or if it is a child of an <if> element and the conditions for it being
-    output are satisfied.
+    '''Returns true if this node is either not a descendant of an <if> element,
+    or if all conditions on its <if> element ancestors are satisfied.
 
     Used to determine whether to return item formatters for formats that
     obey conditional output of resources (e.g. the RC formatters).
     '''
     from grit.node import misc
-    if not self.parent or not isinstance(self.parent, misc.IfNode):
-      return True
+    if self.parent:
+      return self.parent.SatisfiesOutputCondition()
     else:
-      return self.parent.IsConditionSatisfied()
+      return True
 
   def _IsValidChild(self, child):
     '''Returns true if 'child' is a valid child of this node.
@@ -403,7 +399,7 @@ class Node(grit.format.interface.ItemFormatter):
       'resource'
     '''
     return util.normpath(os.path.join(self.GetRoot().GetBaseDir(),
-                                      path_from_basedir))
+                                      os.path.expandvars(path_from_basedir)))
 
   def FilenameToOpen(self):
     '''Returns a path, either absolute or relative to the current working
@@ -447,6 +443,18 @@ class Node(grit.format.interface.ItemFormatter):
       if 'name' in node.attrs and node.attrs['name'] == id:
         return node
     return None
+
+  def GetChildrenOfType(self, type):
+    '''Returns a list of all subnodes (recursing to all leaves) of this node
+    that are of the indicated type.
+
+    Args:
+      type: A type you could use with isinstance().
+
+    Return:
+      A list, possibly empty.
+    '''
+    return [child for child in self if isinstance(child, type)]
 
   def GetTextualIds(self):
     '''Returns the textual ids of this node, if it has some.
@@ -540,6 +548,10 @@ class Node(grit.format.interface.ItemFormatter):
     '''Sets WhitelistMarkedAsSkip.
     '''
     self._whitelist_marked_as_skip = mark_skipped
+
+  def ExpandVariables(self):
+    '''Whether we need to expand variables on a given node.'''
+    return False
 
 
 class ContentNode(Node):

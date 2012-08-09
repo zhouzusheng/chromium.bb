@@ -140,24 +140,9 @@ URLRequestJob* URLRequestHttpJob::Factory(URLRequest* request,
     return new URLRequestErrorJob(request, ERR_INVALID_ARGUMENT);
   }
 
-  TransportSecurityState::DomainState domain_state;
-  if (scheme == "http" &&
-      request->context()->transport_security_state() &&
-      request->context()->transport_security_state()->GetDomainState(
-          &domain_state,
-          request->url().host(),
-          SSLConfigService::IsSNIAvailable(
-              request->context()->ssl_config_service())) &&
-      domain_state.ShouldRedirectHTTPToHTTPS()) {
-    DCHECK_EQ(request->url().scheme(), "http");
-    url_canon::Replacements<char> replacements;
-    static const char kNewScheme[] = "https";
-    replacements.SetScheme(kNewScheme,
-                           url_parse::Component(0, strlen(kNewScheme)));
-    GURL new_location = request->url().ReplaceComponents(replacements);
-    return new URLRequestRedirectJob(request, new_location);
-  }
-
+  GURL redirect_url;
+  if (request->GetHSTSRedirect(&redirect_url))
+    return new URLRequestRedirectJob(request, redirect_url);
   return new URLRequestHttpJob(request);
 }
 
@@ -176,8 +161,7 @@ URLRequestHttpJob::URLRequestHttpJob(URLRequest* request)
                      base::Unretained(this)))),
       read_in_progress_(false),
       transaction_(NULL),
-      throttling_entry_(URLRequestThrottlerManager::GetInstance()->
-          RegisterRequestUrl(request->url())),
+      throttling_entry_(NULL),
       sdch_dictionary_advertised_(false),
       sdch_test_activated_(false),
       sdch_test_control_(false),
@@ -195,6 +179,10 @@ URLRequestHttpJob::URLRequestHttpJob(URLRequest* request)
           base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallback,
                      base::Unretained(this)))),
       awaiting_callback_(false) {
+  URLRequestThrottlerManager* manager = request->context()->throttler_manager();
+  if (manager)
+    throttling_entry_ = manager->RegisterRequestUrl(request->url());
+
   ResetTimer();
 }
 
@@ -207,7 +195,7 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
   // also need this info.
   is_cached_content_ = response_info_->was_cached;
 
-  if (!is_cached_content_) {
+  if (!is_cached_content_ && throttling_entry_) {
     URLRequestThrottlerHeaderAdapter response_adapter(GetResponseHeaders());
     throttling_entry_->UpdateWithResponse(request_info_.url.host(),
                                           &response_adapter);
@@ -325,7 +313,11 @@ void URLRequestHttpJob::StartTransactionInternal() {
       // change (to throttle only requests originating from
       // extensions) gets into M19. Right after the M19 branch point,
       // I will sort this out in a more architecturally-sound way.
-      if (!URLRequestThrottlerManager::GetInstance()->enforce_throttling() ||
+      URLRequestThrottlerManager* manager =
+          request_->context()->throttler_manager();
+      DCHECK(!manager || throttling_entry_);
+      if (!manager ||
+          !manager->enforce_throttling() ||
           request_->first_party_for_cookies().scheme() != "chrome-extension" ||
           !throttling_entry_->ShouldRejectRequest(request_info_.load_flags)) {
         rv = transaction_->Start(
@@ -599,30 +591,21 @@ void URLRequestHttpJob::ProcessStrictTransportSecurityHeader() {
 
   bool sni_available =
       SSLConfigService::IsSNIAvailable(ctx->ssl_config_service());
-  if (!security_state->HasMetadata(&domain_state, host, sni_available)) {
-    // |HasMetadata| may have altered |domain_state| while searching. If not
-    // found, start with a fresh state.
-    domain_state = TransportSecurityState::DomainState();
-    domain_state.mode = TransportSecurityState::DomainState::MODE_STRICT;
-  }
+  if (!security_state->GetDomainState(host, sni_available, &domain_state))
+    // |GetDomainState| may have altered |domain_state| while searching. If
+    // not found, start with a fresh state.
+    domain_state.upgrade_mode =
+        TransportSecurityState::DomainState::MODE_FORCE_HTTPS;
 
   HttpResponseHeaders* headers = GetResponseHeaders();
   std::string value;
   void* iter = NULL;
+  base::Time now = base::Time::Now();
 
   while (headers->EnumerateHeader(&iter, "Strict-Transport-Security", &value)) {
-    int max_age;
-    bool include_subdomains;
-    if (TransportSecurityState::ParseHeader(value, &max_age,
-                                            &include_subdomains)) {
-      base::Time current_time(base::Time::Now());
-      base::TimeDelta max_age_delta = base::TimeDelta::FromSeconds(max_age);
-
-      domain_state.expiry = current_time + max_age_delta;
-      domain_state.include_subdomains = include_subdomains;
-
+    TransportSecurityState::DomainState domain_state;
+    if (domain_state.ParseSTSHeader(now, value))
       security_state->EnableHost(host, domain_state);
-    }
   }
 }
 
@@ -645,25 +628,23 @@ void URLRequestHttpJob::ProcessPublicKeyPinsHeader() {
 
   bool sni_available =
       SSLConfigService::IsSNIAvailable(ctx->ssl_config_service());
-  if (!security_state->HasMetadata(&domain_state, host, sni_available)) {
-    // |HasMetadata| may have altered |domain_state| while searching. If not
-    // found, start with a fresh state.
-    domain_state = TransportSecurityState::DomainState();
-    domain_state.mode = TransportSecurityState::DomainState::MODE_PINNING_ONLY;
-  }
+  if (!security_state->GetDomainState(host, sni_available, &domain_state))
+    // |GetDomainState| may have altered |domain_state| while searching. If
+    // not found, start with a fresh state.
+    domain_state.upgrade_mode =
+        TransportSecurityState::DomainState::MODE_DEFAULT;
 
   HttpResponseHeaders* headers = GetResponseHeaders();
   void* iter = NULL;
   std::string value;
+  base::Time now = base::Time::Now();
 
   while (headers->EnumerateHeader(&iter, "Public-Key-Pins", &value)) {
     // Note that ParsePinsHeader updates |domain_state| (iff the header parses
     // correctly), but does not completely overwrite it. It just updates the
     // dynamic pinning metadata.
-    if (TransportSecurityState::ParsePinsHeader(value, ssl_info,
-                                                &domain_state)) {
+    if (domain_state.ParsePinsHeader(now, value, ssl_info))
       security_state->EnableHost(host, domain_state);
-    }
   }
 }
 
@@ -729,8 +710,9 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
     const bool fatal =
         context_->transport_security_state() &&
         context_->transport_security_state()->GetDomainState(
-            &domain_state, request_info_.url.host(),
-            SSLConfigService::IsSNIAvailable(context_->ssl_config_service()));
+            request_info_.url.host(),
+            SSLConfigService::IsSNIAvailable(context_->ssl_config_service()),
+            &domain_state);
     NotifySSLCertificateError(transaction_->GetResponseInfo()->ssl_info, fatal);
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     NotifyCertificateRequested(
@@ -755,9 +737,9 @@ void URLRequestHttpJob::OnReadCompleted(int result) {
   read_in_progress_ = false;
 
   if (ShouldFixMismatchedContentLength(result))
-    result = 0;
+    result = OK;
 
-  if (result == 0) {
+  if (result == OK) {
     NotifyDone(URLRequestStatus());
   } else if (result < 0) {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, result));
@@ -1098,7 +1080,8 @@ bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {
   // the uncompressed size.  Although this violates the HTTP spec we want to
   // support it (as IE and FireFox do), but *only* for an exact match.
   // See http://crbug.com/79694.
-  if (rv == net::ERR_CONNECTION_CLOSED) {
+  if (rv == net::ERR_CONTENT_LENGTH_MISMATCH ||
+      rv == net::ERR_INCOMPLETE_CHUNKED_ENCODING) {
     if (request_ && request_->response_headers()) {
       int64 expected_length = request_->response_headers()->GetContentLength();
       VLOG(1) << __FUNCTION__ << "() "

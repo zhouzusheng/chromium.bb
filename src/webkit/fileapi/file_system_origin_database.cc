@@ -4,6 +4,8 @@
 
 #include "webkit/fileapi/file_system_origin_database.h"
 
+#include <set>
+
 #include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/location.h"
@@ -27,6 +29,8 @@ const char kInitStatusHistogramLabel[] = "FileSystem.OriginDatabaseInit";
 enum InitStatus {
   INIT_STATUS_OK = 0,
   INIT_STATUS_CORRUPTION,
+  INIT_STATUS_IO_ERROR,
+  INIT_STATUS_UNKNOWN_ERROR,
   INIT_STATUS_MAX
 };
 
@@ -39,7 +43,7 @@ const char* LastPathKey() {
   return kLastPathKey;
 }
 
-}
+}  // namespace
 
 namespace fileapi {
 
@@ -178,9 +182,15 @@ void FileSystemOriginDatabase::ReportInitStatus(const leveldb::Status& status) {
   if (status.ok()) {
     UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
                               INIT_STATUS_OK, INIT_STATUS_MAX);
-  } else {
+  } else if (status.IsCorruption()) {
     UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
                               INIT_STATUS_CORRUPTION, INIT_STATUS_MAX);
+  } else if (status.IsIOError()) {
+    UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
+                              INIT_STATUS_IO_ERROR, INIT_STATUS_MAX);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
+                              INIT_STATUS_UNKNOWN_ERROR, INIT_STATUS_MAX);
   }
 }
 
@@ -254,7 +264,7 @@ bool FileSystemOriginDatabase::ListAllOrigins(
   std::string origin_key_prefix = OriginToOriginKey("");
   iter->Seek(origin_key_prefix);
   origins->clear();
-  while(iter->Valid() &&
+  while (iter->Valid() &&
       StartsWithASCII(iter->key().ToString(), origin_key_prefix, true)) {
     std::string origin =
       iter->key().ToString().substr(origin_key_prefix.length());

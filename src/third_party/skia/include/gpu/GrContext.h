@@ -17,6 +17,7 @@
 #include "GrRenderTarget.h" 
 
 class GrAutoScratchTexture;
+class GrDrawState;
 class GrDrawTarget;
 class GrFontCache;
 class GrGpu;
@@ -273,6 +274,11 @@ public:
     const GrRenderTarget* getRenderTarget() const;
     GrRenderTarget* getRenderTarget();
 
+    /**
+     * Can the provided configuration act as a color render target?
+     */
+    bool isConfigRenderable(GrPixelConfig config) const;
+
     ///////////////////////////////////////////////////////////////////////////
     // Platform Surfaces
 
@@ -405,7 +411,7 @@ public:
      * @param translate     optional additional translation applied to the
      *                      path.
      */
-    void drawPath(const GrPaint& paint, const GrPath& path, GrPathFill fill,
+    void drawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill,
                   const GrPoint* translate = NULL);
 
     /**
@@ -432,6 +438,20 @@ public:
                       const GrColor colors[],
                       const uint16_t indices[],
                       int indexCount);
+
+    /**
+     * Draws an oval.
+     *
+     * @param paint         describes how to color pixels.
+     * @param rect          the bounding rect of the oval.
+     * @param strokeWidth   if strokeWidth < 0, then the oval is filled, else
+     *                      the rect is stroked based on strokeWidth. If
+     *                      strokeWidth == 0, then the stroke is always a single
+     *                      pixel thick.
+     */
+    void drawOval(const GrPaint& paint,
+                  const GrRect& rect,
+                  SkScalar strokeWidth);
 
     ///////////////////////////////////////////////////////////////////////////
     // Misc.
@@ -644,7 +664,6 @@ public:
     const GrGpu* getGpu() const { return fGpu; }
     GrFontCache* getFontCache() { return fFontCache; }
     GrDrawTarget* getTextTarget(const GrPaint& paint);
-    void flushText();
     const GrIndexBuffer* getQuadIndexBuffer() const;
     void resetStats();
     const GrGpuStats& getStats() const;
@@ -666,11 +685,12 @@ private:
     enum DrawCategory {
         kBuffered_DrawCategory,      // last draw was inserted in draw buffer
         kUnbuffered_DrawCategory,    // last draw was not inserted in the draw buffer
-        kText_DrawCategory           // text context was last to draw
     };
     DrawCategory fLastDrawCategory;
 
     GrGpu*              fGpu;
+    GrDrawState*        fDrawState;
+
     GrResourceCache*    fTextureCache;
     GrFontCache*        fFontCache;
 
@@ -704,14 +724,17 @@ private:
 
     void flushDrawBuffer();
 
-    void setPaint(const GrPaint& paint, GrDrawTarget* target);
+    void setPaint(const GrPaint& paint);
 
     GrDrawTarget* prepareToDraw(const GrPaint& paint, DrawCategory drawType);
 
-    GrPathRenderer* getPathRenderer(const GrPath& path,
+    GrPathRenderer* getPathRenderer(const SkPath& path,
                                     GrPathFill fill,
                                     const GrDrawTarget* target,
                                     bool antiAlias);
+
+    void internalDrawPath(const GrPaint& paint, const SkPath& path,
+                          GrPathFill fill, const GrPoint* translate);
 
     /**
      * Flags to the internal read/write pixels funcs

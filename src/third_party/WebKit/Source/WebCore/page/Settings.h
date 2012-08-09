@@ -143,6 +143,10 @@ namespace WebCore {
         void setJavaEnabled(bool);
         bool isJavaEnabled() const { return m_isJavaEnabled; }
 
+        // This settings is only consulted if isJavaEnabled() returns true;
+        void setJavaEnabledForLocalFiles(bool);
+        bool isJavaEnabledForLocalFiles() const { return m_isJavaEnabledForLocalFiles; }
+
         void setImagesEnabled(bool);
         bool areImagesEnabled() const { return m_areImagesEnabled; }
 
@@ -457,8 +461,8 @@ namespace WebCore {
         void setDeviceHeight(int height) { m_deviceHeight = height; }
         int deviceHeight() const { return m_deviceHeight; }
 
-        void setDeviceDPI(int deviceDPI) { m_deviceDPI = deviceDPI; }
-        int deviceDPI() const { return m_deviceDPI; }
+        void setDevicePixelRatio(double devicePixelRatio) { m_devicePixelRatio = devicePixelRatio; }
+        double devicePixelRatio() const { return m_devicePixelRatio; }
 
         void setForceCompositingMode(bool flag) { m_forceCompositingMode = flag; }
         bool forceCompositingMode() { return m_forceCompositingMode; }
@@ -545,8 +549,24 @@ namespace WebCore {
         void setThreadedAnimationEnabled(bool enabled) { m_threadedAnimationEnabled = enabled; }
         bool threadedAnimationEnabled() const { return m_threadedAnimationEnabled; }
 
+        void setShouldRespectImageOrientation(bool enabled) { m_shouldRespectImageOrientation = enabled; }
+        bool shouldRespectImageOrientation() const { return m_shouldRespectImageOrientation; }
+
+        void setWantsBalancedSetDefersLoadingBehavior(bool flag) { m_wantsBalancedSetDefersLoadingBehavior = flag; }
+        bool wantsBalancedSetDefersLoadingBehavior() const { return m_wantsBalancedSetDefersLoadingBehavior; }
+        
+        void setIncrementalRenderingSuppressionTimeoutInSeconds(double timeout) { m_incrementalRenderingSuppressionTimeoutInSeconds = timeout; }
+        double incrementalRenderingSuppressionTimeoutInSeconds() const { return m_incrementalRenderingSuppressionTimeoutInSeconds; }
+        
+#if USE(JSC)
+        static void setShouldRespectPriorityInCSSAttributeSetters(bool);
+        static bool shouldRespectPriorityInCSSAttributeSetters();
+#endif
+
     private:
         Settings(Page*);
+
+        void initializeDefaultFontFamilies();
 
         Page* m_page;
 
@@ -572,7 +592,7 @@ namespace WebCore {
         int m_validationMessageTimerMagnification;
         int m_minimumAccelerated2dCanvasSize;
         int m_layoutFallbackWidth;
-        int m_deviceDPI;
+        double m_devicePixelRatio;
         size_t m_maximumDecodedImageSize;
         int m_deviceWidth;
         int m_deviceHeight;
@@ -581,6 +601,7 @@ namespace WebCore {
         unsigned m_maximumHTMLParserDOMTreeDepth;
         bool m_isSpatialNavigationEnabled : 1;
         bool m_isJavaEnabled : 1;
+        bool m_isJavaEnabledForLocalFiles : 1;
         bool m_loadsImagesAutomatically : 1;
         bool m_loadsSiteIconsIgnoringImageLoadingSetting : 1;
         bool m_privateBrowsingEnabled : 1;
@@ -698,9 +719,13 @@ namespace WebCore {
         bool m_touchEventEmulationEnabled : 1;
 #endif
         bool m_threadedAnimationEnabled : 1;
+        bool m_shouldRespectImageOrientation : 1;
+        bool m_wantsBalancedSetDefersLoadingBehavior : 1;
 
         Timer<Settings> m_loadsImagesAutomaticallyTimer;
         void loadsImagesAutomaticallyTimerFired(Timer<Settings>*);
+        
+        double m_incrementalRenderingSuppressionTimeoutInSeconds;
 
 #if USE(AVFOUNDATION)
         static bool gAVFoundationEnabled;
@@ -712,6 +737,9 @@ namespace WebCore {
 #endif
 #if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
         static bool gShouldUseHighResolutionTimers;
+#endif
+#if USE(JSC)
+        static bool gShouldRespectPriorityInCSSAttributeSetters;
 #endif
     };
 

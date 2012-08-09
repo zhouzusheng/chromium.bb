@@ -145,10 +145,6 @@ class NET_EXPORT SSLConfigService
   // May not be thread-safe, should only be called on the IO thread.
   virtual void GetSSLConfig(SSLConfig* config) = 0;
 
-  // Returns true if the given hostname is known to be incompatible with TLS
-  // False Start.
-  static bool IsKnownFalseStartIncompatibleServer(const std::string& hostname);
-
   // Sets and gets the current, global CRL set.
   static void SetCRLSet(scoped_refptr<CRLSet> crl_set);
   static scoped_refptr<CRLSet> GetCRLSet();
@@ -157,6 +153,9 @@ class NET_EXPORT SSLConfigService
   // just a digest of its certificate chain.
   static void EnableCachedInfo();
   static bool cached_info_enabled();
+
+  // Force domain bound cert support to be enabled.
+  static void EnableDomainBoundCertsTrial();
 
   // Is SNI available in this configuration?
   static bool IsSNIAvailable(SSLConfigService* service);

@@ -335,13 +335,7 @@ WebWidget* TestWebViewDelegate::createPopupMenu(WebPopupType popup_type) {
 
 WebStorageNamespace* TestWebViewDelegate::createSessionStorageNamespace(
     unsigned quota) {
-#ifdef ENABLE_NEW_DOM_STORAGE_BACKEND
   return SimpleDomStorageSystem::instance().CreateSessionStorageNamespace();
-#else
-  // Enforce quota, ignoring the parameter from WebCore as in Chrome.
-  return WebKit::WebStorageNamespace::createSessionStorageNamespace(
-      WebStorageNamespace::m_sessionStorageQuota);
-#endif
 }
 
 WebGraphicsContext3D* TestWebViewDelegate::createGraphicsContext3D(
@@ -950,6 +944,11 @@ void TestWebViewDelegate::openFileSystem(
 
 // WebPluginPageDelegate -----------------------------------------------------
 
+WebKit::WebPlugin* TestWebViewDelegate::CreatePluginReplacement(
+    const FilePath& file_path) {
+  return NULL;
+}
+
 WebCookieJar* TestWebViewDelegate::GetCookieJar() {
   return WebKit::webKitPlatformSupport()->cookieJar();
 }
@@ -965,7 +964,7 @@ TestWebViewDelegate::TestWebViewDelegate(TestShell* shell)
       page_id_(-1),
       last_page_id_updated_(-1),
       using_fake_rect_(false),
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
       cursor_type_(GDK_X_CURSOR),
 #endif
       smart_insert_delete_enabled_(true),

@@ -25,6 +25,7 @@
 
 /**
  * @constructor
+ * @implements {WebInspector.ContentProvider}
  * @param {string} scriptId
  * @param {string} sourceURL
  * @param {number} startLine
@@ -42,19 +43,27 @@ WebInspector.Script = function(scriptId, sourceURL, startLine, startColumn, endL
     this.columnOffset = startColumn;
     this.endLine = endLine;
     this.endColumn = endColumn;
-    // M19 band-aid that treats whitelist of short file names as content scripts. These are not valid URLs, so it is safe to assume these are likely to be content scripts.
-    this.isContentScript = isContentScript || sourceURL === "apitest" || sourceURL === "event_bindings" || sourceURL === "extension" || sourceURL === "i18n" || sourceURL === "json_schema" || sourceURL === "miscellaneous_bindings" || sourceURL === "schema_generated_bindings" || sourceURL === "sendRequest";
+    this.isContentScript = isContentScript;
     this.sourceMapURL = sourceMapURL;
+    this._locations = [];
 }
 
 WebInspector.Script.prototype = {
     /**
-     * @param {function(string)} callback
+     * @return {?string}
      */
-    requestSource: function(callback)
+    contentURL: function()
+    {
+        return this.sourceURL;
+    },
+
+    /**
+     * @param {function(?string,boolean,string)} callback
+     */
+    requestContent: function(callback)
     {
         if (this._source) {
-            callback(this._source);
+            callback(this._source, false, "text/javascript");
             return;
         }
 
@@ -66,13 +75,13 @@ WebInspector.Script.prototype = {
         function didGetScriptSource(error, source)
         {
             this._source = error ? "" : source;
-            callback(this._source);
+            callback(this._source, false, "text/javascript");
         }
         if (this.scriptId) {
             // Script failed to parse.
             DebuggerAgent.getScriptSource(this.scriptId, didGetScriptSource.bind(this));
         } else
-            callback("");
+            callback("", false, "text/javascript");
     },
 
     /**
@@ -117,8 +126,9 @@ WebInspector.Script.prototype = {
          * @this {WebInspector.Script}
          * @param {?Protocol.Error} error
          * @param {Array.<DebuggerAgent.CallFrame>|undefined} callFrames
+         * @param {Object=} debugData
          */
-        function didEditScriptSource(error, callFrames)
+        function didEditScriptSource(error, callFrames, debugData)
         {
             if (!error)
                 this._source = newSource;
@@ -137,5 +147,72 @@ WebInspector.Script.prototype = {
     isInlineScript: function()
     {
         return !!this.sourceURL && this.lineOffset !== 0 && this.columnOffset !== 0;
+    },
+
+    /**
+     * @param {DebuggerAgent.Location} rawLocation
+     * @return {WebInspector.UILocation}
+     */
+    rawLocationToUILocation: function(rawLocation)
+    {
+        console.assert(rawLocation.scriptId === this.scriptId);
+        return this._sourceMapping.rawLocationToUILocation(rawLocation);
+    },
+
+    /**
+     * @param {WebInspector.SourceMapping} sourceMapping
+     */
+    setSourceMapping: function(sourceMapping)
+    {
+        this._sourceMapping = sourceMapping;
+        for (var i = 0; i < this._locations.length; ++i)
+            this._locations[i].update();
+    },
+
+    /**
+     * @param {DebuggerAgent.Location} rawLocation
+     * @param {function(WebInspector.UILocation):(boolean|undefined)} updateDelegate
+     * @return {WebInspector.Script.Location}
+     */
+    createLiveLocation: function(rawLocation, updateDelegate)
+    {
+        console.assert(rawLocation.scriptId === this.scriptId);
+        var location = new WebInspector.Script.Location(this, rawLocation, updateDelegate);
+        this._locations.push(location);
+        location.update();
+        return location;
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.LiveLocation}
+ * @param {WebInspector.Script} script
+ * @param {DebuggerAgent.Location} rawLocation
+ * @param {function(WebInspector.UILocation):(boolean|undefined)} updateDelegate
+ */
+WebInspector.Script.Location = function(script, rawLocation, updateDelegate)
+{
+    this._script = script;
+    this._rawLocation = rawLocation;
+    this._updateDelegate = updateDelegate;
+}
+
+WebInspector.Script.Location.prototype = {
+    dispose: function()
+    {
+        this._script._locations.remove(this);
+    },
+
+    update: function()
+    {
+        if (!this._script._sourceMapping)
+            return;
+        var uiLocation = this._script._sourceMapping.rawLocationToUILocation(this._rawLocation);
+        if (uiLocation) {
+            var oneTime = this._updateDelegate(uiLocation);
+            if (oneTime)
+                this.dispose();
+        }
     }
 }

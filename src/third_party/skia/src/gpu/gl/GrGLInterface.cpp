@@ -151,123 +151,6 @@ GrGLSLVersion GrGLGetGLSLVersion(const GrGLInterface* gl) {
 GrGLInterface::GrGLInterface() {
     fBindingsExported = kNone_GrGLBinding;
 
-    fActiveTexture = NULL;
-    fAttachShader = NULL;
-    fBeginQuery = NULL;
-    fBindAttribLocation = NULL;
-    fBindBuffer = NULL;
-    fBindFragDataLocation = NULL;
-    fBindTexture = NULL;
-    fBlendColor = NULL;
-    fBlendFunc = NULL;
-    fBufferData = NULL;
-    fBufferSubData = NULL;
-    fClear = NULL;
-    fClearColor = NULL;
-    fClearStencil = NULL;
-    fColorMask = NULL;
-    fColorPointer = NULL;
-    fCompileShader = NULL;
-    fCompressedTexImage2D = NULL;
-    fCreateProgram = NULL;
-    fCreateShader = NULL;
-    fCullFace = NULL;
-    fDeleteBuffers = NULL;
-    fDeleteProgram = NULL;
-    fDeleteQueries = NULL;
-    fDeleteShader = NULL;
-    fDeleteTextures = NULL;
-    fDepthMask = NULL;
-    fDisable = NULL;
-    fDisableVertexAttribArray = NULL;
-    fDrawArrays = NULL;
-    fDrawBuffer = NULL;
-    fDrawBuffers = NULL;
-    fDrawElements = NULL;
-    fEndQuery = NULL;
-    fFinish = NULL;
-    fFlush = NULL;
-    fEnable = NULL;
-    fEnableVertexAttribArray = NULL;
-    fFrontFace = NULL;
-    fGenBuffers = NULL;
-    fGenQueries = NULL;
-    fGenTextures = NULL;
-    fGetBufferParameteriv = NULL;
-    fGetError = NULL;
-    fGetIntegerv = NULL;
-    fGetQueryiv = NULL;
-    fGetQueryObjecti64v = NULL;
-    fGetQueryObjectiv = NULL;
-    fGetQueryObjectui64v = NULL;
-    fGetQueryObjectuiv = NULL;
-    fGetProgramInfoLog = NULL;
-    fGetProgramiv = NULL;
-    fGetShaderInfoLog = NULL;
-    fGetShaderiv = NULL;
-    fGetString = NULL;
-    fGetTexLevelParameteriv = NULL;
-    fGetUniformLocation = NULL;
-    fLineWidth = NULL;
-    fLinkProgram = NULL;
-    fPixelStorei = NULL;
-    fQueryCounter = NULL;
-    fReadBuffer = NULL;
-    fReadPixels = NULL;
-    fScissor = NULL;
-    fShaderSource = NULL;
-    fStencilFunc = NULL;
-    fStencilFuncSeparate = NULL;
-    fStencilMask = NULL;
-    fStencilMaskSeparate = NULL;
-    fStencilOp = NULL;
-    fStencilOpSeparate = NULL;
-    fTexImage2D = NULL;
-    fTexParameteri = NULL;
-    fTexStorage2D = NULL;
-    fTexSubImage2D = NULL;
-    fUniform1f = NULL;
-    fUniform1i = NULL;
-    fUniform1fv = NULL;
-    fUniform1iv = NULL;
-    fUniform2f = NULL;
-    fUniform2i = NULL;
-    fUniform2fv = NULL;
-    fUniform2iv = NULL;
-    fUniform3f = NULL;
-    fUniform3i = NULL;
-    fUniform3fv = NULL;
-    fUniform3iv = NULL;
-    fUniform4f = NULL;
-    fUniform4i = NULL;
-    fUniform4fv = NULL;
-    fUniform4iv = NULL;
-    fUniformMatrix2fv = NULL;
-    fUniformMatrix3fv = NULL;
-    fUniformMatrix4fv = NULL;
-    fUseProgram = NULL;
-    fVertexAttrib4fv = NULL;
-    fVertexAttribPointer = NULL;
-    fViewport = NULL;
-    fBindFramebuffer = NULL;
-    fBindRenderbuffer = NULL;
-    fCheckFramebufferStatus = NULL;
-    fDeleteFramebuffers = NULL;
-    fDeleteRenderbuffers = NULL;
-    fFramebufferRenderbuffer = NULL;
-    fFramebufferTexture2D = NULL;
-    fGenFramebuffers = NULL;
-    fGenRenderbuffers = NULL;
-    fGetFramebufferAttachmentParameteriv = NULL;
-    fGetRenderbufferParameteriv = NULL;
-    fRenderbufferStorage = NULL;
-    fRenderbufferStorageMultisample = NULL;
-    fBlitFramebuffer = NULL;
-    fResolveMultisampleFramebuffer = NULL;
-    fMapBuffer = NULL;
-    fUnmapBuffer = NULL;
-    fBindFragDataLocationIndexed = NULL;
-
 #if GR_GL_PER_GL_FUNC_CALLBACK
     fCallback = GrGLDefaultInterfaceCallback;
     fCallbackData = 0;
@@ -291,6 +174,8 @@ bool GrGLInterface::validate(GrGLBinding binding) const {
         NULL == fBindBuffer ||
         NULL == fBindTexture ||
         NULL == fBlendFunc ||
+        NULL == fBlendColor ||      // -> GL >= 1.4, ES >= 2.0 or extension
+        NULL == fBlendEquation ||   // -> GL >= 1.4, ES >= 2.0 or extension
         NULL == fBufferData ||
         NULL == fBufferSubData ||
         NULL == fClear ||
@@ -387,13 +272,13 @@ bool GrGLInterface::validate(GrGLBinding binding) const {
     // On the desktop we assume they are available if the extension
     // is present or GL version is high enough.
     if (kES2_GrGLBinding == binding) {
-        if (NULL == fBlendColor ||
-            NULL == fStencilFuncSeparate ||
+        if (NULL == fStencilFuncSeparate ||
             NULL == fStencilMaskSeparate ||
             NULL == fStencilOpSeparate) {
             return false;
         }
     } else if (kDesktop_GrGLBinding == binding) {
+
         if (glVer >= GR_GL_VER(2,0)) {
             if (NULL == fStencilFuncSeparate ||
                 NULL == fStencilMaskSeparate ||
@@ -410,12 +295,7 @@ bool GrGLInterface::validate(GrGLBinding binding) const {
                 return false;
             }
         }
-        if (glVer >= GR_GL_VER(1,4) ||
-            GrGLHasExtensionFromString("GL_EXT_blend_color", ext)) {
-            if (NULL == fBlendColor) {
-                return false;
-            }
-        }
+
         if (glVer >= GR_GL_VER(1,5) ||
             GrGLHasExtensionFromString("GL_ARB_occlusion_query", ext)) {
             if (NULL == fGenQueries ||

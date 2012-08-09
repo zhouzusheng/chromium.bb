@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/nullable_string16.h"
 #include "base/string16.h"
+#include "webkit/dom_storage/dom_storage_types.h"
 
 class GURL;
 
@@ -31,9 +32,10 @@ class DomStorageHost {
   explicit DomStorageHost(DomStorageContext* context);
   ~DomStorageHost();
 
-  int OpenStorageArea(int namespace_id, const GURL& origin);
+  bool OpenStorageArea(int connection_id, int namespace_id,
+                       const GURL& origin);
   void CloseStorageArea(int connection_id);
-
+  bool ExtractAreaValues(int connection_id, ValuesMap* map);
   unsigned GetAreaLength(int connection_id);
   NullableString16 GetAreaKey(int connection_id, unsigned index);
   NullableString16 GetAreaItem(int connection_id, const string16& key);
@@ -58,7 +60,6 @@ class DomStorageHost {
 
   DomStorageArea* GetOpenArea(int connection_id);
 
-  int last_connection_id_;
   scoped_refptr<DomStorageContext> context_;
   AreaMap connections_;
 };

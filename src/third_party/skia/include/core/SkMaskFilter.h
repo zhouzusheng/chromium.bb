@@ -12,6 +12,7 @@
 
 #include "SkFlattenable.h"
 #include "SkMask.h"
+#include "SkPaint.h"
 
 class SkBlitter;
 class SkBounder;
@@ -55,8 +56,6 @@ public:
     virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
                             SkIPoint* margin);
 
-    virtual void flatten(SkFlattenableWriteBuffer& ) {}
-
     enum BlurType {
         kNone_BlurType,    //!< this maskfilter is not a blur
         kNormal_BlurType,  //!< fuzzy inside and outside
@@ -94,7 +93,7 @@ public:
 
 protected:
     // empty for now, but lets get our subclass to remember to init us for the future
-    SkMaskFilter(SkFlattenableReadBuffer&) {}
+    SkMaskFilter(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
 
 private:
     friend class SkDraw;
@@ -105,7 +104,10 @@ private:
      This method is not exported to java.
      */
     bool filterPath(const SkPath& devPath, const SkMatrix& devMatrix,
-                    const SkRasterClip&, SkBounder*, SkBlitter* blitter);
+                    const SkRasterClip&, SkBounder*, SkBlitter* blitter,
+                    SkPaint::Style style);
+
+    typedef SkFlattenable INHERITED;
 };
 
 #endif

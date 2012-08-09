@@ -399,7 +399,7 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
   bool bind_generates_resource = false;
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group ?
       context_group->decoder_->GetContextGroup() :
-          new ::gpu::gles2::ContextGroup(bind_generates_resource)));
+          new ::gpu::gles2::ContextGroup(NULL, bind_generates_resource)));
 
   gpu_scheduler_.reset(new GpuScheduler(command_buffer_.get(),
                                         decoder_.get(),
@@ -424,10 +424,13 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
     return false;
   }
 
+  ::gpu::gles2::DisallowedFeatures disallowed_features;
+  disallowed_features.swap_buffer_complete_callback = true;
   if (!decoder_->Initialize(surface_.get(),
                             context_.get(),
+                            true,
                             size,
-                            ::gpu::gles2::DisallowedFeatures(),
+                            disallowed_features,
                             allowed_extensions,
                             attribs)) {
     LOG(ERROR) << "Could not initialize decoder.";
@@ -462,6 +465,7 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
   // Create the object exposing the OpenGL API.
   gles2_implementation_.reset(new GLES2Implementation(
       gles2_helper_.get(),
+      context_group ? context_group->GetImplementation()->share_group() : NULL,
       transfer_buffer_.get(),
       true,
       false));
@@ -1220,6 +1224,9 @@ WebKit::WebString WebGraphicsContext3DInProcessCommandBufferImpl::
   return res;
 }
 
+DELEGATE_TO_GL_4(getShaderPrecisionFormat, GetShaderPrecisionFormat,
+                 WGC3Denum, WGC3Denum, WGC3Dint*, WGC3Dint*)
+
 WebKit::WebString WebGraphicsContext3DInProcessCommandBufferImpl::
     getShaderSource(WebGLId shader) {
   ClearContext();
@@ -1586,6 +1593,9 @@ DELEGATE_TO_GL_1(endQueryEXT, EndQueryEXT, WGC3Denum)
 DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivEXT, WGC3Denum, WGC3Denum, WGC3Dint*)
 DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
                  WebGLId, WGC3Denum, WGC3Duint*)
+
+DELEGATE_TO_GL_5(copyTextureCHROMIUM, CopyTextureCHROMIUM, WGC3Denum,
+                 WGC3Denum, WGC3Denum, WGC3Dint, WGC3Dint)
 
 #if WEBKIT_USING_SKIA
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::

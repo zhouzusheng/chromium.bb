@@ -9,13 +9,6 @@
 #include "SkShader.h"
 #include "SkUtils.h"
 
-// Helper to ensure that when we shift down, we do it w/o sign-extension
-// so the caller doesn't have to manually mask off the top 16 bits
-//
-static unsigned SK_USHIFT16(unsigned x) {
-    return x >> 16;
-}
-
 /*  returns 0...(n-1) given any x (positive or negative).
     
     As an example, if n (which is always positive) is 5...
@@ -51,8 +44,8 @@ void decal_filter_scale(uint32_t dst[], SkFixed fx, SkFixed dx, int count);
 #endif
 
 #define MAKENAME(suffix)        RepeatX_RepeatY ## suffix
-#define TILEX_PROCF(fx, max)    SK_USHIFT16(((fx) & 0xFFFF) * ((max) + 1))
-#define TILEY_PROCF(fy, max)    SK_USHIFT16(((fy) & 0xFFFF) * ((max) + 1))
+#define TILEX_PROCF(fx, max)    (((fx) & 0xFFFF) * ((max) + 1) >> 16)
+#define TILEY_PROCF(fy, max)    (((fy) & 0xFFFF) * ((max) + 1) >> 16)
 #define TILEX_LOW_BITS(fx, max) ((((fx) & 0xFFFF) * ((max) + 1) >> 12) & 0xF)
 #define TILEY_LOW_BITS(fy, max) ((((fy) & 0xFFFF) * ((max) + 1) >> 12) & 0xF)
 #if	defined(__ARM_HAVE_NEON)
@@ -70,8 +63,8 @@ void decal_filter_scale(uint32_t dst[], SkFixed fx, SkFixed dx, int count);
 #define PREAMBLE_PARAM_Y        , SkBitmapProcState::FixedTileProc tileProcY, SkBitmapProcState::FixedTileLowBitsProc tileLowBitsProcY
 #define PREAMBLE_ARG_X          , tileProcX, tileLowBitsProcX
 #define PREAMBLE_ARG_Y          , tileProcY, tileLowBitsProcY
-#define TILEX_PROCF(fx, max)    SK_USHIFT16(tileProcX(fx) * ((max) + 1))
-#define TILEY_PROCF(fy, max)    SK_USHIFT16(tileProcY(fy) * ((max) + 1))
+#define TILEX_PROCF(fx, max)    (tileProcX(fx) * ((max) + 1) >> 16)
+#define TILEY_PROCF(fy, max)    (tileProcY(fy) * ((max) + 1) >> 16)
 #define TILEX_LOW_BITS(fx, max) tileLowBitsProcX(fx, (max) + 1)
 #define TILEY_LOW_BITS(fy, max) tileLowBitsProcY(fy, (max) + 1)
 #include "SkBitmapProcState_matrix.h"
@@ -100,12 +93,22 @@ static inline U16CPU fixed_repeat(SkFixed x)
     return x & 0xFFFF;
 }
 
+// Visual Studio 2010 (MSC_VER=1600) optimizes bit-shift code incorrectly.
+// See http://code.google.com/p/skia/issues/detail?id=472
+#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+#pragma optimize("", off)
+#endif
+
 static inline U16CPU fixed_mirror(SkFixed x)
 {
     SkFixed s = x << 15 >> 31;
     // s is FFFFFFFF if we're on an odd interval, or 0 if an even interval
     return (x ^ s) & 0xFFFF;
 }
+
+#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+#pragma optimize("", on)
+#endif
 
 static SkBitmapProcState::FixedTileProc choose_tile_proc(unsigned m)
 {

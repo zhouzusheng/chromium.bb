@@ -95,6 +95,12 @@ class RenderTextWin : public RenderText {
   void ItemizeLogicalText();
   void LayoutVisualText();
 
+  // Helper function to update the font on a text run after font substitution.
+  void ApplySubstituteFont(internal::TextRun* run, const Font& font);
+
+  // Returns whether |run| contains missing glyphs.
+  bool HasMissingGlyphs(internal::TextRun* run) const;
+
   // Returns a vector of linked fonts corresponding to |font|.
   const std::vector<Font>* GetLinkedFonts(const Font& font) const;
 
@@ -106,8 +112,8 @@ class RenderTextWin : public RenderText {
   // Given a |run|, returns the SelectionModel that contains the logical first
   // or last caret position inside (not at a boundary of) the run.
   // The returned value represents a cursor/caret position without a selection.
-  SelectionModel FirstSelectionModelInsideRun(internal::TextRun* run);
-  SelectionModel LastSelectionModelInsideRun(internal::TextRun* run);
+  SelectionModel FirstSelectionModelInsideRun(const internal::TextRun* run);
+  SelectionModel LastSelectionModelInsideRun(const internal::TextRun* run);
 
   // Cached HDC for performing Uniscribe API calls.
   static HDC cached_hdc_;
@@ -115,11 +121,21 @@ class RenderTextWin : public RenderText {
   // Cached map from font names to vectors of linked fonts.
   static std::map<std::string, std::vector<Font> > cached_linked_fonts_;
 
+  // Cached map of system fonts, from file names to font families.
+  static std::map<std::string, std::string> cached_system_fonts_;
+
+  // Cached map from font name to the last successful substitute font used.
+  static std::map<std::string, Font> successful_substitute_fonts_;
+
   SCRIPT_CONTROL script_control_;
   SCRIPT_STATE script_state_;
 
   std::vector<internal::TextRun*> runs_;
-  int string_width_;
+  Size string_size_;
+
+  // A common vertical baseline for all the text runs. This is computed as the
+  // largest baseline over all the runs' fonts.
+  int common_baseline_;
 
   scoped_array<int> visual_to_logical_;
   scoped_array<int> logical_to_visual_;

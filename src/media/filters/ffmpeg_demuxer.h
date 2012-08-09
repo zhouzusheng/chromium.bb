@@ -130,24 +130,23 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
 class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
  public:
-  FFmpegDemuxer(MessageLoop* message_loop, bool local_source);
+  FFmpegDemuxer(MessageLoop* message_loop,
+                const scoped_refptr<DataSource>& data_source,
+                bool local_source);
   virtual ~FFmpegDemuxer();
 
   // Posts a task to perform additional demuxing.
   virtual void PostDemuxTask();
 
-  void Initialize(
-      DataSource* data_source, const PipelineStatusCB& status_cb);
-
   // Demuxer implementation.
+  virtual void Initialize(DemuxerHost* host,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
   virtual void OnAudioRendererDisabled() OVERRIDE;
-  virtual void set_host(DemuxerHost* demuxer_host) OVERRIDE;
   virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
   virtual scoped_refptr<DemuxerStream> GetStream(
       DemuxerStream::Type type) OVERRIDE;
-  virtual void SetPreload(Preload preload) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual int GetBitrate() OVERRIDE;
   virtual bool IsLocalSource() OVERRIDE;
@@ -163,17 +162,12 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // Provide access to FFmpegDemuxerStream.
   MessageLoop* message_loop();
 
-  // For testing purposes.
-  void disable_first_seek_hack_for_testing() { first_seek_hack_ = false; }
-
  private:
-  // Only allow a factory to create this class.
-  friend class MockFFmpegDemuxer;
-  FRIEND_TEST_ALL_PREFIXES(FFmpegDemuxerTest, ProtocolRead);
+  // To allow tests access to privates.
+  friend class FFmpegDemuxerTest;
 
   // Carries out initialization on the demuxer thread.
-  void InitializeTask(
-      DataSource* data_source, const PipelineStatusCB& status_cb);
+  void InitializeTask(DemuxerHost* host, const PipelineStatusCB& status_cb);
 
   // Carries out a seek on the demuxer thread.
   void SeekTask(base::TimeDelta time, const PipelineStatusCB& cb);
@@ -205,6 +199,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // Signal the blocked thread that the read has completed, with |size| bytes
   // read or kReadError in case of error.
   virtual void SignalReadCompleted(int size);
+
+  DemuxerHost* host_;
 
   MessageLoop* message_loop_;
 
@@ -243,14 +239,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   int last_read_bytes_;
   int64 read_position_;
 
-  // Initialization can happen before set_host() is called, in which case we
-  // store these bits for deferred reporting to the DemuxerHost when we get one.
-  base::TimeDelta max_duration_;
-  PipelineStatus deferred_status_;
-
-  // Used to skip the implicit "first seek" to avoid resetting FFmpeg's internal
-  // state.
-  bool first_seek_hack_;
+  // Derived bitrate after initialization has completed.
+  int bitrate_;
 
   // The first timestamp of the opened media file. This is used to set the
   // starting clock value to match the timestamps in the media file. Default

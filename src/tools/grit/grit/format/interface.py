@@ -11,22 +11,37 @@ import re
 
 
 class ItemFormatter(object):
-  '''Base class for a formatter that knows how to format a single item.'''
+  """Base class for a formatter that knows how to format a single item."""
 
-  def Format(self, item, lang='', begin_item=True, output_dir='.'):
-    '''Returns a Unicode string representing 'item' in the format known by this
-    item formatter, for the language 'lang'.  May be called once at the
-    start of the item (begin_item == True) and again at the end
-    (begin_item == False), or only at the start of the item (begin_item == True)
+  def Format(self, item, lang='', output_dir='.'):
+    """Format the start of this item.
+
+    Returns a Unicode string representing 'item' in the format known by this
+    item formatter, for the language 'lang'.
+
+    Args:
+      item: anything.
+      lang: 'en'
+      output_dir: '.'
+
+    Returns:
+      A unicode string.
+    """
+    return ''
+
+  def FormatEnd(self, item, lang='', output_dir='.'):
+    """Format the end of this item.
+
+    Returns a Unicode string representing the closure of 'item' in the
+    format known by this item formatter, for the language 'lang'.
+    Called (optionally) after the children of item have been formatted.
 
     Args:
       item: anything
       lang: 'en'
-      begin_item: True | False
       output_dir: '.'
 
-    Return:
-      u'hello'
-    '''
-    raise NotImplementedError()
-
+    Returns:
+      A unicode string.
+    """
+    return ''

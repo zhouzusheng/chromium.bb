@@ -36,8 +36,11 @@ SkPDFFormXObject::SkPDFFormXObject(SkPDFDevice* device) {
     // embedded in things like shaders and images.
     if (!device->initialTransform().isIdentity()) {
         SkMatrix inverse;
-        inverse.reset();
-        device->initialTransform().invert(&inverse);
+        if (!device->initialTransform().invert(&inverse)) {
+            // The initial transform should be invertible.
+            SkASSERT(false);
+            inverse.reset();
+        }
         insert("Matrix", SkPDFUtils::MatrixToArray(inverse))->unref();
     }
 

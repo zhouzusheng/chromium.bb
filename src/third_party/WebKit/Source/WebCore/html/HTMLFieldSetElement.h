@@ -31,6 +31,10 @@ namespace WebCore {
 class HTMLFieldSetElement : public HTMLFormControlElement {
 public:
     static PassRefPtr<HTMLFieldSetElement> create(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLLegendElement* legend() const;
+
+protected:
+    virtual void disabledAttributeChanged() OVERRIDE;
 
 private:
     HTMLFieldSetElement(const QualifiedName&, Document*, HTMLFormElement*);
@@ -40,6 +44,9 @@ private:
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual const AtomicString& formControlType() const;
     virtual bool recalcWillValidate() const { return false; }
+    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
+
+    static void invalidateDisabledStateUnder(Element*);
 };
 
 } // namespace

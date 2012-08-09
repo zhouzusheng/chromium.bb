@@ -44,6 +44,7 @@
 #include "V8HiddenPropertyName.h"
 #include "V8Node.h"
 #include "V8Proxy.h"
+#include "V8RecursionScope.h"
 #include "WorldContextHandle.h"
 
 #include <wtf/StdLibExtras.h>
@@ -136,25 +137,33 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     // FIXME: V8 does not allow us to programmatically create object environments so
     //        we have to do this hack! What if m_code escapes to run arbitrary script?
     //
+    // Call with 4 arguments instead of 3, pass additional null as the last parameter.
+    // By calling the function with 4 arguments, we create a setter on arguments object
+    // which would shadow property "3" on the prototype.
     String code = "(function() {" \
-        "with (arguments[2]) {" \
-        "with (arguments[1]) {" \
-        "with (arguments[0]) {";
+        "arguments[3] = function() {" \
+        "with (this[2]) {" \
+        "with (this[1]) {" \
+        "with (this[0]) {";
     code.append("return function(");
     code.append(m_eventParameterName);
     code.append(") {");
     code.append(m_code);
     // Insert '\n' otherwise //-style comments could break the handler.
-    code.append("\n};}}}})");
+    code.append("\n};}}}};");
+    code.append("return arguments[3]();})");
     v8::Handle<v8::String> codeExternalString = v8ExternalString(code);
 
     v8::Handle<v8::Script> script = V8Proxy::compileScript(codeExternalString, m_sourceURL, m_position);
     if (script.IsEmpty())
         return;
 
-    // Call v8::Script::Run() directly to avoid an erroneous call to V8RecursionScope::didLeaveScriptContext().
     // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> value = script->Run();
+    v8::Local<v8::Value> value;
+    {
+        V8RecursionScope::MicrotaskSuppression scope;
+        value = script->Run();
+    }
     if (value.IsEmpty())
         return;
 
@@ -170,12 +179,14 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
     v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement);
     v8::Handle<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0);
 
-    v8::Handle<v8::Value> parameters[3] = { nodeWrapper, formWrapper, documentWrapper };
+    v8::Handle<v8::Value> parameters[4] = { nodeWrapper, formWrapper, documentWrapper, v8::Handle<v8::Value>(v8::Null()) };
 
-    // Use Call directly to avoid an erroneous call to V8RecursionScope::didLeaveScriptContext().
     // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> innerValue = intermediateFunction->Call(v8Context->Global(), 3, parameters);
-
+    v8::Local<v8::Value> innerValue;
+    {
+        V8RecursionScope::MicrotaskSuppression scope;
+        innerValue = intermediateFunction->Call(v8Context->Global(), 3, parameters);
+    }
     if (innerValue.IsEmpty() || !innerValue->IsFunction())
         return;
 
@@ -210,11 +221,16 @@ void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
 
     wrappedFunction->SetName(v8::String::New(fromWebCoreString(m_functionName), m_functionName.length()));
 
-    // Since we only parse once, there's no need to keep data used for parsing around anymore.
-    m_functionName = String();
-    m_code = String();
-    m_eventParameterName = String();
-    m_sourceURL = String();
+    // FIXME: Remove the following comment-outs.
+    // See https://bugs.webkit.org/show_bug.cgi?id=85152 for more details.
+    //
+    // For the time being, we comment out the following code since the
+    // second parsing can happen.
+    // // Since we only parse once, there's no need to keep data used for parsing around anymore.
+    // m_functionName = String();
+    // m_code = String();
+    // m_eventParameterName = String();
+    // m_sourceURL = String();
 
     setListenerObject(wrappedFunction);
 }

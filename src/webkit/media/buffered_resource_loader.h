@@ -11,8 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "googleurl/src/gurl.h"
-#include "media/base/seekable_buffer.h"
-#include "net/base/file_stream.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
@@ -21,6 +19,7 @@
 
 namespace media {
 class MediaLog;
+class SeekableBuffer;
 }
 
 namespace webkit_media {
@@ -46,7 +45,30 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
     kThresholdDefer,
   };
 
+  // Status codes for start/read operations on BufferedResourceLoader.
+  enum Status {
+    // Everything went as planned.
+    kOk,
+
+    // The operation failed, which may have been due to:
+    //   - Page navigation
+    //   - Server replied 4xx/5xx
+    //   - The response was invalid
+    //   - Connection was terminated
+    //
+    // At this point you should delete the loader.
+    kFailed,
+
+    // The loader will never be able to satisfy the read request. Please stop,
+    // delete, create a new loader, and try again.
+    kCacheMiss,
+  };
+
+  // Keep in sync with WebMediaPlayer::CORSMode.
+  enum CORSMode { kUnspecified, kAnonymous, kUseCredentials };
+
   // |url| - URL for the resource to be loaded.
+  // |cors_mode| - HTML media element's crossorigin attribute.
   // |first_byte_position| - First byte to start loading from,
   // |kPositionNotSpecified| for not specified.
   // |last_byte_position| - Last byte to be loaded,
@@ -54,78 +76,69 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   // |strategy| is the initial loading strategy to use.
   // |bitrate| is the bitrate of the media, 0 if unknown.
   // |playback_rate| is the current playback rate of the media.
-  BufferedResourceLoader(const GURL& url,
-                         int64 first_byte_position,
-                         int64 last_byte_position,
-                         DeferStrategy strategy,
-                         int bitrate,
-                         float playback_rate,
-                         media::MediaLog* media_log);
+  BufferedResourceLoader(
+      const GURL& url,
+      CORSMode cors_mode,
+      int64 first_byte_position,
+      int64 last_byte_position,
+      DeferStrategy strategy,
+      int bitrate,
+      float playback_rate,
+      media::MediaLog* media_log);
   virtual ~BufferedResourceLoader();
 
   // Start the resource loading with the specified URL and range.
-  // This method operates in asynchronous mode. Once there's a response from the
-  // server, success or fail |callback| is called with the result.
-  // |callback| is called with the following values:
-  // - net::OK
-  //   The request has started successfully.
-  // - net::ERR_FAILED
-  //   The request has failed because of an error with the network.
-  // - net::ERR_INVALID_RESPONSE
-  //   An invalid response is received from the server.
-  // - (Anything else)
-  //   An error code that indicates the request has failed.
-  // |event_cb| is called when the response is completed, data is received, the
-  // request is suspended or resumed.
-  virtual void Start(const net::CompletionCallback& start_cb,
-                     const base::Closure& event_cb,
-                     WebKit::WebFrame* frame);
+  //
+  // |event_cb| is called to notify the client of network activity in the
+  // following situations:
+  //   - Data was received
+  //   - Reading was suspended/resumed
+  //   - Loading completed
+  //   - Loading failed
+  typedef base::Callback<void(Status)> StartCB;
+  void Start(const StartCB& start_cb,
+             const base::Closure& event_cb,
+             WebKit::WebFrame* frame);
 
   // Stops everything associated with this loader, including active URL loads
   // and pending callbacks.
   //
   // It is safe to delete a BufferedResourceLoader after calling Stop().
-  virtual void Stop();
+  void Stop();
 
-  // Reads the specified |read_size| from |position| into |buffer| and when
-  // the operation is done invoke |callback| with number of bytes read or an
-  // error code. If necessary, will temporarily increase forward capacity of
-  // buffer to accomodate an unusually large read.
-  // |callback| is called with the following values:
-  // - (Anything greater than or equal 0)
-  //   Read was successful with the indicated number of bytes read.
-  // - net::ERR_FAILED
-  //   The read has failed because of an error with the network.
-  // - net::ERR_CACHE_MISS
-  //   The read was made too far away from the current buffered position.
-  virtual void Read(int64 position, int read_size,
-                    uint8* buffer, const net::CompletionCallback& callback);
+  // Copies |read_size| bytes from |position| into |buffer|, executing |read_cb|
+  // when the operation has completed.
+  //
+  // The callback will contain the number of bytes read iff the status is kOk,
+  // zero otherwise.
+  //
+  // If necessary will temporarily increase forward capacity of buffer to
+  // accomodate an unusually large read.
+  typedef base::Callback<void(Status, int)> ReadCB;
+  void Read(int64 position, int read_size,
+            uint8* buffer, const ReadCB& read_cb);
 
   // Returns the position of the last byte buffered. Returns
   // |kPositionNotSpecified| if such value is not available.
-  virtual int64 GetBufferedPosition();
+  int64 GetBufferedPosition();
 
   // Gets the content length in bytes of the instance after this loader has been
   // started. If this value is |kPositionNotSpecified|, then content length is
   // unknown.
-  virtual int64 content_length();
+  int64 content_length();
 
   // Gets the original size of the file requested. If this value is
   // |kPositionNotSpecified|, then the size is unknown.
-  virtual int64 instance_size();
+  int64 instance_size();
 
   // Returns true if the server supports byte range requests.
-  virtual bool range_supported();
+  bool range_supported();
 
   // Returns true if the resource loader is currently downloading data.
-  virtual bool is_downloading_data();
+  bool is_downloading_data();
 
   // Returns resulting URL.
-  virtual const GURL& url();
-
-  // |test_loader| will get used the next time Start() is called.
-  virtual void SetURLLoaderForTest(
-      scoped_ptr<WebKit::WebURLLoader> test_loader);
+  const GURL& url();
 
   // WebKit::WebURLLoaderClient implementation.
   virtual void willSendRequest(
@@ -161,6 +174,10 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   // Only valid to call after Start() has completed.
   bool HasSingleOrigin() const;
 
+  // Returns true if the media resource passed a CORS access control check.
+  // Only valid to call after Start() has completed.
+  bool DidPassCORSAccessCheck() const;
+
   // Sets the defer strategy to the given value.
   void UpdateDeferStrategy(DeferStrategy strategy);
 
@@ -185,6 +202,7 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
  private:
   friend class BufferedDataSourceTest;
   friend class BufferedResourceLoaderTest;
+  friend class MockBufferedDataSource;
 
   // Updates the |buffer_|'s forward and backward capacities.
   void UpdateBufferWindow();
@@ -229,10 +247,10 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
 
   // Done with read. Invokes the read callback and reset parameters for the
   // read request.
-  void DoneRead(int error);
+  void DoneRead(Status status, int bytes_read);
 
   // Done with start. Invokes the start callback and reset it.
-  void DoneStart(int error);
+  void DoneStart(Status status);
 
   // Calls |event_cb_| in terms of a network event.
   void NotifyNetworkEvent();
@@ -251,6 +269,10 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   // Keeps track of an active WebURLLoader and associated state.
   scoped_ptr<ActiveLoader> active_loader_;
 
+  // Tracks if |active_loader_| failed. If so, then all calls to Read() will
+  // fail.
+  bool loader_failed_;
+
   // Current buffering algorithm in place for resource loading.
   DeferStrategy defer_strategy_;
 
@@ -261,24 +283,25 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   size_t saved_forward_capacity_;
 
   GURL url_;
-  int64 first_byte_position_;
-  int64 last_byte_position_;
+  CORSMode cors_mode_;
+  const int64 first_byte_position_;
+  const int64 last_byte_position_;
   bool single_origin_;
 
   // Closure that listens to network events.
   base::Closure event_cb_;
 
   // Members used during request start.
-  net::CompletionCallback start_cb_;
+  StartCB start_cb_;
   int64 offset_;
   int64 content_length_;
   int64 instance_size_;
 
   // Members used during a read operation. They should be reset after each
   // read has completed or failed.
-  net::CompletionCallback read_cb_;
+  ReadCB read_cb_;
   int64 read_position_;
-  size_t read_size_;
+  int read_size_;
   uint8* read_buffer_;
 
   // Offsets of the requested first byte and last byte in |buffer_|. They are

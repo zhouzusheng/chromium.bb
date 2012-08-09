@@ -43,8 +43,12 @@ static inline GrDrawState::Edge computeEdge(const GrPoint& p,
 
 static inline GrPoint sanitizePoint(const GrPoint& pt) {
     GrPoint r;
-    r.fX = SkScalarPin(pt.fX, -kMaxVertexValue, kMaxVertexValue);
-    r.fY = SkScalarPin(pt.fY, -kMaxVertexValue, kMaxVertexValue);
+    r.fX = SkScalarPin(pt.fX, 
+                       SkFloatToScalar(-kMaxVertexValue), 
+                       SkFloatToScalar(kMaxVertexValue));
+    r.fY = SkScalarPin(pt.fY, 
+                       SkFloatToScalar(-kMaxVertexValue), 
+                       SkFloatToScalar(kMaxVertexValue));
     return r;
 }
 
@@ -354,7 +358,7 @@ bool GrTesselatedPathRenderer::onDrawPath(const SkPath& path,
                                           GrDrawState::StageMask stageMask,
                                           bool antiAlias) {
 
-    GrDrawTarget::AutoStateRestore asr(target);
+    GrDrawTarget::AutoStateRestore asr(target, GrDrawTarget::kPreserve_ASRInit);
     GrDrawState* drawState = target->drawState();
     // face culling doesn't make sense here
     GrAssert(GrDrawState::kBoth_DrawFace == drawState->getDrawFace());

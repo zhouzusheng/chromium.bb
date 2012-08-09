@@ -24,7 +24,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
   virtual ~BufferedSpdyFramerVisitorInterface() {}
 
   // Called if an error is detected in the SpdyFrame protocol.
-  virtual void OnError(int error_code) = 0;
+  virtual void OnError(SpdyFramer::SpdyError error_code) = 0;
 
   // Called if an error is detected in a SPDY stream.
   virtual void OnStreamError(SpdyStreamId stream_id,
@@ -110,7 +110,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   bool HasError();
   SpdySynStreamControlFrame* CreateSynStream(SpdyStreamId stream_id,
                                              SpdyStreamId associated_stream_id,
-                                             int priority,
+                                             SpdyPriority priority,
                                              uint8 credential_slot,
                                              SpdyControlFlags flags,
                                              bool compressed,
@@ -121,7 +121,7 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                                            const SpdyHeaderBlock* headers);
   SpdyRstStreamControlFrame* CreateRstStream(SpdyStreamId stream_id,
                                              SpdyStatusCodes status) const;
-  SpdySettingsControlFrame* CreateSettings(const SpdySettings& values) const;
+  SpdySettingsControlFrame* CreateSettings(const SettingsMap& values) const;
   SpdyPingControlFrame* CreatePingFrame(uint32 unique_id) const;
   SpdyGoAwayControlFrame* CreateGoAway(
       SpdyStreamId last_accepted_stream_id,
@@ -140,8 +140,10 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                                  uint32 len,
                                  SpdyDataFlags flags);
   SpdyPriority GetHighestPriority() const;
-  SpdyFrame* CompressFrame(const SpdyFrame& frame);
   bool IsCompressible(const SpdyFrame& frame) const;
+  SpdyControlFrame* CompressControlFrame(const SpdyControlFrame& frame);
+  // Specify if newly created SpdySessions should have compression enabled.
+  static void set_enable_compression_default(bool value);
 
   int frames_received() const { return frames_received_; }
 

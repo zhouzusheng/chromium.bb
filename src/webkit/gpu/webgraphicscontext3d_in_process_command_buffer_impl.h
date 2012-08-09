@@ -218,11 +218,10 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual WebKit::WebString getShaderInfoLog(WebGLId shader);
 
-  // TBD
-  // void glGetShaderPrecisionFormat (GLenum shadertype,
-  //                                  GLenum precisiontype,
-  //                                  GLint* range,
-  //                                  GLint* precision);
+  virtual void getShaderPrecisionFormat(WGC3Denum shadertype,
+                                        WGC3Denum precisiontype,
+                                        WGC3Dint* range,
+                                        WGC3Dint* precision);
 
   virtual WebKit::WebString getShaderSource(WebGLId shader);
   virtual WebKit::WebString getString(WGC3Denum name);
@@ -475,6 +474,10 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
       WGC3Denum target, WGC3Denum pname, WGC3Dint* params);
   virtual void getQueryObjectuivEXT(
       WebGLId query, WGC3Denum pname, WGC3Duint* params);
+
+  virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Denum source_id,
+                                   WGC3Denum dest_id, WGC3Dint level,
+                                   WGC3Dint internal_format);
 
  protected:
 #if WEBKIT_USING_SKIA

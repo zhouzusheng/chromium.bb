@@ -176,7 +176,9 @@ void RenderTableSection::addChild(RenderObject* child, RenderObject* beforeChild
 
     ensureRows(m_cRow);
 
-    m_grid[insertionRow].rowRenderer = toRenderTableRow(child);
+    RenderTableRow* row = toRenderTableRow(child);
+    m_grid[insertionRow].rowRenderer = row;
+    row->setRowIndex(insertionRow);
 
     if (!beforeChild)
         setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(m_grid[insertionRow]);
@@ -220,9 +222,7 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
     unsigned cSpan = cell->colSpan();
     Vector<RenderTable::ColumnStruct>& columns = table()->columns();
     unsigned nCols = columns.size();
-    // addCell should be called only after m_cRow has been incremented.
-    ASSERT(m_cRow);
-    unsigned insertionRow = m_cRow - 1;
+    unsigned insertionRow = row->rowIndex();
 
     // ### mozilla still seems to do the old HTML way, even for strict DTD
     // (see the annotation on table cell layouting in the CSS specs and the testcase below:
@@ -266,7 +266,6 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
         cSpan -= currentSpan;
         inColSpan = true;
     }
-    cell->setRow(insertionRow);
     cell->setCol(table()->effColToCol(col));
 }
 
@@ -334,7 +333,7 @@ int RenderTableSection::calcRowLogicalHeight()
         LayoutUnit baselineDescent = 0;
 
         // Our base size is the biggest logical height from our cells' styles (excluding row spanning cells).
-        m_rowPos[r + 1] = max(m_rowPos[r] + minimumValueForLength(m_grid[r].logicalHeight, 0, viewRenderer), 0);
+        m_rowPos[r + 1] = max(m_rowPos[r] + minimumIntValueForLength(m_grid[r].logicalHeight, 0, viewRenderer), 0);
 
         Row& row = m_grid[r].row;
         unsigned totalCols = row.size();
@@ -348,11 +347,11 @@ int RenderTableSection::calcRowLogicalHeight()
 
             // FIXME: We are always adding the height of a rowspan to the last rows which doesn't match
             // other browsers. See webkit.org/b/52185 for example.
-            if ((cell->row() + cell->rowSpan() - 1) != r)
+            if ((cell->rowIndex() + cell->rowSpan() - 1) != r)
                 continue;
 
             // For row spanning cells, |r| is the last row in the span.
-            unsigned cellStartRow = cell->row();
+            unsigned cellStartRow = cell->rowIndex();
 
             if (cell->hasOverrideHeight()) {
                 if (!statePusher.didPush()) {
@@ -362,7 +361,7 @@ int RenderTableSection::calcRowLogicalHeight()
                 }
                 cell->clearIntrinsicPadding();
                 cell->clearOverrideSize();
-                cell->setChildNeedsLayout(true, false);
+                cell->setChildNeedsLayout(true, MarkOnlyThis);
                 cell->layoutIfNeeded();
             }
 
@@ -372,7 +371,7 @@ int RenderTableSection::calcRowLogicalHeight()
             // find out the baseline
             EVerticalAlign va = cell->style()->verticalAlign();
             if (va == BASELINE || va == TEXT_BOTTOM || va == TEXT_TOP || va == SUPER || va == SUB) {
-                int baselinePosition = cell->cellBaselinePosition();
+                LayoutUnit baselinePosition = cell->cellBaselinePosition();
                 if (baselinePosition > cell->borderBefore() + cell->paddingBefore()) {
                     m_grid[r].baseline = max(m_grid[r].baseline, baselinePosition - cell->intrinsicPaddingBefore());
                     baselineDescent = max(baselineDescent, m_rowPos[cellStartRow] + cellLogicalHeight - (baselinePosition - cell->intrinsicPaddingBefore()));
@@ -383,7 +382,7 @@ int RenderTableSection::calcRowLogicalHeight()
         // do we have baseline aligned elements?
         if (m_grid[r].baseline)
             // increase rowheight if baseline requires
-            m_rowPos[r + 1] = max(m_rowPos[r + 1], m_grid[r].baseline + baselineDescent);
+            m_rowPos[r + 1] = max<int>(m_rowPos[r + 1], m_grid[r].baseline + baselineDescent);
 
         // Add the border-spacing to our final position.
         m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : 0;
@@ -404,6 +403,8 @@ int RenderTableSection::calcRowLogicalHeight()
 void RenderTableSection::layout()
 {
     ASSERT(needsLayout());
+    ASSERT(!needsCellRecalc());
+    ASSERT(!table()->needsSectionRecalc());
 
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
     for (RenderObject* child = children()->firstChild(); child; child = child->nextSibling()) {
@@ -413,10 +414,6 @@ void RenderTableSection::layout()
         }
     }
     statePusher.pop();
-
-    if (hasOverflowClip() && !hasLayer())
-        updateCachedSizeForOverflowClip();
-
     setNeedsLayout(false);
 }
 
@@ -554,7 +551,7 @@ void RenderTableSection::layoutRows()
             if (!cell || cs.inColSpan)
                 continue;
 
-            rindx = cell->row();
+            rindx = cell->rowIndex();
             rHeight = m_rowPos[rindx + cell->rowSpan()] - m_rowPos[rindx] - vspacing;
             
             // Force percent height children to lay themselves out again.
@@ -578,7 +575,7 @@ void RenderTableSection::layoutRows()
                 if (!o->isText() && o->style()->logicalHeight().isPercent() && (flexAllChildren || o->isReplaced() || (o->isBox() && toRenderBox(o)->scrollsOverflow()))) {
                     // Tables with no sections do not flex.
                     if (!o->isTable() || toRenderTable(o)->hasSections()) {
-                        o->setNeedsLayout(true, false);
+                        o->setNeedsLayout(true, MarkOnlyThis);
                         cellChildrenFlex = true;
                     }
                 }
@@ -594,7 +591,7 @@ void RenderTableSection::layoutRows()
                     while (box != cell) {
                         if (box->normalChildNeedsLayout())
                             break;
-                        box->setChildNeedsLayout(true, false);
+                        box->setChildNeedsLayout(true, MarkOnlyThis);
                         box = box->containingBlock();
                         ASSERT(box);
                         if (!box)
@@ -605,7 +602,7 @@ void RenderTableSection::layoutRows()
             }
 
             if (cellChildrenFlex) {
-                cell->setChildNeedsLayout(true, false);
+                cell->setChildNeedsLayout(true, MarkOnlyThis);
                 // Alignment within a cell is based off the calculated
                 // height, which becomes irrelevant once the cell has
                 // been resized based off its percentage.
@@ -632,7 +629,7 @@ void RenderTableSection::layoutRows()
                 case TEXT_TOP:
                 case TEXT_BOTTOM:
                 case BASELINE: {
-                    int b = cell->cellBaselinePosition();
+                    LayoutUnit b = cell->cellBaselinePosition();
                     if (b > cell->borderBefore() + cell->paddingBefore())
                         intrinsicPaddingBefore = getBaseline(r) - (b - oldIntrinsicPaddingBefore);
                     break;
@@ -664,16 +661,26 @@ void RenderTableSection::layoutRows()
             view()->addLayoutDelta(oldCellRect.location() - cell->location());
 
             if (intrinsicPaddingBefore != oldIntrinsicPaddingBefore || intrinsicPaddingAfter != oldIntrinsicPaddingAfter)
-                cell->setNeedsLayout(true, false);
+                cell->setNeedsLayout(true, MarkOnlyThis);
 
             if (!cell->needsLayout() && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell->logicalTop()) != cell->pageLogicalOffset())
-                cell->setChildNeedsLayout(true, false);
+                cell->setChildNeedsLayout(true, MarkOnlyThis);
 
             cell->layoutIfNeeded();
 
             // FIXME: Make pagination work with vertical tables.
-            if (style()->isHorizontalWritingMode() && view()->layoutState()->pageLogicalHeight() && cell->height() != rHeight)
-                cell->setHeight(rHeight); // FIXME: Pagination might have made us change size.  For now just shrink or grow the cell to fit without doing a relayout.
+            if (view()->layoutState()->pageLogicalHeight() && cell->logicalHeight() != rHeight) {
+                // FIXME: Pagination might have made us change size. For now just shrink or grow the cell to fit without doing a relayout.
+                // We'll also do a basic increase of the row height to accommodate the cell if it's bigger, but this isn't quite right
+                // either. It's at least stable though and won't result in an infinite # of relayouts that may never stabilize.
+                if (cell->logicalHeight() > rHeight) {
+                    unsigned delta = cell->logicalHeight() - rHeight;
+                    for (unsigned rowIndex = rindx + cell->rowSpan(); rowIndex <= totalRows; rowIndex++)
+                        m_rowPos[rowIndex] += delta;
+                    rHeight = cell->logicalHeight();
+                } else
+                    cell->setLogicalHeight(rHeight);
+            }
 
             LayoutSize childOffset(cell->location() - oldCellRect.location());
             if (childOffset.width() || childOffset.height()) {
@@ -945,7 +952,7 @@ LayoutUnit RenderTableSection::firstLineBoxBaseline() const
         const CellStruct& cs = firstRow.at(i);
         const RenderTableCell* cell = cs.primaryCell();
         if (cell)
-            firstLineBaseline = max(firstLineBaseline, cell->logicalTop() + cell->paddingBefore() + cell->borderBefore() + cell->contentLogicalHeight(IncludeIntrinsicPadding));
+            firstLineBaseline = max(firstLineBaseline, cell->logicalTop() + cell->paddingBefore() + cell->borderBefore() + cell->contentLogicalHeight());
     }
 
     return firstLineBaseline;
@@ -979,15 +986,15 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
 
 static inline bool compareCellPositions(RenderTableCell* elem1, RenderTableCell* elem2)
 {
-    return elem1->row() < elem2->row();
+    return elem1->rowIndex() < elem2->rowIndex();
 }
 
 // This comparison is used only when we have overflowing cells as we have an unsorted array to sort. We thus need
 // to sort both on rows and columns to properly repaint.
 static inline bool compareCellPositionsWithOverflowingCells(RenderTableCell* elem1, RenderTableCell* elem2)
 {
-    if (elem1->row() != elem2->row())
-        return elem1->row() < elem2->row();
+    if (elem1->rowIndex() != elem2->rowIndex())
+        return elem1->rowIndex() < elem2->rowIndex();
 
     return elem1->col() < elem2->col();
 }
@@ -1213,6 +1220,7 @@ void RenderTableSection::recalcCells()
 
             RenderTableRow* tableRow = toRenderTableRow(row);
             m_grid[insertionRow].rowRenderer = tableRow;
+            tableRow->setRowIndex(insertionRow);
             setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(m_grid[insertionRow]);
 
             for (RenderObject* cell = row->firstChild(); cell; cell = cell->nextSibling()) {
@@ -1377,16 +1385,6 @@ bool RenderTableSection::nodeAtPoint(const HitTestRequest& request, HitTestResul
     }
     return false;
 
-}
-
-unsigned RenderTableSection::rowIndexForRenderer(const RenderTableRow* row) const
-{
-    for (size_t i = 0; i < m_grid.size(); ++i) {
-        if (m_grid[i].rowRenderer == row)
-            return i;
-    }
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 void RenderTableSection::removeCachedCollapsedBorders(const RenderTableCell* cell)

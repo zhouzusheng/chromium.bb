@@ -117,77 +117,41 @@ public:
     }
 
     /**
-     * Determines if blending will require a read of a dst given the current
-     * state set on the draw target
-     *
-     * @return true if the dst surface will be read at each pixel hit by the
-     *         a draw operation.
-     */
-    bool drawWillReadDst() const;
-
-    /**
      * Color alpha and coverage are two inputs to the drawing pipeline. For some
      * blend modes it is safe to fold the coverage into constant or per-vertex
      * color alpha value. For other blend modes they must be handled separately.
      * Depending on features available in the underlying 3D API this may or may
      * not be possible.
      *
-     * This function looks at the current blend on the draw target and the draw
-     * target's capabilities to determine whether coverage can be handled
-     * correctly.
+     * This function considers the current draw state and the draw target's
+     * capabilities to determine whether coverage can be handled correctly. The
+     * following assumptions are made:
+     *    1. The caller intends to somehow specify coverage. This can be
+     *       specified either by enabling a coverage stage on the GrDrawState or
+     *       via the vertex layout.
+     *    2. Other than enabling coverage stages, the current configuration of 
+     *       the target's GrDrawState is as it will be at draw time.
+     *    3. If a vertex source has not yet been specified then all stages with
+     *       non-NULL textures will be referenced by the vertex layout.
      */
     bool canApplyCoverage() const;
 
     /**
      * Determines whether incorporating partial pixel coverage into the constant
      * color specified by setColor or per-vertex colors will give the right
-     * blending result.
+     * blending result. If a vertex source has not yet been specified then
+     * the function assumes that all stages with non-NULL textures will be
+     * referenced by the vertex layout.
      */
     bool canTweakAlphaForCoverage() const;
 
     /**
-     * Given the current draw state, vertex layout, and hw support, will HW AA
-     * lines be used (if line primitive type is drawn)? (Note that lines are
-     * always 1 pixel wide)
+     * Given the current draw state and hw support, will HW AA lines be used 
+     * (if line primitive type is drawn)? If a vertex source has not yet been
+     * specified then  the function assumes that all stages with non-NULL
+     * textures will be referenced by the vertex layout.
      */
     bool willUseHWAALines() const;
-
-    /**
-     * Used to save and restore the GrGpu's drawing state
-     */
-    struct SavedDrawState {
-    private:
-        SkTLazy<GrDrawState> fState;
-        friend class GrDrawTarget;
-    };
-
-    /**
-     * Saves the current draw state. The state can be restored at a later time
-     * with restoreDrawState.
-     *
-     * See also AutoStateRestore class.
-     *
-     * @param   state will hold the state after the function returns.
-     */
-    void saveCurrentDrawState(SavedDrawState* state) const;
-
-    /**
-     * Restores previously saved draw state. The client guarantees that state
-     * was previously passed to saveCurrentDrawState and that the rendertarget
-     * and texture set at save are still valid.
-     *
-     * See also AutoStateRestore class.
-     *
-     * @param   state the previously saved state to restore.
-     */
-    void restoreDrawState(const SavedDrawState& state);
-
-    /**
-     * Copies the draw state from another target to this target.
-     *
-     * @param srcTarget     draw target used as src of the draw state.
-     */
-    void copyDrawState(const GrDrawTarget& srcTarget);
 
     /**
      * The format of vertices is represented as a bitfield of flags.
@@ -243,6 +207,19 @@ public:
     static int StagePosAsTexCoordVertexLayoutBit(int stage) {
         GrAssert(stage < GrDrawState::kNumStages);
         return (1 << (TEX_COORD_BIT_CNT + stage));
+    }
+
+    /**
+     * Modify the existing vertex layout. Realistically the only thing that 
+     * can be added w/o recomputing the vertex layout is one of the 
+     * StagePosAsTexCoordVertexLayoutBit flags
+     */
+    void addToVertexLayout(int flag) {
+        GrAssert((1 << TEX_COORD_BIT_CNT) == flag ||
+                 (1 << (TEX_COORD_BIT_CNT + 1)) == flag ||
+                 (1 << (TEX_COORD_BIT_CNT + 2)) == flag ||
+                 (1 << (TEX_COORD_BIT_CNT + 3)) == flag);
+        fGeoSrcStateStack.back().fVertexLayout |= flag;
     }
 
 private:
@@ -579,22 +556,62 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////
 
+    /**
+     * See AutoStateRestore below.
+     */
+    enum ASRInit {
+        kPreserve_ASRInit,
+        kReset_ASRInit
+    };
+
+    /**
+     * Saves off the current state and restores it in the destructor. It will
+     * install a new GrDrawState object on the target (setDrawState) and restore
+     * the previous one in the destructor. The caller should call drawState() to
+     * get the new draw state after the ASR is installed.
+     *
+     * GrDrawState* state = target->drawState();
+     * AutoStateRestore asr(target, GrDrawTarget::kReset_ASRInit).
+     * state->setRenderTarget(rt); // state refers to the GrDrawState set on
+     *                             // target before asr was initialized.
+     *                             // Therefore, rt is set on the GrDrawState
+     *                             // that will be restored after asr's
+     *                             // destructor rather than target's current
+     *                             // GrDrawState. 
+     */
     class AutoStateRestore : ::GrNoncopyable {
     public:
+        /**
+         * Default ASR will have no effect unless set() is subsequently called.
+         */
         AutoStateRestore();
-        AutoStateRestore(GrDrawTarget* target);
+
+        /**
+         * Saves the state on target. The state will be restored when the ASR
+         * is destroyed. If this constructor is used do not call set().
+         *
+         * @param init  Should the newly installed GrDrawState be a copy of the
+         *              previous state or a default-initialized GrDrawState.
+         */
+        AutoStateRestore(GrDrawTarget* target, ASRInit init);
+
         ~AutoStateRestore();
 
         /**
-         * if this object is already saving state for param target then
-         * this does nothing. Otherise, it restores previously saved state on
-         * previous target (if any) and saves current state on param target.
+         * Saves the state on target. The state will be restored when the ASR
+         * is destroyed. This should only be called once per ASR object and only
+         * when the default constructor was used. For nested saves use multiple
+         * ASR objects.
+         *
+         * @param init  Should the newly installed GrDrawState be a copy of the
+         *              previous state or a default-initialized GrDrawState.
          */
-        void set(GrDrawTarget* target);
+        void set(GrDrawTarget* target, ASRInit init);
 
     private:
-        GrDrawTarget*       fDrawTarget;
-        SavedDrawState      fDrawState;
+        GrDrawTarget*        fDrawTarget;
+        SkTLazy<GrDrawState> fTempState;
+        GrDrawState*         fSavedState;
     };
 
     ////////////////////////////////////////////////////////////////////////////
@@ -925,7 +942,7 @@ protected:
                                GrBlendCoeff* dstCoeff = NULL) const;
 
     // determine if src alpha is guaranteed to be one for all src pixels
-    bool srcAlphaWillBeOne() const;
+    bool srcAlphaWillBeOne(GrVertexLayout vertexLayout) const;
 
     enum GeometrySrcType {
         kNone_GeometrySrcType,     //<! src has not been specified
@@ -977,7 +994,7 @@ protected:
     }
 
     bool isStageEnabled(int stage) const {
-        return StageWillBeUsed(stage, this->getGeomSrc().fVertexLayout, 
+        return StageWillBeUsed(stage, this->getVertexLayout(),
                                this->getDrawState());
     }
 
@@ -987,15 +1004,6 @@ protected:
             mask |= this->isStageEnabled(s) ? 1 : 0;
         }
         return mask;
-    }
-
-    // Helpers for GrDrawTarget subclasses that won't have private access to
-    // SavedDrawState but need to peek at the state values.
-    static GrDrawState& accessSavedDrawState(SavedDrawState& sds) {
-        return *sds.fState.get();
-    }
-    static const GrDrawState& accessSavedDrawState(const SavedDrawState& sds){
-        return *sds.fState.get();
     }
 
     // A sublcass can optionally overload this function to be notified before
@@ -1050,9 +1058,17 @@ protected:
                                 GrVertexLayout layout,
                                 void* vertices);
 
-    // accessor for derived classes
+    // accessors for derived classes
     const GeometrySrcState& getGeomSrc() const {
         return fGeoSrcStateStack.back();
+    }
+    // it is prefereable to call this rather than getGeomSrc()->fVertexLayout
+    // because of the assert.
+    GrVertexLayout getVertexLayout() const {
+        // the vertex layout is only valid if a vertex source has been
+        // specified.
+        GrAssert(this->getGeomSrc().fVertexSrc != kNone_GeometrySrcType);
+        return this->getGeomSrc().fVertexLayout;
     }
 
     GrClip fClip;

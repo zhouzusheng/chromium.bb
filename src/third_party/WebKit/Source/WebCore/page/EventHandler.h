@@ -163,12 +163,13 @@ public:
 
 #if ENABLE(GESTURE_EVENTS)
     bool handleGestureEvent(const PlatformGestureEvent&);
-    bool handleGestureTap(const PlatformGestureEvent&);
+    bool handleGestureTap(const PlatformGestureEvent&, Node* preTargetedNode = 0);
     bool handleGestureScrollUpdate(const PlatformGestureEvent&);
 #endif
 
 #if ENABLE(TOUCH_ADJUSTMENT)
-    void bestClickableNodeForTouchPoint(const IntPoint& touchCenter, const IntSize& touchRadius, IntPoint& targetPoint, Node*& targetNode);
+    bool bestClickableNodeForTouchPoint(const IntPoint& touchCenter, const IntSize& touchRadius, IntPoint& targetPoint, Node*& targetNode);
+    bool bestZoomableAreaForTouchPoint(const IntPoint& touchCenter, const IntSize& touchRadius, IntRect& targetArea, Node*& targetNode);
 #endif
 
 #if ENABLE(CONTEXT_MENUS)

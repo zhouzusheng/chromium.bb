@@ -11,6 +11,8 @@
 #define GrStencil_DEFINED
 
 #include "GrTypes.h"
+#include "SkRegion.h"
+
 /**
  * Gr uses the stencil buffer to implement complex clipping inside the
  * GrDrawTarget class. The GrDrawTarget makes a subset of the stencil buffer
@@ -289,7 +291,8 @@ public:
     }
 
 private:
-    friend class GrGpu;
+    friend class GrClipMaskManager;
+
     enum {
         kMaxStencilClipPasses = 2  // maximum number of passes to add a clip 
                                    // element to the stencil buffer.
@@ -318,7 +321,7 @@ private:
      *         stencil clip bit. Will only be true if canBeDirect is true.
      *         numPasses will be 1 if return value is true.
      */
-    static bool GetClipPasses(GrSetOp op, 
+    static bool GetClipPasses(SkRegion::Op op, 
                               bool canBeDirect,
                               unsigned int stencilClipMask,
                               bool invertedFill,

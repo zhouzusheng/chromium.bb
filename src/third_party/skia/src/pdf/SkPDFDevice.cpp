@@ -490,7 +490,11 @@ static inline SkBitmap makeContentBitmap(const SkISize& contentSize,
         SkMatrix inverse;
         drawingSize.set(SkIntToScalar(contentSize.fWidth),
                         SkIntToScalar(contentSize.fHeight));
-        initialTransform->invert(&inverse);
+        if (!initialTransform->invert(&inverse)) {
+            // This shouldn't happen, initial transform should be invertible.
+            SkASSERT(false);
+            inverse.reset();
+        }
         inverse.mapVectors(&drawingSize, 1);
         SkISize size = SkSize::Make(drawingSize.fX, drawingSize.fY).toRound();
         bitmap.setConfig(SkBitmap::kNo_Config, abs(size.fWidth),
@@ -600,8 +604,9 @@ void SkPDFDevice::internalDrawPaint(const SkPaint& paint,
     SkMatrix totalTransform = fInitialTransform;
     totalTransform.preConcat(contentEntry->fState.fMatrix);
     SkMatrix inverse;
-    inverse.reset();
-    totalTransform.invert(&inverse);
+    if (!totalTransform.invert(&inverse)) {
+        return;
+    }
     inverse.mapRect(&bbox);
 
     SkPDFUtils::AppendRectangle(bbox, &contentEntry->fContent);
@@ -1137,7 +1142,8 @@ SkData* SkPDFDevice::copyContentToData() const {
     // we have to clip to the content area; we've already applied the
     // initial transform, so just clip to the device size.
     if (fPageSize != fContentSize) {
-        SkRect r = SkRect::MakeWH(this->width(), this->height());
+        SkRect r = SkRect::MakeWH(SkIntToScalar(this->width()),
+                                  SkIntToScalar(this->height()));
         emit_clip(NULL, &r, &data);
     }
 

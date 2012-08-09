@@ -72,7 +72,7 @@ class GPU_EXPORT ProgramManager {
     typedef std::vector<VertexAttribInfo> AttribInfoVector;
     typedef std::vector<int> SamplerIndices;
 
-    explicit ProgramInfo(GLuint service_id);
+    ProgramInfo(ProgramManager* manager, GLuint service_id);
 
     GLuint service_id() const {
       return service_id_;
@@ -108,6 +108,10 @@ class GPU_EXPORT ProgramManager {
          &uniform_infos_[index] : NULL;
     }
 
+    // If the original name is not found, return NULL.
+    const std::string* GetAttribMappedName(
+        const std::string& original_name) const;
+
     // Gets the fake location of a uniform by name.
     GLint GetUniformFakeLocation(const std::string& name) const;
 
@@ -122,10 +126,14 @@ class GPU_EXPORT ProgramManager {
     // Sets the sampler values for a uniform.
     // This is safe to call for any location. If the location is not
     // a sampler uniform nothing will happen.
-    bool SetSamplers(GLint fake_location, GLsizei count, const GLint* value);
+    // Returns false if fake_location is a sampler and any value
+    // is >= num_texture_units. Returns true otherwise.
+    bool SetSamplers(
+        GLint num_texture_units, GLint fake_location,
+        GLsizei count, const GLint* value);
 
     bool IsDeleted() const {
-      return service_id_ == 0;
+      return deleted_;
     }
 
     void GetProgramiv(GLenum pname, GLint* params);
@@ -140,7 +148,7 @@ class GPU_EXPORT ProgramManager {
     bool CanLink() const;
 
     // Performs glLinkProgram and related activities.
-    void Link();
+    bool Link();
 
     // Performs glValidateProgram and related activities.
     void Validate();
@@ -194,8 +202,8 @@ class GPU_EXPORT ProgramManager {
     }
 
     void MarkAsDeleted() {
-      DCHECK_NE(service_id_, 0u);
-      service_id_ = 0;
+      DCHECK(!deleted_);
+      deleted_ =  true;
     }
 
     // Resets the program.
@@ -206,6 +214,15 @@ class GPU_EXPORT ProgramManager {
 
     // Updates the program log info from GL
     void UpdateLogInfo();
+
+    // Clears all the uniforms.
+    void ClearUniforms(std::vector<uint8>* zero_buffer);
+
+    // If long attribate names are mapped during shader translation, call
+    // glBindAttribLocation() again with the mapped names.
+    // This is called right before the glLink() call, but after shaders are
+    // translated.
+    void ExecuteBindAttribLocationCalls();
 
     const UniformInfo* AddUniformInfo(
         GLsizei size, GLenum type, GLint location,
@@ -226,6 +243,8 @@ class GPU_EXPORT ProgramManager {
         GLint fake_location) {
       return (fake_location >> 16) & 0xFFFF;
     }
+
+    ProgramManager* manager_;
 
     int use_count_;
 
@@ -251,11 +270,17 @@ class GPU_EXPORT ProgramManager {
     // Shaders by type of shader.
     ShaderManager::ShaderInfo::Ref attached_shaders_[kMaxAttachedShaders];
 
+    // True if this program is marked as deleted.
+    bool deleted_;
+
     // This is true if glLinkProgram was successful at least once.
     bool valid_;
 
     // This is true if glLinkProgram was successful last time it was called.
     bool link_status_;
+
+    // True if the uniforms have been cleared.
+    bool uniforms_cleared_;
 
     // Log info
     scoped_ptr<std::string> log_info_;
@@ -288,6 +313,9 @@ class GPU_EXPORT ProgramManager {
   // Makes a program as unused. If deleted the program info will be removed.
   void UnuseProgram(ShaderManager* shader_manager, ProgramInfo* info);
 
+  // Clears the uniforms for this program.
+  void ClearUniforms(ProgramInfo* info);
+
   // Returns true if prefix is invalid for gl.
   static bool IsInvalidPrefix(const char* name, size_t length);
 
@@ -298,12 +326,24 @@ class GPU_EXPORT ProgramManager {
   GLint UnswizzleLocation(GLint swizzled_location) const;
 
  private:
+  void StartTracking(ProgramInfo* info);
+  void StopTracking(ProgramInfo* info);
+
   // Info for each "successfully linked" program by service side program Id.
   // TODO(gman): Choose a faster container.
   typedef std::map<GLuint, ProgramInfo::Ref> ProgramInfoMap;
   ProgramInfoMap program_infos_;
 
   int uniform_swizzle_;
+
+  // Counts the number of ProgramInfo allocated with 'this' as its manager.
+  // Allows to check no ProgramInfo will outlive this.
+  unsigned int program_info_count_;
+
+  bool have_context_;
+
+  // Used to clear uniforms.
+  std::vector<uint8> zero_;
 
   void RemoveProgramInfoIfUnused(
       ShaderManager* shader_manager, ProgramInfo* info);

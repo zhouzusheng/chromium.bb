@@ -41,7 +41,7 @@
 #include "webkit/tools/test_shell/drop_delegate.h"
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
 #include <gdk/gdk.h>
 #endif
 
@@ -241,6 +241,8 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual webkit::npapi::WebPluginDelegate* CreatePluginDelegate(
       const FilePath& url,
       const std::string& mime_type) OVERRIDE;
+  virtual WebKit::WebPlugin* CreatePluginReplacement(
+      const FilePath& file_path) OVERRIDE;
   virtual void CreatedPluginWindow(
       gfx::PluginWindowHandle handle) OVERRIDE;
   virtual void WillDestroyPluginWindow(
@@ -407,7 +409,7 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   scoped_refptr<TestDropDelegate> drop_delegate_;
 #endif
 
-#if defined(TOOLKIT_USES_GTK)
+#if defined(TOOLKIT_GTK)
   // The type of cursor the window is currently using.
   // Used for judging whether a new SetCursor call is actually changing the
   // cursor.

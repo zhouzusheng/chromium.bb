@@ -25,13 +25,13 @@
 #include "config.h"
 #include "HTMLOptGroupElement.h"
 
-#include "CSSStyleSelector.h"
 #include "Document.h"
 #include "HTMLNames.h"
 #include "HTMLSelectElement.h"
 #include "RenderMenuList.h"
 #include "NodeRenderStyle.h"
 #include "NodeRenderingContext.h"
+#include "StyleResolver.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
@@ -47,6 +47,11 @@ inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Do
 PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(const QualifiedName& tagName, Document* document)
 {
     return adoptRef(new HTMLOptGroupElement(tagName, document));
+}
+
+bool HTMLOptGroupElement::disabled() const
+{
+    return fastHasAttribute(disabledAttr);
 }
 
 bool HTMLOptGroupElement::supportsFocus() const

@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 
 namespace gpu {
@@ -49,13 +50,18 @@ bool ProgramManager::IsInvalidPrefix(const char* name, size_t length) {
       memcmp(name, kInvalidPrefix, sizeof(kInvalidPrefix)) == 0);
 }
 
-ProgramManager::ProgramInfo::ProgramInfo(GLuint service_id)
-    : use_count_(0),
+ProgramManager::ProgramInfo::ProgramInfo(
+    ProgramManager* manager, GLuint service_id)
+    : manager_(manager),
+      use_count_(0),
       max_attrib_name_length_(0),
       max_uniform_name_length_(0),
       service_id_(service_id),
+      deleted_(false),
       valid_(false),
-      link_status_(false) {
+      link_status_(false),
+      uniforms_cleared_(false) {
+  manager_->StartTracking(this);
 }
 
 void ProgramManager::ProgramInfo::Reset() {
@@ -84,10 +90,80 @@ void ProgramManager::ProgramInfo::UpdateLogInfo() {
   set_log_info(std::string(temp.get(), len).c_str());
 }
 
+void ProgramManager::ProgramInfo::ClearUniforms(
+    std::vector<uint8>* zero_buffer) {
+  DCHECK(zero_buffer);
+  if (uniforms_cleared_) {
+    return;
+  }
+  uniforms_cleared_ = true;
+  for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
+    const UniformInfo& uniform_info = uniform_infos_[ii];
+    GLint location = uniform_info.element_locations[0];
+    GLsizei size = uniform_info.size;
+    uint32 unit_size =  GLES2Util::GetGLDataTypeSizeForUniforms(
+        uniform_info.type);
+    uint32 size_needed = size * unit_size;
+    if (size_needed > zero_buffer->size()) {
+      zero_buffer->resize(size_needed, 0u);
+    }
+    const void* zero = &(*zero_buffer)[0];
+    switch (uniform_info.type) {
+    case GL_FLOAT:
+      glUniform1fv(location, size, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_VEC2:
+      glUniform2fv(location, size, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_VEC3:
+      glUniform3fv(location, size, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_VEC4:
+      glUniform4fv(location, size, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_INT:
+    case GL_BOOL:
+    case GL_SAMPLER_2D:
+    case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_EXTERNAL_OES:
+      glUniform1iv(location, size, reinterpret_cast<const GLint*>(zero));
+      break;
+    case GL_INT_VEC2:
+    case GL_BOOL_VEC2:
+      glUniform2iv(location, size, reinterpret_cast<const GLint*>(zero));
+      break;
+    case GL_INT_VEC3:
+    case GL_BOOL_VEC3:
+      glUniform3iv(location, size, reinterpret_cast<const GLint*>(zero));
+      break;
+    case GL_INT_VEC4:
+    case GL_BOOL_VEC4:
+      glUniform4iv(location, size, reinterpret_cast<const GLint*>(zero));
+      break;
+    case GL_FLOAT_MAT2:
+      glUniformMatrix2fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT3:
+      glUniformMatrix3fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT4:
+      glUniformMatrix4fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    default:
+      NOTREACHED();
+      break;
+    }
+  }
+}
+
 void ProgramManager::ProgramInfo::Update() {
   Reset();
   UpdateLogInfo();
   link_status_ = true;
+  uniforms_cleared_ = false;
   GLint num_attribs = 0;
   GLint max_len = 0;
   GLint max_location = -1;
@@ -163,25 +239,36 @@ void ProgramManager::ProgramInfo::Update() {
   valid_ = true;
 }
 
-void ProgramManager::ProgramInfo::Link() {
+void ProgramManager::ProgramInfo::ExecuteBindAttribLocationCalls() {
+  for (std::map<std::string, GLint>::const_iterator it =
+           bind_attrib_location_map_.begin();
+       it != bind_attrib_location_map_.end(); ++it) {
+    const std::string* mapped_name = GetAttribMappedName(it->first);
+    if (mapped_name && *mapped_name != it->first)
+      glBindAttribLocation(service_id_, it->second, mapped_name->c_str());
+  }
+}
+
+bool ProgramManager::ProgramInfo::Link() {
   ClearLinkStatus();
   if (!CanLink()) {
     set_log_info("missing shaders");
-    return;
+    return false;
   }
   if (DetectAttribLocationBindingConflicts()) {
     set_log_info("glBindAttribLocation() conflicts");
-    return;
+    return false;
   }
-
+  ExecuteBindAttribLocationCalls();
   glLinkProgram(service_id());
   GLint success = 0;
   glGetProgramiv(service_id(), GL_LINK_STATUS, &success);
-  if (success) {
+  if (success == GL_TRUE) {
     Update();
   } else {
     UpdateLogInfo();
   }
+  return success == GL_TRUE;
 }
 
 void ProgramManager::ProgramInfo::Validate() {
@@ -258,6 +345,20 @@ const ProgramManager::ProgramInfo::UniformInfo*
       *real_location = uniform_info.element_locations[element_index];
       *array_index = element_index;
       return &uniform_info;
+    }
+  }
+  return NULL;
+}
+
+const std::string* ProgramManager::ProgramInfo::GetAttribMappedName(
+    const std::string& original_name) const {
+  for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+    ShaderManager::ShaderInfo* shader_info = attached_shaders_[ii].get();
+    if (shader_info) {
+      const std::string* mapped_name =
+          shader_info->GetAttribMappedName(original_name);
+      if (mapped_name)
+        return mapped_name;
     }
   }
   return NULL;
@@ -345,9 +446,10 @@ const ProgramManager::ProgramInfo::UniformInfo*
 }
 
 bool ProgramManager::ProgramInfo::SetSamplers(
-    GLint fake_location, GLsizei count, const GLint* value) {
+    GLint num_texture_units, GLint fake_location,
+    GLsizei count, const GLint* value) {
   if (fake_location < 0) {
-    return false;
+    return true;
   }
   GLint uniform_index = GetUniformInfoIndexFromFakeLocation(fake_location);
   if (uniform_index >= 0 &&
@@ -357,13 +459,18 @@ bool ProgramManager::ProgramInfo::SetSamplers(
     if (element_index < info.size) {
       count = std::min(info.size - element_index, count);
       if (info.IsSampler() && count > 0) {
+        for (GLsizei ii = 0; ii < count; ++ii) {
+          if (value[ii] < 0 || value[ii] >= num_texture_units) {
+            return false;
+          }
+        }
         std::copy(value, value + count,
                   info.texture_units.begin() + element_index);
         return true;
       }
     }
   }
-  return false;
+  return true;
 }
 
 void ProgramManager::ProgramInfo::GetProgramiv(GLenum pname, GLint* params) {
@@ -388,6 +495,9 @@ void ProgramManager::ProgramInfo::GetProgramiv(GLenum pname, GLint* params) {
     case GL_INFO_LOG_LENGTH:
       // Notice +1 to accomodate NULL terminator.
       *params = log_info_.get() ? (log_info_->size() + 1) : 0;
+      break;
+    case GL_DELETE_STATUS:
+      *params = deleted_;
       break;
     case GL_VALIDATE_STATUS:
       if (!IsValid()) {
@@ -554,7 +664,15 @@ void ProgramManager::ProgramInfo::GetProgramInfo(
   DCHECK_EQ(ComputeOffset(header, strings), size);
 }
 
-ProgramManager::ProgramInfo::~ProgramInfo() {}
+ProgramManager::ProgramInfo::~ProgramInfo() {
+  if (manager_) {
+    if (manager_->have_context_) {
+      glDeleteProgram(service_id());
+    }
+    manager_->StopTracking(this);
+    manager_ = NULL;
+  }
+}
 
 // TODO(gman): make this some kind of random number. Base::RandInt is not
 // callable because of the sandbox. What matters is that it's possibly different
@@ -562,7 +680,9 @@ ProgramManager::ProgramInfo::~ProgramInfo() {}
 static int uniform_random_offset_ = 3;
 
 ProgramManager::ProgramManager()
-    : uniform_swizzle_(uniform_random_offset_++ % 15) {
+    : uniform_swizzle_(uniform_random_offset_++ % 15),
+      program_info_count_(0),
+      have_context_(true) {
 }
 
 ProgramManager::~ProgramManager() {
@@ -570,16 +690,16 @@ ProgramManager::~ProgramManager() {
 }
 
 void ProgramManager::Destroy(bool have_context) {
-  while (!program_infos_.empty()) {
-    if (have_context) {
-      ProgramInfo* info = program_infos_.begin()->second;
-      if (!info->IsDeleted()) {
-        glDeleteProgram(info->service_id());
-        info->MarkAsDeleted();
-      }
-    }
-    program_infos_.erase(program_infos_.begin());
-  }
+  have_context_ = have_context;
+  program_infos_.clear();
+}
+
+void ProgramManager::StartTracking(ProgramManager::ProgramInfo* /* program */) {
+  ++program_info_count_;
+}
+
+void ProgramManager::StopTracking(ProgramManager::ProgramInfo* /* program */) {
+  --program_info_count_;
 }
 
 ProgramManager::ProgramInfo* ProgramManager::CreateProgramInfo(
@@ -587,7 +707,7 @@ ProgramManager::ProgramInfo* ProgramManager::CreateProgramInfo(
   std::pair<ProgramInfoMap::iterator, bool> result =
       program_infos_.insert(
           std::make_pair(client_id,
-                         ProgramInfo::Ref(new ProgramInfo(service_id))));
+                         ProgramInfo::Ref(new ProgramInfo(this, service_id))));
   DCHECK(result.second);
   return result.first->second;
 }
@@ -651,6 +771,7 @@ void ProgramManager::UseProgram(ProgramManager::ProgramInfo* info) {
   DCHECK(info);
   DCHECK(IsOwned(info));
   info->IncUseCount();
+  ClearUniforms(info);
 }
 
 void ProgramManager::UnuseProgram(
@@ -661,6 +782,11 @@ void ProgramManager::UnuseProgram(
   DCHECK(IsOwned(info));
   info->DecUseCount();
   RemoveProgramInfoIfUnused(shader_manager, info);
+}
+
+void ProgramManager::ClearUniforms(ProgramManager::ProgramInfo* info) {
+  DCHECK(info);
+  info->ClearUniforms(&zero_);
 }
 
 // Swizzles the locations to prevent developers from assuming they

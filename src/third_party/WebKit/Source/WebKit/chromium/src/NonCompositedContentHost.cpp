@@ -47,6 +47,9 @@ NonCompositedContentHost::NonCompositedContentHost(PassOwnPtr<WebCore::LayerPain
     m_graphicsLayer->setDrawsContent(true);
     m_graphicsLayer->platformLayer()->setIsNonCompositedContent(true);
     m_graphicsLayer->platformLayer()->setOpaque(true);
+#if !OS(ANDROID)
+    m_graphicsLayer->platformLayer()->setDrawCheckerboardForMissingTiles(true);
+#endif
 }
 
 NonCompositedContentHost::~NonCompositedContentHost()
@@ -131,11 +134,6 @@ WebCore::LayerChromium* NonCompositedContentHost::scrollLayer()
     if (!m_graphicsLayer->parent())
         return 0;
     return m_graphicsLayer->parent()->platformLayer();
-}
-
-void NonCompositedContentHost::protectVisibleTileTextures()
-{
-    m_graphicsLayer->platformLayer()->protectVisibleTileTextures();
 }
 
 void NonCompositedContentHost::invalidateRect(const WebCore::IntRect& rect)

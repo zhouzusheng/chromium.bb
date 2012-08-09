@@ -79,7 +79,7 @@ void StyleElement::removedFromDocument(Document* document, Element* element)
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document->renderer())
-        document->styleSelectorChanged(DeferRecalcStyle);
+        document->styleResolverChanged(DeferRecalcStyle);
 }
 
 void StyleElement::clearDocumentData(Document* document, Element* element)
@@ -168,16 +168,19 @@ void StyleElement::createSheet(Element* e, int startLineNumber, const String& te
         if (screenEval.eval(mediaQueries.get()) || printEval.eval(mediaQueries.get())) {
             document->addPendingSheet();
             m_loading = true;
-            m_sheet = CSSStyleSheet::create(e, String(), KURL(), document->inputEncoding());
-            m_sheet->parseStringAtLine(text, !document->inQuirksMode(), startLineNumber);
+
+            m_sheet = CSSStyleSheet::createInline(e, KURL(), document->inputEncoding());
             m_sheet->setMediaQueries(mediaQueries.release());
             m_sheet->setTitle(e->title());
+    
+            m_sheet->internal()->parseStringAtLine(text, startLineNumber);
+
             m_loading = false;
         }
     }
 
     if (m_sheet)
-        m_sheet->checkLoaded();
+        m_sheet->internal()->checkLoaded();
 }
 
 bool StyleElement::isLoading() const

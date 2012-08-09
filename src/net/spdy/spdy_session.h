@@ -49,6 +49,50 @@ class BoundNetLog;
 class SpdyStream;
 class SSLInfo;
 
+enum SpdyProtocolErrorDetails {
+  // SpdyFramer::SpdyErrors
+  SPDY_ERROR_NO_ERROR,
+  SPDY_ERROR_INVALID_CONTROL_FRAME,
+  SPDY_ERROR_CONTROL_PAYLOAD_TOO_LARGE,
+  SPDY_ERROR_ZLIB_INIT_FAILURE,
+  SPDY_ERROR_UNSUPPORTED_VERSION,
+  SPDY_ERROR_DECOMPRESS_FAILURE,
+  SPDY_ERROR_COMPRESS_FAILURE,
+  SPDY_ERROR_CREDENTIAL_FRAME_CORRUPT,
+  SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
+
+  // SpdyStatusCodes
+  STATUS_CODE_INVALID,
+  STATUS_CODE_PROTOCOL_ERROR,
+  STATUS_CODE_INVALID_STREAM,
+  STATUS_CODE_REFUSED_STREAM,
+  STATUS_CODE_UNSUPPORTED_VERSION,
+  STATUS_CODE_CANCEL,
+  STATUS_CODE_INTERNAL_ERROR,
+  STATUS_CODE_FLOW_CONTROL_ERROR,
+  STATUS_CODE_STREAM_IN_USE,
+  STATUS_CODE_STREAM_ALREADY_CLOSED,
+  STATUS_CODE_INVALID_CREDENTIALS,
+  STATUS_CODE_FRAME_TOO_LARGE,
+
+  // SpdySession errors
+  PROTOCOL_ERROR_UNEXPECTED_PING,
+  PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM,
+  PROTOCOL_ERROR_SPDY_COMPRESSION_FAILURE,
+  PROTOCOL_ERROR_REQUST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION,
+  PROTOCOL_ERROR_SYN_REPLY_NOT_RECEIVED,
+  NUM_SPDY_PROTOCOL_ERROR_DETAILS
+};
+
+COMPILE_ASSERT(STATUS_CODE_INVALID ==
+               static_cast<SpdyProtocolErrorDetails>(SpdyFramer::LAST_ERROR),
+               SpdyProtocolErrorDetails_SpdyErrors_mismatch);
+
+COMPILE_ASSERT(PROTOCOL_ERROR_UNEXPECTED_PING ==
+               static_cast<SpdyProtocolErrorDetails>(NUM_STATUS_CODES +
+                                                     STATUS_CODE_INVALID),
+               SpdyProtocolErrorDetails_SpdyErrors_mismatch);
+
 class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                                public BufferedSpdyFramerVisitorInterface {
  public:
@@ -63,6 +107,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
               SpdySessionPool* spdy_session_pool,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
+              const HostPortPair& trusted_spdy_proxy,
               NetLog* net_log);
 
   const HostPortPair& host_port_pair() const {
@@ -240,6 +285,11 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
     return flow_control_;
   }
 
+  // Returns the current |initial_send_window_size_|.
+  int32 initial_send_window_size() const {
+    return initial_send_window_size_;
+  }
+
   // Returns the current |initial_recv_window_size_|.
   int32 initial_recv_window_size() const { return initial_recv_window_size_; }
 
@@ -380,7 +430,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // |frame| is the frame to send.
   // |priority| is the priority for insertion into the queue.
   // |stream| is the stream which this IO is associated with (or NULL).
-  void QueueFrame(SpdyFrame* frame, SpdyPriority priority,
+  void QueueFrame(SpdyFrame* frame, RequestPriority priority,
                   SpdyStream* stream);
 
   // Track active streams in the active stream list.
@@ -402,6 +452,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   void RecordPingRTTHistogram(base::TimeDelta duration);
   void RecordHistograms();
+  void RecordProtocolErrorHistogram(SpdyProtocolErrorDetails details);
 
   // Closes all streams.  Used as part of shutdown.
   void CloseAllStreams(net::Error status);
@@ -411,7 +462,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   void InvokeUserStreamCreationCallback(scoped_refptr<SpdyStream>* stream);
 
   // BufferedSpdyFramerVisitorInterface:
-  virtual void OnError(int error_code) OVERRIDE;
+  virtual void OnError(SpdyFramer::SpdyError error_code) OVERRIDE;
   virtual void OnStreamError(SpdyStreamId stream_id,
                              const std::string& description) OVERRIDE;
   virtual void OnRstStream(
@@ -604,6 +655,10 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // to build a new connection, and see if that completes before we (finally)
   // get a PING response (http://crbug.com/127812).
   base::TimeDelta hung_interval_;
+
+  // This SPDY proxy is allowed to push resources from origins that are
+  // different from those of their associated streams.
+  HostPortPair trusted_spdy_proxy_;
 };
 
 class NetLogSpdySynParameter : public NetLog::EventParameters {
@@ -619,9 +674,10 @@ class NetLogSpdySynParameter : public NetLog::EventParameters {
 
   virtual base::Value* ToValue() const OVERRIDE;
 
- private:
+ protected:
   virtual ~NetLogSpdySynParameter();
 
+ private:
   const linked_ptr<SpdyHeaderBlock> headers_;
   const SpdyControlFlags flags_;
   const SpdyStreamId id_;
@@ -637,9 +693,10 @@ class NetLogSpdyCredentialParameter : public NetLog::EventParameters {
 
   virtual base::Value* ToValue() const OVERRIDE;
 
- private:
+ protected:
   virtual ~NetLogSpdyCredentialParameter();
 
+ private:
   const size_t slot_;
   const std::string origin_;
 
@@ -654,9 +711,10 @@ class NetLogSpdySessionCloseParameter : public NetLog::EventParameters {
   int status() const { return status_; }
   virtual base::Value* ToValue() const  OVERRIDE;
 
- private:
+ protected:
   virtual ~NetLogSpdySessionCloseParameter();
 
+ private:
   const int status_;
   const std::string description_;
 

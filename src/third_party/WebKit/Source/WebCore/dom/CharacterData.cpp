@@ -44,6 +44,8 @@ void CharacterData::setData(const String& data, ExceptionCode&)
     if (m_data == nonNullData)
         return;
 
+    RefPtr<CharacterData> protect = this;
+
     unsigned oldLength = length();
 
     setDataAndUpdate(nonNullData, 0, oldLength, nonNullData.length());
@@ -200,7 +202,7 @@ void CharacterData::dispatchModifiedEvent(const String& oldData)
     if (parentNode())
         parentNode()->childrenChanged();
     if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
-        dispatchEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
+        dispatchScopedEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
     dispatchSubtreeModifiedEvent();
 #if ENABLE(INSPECTOR)
     InspectorInstrumentation::characterDataModified(document(), this);

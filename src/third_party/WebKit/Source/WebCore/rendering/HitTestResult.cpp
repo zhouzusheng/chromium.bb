@@ -54,6 +54,7 @@ HitTestResult::HitTestResult()
     , m_rightPadding(0)
     , m_bottomPadding(0)
     , m_leftPadding(0)
+    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
     , m_region(0)
 {
 }
@@ -66,17 +67,19 @@ HitTestResult::HitTestResult(const LayoutPoint& point)
     , m_rightPadding(0)
     , m_bottomPadding(0)
     , m_leftPadding(0)
+    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
     , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding, ShadowContentFilterPolicy allowShadowContent)
     : m_point(centerPoint)
     , m_isOverWidget(false)
     , m_topPadding(topPadding)
     , m_rightPadding(rightPadding)
     , m_bottomPadding(bottomPadding)
     , m_leftPadding(leftPadding)
+    , m_shadowContentFilterPolicy(allowShadowContent)
     , m_region(0)
 {
     // If all padding values passed in are zero then it is not a rect based hit test.
@@ -95,6 +98,7 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_innerURLElement(other.URLElement())
     , m_scrollbar(other.scrollbar())
     , m_isOverWidget(other.isOverWidget())
+    , m_shadowContentFilterPolicy(other.shadowContentFilterPolicy())
     , m_region(other.region())
 {
     // Only copy the padding and NodeSet in case of rect hit test.
@@ -134,7 +138,8 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
         m_topPadding = m_rightPadding = m_bottomPadding = m_leftPadding = 0;
 
     m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
-    
+    m_shadowContentFilterPolicy = other.shadowContentFilterPolicy();
+
     m_region = other.m_region;
 
     return *this;
@@ -572,24 +577,28 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& 
     if (!node)
         return true;
 
-    node = node->shadowAncestorNode();
+    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+        node = node->shadowAncestorNode();
+
     mutableRectBasedTestResult().add(node);
 
-    if (node->renderer()->isInline()) {
+    bool regionFilled = rect.contains(rectForPoint(pointInContainer));
+    // FIXME: This code (incorrectly) attempts to correct for culled inline nodes. See https://bugs.webkit.org/show_bug.cgi?id=85849.
+    if (node->renderer()->isInline() && !regionFilled) {
         for (RenderObject* curr = node->renderer()->parent(); curr; curr = curr->parent()) {
             if (!curr->isRenderInline())
                 break;
-            
+
             // We need to make sure the nodes for culled inlines get included.
             RenderInline* currInline = toRenderInline(curr);
             if (currInline->alwaysCreateLineBoxes())
                 break;
-            
+
             if (currInline->visibleToHitTesting() && currInline->node())
                 mutableRectBasedTestResult().add(currInline->node()->shadowAncestorNode());
         }
     }
-    return !rect.contains(rectForPoint(pointInContainer));
+    return !regionFilled;
 }
 
 bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& pointInContainer, const FloatRect& rect)
@@ -603,24 +612,28 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& 
     if (!node)
         return true;
 
-    node = node->shadowAncestorNode();
+    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+        node = node->shadowAncestorNode();
+
     mutableRectBasedTestResult().add(node);
 
-    if (node->renderer()->isInline()) {
+    bool regionFilled = rect.contains(rectForPoint(pointInContainer));
+    // FIXME: This code (incorrectly) attempts to correct for culled inline nodes. See https://bugs.webkit.org/show_bug.cgi?id=85849.
+    if (node->renderer()->isInline() && !regionFilled) {
         for (RenderObject* curr = node->renderer()->parent(); curr; curr = curr->parent()) {
             if (!curr->isRenderInline())
                 break;
-            
+
             // We need to make sure the nodes for culled inlines get included.
             RenderInline* currInline = toRenderInline(curr);
             if (currInline->alwaysCreateLineBoxes())
                 break;
-            
+
             if (currInline->visibleToHitTesting() && currInline->node())
                 mutableRectBasedTestResult().add(currInline->node()->shadowAncestorNode());
         }
     }
-    return !rect.contains(rectForPoint(pointInContainer));
+    return !regionFilled;
 }
 
 void HitTestResult::append(const HitTestResult& other)
@@ -643,16 +656,16 @@ void HitTestResult::append(const HitTestResult& other)
     }
 }
 
-LayoutRect HitTestResult::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+IntRect HitTestResult::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
 {
-    LayoutPoint actualPoint(point);
-    actualPoint -= LayoutSize(leftPadding, topPadding);
+    IntPoint actualPoint(roundedIntPoint(point));
+    actualPoint -= IntSize(leftPadding, topPadding);
 
     IntSize actualPadding(leftPadding + rightPadding, topPadding + bottomPadding);
     // As IntRect is left inclusive and right exclusive (seeing IntRect::contains(x, y)), adding "1".
     actualPadding += IntSize(1, 1);
 
-    return LayoutRect(actualPoint, actualPadding);
+    return IntRect(actualPoint, actualPadding);
 }
 
 const HitTestResult::NodeSet& HitTestResult::rectBasedTestResult() const

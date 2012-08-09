@@ -16,6 +16,8 @@
 using base::win::ScopedComPtr;
 using base::win::ScopedCOMInitializer;
 
+namespace media {
+
 WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
                                                  const AudioParameters& params,
                                                  ERole device_role)
@@ -241,6 +243,7 @@ void WASAPIAudioOutputStream::Close() {
 }
 
 void WASAPIAudioOutputStream::SetVolume(double volume) {
+  DVLOG(1) << "SetVolume(volume=" << volume << ")";
   float volume_float = static_cast<float>(volume);
   if (volume_float < 0.0f || volume_float > 1.0f) {
     return;
@@ -249,6 +252,7 @@ void WASAPIAudioOutputStream::SetVolume(double volume) {
 }
 
 void WASAPIAudioOutputStream::GetVolume(double* volume) {
+  DVLOG(1) << "GetVolume()";
   *volume = static_cast<double>(volume_);
 }
 
@@ -436,7 +440,7 @@ void WASAPIAudioOutputStream::Run() {
             // the delay between the usage of the delay value and the time
             // of generation.
             uint32 num_filled_bytes = source_->OnMoreData(
-                this, audio_data, packet_size_bytes_,
+                audio_data, packet_size_bytes_,
                 AudioBuffersState(0, audio_delay_bytes));
 
             // Perform in-place, software-volume adjustments.
@@ -806,3 +810,5 @@ bool WASAPIAudioOutputStream::RestartRenderingUsingNewDefaultDevice() {
   restart_rendering_mode_ = false;
   return SUCCEEDED(hr);
 }
+
+}  // namespace media

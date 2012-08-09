@@ -38,7 +38,7 @@ public:
      * or not.
      */
     enum {
-        kNumStages = 3,
+        kNumStages = 4,
         kMaxTexCoords = kNumStages
     };
 
@@ -331,7 +331,7 @@ public:
     ////
 
     /**
-     * Sets the matrix applied to veretx positions.
+     * Sets the matrix applied to vertex positions.
      *
      * In the post-view-matrix space the rectangle [0,w]x[0,h]
      * fully covers the render target. (w and h are the width and height of the
@@ -460,6 +460,7 @@ public:
         AutoRenderTargetRestore() : fDrawState(NULL), fSavedTarget(NULL) {}
         AutoRenderTargetRestore(GrDrawState* ds, GrRenderTarget* newTarget) {
             fDrawState = NULL;
+            fSavedTarget = NULL;
             this->set(ds, newTarget);
         }
         ~AutoRenderTargetRestore() { this->set(NULL, NULL); }
@@ -538,6 +539,9 @@ public:
      * When specifying edges as vertex data this enum specifies what type of
      * edges are in use. The edges are always 4 GrScalars in memory, even when
      * the edge type requires fewer than 4.
+     *
+     * TODO: Fix the fact that HairLine and Circle edge types use y-down coords.
+     *       (either adjust in VS or use origin_upper_left in GLSL)
      */
     enum VertexEdgeType {
         /* 1-pixel wide line
@@ -545,11 +549,15 @@ public:
         kHairLine_EdgeType,
         /* Quadratic specified by u^2-v canonical coords (only 2 
            components used). Coverage based on signed distance with negative
-           being inside, positive outside.*/
+           being inside, positive outside. Edge specified in window space
+           (y-down) */
         kQuad_EdgeType,
         /* Same as above but for hairline quadratics. Uses unsigned distance.
            Coverage is min(0, 1-distance). */
         kHairQuad_EdgeType,
+        /* Circle specified as center_x, center_y, outer_radius, inner_radius
+           all in window space (y-down). */
+        kCircle_EdgeType,
 
         kVertexEdgeTypeCnt
     };
@@ -749,8 +757,7 @@ public:
 
         for (int i = 0; i < kNumStages; i++) {
             if (fTextures[i] &&
-                memcmp(&this->fSamplerStates[i], &s.fSamplerStates[i],
-                       sizeof(GrSamplerState))) {
+                this->fSamplerStates[i] != s.fSamplerStates[i]) {
                 return false;
             }
         }
@@ -778,8 +785,7 @@ public:
     
         for (int i = 0; i < kNumStages; i++) {
             if (s.fTextures[i]) {
-                memcpy(&this->fSamplerStates[i], &s.fSamplerStates[i],
-                       sizeof(GrSamplerState));
+                this->fSamplerStates[i] = s.fSamplerStates[i];
             }
         }
         if (kColorMatrix_StateBit & s.fFlagBits) {

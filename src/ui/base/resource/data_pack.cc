@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -61,9 +61,12 @@ enum LoadErrors {
 
 namespace ui {
 
-// In .cc for MemoryMappedFile dtor.
-DataPack::DataPack() : resource_count_(0), text_encoding_type_(BINARY) {
+DataPack::DataPack(float scale_factor)
+    : resource_count_(0),
+      text_encoding_type_(BINARY),
+      scale_factor_(scale_factor) {
 }
+
 DataPack::~DataPack() {
 }
 
@@ -169,13 +172,22 @@ bool DataPack::GetStringPiece(uint16 resource_id,
   return true;
 }
 
-RefCountedStaticMemory* DataPack::GetStaticMemory(uint16 resource_id) const {
+base::RefCountedStaticMemory* DataPack::GetStaticMemory(
+    uint16 resource_id) const {
   base::StringPiece piece;
   if (!GetStringPiece(resource_id, &piece))
     return NULL;
 
-  return new RefCountedStaticMemory(
+  return new base::RefCountedStaticMemory(
       reinterpret_cast<const unsigned char*>(piece.data()), piece.length());
+}
+
+ResourceHandle::TextEncodingType DataPack::GetTextEncodingType() const {
+  return text_encoding_type_;
+}
+
+float DataPack::GetScaleFactor() const {
+  return scale_factor_;
 }
 
 // static

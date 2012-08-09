@@ -8,7 +8,7 @@
 #include <deque>
 
 #include "base/callback.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "media/base/video_decoder.h"
 #include "media/crypto/aes_decryptor.h"
 
@@ -19,10 +19,11 @@ struct AVFrame;
 
 namespace media {
 
+class DecoderBuffer;
+
 class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
  public:
   FFmpegVideoDecoder(const base::Callback<MessageLoop*()>& message_loop_cb);
-  virtual ~FFmpegVideoDecoder();
 
   // VideoDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -33,7 +34,12 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual const gfx::Size& natural_size() OVERRIDE;
 
-  AesDecryptor* decryptor();
+  // Must be called prior to initialization if decrypted buffers will be
+  // encountered.
+  void set_decryptor(AesDecryptor* decryptor);
+
+ protected:
+  virtual ~FFmpegVideoDecoder();
 
  private:
   enum DecoderState {
@@ -48,11 +54,11 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
-  void DecodeBuffer(const scoped_refptr<Buffer>& buffer);
+  void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
 
   // Carries out the decoding operation scheduled by DecodeBuffer().
-  void DoDecodeBuffer(const scoped_refptr<Buffer>& buffer);
-  bool Decode(const scoped_refptr<Buffer>& buffer,
+  void DoDecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
+  bool Decode(const scoped_refptr<DecoderBuffer>& buffer,
               scoped_refptr<VideoFrame>* video_frame);
 
   // Delivers the frame to |read_cb_| and resets the callback.
@@ -96,7 +102,7 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   // Pointer to the demuxer stream that will feed us compressed buffers.
   scoped_refptr<DemuxerStream> demuxer_stream_;
 
-  AesDecryptor decryptor_;
+  AesDecryptor* decryptor_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegVideoDecoder);
 };

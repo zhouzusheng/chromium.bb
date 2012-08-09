@@ -35,21 +35,30 @@
 #include "Pasteboard.h"
 #include "PlatformString.h"
 
+#include <public/WebClipboard.h>
+#include <wtf/text/StringBuilder.h>
+
 namespace WebCore {
 
-PasteboardPrivate::ClipboardBuffer currentPasteboardBuffer()
+WebKit::WebClipboard::Buffer currentPasteboardBuffer()
 {
     return Pasteboard::generalPasteboard()->isSelectionMode() ?
-        PasteboardPrivate::SelectionBuffer :
-        PasteboardPrivate::StandardBuffer;
+        WebKit::WebClipboard::BufferSelection :
+        WebKit::WebClipboard::BufferStandard;
 }
 
 #if OS(WINDOWS)
 void replaceNewlinesWithWindowsStyleNewlines(String& str)
 {
-    static const UChar Newline = '\n';
-    static const char* const WindowsNewline("\r\n");
-    str.replace(Newline, WindowsNewline);
+    DEFINE_STATIC_LOCAL(String, windowsNewline, ("\r\n"));
+    StringBuilder result;
+    for (unsigned index = 0; index < str.length(); ++index) {
+        if (str[index] != '\n' || (index > 0 && str[index - 1] == '\r'))
+            result.append(str[index]);
+        else
+            result.append(windowsNewline);
+    }
+    str = result.toString();
 }
 #endif
 

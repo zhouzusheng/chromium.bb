@@ -33,7 +33,6 @@
 
 #include "AXObjectCache.h"
 #include "CSSParserMode.h"
-#include "CSSStyleSheet.h"
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "DocumentType.h"
@@ -46,6 +45,7 @@
 #include "HTMLHeadElement.h"
 #include "NodeList.h"
 #include "SecurityOrigin.h"
+#include "StyleSheetContents.h"
 #include "WebAccessibilityObject.h"
 #include "WebDOMEvent.h"
 #include "WebDocumentType.h"
@@ -139,6 +139,20 @@ WebNodeCollection WebDocument::all()
     return WebNodeCollection(unwrap<Document>()->all());
 }
 
+void WebDocument::images(WebVector<WebElement>& results)
+{
+    RefPtr<HTMLCollection> images = unwrap<Document>()->images();
+    size_t sourceLength = images->length();
+    Vector<WebElement> temp;
+    temp.reserveCapacity(sourceLength);
+    for (size_t i = 0; i < sourceLength; ++i) {
+        Node* node = images->item(i);
+        if (node && node->isHTMLElement())
+            temp.append(WebElement(static_cast<Element*>(node)));
+    }
+    results.assign(temp);
+}
+
 void WebDocument::forms(WebVector<WebFormElement>& results) const
 {
     RefPtr<HTMLCollection> forms = const_cast<Document*>(constUnwrap<Document>())->forms();
@@ -178,7 +192,7 @@ void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLev
 {
     RefPtr<Document> document = unwrap<Document>();
 
-    RefPtr<StyleSheetInternal> parsedSheet = StyleSheetInternal::create(document.get());
+    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(document.get());
     parsedSheet->setIsUserStyleSheet(level == UserStyleUserLevel);
     parsedSheet->parseString(sourceCode);
     document->addUserSheet(parsedSheet.release());

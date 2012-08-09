@@ -31,11 +31,18 @@
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
+namespace WTF {
+class OrdinalNumber;
+}
+
 namespace WebCore {
 
 class CSPDirectiveList;
+class ScriptCallStack;
 class ScriptExecutionContext;
 class KURL;
+
+typedef Vector<OwnPtr<CSPDirectiveList> > CSPDirectiveListVector;
 
 class ContentSecurityPolicy {
 public:
@@ -54,14 +61,16 @@ public:
 
     void didReceiveHeader(const String&, HeaderType);
 
-    const String& header() const;
-    HeaderType headerType() const;
+    // These functions are wrong becuase they assume that there is only one header.
+    // FIXME: Replace them with functions that return vectors.
+    const String& deprecatedHeader() const;
+    HeaderType deprecatedHeaderType() const;
 
-    bool allowJavaScriptURLs() const;
-    bool allowInlineEventHandlers() const;
-    bool allowInlineScript() const;
-    bool allowInlineStyle() const;
-    bool allowEval() const;
+    bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
+    bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
+    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
+    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
+    bool allowEval(PassRefPtr<ScriptCallStack>) const;
 
     bool allowScriptFromSource(const KURL&) const;
     bool allowObjectFromSource(const KURL&) const;
@@ -70,7 +79,7 @@ public:
     bool allowStyleFromSource(const KURL&) const;
     bool allowFontFromSource(const KURL&) const;
     bool allowMediaFromSource(const KURL&) const;
-    bool allowConnectFromSource(const KURL&) const;
+    bool allowConnectToSource(const KURL&) const;
 
     void setOverrideAllowInlineStyle(bool);
 
@@ -79,7 +88,7 @@ private:
 
     ScriptExecutionContext* m_scriptExecutionContext;
     bool m_overrideInlineStyleAllowed;
-    OwnPtr<CSPDirectiveList> m_policy;
+    CSPDirectiveListVector m_policies;
 };
 
 }

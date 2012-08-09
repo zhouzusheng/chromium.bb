@@ -175,7 +175,7 @@ protected:
     virtual void determinePropertyValueTypes(const String& from, const String& to);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     enum AttributeType {
@@ -190,11 +190,10 @@ protected:
     String fromValue() const;
 
     String targetAttributeBaseValue();
-    void setTargetAttributeAnimatedCSSValue(SVGAnimatedType*);
 
     // from SVGSMILElement
-    virtual void startedActiveInterval();
-    virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement);
+    virtual void startedActiveInterval() OVERRIDE;
+    virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) OVERRIDE;
 
     AnimatedPropertyValueType m_fromPropertyValueType;
     AnimatedPropertyValueType m_toPropertyValueType;

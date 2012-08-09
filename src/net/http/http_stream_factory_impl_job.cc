@@ -40,75 +40,30 @@
 
 namespace net {
 
-// Parameters associated with the start of a HTTP stream job.
-class HttpStreamJobParameters : public NetLog::EventParameters {
- public:
-  static scoped_refptr<HttpStreamJobParameters> Create(
-      const GURL& original_url,
-      const GURL& url) {
-    return make_scoped_refptr(new HttpStreamJobParameters(original_url, url));
-  }
-
-  virtual Value* ToValue() const;
-
- protected:
-  virtual ~HttpStreamJobParameters() {}
-
- private:
-  HttpStreamJobParameters(const GURL& original_url, const GURL& url)
-      : original_url_(original_url.GetOrigin().spec()),
-        url_(url.GetOrigin().spec()) {
-  }
-
-  const std::string original_url_;
-  const std::string url_;
-};
-
-Value* HttpStreamJobParameters::ToValue() const {
+// Returns parameters associated with the start of a HTTP stream job.
+Value* NetLogHttpStreamJobCallback(const GURL* original_url,
+                                   const GURL* url,
+                                   NetLog::LogLevel /* log_level */) {
   DictionaryValue* dict = new DictionaryValue();
-  dict->SetString("original_url", original_url_);
-  dict->SetString("url", url_);
+  dict->SetString("original_url", original_url->GetOrigin().spec());
+  dict->SetString("url", url->GetOrigin().spec());
   return dict;
 }
 
-// Parameters associated with the Proto (with NPN negotiation) of a HTTP stream.
-class HttpStreamProtoParameters : public NetLog::EventParameters {
- public:
-  static scoped_refptr<HttpStreamProtoParameters> Create(
-      const SSLClientSocket::NextProtoStatus status,
-      const std::string& proto,
-      const std::string& server_protos) {
-    return make_scoped_refptr(new HttpStreamProtoParameters(
-        status, proto, server_protos));
-  }
-
-  virtual Value* ToValue() const;
-
- protected:
-  virtual ~HttpStreamProtoParameters() {}
-
- private:
-  HttpStreamProtoParameters(const SSLClientSocket::NextProtoStatus status,
-                            const std::string& proto,
-                            const std::string& server_protos)
-      : status_(status),
-        proto_(proto),
-        server_protos_(server_protos) {
-  }
-
-  const SSLClientSocket::NextProtoStatus status_;
-  const std::string proto_;
-  const std::string server_protos_;
-};
-
-Value* HttpStreamProtoParameters::ToValue() const {
+// Returns parameters associated with the Proto (with NPN negotiation) of a HTTP
+// stream.
+Value* NetLogHttpStreamProtoCallback(
+    const SSLClientSocket::NextProtoStatus status,
+    const std::string* proto,
+    const std::string* server_protos,
+    NetLog::LogLevel /* log_level */) {
   DictionaryValue* dict = new DictionaryValue();
 
   dict->SetString("next_proto_status",
-                  SSLClientSocket::NextProtoStatusToString(status_));
-  dict->SetString("proto", proto_);
+                  SSLClientSocket::NextProtoStatusToString(status));
+  dict->SetString("proto", *proto);
   dict->SetString("server_protos",
-                  SSLClientSocket::ServerProtosToString(server_protos_));
+                  SSLClientSocket::ServerProtosToString(*server_protos));
   return dict;
 }
 
@@ -149,7 +104,7 @@ HttpStreamFactoryImpl::Job::Job(HttpStreamFactoryImpl* stream_factory,
 }
 
 HttpStreamFactoryImpl::Job::~Job() {
-  net_log_.EndEvent(NetLog::TYPE_HTTP_STREAM_JOB, NULL);
+  net_log_.EndEvent(NetLog::TYPE_HTTP_STREAM_JOB);
 
   // When we're in a partially constructed state, waiting for the user to
   // provide certificate handling information or authentication, we can't reuse
@@ -285,6 +240,15 @@ void HttpStreamFactoryImpl::Job::GetSSLInfo() {
   ssl_socket->GetSSLInfo(&ssl_info_);
 }
 
+HostPortProxyPair HttpStreamFactoryImpl::Job::GetSpdySessionKey() const {
+  if (IsHttpsProxyAndHttpUrl()) {
+    return HostPortProxyPair(proxy_info_.proxy_server().host_port_pair(),
+                             ProxyServer::Direct());
+  } else {
+    return HostPortProxyPair(origin_, proxy_info_.proxy_server());
+  }
+}
+
 void HttpStreamFactoryImpl::Job::OnStreamReadyCallback() {
   DCHECK(stream_.get());
   DCHECK(!IsPreconnecting());
@@ -382,6 +346,20 @@ void HttpStreamFactoryImpl::Job::OnPreconnectsComplete() {
   }
   stream_factory_->OnPreconnectsComplete(this);
   // |this| may be deleted after this call.
+}
+
+// static
+int HttpStreamFactoryImpl::Job::OnHostResolution(
+    SpdySessionPool* spdy_session_pool,
+    const HostPortProxyPair spdy_session_key,
+    const AddressList& addresses,
+    const BoundNetLog& net_log) {
+  // It is OK to dereference spdy_session_pool, because the
+  // ClientSocketPoolManager will be destroyed in the same callback that
+  // destroys the SpdySessionPool.
+  bool has_session =
+      spdy_session_pool->GetIfExists(spdy_session_key, net_log) != NULL;
+  return has_session ? ERR_SPDY_SESSION_ALREADY_EXISTS  : OK;
 }
 
 void HttpStreamFactoryImpl::Job::OnIOComplete(int result) {
@@ -574,8 +552,8 @@ int HttpStreamFactoryImpl::Job::DoStart() {
   http_pipelining_key_.reset(new HttpPipelinedHost::Key(origin_));
 
   net_log_.BeginEvent(NetLog::TYPE_HTTP_STREAM_JOB,
-                      HttpStreamJobParameters::Create(request_info_.url,
-                                                      origin_url_));
+                      base::Bind(&NetLogHttpStreamJobCallback,
+                                 &request_info_.url, &origin_url_));
 
   // Don't connect to restricted ports.
   if (!IsPortAllowedByDefault(port) && !IsPortAllowedByOverride(port)) {
@@ -670,14 +648,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
 
   // Check first if we have a spdy session for this group.  If so, then go
   // straight to using that.
-  HostPortProxyPair spdy_session_key;
-  if (IsHttpsProxyAndHttpUrl()) {
-    spdy_session_key =
-        HostPortProxyPair(proxy_info_.proxy_server().host_port_pair(),
-                          ProxyServer::Direct());
-  } else {
-    spdy_session_key = HostPortProxyPair(origin_, proxy_info_.proxy_server());
-  }
+  HostPortProxyPair spdy_session_key = GetSpdySessionKey();
   scoped_refptr<SpdySession> spdy_session =
       session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
   if (spdy_session) {
@@ -757,13 +728,33 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
         origin_url_, request_info_.extra_headers, request_info_.load_flags,
         request_info_.priority, session_, proxy_info_, ShouldForceSpdySSL(),
         want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_, net_log_,
-        connection_.get(), io_callback_);
+        connection_.get(),
+        //OnHostResolutionCallback(),
+        base::Bind(&Job::OnHostResolution, session_->spdy_session_pool(),
+                   GetSpdySessionKey()),
+        io_callback_);
   }
 }
 
 int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   if (IsPreconnecting()) {
     DCHECK_EQ(OK, result);
+    return OK;
+  }
+
+  if (result == ERR_SPDY_SESSION_ALREADY_EXISTS) {
+    // We found a SPDY connection after resolving the host.  This is
+    // probably an IP pooled connection.
+    HostPortProxyPair spdy_session_key = GetSpdySessionKey();
+    existing_spdy_session_ =
+        session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
+    if (existing_spdy_session_) {
+      using_spdy_ = true;
+      next_state_ = STATE_CREATE_STREAM;
+    } else {
+      // It is possible that the spdy session no longer exists.
+      ReturnToStateInitConnection(true /* close connection */);
+    }
     return OK;
   }
 
@@ -804,7 +795,8 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       protocol_negotiated_ = protocol_negotiated;
       net_log_.AddEvent(
            NetLog::TYPE_HTTP_STREAM_REQUEST_PROTO,
-           HttpStreamProtoParameters::Create(status, proto, server_protos));
+           base::Bind(&NetLogHttpStreamProtoCallback,
+                      status, &proto, &server_protos));
       if (ssl_socket->was_spdy_negotiated())
         SwitchToSpdyMode();
     }
@@ -1042,7 +1034,7 @@ void HttpStreamFactoryImpl::Job::SetSocketMotivation() {
   // TODO(mbelshe): Add other motivations (like EARLY_LOAD_MOTIVATED).
 }
 
-bool HttpStreamFactoryImpl::Job::IsHttpsProxyAndHttpUrl() {
+bool HttpStreamFactoryImpl::Job::IsHttpsProxyAndHttpUrl() const {
   if (!proxy_info_.is_https())
     return false;
   if (original_url_.get()) {
@@ -1071,8 +1063,30 @@ void HttpStreamFactoryImpl::Job::InitSSLConfig(
     ssl_config->false_start_enabled = false;
   }
 
-  UMA_HISTOGRAM_ENUMERATION("Net.ConnectionUsedSSLv3Fallback",
-                            static_cast<int>(ssl_config->ssl3_fallback), 2);
+  enum {
+    FALLBACK_NONE = 0,    // SSL version fallback did not occur.
+    FALLBACK_SSL3 = 1,    // Fell back to SSL 3.0.
+    FALLBACK_TLS1 = 2,    // Fell back to TLS 1.0.
+    FALLBACK_TLS1_1 = 3,  // Fell back to TLS 1.1.
+    FALLBACK_MAX
+  };
+
+  int fallback = FALLBACK_NONE;
+  if (ssl_config->version_fallback) {
+    switch (ssl_config->version_max) {
+      case SSL_PROTOCOL_VERSION_SSL3:
+        fallback = FALLBACK_SSL3;
+        break;
+      case SSL_PROTOCOL_VERSION_TLS1:
+        fallback = FALLBACK_TLS1;
+        break;
+      case SSL_PROTOCOL_VERSION_TLS1_1:
+        fallback = FALLBACK_TLS1_1;
+        break;
+    }
+  }
+  UMA_HISTOGRAM_ENUMERATION("Net.ConnectionUsedSSLVersionFallback",
+                            fallback, FALLBACK_MAX);
 
   if (request_info_.load_flags & LOAD_VERIFY_EV_CERT)
     ssl_config->verify_ev_cert = true;

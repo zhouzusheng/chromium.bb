@@ -31,7 +31,7 @@ Sk2DPathEffect::Sk2DPathEffect(const SkMatrix& mat) : fMatrix(mat) {
     fMatrixIsInvertible = mat.invert(&fInverse);
 }
 
-bool Sk2DPathEffect::filterPath(SkPath* dst, const SkPath& src, SkScalar* width) {
+bool Sk2DPathEffect::filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) {
     if (!fMatrixIsInvertible) {
         return false;
     }
@@ -74,18 +74,11 @@ void Sk2DPathEffect::end(SkPath* dst) {}
 
 void Sk2DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-    char storage[SkMatrix::kMaxFlattenSize];
-    uint32_t size = fMatrix.flatten(storage);
-    buffer.write32(size);
-    buffer.write(storage, size);
+    buffer.writeMatrix(fMatrix);
 }
 
 Sk2DPathEffect::Sk2DPathEffect(SkFlattenableReadBuffer& buffer) {
-    char storage[SkMatrix::kMaxFlattenSize];
-    uint32_t size = buffer.readS32();
-    SkASSERT(size <= sizeof(storage));
-    buffer.read(storage, size);
-    fMatrix.unflatten(storage);
+    buffer.readMatrix(&fMatrix);
     fMatrixIsInvertible = fMatrix.invert(&fInverse);
 }
 

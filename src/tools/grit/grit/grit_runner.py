@@ -16,7 +16,7 @@ import getopt
 
 from grit import util
 
-import grit.exception
+import grit.extern.FP
 
 # Copyright notice
 _COPYRIGHT = """\
@@ -70,6 +70,10 @@ def ToolFactoryUnit():
   import grit.tool.unit
   return grit.tool.unit.UnitTestTool()
 
+def ToolFactoryXmb():
+  import grit.tool.xmb
+  return grit.tool.xmb.OutputXmb()
+
 # Keys for the following map
 _FACTORY = 1
 _REQUIRES_INPUT = 2
@@ -80,22 +84,23 @@ _HIDDEN = 3  # optional key - presence indicates tool is hidden
 _TOOLS = [
   ['build', { _FACTORY : ToolFactoryBuild, _REQUIRES_INPUT : True }],
   ['buildinfo', { _FACTORY : ToolFactoryBuildInfo, _REQUIRES_INPUT : True }],
-  ['newgrd', { _FACTORY  : ToolFactoryNewGrd, _REQUIRES_INPUT : False }],
-  ['rc2grd', { _FACTORY : ToolFactoryRc2Grd, _REQUIRES_INPUT : False }],
-  ['transl2tc', { _FACTORY : ToolFactoryTranslationToTc,
-                  _REQUIRES_INPUT : False }],
-  ['sdiff', { _FACTORY : ToolFactoryDiffStructures,
-              _REQUIRES_INPUT : False }],
-  ['resize', {
-      _FACTORY : ToolFactoryResizeDialog, _REQUIRES_INPUT : True }],
-  ['unit', { _FACTORY : ToolFactoryUnit, _REQUIRES_INPUT : False }],
   ['count', { _FACTORY : ToolFactoryCount, _REQUIRES_INPUT : True }],
-  ['test', {
-      _FACTORY: ToolFactoryTest, _REQUIRES_INPUT : True,
-      _HIDDEN : True }],
   ['menufromparts', {
       _FACTORY: ToolFactoryMenuTranslationsFromParts,
       _REQUIRES_INPUT : True, _HIDDEN : True }],
+  ['newgrd', { _FACTORY  : ToolFactoryNewGrd, _REQUIRES_INPUT : False }],
+  ['rc2grd', { _FACTORY : ToolFactoryRc2Grd, _REQUIRES_INPUT : False }],
+  ['resize', {
+      _FACTORY : ToolFactoryResizeDialog, _REQUIRES_INPUT : True }],
+  ['sdiff', { _FACTORY : ToolFactoryDiffStructures,
+              _REQUIRES_INPUT : False }],
+  ['test', {
+      _FACTORY: ToolFactoryTest, _REQUIRES_INPUT : True,
+      _HIDDEN : True }],
+  ['transl2tc', { _FACTORY : ToolFactoryTranslationToTc,
+                  _REQUIRES_INPUT : False }],
+  ['unit', { _FACTORY : ToolFactoryUnit, _REQUIRES_INPUT : False }],
+  ['xmb', { _FACTORY : ToolFactoryXmb, _REQUIRES_INPUT : True }],
 ]
 
 
@@ -122,6 +127,10 @@ Global options:
             If it is not present either, GRIT will try to find an input file
             named 'resource.grd' in the current working directory.
 
+  -h MODULE Causes GRIT to use MODULE.UnsignedFingerPrint instead of
+            grit.extern.FP.UnsignedFingerprint.  MODULE must be
+            available somewhere in the PYTHONPATH search path.
+
   -v        Print more verbose runtime information.
 
   -x        Print extremely verbose runtime information.  Implies -v
@@ -144,6 +153,7 @@ class Options(object):
   def __init__(self):
     self.disconnected = False
     self.client = ''
+    self.hash = None
     self.input = None
     self.verbose = False
     self.extra_verbose = False
@@ -153,10 +163,11 @@ class Options(object):
 
   def ReadOptions(self, args):
     """Reads options from the start of args and returns the remainder."""
-    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:', ('psyco',))
+    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:h:', ('psyco',))
     for (key, val) in opts:
       if key == '-d': self.disconnected = True
       elif key == '-c': self.client = val
+      elif key == '-h': self.hash = val
       elif key == '-i': self.input = val
       elif key == '-v':
         self.verbose = True
@@ -243,6 +254,9 @@ def Main(args):
       # compilations.  See http://psyco.sourceforge.net/
       import psyco
       psyco.profile()
+
+    if options.hash:
+      grit.extern.FP.UseUnsignedFingerPrintFromModule(options.hash)
 
     toolobject = _GetToolInfo(tool)[_FACTORY]()
     if options.profile_dest:

@@ -18,7 +18,6 @@ const unsigned int URLRequestThrottlerManager::kRequestsBetweenCollecting = 200;
 
 URLRequestThrottlerManager::URLRequestThrottlerManager()
     : requests_since_last_gc_(0),
-      enforce_throttling_(true),
       enable_thread_checks_(false),
       logged_for_localhost_disabled_(false),
       registered_from_thread_(base::kInvalidThreadId) {
@@ -28,17 +27,15 @@ URLRequestThrottlerManager::URLRequestThrottlerManager()
   url_id_replacements_.ClearRef();
 
   NetworkChangeNotifier::AddIPAddressObserver(this);
-  NetworkChangeNotifier::AddOnlineStateObserver(this);
+  NetworkChangeNotifier::AddConnectionTypeObserver(this);
 }
 
 URLRequestThrottlerManager::~URLRequestThrottlerManager() {
   NetworkChangeNotifier::RemoveIPAddressObserver(this);
-  NetworkChangeNotifier::RemoveOnlineStateObserver(this);
+  NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
 
-  // Since, for now, the manager object might conceivably go away before
-  // the entries, detach the entries' back-pointer to the manager.
-  //
-  // TODO(joi): Revisit whether to make entries non-refcounted.
+  // Since the manager object might conceivably go away before the
+  // entries, detach the entries' back-pointer to the manager.
   UrlEntryMap::iterator i = url_entries_.begin();
   while (i != url_entries_.end()) {
     if (i->second != NULL) {
@@ -86,9 +83,8 @@ scoped_refptr<URLRequestThrottlerEntryInterface>
         IsLocalhost(host)) {
       if (!logged_for_localhost_disabled_ && IsLocalhost(host)) {
         logged_for_localhost_disabled_ = true;
-        net_log_.AddEvent(
-            NetLog::TYPE_THROTTLING_DISABLED_FOR_HOST,
-            make_scoped_refptr(new NetLogStringParameter("host", host)));
+        net_log_.AddEvent(NetLog::TYPE_THROTTLING_DISABLED_FOR_HOST,
+                          NetLog::StringCallback("host", &host));
       }
 
       // TODO(joi): Once sliding window is separate from back-off throttling,
@@ -111,9 +107,8 @@ void URLRequestThrottlerManager::AddToOptOutList(const std::string& host) {
   if (opt_out_hosts_.find(host) == opt_out_hosts_.end()) {
     UMA_HISTOGRAM_COUNTS("Throttling.SiteOptedOut", 1);
 
-    net_log_.EndEvent(
-        NetLog::TYPE_THROTTLING_DISABLED_FOR_HOST,
-        make_scoped_refptr(new NetLogStringParameter("host", host)));
+    net_log_.EndEvent(NetLog::TYPE_THROTTLING_DISABLED_FOR_HOST,
+                      NetLog::StringCallback("host", &host));
     opt_out_hosts_.insert(host);
   }
 }
@@ -144,14 +139,6 @@ bool URLRequestThrottlerManager::enable_thread_checks() const {
   return enable_thread_checks_;
 }
 
-void URLRequestThrottlerManager::set_enforce_throttling(bool enforce) {
-  enforce_throttling_ = enforce;
-}
-
-bool URLRequestThrottlerManager::enforce_throttling() {
-  return enforce_throttling_;
-}
-
 void URLRequestThrottlerManager::set_net_log(NetLog* net_log) {
   DCHECK(net_log);
   net_log_ = BoundNetLog::Make(net_log,
@@ -166,7 +153,8 @@ void URLRequestThrottlerManager::OnIPAddressChanged() {
   OnNetworkChange();
 }
 
-void URLRequestThrottlerManager::OnOnlineStateChanged(bool online) {
+void URLRequestThrottlerManager::OnConnectionTypeChanged(
+    NetworkChangeNotifier::ConnectionType type) {
   OnNetworkChange();
 }
 
@@ -207,7 +195,7 @@ void URLRequestThrottlerManager::OnNetworkChange() {
   // Remove all entries.  Any entries that in-flight requests have a reference
   // to will live until those requests end, and these entries may be
   // inconsistent with new entries for the same URLs, but since what we
-  // want is a clean slate for the new connection state, this is OK.
+  // want is a clean slate for the new connection type, this is OK.
   url_entries_.clear();
   requests_since_last_gc_ = 0;
 }

@@ -6,10 +6,7 @@
 '''Stuff to prevent conflicting shortcuts.
 '''
 
-import re
-
 from grit import lazy_re
-from grit import util
 
 
 class ShortcutGroup(object):

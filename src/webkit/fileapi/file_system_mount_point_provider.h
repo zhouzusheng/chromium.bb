@@ -10,30 +10,28 @@
 
 #include "base/callback_forward.h"
 #include "base/file_path.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_types.h"
 
 class GURL;
 
-namespace base {
-class MessageLoopProxy;
-}
-
 namespace webkit_blob {
-class FileReader;
+class FileStreamReader;
 }
 
 namespace fileapi {
 
+class FileStreamWriter;
 class FileSystemContext;
 class FileSystemFileUtil;
 class FileSystemOperationInterface;
+class FileSystemQuotaUtil;
 class RemoteFileSystemProxyInterface;
 
 // An interface to provide mount-point-specific path-related utilities
 // and specialized FileSystemFileUtil instance.
-class FileSystemMountPointProvider {
+class FILEAPI_EXPORT FileSystemMountPointProvider {
  public:
   // Callback for ValidateFileSystemRoot.
   typedef base::Callback<void(base::PlatformFileError error)>
@@ -70,11 +68,6 @@ class FileSystemMountPointProvider {
   // Callable on any thread.
   virtual bool IsRestrictedFileName(const FilePath& filename) const = 0;
 
-  // Returns the list of top level directories that are exposed by this
-  // provider. This list is used to set appropriate child process file access
-  // permissions.
-  virtual std::vector<FilePath> GetRootDirectories() const = 0;
-
   // Returns the specialized FileSystemFileUtil for this mount point.
   virtual FileSystemFileUtil* GetFileUtil() = 0;
 
@@ -92,25 +85,41 @@ class FileSystemMountPointProvider {
       const GURL& origin_url,
       FileSystemType file_system_type,
       const FilePath& virtual_path,
-      base::MessageLoopProxy* file_proxy,
       FileSystemContext* context) const = 0;
 
-  // Creates a new file reader for a given filesystem URL |url| with a offset
-  // |offset|.
+  // Creates a new file stream reader for a given filesystem URL |url| with an
+  // offset |offset|.
   // The returned object must be owned and managed by the caller.
   // This method itself does *not* check if the given path exists and is a
   // regular file.
-  virtual webkit_blob::FileReader* CreateFileReader(
+  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
     const GURL& url,
     int64 offset,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const = 0;
+
+  // Creates a new file stream writer for a given filesystem URL |url| with an
+  // offset |offset|.
+  // The returned object must be owned and managed by the caller.
+  // This method itself does *not* check if the given path exists and is a
+  // regular file.
+  virtual FileStreamWriter* CreateFileStreamWriter(
+      const GURL& url,
+      int64 offset,
+      FileSystemContext* context) const = 0;
+
+  // Returns the specialized FileSystemQuotaUtil for this mount point.
+  // This could return NULL if this mount point does not support quota.
+  virtual FileSystemQuotaUtil* GetQuotaUtil() = 0;
 };
 
 // An interface to control external file system access permissions.
 class ExternalFileSystemMountPointProvider
     : public FileSystemMountPointProvider {
  public:
+  // Returns the list of top level directories that are exposed by this
+  // provider. This list is used to set appropriate child process file access
+  // permissions.
+  virtual std::vector<FilePath> GetRootDirectories() const = 0;
   // Grant access to all external file system from extension identified with
   // |extension_id|.
   virtual void GrantFullAccessToExtension(const std::string& extension_id) = 0;

@@ -33,6 +33,7 @@
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "PaintInfo.h"
+#include "TimeRanges.h"
 
 namespace WebCore {
 
@@ -73,14 +74,25 @@ static bool paintMediaMuteButton(RenderObject* object, const PaintInfo& paintInf
     if (!mediaElement)
       return false;
 
-    static Image* soundFull = platformResource("mediaSoundFull");
-    static Image* soundNone = platformResource("mediaSoundNone");
-    static Image* soundDisabled = platformResource("mediaSoundDisabled");
+    static Image* soundLevel3 = platformResource("mediaplayerSoundLevel3");
+    static Image* soundLevel2 = platformResource("mediaplayerSoundLevel2");
+    static Image* soundLevel1 = platformResource("mediaplayerSoundLevel1");
+    static Image* soundLevel0 = platformResource("mediaplayerSoundLevel0");
+    static Image* soundDisabled = platformResource("mediaplayerSoundDisabled");
 
     if (!hasSource(mediaElement) || !mediaElement->hasAudio())
         return paintMediaButton(paintInfo.context, rect, soundDisabled);
 
-    return paintMediaButton(paintInfo.context, rect, mediaElement->muted() ? soundNone: soundFull);
+    if (mediaElement->muted() || mediaElement->volume() <= 0)
+        return paintMediaButton(paintInfo.context, rect, soundLevel0);
+
+    if (mediaElement->volume() <= 0.33)
+        return paintMediaButton(paintInfo.context, rect, soundLevel1);
+
+    if (mediaElement->volume() <= 0.66)
+        return paintMediaButton(paintInfo.context, rect, soundLevel2);
+
+    return paintMediaButton(paintInfo.context, rect, soundLevel3);
 }
 
 static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -89,9 +101,9 @@ static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInf
     if (!mediaElement)
         return false;
 
-    static Image* mediaPlay = platformResource("mediaPlay");
-    static Image* mediaPause = platformResource("mediaPause");
-    static Image* mediaPlayDisabled = platformResource("mediaPlayDisabled");
+    static Image* mediaPlay = platformResource("mediaplayerPlay");
+    static Image* mediaPause = platformResource("mediaplayerPause");
+    static Image* mediaPlayDisabled = platformResource("mediaplayerPlayDisabled");
 
     if (!hasSource(mediaElement))
         return paintMediaButton(paintInfo.context, rect, mediaPlayDisabled);
@@ -101,9 +113,77 @@ static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInf
 
 static Image* getMediaSliderThumb()
 {
-    static Image* mediaSliderThumb = platformResource("mediaSliderThumb");
+    static Image* mediaSliderThumb = platformResource("mediaplayerSliderThumb");
     return mediaSliderThumb;
 }
+
+static void paintRoundedSliderBackground(const IntRect& rect, const RenderStyle* style, GraphicsContext* context)
+{
+    int borderRadius = rect.height() / 2;
+    IntSize radii(borderRadius, borderRadius);
+    Color sliderBackgroundColor = Color(11, 11, 11);
+    context->save();
+    context->fillRoundedRect(rect, radii, radii, radii, radii, sliderBackgroundColor, ColorSpaceDeviceRGB);
+    context->restore();
+}
+
+static void paintSliderRangeHighlight(const IntRect& rect, const RenderStyle* style, GraphicsContext* context, int startPosition, int endPosition, Color startColor, Color endColor)
+{
+    // Calculate border radius; need to avoid being smaller than half the slider height
+    // because of https://bugs.webkit.org/show_bug.cgi?id=30143.
+    int borderRadius = rect.height() / 2;
+    IntSize radii(borderRadius, borderRadius);
+
+    // Calculate highlight rectangle and edge dimensions.
+    int startOffset = startPosition;
+    int endOffset = rect.width() - endPosition;
+    int rangeWidth = endPosition - startPosition;
+
+    if (rangeWidth <= 0)
+        return;
+
+    // Make sure the range width is bigger than border radius at the edges to retain rounded corners.
+    if (startOffset < borderRadius && rangeWidth < borderRadius)
+        rangeWidth = borderRadius;
+    if (endOffset < borderRadius && rangeWidth < borderRadius) {
+        startPosition -= borderRadius - rangeWidth;
+        rangeWidth = borderRadius;
+    }
+
+    // Set rectangle to highlight range.
+    IntRect highlightRect = rect;
+    highlightRect.move(startOffset, 0);
+    highlightRect.setWidth(rangeWidth);
+
+    // Don't bother drawing an empty area.
+    if (highlightRect.isEmpty())
+        return;
+
+    // Calculate white-grey gradient.
+    IntPoint sliderTopLeft = highlightRect.location();
+    IntPoint sliderBottomLeft = sliderTopLeft;
+    sliderBottomLeft.move(0, highlightRect.height());
+    RefPtr<Gradient> gradient = Gradient::create(sliderTopLeft, sliderBottomLeft);
+    gradient->addColorStop(0.0, startColor);
+    gradient->addColorStop(1.0, endColor);
+
+    // Fill highlight rectangle with gradient, potentially rounded if on left or right edge.
+    context->save();
+    context->setFillGradient(gradient);
+
+    if (startOffset < borderRadius && endOffset < borderRadius)
+        context->fillRoundedRect(highlightRect, radii, radii, radii, radii, startColor, ColorSpaceDeviceRGB);
+    else if (startOffset < borderRadius)
+        context->fillRoundedRect(highlightRect, radii, IntSize(0, 0), radii, IntSize(0, 0), startColor, ColorSpaceDeviceRGB);
+    else if (endOffset < borderRadius)
+        context->fillRoundedRect(highlightRect, IntSize(0, 0), radii, IntSize(0, 0), radii, startColor, ColorSpaceDeviceRGB);
+    else
+        context->fillRect(highlightRect);
+
+    context->restore();
+}
+
+const int mediaSliderThumbWidth = 32;
 
 static bool paintMediaSlider(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
@@ -114,51 +194,44 @@ static bool paintMediaSlider(RenderObject* object, const PaintInfo& paintInfo, c
     RenderStyle* style = object->style();
     GraphicsContext* context = paintInfo.context;
 
-    // Draw the border of the time bar.
-    // FIXME: this should be a rounded rect but need to fix GraphicsContextSkia first.
-    // https://bugs.webkit.org/show_bug.cgi?id=30143
-    context->save();
-    context->setShouldAntialias(true);
-    context->setStrokeStyle(SolidStroke);
-    context->setStrokeColor(style->visitedDependentColor(CSSPropertyBorderLeftColor), ColorSpaceDeviceRGB);
-    context->setStrokeThickness(style->borderLeftWidth());
-    context->setFillColor(style->visitedDependentColor(CSSPropertyBackgroundColor), ColorSpaceDeviceRGB);
-    context->drawRect(rect);
-    context->restore();
+    paintRoundedSliderBackground(rect, style, context);
 
-    // Draw the buffered ranges.
-    // FIXME: Draw multiple ranges if there are multiple buffered ranges.
-    IntRect bufferedRect = rect;
-    bufferedRect.inflate(-style->borderLeftWidth());
+    // Draw the buffered range. Since the element may have multiple buffered ranges and it'd be
+    // distracting/'busy' to show all of them, show only the buffered range containing the current play head.
+    RefPtr<TimeRanges> bufferedTimeRanges = mediaElement->buffered();
+    float duration = mediaElement->duration();
+    float currentTime = mediaElement->currentTime();
+    if (isnan(duration) || isinf(duration) || !duration || isnan(currentTime))
+        return true;
 
-    double bufferedWidth = 0.0;
-    if (mediaElement->percentLoaded() > 0.0) {
-        // Account for the width of the slider thumb.
-        Image* mediaSliderThumb = getMediaSliderThumb();
-        double thumbWidth = mediaSliderThumb->width() / 2.0 + 1.0;
-        double rectWidth = bufferedRect.width() - thumbWidth;
-        if (rectWidth < 0.0)
-            rectWidth = 0.0;
-        bufferedWidth = rectWidth * mediaElement->percentLoaded() + thumbWidth;
-    }
-    bufferedRect.setWidth(bufferedWidth);
+    for (unsigned i = 0; i < bufferedTimeRanges->length(); ++i) {
+        float start = bufferedTimeRanges->start(i, ASSERT_NO_EXCEPTION);
+        float end = bufferedTimeRanges->end(i, ASSERT_NO_EXCEPTION);
+        if (isnan(start) || isnan(end) || start > currentTime || end < currentTime)
+            continue;
+        int startPosition = int(start * rect.width() / duration);
+        int currentPosition = int(currentTime * rect.width() / duration);
+        int endPosition = int(end * rect.width() / duration);
 
-    // Don't bother drawing an empty area.
-    if (!bufferedRect.isEmpty()) {
-        IntPoint sliderTopLeft = bufferedRect.location();
-        IntPoint sliderTopRight = sliderTopLeft;
-        sliderTopRight.move(0, bufferedRect.height());
+        // Add half the thumb width proportionally adjusted to the current painting position.
+        int thumbCenter = mediaSliderThumbWidth / 2;
+        int addWidth = thumbCenter * (1.0 - 2.0 * currentPosition / rect.width());
+        currentPosition += addWidth;
 
-        RefPtr<Gradient> gradient = Gradient::create(sliderTopLeft, sliderTopRight);
-        Color startColor = object->style()->visitedDependentColor(CSSPropertyColor);
-        gradient->addColorStop(0.0, startColor);
-        gradient->addColorStop(1.0, Color(startColor.red() / 2, startColor.green() / 2, startColor.blue() / 2, startColor.alpha()));
+        // Draw white-ish highlight before current time.
+        Color startColor = Color(195, 195, 195);
+        Color endColor = Color(217, 217, 217);
+        if (currentPosition > startPosition)
+            paintSliderRangeHighlight(rect, style, context, startPosition, currentPosition, startColor, endColor);
 
-        context->save();
-        context->setStrokeStyle(NoStroke);
-        context->setFillGradient(gradient);
-        context->fillRect(bufferedRect);
-        context->restore();
+        // Draw grey-ish highlight after current time.
+        startColor = Color(60, 60, 60);
+        endColor = Color(76, 76, 76);
+
+        if (endPosition > currentPosition)
+            paintSliderRangeHighlight(rect, style, context, currentPosition, endPosition, startColor, endColor);
+
+        return true;
     }
 
     return true;
@@ -180,6 +253,8 @@ static bool paintMediaSliderThumb(RenderObject* object, const PaintInfo& paintIn
     return paintMediaButton(paintInfo.context, rect, mediaSliderThumb);
 }
 
+const int mediaVolumeSliderThumbWidth = 24;
+
 static bool paintMediaVolumeSlider(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     HTMLMediaElement* mediaElement = toParentMediaElement(object);
@@ -187,55 +262,50 @@ static bool paintMediaVolumeSlider(RenderObject* object, const PaintInfo& paintI
         return false;
 
     GraphicsContext* context = paintInfo.context;
-    Color originalColor = context->strokeColor();
-    if (originalColor != Color::white)
-        context->setStrokeColor(Color::white, ColorSpaceDeviceRGB);
+    RenderStyle* style = object->style();
 
-    int x = rect.x() + rect.width() / 2;
-    context->drawLine(IntPoint(x, rect.y()),  IntPoint(x, rect.y() + rect.height()));
+    paintRoundedSliderBackground(rect, style, context);
 
-    if (originalColor != Color::white)
-        context->setStrokeColor(originalColor, ColorSpaceDeviceRGB);
+    // Calculate volume position for white background rectangle.
+    float volume = mediaElement->volume();
+    if (isnan(volume) || volume < 0)
+        return true;
+    if (volume > 1)
+        volume = 1;
+    if (!hasSource(mediaElement) || !mediaElement->hasAudio() || mediaElement->muted())
+        volume = 0;
+
+    // Calculate the position relative to the center of the thumb.
+    float fillWidth = 0;
+    if (volume > 0) {
+        float thumbCenter = mediaVolumeSliderThumbWidth / 2;
+        float zoomLevel = style->effectiveZoom();
+        float positionWidth = volume * (rect.width() - (zoomLevel * thumbCenter));
+        fillWidth = positionWidth + (zoomLevel * thumbCenter / 2);
+    }
+
+    Color startColor = Color(195, 195, 195);
+    Color endColor = Color(217, 217, 217);
+
+    paintSliderRangeHighlight(rect, style, context, 0.0, fillWidth, startColor, endColor);
+
     return true;
 }
 
 static bool paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    static Image* mediaVolumeSliderThumb = platformResource("mediaVolumeSliderThumb");
-    return paintMediaButton(paintInfo.context, rect, mediaVolumeSliderThumb);
-}
-
-static bool paintMediaTimelineContainer(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(object);
+    ASSERT(object->node());
+    Node* hostNode = object->node()->shadowAncestorNode();
+    ASSERT(hostNode);
+    HTMLMediaElement* mediaElement = toParentMediaElement(hostNode);
     if (!mediaElement)
         return false;
 
-    if (!rect.isEmpty()) {
-        GraphicsContext* context = paintInfo.context;
-        Color originalColor = context->strokeColor();
-        float originalThickness = context->strokeThickness();
-        StrokeStyle originalStyle = context->strokeStyle();
+    if (!hasSource(mediaElement) || !mediaElement->hasAudio())
+        return true;
 
-        context->setStrokeStyle(SolidStroke);
-
-        // Draw the left border using CSS defined width and color.
-        context->setStrokeThickness(object->style()->borderLeftWidth());
-        context->setStrokeColor(object->style()->visitedDependentColor(CSSPropertyBorderLeftColor).rgb(), ColorSpaceDeviceRGB);
-        context->drawLine(IntPoint(rect.x() + 1, rect.y()),
-                          IntPoint(rect.x() + 1, rect.y() + rect.height()));
-
-        // Draw the right border using CSS defined width and color.
-        context->setStrokeThickness(object->style()->borderRightWidth());
-        context->setStrokeColor(object->style()->visitedDependentColor(CSSPropertyBorderRightColor).rgb(), ColorSpaceDeviceRGB);
-        context->drawLine(IntPoint(rect.x() + rect.width() - 1, rect.y()),
-                          IntPoint(rect.x() + rect.width() - 1, rect.y() + rect.height()));
-
-        context->setStrokeColor(originalColor, ColorSpaceDeviceRGB);
-        context->setStrokeThickness(originalThickness);
-        context->setStrokeStyle(originalStyle);
-    }
-    return true;
+    static Image* mediaVolumeSliderThumb = platformResource("mediaplayerVolumeSliderThumb");
+    return paintMediaButton(paintInfo.context, rect, mediaVolumeSliderThumb);
 }
 
 static bool paintMediaFullscreenButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -244,8 +314,8 @@ static bool paintMediaFullscreenButton(RenderObject* object, const PaintInfo& pa
     if (!mediaElement)
         return false;
 
-    DEFINE_STATIC_LOCAL(Image*, mediaFullscreen, (platformResource("mediaFullscreen")));
-    return paintMediaButton(paintInfo.context, rect, mediaFullscreen);
+    static Image* mediaFullscreenButton = platformResource("mediaplayerFullscreen");
+    return paintMediaButton(paintInfo.context, rect, mediaFullscreenButton);
 }
 
 bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType part, RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -265,8 +335,6 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
         return paintMediaVolumeSlider(object, paintInfo, rect);
     case MediaVolumeSliderThumb:
         return paintMediaVolumeSliderThumb(object, paintInfo, rect);
-    case MediaTimelineContainer:
-        return paintMediaTimelineContainer(object, paintInfo, rect);
     case MediaEnterFullscreenButton:
     case MediaExitFullscreenButton:
         return paintMediaFullscreenButton(object, paintInfo, rect);
@@ -274,6 +342,7 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     case MediaSeekBackButton:
     case MediaSeekForwardButton:
     case MediaVolumeSliderContainer:
+    case MediaTimelineContainer:
     case MediaCurrentTimeDisplay:
     case MediaTimeRemainingDisplay:
     case MediaControlsPanel:
@@ -292,22 +361,71 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     return false;
 }
 
+const int mediaSliderThumbHeight = 24;
+const int mediaVolumeSliderThumbHeight = 24;
+
 void RenderMediaControlsChromium::adjustMediaSliderThumbSize(RenderStyle* style)
 {
-    static Image* mediaSliderThumb = platformResource("mediaSliderThumb");
-    static Image* mediaVolumeSliderThumb = platformResource("mediaVolumeSliderThumb");
+    static Image* mediaSliderThumb = platformResource("mediaplayerSliderThumb");
+    static Image* mediaVolumeSliderThumb = platformResource("mediaplayerVolumeSliderThumb");
+    int width = 0;
+    int height = 0;
 
     Image* thumbImage = 0;
-    if (style->appearance() == MediaSliderThumbPart)
+    if (style->appearance() == MediaSliderThumbPart) {
         thumbImage = mediaSliderThumb;
-    else if (style->appearance() == MediaVolumeSliderThumbPart)
+        width = mediaSliderThumbWidth;
+        height = mediaSliderThumbHeight;
+    } else if (style->appearance() == MediaVolumeSliderThumbPart) {
         thumbImage = mediaVolumeSliderThumb;
+        width = mediaVolumeSliderThumbWidth;
+        height = mediaVolumeSliderThumbHeight;
+    }
 
     float zoomLevel = style->effectiveZoom();
     if (thumbImage) {
-        style->setWidth(Length(static_cast<int>(thumbImage->width() * zoomLevel), Fixed));
-        style->setHeight(Length(static_cast<int>(thumbImage->height() * zoomLevel), Fixed));
+        style->setWidth(Length(static_cast<int>(width * zoomLevel), Fixed));
+        style->setHeight(Length(static_cast<int>(height * zoomLevel), Fixed));
     }
+}
+
+static String formatChromiumMediaControlsTime(float time, float duration)
+{
+    if (!isfinite(time))
+        time = 0;
+    if (!isfinite(duration))
+        duration = 0;
+    int seconds = static_cast<int>(fabsf(time));
+    int hours = seconds / (60 * 60);
+    int minutes = (seconds / 60) % 60;
+    seconds %= 60;
+
+    // duration defines the format of how the time is rendered
+    int durationSecs = static_cast<int>(fabsf(duration));
+    int durationHours = durationSecs / (60 * 60);
+    int durationMins = (durationSecs / 60) % 60;
+
+    if (durationHours || hours)
+        return String::format("%s%01d:%02d:%02d", (time < 0 ? "-" : ""), hours, minutes, seconds);
+    if (durationMins > 9)
+        return String::format("%s%02d:%02d", (time < 0 ? "-" : ""), minutes, seconds);
+
+    return String::format("%s%01d:%02d", (time < 0 ? "-" : ""), minutes, seconds);
+}
+
+String RenderMediaControlsChromium::formatMediaControlsTime(float time)
+{
+    return formatChromiumMediaControlsTime(time, time);
+}
+
+String RenderMediaControlsChromium::formatMediaControlsCurrentTime(float currentTime, float duration)
+{
+    return formatChromiumMediaControlsTime(currentTime, duration);
+}
+
+String RenderMediaControlsChromium::formatMediaControlsRemainingTime(float currentTime, float duration)
+{
+    return formatChromiumMediaControlsTime(currentTime - duration, duration);
 }
 
 #endif  // #if ENABLE(VIDEO)

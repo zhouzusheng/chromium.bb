@@ -33,6 +33,7 @@
 #include "PlatformString.h"
 #include <time.h>
 #include <wtf/Forward.h>
+#include <wtf/MathExtras.h>
 #include <wtf/Vector.h>
 
 #if USE(CF)
@@ -151,12 +152,14 @@ static const char PlatformFilePathSeparator = '\\';
 static const char PlatformFilePathSeparator = '/';
 #endif
 
-void revealFolderInOS(const String&);
+struct FileMetadata;
+
 bool fileExists(const String&);
 bool deleteFile(const String&);
 bool deleteEmptyDirectory(const String&);
 bool getFileSize(const String&, long long& result);
 bool getFileModificationTime(const String&, time_t& result);
+bool getFileMetadata(const String&, FileMetadata&);
 String pathByAppendingComponent(const String& path, const String& component);
 bool makeAllDirectories(const String& path);
 String homeDirectoryPath();
@@ -171,6 +174,9 @@ Vector<String> listDirectory(const String& path, const String& filter = String()
 CString fileSystemRepresentation(const String&);
 
 inline bool isHandleValid(const PlatformFileHandle& handle) { return handle != invalidPlatformFileHandle; }
+
+inline double invalidFileTime() { return std::numeric_limits<double>::quiet_NaN(); }
+inline bool isValidFileTime(double time) { return isfinite(time); }
 
 // Prefix is what the filename should be prefixed with, not the full path.
 String openTemporaryFile(const String& prefix, PlatformFileHandle&);
@@ -203,6 +209,8 @@ String filenameToString(const char*);
 String filenameForDisplay(const String&);
 CString applicationDirectoryPath();
 CString sharedResourcesPath();
+#endif
+#if PLATFORM(GTK) || PLATFORM(QT)
 uint64_t getVolumeFreeSizeForPath(const char*);
 #endif
 

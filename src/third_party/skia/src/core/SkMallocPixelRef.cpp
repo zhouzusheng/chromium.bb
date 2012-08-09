@@ -18,6 +18,8 @@ SkMallocPixelRef::SkMallocPixelRef(void* storage, size_t size,
     fSize = size;
     fCTable = ctable;
     SkSafeRef(ctable);
+    
+    this->setPreLocked(fStorage, fCTable);
 }
 
 SkMallocPixelRef::~SkMallocPixelRef() {
@@ -41,7 +43,7 @@ void SkMallocPixelRef::flatten(SkFlattenableWriteBuffer& buffer) const {
     buffer.writePad(fStorage, fSize);
     if (fCTable) {
         buffer.writeBool(true);
-        fCTable->flatten(buffer);
+        buffer.writeFlattenable(fCTable);
     } else {
         buffer.writeBool(false);
     }
@@ -53,10 +55,12 @@ SkMallocPixelRef::SkMallocPixelRef(SkFlattenableReadBuffer& buffer)
     fStorage = sk_malloc_throw(fSize);
     buffer.read(fStorage, fSize);
     if (buffer.readBool()) {
-        fCTable = SkNEW_ARGS(SkColorTable, (buffer));
+        fCTable = static_cast<SkColorTable*>(buffer.readFlattenable());
     } else {
         fCTable = NULL;
     }
+
+    this->setPreLocked(fStorage, fCTable);
 }
 
 SK_DEFINE_FLATTENABLE_REGISTRAR(SkMallocPixelRef)

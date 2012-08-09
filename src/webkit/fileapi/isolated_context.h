@@ -15,6 +15,7 @@
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
 #include "base/lazy_instance.h"
+#include "webkit/fileapi/fileapi_export.h"
 
 namespace fileapi {
 
@@ -23,7 +24,7 @@ namespace fileapi {
 // a singleton and access to the context is thread-safe (protected with a
 // lock).
 // Some methods of this class are virtual just for mocking.
-class IsolatedContext {
+class FILEAPI_EXPORT IsolatedContext {
  public:
   // The instance is lazily created per browser process.
   static IsolatedContext* GetInstance();
@@ -76,12 +77,19 @@ class IsolatedContext {
   // Returns a vector of the full paths of the top-level entry paths
   // registered for the |filesystem_id|.  Returns false if the
   // |filesystem_is| is not valid.
-  bool GetTopLevelPaths(std::string filesystem_id,
+  bool GetTopLevelPaths(const std::string& filesystem_id,
                         std::vector<FilePath>* paths) const;
 
   // Returns the virtual path that looks like /<filesystem_id>/<relative_path>.
   FilePath CreateVirtualPath(const std::string& filesystem_id,
                              const FilePath& relative_path) const;
+
+  // Set the filesystem writable if |writable| is true, non-writable
+  // if it is false. Returns false if the |filesystem_id| is not valid.
+  bool SetWritable(const std::string& filesystem_id, bool writable);
+
+  // Returns true if the |filesystem_id| is writable.
+  bool IsWritable(const std::string& filesystem_id) const;
 
  private:
   friend struct base::DefaultLazyInstanceTraits<IsolatedContext>;
@@ -102,6 +110,13 @@ class IsolatedContext {
 
   // Maps the toplevel entries to the filesystem id.
   IDToPathMap toplevel_map_;
+
+  // Holds a set of writable ids.
+  // Isolated file systems are created read-only by default, and this set
+  // holds a list of exceptions.
+  // Detailed filesystem permission may be provided by an external
+  // security policy manager, e.g. ChildProcessSecurityPolicy.
+  std::set<std::string> writable_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(IsolatedContext);
 };

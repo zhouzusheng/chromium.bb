@@ -31,42 +31,187 @@
 /**
  * @constructor
  * @extends {WebInspector.UISourceCode}
- * @param {string} id
  * @param {string} url
+ * @param {WebInspector.Resource} resource
  * @param {WebInspector.ContentProvider} contentProvider
+ * @param {WebInspector.SourceMapping} sourceMapping
  */
-WebInspector.JavaScriptSource = function(id, url, contentProvider)
+WebInspector.JavaScriptSource = function(url, resource, contentProvider, sourceMapping, isEditable)
 {
-    WebInspector.UISourceCode.call(this, id, url, contentProvider);
+    WebInspector.UISourceCode.call(this, url, resource, contentProvider, sourceMapping);
+    this._isEditable = isEditable;
 
-    /**
-     * @type {Array.<WebInspector.PresentationConsoleMessage>}
-     */
-    this._consoleMessages = [];
+    this._formatterMapping = new WebInspector.IdentityFormatterSourceMapping();
+    // FIXME: postpone breakpoints restore to after the mapping has been established.
+    setTimeout(function() {
+        if (!this._formatted)
+            WebInspector.breakpointManager.restoreBreakpoints(this);
+    }.bind(this), 0);
 }
 
 WebInspector.JavaScriptSource.prototype = {
     /**
-     * @return {Array.<WebInspector.PresentationConsoleMessage>}
+     * @param {?string} content
+     * @param {boolean} contentEncoded
+     * @param {string} mimeType
      */
-    consoleMessages: function()
+    fireContentAvailable: function(content, contentEncoded, mimeType)
     {
-        return this._consoleMessages;
+        WebInspector.UISourceCode.prototype.fireContentAvailable.call(this, content, contentEncoded, mimeType);
+        if (this._formatOnLoad) {
+            delete this._formatOnLoad;
+            this.setFormatted(true);
+        }
     },
 
     /**
-     * @param {WebInspector.PresentationConsoleMessage} message
+     * @param {boolean} formatted
+     * @param {function()=} callback
      */
-    consoleMessageAdded: function(message)
+    setFormatted: function(formatted, callback)
     {
-        this._consoleMessages.push(message);
-        this.dispatchEventToListeners(WebInspector.UISourceCode.Events.ConsoleMessageAdded, message);
+        callback = callback || function() {};
+        if (!this.contentLoaded()) {
+            this._formatOnLoad = formatted;
+            callback();
+            return;
+        }
+
+        if (this._formatted === formatted) {
+            callback();
+            return;
+        }
+
+        this._formatted = formatted;
+
+        // Re-request content
+        this._contentLoaded = false;
+        WebInspector.UISourceCode.prototype.requestContent.call(this, didGetContent.bind(this));
+  
+        /**
+         * @this {WebInspector.UISourceCode}
+         * @param {?string} content
+         * @param {boolean} contentEncoded
+         * @param {string} mimeType
+         */
+        function didGetContent(content, contentEncoded, mimeType)
+        {
+            if (!formatted) {
+                this._togglingFormatter = true;
+                this.contentChanged(content || "", mimeType);
+                delete this._togglingFormatter;
+                this._formatterMapping = new WebInspector.IdentityFormatterSourceMapping();
+                this.updateLiveLocations();
+                callback();
+                return;
+            }
+    
+            var formatter = new WebInspector.ScriptFormatter();
+            formatter.formatContent(mimeType, content || "", didFormatContent.bind(this));
+  
+            /**
+             * @this {WebInspector.UISourceCode}
+             * @param {string} formattedContent
+             * @param {WebInspector.FormatterSourceMapping} formatterMapping
+             */
+            function didFormatContent(formattedContent, formatterMapping)
+            {
+                this._togglingFormatter = true;
+                this.contentChanged(formattedContent, mimeType);
+                delete this._togglingFormatter;
+                this._formatterMapping = formatterMapping;
+                this.updateLiveLocations();
+                WebInspector.breakpointManager.restoreBreakpoints(this);
+                callback();
+            }
+        }
     },
 
-    consoleMessagesCleared: function()
+    /**
+     * @return {boolean}
+     */
+    togglingFormatter: function()
     {
-        this._consoleMessages = [];
-        this.dispatchEventToListeners(WebInspector.UISourceCode.Events.ConsoleMessagesCleared);
+        return this._togglingFormatter;
+    },
+
+    /**
+     * @param {number} lineNumber
+     * @param {number} columnNumber
+     * @return {WebInspector.DebuggerModel.Location}
+     */
+    uiLocationToRawLocation: function(lineNumber, columnNumber)
+    {
+        var location = this._formatterMapping.formattedToOriginal(lineNumber, columnNumber);
+        var rawLocation = WebInspector.UISourceCode.prototype.uiLocationToRawLocation.call(this, location[0], location[1]);
+        var debuggerModelLocation = /** @type {WebInspector.DebuggerModel.Location} */ rawLocation;
+        return debuggerModelLocation;
+    },
+
+    /**
+     * @param {WebInspector.UILocation} uiLocation
+     */
+    overrideLocation: function(uiLocation)
+    {
+        var location = this._formatterMapping.originalToFormatted(uiLocation.lineNumber, uiLocation.columnNumber);
+        uiLocation.lineNumber = location[0];
+        uiLocation.columnNumber = location[1];
+        return uiLocation;
+    },
+
+    /**
+     * @return {string}
+     */
+    breakpointStorageId: function()
+    {
+        return this._formatted ? "deobfuscated:" + this.url : this.url;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isEditable: function()
+    {
+        return this._isEditable && WebInspector.debuggerModel.canSetScriptSource();
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isDivergedFromVM: function()
+    {
+        // FIXME: We should return true if this._isDivergedFromVM is set as well once we provide a way to set breakpoints after LiveEdit failure.
+        return this.isDirty();
+    },
+
+    /**
+     * @param {function(?string)} callback
+     */
+    workingCopyCommitted: function(callback)
+    {  
+        /**
+         * @param {?string} error
+         */
+        function innerCallback(error)
+        {
+            this._isDivergedFromVM = !!error;
+            callback(error);
+        }
+
+        WebInspector.DebuggerResourceBinding.setScriptSource(this, this.workingCopy(), innerCallback.bind(this));
+    },
+
+    /**
+     * @param {string} query
+     * @param {boolean} caseSensitive
+     * @param {boolean} isRegex
+     * @param {function(Array.<WebInspector.ContentProvider.SearchMatch>)} callback
+     */
+    searchInContent: function(query, caseSensitive, isRegex, callback)
+    {
+        var content = this.content();
+        var provider = content ? new WebInspector.StaticContentProvider(this._contentProvider.contentType(), content) : this._contentProvider;
+        provider.searchInContent(query, caseSensitive, isRegex, callback);
     }
 }
 

@@ -9,14 +9,14 @@
 #include "SkOrderedWriteBuffer.h"
 #include "SkTypeface.h"
 
-SkOrderedWriteBuffer::SkOrderedWriteBuffer(size_t minSize) :
-    INHERITED(),
-    fWriter(minSize) {
+SkOrderedWriteBuffer::SkOrderedWriteBuffer(size_t minSize) 
+    : fWriter(minSize) {
 }
 
-SkOrderedWriteBuffer::SkOrderedWriteBuffer(size_t minSize, void* storage, size_t storageSize) :
-    INHERITED(),
-    fWriter(minSize, storage, storageSize) {
+SkOrderedWriteBuffer::SkOrderedWriteBuffer(size_t minSize, 
+                                           void* storage, 
+                                           size_t storageSize)
+    : fWriter(minSize, storage, storageSize) {
 }
 
 void SkOrderedWriteBuffer::writeFlattenable(SkFlattenable* flattenable) {
@@ -95,5 +95,11 @@ void SkOrderedWriteBuffer::writeFlattenable(SkFlattenable* flattenable) {
 }
 
 void SkOrderedWriteBuffer::writeFunctionPtr(void* proc) {
+// enable this to catch writers who's function-ptrs will break if the
+// serialized buffer is read-back in a diff process
+#if 0
+    SkASSERT(!proc || !this->isCrossProcess());
+#endif
+
     *(void**)this->reserve(sizeof(void*)) = proc;
 }

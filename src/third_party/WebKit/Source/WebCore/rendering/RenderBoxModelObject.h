@@ -58,9 +58,7 @@ public:
     RenderBoxModelObject(Node*);
     virtual ~RenderBoxModelObject();
     
-    LayoutUnit relativePositionOffsetX() const;
-    LayoutUnit relativePositionOffsetY() const;
-    LayoutSize relativePositionOffset() const { return LayoutSize(relativePositionOffsetX(), relativePositionOffsetY()); }
+    LayoutSize relativePositionOffset() const;
     LayoutSize relativePositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? relativePositionOffset() : relativePositionOffset().transposedSize(); }
 
     // IE extensions. Used to calculate offsetWidth/Height.  Overridden by inlines (RenderFlow)
@@ -130,10 +128,10 @@ public:
     virtual LayoutUnit marginBottom() const = 0;
     virtual LayoutUnit marginLeft() const = 0;
     virtual LayoutUnit marginRight() const = 0;
-    virtual LayoutUnit marginBefore() const = 0;
-    virtual LayoutUnit marginAfter() const = 0;
-    virtual LayoutUnit marginStart() const = 0;
-    virtual LayoutUnit marginEnd() const = 0;
+    virtual LayoutUnit marginBefore(const RenderStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginAfter(const RenderStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginStart(const RenderStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginEnd(const RenderStyle* otherStyle = 0) const = 0;
     LayoutUnit marginHeight() const { return marginTop() + marginBottom(); }
     LayoutUnit marginWidth() const { return marginLeft() + marginRight(); }
 
@@ -227,6 +225,8 @@ protected:
         IntSize m_tileSize;
     };
 
+    LayoutPoint adjustedPositionRelativeToOffsetParent(const LayoutPoint&) const;
+
     void calculateBackgroundImageGeometry(const FillLayer*, const LayoutRect& paintRect, BackgroundImageGeometry&);
     void getBorderEdgeInfo(class BorderEdge[], const RenderStyle*, bool includeLogicalLeftEdge = true, bool includeLogicalRightEdge = true) const;
     bool borderObscuresBackgroundEdge(const FloatSize& contextScale) const;
@@ -236,6 +236,8 @@ protected:
 
     RenderBoxModelObject* continuation() const;
     void setContinuation(RenderBoxModelObject*);
+
+    LayoutRect localCaretRectForEmptyElement(LayoutUnit width, LayoutUnit textIndentOffset);
 
     static bool shouldAntialiasLines(GraphicsContext*);
 
@@ -272,7 +274,9 @@ private:
     virtual bool isBoxModelObject() const { return true; }
 
     IntSize calculateFillTileSize(const FillLayer*, const IntSize& scaledPositioningAreaSize) const;
-    IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize) const;
+
+    enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
+    IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
     RoundedRect getBackgroundRoundedRect(const LayoutRect&, InlineFlowBox*, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
         bool includeLogicalLeftEdge, bool includeLogicalRightEdge);

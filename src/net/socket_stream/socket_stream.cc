@@ -56,6 +56,7 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
     : delegate_(delegate),
       url_(url),
       max_pending_send_allowed_(kMaxPendingSendAllowed),
+      context_(NULL),
       next_state_(STATE_NONE),
       host_resolver_(NULL),
       cert_verifier_(NULL),
@@ -101,8 +102,8 @@ bool SocketStream::is_secure() const {
   return url_.SchemeIs("wss");
 }
 
-void SocketStream::set_context(URLRequestContext* context) {
-  scoped_refptr<URLRequestContext> prev_context = context_;
+void SocketStream::set_context(const URLRequestContext* context) {
+  const URLRequestContext* prev_context = context_;
 
   context_ = context;
 
@@ -112,7 +113,7 @@ void SocketStream::set_context(URLRequestContext* context) {
       pac_request_ = NULL;
     }
 
-    net_log_.EndEvent(NetLog::TYPE_REQUEST_ALIVE, NULL);
+    net_log_.EndEvent(NetLog::TYPE_REQUEST_ALIVE);
     net_log_ = BoundNetLog();
 
     if (context) {
@@ -120,7 +121,7 @@ void SocketStream::set_context(URLRequestContext* context) {
           context->net_log(),
           NetLog::SOURCE_SOCKET_STREAM);
 
-      net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE, NULL);
+      net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
     }
   }
 
@@ -146,11 +147,10 @@ void SocketStream::Connect() {
   AddRef();  // Released in Finish()
   // Open a connection asynchronously, so that delegate won't be called
   // back before returning Connect().
-  next_state_ = STATE_RESOLVE_PROXY;
+  next_state_ = STATE_BEFORE_CONNECT;
   net_log_.BeginEvent(
       NetLog::TYPE_SOCKET_STREAM_CONNECT,
-      make_scoped_refptr(
-          new NetLogStringParameter("url", url_.possibly_invalid_spec())));
+      NetLog::StringCallback("url", &url_.possibly_invalid_spec()));
   MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&SocketStream::DoLoop, this, OK));
@@ -235,7 +235,7 @@ void SocketStream::DetachDelegate() {
   if (!delegate_)
     return;
   delegate_ = NULL;
-  net_log_.AddEvent(NetLog::TYPE_CANCELLED, NULL);
+  net_log_.AddEvent(NetLog::TYPE_CANCELLED);
   // We don't need to send pending data when client detach the delegate.
   pending_write_bufs_.clear();
   Close();
@@ -243,11 +243,6 @@ void SocketStream::DetachDelegate() {
 
 const ProxyServer& SocketStream::proxy_server() const {
   return proxy_info_.proxy_server();
-}
-
-void SocketStream::SetHostResolver(HostResolver* host_resolver) {
-  DCHECK(host_resolver);
-  host_resolver_ = host_resolver;
 }
 
 void SocketStream::SetClientSocketFactory(
@@ -278,8 +273,8 @@ SocketStream::~SocketStream() {
   DCHECK(!pac_request_);
 }
 
-void SocketStream::CopyAddrInfo(struct addrinfo* head) {
-  addresses_ = AddressList::CreateByCopying(head);
+void SocketStream::set_addresses(const AddressList& addresses) {
+  addresses_ = addresses;
 }
 
 void SocketStream::DoClose() {
@@ -333,7 +328,7 @@ int SocketStream::DidEstablishConnection() {
   next_state_ = STATE_READ_WRITE;
   metrics_->OnConnected();
 
-  net_log_.EndEvent(NetLog::TYPE_SOCKET_STREAM_CONNECT, NULL);
+  net_log_.EndEvent(NetLog::TYPE_SOCKET_STREAM_CONNECT);
   if (delegate_)
     delegate_->OnConnected(this, max_pending_send_allowed_);
 
@@ -343,7 +338,7 @@ int SocketStream::DidEstablishConnection() {
 int SocketStream::DidReceiveData(int result) {
   DCHECK(read_buf_);
   DCHECK_GT(result, 0);
-  net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_RECEIVED, NULL);
+  net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_RECEIVED);
   int len = result;
   metrics_->OnRead(len);
   if (delegate_) {
@@ -356,7 +351,7 @@ int SocketStream::DidReceiveData(int result) {
 
 int SocketStream::DidSendData(int result) {
   DCHECK_GT(result, 0);
-  net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_SENT, NULL);
+  net_log_.AddEvent(NetLog::TYPE_SOCKET_STREAM_SENT);
   int len = result;
   metrics_->OnWrite(len);
   current_write_buf_ = NULL;
@@ -414,6 +409,13 @@ void SocketStream::DoLoop(int result) {
     State state = next_state_;
     next_state_ = STATE_NONE;
     switch (state) {
+      case STATE_BEFORE_CONNECT:
+        DCHECK_EQ(OK, result);
+        result = DoBeforeConnect();
+        break;
+      case STATE_BEFORE_CONNECT_COMPLETE:
+        result = DoBeforeConnectComplete(result);
+        break;
       case STATE_RESOLVE_PROXY:
         DCHECK_EQ(OK, result);
         result = DoResolveProxy();
@@ -513,6 +515,30 @@ void SocketStream::DoLoop(int result) {
           NetLog::TYPE_SOCKET_STREAM_CONNECT, result);
     }
   } while (result != ERR_IO_PENDING);
+}
+
+int SocketStream::DoBeforeConnect() {
+  next_state_ = STATE_BEFORE_CONNECT_COMPLETE;
+  if (!context_ || !context_->network_delegate())
+    return OK;
+
+  int result = context_->network_delegate()->NotifyBeforeSocketStreamConnect(
+      this, io_callback_);
+  if (result != OK && result != ERR_IO_PENDING)
+    next_state_ = STATE_CLOSE;
+
+  return result;
+}
+
+int SocketStream::DoBeforeConnectComplete(int result) {
+  DCHECK_NE(ERR_IO_PENDING, result);
+
+  if (result == OK)
+    next_state_ = STATE_RESOLVE_PROXY;
+  else
+    next_state_ = STATE_CLOSE;
+
+  return result;
 }
 
 int SocketStream::DoResolveProxy() {

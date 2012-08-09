@@ -52,6 +52,48 @@ bool Utils::ExtractStringSetting(const v8::Handle<v8::Object>& settings,
 }
 
 // static
+bool Utils::ExtractIntegerSetting(const v8::Handle<v8::Object>& settings,
+                                  const char* setting,
+                                  int32_t* result) {
+  if (!setting || !result) return false;
+
+  v8::HandleScope handle_scope;
+  v8::TryCatch try_catch;
+  v8::Handle<v8::Value> value = settings->Get(v8::String::New(setting));
+  if (try_catch.HasCaught()) {
+    return false;
+  }
+  // No need to check if |value| is empty because it's taken care of
+  // by TryCatch above.
+  if (!value->IsUndefined() && !value->IsNull() && value->IsNumber()) {
+    *result = static_cast<int32_t>(value->Int32Value());
+    return true;
+  }
+  return false;
+}
+
+// static
+bool Utils::ExtractBooleanSetting(const v8::Handle<v8::Object>& settings,
+                                  const char* setting,
+                                  bool* result) {
+  if (!setting || !result) return false;
+
+  v8::HandleScope handle_scope;
+  v8::TryCatch try_catch;
+  v8::Handle<v8::Value> value = settings->Get(v8::String::New(setting));
+  if (try_catch.HasCaught()) {
+    return false;
+  }
+  // No need to check if |value| is empty because it's taken care of
+  // by TryCatch above.
+  if (!value->IsUndefined() && !value->IsNull() && value->IsBoolean()) {
+    *result = static_cast<bool>(value->BooleanValue());
+    return true;
+  }
+  return false;
+}
+
+// static
 void Utils::AsciiToUChar(const char* source,
                          int32_t source_length,
                          UChar* target,
@@ -68,6 +110,46 @@ void Utils::AsciiToUChar(const char* source,
   }
 
   target[length - 1] = 0x0u;
+}
+
+// static
+// Chrome Linux doesn't like static initializers in class, so we create
+// template on demand.
+v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate() {
+  v8::HandleScope handle_scope;
+
+  static v8::Persistent<v8::ObjectTemplate> icu_template;
+
+  if (icu_template.IsEmpty()) {
+    v8::Local<v8::ObjectTemplate> raw_template(v8::ObjectTemplate::New());
+
+    // Set aside internal field for ICU class.
+    raw_template->SetInternalFieldCount(1);
+
+    icu_template = v8::Persistent<v8::ObjectTemplate>::New(raw_template);
+  }
+
+  return icu_template;
+}
+
+// static
+// Chrome Linux doesn't like static initializers in class, so we create
+// template on demand. This one has 2 internal fields.
+v8::Persistent<v8::ObjectTemplate> Utils::GetTemplate2() {
+  v8::HandleScope handle_scope;
+
+  static v8::Persistent<v8::ObjectTemplate> icu_template_2;
+
+  if (icu_template_2.IsEmpty()) {
+    v8::Local<v8::ObjectTemplate> raw_template(v8::ObjectTemplate::New());
+
+    // Set aside internal field for ICU class and additional data.
+    raw_template->SetInternalFieldCount(2);
+
+    icu_template_2 = v8::Persistent<v8::ObjectTemplate>::New(raw_template);
+  }
+
+  return icu_template_2;
 }
 
 }  // namespace v8_i18n

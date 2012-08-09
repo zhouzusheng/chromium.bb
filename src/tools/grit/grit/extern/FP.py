@@ -10,6 +10,7 @@ except ImportError:
   import md5
   _new_md5 = md5.new
 
+
 """64-bit fingerprint support for strings.
 
 Usage:
@@ -18,12 +19,24 @@ Usage:
 """
 
 
-def UnsignedFingerPrint(str, encoding='utf-8'):
+def _UnsignedFingerPrintImpl(str, encoding='utf-8'):
   """Generate a 64-bit fingerprint by taking the first half of the md5
-  of the string."""
+  of the string.
+  """
   hex128 = _new_md5(str).hexdigest()
   int64 = long(hex128[:16], 16)
   return int64
+
+
+def UnsignedFingerPrint(str, encoding='utf-8'):
+  """Generate a 64-bit fingerprint.
+
+  The default implementation uses _UnsignedFingerPrintImpl, which
+  takes the first half of the md5 of the string, but the
+  implementation may be switched using SetUnsignedFingerPrintImpl.
+  """
+  return _UnsignedFingerPrintImpl(str, encoding)
+
 
 def FingerPrint(str, encoding='utf-8'):
   fp = UnsignedFingerPrint(str, encoding=encoding)
@@ -32,3 +45,27 @@ def FingerPrint(str, encoding='utf-8'):
     fp = - ((~fp & 0xFFFFFFFFFFFFFFFFL) + 1)
   return fp
 
+
+def UseUnsignedFingerPrintFromModule(module_name):
+  """Imports module_name and replaces UnsignedFingerPrint in the
+  current module with the function of the same name from the imported
+  module.
+
+  Returns the function object previously known as
+  grit.extern.FP.UnsignedFingerPrint.
+  """
+  hash_module = __import__(module_name, fromlist=[module_name])
+  return SetUnsignedFingerPrint(hash_module.UnsignedFingerPrint)
+
+
+def SetUnsignedFingerPrint(function_object):
+  """Sets grit.extern.FP.UnsignedFingerPrint to point to
+  function_object.
+
+  Returns the function object previously known as
+  grit.extern.FP.UnsignedFingerPrint.
+  """
+  global UnsignedFingerPrint
+  original_function_object = UnsignedFingerPrint
+  UnsignedFingerPrint = function_object
+  return original_function_object

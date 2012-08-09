@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,6 +47,7 @@ struct Thread::StartupData {
 Thread::Thread(const char* name)
     : started_(false),
       stopping_(false),
+      running_(false),
       startup_data_(NULL),
       thread_(0),
       message_loop_(NULL),
@@ -124,6 +125,10 @@ void Thread::StopSoon() {
   message_loop_->PostTask(FROM_HERE, base::Bind(&ThreadQuitHelper));
 }
 
+bool Thread::IsRunning() const {
+  return running_;
+}
+
 void Thread::Run(MessageLoop* message_loop) {
   message_loop->Run();
 }
@@ -156,11 +161,13 @@ void Thread::ThreadMain() {
     // Let's do this before signaling we are started.
     Init();
 
+    running_ = true;
     startup_data_->event.Signal();
     // startup_data_ can't be touched anymore since the starting thread is now
     // unlocked.
 
     Run(message_loop_);
+    running_ = false;
 
     // Let the thread do extra cleanup.
     CleanUp();
@@ -171,7 +178,6 @@ void Thread::ThreadMain() {
     // We can't receive messages anymore.
     message_loop_ = NULL;
   }
-  thread_id_ = kInvalidThreadId;
 }
 
 }  // namespace base

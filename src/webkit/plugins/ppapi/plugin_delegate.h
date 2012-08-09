@@ -25,10 +25,10 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/glue/clipboard_client.h"
-#include "webkit/plugins/ppapi/dir_contents.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
@@ -55,6 +55,7 @@ class CommandBuffer;
 }
 
 namespace ppapi {
+class PepperFilePath;
 class PPB_HostResolver_Shared;
 class PPB_X509Certificate_Fields;
 struct DeviceRefData;
@@ -70,6 +71,7 @@ namespace WebKit {
 class WebFileChooserCompletion;
 class WebGamepads;
 class WebPlugin;
+struct WebCompositionUnderline;
 struct WebCursorInfo;
 struct WebFileChooserParams;
 }
@@ -85,7 +87,6 @@ namespace ppapi {
 
 class FileIO;
 class FullscreenContainer;
-class PepperFilePath;
 class PluginInstance;
 class PluginModule;
 class PPB_Broker_Impl;
@@ -170,7 +171,8 @@ class PluginDelegate {
     virtual ~PlatformContext3D() {}
 
     // Initialize the context.
-    virtual bool Init(const int32* attrib_list) = 0;
+    virtual bool Init(const int32* attrib_list,
+                      PlatformContext3D* share_context) = 0;
 
     // If the plugin instance is backed by an OpenGL, return its ID in the
     // compositors namespace. Otherwise return 0. Returns 0 by default.
@@ -280,10 +282,14 @@ class PluginDelegate {
   class PlatformVideoCapture : public media::VideoCapture,
                                public base::RefCounted<PlatformVideoCapture> {
    public:
-    virtual ~PlatformVideoCapture() {}
-
     // Detaches the event handler and stops sending notifications to it.
     virtual void DetachEventHandler() = 0;
+
+   protected:
+    virtual ~PlatformVideoCapture() {}
+
+   private:
+    friend class base::RefCounted<PlatformVideoCapture>;
   };
 
   // Provides access to the ppapi broker.
@@ -316,6 +322,13 @@ class PluginDelegate {
   // Notification that the text selection in the given plugin is changed.
   virtual void PluginSelectionChanged(
       webkit::ppapi::PluginInstance* instance) = 0;
+  // Requests simulating IME events for testing purpose.
+  virtual void SimulateImeSetComposition(
+      const string16& text,
+      const std::vector<WebKit::WebCompositionUnderline>& underlines,
+      int selection_start,
+      int selection_end) = 0;
+  virtual void SimulateImeConfirmComposition(const string16& text) = 0;
 
   // Notification that the given plugin has crashed. When a plugin crashes, all
   // instances associated with that plugin will notify that they've crashed via
@@ -443,18 +456,26 @@ class PluginDelegate {
   virtual void WillUpdateFile(const GURL& file_path) = 0;
   virtual void DidUpdateFile(const GURL& file_path, int64_t delta) = 0;
 
-  virtual base::PlatformFileError OpenFile(const PepperFilePath& path,
-                                           int flags,
-                                           base::PlatformFile* file) = 0;
-  virtual base::PlatformFileError RenameFile(const PepperFilePath& from_path,
-                                             const PepperFilePath& to_path) = 0;
-  virtual base::PlatformFileError DeleteFileOrDir(const PepperFilePath& path,
-                                                  bool recursive) = 0;
-  virtual base::PlatformFileError CreateDir(const PepperFilePath& path) = 0;
-  virtual base::PlatformFileError QueryFile(const PepperFilePath& path,
-                                            base::PlatformFileInfo* info) = 0;
-  virtual base::PlatformFileError GetDirContents(const PepperFilePath& path,
-                                                 DirContents* contents) = 0;
+  virtual base::PlatformFileError OpenFile(
+      const ::ppapi::PepperFilePath& path,
+      int flags,
+      base::PlatformFile* file) = 0;
+  virtual base::PlatformFileError RenameFile(
+      const ::ppapi::PepperFilePath& from_path,
+      const ::ppapi::PepperFilePath& to_path) = 0;
+  virtual base::PlatformFileError DeleteFileOrDir(
+      const ::ppapi::PepperFilePath& path,
+      bool recursive) = 0;
+  virtual base::PlatformFileError CreateDir(
+      const ::ppapi::PepperFilePath& path) = 0;
+  virtual base::PlatformFileError QueryFile(
+      const ::ppapi::PepperFilePath& path,
+      base::PlatformFileInfo* info) = 0;
+  virtual base::PlatformFileError GetDirContents(
+      const ::ppapi::PepperFilePath& path,
+      ::ppapi::DirContents* contents) = 0;
+  virtual base::PlatformFileError CreateTemporaryFile(
+      base::PlatformFile* file) = 0;
 
   // Synchronously returns the platform file path for a filesystem URL.
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,

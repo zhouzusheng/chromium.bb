@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,12 @@
 
 #include <mstcpip.h>
 
+#include "base/callback.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
 #include "base/rand_util.h"
-#include "net/base/address_list_net_log_param.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -19,7 +19,7 @@
 #include "net/base/net_util.h"
 #include "net/base/winsock_init.h"
 #include "net/base/winsock_util.h"
-#include "net/udp/udp_data_transfer_param.h"
+#include "net/udp/udp_net_log_parameters.h"
 
 namespace {
 
@@ -53,10 +53,8 @@ UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
       recv_from_address_(NULL),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_UDP_SOCKET)) {
   EnsureWinsockInit();
-  scoped_refptr<NetLog::EventParameters> params;
-  if (source.is_valid())
-    params = new NetLogSourceParameter("source_dependency", source);
-  net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE, params);
+  net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE,
+                      source.ToEventParametersCallback());
   memset(&read_overlapped_, 0, sizeof(read_overlapped_));
   read_overlapped_.hEvent = WSACreateEvent();
   memset(&write_overlapped_, 0, sizeof(write_overlapped_));
@@ -67,7 +65,7 @@ UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
 
 UDPSocketWin::~UDPSocketWin() {
   Close();
-  net_log_.EndEvent(NetLog::TYPE_SOCKET_ALIVE, NULL);
+  net_log_.EndEvent(NetLog::TYPE_SOCKET_ALIVE);
 }
 
 void UDPSocketWin::Close() {
@@ -94,14 +92,13 @@ int UDPSocketWin::GetPeerAddress(IPEndPoint* address) const {
   if (!is_connected())
     return ERR_SOCKET_NOT_CONNECTED;
 
+  // TODO(szym): Simplify. http://crbug.com/126152
   if (!remote_address_.get()) {
-    struct sockaddr_storage addr_storage;
-    int addr_len = sizeof(addr_storage);
-    struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
-    if (getpeername(socket_, addr, &addr_len))
+    SockaddrStorage storage;
+    if (getpeername(socket_, storage.addr, &storage.addr_len))
       return MapSystemError(WSAGetLastError());
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
-    if (!address->FromSockAddr(addr, addr_len))
+    if (!address->FromSockAddr(storage.addr, storage.addr_len))
       return ERR_FAILED;
     remote_address_.reset(address.release());
   }
@@ -116,14 +113,13 @@ int UDPSocketWin::GetLocalAddress(IPEndPoint* address) const {
   if (!is_connected())
     return ERR_SOCKET_NOT_CONNECTED;
 
+  // TODO(szym): Simplify. http://crbug.com/126152
   if (!local_address_.get()) {
-    struct sockaddr_storage addr_storage;
-    socklen_t addr_len = sizeof(addr_storage);
-    struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
-    if (getsockname(socket_, addr, &addr_len))
+    SockaddrStorage storage;
+    if (getsockname(socket_, storage.addr, &storage.addr_len))
       return MapSystemError(WSAGetLastError());
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
-    if (!address->FromSockAddr(addr, addr_len))
+    if (!address->FromSockAddr(storage.addr, storage.addr_len))
       return ERR_FAILED;
     local_address_.reset(address.release());
   }
@@ -195,10 +191,8 @@ int UDPSocketWin::SendToOrWrite(IOBuffer* buf,
 }
 
 int UDPSocketWin::Connect(const IPEndPoint& address) {
-  net_log_.BeginEvent(
-      NetLog::TYPE_UDP_CONNECT,
-      make_scoped_refptr(new NetLogStringParameter("address",
-                                                   address.ToString())));
+  net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
+                      CreateNetLogUDPConnectCallback(&address));
   int rv = InternalConnect(address);
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
   return rv;
@@ -218,13 +212,11 @@ int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
   if (rv < 0)
     return rv;
 
-  struct sockaddr_storage addr_storage;
-  size_t addr_len = sizeof(addr_storage);
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
-  if (!address.ToSockAddr(addr, &addr_len))
+  SockaddrStorage storage;
+  if (!address.ToSockAddr(storage.addr, &storage.addr_len))
     return ERR_FAILED;
 
-  rv = connect(socket_, addr, addr_len);
+  rv = connect(socket_, storage.addr, storage.addr_len);
   if (rv < 0)
     return MapSystemError(WSAGetLastError());
 
@@ -317,10 +309,9 @@ void UDPSocketWin::LogRead(int result, const char* bytes) const {
     bool is_address_valid = ReceiveAddressToIPEndpoint(&address);
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_RECEIVED,
-        make_scoped_refptr(
-            new UDPDataTransferNetLogParam(
-                result, bytes, net_log_.IsLoggingBytes(),
-                is_address_valid ? &address : NULL)));
+        CreateNetLogUDPDataTranferCallback(
+            result, bytes,
+            is_address_valid ? &address : NULL));
   }
 
   base::StatsCounter read_bytes("udp.read_bytes");
@@ -351,10 +342,7 @@ void UDPSocketWin::LogWrite(int result,
   if (net_log_.IsLoggingAllEvents()) {
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_SENT,
-        make_scoped_refptr(
-            new UDPDataTransferNetLogParam(result, bytes,
-                                           net_log_.IsLoggingBytes(),
-                                           address)));
+        CreateNetLogUDPDataTranferCallback(result, bytes, address));
   }
 
   base::StatsCounter write_bytes("udp.write_bytes");
@@ -401,16 +389,14 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
 
 int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
                                  const IPEndPoint* address) {
-  struct sockaddr_storage addr_storage;
-  size_t addr_len = sizeof(addr_storage);
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
-
+  SockaddrStorage storage;
+  struct sockaddr* addr = storage.addr;
   // Convert address.
   if (!address) {
     addr = NULL;
-    addr_len = 0;
+    storage.addr_len = 0;
   } else {
-    if (!address->ToSockAddr(addr, &addr_len)) {
+    if (!address->ToSockAddr(addr, &storage.addr_len)) {
       int result = ERR_FAILED;
       LogWrite(result, NULL, NULL);
       return result;
@@ -425,7 +411,7 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
   DWORD num;
   AssertEventNotSignaled(write_overlapped_.hEvent);
   int rv = WSASendTo(socket_, &write_buffer, 1, &num, flags,
-                     addr, addr_len, &write_overlapped_, NULL);
+                     addr, storage.addr_len, &write_overlapped_, NULL);
   if (rv == 0) {
     if (ResetEventIfSignaled(write_overlapped_.hEvent)) {
       int result = num;
@@ -446,12 +432,10 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
 }
 
 int UDPSocketWin::DoBind(const IPEndPoint& address) {
-  struct sockaddr_storage addr_storage;
-  size_t addr_len = sizeof(addr_storage);
-  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&addr_storage);
-  if (!address.ToSockAddr(addr, &addr_len))
+  SockaddrStorage storage;
+  if (!address.ToSockAddr(storage.addr, &storage.addr_len))
     return ERR_UNEXPECTED;
-  int rv = bind(socket_, addr, addr_len);
+  int rv = bind(socket_, storage.addr, storage.addr_len);
   return rv < 0 ? MapSystemError(WSAGetLastError()) : rv;
 }
 

@@ -77,11 +77,6 @@ const AtomicString& FileWriter::interfaceName() const
     return eventNames().interfaceForFileWriter;
 }
 
-bool FileWriter::hasPendingActivity() const
-{
-    return m_readyState == WRITING || ActiveDOMObject::hasPendingActivity();
-}
-
 bool FileWriter::canSuspend() const
 {
     // FIXME: It is not currently possible to suspend a FileWriter, so pages with FileWriter can not go into page cache.
@@ -114,6 +109,7 @@ void FileWriter::write(Blob* data, ExceptionCode& ec)
         setError(FileError::SECURITY_ERR, ec);
         return;
     }
+
     m_blobBeingWritten = data;
     m_readyState = WRITING;
     m_bytesWritten = 0;
@@ -154,6 +150,7 @@ void FileWriter::truncate(long long position, ExceptionCode& ec)
         setError(FileError::SECURITY_ERR, ec);
         return;
     }
+
     m_readyState = WRITING;
     m_bytesWritten = 0;
     m_bytesToWrite = 0;
@@ -195,15 +192,19 @@ void FileWriter::didWrite(long long bytes, bool complete)
     setPosition(position() + bytes);
     if (position() > length())
         setLength(position());
+    if (complete) {
+        m_blobBeingWritten.clear();
+        m_operationInProgress = OperationNone;
+    }
     // TODO: Throttle to no more frequently than every 50ms.
     int numAborts = m_numAborts;
     fireEvent(eventNames().progressEvent);
     // We could get an abort in the handler for this event. If we do, it's
     // already handled the cleanup and signalCompletion call.
-    if (complete && numAborts == m_numAborts) {
-        m_blobBeingWritten.clear();
-        m_operationInProgress = OperationNone;
-        signalCompletion(FileError::OK);
+    if (complete) {
+      if (numAborts == m_numAborts)
+          signalCompletion(FileError::OK);
+      unsetPendingActivity(this);
     }
 }
 
@@ -220,6 +221,7 @@ void FileWriter::didTruncate()
         setPosition(length());
     m_operationInProgress = OperationNone;
     signalCompletion(FileError::OK);
+    unsetPendingActivity(this);
 }
 
 void FileWriter::didFail(FileError::ErrorCode code)
@@ -236,6 +238,7 @@ void FileWriter::didFail(FileError::ErrorCode code)
     m_blobBeingWritten.clear();
     m_operationInProgress = OperationNone;
     signalCompletion(code);
+    unsetPendingActivity(this);
 }
 
 void FileWriter::completeAbort()
@@ -245,6 +248,7 @@ void FileWriter::completeAbort()
     Operation operation = m_queuedOperation;
     m_queuedOperation = OperationNone;
     doOperation(operation);
+    unsetPendingActivity(this);
 }
 
 void FileWriter::doOperation(Operation operation)
@@ -255,12 +259,14 @@ void FileWriter::doOperation(Operation operation)
         ASSERT(m_truncateLength == -1);
         ASSERT(m_blobBeingWritten.get());
         ASSERT(m_readyState == WRITING);
+        setPendingActivity(this);
         writer()->write(position(), m_blobBeingWritten.get());
         break;
     case OperationTruncate:
         ASSERT(m_operationInProgress == OperationNone);
         ASSERT(m_truncateLength >= 0);
         ASSERT(m_readyState == WRITING);
+        setPendingActivity(this);
         writer()->truncate(m_truncateLength);
         break;
     case OperationNone:
@@ -272,6 +278,8 @@ void FileWriter::doOperation(Operation operation)
     case OperationAbort:
         if (m_operationInProgress == OperationWrite || m_operationInProgress == OperationTruncate)
             writer()->abort();
+        else if (m_operationInProgress != OperationAbort)
+            operation = OperationNone;
         m_queuedOperation = OperationNone;
         m_blobBeingWritten.clear();
         m_truncateLength = -1;

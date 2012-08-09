@@ -33,6 +33,7 @@
 
 namespace WebKit {
 
+class WebDocument;
 class WebFrame;
 class WebSecurityOrigin;
 class WebString;
@@ -88,6 +89,9 @@ public:
 
     // Controls whether access to write the clipboard is allowed for this frame.
     virtual bool allowWriteToClipboard(WebFrame*, bool defaultValue) { return defaultValue; }
+
+    // Controls whether enabling Web Components API for this frame.
+    virtual bool allowWebComponents(const WebDocument&, bool defaultValue) { return defaultValue; }
 
     // Notifies the client that the frame would have instantiated a plug-in if plug-ins were enabled.
     virtual void didNotAllowPlugins(WebFrame*) { }

@@ -10,21 +10,47 @@
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/blob/local_file_reader.h"
+#include "webkit/blob/local_file_stream_reader.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
-#include "webkit/fileapi/file_system_file_reader.h"
+#include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/isolated_context.h"
 #include "webkit/fileapi/isolated_file_util.h"
+#include "webkit/fileapi/local_file_stream_writer.h"
 #include "webkit/fileapi/native_file_util.h"
 
 namespace fileapi {
 
+namespace {
+
+IsolatedContext* isolated_context() {
+  return IsolatedContext::GetInstance();
+}
+
+FilePath GetPathFromURL(const GURL& url, bool for_writing) {
+  GURL origin_url;
+  FileSystemType file_system_type = kFileSystemTypeUnknown;
+  FilePath virtual_path;
+  if (!CrackFileSystemURL(url, &origin_url, &file_system_type, &virtual_path))
+    return FilePath();
+  std::string fsid;
+  FilePath path;
+  if (!isolated_context()->CrackIsolatedPath(virtual_path, &fsid, NULL, &path))
+    return FilePath();
+  if (for_writing && !isolated_context()->IsWritable(fsid))
+    return FilePath();
+  return path;
+}
+
+}  // namespace
+
 IsolatedMountPointProvider::IsolatedMountPointProvider()
-  : isolated_file_util_(new IsolatedFileUtil(new NativeFileUtil())) {
+    : isolated_file_util_(new IsolatedFileUtil()) {
 }
 
 IsolatedMountPointProvider::~IsolatedMountPointProvider() {
@@ -71,12 +97,6 @@ bool IsolatedMountPointProvider::IsRestrictedFileName(
   return false;
 }
 
-std::vector<FilePath> IsolatedMountPointProvider::GetRootDirectories() const {
-  // We have no pre-defined root directories that need to be given
-  // access permission.
-  return  std::vector<FilePath>();
-}
-
 FileSystemFileUtil* IsolatedMountPointProvider::GetFileUtil() {
   return isolated_file_util_.get();
 }
@@ -95,33 +115,31 @@ IsolatedMountPointProvider::CreateFileSystemOperation(
     const GURL& origin_url,
     FileSystemType file_system_type,
     const FilePath& virtual_path,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const {
-  return new FileSystemOperation(file_proxy, context);
+  return new FileSystemOperation(context);
 }
 
-webkit_blob::FileReader* IsolatedMountPointProvider::CreateFileReader(
+webkit_blob::FileStreamReader*
+IsolatedMountPointProvider::CreateFileStreamReader(
     const GURL& url,
     int64 offset,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const {
-  GURL origin_url;
-  FileSystemType file_system_type = kFileSystemTypeUnknown;
-  FilePath virtual_path;
-  if (!CrackFileSystemURL(url, &origin_url, &file_system_type, &virtual_path))
-    return NULL;
-  std::string fsid;
-  FilePath path;
-  if (!isolated_context()->CrackIsolatedPath(virtual_path, &fsid, NULL, &path))
-    return NULL;
-  if (path.empty())
-    return NULL;
-  return new webkit_blob::LocalFileReader(
-      file_proxy, path, offset, base::Time());
+  FilePath path = GetPathFromURL(url, false);
+  return path.empty() ? NULL : new webkit_blob::LocalFileStreamReader(
+      context->file_task_runner(), path, offset, base::Time());
 }
 
-IsolatedContext* IsolatedMountPointProvider::isolated_context() const {
-  return IsolatedContext::GetInstance();
+FileStreamWriter* IsolatedMountPointProvider::CreateFileStreamWriter(
+    const GURL& url,
+    int64 offset,
+    FileSystemContext* context) const {
+  FilePath path = GetPathFromURL(url, true);
+  return path.empty() ? NULL : new LocalFileStreamWriter(path, offset);
+}
+
+FileSystemQuotaUtil* IsolatedMountPointProvider::GetQuotaUtil() {
+  // No quota support.
+  return NULL;
 }
 
 }  // namespace fileapi

@@ -183,6 +183,14 @@ public:
     virtual CORSMode mediaPlayerCORSMode() const { return Unspecified; }
 };
 
+class MediaPlayerSupportsTypeClient {
+public:
+    virtual ~MediaPlayerSupportsTypeClient() { }
+
+    virtual bool mediaPlayerNeedsSiteSpecificHacks() const { return false; }
+    virtual String mediaPlayerDocumentHost() const { return String(); }
+};
+
 class MediaPlayer {
     WTF_MAKE_NONCOPYABLE(MediaPlayer); WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -195,7 +203,7 @@ public:
 
     // Media engine support.
     enum SupportsType { IsNotSupported, IsSupported, MayBeSupported };
-    static MediaPlayer::SupportsType supportsType(const ContentType&, const String& keySystem);
+    static MediaPlayer::SupportsType supportsType(const ContentType&, const String& keySystem, const MediaPlayerSupportsTypeClient*);
     static void getSupportedTypes(HashSet<String>&);
     static bool isAvailable();
     static void getSitesInMediaCache(Vector<String>&);
@@ -233,9 +241,11 @@ public:
 
 #if ENABLE(MEDIA_SOURCE)
     enum AddIdStatus { Ok, NotSupported, ReachedIdLimit };
-    AddIdStatus sourceAddId(const String& id, const String& type);
+    AddIdStatus sourceAddId(const String& id, const String& type, const Vector<String>& codecs);
     bool sourceRemoveId(const String& id);
-    bool sourceAppend(const unsigned char* data, unsigned length);
+    PassRefPtr<TimeRanges> sourceBuffered(const String& id);
+    bool sourceAppend(const String& id, const unsigned char* data, unsigned length);
+    bool sourceAbort(const String& id);
     enum EndOfStreamStatus { EosNoError, EosNetworkError, EosDecodeError };
     void sourceEndOfStream(EndOfStreamStatus);
 #endif
@@ -253,6 +263,7 @@ public:
     bool paused() const;
     bool seeking() const;
 
+    static float invalidTime() { return -1.0f;}
     float duration() const;
     float currentTime() const;
     void seek(float time);
@@ -271,7 +282,7 @@ public:
     PassRefPtr<TimeRanges> seekable();
     float maxTimeSeekable();
 
-    unsigned bytesLoaded();
+    bool didLoadingProgress();
 
     float volume() const;
     void setVolume(float);
@@ -330,8 +341,12 @@ public:
 #endif
 
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO) || USE(NATIVE_FULLSCREEN_VIDEO)
-    bool enterFullscreen() const;
+    void enterFullscreen();
     void exitFullscreen();
+#endif
+
+#if USE(NATIVE_FULLSCREEN_VIDEO)
+    bool canEnterFullscreen() const;
 #endif
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -400,6 +415,7 @@ private:
     bool m_preservesPitch;
     bool m_privateBrowsing;
     bool m_shouldPrepareToRender;
+    bool m_contentMIMETypeWasInferredFromExtension;
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     WebMediaPlayerProxy* m_playerProxy;    // not owned or used, passed to m_private
 #endif

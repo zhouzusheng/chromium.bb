@@ -53,7 +53,7 @@ using namespace Unicode;
 
 namespace WebCore {
 
-class SameSizeAsRenderText : public RenderObject {
+struct SameSizeAsRenderText : public RenderObject {
     uint32_t bitfields : 16;
     float widths[4];
     String text;
@@ -687,10 +687,6 @@ LayoutRect RenderText::localCaretRect(InlineBox* inlineBox, int caretOffset, Lay
 
     bool rightAligned = false;
     switch (cbStyle->textAlign()) {
-    case TAAUTO:
-    case JUSTIFY:
-        rightAligned = !cbStyle->isLeftToRightDirection();
-        break;
     case RIGHT:
     case WEBKIT_RIGHT:
         rightAligned = true;
@@ -700,6 +696,7 @@ LayoutRect RenderText::localCaretRect(InlineBox* inlineBox, int caretOffset, Lay
     case CENTER:
     case WEBKIT_CENTER:
         break;
+    case JUSTIFY:
     case TASTART:
         rightAligned = !cbStyle->isLeftToRightDirection();
         break;
@@ -729,7 +726,6 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
 
     if (f.isFixedPitch() && !f.isSmallCaps() && m_isAllASCII && (!glyphOverflow || !glyphOverflow->computeBounds)) {
         float monospaceCharacterWidth = f.spaceWidth();
-        float tabWidth = allowTabs() ? monospaceCharacterWidth * 8 : 0;
         float w = 0;
         bool isSpace;
         bool previousCharWasSpace = true; // FIXME: Preserves historical behavior, but seems wrong for start > 0.
@@ -742,7 +738,7 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
                     w += monospaceCharacterWidth;
                     isSpace = true;
                 } else if (c == '\t') {
-                    w += tabWidth ? tabWidth - fmodf(xPos + w, tabWidth) : monospaceCharacterWidth;
+                    w += style()->collapseWhiteSpace() ? monospaceCharacterWidth : f.tabWidth(style()->tabSize(), xPos + w);
                     isSpace = true;
                 } else
                     isSpace = false;
@@ -762,7 +758,7 @@ ALWAYS_INLINE float RenderText::widthFromCache(const Font& f, int start, int len
     ASSERT(run.charactersLength() >= run.length());
 
     run.setCharacterScanForCodePath(!canUseSimpleFontCodePath());
-    run.setAllowTabs(allowTabs());
+    run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
     run.setXPos(xPos);
     return f.width(run, fallbackFonts, glyphOverflow);
 }
@@ -1061,8 +1057,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                 TextRun run = RenderBlock::constructTextRun(this, f, txt + i, 1, styleToUse);
                 run.setCharactersLength(len - i);
                 ASSERT(run.charactersLength() >= run.length());
-
-                run.setAllowTabs(allowTabs());
+                run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
                 run.setXPos(leadWidth + currMaxWidth);
 
                 currMaxWidth += f.width(run);
@@ -1477,7 +1472,7 @@ float RenderText::width(unsigned from, unsigned len, const Font& f, float xPos, 
         ASSERT(run.charactersLength() >= run.length());
 
         run.setCharacterScanForCodePath(!canUseSimpleFontCodePath());
-        run.setAllowTabs(allowTabs());
+        run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
         run.setXPos(xPos);
         w = f.width(run, fallbackFonts, glyphOverflow);
     }

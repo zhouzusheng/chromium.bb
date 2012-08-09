@@ -8,23 +8,23 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/rand_util.h"
+#include "base/sequenced_task_runner.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/metrics/histogram.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "webkit/fileapi/file_system_file_reader.h"
+#include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_options.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/native_file_util.h"
 #include "webkit/fileapi/obfuscated_file_util.h"
-#include "webkit/fileapi/quota_file_util.h"
+#include "webkit/fileapi/sandbox_file_stream_writer.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -44,11 +44,18 @@ const size_t kOldFileSystemUniqueDirectoryNameLength =
     kOldFileSystemUniqueLength + arraysize(kOldFileSystemUniqueNamePrefix) - 1;
 
 const char kOpenFileSystemLabel[] = "FileSystem.OpenFileSystem";
+const char kOpenFileSystemDetailLabel[] = "FileSystem.OpenFileSystemDetail";
+const char kOpenFileSystemDetailNonThrottledLabel[] =
+    "FileSystem.OpenFileSystemDetailNonthrottled";
+int64 kMinimumStatsCollectionIntervalHours = 1;
+
 enum FileSystemError {
   kOK = 0,
   kIncognito,
-  kInvalidScheme,
+  kInvalidSchemeError,
   kCreateDirectoryError,
+  kNotFound,
+  kUnknownError,
   kFileSystemErrorMax,
 };
 
@@ -268,25 +275,34 @@ void PassPointerErrorByValue(
   callback.Run(*error_ptr);
 }
 
-void ValidateRootOnFileThread(ObfuscatedFileUtil* file_util,
-                              const GURL& origin_url,
-                              FileSystemType type,
-                              const FilePath& old_base_path,
-                              bool create,
-                              base::PlatformFileError* error_ptr) {
+void DidValidateFileSystemRoot(
+    base::WeakPtr<SandboxMountPointProvider> mount_point_provider,
+    const base::Callback<void(PlatformFileError)>& callback,
+    base::PlatformFileError* error) {
+  if (mount_point_provider.get())
+    mount_point_provider.get()->CollectOpenFileSystemMetrics(*error);
+  callback.Run(*error);
+}
+
+void ValidateRootOnFileThread(
+    ObfuscatedFileUtil* file_util,
+    const GURL& origin_url,
+    FileSystemType type,
+    const FilePath& old_base_path,
+    bool create,
+    base::PlatformFileError* error_ptr) {
   DCHECK(error_ptr);
   MigrateIfNeeded(file_util, old_base_path);
+
   FilePath root_path =
-      file_util->GetDirectoryForOriginAndType(origin_url, type, create);
+      file_util->GetDirectoryForOriginAndType(
+          origin_url, type, create, error_ptr);
   if (root_path.empty()) {
     UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
                               kCreateDirectoryError,
                               kFileSystemErrorMax);
-    // TODO(kinuko): We should return appropriate error code.
-    *error_ptr = base::PLATFORM_FILE_ERROR_FAILED;
   } else {
     UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel, kOK, kFileSystemErrorMax);
-    *error_ptr = base::PLATFORM_FILE_OK;
   }
   // The reference of file_util will be derefed on the FILE thread
   // when the storage of this callback gets deleted regardless of whether
@@ -306,24 +322,24 @@ const FilePath::CharType
         FILE_PATH_LITERAL("FS.old");
 
 SandboxMountPointProvider::SandboxMountPointProvider(
-    scoped_refptr<base::MessageLoopProxy> file_message_loop,
+    base::SequencedTaskRunner* file_task_runner,
     const FilePath& profile_path,
     const FileSystemOptions& file_system_options)
-    : FileSystemQuotaUtil(file_message_loop),
-      file_message_loop_(file_message_loop),
+    : FileSystemQuotaUtil(file_task_runner),
+      file_task_runner_(file_task_runner),
       profile_path_(profile_path),
       file_system_options_(file_system_options),
       sandbox_file_util_(
           new ObfuscatedFileUtil(
-              profile_path.Append(kNewFileSystemDirectory),
-              QuotaFileUtil::CreateDefault())) {
+              profile_path.Append(kNewFileSystemDirectory))),
+      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 SandboxMountPointProvider::~SandboxMountPointProvider() {
-  if (!file_message_loop_->BelongsToCurrentThread()) {
+  if (!file_task_runner_->RunsTasksOnCurrentThread()) {
     ObfuscatedFileUtil* sandbox_file_util = sandbox_file_util_.release();
-    if (!file_message_loop_->ReleaseSoon(FROM_HERE, sandbox_file_util))
-      sandbox_file_util->Release();
+    if (!file_task_runner_->DeleteSoon(FROM_HERE, sandbox_file_util))
+      delete sandbox_file_util;
   }
 }
 
@@ -342,20 +358,21 @@ void SandboxMountPointProvider::ValidateFileSystemRoot(
   if (!IsAllowedScheme(origin_url)) {
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
     UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
-                              kInvalidScheme,
+                              kInvalidSchemeError,
                               kFileSystemErrorMax);
     return;
   }
 
   base::PlatformFileError* error_ptr = new base::PlatformFileError;
-  file_message_loop_->PostTaskAndReply(
+  file_task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::Bind(&ValidateRootOnFileThread,
-                 sandbox_file_util_,
+                 sandbox_file_util_.get(),
                  origin_url, type, old_base_path(), create,
                  base::Unretained(error_ptr)),
-      base::Bind(base::Bind(&PassPointerErrorByValue, callback),
-                 base::Owned(error_ptr)));
+      base::Bind(&DidValidateFileSystemRoot,
+                 weak_factory_.GetWeakPtr(),
+                 callback, base::Owned(error_ptr)));
 };
 
 FilePath
@@ -369,7 +386,7 @@ SandboxMountPointProvider::GetFileSystemRootPathOnFileThread(
   if (!IsAllowedScheme(origin_url))
     return FilePath();
 
-  MigrateIfNeeded(sandbox_file_util_, old_base_path());
+  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
 
   return sandbox_file_util_->GetDirectoryForOriginAndType(
       origin_url, type, create);
@@ -405,14 +422,6 @@ bool SandboxMountPointProvider::IsRestrictedFileName(const FilePath& filename)
   return false;
 }
 
-std::vector<FilePath> SandboxMountPointProvider::GetRootDirectories() const {
-  NOTREACHED();
-  // TODO(ericu): Implement this method and check for access permissions as
-  // fileBrowserPrivate extension API does. We currently have another mechanism,
-  // but we should switch over.  This may also need to call MigrateIfNeeded().
-  return  std::vector<FilePath>();
-}
-
 FileSystemFileUtil* SandboxMountPointProvider::GetFileUtil() {
   return sandbox_file_util_.get();
 }
@@ -429,17 +438,27 @@ SandboxMountPointProvider::CreateFileSystemOperation(
     const GURL& origin_url,
     FileSystemType file_system_type,
     const FilePath& virtual_path,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const {
-  return new FileSystemOperation(file_proxy, context);
+  return new FileSystemOperation(context);
 }
 
-webkit_blob::FileReader* SandboxMountPointProvider::CreateFileReader(
+webkit_blob::FileStreamReader*
+SandboxMountPointProvider::CreateFileStreamReader(
     const GURL& url,
     int64 offset,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const {
-  return new FileSystemFileReader(file_proxy, context, url, offset);
+  return new FileSystemFileStreamReader(context, url, offset);
+}
+
+fileapi::FileStreamWriter* SandboxMountPointProvider::CreateFileStreamWriter(
+    const GURL& url,
+    int64 offset,
+    FileSystemContext* context) const {
+  return new SandboxFileStreamWriter(context, url, offset);
+}
+
+FileSystemQuotaUtil* SandboxMountPointProvider::GetQuotaUtil() {
+  return this;
 }
 
 FilePath SandboxMountPointProvider::old_base_path() const {
@@ -456,25 +475,28 @@ FilePath SandboxMountPointProvider::renamed_old_base_path() const {
 
 SandboxMountPointProvider::OriginEnumerator*
 SandboxMountPointProvider::CreateOriginEnumerator() const {
-  MigrateIfNeeded(sandbox_file_util_, old_base_path());
+  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
   return new ObfuscatedOriginEnumerator(sandbox_file_util_.get());
 }
 
 FilePath SandboxMountPointProvider::GetBaseDirectoryForOriginAndType(
     const GURL& origin_url, fileapi::FileSystemType type, bool create) const {
 
-  MigrateIfNeeded(sandbox_file_util_, old_base_path());
+  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
 
   return sandbox_file_util_->GetDirectoryForOriginAndType(
       origin_url, type, create);
 }
 
 bool SandboxMountPointProvider::DeleteOriginDataOnFileThread(
-    QuotaManagerProxy* proxy, const GURL& origin_url,
+    FileSystemContext* file_system_context,
+    QuotaManagerProxy* proxy,
+    const GURL& origin_url,
     fileapi::FileSystemType type) {
-  MigrateIfNeeded(sandbox_file_util_, old_base_path());
+  MigrateIfNeeded(sandbox_file_util_.get(), old_base_path());
 
-  int64 usage = GetOriginUsageOnFileThread(origin_url, type);
+  int64 usage = GetOriginUsageOnFileThread(file_system_context,
+                                           origin_url, type);
 
   bool result =
       sandbox_file_util_->DeleteDirectoryForOriginAndType(origin_url, type);
@@ -524,7 +546,9 @@ void SandboxMountPointProvider::GetOriginsForHostOnFileThread(
 }
 
 int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
-    const GURL& origin_url, fileapi::FileSystemType type) {
+    FileSystemContext* file_system_context,
+    const GURL& origin_url,
+    fileapi::FileSystemType type) {
   DCHECK(type == kFileSystemTypeTemporary ||
          type == kFileSystemTypePersistent);
   FilePath base_path =
@@ -546,7 +570,7 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
   // Get the directory size now and update the cache.
   FileSystemUsageCache::Delete(usage_file_path);
 
-  FileSystemOperationContext context(NULL);
+  FileSystemOperationContext context(file_system_context);
   FileSystemPath path(origin_url, type, FilePath());
   scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> enumerator(
       sandbox_file_util_->CreateFileEnumerator(&context, path, true));
@@ -674,6 +698,43 @@ bool SandboxMountPointProvider::IsAllowedScheme(const GURL& url) const {
       return true;
   }
   return false;
+}
+
+void SandboxMountPointProvider::CollectOpenFileSystemMetrics(
+    base::PlatformFileError error_code) {
+  base::Time now = base::Time::Now();
+  bool throttled = now < next_release_time_for_open_filesystem_stat_;
+  if (!throttled) {
+    next_release_time_for_open_filesystem_stat_ =
+        now + base::TimeDelta::FromHours(kMinimumStatsCollectionIntervalHours);
+  }
+
+#define REPORT(report_value)                                            \
+  UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemDetailLabel,                 \
+                            (report_value),                             \
+                            kFileSystemErrorMax);                       \
+  if (!throttled) {                                                     \
+    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemDetailNonThrottledLabel,   \
+                              (report_value),                           \
+                              kFileSystemErrorMax);                     \
+  }
+
+  switch (error_code) {
+    case base::PLATFORM_FILE_OK:
+      REPORT(kOK);
+      break;
+    case base::PLATFORM_FILE_ERROR_INVALID_URL:
+      REPORT(kInvalidSchemeError);
+      break;
+    case base::PLATFORM_FILE_ERROR_NOT_FOUND:
+      REPORT(kNotFound);
+      break;
+    case base::PLATFORM_FILE_ERROR_FAILED:
+    default:
+      REPORT(kUnknownError);
+      break;
+  }
+#undef REPORT
 }
 
 }  // namespace fileapi

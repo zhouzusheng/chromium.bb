@@ -16,8 +16,8 @@ import sys
 import base64
 import mimetypes
 
-from grit.node import base
 from grit import lazy_re
+from grit import util
 
 DIST_DEFAULT = 'chromium'
 DIST_ENV_VAR = 'CHROMIUM_BUILD'
@@ -30,19 +30,20 @@ _BEGIN_IF_BLOCK = lazy_re.compile(
 # Matches ending of an "if" block with preceding spaces.
 _END_IF_BLOCK = lazy_re.compile('\s*</if>')
 
-def ReadFile(input_filename):
-  """Helper function that returns input_filename as a string.
 
-  Args:
-    input_filename: name of file to be read
+def GetDistribution():
+  """Helper function that gets the distribution we are building.
 
   Returns:
     string
   """
-  f = open(input_filename, 'rb')
-  file_contents = f.read()
-  f.close()
-  return file_contents
+  distribution = DIST_DEFAULT
+  if DIST_ENV_VAR in os.environ.keys():
+    distribution = os.environ[DIST_ENV_VAR]
+    if len(distribution) > 1 and distribution[0] == '_':
+      distribution = distribution[1:].lower()
+  return distribution
+
 
 def SrcInlineAsDataURL(
     src_match, base_path, distribution, inlined_files, names_only=False):
@@ -70,7 +71,7 @@ def SrcInlineAsDataURL(
     # filename is probably a URL, which we don't want to bother inlining
     return src_match.group(0)
 
-  filename = filename.replace('%DISTRIBUTION%', distribution)
+  filename = filename.replace(DIST_SUBSTR , distribution)
   filepath = os.path.join(base_path, filename)
   inlined_files.add(filepath)
 
@@ -78,7 +79,7 @@ def SrcInlineAsDataURL(
     return ""
 
   mimetype = mimetypes.guess_type(filename)[0] or 'text/plain'
-  inline_data = base64.standard_b64encode(ReadFile(filepath))
+  inline_data = base64.standard_b64encode(util.ReadFile(filepath, util.BINARY))
 
   prefix = src_match.string[src_match.start():src_match.start('filename')-1]
   return "%s\"data:%s;base64,%s\"" % (prefix, mimetype, inline_data)
@@ -95,7 +96,8 @@ class InlinedData:
     self.inlined_files = inlined_files
 
 def DoInline(
-    input_filename, grd_node, allow_external_script=False, names_only=False):
+    input_filename, grd_node, allow_external_script=False, names_only=False,
+    rewrite_function=None):
   """Helper function that inlines the resources in a specified file.
 
   Reads input_filename, finds all the src attributes and attempts to
@@ -106,17 +108,14 @@ def DoInline(
     input_filename: name of file to read in
     grd_node: html node from the grd file for this include tag
     names_only: |nil| will be returned for the inlined contents (faster).
+    rewrite_function: function(filepath, text, distribution) which will be
+        called to rewrite html content before inlining images.
   Returns:
     a tuple of the inlined data as a string and the set of filenames
     of all the inlined files
   """
   input_filepath = os.path.dirname(input_filename)
-
-  distribution = DIST_DEFAULT
-  if DIST_ENV_VAR in os.environ.keys():
-    distribution = os.environ[DIST_ENV_VAR]
-    if len(distribution) > 1 and distribution[0] == '_':
-      distribution = distribution[1:].lower()
+  distribution = GetDistribution()
 
   # Keep track of all the files we inline.
   inlined_files = set()
@@ -208,6 +207,9 @@ def DoInline(
   def InlineCSSText(text, css_filepath):
     """Helper function that inlines external resources in CSS text"""
     filepath = os.path.dirname(css_filepath)
+    # Allow custom modifications before inlining images.
+    if rewrite_function:
+      text = rewrite_function(filepath, text, distribution)
     return InlineCSSImages(text, filepath)
 
   def InlineCSSFile(src_match, inlined_files=inlined_files):
@@ -228,18 +230,31 @@ def DoInline(
     inlined_files.add(filepath)
     # When resolving CSS files we need to pass in the path so that relative URLs
     # can be resolved.
-    return '<style>%s</style>' % InlineCSSText(ReadFile(filepath), filepath)
+    return '<style>%s</style>' % InlineCSSText(
+        util.ReadFile(filepath, util.BINARY), filepath)
 
   def InlineCSSImages(text, filepath=input_filepath):
     """Helper function that inlines external images in CSS backgrounds."""
     # Replace contents of url() for css attributes: content, background,
     # or *-image.
-    return re.sub('(?:content|background|[\w-]*-image):[ ]*' +
-                  'url\((?:\'|\")(?P<filename>[^"\'\)\(]*)(?:\'|\")',
-                  lambda m: SrcReplace(m, filepath),
+    return re.sub('(?:content|background|[\w-]*-image):[^;]*' +
+                  '(?:url\((?:\'|\")([^"\'\)\(]*)(?:\'|\")\)|' +
+                      'image-set\(' +
+                          '([ ]*url\((?:\'|\")([^"\'\)\(]*)(?:\'|\")\)' +
+                              '[ ]*[0-9.]*x[ ]*(,[ ]*)?)*\))',
+                  lambda m: InlineCSSUrls(m, filepath),
                   text)
 
-  flat_text = ReadFile(input_filename)
+  def InlineCSSUrls(src_match, filepath=input_filepath):
+    """Helper function that inlines each url on a CSS image rule match."""
+    # Replace contents of url() references in matches.
+    return re.sub('url\((?:\'|\")(?P<filename>[^"\'\)\(]*)(?:\'|\")',
+                  lambda m: SrcReplace(m, filepath),
+                  src_match.group(0))
+
+
+
+  flat_text = util.ReadFile(input_filename, util.BINARY)
 
   if not allow_external_script:
     # We need to inline css and js before we inline images so that image
@@ -266,6 +281,10 @@ def DoInline(
                      SrcReplace,
                      flat_text)
 
+  # Allow custom modifications before inlining images.
+  if rewrite_function:
+    flat_text = rewrite_function(input_filepath, flat_text, distribution)
+
   # TODO(arv): Only do this inside <style> tags.
   flat_text = InlineCSSImages(flat_text)
 
@@ -278,7 +297,8 @@ def DoInline(
   return InlinedData(flat_text, inlined_files)
 
 
-def InlineToString(input_filename, grd_node, allow_external_script=False):
+def InlineToString(input_filename, grd_node, allow_external_script=False,
+                   rewrite_function=None):
   """Inlines the resources in a specified file and returns it as a string.
 
   Args:
@@ -290,7 +310,8 @@ def InlineToString(input_filename, grd_node, allow_external_script=False):
   try:
     return DoInline(input_filename,
                     grd_node,
-                    allow_external_script=allow_external_script).inlined_data
+                    allow_external_script=allow_external_script,
+                    rewrite_function=rewrite_function).inlined_data
   except IOError, e:
     raise Exception("Failed to open %s while trying to flatten %s. (%s)" %
                     (e.filename, input_filename, e.strerror))
@@ -311,16 +332,20 @@ def InlineToFile(input_filename, output_filename, grd_node):
     a set of filenames of all the inlined files
   """
   inlined_data = InlineToString(input_filename, grd_node)
-  out_file = open(output_filename, 'wb')
-  out_file.writelines(inlined_data)
-  out_file.close()
+  with open(output_filename, 'wb') as out_file:
+    out_file.writelines(inlined_data)
 
 
-def GetResourceFilenames(filename, allow_external_script=False):
+def GetResourceFilenames(filename,
+                         allow_external_script=False,
+                         rewrite_function=None):
   """For a grd file, returns a set of all the files that would be inline."""
   try:
-    return DoInline(filename, None, names_only=True,
-                    allow_external_script=allow_external_script).inlined_files
+    return DoInline(filename,
+                    None,
+                    names_only=True,
+                    allow_external_script=allow_external_script,
+                    rewrite_function=rewrite_function).inlined_files
   except IOError, e:
     raise Exception("Failed to open %s while trying to flatten %s. (%s)" %
                     (e.filename, filename, e.strerror))

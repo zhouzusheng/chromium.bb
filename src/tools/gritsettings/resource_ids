@@ -18,15 +18,18 @@
 
   "chrome/browser/browser_resources.grd": {
     "includes": [500],
+    "structures": [750],
   },
   "chrome/browser/resources/component_extension_resources.grd": {
     "includes": [1000],
+    "structures": [1250],
   },
   "chrome/browser/resources/net_internals_resources.grd": {
     "includes": [1500],
   },
   "chrome/browser/resources/shared_resources.grd": {
     "includes": [2000],
+    "structures": [2200],
   },
   "chrome/common/common_resources.grd": {
     "includes": [2500],
@@ -120,7 +123,7 @@
     "structures": [18000],
   },
 
-  "ui/gfx/gfx_resources.grd": {
+ "ui/base/native_theme/resources/native_theme_resources.grd": {
     "includes": [18500],
   },
 
@@ -136,18 +139,16 @@
     "includes": [20000],
   },
   # This file is generated during the build.
+  # devtools_resources.grd can be in two different places depending on whether
+  # we are in a chromium checkout or a webkit-only checkout.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
     "includes": [20500],
   },
-  # All standard and large theme resources should have the same IDs.
+  "devtools_resources.grd": {
+    "includes": [20500],
+  },
   "chrome/app/theme/theme_resources_standard.grd": {
-    "includes": [21000],
-  },
-  "chrome/app/theme/theme_resources_2x.grd": {
-    "includes": [21000],
-  },
-  "chrome/app/theme/theme_resources_touch_1x.grd": {
-    "includes": [21000],
+    "structures": [21000],
   },
   # This file is generated during the build.
   "chrome/browser/debugger/frontend/devtools_discovery_page_resources.grd": {
@@ -157,7 +158,7 @@
     "includes": [22000],
   },
   "chrome/browser/resources/options2_resources.grd": {
-    "includes": [22200],
+    "structures": [22200],
   },
   "cloud_print/virtual_driver/win/install/virtual_driver_setup_resources.grd": {
     "messages": [22500],
@@ -165,15 +166,8 @@
   "chrome/browser/resources/quota_internals_resources.grd": {
     "includes": [23000],
   },
-  # All standard and large theme resources should have the same IDs.
   "ui/resources/ui_resources_standard.grd": {
-    "includes": [24000],
-  },
-  "ui/resources/ui_resources_touch.grd": {
-    "includes": [24000],
-  },
-  "ui/resources/ui_resources_2x.grd": {
-    "includes": [24000],
+    "structures": [24000],
   },
   "content/content_resources.grd": {
     "includes": [24500],
@@ -186,5 +180,8 @@
   },
   "chrome/common/extensions_api_resources.grd": {
     "includes": [26000],
+  },
+  "third_party/trace-viewer/src/tracing.grd": {
+    "includes": [26500],
   },
 }

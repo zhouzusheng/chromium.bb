@@ -19,7 +19,6 @@
 #include "ppapi/c/ppb_input_event.h"
 #include "ppapi/c/ppb_websocket.h"
 #include "ppapi/c/dev/pp_video_dev.h"
-#include "ppapi/c/dev/ppb_transport_dev.h"
 #include "ppapi/c/private/ppb_network_monitor_private.h"
 #include "ppapi/shared_impl/api_id.h"
 
@@ -47,6 +46,15 @@ class ResourceCreationAPI {
                                     const char* path) = 0;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) = 0;
+  virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
+                                          PP_InputEvent_Type type,
+                                          PP_TimeTicks time_stamp,
+                                          struct PP_Var text,
+                                          uint32_t segment_number,
+                                          const uint32_t* segment_offsets,
+                                          int32_t target_segment,
+                                          uint32_t selection_start,
+                                          uint32_t selection_end) = 0;
   virtual PP_Resource CreateKeyboardInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -78,15 +86,19 @@ class ResourceCreationAPI {
       const PP_FloatPoint* wheel_ticks,
       PP_Bool scroll_by_page) = 0;
 
-#if !defined(OS_NACL)
   virtual PP_Resource CreateAudio(PP_Instance instance,
                                   PP_Resource config_id,
                                   PPB_Audio_Callback audio_callback,
                                   void* user_data) = 0;
-  virtual PP_Resource CreateAudioTrusted(PP_Instance instance) = 0;
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) = 0;
+  virtual PP_Resource CreateImageData(PP_Instance instance,
+                                      PP_ImageDataFormat format,
+                                      const PP_Size& size,
+                                      PP_Bool init_to_zero) = 0;
+#if !defined(OS_NACL)
+  virtual PP_Resource CreateAudioTrusted(PP_Instance instance) = 0;
   virtual PP_Resource CreateAudioInput0_1(
       PP_Instance instance,
       PP_Resource config_id,
@@ -102,7 +114,8 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateFileChooser(
       PP_Instance instance,
       PP_FileChooserMode_Dev mode,
-      const char* accept_mime_types) = 0;
+      const char* accept_types) = 0;
+  virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) = 0;
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) = 0;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) = 0;
@@ -116,10 +129,6 @@ class ResourceCreationAPI {
                                           PP_Resource share_context,
                                           const int32_t* attrib_list) = 0;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
-  virtual PP_Resource CreateImageData(PP_Instance instance,
-                                      PP_ImageDataFormat format,
-                                      const PP_Size& size,
-                                      PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
       PPB_NetworkMonitor_Callback callback,
@@ -129,9 +138,6 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateTalk(PP_Instance instance) = 0;
   virtual PP_Resource CreateTCPServerSocketPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
-  virtual PP_Resource CreateTransport(PP_Instance instance,
-                                      const char* name,
-                                      PP_TransportType type) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDecoder(

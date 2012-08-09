@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -10,18 +9,18 @@
 #ifndef GrGLProgram_DEFINED
 #define GrGLProgram_DEFINED
 
-#include "../GrDrawState.h"
+#include "GrDrawState.h"
 #include "GrGLContextInfo.h"
 #include "GrGLSL.h"
-#include "../GrStringBuilder.h"
-#include "../GrGpu.h"
+#include "GrGLTexture.h"
+#include "GrStringBuilder.h"
+#include "GrGpu.h"
 
 #include "SkXfermode.h"
 
 class GrBinHashKeyBuilder;
 class GrGLProgramStage;
-
-struct ShaderCodeSegments;
+class GrGLShaderBuilder;
 
 // optionally compile the experimental GS code. Set to GR_DEBUG
 // so that debug build bots will execute the code.
@@ -108,15 +107,7 @@ public:
                 kCustomTextureDomain_OptFlagBit = 1 << 2,
                 kIsEnabled_OptFlagBit           = 1 << 7
             };
-            enum FetchMode {
-                kSingle_FetchMode,
-                k2x2_FetchMode,
-                kConvolution_FetchMode,
-                kErode_FetchMode,
-                kDilate_FetchMode,
 
-                kFetchModeCnt,
-            };
             /**
               Flags set based on a src texture's pixel config. The operations
               described are performed after reading a texel.
@@ -151,7 +142,7 @@ public:
 
                 /**
                  Multiply r,g,b by a after texture reads. This flag incompatible
-                 with kSmearAlpha and may only be used with FetchMode kSingle.
+                 with kSmearAlpha.
 
                  It is assumed the src texture has 8bit color components. After
                  reading the texture one version rounds up to the next multiple
@@ -165,22 +156,9 @@ public:
                 kInConfigBitMask = (kDummyInConfigFlag-1) |
                                    (kDummyInConfigFlag-2)
             };
-            enum CoordMapping {
-                kIdentity_CoordMapping,
-                kRadialGradient_CoordMapping,
-                kSweepGradient_CoordMapping,
-                kRadial2Gradient_CoordMapping,
-                // need different shader computation when quadratic
-                // eq describing the gradient degenerates to a linear eq.
-                kRadial2GradientDegenerate_CoordMapping,
-                kCoordMappingCnt
-            };
 
             uint8_t fOptFlags;
             uint8_t fInConfigFlags; // bitfield of InConfigFlags values
-            uint8_t fFetchMode;     // casts to enum FetchMode
-            uint8_t fCoordMapping;  // casts to enum CoordMapping
-            uint8_t fKernelWidth;
 
             /** Non-zero if user-supplied code will write the stage's
                 contribution to the fragment shader. */
@@ -242,12 +220,10 @@ public:
         uint8_t fDualSrcOutput;     // casts to enum DualSrcOutput
         int8_t fFirstCoverageStage;
         SkBool8 fEmitsPointSize;
-        SkBool8 fEdgeAAConcave;
         SkBool8 fColorMatrixEnabled;
 
-        int8_t fEdgeAANumEdges;
         uint8_t fColorFilterXfermode;  // casts to enum SkXfermode::Mode
-        int8_t fPadding[3];
+        int8_t fPadding[1];
 
     } fProgramDesc;
     GR_STATIC_ASSERT(!(sizeof(ProgramDesc) % 4));
@@ -263,25 +239,16 @@ private:
 public:
     enum {
         kUnusedUniform = -1,
-        kSetAsAttribute = 1000,
     };
 
     struct StageUniLocations {
         GrGLint fTextureMatrixUni;
-        GrGLint fNormalizedTexelSizeUni;
         GrGLint fSamplerUni;
-        GrGLint fRadial2Uni;
         GrGLint fTexDomUni;
-        GrGLint fKernelUni;
-        GrGLint fImageIncrementUni;
         void reset() {
             fTextureMatrixUni = kUnusedUniform;
-            fNormalizedTexelSizeUni = kUnusedUniform;
             fSamplerUni = kUnusedUniform;
-            fRadial2Uni = kUnusedUniform;
             fTexDomUni = kUnusedUniform;
-            fKernelUni = kUnusedUniform;
-            fImageIncrementUni = kUnusedUniform;
         }
     };
 
@@ -289,7 +256,6 @@ public:
         GrGLint fViewMatrixUni;
         GrGLint fColorUni;
         GrGLint fCoverageUni;
-        GrGLint fEdgesUni;
         GrGLint fColorFilterUni;
         GrGLint fColorMatrixUni;
         GrGLint fColorMatrixVecUni;
@@ -298,7 +264,6 @@ public:
             fViewMatrixUni = kUnusedUniform;
             fColorUni = kUnusedUniform;
             fCoverageUni = kUnusedUniform;
-            fEdgesUni = kUnusedUniform;
             fColorFilterUni = kUnusedUniform;
             fColorMatrixUni = kUnusedUniform;
             fColorMatrixVecUni = kUnusedUniform;
@@ -320,6 +285,9 @@ public:
 
         void copyAndTakeOwnership(CachedData& other) {
             memcpy(this, &other, sizeof(*this));
+            for (int i = 0; i < GrDrawState::kNumStages; ++i) {
+                other.fCustomStage[i] = NULL;
+            }
         }
 
     public:
@@ -332,7 +300,10 @@ public:
         // shader uniform locations (-1 if shader doesn't use them)
         UniLocations fUniLocations;
 
+        // The matrix sent to GL is determined by both the client's matrix and
+        // the size of the viewport.
         GrMatrix  fViewMatrix;
+        SkISize   fViewportSize;
 
         // these reflect the current values of uniforms
         // (GL uniform values travel with program)
@@ -340,13 +311,10 @@ public:
         GrColor                     fCoverage;
         GrColor                     fColorFilterColor;
         GrMatrix                    fTextureMatrices[GrDrawState::kNumStages];
-        // width and height used for normalized texel size
-        int                         fTextureWidth[GrDrawState::kNumStages];
-        int                         fTextureHeight[GrDrawState::kNumStages]; 
-        GrScalar                    fRadial2CenterX1[GrDrawState::kNumStages];
-        GrScalar                    fRadial2Radius0[GrDrawState::kNumStages];
-        bool                        fRadial2PosRoot[GrDrawState::kNumStages];
         GrRect                      fTextureDomain[GrDrawState::kNumStages];
+        // The texture domain and texture matrix sent to GL depend upon the
+        // orientation.
+        GrGLTexture::Orientation    fTextureOrientation[GrDrawState::kNumStages];
 
         GrGLProgramStage*           fCustomStage[GrDrawState::kNumStages];
 
@@ -375,22 +343,22 @@ private:
                       const char* fsInColor, // NULL means no incoming color
                       const char* fsOutColor,
                       const char* vsInCoord,
-                      ShaderCodeSegments* segments,
+                      GrGLShaderBuilder* segments,
                       StageUniLocations* locations,
                       GrGLProgramStage* override) const;
 
     void genGeometryShader(const GrGLContextInfo& gl,
-                           ShaderCodeSegments* segments) const;
+                           GrGLShaderBuilder* segments) const;
 
     // generates code to compute coverage based on edge AA.
     void genEdgeCoverage(const GrGLContextInfo& gl,
                          GrVertexLayout layout,
                          CachedData* programData,
                          GrStringBuilder* coverageVar,
-                         ShaderCodeSegments* segments) const;
+                         GrGLShaderBuilder* segments) const;
 
     static bool CompileShaders(const GrGLContextInfo& gl,
-                               const ShaderCodeSegments& segments, 
+                               const GrGLShaderBuilder& segments, 
                                CachedData* programData);
 
     // Compiles a GL shader, returns shader ID or 0 if failed
@@ -413,7 +381,7 @@ private:
     void getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
                                          CachedData* programData) const;
 
-    friend class GrGpuGLShaders;
+    friend class GrGpuGL;
 };
 
 #endif

@@ -18,13 +18,15 @@
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
-#include "ui/gfx/gl/gl_implementation.h"
+#include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gpu {
 namespace gles2 {
 
-ContextGroup::ContextGroup(MailboxManager* mailbox_manager,
-                           bool bind_generates_resource)
+ContextGroup::ContextGroup(
+    MailboxManager* mailbox_manager,
+    bool bind_generates_resource)
     : mailbox_manager_(mailbox_manager ? mailbox_manager : new MailboxManager),
       num_contexts_(0),
       enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -38,6 +40,12 @@ ContextGroup::ContextGroup(MailboxManager* mailbox_manager,
       max_varying_vectors_(0u),
       max_vertex_uniform_vectors_(0u),
       feature_info_(new FeatureInfo()) {
+  {
+    TransferBufferManager* manager = new TransferBufferManager();
+    transfer_buffer_manager_.reset(manager);
+    manager->Initialize();
+  }
+
   id_namespaces_[id_namespaces::kBuffers].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kFramebuffers].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kProgramsAndShaders].reset(
@@ -47,49 +55,10 @@ ContextGroup::ContextGroup(MailboxManager* mailbox_manager,
   id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
 }
 
-ContextGroup::~ContextGroup() {
-  CHECK(num_contexts_ == 0);
-}
-
 static void GetIntegerv(GLenum pname, uint32* var) {
   GLint value = 0;
   glGetIntegerv(pname, &value);
   *var = value;
-}
-
-bool ContextGroup::CheckGLFeature(GLint min_required, GLint* v) {
-  GLint value = *v;
-  if (enforce_gl_minimums_) {
-    value = std::min(min_required, value);
-  }
-  *v = value;
-  return value >= min_required;
-}
-
-bool ContextGroup::CheckGLFeatureU(GLint min_required, uint32* v) {
-  GLint value = *v;
-  if (enforce_gl_minimums_) {
-    value = std::min(min_required, value);
-  }
-  *v = value;
-  return value >= min_required;
-}
-
-bool ContextGroup::QueryGLFeature(
-    GLenum pname, GLint min_required, GLint* v) {
-  GLint value = 0;
-  glGetIntegerv(pname, &value);
-  *v = value;
-  return CheckGLFeature(min_required, v);
-}
-
-bool ContextGroup::QueryGLFeatureU(
-    GLenum pname, GLint min_required, uint32* v) {
-  uint32 value = 0;
-  GetIntegerv(pname, &value);
-  bool result = CheckGLFeatureU(min_required, &value);
-  *v = value;
-  return result;
 }
 
 bool ContextGroup::Initialize(const DisallowedFeatures& disallowed_features,
@@ -163,17 +132,11 @@ bool ContextGroup::Initialize(const DisallowedFeatures& disallowed_features,
   // TODO(gman): Update this code to check for a specific version of
   // the drivers above which we no longer need this fix.
 #if defined(OS_MACOSX)
-  const char* vendor_str = reinterpret_cast<const char*>(
-      glGetString(GL_VENDOR));
-  if (vendor_str) {
-    std::string lc_str(::StringToLowerASCII(std::string(vendor_str)));
-    bool intel_on_mac = strstr(lc_str.c_str(), "intel");
-    if (intel_on_mac) {
-      max_texture_size = std::min(
+  if (feature_info_->feature_flags().is_intel) {
+    max_texture_size = std::min(
         static_cast<GLint>(4096), max_texture_size);
-      max_cube_map_texture_size = std::min(
+    max_cube_map_texture_size = std::min(
         static_cast<GLint>(512), max_cube_map_texture_size);
-    }
   }
 #endif
   texture_manager_.reset(new TextureManager(feature_info_.get(),
@@ -274,6 +237,56 @@ IdAllocatorInterface* ContextGroup::GetIdAllocator(unsigned namespace_id) {
     return NULL;
 
   return id_namespaces_[namespace_id].get();
+}
+
+uint32 ContextGroup::GetMemRepresented() const {
+  uint32 total = 0;
+  if (buffer_manager_.get())
+    total += buffer_manager_->mem_represented();
+  if (renderbuffer_manager_.get())
+    total += renderbuffer_manager_->mem_represented();
+  if (texture_manager_.get())
+    total += texture_manager_->mem_represented();
+  return total;
+}
+
+ContextGroup::~ContextGroup() {
+  CHECK(num_contexts_ == 0);
+}
+
+bool ContextGroup::CheckGLFeature(GLint min_required, GLint* v) {
+  GLint value = *v;
+  if (enforce_gl_minimums_) {
+    value = std::min(min_required, value);
+  }
+  *v = value;
+  return value >= min_required;
+}
+
+bool ContextGroup::CheckGLFeatureU(GLint min_required, uint32* v) {
+  GLint value = *v;
+  if (enforce_gl_minimums_) {
+    value = std::min(min_required, value);
+  }
+  *v = value;
+  return value >= min_required;
+}
+
+bool ContextGroup::QueryGLFeature(
+    GLenum pname, GLint min_required, GLint* v) {
+  GLint value = 0;
+  glGetIntegerv(pname, &value);
+  *v = value;
+  return CheckGLFeature(min_required, v);
+}
+
+bool ContextGroup::QueryGLFeatureU(
+    GLenum pname, GLint min_required, uint32* v) {
+  uint32 value = 0;
+  GetIntegerv(pname, &value);
+  bool result = CheckGLFeatureU(min_required, &value);
+  *v = value;
+  return result;
 }
 
 }  // namespace gles2

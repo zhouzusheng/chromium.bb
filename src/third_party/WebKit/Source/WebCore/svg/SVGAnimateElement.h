@@ -43,7 +43,8 @@ public:
 protected:
     SVGAnimateElement(const QualifiedName&, Document*);
 
-    virtual void resetToBaseValue();
+    virtual void resetAnimatedType();
+    virtual void clearAnimatedType(SVGElement* targetElement);
     virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString);
     virtual bool calculateFromAndToValues(const String& fromString, const String& toString);
     virtual bool calculateFromAndByValues(const String& fromString, const String& byString);
@@ -54,11 +55,12 @@ protected:
 
     virtual void targetElementWillChange(SVGElement* currentTarget, SVGElement* oldTarget) OVERRIDE;
 
+    AnimatedPropertyType m_animatedPropertyType;
+
 private:
     SVGAnimatedTypeAnimator* ensureAnimator();
 
     virtual bool hasValidAttributeType();
-    AnimatedPropertyType m_animatedPropertyType;
 
     OwnPtr<SVGAnimatedType> m_fromType;
     OwnPtr<SVGAnimatedType> m_toType;

@@ -20,6 +20,8 @@ class GrContext;
  */
 class GrResource : public GrRefCnt {
 public:
+    SK_DECLARE_INST_COUNT(GrResource)
+
     /**
      * Frees the resource in the underlying 3D API. It must be safe to call this
      * when the resource has been previously abandoned.

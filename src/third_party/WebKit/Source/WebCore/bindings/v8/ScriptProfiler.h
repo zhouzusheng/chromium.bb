@@ -43,6 +43,7 @@ namespace WebCore {
 class DOMWrapperVisitor;
 class Page;
 class ScriptObject;
+class ScriptValue;
 class WorkerContext;
 
 class ScriptProfiler {
@@ -59,6 +60,7 @@ public:
 
     static void collectGarbage();
     static ScriptObject objectByHeapObjectId(unsigned id);
+    static unsigned getHeapObjectId(ScriptValue);
     static void start(ScriptState* state, const String& title);
     static void startForPage(Page*, const String& title);
 #if ENABLE(WORKERS)
@@ -76,6 +78,7 @@ public:
     static void initialize();
     static void visitJSDOMWrappers(DOMWrapperVisitor*);
     static void visitExternalJSStrings(DOMWrapperVisitor*);
+    static size_t profilerSnapshotsSize();
 };
 
 } // namespace WebCore

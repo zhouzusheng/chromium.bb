@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -11,12 +10,12 @@
 #define GrGLStencilBuffer_DEFINED
 
 #include "gl/GrGLInterface.h"
-#include "../GrStencilBuffer.h"
+#include "GrStencilBuffer.h"
 
 class GrGLStencilBuffer : public GrStencilBuffer {
 public:
-    static const GrGLenum kUnknownInternalFormat = ~0;
-    static const GrGLuint kUnknownBitCount = ~0;
+    static const GrGLenum kUnknownInternalFormat = ~0U;
+    static const GrGLuint kUnknownBitCount = ~0U;
     struct Format {
         GrGLenum  fInternalFormat;
         GrGLuint  fStencilBits;

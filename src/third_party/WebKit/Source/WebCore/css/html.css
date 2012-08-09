@@ -510,8 +510,6 @@ input::-webkit-input-placeholder, isindex::-webkit-input-placeholder {
     white-space: pre;
     word-wrap: normal;
     overflow: hidden;
-    padding-left: 1px;
-    padding-right: 1px;
 }
 
 input[type="password"] {
@@ -572,6 +570,7 @@ input[type="range"] {
     padding: initial;
     border: initial;
     margin: 2px;
+    color: #909090;
 }
 
 input[type="range"]::-webkit-slider-container {

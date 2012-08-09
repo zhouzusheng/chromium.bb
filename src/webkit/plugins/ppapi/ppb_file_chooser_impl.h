@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,14 +34,22 @@ class PPB_FileRef_Impl;
 class PPB_FileChooser_Impl : public ::ppapi::Resource,
                              public ::ppapi::thunk::PPB_FileChooser_API {
  public:
+  // Structure to store the information of chosen files.
+  struct ChosenFileInfo {
+    ChosenFileInfo(const std::string& path, const std::string& display_name);
+    std::string path;
+    // |display_name| may be empty.
+    std::string display_name;
+  };
+
   PPB_FileChooser_Impl(PP_Instance instance,
                        PP_FileChooserMode_Dev mode,
-                       const char* accept_mime_types);
+                       const char* accept_types);
   virtual ~PPB_FileChooser_Impl();
 
   static PP_Resource Create(PP_Instance instance,
                             PP_FileChooserMode_Dev mode,
-                            const char* accept_mime_types);
+                            const char* accept_types);
 
   // Resource overrides.
   virtual PPB_FileChooser_Impl* AsPPB_FileChooser_Impl();
@@ -50,7 +58,7 @@ class PPB_FileChooser_Impl : public ::ppapi::Resource,
   virtual ::ppapi::thunk::PPB_FileChooser_API* AsPPB_FileChooser_API() OVERRIDE;
 
   // Stores the list of selected files.
-  void StoreChosenFiles(const std::vector<std::string>& files);
+  void StoreChosenFiles(const std::vector<ChosenFileInfo>& files);
 
   // Check that |callback| is valid (only non-blocking operation is supported)
   // and that no callback is already pending. Returns |PP_OK| if okay, else
@@ -78,15 +86,15 @@ class PPB_FileChooser_Impl : public ::ppapi::Resource,
       PP_Var suggested_file_name,
       const PP_CompletionCallback& callback) OVERRIDE;
 
-  // Splits a comma-separated MIME type list |accept_mime_types|, trims the
+  // Splits a comma-separated MIME type/extension list |accept_types|, trims the
   // resultant split types, makes them lowercase, and returns them.
   // Though this should be private, this is public for testing.
   WEBKIT_PLUGINS_EXPORT static std::vector<WebKit::WebString> ParseAcceptValue(
-      const std::string& accept_mime_types);
+      const std::string& accept_types);
 
  private:
   PP_FileChooserMode_Dev mode_;
-  std::string accept_mime_types_;
+  std::string accept_types_;
   scoped_refptr< ::ppapi::TrackedCallback> callback_;
 
   // When using the v0.6 of the API, this will contain the output for the

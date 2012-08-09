@@ -23,7 +23,6 @@
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/host_resolver.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
@@ -52,24 +51,14 @@ class TestURLRequestContext : public net::URLRequestContext {
   // URLRequestContext before it is constructed completely. If
   // |delay_initialization| is true, Init() needs be be called manually.
   explicit TestURLRequestContext(bool delay_initialization);
-  // We need this constructor because TestURLRequestContext("foo") actually
-  // calls the boolean constructor rather than the std::string constructor.
-  explicit TestURLRequestContext(const char* proxy);
-  explicit TestURLRequestContext(const std::string& proxy);
-  TestURLRequestContext(const std::string& proxy,
-                        net::HostResolver* host_resolver);
-
-  // Configures the proxy server, must not be called after Init().
-  void SetProxyFromString(const std::string& proxy);
-  void SetProxyDirect();
+  virtual ~TestURLRequestContext();
 
   void Init();
 
- protected:
-  virtual ~TestURLRequestContext();
-
  private:
   bool initialized_;
+
+ protected:
   net::URLRequestContextStorage context_storage_;
 };
 
@@ -79,21 +68,26 @@ class TestURLRequestContext : public net::URLRequestContext {
 // given in the constructor.
 class TestURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
-  // |io_message_loop_proxy| must not be NULL.
+  // |network_task_runner| must not be NULL.
   explicit TestURLRequestContextGetter(
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy);
+      const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner);
+
+  // Use to pass a pre-initialized |context|.
+  TestURLRequestContextGetter(
+      const scoped_refptr<base::SingleThreadTaskRunner>& network_task_runner,
+      scoped_ptr<TestURLRequestContext> context);
 
   // net::URLRequestContextGetter implementation.
   virtual TestURLRequestContext* GetURLRequestContext() OVERRIDE;
-  virtual scoped_refptr<base::MessageLoopProxy>
-      GetIOMessageLoopProxy() const OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetNetworkTaskRunner() const OVERRIDE;
 
  protected:
   virtual ~TestURLRequestContextGetter();
 
  private:
-  const scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
-  scoped_refptr<TestURLRequestContext> context_;
+  const scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
+  scoped_ptr<TestURLRequestContext> context_;
 };
 
 //-----------------------------------------------------------------------------
@@ -102,6 +96,9 @@ class TestURLRequest : public net::URLRequest {
  public:
   TestURLRequest(const GURL& url, Delegate* delegate);
   virtual ~TestURLRequest();
+
+ private:
+  const scoped_ptr<net::URLRequestContext> context_;
 };
 
 //-----------------------------------------------------------------------------
@@ -247,6 +244,11 @@ class TestNetworkDelegate : public net::NetworkDelegate {
                               net::CookieOptions* options) OVERRIDE;
   virtual bool OnCanAccessFile(const net::URLRequest& request,
                                const FilePath& path) const OVERRIDE;
+  virtual bool OnCanThrottleRequest(
+      const net::URLRequest& request) const OVERRIDE;
+  virtual int OnBeforeSocketStreamConnect(
+      net::SocketStream* stream,
+      const net::CompletionCallback& callback) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
 

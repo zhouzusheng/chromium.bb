@@ -43,13 +43,6 @@
 #include <machine/ieee.h>
 #endif
 
-#if COMPILER(MSVC)
-#if OS(WINCE)
-#include <stdlib.h>
-#endif
-#include <limits>
-#endif
-
 #if OS(QNX)
 // FIXME: Look into a way to have cmath import its functions into both the standard and global
 // namespace. For now, we include math.h since the QNX cmath header only imports its functions
@@ -279,10 +272,37 @@ inline bool isWithinIntRange(float x)
 
 #if !COMPILER(MSVC) && !COMPILER(RVCT) && !OS(SOLARIS)
 using std::isfinite;
+#if !COMPILER_QUIRK(GCC11_GLOBAL_ISINF_ISNAN)
 using std::isinf;
 using std::isnan;
+#endif
 using std::signbit;
 #endif
+
+#if COMPILER_QUIRK(GCC11_GLOBAL_ISINF_ISNAN)
+// A workaround to avoid conflicting declarations of isinf and isnan when compiling with GCC in C++11 mode.
+namespace std {
+    constexpr bool wtf_isinf(float f) { return std::isinf(f); }
+    constexpr bool wtf_isinf(double d) { return std::isinf(d); }
+    constexpr bool wtf_isnan(float f) { return std::isnan(f); }
+    constexpr bool wtf_isnan(double d) { return std::isnan(d); }
+};
+
+using std::wtf_isinf;
+using std::wtf_isnan;
+
+#define isinf(x) wtf_isinf(x)
+#define isnan(x) wtf_isnan(x)
+#endif
+
+#ifndef UINT64_C
+#if COMPILER(MSVC)
+#define UINT64_C(c) c ## ui64
+#else
+#define UINT64_C(c) c ## ull
+#endif
+#endif
+
 
 // decompose 'number' to its sign, exponent, and mantissa components.
 // The result is interpreted as:

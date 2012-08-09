@@ -11,6 +11,7 @@
 #include "base/file_util_proxy.h"
 #include "base/platform_file.h"
 #include "base/process.h"
+#include "webkit/fileapi/fileapi_export.h"
 
 class GURL;
 
@@ -19,7 +20,7 @@ namespace fileapi {
 // This class mirrors the callbacks in
 // third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h,
 // but uses chromium types.
-class FileSystemCallbackDispatcher {
+class FILEAPI_EXPORT FileSystemCallbackDispatcher {
  public:
   virtual ~FileSystemCallbackDispatcher();
 
@@ -58,8 +59,7 @@ class FileSystemCallbackDispatcher {
   // for Pepper.
   // The method will be responsible for closing |file|.
   virtual void DidOpenFile(
-      base::PlatformFile file,
-      base::ProcessHandle peer_handle);
+      base::PlatformFile file);
 };
 
 }  // namespace fileapi

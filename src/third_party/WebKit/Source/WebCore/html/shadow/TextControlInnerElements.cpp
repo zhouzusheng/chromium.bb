@@ -37,7 +37,7 @@
 #include "HTMLTextAreaElement.h"
 #include "MouseEvent.h"
 #include "Page.h"
-#include "RenderTextControlSingleLine.h"
+#include "RenderSearchField.h"
 #include "RenderView.h"
 #include "ScriptController.h"
 #include "ScrollbarTheme.h"
@@ -53,7 +53,7 @@ using namespace HTMLNames;
 TextControlInnerElement::TextControlInnerElement(Document* document)
     : HTMLDivElement(divTag, document)
 {
-    setHasCustomStyleForRenderer();
+    setHasCustomCallbacks();
 }
 
 PassRefPtr<TextControlInnerElement> TextControlInnerElement::create(Document* document)
@@ -72,7 +72,7 @@ PassRefPtr<RenderStyle> TextControlInnerElement::customStyleForRenderer()
 inline TextControlInnerTextElement::TextControlInnerTextElement(Document* document)
     : HTMLDivElement(divTag, document)
 {
-    setHasCustomStyleForRenderer();
+    setHasCustomCallbacks();
 }
 
 PassRefPtr<TextControlInnerTextElement> TextControlInnerTextElement::create(Document* document)
@@ -151,7 +151,7 @@ void SearchFieldResultsButtonElement::defaultEventHandler(Event* event)
     if (event->type() == eventNames().mousedownEvent && event->isMouseEvent() && static_cast<MouseEvent*>(event)->button() == LeftButton) {
         input->focus();
         input->select();
-        RenderTextControlSingleLine* renderer = toRenderTextControlSingleLine(input->renderer());
+        RenderSearchField* renderer = toRenderSearchField(input->renderer());
         if (renderer->popupIsVisible())
             renderer->hidePopup();
         else if (input->maxResults() > 0)

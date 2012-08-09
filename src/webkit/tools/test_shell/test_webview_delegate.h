@@ -45,7 +45,6 @@
 #include <gdk/gdk.h>
 #endif
 
-struct WebPreferences;
 class GURL;
 class TestShell;
 class WebWidgetHost;
@@ -133,8 +132,9 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       WebKit::WebFrame* frame, const WebKit::WebString& message);
   virtual void setStatusText(const WebKit::WebString& text);
   virtual void startDragging(
-      const WebKit::WebDragData& data, WebKit::WebDragOperationsMask mask,
-      const WebKit::WebImage& image, const WebKit::WebPoint& offset);
+      WebKit::WebFrame* frame, const WebKit::WebDragData& data,
+      WebKit::WebDragOperationsMask mask, const WebKit::WebImage& image,
+      const WebKit::WebPoint& offset);
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();

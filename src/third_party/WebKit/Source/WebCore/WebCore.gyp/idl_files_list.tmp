@@ -50,6 +50,7 @@
 ../Modules/indexeddb/IDBVersionChangeEvent.idl
 ../Modules/indexeddb/IDBVersionChangeRequest.idl
 ../Modules/indexeddb/WorkerContextIndexedDatabase.idl
+../Modules/intents/DeliveredIntent.idl
 ../Modules/intents/DOMWindowIntents.idl
 ../Modules/intents/Intent.idl
 ../Modules/intents/IntentResultCallback.idl
@@ -71,6 +72,11 @@
 ../Modules/mediastream/PeerConnection00.idl
 ../Modules/mediastream/SessionDescription.idl
 ../Modules/mediastream/SignalingCallback.idl
+../Modules/quota/DOMWindowQuota.idl
+../Modules/quota/StorageInfo.idl
+../Modules/quota/StorageInfoErrorCallback.idl
+../Modules/quota/StorageInfoQuotaCallback.idl
+../Modules/quota/StorageInfoUsageCallback.idl
 ../Modules/speech/DOMWindowSpeech.idl
 ../Modules/speech/SpeechGrammar.idl
 ../Modules/speech/SpeechGrammarList.idl
@@ -165,6 +171,7 @@
 ../dom/CompositionEvent.idl
 ../dom/CustomEvent.idl
 ../dom/DOMCoreException.idl
+../dom/DOMError.idl
 ../dom/DOMImplementation.idl
 ../dom/DOMStringList.idl
 ../dom/DOMStringMap.idl
@@ -181,6 +188,7 @@
 ../dom/ErrorEvent.idl
 ../dom/Event.idl
 ../dom/EventException.idl
+../dom/EventTarget.idl
 ../dom/HashChangeEvent.idl
 ../dom/KeyboardEvent.idl
 ../dom/MessageChannel.idl
@@ -218,6 +226,7 @@
 ../dom/WebKitNamedFlow.idl
 ../dom/WebKitTransitionEvent.idl
 ../dom/WheelEvent.idl
+../editing/UndoManager.idl
 ../fileapi/Blob.idl
 ../fileapi/File.idl
 ../fileapi/FileError.idl
@@ -225,7 +234,6 @@
 ../fileapi/FileList.idl
 ../fileapi/FileReader.idl
 ../fileapi/FileReaderSync.idl
-../fileapi/OperationNotAllowedException.idl
 ../fileapi/WebKitBlobBuilder.idl
 ../html/DOMFormData.idl
 ../html/DOMSettableTokenList.idl
@@ -263,6 +271,7 @@
 ../html/HTMLIFrameElement.idl
 ../html/HTMLImageElement.idl
 ../html/HTMLInputElement.idl
+../html/HTMLIntentElement.idl
 ../html/HTMLKeygenElement.idl
 ../html/HTMLLIElement.idl
 ../html/HTMLLabelElement.idl
@@ -309,6 +318,7 @@
 ../html/MediaError.idl
 ../html/MediaKeyError.idl
 ../html/MediaKeyEvent.idl
+../html/RadioNodeList.idl
 ../html/TextMetrics.idl
 ../html/TimeRanges.idl
 ../html/ValidityState.idl
@@ -373,12 +383,14 @@
 ../page/Crypto.idl
 ../page/DOMSelection.idl
 ../page/DOMWindow.idl
+../page/DOMWindowPagePopup.idl
 ../page/EventSource.idl
 ../page/History.idl
 ../page/Location.idl
 ../page/MemoryInfo.idl
 ../page/Navigator.idl
 ../page/NavigatorRegisterProtocolHandler.idl
+../page/PagePopupController.idl
 ../page/Performance.idl
 ../page/PerformanceEntry.idl
 ../page/PerformanceEntryList.idl
@@ -399,10 +411,6 @@
 ../plugins/DOMPluginArray.idl
 ../storage/Storage.idl
 ../storage/StorageEvent.idl
-../storage/StorageInfo.idl
-../storage/StorageInfoErrorCallback.idl
-../storage/StorageInfoQuotaCallback.idl
-../storage/StorageInfoUsageCallback.idl
 ../workers/AbstractWorker.idl
 ../workers/DedicatedWorkerContext.idl
 ../workers/SharedWorker.idl
@@ -561,5 +569,7 @@
 ../svg/SVGUnitTypes.idl
 ../svg/SVGUseElement.idl
 ../svg/SVGViewElement.idl
+../svg/SVGViewSpec.idl
 ../svg/SVGVKernElement.idl
+../svg/SVGZoomAndPan.idl
 ../svg/SVGZoomEvent.idl

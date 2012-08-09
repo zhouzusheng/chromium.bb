@@ -243,7 +243,7 @@ static int count_path_runtype_values(const SkPath& path, int* itop, int* ibot) {
     SkScalar    top = SkIntToScalar(SK_MaxS16);
     SkScalar    bot = SkIntToScalar(SK_MinS16);
 
-    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
+    while ((verb = iter.next(pts, false)) != SkPath::kDone_Verb) {
         maxEdges += gPathVerbToMaxEdges[verb];
 
         int lastIndex = gPathVerbToInitialLastIndex[verb];
@@ -462,8 +462,7 @@ bool SkRegion::getBoundaryPath(SkPath* path) const {
         edge[0].set(r.fLeft, r.fBottom, r.fTop);
         edge[1].set(r.fRight, r.fTop, r.fBottom);
     }
-    SkQSort(edges.begin(), edges.count(), sizeof(Edge),
-            (SkQSortCompareProc)EdgeProc);
+    qsort(edges.begin(), edges.count(), sizeof(Edge), SkCastForQSort(EdgeProc));
     
     int count = edges.count();
     Edge* start = edges.begin();

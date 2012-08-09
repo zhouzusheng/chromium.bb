@@ -24,19 +24,20 @@
 #include "base/metrics/histogram.h"
 #include "base/string_tokenizer.h"
 #include "base/synchronization/lock.h"
-#include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
+#include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
-#include "gpu/command_buffer/service/context_group.h"
-#include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
+#include "gpu/command_buffer/service/context_group.h"
+#include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "ui/gfx/gl/gl_context.h"
-#include "ui/gfx/gl/gl_share_group.h"
-#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_share_group.h"
+#include "ui/gl/gl_surface.h"
 #include "webkit/glue/gl_bindings_skia_cmd_buffer.h"
 
 using gpu::Buffer;
@@ -46,6 +47,8 @@ using gpu::gles2::GLES2CmdHelper;
 using gpu::gles2::GLES2Implementation;
 using gpu::GpuScheduler;
 using gpu::TransferBuffer;
+using gpu::TransferBufferManager;
+using gpu::TransferBufferManagerInterface;
 
 namespace webkit {
 namespace gpu {
@@ -158,6 +161,7 @@ class GLInProcessContext : public base::SupportsWeakPtr<GLInProcessContext> {
   base::WeakPtr<GLInProcessContext> parent_;
   base::Closure context_lost_callback_;
   uint32 parent_texture_id_;
+  scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferService> command_buffer_;
   scoped_ptr< ::gpu::GpuScheduler> gpu_scheduler_;
   scoped_ptr< ::gpu::gles2::GLES2Decoder> decoder_;
@@ -313,6 +317,9 @@ GLInProcessContext::Error GLInProcessContext::GetError() {
 }
 
 bool GLInProcessContext::IsCommandBufferContextLost() {
+  if (!command_buffer_.get()) {
+    return true;
+  }
   CommandBuffer::State state = command_buffer_->GetState();
   return state.error == ::gpu::error::kLostContext;
 }
@@ -388,7 +395,14 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
     }
   }
 
-  command_buffer_.reset(new CommandBufferService);
+  {
+    TransferBufferManager* manager = new TransferBufferManager();
+    transfer_buffer_manager_.reset(manager);
+    manager->Initialize();
+  }
+
+  command_buffer_.reset(
+      new CommandBufferService(transfer_buffer_manager_.get()));
   if (!command_buffer_->Initialize()) {
     LOG(ERROR) << "Could not initialize command buffer.";
     Destroy();
@@ -424,10 +438,17 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
     return false;
   }
 
+  if (!context_->MakeCurrent(surface_.get())) {
+    LOG(ERROR) << "Could not make context current.";
+    Destroy();
+    return false;
+  }
+
   ::gpu::gles2::DisallowedFeatures disallowed_features;
   disallowed_features.swap_buffer_complete_callback = true;
-  if (!decoder_->Initialize(surface_.get(),
-                            context_.get(),
+  disallowed_features.gpu_memory_manager = true;
+  if (!decoder_->Initialize(surface_,
+                            context_,
                             true,
                             size,
                             disallowed_features,
@@ -481,6 +502,8 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
 }
 
 void GLInProcessContext::Destroy() {
+  bool context_lost = IsCommandBufferContextLost();
+
   if (parent_.get() && parent_texture_id_ != 0) {
     parent_->gles2_implementation_->FreeTextureId(parent_texture_id_);
     parent_texture_id_ = 0;
@@ -500,6 +523,10 @@ void GLInProcessContext::Destroy() {
   transfer_buffer_.reset();
   gles2_helper_.reset();
   command_buffer_.reset();
+
+  if (decoder_.get()) {
+    decoder_->Destroy(!context_lost);
+  }
 }
 
 void GLInProcessContext::OnContextLost() {
@@ -1595,14 +1622,12 @@ DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
 DELEGATE_TO_GL_5(copyTextureCHROMIUM, CopyTextureCHROMIUM, WGC3Denum,
-                 WGC3Denum, WGC3Denum, WGC3Dint, WGC3Dint)
+                 WebGLId, WebGLId, WGC3Dint, WGC3Denum)
 
-#if WEBKIT_USING_SKIA
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::
     onCreateGrGLInterface() {
   return webkit_glue::CreateCommandBufferSkiaGLBinding();
 }
-#endif
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::OnContextLost() {
   // TODO(kbr): improve the precision here.

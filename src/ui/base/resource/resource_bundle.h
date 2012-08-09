@@ -18,7 +18,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/string16.h"
 #include "base/string_piece.h"
+#include "ui/base/layout.h"
 #include "ui/base/ui_export.h"
+#include "ui/gfx/font.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
 
 class SkBitmap;
@@ -26,11 +29,6 @@ class SkBitmap;
 namespace base {
 class Lock;
 class RefCountedStaticMemory;
-}
-
-namespace gfx {
-class Font;
-class Image;
 }
 
 namespace ui {
@@ -63,12 +61,62 @@ class UI_EXPORT ResourceBundle {
     RTL_DISABLED,
   };
 
-  // Initialize the ResourceBundle for this process.  Returns the language
-  // selected.
+  // Delegate class that allows interception of pack file loading and resource
+  // requests. The methods of this class may be called on multiple threads.
+  class Delegate {
+   public:
+    // Called before a resource pack file is loaded. Return the full path for
+    // the pack file to continue loading or an empty value to cancel loading.
+    // |pack_path| will contain the complete default path for the pack file if
+    // known or just the pack file name otherwise.
+    virtual FilePath GetPathForResourcePack(const FilePath& pack_path,
+                                            ScaleFactor scale_factor) = 0;
+
+    // Called before a locale pack file is loaded. Return the full path for
+    // the pack file to continue loading or an empty value to cancel loading.
+    // |pack_path| will contain the complete default path for the pack file if
+    // known or just the pack file name otherwise.
+    virtual FilePath GetPathForLocalePack(const FilePath& pack_path,
+                                          const std::string& locale) = 0;
+
+    // Return an image resource or an empty value to attempt retrieval of the
+    // default resource.
+    virtual gfx::Image GetImageNamed(int resource_id) = 0;
+
+    // Return an image resource or an empty value to attempt retrieval of the
+    // default resource.
+    virtual gfx::Image GetNativeImageNamed(int resource_id, ImageRTL rtl) = 0;
+
+    // Return a static memory resource or NULL to attempt retrieval of the
+    // default resource.
+    virtual base::RefCountedStaticMemory* LoadDataResourceBytes(
+        int resource_id,
+        ScaleFactor scale_factor) = 0;
+
+    // Retrieve a raw data resource. Return true if a resource was provided or
+    // false to attempt retrieval of the default resource.
+    virtual bool GetRawDataResource(int resource_id,
+                                    ScaleFactor scale_factor,
+                                    base::StringPiece* value) = 0;
+
+    // Retrieve a localized string. Return true if a string was provided or
+    // false to attempt retrieval of the default string.
+    virtual bool GetLocalizedString(int message_id, string16* value) = 0;
+
+    // Return a font resource or NULL to attempt retrieval of the default
+    // resource.
+    virtual scoped_ptr<gfx::Font> GetFont(FontStyle style) = 0;
+
+   protected:
+    virtual ~Delegate() {}
+  };
+
+  // Initialize the ResourceBundle for this process. Does not take ownership of
+  // the |delegate| value. Returns the language selected.
   // NOTE: Mac ignores this and always loads up resources for the language
   // defined by the Cocoa UI (i.e., NSBundle does the language work).
   static std::string InitSharedInstanceWithLocale(
-      const std::string& pref_locale);
+      const std::string& pref_locale, Delegate* delegate);
 
   // Initialize the ResourceBundle using given data pack path for testing.
   static void InitSharedInstanceWithPakFile(const FilePath& path);
@@ -83,14 +131,16 @@ class UI_EXPORT ResourceBundle {
   static ResourceBundle& GetSharedInstance();
 
   // Check if the .pak for the given locale exists.
-  static bool LocaleDataPakExists(const std::string& locale);
+  bool LocaleDataPakExists(const std::string& locale);
 
-  // Registers additional data pack files with the global ResourceBundle.  When
+  // Registers additional data pack files with this ResourceBundle.  When
   // looking for a DataResource, we will search these files after searching the
-  // main module. |scale_factor| is the scale of images in this resource pak
+  // main module. |path| should be the complete path to the pack file if known
+  // or just the pack file name otherwise (the delegate may optionally override
+  // this value). |scale_factor| is the scale of images in this resource pak
   // relative to the images in the 1x resource pak. This method is not thread
   // safe! You should call it immediately after calling InitSharedInstance.
-  void AddDataPack(const FilePath& path, float scale_factor);
+  void AddDataPack(const FilePath& path, ScaleFactor scale_factor);
 
   // Changes the locale for an already-initialized ResourceBundle, returning the
   // name of the newly-loaded locale.  Future calls to get strings will return
@@ -106,6 +156,15 @@ class UI_EXPORT ResourceBundle {
   //
   // !! THIS IS DEPRECATED. PLEASE USE THE METHOD BELOW. !!
   SkBitmap* GetBitmapNamed(int resource_id);
+
+  // Gets image with the specified resource_id from the current module data.
+  // Returns a pointer to a shared instance of gfx::ImageSkia. This shared
+  // instance is owned by the resource bundle and should not be freed.
+  // TODO(pkotwicz): Make method return const gfx::ImageSkia*
+  //
+  // NOTE: It is preferrable to use GetImageNamed such that code is more
+  // portable.
+  gfx::ImageSkia* GetImageSkiaNamed(int resource_id);
 
   // Gets an image resource from the current module data. This will load the
   // image in Skia format by default. The ResourceBundle owns this.
@@ -125,13 +184,19 @@ class UI_EXPORT ResourceBundle {
   // Same as GetNativeImageNamed() except that RTL is not enabled.
   gfx::Image& GetNativeImageNamed(int resource_id);
 
-  // Loads the raw bytes of a data resource into |bytes|,
-  // without doing any processing or interpretation of
-  // the resource. Returns whether we successfully read the resource.
-  base::RefCountedStaticMemory* LoadDataResourceBytes(int resource_id) const;
+  // Loads the raw bytes of a data resource nearest the scale factor
+  // |scale_factor| into |bytes|, without doing any processing or interpretation
+  // of the resource. Use ResourceHandle::SCALE_FACTOR_NONE for non-image
+  // resources. Returns NULL if we fail to read the resource.
+  base::RefCountedStaticMemory* LoadDataResourceBytes(
+      int resource_id,
+      ScaleFactor scale_factor) const;
 
-  // Return the contents of a resource in a StringPiece given the resource id.
-  base::StringPiece GetRawDataResource(int resource_id) const;
+  // Return the contents of a resource in a StringPiece given the resource id
+  // nearest the scale factor |scale_factor|.
+  // Use ResourceHanlde::SCALE_FACTOR_NONE for non-image resources.
+  base::StringPiece GetRawDataResource(int resource_id,
+                                       ScaleFactor scale_factor) const;
 
   // Get a localized string given a message id.  Returns an empty
   // string if the message_id is not found.
@@ -149,10 +214,20 @@ class UI_EXPORT ResourceBundle {
   void OverrideLocalePakForTest(const FilePath& pak_path);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForResourcePack);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForLocalePack);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetImageNamed);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetNativeImageNamed);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateLoadDataResourceBytes);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetRawDataResource);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetLocalizedString);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetFont);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, GetRawDataResource);
   FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LoadDataResourceBytes);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LocaleDataPakExists);
 
   // Ctor/dtor are private, since we're a singleton.
-  ResourceBundle();
+  explicit ResourceBundle(Delegate* delegate);
   ~ResourceBundle();
 
   // Free skia_images_.
@@ -165,8 +240,9 @@ class UI_EXPORT ResourceBundle {
   // Returns the locale that is loaded.
   std::string LoadLocaleResources(const std::string& pref_locale);
 
-  // Load test resources in given path.
-  void LoadTestResources(const FilePath& path);
+  // Load test resources in given paths. If either path is empty an empty
+  // resource pack is loaded.
+  void LoadTestResources(const FilePath& path, const FilePath& locale_path);
 
   // Unload the locale specific strings and prepares to load new ones. See
   // comments for ReloadLocaleResources().
@@ -177,7 +253,7 @@ class UI_EXPORT ResourceBundle {
 
   // Returns the full pathname of the locale file to load.  May return an empty
   // string if no locale data files are found.
-  static FilePath GetLocaleFilePath(const std::string& app_locale);
+  FilePath GetLocaleFilePath(const std::string& app_locale);
 
   // Creates and returns a new SkBitmap given the data file to look in and the
   // resource id.  It's up to the caller to free the returned bitmap when
@@ -186,9 +262,13 @@ class UI_EXPORT ResourceBundle {
 
   // Returns an empty image for when a resource cannot be loaded. This is a
   // bright red bitmap.
-  gfx::Image* GetEmptyImage();
+  gfx::Image& GetEmptyImage();
 
   const FilePath& GetOverriddenPakPath();
+
+  // This pointer is guaranteed to outlive the ResourceBundle instance and may
+  // be NULL.
+  Delegate* delegate_;
 
   // Protects |images_| and font-related members.
   scoped_ptr<base::Lock> images_and_fonts_lock_;
@@ -202,8 +282,10 @@ class UI_EXPORT ResourceBundle {
 
   // Cached images. The ResourceBundle caches all retrieved images and keeps
   // ownership of the pointers.
-  typedef std::map<int, gfx::Image*> ImageMap;
+  typedef std::map<int, gfx::Image> ImageMap;
   ImageMap images_;
+
+  gfx::Image empty_image_;
 
   // The various fonts used. Cached to avoid repeated GDI creation/destruction.
   scoped_ptr<gfx::Font> base_font_;

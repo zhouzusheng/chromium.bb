@@ -54,7 +54,7 @@ public:
         {
         }
 
-        virtual void updateRect(GraphicsContext3D* context, TextureAllocator* allocator, const IntRect& sourceRect, const IntRect& destRect)
+        virtual void updateRect(CCGraphicsContext* context, TextureAllocator* allocator, const IntRect& sourceRect, const IntRect& destRect) OVERRIDE
         {
             textureUpdater()->updateTextureRect(context, allocator, texture(), sourceRect, destRect);
         }
@@ -77,13 +77,13 @@ public:
         return adoptPtr(new Texture(this, ManagedTexture::create(manager)));
     }
 
-    virtual SampledTexelFormat sampledTexelFormat(GC3Denum textureFormat)
+    virtual SampledTexelFormat sampledTexelFormat(GC3Denum textureFormat) OVERRIDE
     {
         return PlatformColor::sameComponentOrder(textureFormat) ?
                 LayerTextureUpdater::SampledTexelFormatRGBA : LayerTextureUpdater::SampledTexelFormatBGRA;
     }
 
-    virtual void updateTextureRect(GraphicsContext3D* context, TextureAllocator* allocator, ManagedTexture* texture, const IntRect& sourceRect, const IntRect& destRect)
+    void updateTextureRect(CCGraphicsContext* context, TextureAllocator* allocator, ManagedTexture* texture, const IntRect& sourceRect, const IntRect& destRect)
     {
         texture->bindTexture(context, allocator);
 
@@ -105,7 +105,7 @@ public:
     {
         m_bitmap = bitmap;
     }
- 
+
 private:
     explicit ImageLayerTextureUpdater(bool useMapTexSubImage)
         : m_texSubImage(useMapTexSubImage)

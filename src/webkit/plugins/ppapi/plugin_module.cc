@@ -29,11 +29,11 @@
 #include "ppapi/c/dev/ppb_layer_compositor_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
+#include "ppapi/c/dev/ppb_printing_dev.h"
 #include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
-#include "ppapi/c/dev/ppb_transport_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
@@ -70,6 +70,7 @@
 #include "ppapi/c/private/ppb_file_ref_private.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
+#include "ppapi/c/private/ppb_flash_device_id.h"
 #include "ppapi/c/private/ppb_flash_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
@@ -323,17 +324,19 @@ const void* GetInterface(const char* name) {
     return ::ppapi::thunk::GetPPB_Instance_Private_0_1_Thunk();
   if (strcmp(name, PPB_OPENGLES2_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetInterface();
-  if (strcmp(name, PPB_OPENGLES2_INSTANCEDARRAYS_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_INSTANCEDARRAYS_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetInstancedArraysInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERBLIT_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERBLIT_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferBlitInterface();
-  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERMULTISAMPLE_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERMULTISAMPLE_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferMultisampleInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMENABLEFEATURE_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_CHROMIUMENABLEFEATURE_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumEnableFeatureInterface();
-  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
-  if (strcmp(name, PPB_OPENGLES2_QUERY_DEV_INTERFACE) == 0)
+  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_DEV_INTERFACE_1_0) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
+  if (strcmp(name, PPB_OPENGLES2_QUERY_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetQueryInterface();
   if (strcmp(name, PPB_PROXY_PRIVATE_INTERFACE) == 0)
     return PPB_Proxy_Impl::GetInterface();

@@ -6,13 +6,14 @@
  * found in the LICENSE file.
  */
 
+#include "SkGpuDevice.h"
 
+#include "effects/GrGradientEffects.h"
 
 #include "GrContext.h"
 #include "GrDefaultTextContext.h"
 #include "GrTextContext.h"
 
-#include "SkGpuDevice.h"
 #include "SkGrTexturePixelRef.h"
 
 #include "SkColorFilter.h"
@@ -225,13 +226,11 @@ SkGpuDevice::SkGpuDevice(GrContext* context,
     SkBitmap bm;
     bm.setConfig(config, width, height);
 
-    const GrTextureDesc desc = {
-        kRenderTarget_GrTextureFlagBit,
-        width,
-        height,
-        SkGr::Bitmap2PixelConfig(bm),
-        0 // samples
-    };
+    GrTextureDesc desc;
+    desc.fFlags = kRenderTarget_GrTextureFlagBit;
+    desc.fWidth = width;
+    desc.fHeight = height;
+    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bm.config());
 
     fTexture = fContext->createUncachedTexture(desc, NULL, 0);
 
@@ -336,8 +335,7 @@ void SkGpuDevice::writePixels(const SkBitmap& bitmap, int x, int y,
     if (SkBitmap::kARGB_8888_Config == bitmap.config()) {
         config = config8888_to_gr_config(config8888);
     } else {
-        config= SkGr::BitmapConfig2PixelConfig(bitmap.config(),
-                                               bitmap.isOpaque());
+        config= SkGr::BitmapConfig2PixelConfig(bitmap.config());
     }
 
     fRenderTarget->writePixels(x, y, bitmap.width(), bitmap.height(),
@@ -420,14 +418,6 @@ SK_COMPILE_ASSERT(SkShader::kSweep_BitmapType == 3, shader_type_mismatch);
 SK_COMPILE_ASSERT(SkShader::kTwoPointRadial_BitmapType == 4,
                   shader_type_mismatch);
 SK_COMPILE_ASSERT(SkShader::kLast_BitmapType == 4, shader_type_mismatch);
-
-static const GrSamplerState::SampleMode sk_bmp_type_to_sample_mode[] = {
-    (GrSamplerState::SampleMode) -1,                    // kNone_BitmapType
-    GrSamplerState::kNormal_SampleMode,                 // kDefault_BitmapType
-    GrSamplerState::kRadial_SampleMode,                 // kRadial_BitmapType
-    GrSamplerState::kSweep_SampleMode,                  // kSweep_BitmapType
-    GrSamplerState::kRadial2_SampleMode,                // kTwoPointRadial_BitmapType
-};
 
 namespace {
 
@@ -524,8 +514,7 @@ inline bool skPaint2GrPaintShader(SkGpuDevice* dev,
     SkShader::BitmapType bmptype = shader->asABitmap(&bitmap, matrix,
                                                      tileModes, twoPointParams);
 
-    GrSamplerState::SampleMode sampleMode = sk_bmp_type_to_sample_mode[bmptype];
-    if (-1 == sampleMode) {
+    if (SkShader::kNone_BitmapType == bmptype) {
         SkShader::GradientInfo info;
         SkColor                color;
 
@@ -546,19 +535,32 @@ inline bool skPaint2GrPaintShader(SkGpuDevice* dev,
         return false;
     }
     GrSamplerState* sampler = grPaint->textureSampler(kShaderTextureIdx);
-    sampler->setSampleMode(sampleMode);
-    if (skPaint.isFilterBitmap()) {
-        sampler->setFilter(GrSamplerState::kBilinear_Filter);
-    } else {
-        sampler->setFilter(GrSamplerState::kNearest_Filter);
+    switch (bmptype) {
+        case SkShader::kRadial_BitmapType:
+            sampler->setCustomStage(new GrRadialGradient())->unref();
+            sampler->setFilter(GrSamplerState::kBilinear_Filter);
+            break;
+        case SkShader::kSweep_BitmapType:
+            sampler->setCustomStage(new GrSweepGradient())->unref();
+            sampler->setFilter(GrSamplerState::kBilinear_Filter);
+            break;
+        case SkShader::kTwoPointRadial_BitmapType:
+            sampler->setCustomStage(new
+                GrRadial2Gradient(twoPointParams[0],
+                                  twoPointParams[1],
+                                  twoPointParams[2] < 0))->unref();
+            sampler->setFilter(GrSamplerState::kBilinear_Filter);
+            break;
+        default:
+            if (skPaint.isFilterBitmap()) {
+                sampler->setFilter(GrSamplerState::kBilinear_Filter);
+            } else {
+                sampler->setFilter(GrSamplerState::kNearest_Filter);
+            }
+            break;
     }
     sampler->setWrapX(sk_tile_mode_to_grwrap(tileModes[0]));
     sampler->setWrapY(sk_tile_mode_to_grwrap(tileModes[1]));
-    if (GrSamplerState::kRadial2_SampleMode == sampleMode) {
-        sampler->setRadial2Params(twoPointParams[0],
-                                  twoPointParams[1],
-                                  twoPointParams[2] < 0);
-    }
 
     GrTexture* texture = act->set(dev, bitmap, sampler);
     if (NULL == texture) {
@@ -614,9 +616,9 @@ void SkGpuDevice::drawPaint(const SkDraw& draw, const SkPaint& paint) {
 
 // must be in SkCanvas::PointMode order
 static const GrPrimitiveType gPointMode2PrimtiveType[] = {
-    kPoints_PrimitiveType,
-    kLines_PrimitiveType,
-    kLineStrip_PrimitiveType
+    kPoints_GrPrimitiveType,
+    kLines_GrPrimitiveType,
+    kLineStrip_GrPrimitiveType
 };
 
 void SkGpuDevice::drawPoints(const SkDraw& draw, SkCanvas::PointMode mode,
@@ -628,8 +630,9 @@ void SkGpuDevice::drawPoints(const SkDraw& draw, SkCanvas::PointMode mode,
         return;
     }
 
-    // we only handle hairlines here, else we let the SkDraw call our drawPath()
-    if (width > 0) {
+    // we only handle hairlines and paints without path effects or mask filters,
+    // else we let the SkDraw call our drawPath()
+    if (width > 0 || paint.getPathEffect() || paint.getMaskFilter()) {
         draw.drawPoints(mode, count, pts, paint, true);
         return;
     }
@@ -718,16 +721,16 @@ namespace {
 GrPathFill skToGrFillType(SkPath::FillType fillType) {
     switch (fillType) {
         case SkPath::kWinding_FillType:
-            return kWinding_PathFill;
+            return kWinding_GrPathFill;
         case SkPath::kEvenOdd_FillType:
-            return kEvenOdd_PathFill;
+            return kEvenOdd_GrPathFill;
         case SkPath::kInverseWinding_FillType:
-            return kInverseWinding_PathFill;
+            return kInverseWinding_GrPathFill;
         case SkPath::kInverseEvenOdd_FillType:
-            return kInverseEvenOdd_PathFill;
+            return kInverseEvenOdd_GrPathFill;
         default:
             SkDebugf("Unsupported path fill type\n");
-            return kHairLine_PathFill;
+            return kHairLine_GrPathFill;
     }
 }
 
@@ -788,15 +791,13 @@ bool drawWithGPUMaskFilter(GrContext* context, const SkPath& path,
     }
     GrPoint offset = GrPoint::Make(-srcRect.fLeft, -srcRect.fTop);
     srcRect.offset(offset);
-    GrTextureDesc desc = {
-        kRenderTarget_GrTextureFlagBit,
-        SkScalarCeilToInt(srcRect.width()),
-        SkScalarCeilToInt(srcRect.height()),
-        // We actually only need A8, but it often isn't supported as a
-        // render target so default to RGBA_8888
-        kRGBA_8888_PM_GrPixelConfig,
-        0 // samples
-    };
+    GrTextureDesc desc;
+    desc.fFlags = kRenderTarget_GrTextureFlagBit;
+    desc.fWidth = SkScalarCeilToInt(srcRect.width());
+    desc.fHeight = SkScalarCeilToInt(srcRect.height());
+    // We actually only need A8, but it often isn't supported as a
+    // render target so default to RGBA_8888
+    desc.fConfig = kRGBA_8888_PM_GrPixelConfig;
 
     if (context->isConfigRenderable(kAlpha_8_GrPixelConfig)) {
         desc.fConfig = kAlpha_8_GrPixelConfig;
@@ -826,8 +827,8 @@ bool drawWithGPUMaskFilter(GrContext* context, const SkPath& path,
         // code path may not be taken. So we use a dst blend coeff of ISA. We
         // could special case AA draws to a dst surface with known alpha=0 to
         // use a zero dst coeff when dual source blending isn't available.
-        tempPaint.fSrcBlendCoeff = kOne_BlendCoeff;
-        tempPaint.fDstBlendCoeff = kISC_BlendCoeff;
+        tempPaint.fSrcBlendCoeff = kOne_GrBlendCoeff;
+        tempPaint.fDstBlendCoeff = kISC_GrBlendCoeff;
     }
     // Draw hard shadow to pathTexture with path topleft at origin 0,0.
     context->drawPath(tempPaint, path, pathFillType, &offset);
@@ -852,18 +853,18 @@ bool drawWithGPUMaskFilter(GrContext* context, const SkPath& path,
         paint.setTexture(0, pathTexture);
         if (SkMaskFilter::kInner_BlurType == blurType) {
             // inner:  dst = dst * src
-            paint.fSrcBlendCoeff = kDC_BlendCoeff;
-            paint.fDstBlendCoeff = kZero_BlendCoeff;
+            paint.fSrcBlendCoeff = kDC_GrBlendCoeff;
+            paint.fDstBlendCoeff = kZero_GrBlendCoeff;
         } else if (SkMaskFilter::kSolid_BlurType == blurType) {
             // solid:  dst = src + dst - src * dst
             //             = (1 - dst) * src + 1 * dst
-            paint.fSrcBlendCoeff = kIDC_BlendCoeff;
-            paint.fDstBlendCoeff = kOne_BlendCoeff;
+            paint.fSrcBlendCoeff = kIDC_GrBlendCoeff;
+            paint.fDstBlendCoeff = kOne_GrBlendCoeff;
         } else if (SkMaskFilter::kOuter_BlurType == blurType) {
             // outer:  dst = dst * (1 - src)
             //             = 0 * src + (1 - src) * dst
-            paint.fSrcBlendCoeff = kZero_BlendCoeff;
-            paint.fDstBlendCoeff = kISC_BlendCoeff;
+            paint.fSrcBlendCoeff = kZero_GrBlendCoeff;
+            paint.fDstBlendCoeff = kISC_GrBlendCoeff;
         }
         context->drawRect(paint, srcRect);
     }
@@ -926,13 +927,10 @@ bool drawWithMaskFilter(GrContext* context, const SkPath& path,
 
     GrAutoMatrix avm(context, GrMatrix::I());
 
-    const GrTextureDesc desc = {
-        kNone_GrTextureFlags,
-        dstM.fBounds.width(),
-        dstM.fBounds.height(),
-        kAlpha_8_GrPixelConfig,
-        0, // samples
-    };
+    GrTextureDesc desc;
+    desc.fWidth = dstM.fBounds.width();
+    desc.fHeight = dstM.fBounds.height();
+    desc.fConfig = kAlpha_8_GrPixelConfig;
 
     GrAutoScratchTexture ast(context, desc);
     GrTexture* texture = ast.texture();
@@ -1034,7 +1032,7 @@ void SkGpuDevice::drawPath(const SkDraw& draw, const SkPath& origSrcPath,
         // transform the path into device space
         pathPtr->transform(*draw.fMatrix, devPathPtr);
         GrPathFill pathFillType = doFill ?
-            skToGrFillType(devPathPtr->getFillType()) : kHairLine_PathFill;
+            skToGrFillType(devPathPtr->getFillType()) : kHairLine_GrPathFill;
         if (!drawWithGPUMaskFilter(fContext, *devPathPtr, paint.getMaskFilter(),
                                    *draw.fMatrix, *draw.fClip, draw.fBounder,
                                    &grPaint, pathFillType)) {
@@ -1047,21 +1045,21 @@ void SkGpuDevice::drawPath(const SkDraw& draw, const SkPath& origSrcPath,
         return;
     }
 
-    GrPathFill fill = kHairLine_PathFill;
+    GrPathFill fill = kHairLine_GrPathFill;
 
     if (doFill) {
         switch (pathPtr->getFillType()) {
             case SkPath::kWinding_FillType:
-                fill = kWinding_PathFill;
+                fill = kWinding_GrPathFill;
                 break;
             case SkPath::kEvenOdd_FillType:
-                fill = kEvenOdd_PathFill;
+                fill = kEvenOdd_GrPathFill;
                 break;
             case SkPath::kInverseWinding_FillType:
-                fill = kInverseWinding_PathFill;
+                fill = kInverseWinding_GrPathFill;
                 break;
             case SkPath::kInverseEvenOdd_FillType:
-                fill = kInverseEvenOdd_PathFill;
+                fill = kInverseEvenOdd_GrPathFill;
                 break;
             default:
                 SkDebugf("Unsupported path fill type\n");
@@ -1354,7 +1352,6 @@ void SkGpuDevice::internalDrawBitmap(const SkDraw& draw,
 
     sampler->setWrapX(GrSamplerState::kClamp_WrapMode);
     sampler->setWrapY(GrSamplerState::kClamp_WrapMode);
-    sampler->setSampleMode(GrSamplerState::kNormal_SampleMode);
     sampler->matrix()->reset();
 
     GrTexture* texture;
@@ -1433,13 +1430,11 @@ static GrTexture* filter_texture(GrContext* context, GrTexture* texture,
     SkSize blurSize;
     SkISize radius;
 
-    const GrTextureDesc desc = {
-        kRenderTarget_GrTextureFlagBit,
-        SkScalarCeilToInt(rect.width()),
-        SkScalarCeilToInt(rect.height()),
-        kRGBA_8888_PM_GrPixelConfig,
-        0 // samples
-    };
+    GrTextureDesc desc;
+    desc.fFlags = kRenderTarget_GrTextureFlagBit,
+    desc.fWidth = SkScalarCeilToInt(rect.width());
+    desc.fHeight = SkScalarCeilToInt(rect.height());
+    desc.fConfig = kRGBA_8888_PM_GrPixelConfig;
 
     if (filter->asABlur(&blurSize)) {
         GrAutoScratchTexture temp1, temp2;
@@ -1451,14 +1446,14 @@ static GrTexture* filter_texture(GrContext* context, GrTexture* texture,
         GrAutoScratchTexture temp1(context, desc), temp2(context, desc);
         texture = context->applyMorphology(texture, rect,
                                            temp1.texture(), temp2.texture(),
-                                           GrSamplerState::kDilate_Filter,
+                                           GrContext::kDilate_MorphologyType,
                                            radius);
         texture->ref();
     } else if (filter->asAnErode(&radius)) {
         GrAutoScratchTexture temp1(context, desc), temp2(context, desc);
         texture = context->applyMorphology(texture, rect,
                                            temp1.texture(), temp2.texture(),
-                                           GrSamplerState::kErode_Filter,
+                                           GrContext::kErode_MorphologyType,
                                            radius);
         texture->ref();
     }
@@ -1610,9 +1605,9 @@ bool SkGpuDevice::filterImage(SkImageFilter* filter, const SkBitmap& src,
 
 // must be in SkCanvas::VertexMode order
 static const GrPrimitiveType gVertexMode2PrimitiveType[] = {
-    kTriangles_PrimitiveType,
-    kTriangleStrip_PrimitiveType,
-    kTriangleFan_PrimitiveType,
+    kTriangles_GrPrimitiveType,
+    kTriangleStrip_GrPrimitiveType,
+    kTriangleFan_GrPrimitiveType,
 };
 
 void SkGpuDevice::drawVertices(const SkDraw& draw, SkCanvas::VertexMode vmode,
@@ -1830,17 +1825,22 @@ SkGpuDevice::TexCache SkGpuDevice::lockCachedTexture(
     GrContext* ctx = this->context();
 
     if (!bitmap.isVolatile()) {
-        GrContext::TextureKey key = bitmap.getGenerationID();
+        uint64_t key = bitmap.getGenerationID();
         key |= ((uint64_t) bitmap.pixelRefOffset()) << 32;
 
-        entry = ctx->findAndLockTexture(key, bitmap.width(),
-                                        bitmap.height(), sampler);
+        GrTextureDesc desc;
+        desc.fWidth = bitmap.width();
+        desc.fHeight = bitmap.height();
+        desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap.config());
+        desc.fClientCacheID = key;
+
+        entry = ctx->findAndLockTexture(desc, sampler);
         if (NULL == entry.texture()) {
             entry = sk_gr_create_bitmap_texture(ctx, key, sampler,
                                                 bitmap);
         }
     } else {
-        entry = sk_gr_create_bitmap_texture(ctx, gUNCACHED_KEY,
+        entry = sk_gr_create_bitmap_texture(ctx, kUncached_CacheID,
                                             sampler, bitmap);
     }
     if (NULL == entry.texture()) {
@@ -1856,11 +1856,16 @@ void SkGpuDevice::unlockCachedTexture(TexCache cache) {
 
 bool SkGpuDevice::isBitmapInTextureCache(const SkBitmap& bitmap,
                                          const GrSamplerState& sampler) const {
-    GrContext::TextureKey key = bitmap.getGenerationID();
+    uint64_t key = bitmap.getGenerationID();
     key |= ((uint64_t) bitmap.pixelRefOffset()) << 32;
-    return this->context()->isTextureInCache(key, bitmap.width(),
-                                             bitmap.height(), &sampler);
 
+    GrTextureDesc desc;
+    desc.fWidth = bitmap.width();
+    desc.fHeight = bitmap.height();
+    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap.config());
+    desc.fClientCacheID = key;
+
+    return this->context()->isTextureInCache(desc, &sampler);
 }
 
 

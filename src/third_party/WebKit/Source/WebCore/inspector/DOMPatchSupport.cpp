@@ -36,6 +36,7 @@
 
 #include "Attribute.h"
 #include "Base64.h"
+#include "ContextFeatures.h"
 #include "DOMEditor.h"
 #include "Document.h"
 #include "DocumentFragment.h"
@@ -89,6 +90,7 @@ DOMPatchSupport::~DOMPatchSupport() { }
 void DOMPatchSupport::patchDocument(const String& markup)
 {
     RefPtr<HTMLDocument> newDocument = HTMLDocument::create(0, KURL());
+    newDocument->setContextFeatures(m_document->contextFeatures());
     RefPtr<DocumentParser> parser = HTMLDocumentParser::create(newDocument.get(), false);
     parser->insert(markup); // Use insert() so that the parser will not yield.
     parser->finish();
@@ -114,6 +116,7 @@ Node* DOMPatchSupport::patchNode(Node* node, const String& markup, ExceptionCode
     }
 
     Node* previousSibling = node->previousSibling();
+    // FIXME: This code should use one of createFragment* in markup.h
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(m_document);
     fragment->parseHTML(markup, node->parentElement() ? node->parentElement() : m_document->documentElement());
 
@@ -180,7 +183,7 @@ bool DOMPatchSupport::innerPatchNode(Digest* oldDigest, Digest* newDigest, Excep
             }
         }
 
-        // FIXME: Create a function in Element for copying properties. setAttributesFromElement() is close but not enough for this case.
+        // FIXME: Create a function in Element for copying properties. cloneDataFromElement() is close but not enough for this case.
         if (newElement->hasAttributesWithoutUpdate()) {
             size_t numAttrs = newElement->attributeCount();
             for (size_t i = 0; i < numAttrs; ++i) {

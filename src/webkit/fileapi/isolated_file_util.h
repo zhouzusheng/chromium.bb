@@ -8,6 +8,7 @@
 #include "base/file_path.h"
 #include "base/file_util_proxy.h"
 #include "base/platform_file.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_file_util.h"
 
 namespace base {
@@ -19,9 +20,9 @@ namespace fileapi {
 class FileSystemOperationContext;
 class IsolatedContext;
 
-class IsolatedFileUtil : public FileSystemFileUtil {
+class FILEAPI_EXPORT_PRIVATE IsolatedFileUtil : public FileSystemFileUtil {
  public:
-  explicit IsolatedFileUtil(FileSystemFileUtil* underlying_file_util);
+  IsolatedFileUtil();
   virtual ~IsolatedFileUtil() {}
 
   // FileSystemFileUtil overrides.
@@ -33,7 +34,7 @@ class IsolatedFileUtil : public FileSystemFileUtil {
       bool* created) OVERRIDE;
   virtual base::PlatformFileError Close(
       FileSystemOperationContext* context,
-      base::PlatformFile) OVERRIDE;
+      base::PlatformFile file) OVERRIDE;
   virtual base::PlatformFileError EnsureFileExists(
       FileSystemOperationContext* context,
       const FileSystemPath& path, bool* created) OVERRIDE;
@@ -51,6 +52,10 @@ class IsolatedFileUtil : public FileSystemFileUtil {
       FileSystemOperationContext* context,
       const FileSystemPath& root_path,
       bool recursive) OVERRIDE;
+  virtual PlatformFileError GetLocalFilePath(
+      FileSystemOperationContext* context,
+      const FileSystemPath& file_system_path,
+      FilePath* local_file_path) OVERRIDE;
   virtual base::PlatformFileError Touch(
       FileSystemOperationContext* context,
       const FileSystemPath& path,
@@ -76,7 +81,7 @@ class IsolatedFileUtil : public FileSystemFileUtil {
       bool copy) OVERRIDE;
   virtual base::PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
-        const FileSystemPath& underlying_src_path,
+        const FilePath& src_file_path,
         const FileSystemPath& dest_path) OVERRIDE;
   virtual base::PlatformFileError DeleteFile(
       FileSystemOperationContext* context,

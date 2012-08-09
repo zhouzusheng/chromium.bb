@@ -46,6 +46,7 @@ DOMAIN_DEFINE_NAME_MAP = {
     "IndexedDB": "INDEXED_DATABASE",
     "Profiler": "JAVASCRIPT_DEBUGGER",
     "Worker": "WORKERS",
+    "WebGL": "WEBGL",
 }
 
 
@@ -66,6 +67,8 @@ TYPES_WITH_OPEN_FIELD_LIST_SET = frozenset(["Timeline.TimelineEvent",
                                             "CSS.CSSProperty",
                                             # InspectorResourceAgent needs to update mime-type.
                                             "Network.Response"])
+
+EXACTLY_INT_SUPPORTED = False
 
 cmdline_parser = optparse.OptionParser()
 cmdline_parser.add_option("--output_h_dir")
@@ -185,7 +188,7 @@ class DomainNameFixes:
 
         return Res
 
-    skip_js_bind_domains = set(["Runtime", "DOMDebugger"])
+    skip_js_bind_domains = set(["DOMDebugger"])
 
 
 class RawTypes(object):
@@ -622,7 +625,7 @@ class CommandReturnPassModel:
 
 
 class TypeModel:
-    class RefPtrBased:
+    class RefPtrBased(object):
         def __init__(self, class_name):
             self.class_name = class_name
             self.optional = False
@@ -646,7 +649,7 @@ class TypeModel:
         def get_event_setter_expression_pattern():
             return "%s"
 
-    class Enum:
+    class Enum(object):
         def __init__(self, base_type_name):
             self.type_name = base_type_name + "::Enum"
 
@@ -679,7 +682,7 @@ class TypeModel:
         def get_event_setter_expression_pattern():
             return "%s"
 
-    class ValueType:
+    class ValueType(object):
         def __init__(self, type_name, is_heavy):
             self.type_name = type_name
             self.is_heavy = is_heavy
@@ -696,6 +699,9 @@ class TypeModel:
             else:
                 return self.type_name
 
+        def get_opt_output_type_(self):
+            return self.type_name
+
         @staticmethod
         def get_event_setter_expression_pattern():
             return "%s"
@@ -708,7 +714,7 @@ class TypeModel:
                 return self
 
             def get_command_return_pass_model(self):
-                return CommandReturnPassModel.OptOutput(self.base.type_name)
+                return CommandReturnPassModel.OptOutput(self.base.get_opt_output_type_())
 
             def get_input_param_type_text(self):
                 return "const %s* const" % self.base.type_name
@@ -717,12 +723,25 @@ class TypeModel:
             def get_event_setter_expression_pattern():
                 return "*%s"
 
+    class ExactlyInt(ValueType):
+        def __init__(self):
+            TypeModel.ValueType.__init__(self, "int", False)
+
+        def get_input_param_type_text(self):
+            return "TypeBuilder::ExactlyInt"
+
+        def get_opt_output_type_(self):
+            return "TypeBuilder::ExactlyInt"
+
     @classmethod
     def init_class(cls):
         cls.Bool = cls.ValueType("bool", False)
-        cls.Int = cls.ValueType("int", False)
+        if EXACTLY_INT_SUPPORTED:
+            cls.Int = cls.ExactlyInt()
+        else:
+            cls.Int = cls.ValueType("int", False)
         cls.Number = cls.ValueType("double", False)
-        cls.String = cls.ValueType("String", True)
+        cls.String = cls.ValueType("String", True,)
         cls.Object = cls.RefPtrBased("InspectorObject")
         cls.Array = cls.RefPtrBased("InspectorArray")
         cls.Any = cls.RefPtrBased("InspectorValue")
@@ -1815,7 +1834,6 @@ public:
 
 $domainClassList
 private:
-    InspectorFrontendChannel* m_inspectorFrontendChannel;
 ${fieldDeclarations}};
 
 #endif // ENABLE(INSPECTOR)
@@ -2171,8 +2189,7 @@ bool InspectorBackendDispatcher::getCommandName(const String& message, String* r
 namespace WebCore {
 
 InspectorFrontend::InspectorFrontend(InspectorFrontendChannel* inspectorFrontendChannel)
-    : m_inspectorFrontendChannel(inspectorFrontendChannel)
-$constructorInit{
+    : $constructorInit{
 }
 
 $methods
@@ -2222,6 +2239,30 @@ private:
 
     WTF_MAKE_NONCOPYABLE(OptOutput);
 };
+
+
+// A small transient wrapper around int type, that can be used as a funciton parameter type
+// cleverly disallowing C++ implicit casts from float or double.
+class ExactlyInt {
+public:
+    template<typename T>
+    ExactlyInt(T t) : m_value(cast_to_int<T>(t)) {}
+
+    ExactlyInt() {}
+
+    operator int() { return m_value; }
+private:
+    int m_value;
+
+    template<typename T>
+    static int cast_to_int(T) { return T::default_case_cast_is_not_supported(); }
+};
+
+template<>
+inline int ExactlyInt::cast_to_int<int>(int i) { return i; }
+
+template<>
+inline int ExactlyInt::cast_to_int<unsigned int>(unsigned int i) { return i; }
 
 
 // This class provides "Traits" type for the input type T. It is programmed using C++ template specialization
@@ -2553,7 +2594,9 @@ class Generator:
                     Generator.process_event(json_event, domain_name, frontend_method_declaration_lines)
 
             Generator.frontend_class_field_lines.append("    %s m_%s;\n" % (domain_name, domain_name_lower))
-            Generator.frontend_constructor_init_list.append("    , m_%s(inspectorFrontendChannel)\n" % domain_name_lower)
+            if Generator.frontend_constructor_init_list:
+                Generator.frontend_constructor_init_list.append("    , ")
+            Generator.frontend_constructor_init_list.append("m_%s(inspectorFrontendChannel)\n" % domain_name_lower)
             Generator.frontend_domain_class_lines.append(Templates.frontend_domain_class.substitute(None,
                 domainClassName=domain_name,
                 domainFieldName=domain_name_lower,
@@ -2912,7 +2955,7 @@ frontend_cpp_file = open(output_cpp_dirname + "/InspectorFrontend.cpp", "w")
 typebuilder_h_file = open(output_header_dirname + "/InspectorTypeBuilder.h", "w")
 typebuilder_cpp_file = open(output_cpp_dirname + "/InspectorTypeBuilder.cpp", "w")
 
-backend_js_file = open(output_cpp_dirname + "/InspectorBackendStub.js", "w")
+backend_js_file = open(output_cpp_dirname + "/InspectorBackendCommands.js", "w")
 
 
 backend_h_file.write(Templates.backend_h.substitute(None,

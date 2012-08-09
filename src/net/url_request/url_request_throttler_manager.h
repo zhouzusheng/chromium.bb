@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/platform_thread.h"
 #include "googleurl/src/gurl.h"
@@ -36,7 +36,7 @@ class NetLog;
 class NET_EXPORT URLRequestThrottlerManager
     : NON_EXPORTED_BASE(public base::NonThreadSafe),
       public NetworkChangeNotifier::IPAddressObserver,
-      public NetworkChangeNotifier::OnlineStateObserver {
+      public NetworkChangeNotifier::ConnectionTypeObserver {
  public:
   URLRequestThrottlerManager();
   virtual ~URLRequestThrottlerManager();
@@ -81,8 +81,9 @@ class NET_EXPORT URLRequestThrottlerManager
   // IPAddressObserver interface.
   virtual void OnIPAddressChanged() OVERRIDE;
 
-  // OnlineStateObserver interface.
-  virtual void OnOnlineStateChanged(bool online) OVERRIDE;
+  // ConnectionTypeObserver interface.
+  virtual void OnConnectionTypeChanged(
+      NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
   // Method that allows us to transform a URL into an ID that can be used in our
   // map. Resulting IDs will be lowercase and consist of the scheme, host, port
@@ -139,10 +140,6 @@ class NET_EXPORT URLRequestThrottlerManager
 
   // Valid after construction.
   GURL::Replacements url_id_replacements_;
-
-  // Whether we would like to reject outgoing HTTP requests during the back-off
-  // period.
-  bool enforce_throttling_;
 
   // Certain tests do not obey the net component's threading policy, so we
   // keep track of whether we're being used by tests, and turn off certain

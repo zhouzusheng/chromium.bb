@@ -11,28 +11,28 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_job.h"
+#include "webkit/fileapi/fileapi_export.h"
 
 class GURL;
 class FilePath;
 
 namespace webkit_blob {
-class FileReader;
+class FileStreamReader;
 }
 
 namespace fileapi {
 class FileSystemContext;
 
 // A request job that handles reading filesystem: URLs
-class FileSystemURLRequestJob : public net::URLRequestJob {
+class FILEAPI_EXPORT_PRIVATE FileSystemURLRequestJob
+    : public net::URLRequestJob {
  public:
   FileSystemURLRequestJob(
       net::URLRequest* request,
-      FileSystemContext* file_system_context,
-      scoped_refptr<base::MessageLoopProxy> file_thread_proxy);
+      FileSystemContext* file_system_context);
 
   // URLRequestJob methods:
   virtual void Start() OVERRIDE;
@@ -64,9 +64,8 @@ class FileSystemURLRequestJob : public net::URLRequestJob {
   void NotifyFailed(int rv);
 
   FileSystemContext* file_system_context_;
-  scoped_refptr<base::MessageLoopProxy> file_thread_proxy_;
   base::WeakPtrFactory<FileSystemURLRequestJob> weak_factory_;
-  scoped_ptr<webkit_blob::FileReader> reader_;
+  scoped_ptr<webkit_blob::FileStreamReader> reader_;
   bool is_directory_;
   scoped_ptr<net::HttpResponseInfo> response_info_;
   int64 remaining_bytes_;

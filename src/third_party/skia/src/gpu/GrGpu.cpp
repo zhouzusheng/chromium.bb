@@ -30,7 +30,8 @@ extern void gr_run_unittests();
 #define DEBUG_INVAL_START_IDX -1
 
 GrGpu::GrGpu()
-    : fContext(NULL)
+    : fClipMaskManager(this)
+    , fContext(NULL)
     , fResetTimestamp(kExpiredTimestamp+1)
     , fVertexPool(NULL)
     , fIndexPool(NULL)
@@ -53,7 +54,6 @@ GrGpu::GrGpu()
     poolState.fPoolIndexBuffer = (GrIndexBuffer*)DEBUG_INVAL_BUFFER;
     poolState.fPoolStartIndex = DEBUG_INVAL_START_IDX;
 #endif
-    resetStats();
 
     for (int i = 0; i < kGrPixelConfigCount; ++i) {
         fConfigRenderSupport[i] = false;
@@ -65,6 +65,8 @@ GrGpu::~GrGpu() {
 }
 
 void GrGpu::abandonResources() {
+
+    fClipMaskManager.releaseResources();
 
     while (NULL != fResourceHead) {
         fResourceHead->abandon();
@@ -79,11 +81,11 @@ void GrGpu::abandonResources() {
     fVertexPool = NULL;
     delete fIndexPool;
     fIndexPool = NULL;
-
-    fClipMaskManager.freeResources();
 }
 
 void GrGpu::releaseResources() {
+
+    fClipMaskManager.releaseResources();
 
     while (NULL != fResourceHead) {
         fResourceHead->release();
@@ -98,8 +100,6 @@ void GrGpu::releaseResources() {
     fVertexPool = NULL;
     delete fIndexPool;
     fIndexPool = NULL;
-
-    fClipMaskManager.freeResources();
 }
 
 void GrGpu::insertResource(GrResource* resource) {
@@ -225,6 +225,12 @@ GrVertexBuffer* GrGpu::createVertexBuffer(uint32_t size, bool dynamic) {
 GrIndexBuffer* GrGpu::createIndexBuffer(uint32_t size, bool dynamic) {
     this->handleDirtyContext();
     return this->onCreateIndexBuffer(size, dynamic);
+}
+
+GrPath* GrGpu::createPath(const SkPath& path) {
+    GrAssert(fCaps.fPathStencilingSupport);
+    this->handleDirtyContext();
+    return this->onCreatePath(path);
 }
 
 void GrGpu::clear(const GrIRect* rect, GrColor color) {
@@ -357,94 +363,13 @@ const GrStencilSettings* GrGpu::GetClipStencilSettings(void) {
     return GR_CONST_STENCIL_SETTINGS_PTR_FROM_STRUCT_PTR(&sClipStencilSettings);
 }
 
-// mapping of clip-respecting stencil funcs to normal stencil funcs
-// mapping depends on whether stencil-clipping is in effect.
-static const GrStencilFunc gGrClipToNormalStencilFunc[2][kClipStencilFuncCount] = {
-    {// Stencil-Clipping is DISABLED, effectively always inside the clip
-        // In the Clip Funcs
-        kAlways_StencilFunc,          // kAlwaysIfInClip_StencilFunc
-        kEqual_StencilFunc,           // kEqualIfInClip_StencilFunc
-        kLess_StencilFunc,            // kLessIfInClip_StencilFunc
-        kLEqual_StencilFunc,          // kLEqualIfInClip_StencilFunc
-        // Special in the clip func that forces user's ref to be 0.
-        kNotEqual_StencilFunc,        // kNonZeroIfInClip_StencilFunc
-                                      // make ref 0 and do normal nequal.
-    },
-    {// Stencil-Clipping is ENABLED
-        // In the Clip Funcs
-        kEqual_StencilFunc,           // kAlwaysIfInClip_StencilFunc
-                                      // eq stencil clip bit, mask
-                                      // out user bits.
-
-        kEqual_StencilFunc,           // kEqualIfInClip_StencilFunc
-                                      // add stencil bit to mask and ref
-
-        kLess_StencilFunc,            // kLessIfInClip_StencilFunc
-        kLEqual_StencilFunc,          // kLEqualIfInClip_StencilFunc
-                                      // for both of these we can add
-                                      // the clip bit to the mask and
-                                      // ref and compare as normal
-        // Special in the clip func that forces user's ref to be 0.
-        kLess_StencilFunc,            // kNonZeroIfInClip_StencilFunc
-                                      // make ref have only the clip bit set
-                                      // and make comparison be less
-                                      // 10..0 < 1..user_bits..
-    }
-};
-
-GrStencilFunc GrGpu::ConvertStencilFunc(bool stencilInClip, GrStencilFunc func) {
-    GrAssert(func >= 0);
-    if (func >= kBasicStencilFuncCount) {
-        GrAssert(func < kStencilFuncCount);
-        func = gGrClipToNormalStencilFunc[stencilInClip ? 1 : 0][func - kBasicStencilFuncCount];
-        GrAssert(func >= 0 && func < kBasicStencilFuncCount);
-    }
-    return func;
-}
-
-void GrGpu::ConvertStencilFuncAndMask(GrStencilFunc func,
-                                      bool clipInStencil,
-                                      unsigned int clipBit,
-                                      unsigned int userBits,
-                                      unsigned int* ref,
-                                      unsigned int* mask) {
-    if (func < kBasicStencilFuncCount) {
-        *mask &= userBits;
-        *ref &= userBits;
-    } else {
-        if (clipInStencil) {
-            switch (func) {
-                case kAlwaysIfInClip_StencilFunc:
-                    *mask = clipBit;
-                    *ref = clipBit;
-                    break;
-                case kEqualIfInClip_StencilFunc:
-                case kLessIfInClip_StencilFunc:
-                case kLEqualIfInClip_StencilFunc:
-                    *mask = (*mask & userBits) | clipBit;
-                    *ref = (*ref & userBits) | clipBit;
-                    break;
-                case kNonZeroIfInClip_StencilFunc:
-                    *mask = (*mask & userBits) | clipBit;
-                    *ref = clipBit;
-                    break;
-                default:
-                    GrCrash("Unknown stencil func");
-            }
-        } else {
-            *mask &= userBits;
-            *ref &= userBits;
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
-bool GrGpu::setupClipAndFlushState(GrPrimitiveType type) {
+bool GrGpu::setupClipAndFlushState(DrawType type) {
 
     ScissoringSettings scissoringSettings;
 
-    if (!fClipMaskManager.createClipMask(this, fClip, &scissoringSettings)) {
+    if (!fClipMaskManager.createClipMask(fClip, &scissoringSettings)) {
         return false;
     }
 
@@ -492,15 +417,9 @@ void GrGpu::onDrawIndexed(GrPrimitiveType type,
 
     this->handleDirtyContext();
 
-    if (!this->setupClipAndFlushState(type)) {
+    if (!this->setupClipAndFlushState(PrimTypeToDrawType(type))) {
         return;
     }
-
-#if GR_COLLECT_STATS
-    fStats.fVertexCnt += vertexCount;
-    fStats.fIndexCnt  += indexCount;
-    fStats.fDrawCnt   += 1;
-#endif
 
     int sVertex = startVertex;
     int sIndex = startIndex;
@@ -511,22 +430,28 @@ void GrGpu::onDrawIndexed(GrPrimitiveType type,
 }
 
 void GrGpu::onDrawNonIndexed(GrPrimitiveType type,
-                           int startVertex,
-                           int vertexCount) {
+                             int startVertex,
+                             int vertexCount) {
     this->handleDirtyContext();
 
-    if (!this->setupClipAndFlushState(type)) {
+    if (!this->setupClipAndFlushState(PrimTypeToDrawType(type))) {
         return;
     }
-#if GR_COLLECT_STATS
-    fStats.fVertexCnt += vertexCount;
-    fStats.fDrawCnt   += 1;
-#endif
 
     int sVertex = startVertex;
     setupGeometry(&sVertex, NULL, vertexCount, 0);
 
     this->onGpuDrawNonIndexed(type, sVertex, vertexCount);
+}
+
+void GrGpu::onStencilPath(const GrPath& path, GrPathFill fill) {
+    this->handleDirtyContext();
+
+    if (!this->setupClipAndFlushState(kStencilPath_DrawType)) {
+        return;
+    }
+
+    this->onGpuStencilPath(path, fill);
 }
 
 void GrGpu::finalizeReservedVertices() {
@@ -666,31 +591,4 @@ void GrGpu::releaseIndexArray() {
     fIndexPool->putBack(bytes);
     --fIndexPoolUseCnt;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-const GrGpuStats& GrGpu::getStats() const {
-    return fStats;
-}
-
-void GrGpu::resetStats() {
-    memset(&fStats, 0, sizeof(fStats));
-}
-
-void GrGpu::printStats() const {
-    if (GR_COLLECT_STATS) {
-     GrPrintf(
-     "-v-------------------------GPU STATS----------------------------v-\n"
-     "Stats collection is: %s\n"
-     "Draws: %04d, Verts: %04d, Indices: %04d\n"
-     "ProgChanges: %04d, TexChanges: %04d, RTChanges: %04d\n"
-     "TexCreates: %04d, RTCreates:%04d\n"
-     "-^--------------------------------------------------------------^-\n",
-     (GR_COLLECT_STATS ? "ON" : "OFF"),
-    fStats.fDrawCnt, fStats.fVertexCnt, fStats.fIndexCnt,
-    fStats.fProgChngCnt, fStats.fTextureChngCnt, fStats.fRenderTargetChngCnt,
-    fStats.fTextureCreateCnt, fStats.fRenderTargetCreateCnt);
-    }
-}
-
 

@@ -33,13 +33,14 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
+#include "ElementShadow.h"
 #include "Event.h"
 #include "HTMLInputElement.h"
 #include "HTMLShadowElement.h"
 #include "NodeRenderStyle.h"
 #include "RenderImage.h"
 #include "ShadowRoot.h"
-#include "ShadowTree.h"
+#include "StyleResolver.h"
 
 namespace WebCore {
 
@@ -58,7 +59,7 @@ TextFieldDecorationElement::TextFieldDecorationElement(Document* document, TextF
     , m_textFieldDecorator(decorator)
 {
     ASSERT(decorator);
-    setHasCustomStyleForRenderer();
+    setHasCustomCallbacks();
 }
 
 PassRefPtr<TextFieldDecorationElement> TextFieldDecorationElement::create(Document* document, TextFieldDecorator* decorator)
@@ -66,9 +67,19 @@ PassRefPtr<TextFieldDecorationElement> TextFieldDecorationElement::create(Docume
     return adoptRef(new TextFieldDecorationElement(document, decorator));
 }
 
+TextFieldDecorationElement* TextFieldDecorationElement::fromShadowRoot(ShadowRoot* shadowRoot)
+{
+    if (!shadowRoot->firstChild()
+        || !shadowRoot->firstChild()->lastChild()
+        || !shadowRoot->firstChild()->lastChild()->isElementNode()
+        || !toElement(shadowRoot->firstChild()->lastChild())->isTextFieldDecoration())
+        return 0;
+    return toTextFieldDecorationElement(shadowRoot->firstChild()->lastChild());
+}
+
 static inline void getDecorationRootAndDecoratedRoot(HTMLInputElement* input, ShadowRoot*& decorationRoot, ShadowRoot*& decoratedRoot)
 {
-    ShadowRoot* existingRoot = input->shadowTree()->youngestShadowRoot();
+    ShadowRoot* existingRoot = input->youngestShadowRoot();
     ShadowRoot* newRoot = 0;
     while (existingRoot->childNodeCount() == 1 && existingRoot->firstChild()->hasTagName(shadowTag)) {
         newRoot = existingRoot;
@@ -83,7 +94,7 @@ static inline void getDecorationRootAndDecoratedRoot(HTMLInputElement* input, Sh
     decoratedRoot = existingRoot;
 }
 
-void TextFieldDecorationElement::decorate(HTMLInputElement* input)
+void TextFieldDecorationElement::decorate(HTMLInputElement* input, bool visible)
 {
     ASSERT(input);
     ShadowRoot* existingRoot;
@@ -99,15 +110,16 @@ void TextFieldDecorationElement::decorate(HTMLInputElement* input)
     toHTMLElement(existingRoot->firstChild())->setInlineStyleProperty(CSSPropertyWebkitBoxFlex, 1.0, CSSPrimitiveValue::CSS_NUMBER);
     box->appendChild(HTMLShadowElement::create(HTMLNames::shadowTag, input->document()));
 
-    setInlineStyleProperty(CSSPropertyWebkitBoxFlex, 0.0, CSSPrimitiveValue::CSS_NUMBER);
+    setInlineStyleProperty(CSSPropertyDisplay, visible ? CSSValueBlock : CSSValueNone);
     box->appendChild(this);
 }
 
 inline HTMLInputElement* TextFieldDecorationElement::hostInput()
 {
-    ASSERT(shadowAncestorNode());
-    ASSERT(shadowAncestorNode()->hasTagName(inputTag));
-    return static_cast<HTMLInputElement*>(shadowAncestorNode());
+    // TextFieldDecorationElement is created only by C++ code, and it is always
+    // in <input> shadow.
+    ASSERT(!shadowHost() || shadowHost()->hasTagName(inputTag));
+    return static_cast<HTMLInputElement*>(shadowHost());
 }
 
 bool TextFieldDecorationElement::isTextFieldDecoration() const
@@ -133,7 +145,8 @@ void TextFieldDecorationElement::updateImage()
 
 PassRefPtr<RenderStyle> TextFieldDecorationElement::customStyleForRenderer()
 {
-    RefPtr<RenderStyle> style = RenderStyle::create();
+    RefPtr<RenderStyle> originalStyle = document()->styleResolver()->styleForElement(this);
+    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
     RenderStyle* inputStyle = hostInput()->renderStyle();
     ASSERT(inputStyle);
     style->setWidth(Length(inputStyle->fontSize(), Fixed));
@@ -169,7 +182,7 @@ bool TextFieldDecorationElement::isMouseFocusable() const
 void TextFieldDecorationElement::defaultEventHandler(Event* event)
 {
     RefPtr<HTMLInputElement> input(hostInput());
-    if (input->disabled() || input->readOnly() || !event->isMouseEvent()) {
+    if (!input || input->disabled() || input->readOnly() || !event->isMouseEvent()) {
         if (!event->defaultHandled())
             HTMLDivElement::defaultEventHandler(event);
         return;

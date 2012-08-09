@@ -31,9 +31,14 @@ namespace webkit_media {
 // before being passed to other threads. It may be deleted on any thread.
 class BufferedDataSource : public media::DataSource {
  public:
+  typedef base::Callback<void(bool)> DownloadingCB;
+
+  // |downloading_cb| will be called whenever the downloading/paused state of
+  // the source changes.
   BufferedDataSource(MessageLoop* render_loop,
                      WebKit::WebFrame* frame,
-                     media::MediaLog* media_log);
+                     media::MediaLog* media_log,
+                     const DownloadingCB& downloading_cb);
 
   // Initialize this object using |url| and |cors_mode|, and call |status_cb|
   // when initialization has completed.
@@ -172,9 +177,10 @@ class BufferedDataSource : public media::DataSource {
 
   // Read parameters received from the Read() method call.
   media::DataSource::ReadCB read_cb_;
-  int64 read_position_;
   int read_size_;
   uint8* read_buffer_;
+  // Retained between reads to make sense of buffering information.
+  int64 last_read_start_;
 
   // This buffer is intermediate, we use it for BufferedResourceLoader to write
   // to. And when read in BufferedResourceLoader is done, we copy data from
@@ -222,6 +228,8 @@ class BufferedDataSource : public media::DataSource {
   float playback_rate_;
 
   scoped_refptr<media::MediaLog> media_log_;
+
+  DownloadingCB downloading_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedDataSource);
 };

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -51,20 +50,14 @@ void GrGLTexture::init(GrGpuGL* gpu,
 
 GrGLTexture::GrGLTexture(GrGpuGL* gpu,
                          const Desc& textureDesc) 
-    : INHERITED(gpu,
-                textureDesc.fWidth,
-                textureDesc.fHeight,
-                textureDesc.fConfig) {
+    : INHERITED(gpu, textureDesc) {
     this->init(gpu, textureDesc, NULL);
 }
 
 GrGLTexture::GrGLTexture(GrGpuGL* gpu,
                          const Desc& textureDesc,
                          const GrGLRenderTarget::Desc& rtDesc)
-    : INHERITED(gpu,
-                textureDesc.fWidth,
-                textureDesc.fHeight,
-                textureDesc.fConfig) {
+    : INHERITED(gpu, textureDesc) {
     this->init(gpu, textureDesc, &rtDesc);
 }
 

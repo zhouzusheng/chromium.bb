@@ -150,7 +150,7 @@ public:
     virtual NetworkState networkState() const = 0;
     virtual ReadyState readyState() const = 0;
 
-    virtual unsigned long long bytesLoaded() const = 0;
+    virtual bool didLoadingProgress() const = 0;
     virtual unsigned long long totalBytes() const = 0;
 
     virtual bool hasSingleSecurityOrigin() const = 0;
@@ -180,9 +180,12 @@ public:
 
     virtual WebAudioSourceProvider* audioSourceProvider() { return 0; }
 
-    virtual AddIdStatus sourceAddId(const WebString& id, const WebString& type) { return AddIdStatusNotSupported; }
+    virtual AddIdStatus sourceAddId(const WebString& id, const WebString& type,
+                                    const WebVector<WebString>& codecs) { return AddIdStatusNotSupported; }
     virtual bool sourceRemoveId(const WebString& id) { return false; }
-    virtual bool sourceAppend(const unsigned char* data, unsigned length) { return false; }
+    virtual WebTimeRanges sourceBuffered(const WebString& id) { return WebTimeRanges(); };
+    virtual bool sourceAppend(const WebString& id, const unsigned char* data, unsigned length) { return false; }
+    virtual bool sourceAbort(const WebString& id) { return false; }
     virtual void sourceEndOfStream(EndOfStreamStatus)  { }
 
     // Returns whether keySystem is supported. If true, the result will be
@@ -191,10 +194,11 @@ public:
     virtual MediaKeyException addKey(const WebString& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
     virtual MediaKeyException cancelKeyRequest(const WebString& keySystem, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
 
-    // Instuct WebMediaPlayer to enter/exit fullscreen.
-    // Returns true if the player can enter fullscreen.
-    virtual bool enterFullscreen() { return false; }
+    // Instruct WebMediaPlayer to enter/exit fullscreen.
+    virtual void enterFullscreen() { }
     virtual void exitFullscreen() { }
+    // Returns true if the player can enter fullscreen.
+    virtual bool canEnterFullscreen() const { return false; }
 };
 
 } // namespace WebKit

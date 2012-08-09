@@ -297,7 +297,7 @@ err:
 void SkBitmap::updatePixelsFromRef() const {
     if (NULL != fPixelRef) {
         if (fPixelLockCount > 0) {
-            SkASSERT(fPixelRef->getLockCount() > 0);
+            SkASSERT(fPixelRef->isLocked());
 
             void* p = fPixelRef->pixels();
             if (NULL != p) {
@@ -925,7 +925,6 @@ bool SkBitmap::copyTo(SkBitmap* dst, Config dstConfig, Allocator* alloc) const {
         return false;
     }
     
-    SkAutoLockPixels dstlock(tmpDst);
     if (!tmpDst.readyToDraw()) {
         // allocator/lock failed
         return false;
@@ -1376,7 +1375,7 @@ enum {
     SERIALIZE_PIXELTYPE_RAW_WITH_CTABLE,
     SERIALIZE_PIXELTYPE_RAW_NO_CTABLE,
     SERIALIZE_PIXELTYPE_REF_DATA,
-    SERIALIZE_PIXELTYPE_REF_PTR,
+    SERIALIZE_PIXELTYPE_REF_PTR
 };
 
 /*
@@ -1429,7 +1428,7 @@ void SkBitmap::flatten(SkFlattenableWriteBuffer& buffer) const {
     } else if (fPixels) {
         if (fColorTable) {
             buffer.write8(SERIALIZE_PIXELTYPE_RAW_WITH_CTABLE);
-            fColorTable->flatten(buffer);
+            buffer.writeFlattenable(fColorTable);
         } else {
             buffer.write8(SERIALIZE_PIXELTYPE_RAW_NO_CTABLE);
         }
@@ -1475,7 +1474,7 @@ void SkBitmap::unflatten(SkFlattenableReadBuffer& buffer) {
         case SERIALIZE_PIXELTYPE_RAW_NO_CTABLE: {
             SkColorTable* ctable = NULL;
             if (SERIALIZE_PIXELTYPE_RAW_WITH_CTABLE == reftype) {
-                ctable = SkNEW_ARGS(SkColorTable, (buffer));
+                ctable = static_cast<SkColorTable*>(buffer.readFlattenable());
             }
             size_t size = this->getSize();
             if (this->allocPixels(ctable)) {
@@ -1525,7 +1524,7 @@ void SkBitmap::validate() const {
 #if 0   // these asserts are not thread-correct, so disable for now
     if (fPixelRef) {
         if (fPixelLockCount > 0) {
-            SkASSERT(fPixelRef->getLockCount() > 0);
+            SkASSERT(fPixelRef->isLocked());
         } else {
             SkASSERT(NULL == fPixels);
             SkASSERT(NULL == fColorTable);

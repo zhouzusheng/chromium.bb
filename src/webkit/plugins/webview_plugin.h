@@ -20,7 +20,10 @@
 namespace WebKit {
 class WebMouseEvent;
 }
+
+namespace webkit_glue {
 struct WebPreferences;
+}
 
 namespace webkit {
 
@@ -56,13 +59,11 @@ class WebViewPlugin: public WebKit::WebPlugin, public WebKit::WebViewClient,
   // only used for navigation and never actually resolved.
   WEBKIT_PLUGINS_EXPORT static WebViewPlugin* Create(
       Delegate* delegate,
-      const WebPreferences& preferences,
+      const webkit_glue::WebPreferences& preferences,
       const std::string& html_data,
       const GURL& url);
 
   WebKit::WebView* web_view() { return web_view_; }
-
-  WebKit::WebPluginContainer* container() { return container_; }
 
   // When loading a plug-in document (i.e. a full page plug-in not embedded in
   // another page), we save all data that has been received, and replay it with
@@ -72,6 +73,7 @@ class WebViewPlugin: public WebKit::WebPlugin, public WebKit::WebViewClient,
   WEBKIT_PLUGINS_EXPORT void RestoreTitleText();
 
   // WebPlugin methods:
+  virtual WebKit::WebPluginContainer* container() const;
   virtual bool initialize(WebKit::WebPluginContainer*);
   virtual void destroy();
 
@@ -110,7 +112,8 @@ class WebViewPlugin: public WebKit::WebPlugin, public WebKit::WebViewClient,
   virtual void setToolTipText(const WebKit::WebString&,
                               WebKit::WebTextDirection);
 
-  virtual void startDragging(const WebKit::WebDragData& drag_data,
+  virtual void startDragging(WebKit::WebFrame* frame,
+                             const WebKit::WebDragData& drag_data,
                              WebKit::WebDragOperationsMask mask,
                              const WebKit::WebImage& image,
                              const WebKit::WebPoint& point);

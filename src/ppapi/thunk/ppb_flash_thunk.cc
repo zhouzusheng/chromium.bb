@@ -112,10 +112,8 @@ PP_Bool IsRectTopmost(PP_Instance instance, const PP_Rect* rect) {
 }
 
 int32_t InvokePrinting(PP_Instance instance) {
-  EnterInstance enter(instance);
-  if (enter.failed())
-    return PP_ERROR_BADARGUMENT;
-  return enter.functions()->GetFlashAPI()->InvokePrinting(instance);
+  // This function is no longer supported, use PPB_Flash_Print instead.
+  return PP_ERROR_NOTSUPPORTED;
 }
 
 void UpdateActivity(PP_Instance instance) {
@@ -137,6 +135,13 @@ int32_t GetSettingInt(PP_Instance instance, PP_FlashSetting setting) {
   if (enter.failed())
     return -1;
   return enter.functions()->GetFlashAPI()->GetSettingInt(instance, setting);
+}
+
+PP_Var GetSetting(PP_Instance instance, PP_FlashSetting setting) {
+  EnterInstance enter(instance);
+  if (enter.failed())
+    return PP_MakeUndefined();
+  return enter.functions()->GetFlashAPI()->GetSetting(instance, setting);
 }
 
 const PPB_Flash_12_0 g_ppb_flash_12_0_thunk = {
@@ -199,6 +204,24 @@ const PPB_Flash_12_3 g_ppb_flash_12_3_thunk = {
   &GetSettingInt
 };
 
+const PPB_Flash_12_4 g_ppb_flash_12_4_thunk = {
+  &SetInstanceAlwaysOnTop,
+  &DrawGlyphs,
+  &GetProxyForURL,
+  &Navigate,
+  &RunMessageLoop,
+  &QuitMessageLoop,
+  &GetLocalTimeZoneOffset,
+  &GetCommandLineArgs,
+  &PreLoadFontWin,
+  &IsRectTopmost,
+  &InvokePrinting,
+  &UpdateActivity,
+  &GetDeviceID,
+  &GetSettingInt,
+  &GetSetting
+};
+
 }  // namespace
 
 const PPB_Flash_12_0* GetPPB_Flash_12_0_Thunk() {
@@ -215,6 +238,10 @@ const PPB_Flash_12_2* GetPPB_Flash_12_2_Thunk() {
 
 const PPB_Flash_12_3* GetPPB_Flash_12_3_Thunk() {
   return &g_ppb_flash_12_3_thunk;
+}
+
+const PPB_Flash_12_4* GetPPB_Flash_12_4_Thunk() {
+  return &g_ppb_flash_12_4_thunk;
 }
 
 }  // namespace thunk

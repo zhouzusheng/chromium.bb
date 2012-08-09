@@ -12,7 +12,6 @@
 #include "base/basictypes.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
 #include "net/base/io_buffer.h"
@@ -158,7 +157,7 @@ class NET_EXPORT_PRIVATE SpdyStream
   // Decreases |send_window_size_| by the given number of bytes.
   void DecreaseSendWindowSize(int32 delta_window_size);
 
-  int GetPeerAddress(AddressList* address) const;
+  int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
 
   // Returns true if the underlying transport socket ever had any reads or
@@ -369,25 +368,6 @@ class NET_EXPORT_PRIVATE SpdyStream
   ServerBoundCertService::RequestHandle domain_bound_cert_request_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyStream);
-};
-
-class NetLogSpdyStreamErrorParameter : public NetLog::EventParameters {
- public:
-  NetLogSpdyStreamErrorParameter(SpdyStreamId stream_id,
-                                 int status,
-                                 const std::string& description);
-
-  SpdyStreamId stream_id() const { return stream_id_; }
-  virtual base::Value* ToValue() const OVERRIDE;
-
- private:
-  virtual ~NetLogSpdyStreamErrorParameter();
-
-  const SpdyStreamId stream_id_;
-  const int status_;
-  const std::string description_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetLogSpdyStreamErrorParameter);
 };
 
 }  // namespace net

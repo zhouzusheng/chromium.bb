@@ -49,8 +49,12 @@
 
 namespace WebCore {
 
-PassRefPtr<PeerConnection00> PeerConnection00::create(ScriptExecutionContext* context, const String& serverConfiguration, PassRefPtr<IceCallback> iceCallback)
+PassRefPtr<PeerConnection00> PeerConnection00::create(ScriptExecutionContext* context, const String& serverConfiguration, PassRefPtr<IceCallback> iceCallback, ExceptionCode& ec)
 {
+    if (!iceCallback) {
+        ec = TYPE_MISMATCH_ERR;
+        return 0;
+    }
     RefPtr<PeerConnection00> peerConnection = adoptRef(new PeerConnection00(context, serverConfiguration, iceCallback));
     peerConnection->suspendIfNeeded();
     return peerConnection.release();
@@ -96,7 +100,7 @@ PassRefPtr<MediaHints> PeerConnection00::createMediaHints(const Dictionary& dict
     bool audio = hasLocalAudioTrack();
     bool video = hasLocalVideoTrack();
     dictionary.get("has_audio", audio);
-    dictionary.get("has_video", audio);
+    dictionary.get("has_video", video);
     return MediaHints::create(audio, video);
 }
 

@@ -9,7 +9,6 @@ More info at https://sites.google.com/a/chromium.org/dev/Home/fake-bidi
 '''
 
 import re
-import types
 
 from grit import lazy_re
 from grit import tclib

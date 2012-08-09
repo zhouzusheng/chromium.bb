@@ -69,29 +69,44 @@ public:
 
     void addFontMetricsTopBottom(const SkPaint& paint, SkScalar minY, SkScalar maxY);
 
-    const SkTDArray<const SkFlatBitmap* >& getBitmaps() const {
+    const SkBitmapDictionary& getBitmaps() const {
         return fBitmaps;
     }
-    const SkTDArray<const SkFlatMatrix* >& getMatrices() const {
+    const SkMatrixDictionary& getMatrices() const {
         return fMatrices;
     }
-    const SkTDArray<const SkFlatPaint* >& getPaints() const {
+    const SkPaintDictionary& getPaints() const {
         return fPaints;
     }
     const SkTDArray<SkPicture* >& getPictureRefs() const {
         return fPictureRefs;
     }
-    const SkTDArray<const SkFlatRegion* >& getRegions() const {
+    const SkRegionDictionary& getRegions() const {
         return fRegions;
     }
 
     void reset();
+    void setFlags(uint32_t recordFlags) {
+        fRecordFlags = recordFlags;
+    }
 
     const SkWriter32& writeStream() const {
         return fWriter;
     }
 
+    bool shouldFlattenPixels(const SkBitmap&) const;
 private:
+    struct PixelRefDictionaryEntry {
+        uint32_t fKey; // SkPixelRef GenerationID.
+        uint32_t fIndex; // Index of corresponding flattened bitmap in fBitmaps.
+        bool operator < (const PixelRefDictionaryEntry& other) const {
+            return this->fKey < other.fKey;
+        } 
+        bool operator != (const PixelRefDictionaryEntry& other) const {
+            return this->fKey != other.fKey;
+        } 
+    };
+
     SkTDArray<uint32_t> fRestoreOffsetStack;
     int fFirstSavedLayerIndex;
     enum {
@@ -127,12 +142,7 @@ private:
     void addRegion(const SkRegion& region);
     void addText(const void* text, size_t byteLength);
 
-    int find(SkTDArray<const SkFlatBitmap* >& bitmaps,
-                   const SkBitmap& bitmap);
-    int find(SkTDArray<const SkFlatMatrix* >& matrices,
-                   const SkMatrix* matrix);
-    int find(SkTDArray<const SkFlatPaint* >& paints, const SkPaint* paint);
-    int find(SkTDArray<const SkFlatRegion* >& regions, const SkRegion& region);
+    int find(const SkBitmap& bitmap);
 
 #ifdef SK_DEBUG_DUMP
 public:
@@ -170,14 +180,13 @@ public:
 
 private:
     SkChunkAlloc fHeap;
-    int fBitmapIndex;
-    SkTDArray<const SkFlatBitmap* > fBitmaps;
-    int fMatrixIndex;
-    SkTDArray<const SkFlatMatrix* > fMatrices;
-    int fPaintIndex;
-    SkTDArray<const SkFlatPaint* > fPaints;
-    int fRegionIndex;
-    SkTDArray<const SkFlatRegion* > fRegions;
+
+    SkTDArray<PixelRefDictionaryEntry> fPixelRefDictionary;
+    SkBitmapDictionary fBitmaps;
+    SkMatrixDictionary fMatrices;
+    SkPaintDictionary fPaints;
+    SkRegionDictionary fRegions;
+
     SkPathHeap* fPathHeap;  // reference counted
     SkWriter32 fWriter;
 

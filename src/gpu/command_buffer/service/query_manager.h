@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/gpu_export.h"
 
@@ -19,6 +20,8 @@ namespace gpu {
 class CommonDecoder;
 
 namespace gles2 {
+
+class FeatureInfo;
 
 // This class keeps track of the queries and their state
 // As Queries are not shared there is one QueryManager per context.
@@ -29,8 +32,7 @@ class GPU_EXPORT QueryManager {
     typedef scoped_refptr<Query> Ref;
 
     Query(
-       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
-    virtual ~Query();
+        QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
     GLenum target() const {
       return target_;
@@ -68,6 +70,8 @@ class GPU_EXPORT QueryManager {
     virtual void Destroy(bool have_context) = 0;
 
    protected:
+    virtual ~Query();
+
     QueryManager* manager() const {
       return manager_;
     }
@@ -129,7 +133,7 @@ class GPU_EXPORT QueryManager {
 
   QueryManager(
       CommonDecoder* decoder,
-      bool use_arb_occlusion_query2_for_occlusion_query_boolean);
+      FeatureInfo* feature_info);
   ~QueryManager();
 
   // Must call before destruction.
@@ -175,10 +179,15 @@ class GPU_EXPORT QueryManager {
   // Returns false if any query is pointing to invalid shared memory.
   bool RemovePendingQuery(Query* query);
 
+  // Returns a target used for the underlying GL extension
+  // used to emulate a query.
+  GLenum AdjustTargetForEmulation(GLenum target);
+
   // Used to validate shared memory.
   CommonDecoder* decoder_;
 
   bool use_arb_occlusion_query2_for_occlusion_query_boolean_;
+  bool use_arb_occlusion_query_for_occlusion_query_boolean_;
 
   // Counts the number of Queries allocated with 'this' as their manager.
   // Allows checking no Query will outlive this.

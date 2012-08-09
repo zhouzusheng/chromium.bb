@@ -35,7 +35,7 @@ class MessageNode(base.ContentNode):
   _SPLIT_RE = lazy_re.compile('\s*,\s*|\s+')
 
   def __init__(self):
-    super(type(self), self).__init__()
+    super(MessageNode, self).__init__()
     # Valid after EndParsing, this is the MessageClique that contains the
     # source message and any translations of it that have been loaded.
     self.clique = None
@@ -97,7 +97,7 @@ class MessageNode(base.ContentNode):
       assert 'first_id' in grouping_parent.attrs
       return [grouping_parent.attrs['first_id'] + '_' + self.attrs['offset']]
     else:
-      return super(type(self), self).GetTextualIds()
+      return super(MessageNode, self).GetTextualIds()
 
   def IsTranslateable(self):
     return self.attrs['translateable'] == 'true'
@@ -105,7 +105,7 @@ class MessageNode(base.ContentNode):
   def ItemFormatter(self, t):
     # Only generate an output if the if condition is satisfied.
     if not self.SatisfiesOutputCondition():
-      return super(type(self), self).ItemFormatter(t)
+      return super(MessageNode, self).ItemFormatter(t)
 
     if t == 'rc_header':
       return grit.format.rc_header.Item()
@@ -116,10 +116,10 @@ class MessageNode(base.ContentNode):
     elif t == 'js_map_format':
         return grit.format.js_map_format.Message()
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(MessageNode, self).ItemFormatter(t)
 
   def EndParsing(self):
-    super(type(self), self).EndParsing()
+    super(MessageNode, self).EndParsing()
 
     # Make the text (including placeholder references) and list of placeholders,
     # then strip and store leading and trailing whitespace and create the
@@ -234,17 +234,14 @@ class MessageNode(base.ContentNode):
     # Default is BINARY
     return id, message
 
-  # static method
+  @staticmethod
   def Construct(parent, message, name, desc='', meaning='', translateable=True):
     '''Constructs a new message node that is a child of 'parent', with the
     name, desc, meaning and translateable attributes set using the same-named
     parameters and the text of the message and any placeholders taken from
     'message', which must be a tclib.Message() object.'''
     # Convert type to appropriate string
-    if translateable:
-      translateable = 'true'
-    else:
-      translateable = 'false'
+    translateable = 'true' if translateable else 'false'
 
     node = MessageNode()
     node.StartParsing('message', parent)
@@ -254,27 +251,25 @@ class MessageNode(base.ContentNode):
     node.HandleAttribute('translateable', translateable)
 
     items = message.GetContent()
-    for ix in range(len(items)):
-      if isinstance(items[ix], types.StringTypes):
-        text = items[ix]
-
+    for ix, item in enumerate(items):
+      if isinstance(item, types.StringTypes):
         # Ensure whitespace at front and back of message is correctly handled.
         if ix == 0:
-          text = "'''" + text
+          item = "'''" + item
         if ix == len(items) - 1:
-          text = text + "'''"
+          item = item + "'''"
 
-        node.AppendContent(text)
+        node.AppendContent(item)
       else:
         phnode = PhNode()
         phnode.StartParsing('ph', node)
-        phnode.HandleAttribute('name', items[ix].GetPresentation())
-        phnode.AppendContent(items[ix].GetOriginal())
+        phnode.HandleAttribute('name', item.GetPresentation())
+        phnode.AppendContent(item.GetOriginal())
 
-        if len(items[ix].GetExample()) and items[ix].GetExample() != ' ':
+        if len(item.GetExample()) and item.GetExample() != ' ':
           exnode = ExNode()
           exnode.StartParsing('ex', phnode)
-          exnode.AppendContent(items[ix].GetExample())
+          exnode.AppendContent(item.GetExample())
           exnode.EndParsing()
           phnode.AddChild(exnode)
 
@@ -283,7 +278,6 @@ class MessageNode(base.ContentNode):
 
     node.EndParsing()
     return node
-  Construct = staticmethod(Construct)
 
 class PhNode(base.ContentNode):
   '''A <ph> element.'''
@@ -295,7 +289,7 @@ class PhNode(base.ContentNode):
     return ['name']
 
   def EndParsing(self):
-    super(type(self), self).EndParsing()
+    super(PhNode, self).EndParsing()
     # We only allow a single example for each placeholder
     if len(self.children) > 1:
       raise exception.TooManyExamples()

@@ -7,7 +7,9 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -20,15 +22,19 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/selection_model.h"
+#include "ui/gfx/shadow_value.h"
 
 class SkCanvas;
+class SkDrawLooper;
 struct SkPoint;
+class SkShader;
+class SkTypeface;
 
 namespace gfx {
 
 class Canvas;
+class Font;
 class RenderTextTest;
-class ShadowValue;
 struct StyleRange;
 
 namespace internal {
@@ -42,10 +48,14 @@ class SkiaTextRenderer {
   void SetDrawLooper(SkDrawLooper* draw_looper);
   void SetFontSmoothingSettings(bool enable_smoothing, bool enable_lcd_text);
   void SetTypeface(SkTypeface* typeface);
-  void SetTextSize(int size);
+  void SetTextSize(SkScalar size);
   void SetFontFamilyWithStyle(const std::string& family, int font_style);
   void SetForegroundColor(SkColor foreground);
   void SetShader(SkShader* shader, const Rect& bounds);
+  // Sets underline metrics to use if the text will be drawn with an underline.
+  // If not set, default values based on the size of the text will be used. The
+  // two metrics must be set together.
+  void SetUnderlineMetrics(SkScalar thickness, SkScalar position);
   void DrawSelection(const std::vector<Rect>& selection, SkColor color);
   void DrawPosText(const SkPoint* pos,
                    const uint16* glyphs,
@@ -58,6 +68,8 @@ class SkiaTextRenderer {
   SkPaint paint_;
   SkRect bounds_;
   SkRefPtr<SkShader> deferred_fade_shader_;
+  SkScalar underline_thickness_;
+  SkScalar underline_position_;
 
   DISALLOW_COPY_AND_ASSIGN(SkiaTextRenderer);
 };
@@ -135,6 +147,23 @@ class UI_EXPORT RenderText {
 
   SkColor cursor_color() const { return cursor_color_; }
   void set_cursor_color(SkColor color) { cursor_color_ = color; }
+
+  SkColor selection_color() const { return selection_color_; }
+  void set_selection_color(SkColor color) { selection_color_ = color; }
+
+  SkColor selection_background_focused_color() const {
+    return selection_background_focused_color_;
+  }
+  void set_selection_background_focused_color(SkColor color) {
+    selection_background_focused_color_ = color;
+  }
+
+  SkColor selection_background_unfocused_color() const {
+    return selection_background_unfocused_color_;
+  }
+  void set_selection_background_unfocused_color(SkColor color) {
+    selection_background_unfocused_color_ = color;
+  }
 
   bool focused() const { return focused_; }
   void set_focused(bool focused) { focused_ = focused; }
@@ -246,15 +275,22 @@ class UI_EXPORT RenderText {
   // range 0 to text().length() inclusive (the input is clamped if it is out of
   // that range). Always moves by at least one character index unless the
   // supplied index is already at the boundary of the string.
-  virtual size_t IndexOfAdjacentGrapheme(size_t index,
-                                         LogicalCursorDirection direction) = 0;
+  size_t IndexOfAdjacentGrapheme(size_t index,
+                                 LogicalCursorDirection direction);
 
   // Return a SelectionModel with the cursor at the current selection's start.
   // The returned value represents a cursor/caret position without a selection.
   SelectionModel GetSelectionModelForSelectionStart();
 
   // Sets shadows to drawn with text.
-  void SetTextShadows(const std::vector<ShadowValue>& shadows);
+  void SetTextShadows(const ShadowValues& shadows);
+
+  typedef std::pair<Font, ui::Range> FontSpan;
+  // For testing purposes, returns which fonts were chosen for which parts of
+  // the text by returning a vector of Font and Range pairs, where each range
+  // specifies the character range for which the corresponding font has been
+  // chosen.
+  virtual std::vector<FontSpan> GetFontSpansForTesting() = 0;
 
  protected:
   RenderText();
@@ -411,6 +447,15 @@ class UI_EXPORT RenderText {
   // The color used for the cursor.
   SkColor cursor_color_;
 
+  // The color used for drawing selected text.
+  SkColor selection_color_;
+
+  // The background color used for drawing the selection when focused.
+  SkColor selection_background_focused_color_;
+
+  // The background color used for drawing the selection when not focused.
+  SkColor selection_background_unfocused_color_;
+
   // The focus state of the text.
   bool focused_;
 
@@ -444,7 +489,7 @@ class UI_EXPORT RenderText {
   bool cached_bounds_and_offset_valid_;
 
   // Text shadows to be drawn.
-  std::vector<ShadowValue> text_shadows_;
+  ShadowValues text_shadows_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderText);
 };

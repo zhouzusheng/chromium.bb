@@ -26,6 +26,7 @@
 #include "HTMLFormControlElement.h"
 
 #include "Attribute.h"
+#include "ElementShadow.h"
 #include "Event.h"
 #include "EventHandler.h"
 #include "EventNames.h"
@@ -61,17 +62,11 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
     , m_hasAutofocused(false)
 {
     setForm(form ? form : findFormAncestor());
-    setHasCustomWillOrDidRecalcStyle();
+    setHasCustomCallbacks();
 }
 
 HTMLFormControlElement::~HTMLFormControlElement()
 {
-}
-
-void HTMLFormControlElement::detach()
-{
-    m_validationMessage = nullptr;
-    HTMLElement::detach();
 }
 
 String HTMLFormControlElement::formEnctype() const
@@ -120,31 +115,31 @@ void HTMLFormControlElement::ancestorDisabledStateWasChanged()
     disabledAttributeChanged();
 }
 
-void HTMLFormControlElement::parseAttribute(Attribute* attr)
+void HTMLFormControlElement::parseAttribute(const Attribute& attribute)
 {
-    if (attr->name() == formAttr)
+    if (attribute.name() == formAttr)
         formAttributeChanged();
-    else if (attr->name() == disabledAttr) {
+    else if (attribute.name() == disabledAttr) {
         bool oldDisabled = m_disabled;
-        m_disabled = !attr->isNull();
+        m_disabled = !attribute.isNull();
         if (oldDisabled != m_disabled)
             disabledAttributeChanged();
-    } else if (attr->name() == readonlyAttr) {
+    } else if (attribute.name() == readonlyAttr) {
         bool oldReadOnly = m_readOnly;
-        m_readOnly = !attr->isNull();
+        m_readOnly = !attribute.isNull();
         if (oldReadOnly != m_readOnly) {
             setNeedsWillValidateCheck();
             setNeedsStyleRecalc();
             if (renderer() && renderer()->style()->hasAppearance())
                 renderer()->theme()->stateChanged(renderer(), ReadOnlyState);
         }
-    } else if (attr->name() == requiredAttr) {
+    } else if (attribute.name() == requiredAttr) {
         bool oldRequired = m_required;
-        m_required = !attr->isNull();
+        m_required = !attribute.isNull();
         if (oldRequired != m_required)
             requiredAttributeChanged();
     } else
-        HTMLElement::parseAttribute(attr);
+        HTMLElement::parseAttribute(attribute);
 }
 
 void HTMLFormControlElement::disabledAttributeChanged()
@@ -227,7 +222,7 @@ void HTMLFormControlElement::didMoveToNewDocument(Document* oldDocument)
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
-Node::InsertionNotificationRequest HTMLFormControlElement::insertedInto(Node* insertionPoint)
+Node::InsertionNotificationRequest HTMLFormControlElement::insertedInto(ContainerNode* insertionPoint)
 {
     m_ancestorDisabledState = AncestorDisabledStateUnknown;
     m_dataListAncestorState = Unknown;
@@ -237,23 +232,13 @@ Node::InsertionNotificationRequest HTMLFormControlElement::insertedInto(Node* in
     return InsertionDone;
 }
 
-void HTMLFormControlElement::removedFrom(Node* insertionPoint)
+void HTMLFormControlElement::removedFrom(ContainerNode* insertionPoint)
 {
+    m_validationMessage = nullptr;
     m_ancestorDisabledState = AncestorDisabledStateUnknown;
     m_dataListAncestorState = Unknown;
     HTMLElement::removedFrom(insertionPoint);
     FormAssociatedElement::removedFrom(insertionPoint);
-}
-
-const AtomicString& HTMLFormControlElement::formControlName() const
-{
-    const AtomicString& name = getNameAttribute();
-    return name.isNull() ? emptyAtom : name;
-}
-
-void HTMLFormControlElement::setName(const AtomicString& value)
-{
-    setAttribute(nameAttr, value);
 }
 
 bool HTMLFormControlElement::wasChangedSinceLastFormControlChangeEvent() const
@@ -322,7 +307,7 @@ void HTMLFormControlElement::didRecalcStyle(StyleChange)
 
 bool HTMLFormControlElement::supportsFocus() const
 {
-    return !m_disabled;
+    return !disabled();
 }
 
 bool HTMLFormControlElement::isFocusable() const
@@ -376,7 +361,11 @@ bool HTMLFormControlElement::willValidate() const
 {
     if (!m_willValidateInitialized || m_dataListAncestorState == Unknown) {
         m_willValidateInitialized = true;
-        m_willValidate = recalcWillValidate();
+        bool newWillValidate = recalcWillValidate();
+        if (m_willValidate != newWillValidate) {
+            m_willValidate = newWillValidate;
+            const_cast<HTMLFormControlElement*>(this)->setNeedsValidityCheck();
+        }
     } else {
         // If the following assertion fails, setNeedsWillValidateCheck() is not
         // called correctly when something which changes recalcWillValidate() result
@@ -394,14 +383,10 @@ void HTMLFormControlElement::setNeedsWillValidateCheck()
         return;
     m_willValidateInitialized = true;
     m_willValidate = newWillValidate;
+    setNeedsValidityCheck();
     setNeedsStyleRecalc();
     if (!m_willValidate)
         hideVisibleValidationMessage();
-}
-
-String HTMLFormControlElement::validationMessage()
-{
-    return validity()->validationMessage();
 }
 
 void HTMLFormControlElement::updateVisibleValidationMessage()
@@ -486,7 +471,13 @@ void HTMLFormControlElement::setNeedsValidityCheck()
 
 void HTMLFormControlElement::setCustomValidity(const String& error)
 {
-    validity()->setCustomErrorMessage(error);
+    FormAssociatedElement::setCustomValidity(error);
+    setNeedsValidityCheck();
+}
+
+bool HTMLFormControlElement::validationMessageShadowTreeContains(Node* node) const
+{
+    return m_validationMessage && m_validationMessage->shadowTreeContains(node);
 }
 
 void HTMLFormControlElement::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)

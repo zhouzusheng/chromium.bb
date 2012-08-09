@@ -138,6 +138,14 @@ void UpdateRenderText(const gfx::Rect& rect,
   display_rect.set_height(font.GetHeight());
   render_text->SetDisplayRect(display_rect);
 
+  // Set the text alignment explicitly based on the directionality of the UI,
+  // if not specified.
+  if (!(flags & (gfx::Canvas::TEXT_ALIGN_CENTER |
+                 gfx::Canvas::TEXT_ALIGN_RIGHT |
+                 gfx::Canvas::TEXT_ALIGN_LEFT))) {
+    flags |= gfx::Canvas::DefaultCanvasTextAlignment();
+  }
+
   if (flags & gfx::Canvas::TEXT_ALIGN_RIGHT)
     render_text->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
   else if (flags & gfx::Canvas::TEXT_ALIGN_CENTER)
@@ -252,7 +260,7 @@ void Canvas::DrawStringWithShadows(const string16& text,
                                    SkColor color,
                                    const gfx::Rect& text_bounds,
                                    int flags,
-                                   const std::vector<ShadowValue>& shadows) {
+                                   const ShadowValues& shadows) {
   if (!IntersectsClipRect(text_bounds))
     return;
 
@@ -313,6 +321,7 @@ void Canvas::DrawStringWithShadows(const string16& text,
       rect.set_height(line_height);
 
       ApplyUnderlineStyle(range, render_text.get());
+      render_text->SetDisplayRect(rect);
       render_text->Draw(this);
       rect.Offset(0, line_height);
     }
@@ -395,7 +404,7 @@ void Canvas::DrawStringWithHalo(const string16& text,
   }
 
   // Draw the halo bitmap with blur.
-  DrawBitmapInt(text_bitmap, x - 1, y - 1);
+  DrawImageInt(text_bitmap, x - 1, y - 1);
 }
 
 // TODO(asvitkine): Remove the ifdef once all platforms use canvas_skia.cc.
@@ -452,6 +461,10 @@ void Canvas::DrawFadeTruncatingString(
       render_text->set_fade_head(true);
       break;
   }
+
+  // Default to left alignment unless right alignment was chosen above.
+  if (!(flags & TEXT_ALIGN_RIGHT))
+    flags |= TEXT_ALIGN_LEFT;
 
   gfx::Rect rect = display_rect;
   UpdateRenderText(rect, clipped_text, font, flags, color, render_text.get());

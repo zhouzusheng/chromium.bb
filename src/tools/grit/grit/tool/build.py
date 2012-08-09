@@ -12,7 +12,6 @@ import getopt
 import os
 import shutil
 import sys
-import types
 
 from grit import grd_reader
 from grit import util
@@ -96,9 +95,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
       self.whitelist_names = set()
       for whitelist_filename in whitelist_filenames:
         self.VerboseOut('Using whitelist: %s\n' % whitelist_filename);
-        whitelist_file = open(whitelist_filename)
-        self.whitelist_names |= set(whitelist_file.read().strip().split('\n'))
-        whitelist_file.close()
+        whitelist_contents = util.ReadFile(whitelist_filename, util.RAW_TEXT)
+        self.whitelist_names.update(whitelist_contents.strip().split('\n'))
 
     self.res = grd_reader.Parse(opts.input,
                                 debug=opts.extra_verbose,
@@ -107,15 +105,15 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # Set an output context so that conditionals can use defines during the
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
-    self.res.SetOutputContext('en', self.defines)
+    self.res.SetOutputLanguage('en')
     self.res.RunGatherers(recursive = True)
     self.Process()
     return 0
 
   def __init__(self, defines=None):
-    # Default file-creation function is built-in file().  Only done to allow
+    # Default file-creation function is built-in open().  Only done to allow
     # overriding by unit test.
-    self.fo_create = file
+    self.fo_create = open
 
     # key/value pairs of C-preprocessor like defines that are used for
     # conditional output of resources
@@ -135,7 +133,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.whitelist_names = None
 
 
-  # static method
+  @staticmethod
   def AddWhitelistTags(start_node, whitelist_names):
     # Walk the tree of nodes added attributes for the nodes that shouldn't
     # be written into the target files (skip markers).
@@ -150,9 +148,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
         # Mark the item to be skipped if it wasn't in the whitelist.
         if text_ids and not text_ids[0] in whitelist_names:
           node.SetWhitelistMarkedAsSkip(True)
-  AddWhitelistTags = staticmethod(AddWhitelistTags)
 
-  # static method
+  @staticmethod
   def ProcessNode(node, output_node, outfile):
     '''Processes a node in-order, calling its formatter before and after
     recursing to its children.
@@ -192,7 +189,6 @@ are exported to translation interchange files (e.g. XMB files), etc.
     except:
       print u'Error processing node %s' % unicode(node)
       raise
-  ProcessNode = staticmethod(ProcessNode)
 
 
   def Process(self):
@@ -232,10 +228,20 @@ are exported to translation interchange files (e.g. XMB files), etc.
         # TODO(gfeher) modify here to set utf-8 encoding for admx/adml
         encoding = 'utf_16'
 
+      # Set the context, for conditional inclusion of resources
+      self.res.SetOutputLanguage(output.GetLanguage())
+      self.res.SetOutputContext(output.GetContext())
+      self.res.SetDefines(self.defines)
+
+      # TODO(joi) Handle this more gracefully
+      import grit.format.rc_header
+      grit.format.rc_header.Item.ids_ = {}
+
       # Make the output directory if it doesn't exist.
       outdir = os.path.split(output.GetOutputFilename())[0]
       if not os.path.exists(outdir):
         os.makedirs(outdir)
+
       # Write the results to a temporary file and only overwrite the original
       # if the file changed.  This avoids unnecessary rebuilds.
       outfile = self.fo_create(output.GetOutputFilename() + '.tmp', 'wb')
@@ -243,17 +249,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
       if output.GetType() != 'data_package':
         outfile = util.WrapOutputStream(outfile, encoding)
 
-      # Set the context, for conditional inclusion of resources
-      self.res.SetOutputContext(output.GetLanguage(), self.defines)
-
-      # TODO(joi) Handle this more gracefully
-      import grit.format.rc_header
-      grit.format.rc_header.Item.ids_ = {}
-
       # Iterate in-order through entire resource tree, calling formatters on
       # the entry into a node and on exit out of it.
-      self.ProcessNode(self.res, output, outfile)
-      outfile.close()
+      with outfile:
+        self.ProcessNode(self.res, output, outfile)
 
       # Now copy from the temp file back to the real output, but on Windows,
       # only if the real output doesn't exist or the contents of the file

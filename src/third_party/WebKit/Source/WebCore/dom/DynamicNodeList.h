@@ -24,6 +24,7 @@
 #ifndef DynamicNodeList_h
 #define DynamicNodeList_h
 
+#include "Document.h"
 #include "NodeList.h"
 #include <wtf/Forward.h>
 #include <wtf/RefPtr.h>
@@ -35,8 +36,26 @@ class Node;
 
 class DynamicNodeList : public NodeList {
 public:
-    DynamicNodeList(PassRefPtr<Node> node)
-        : m_node(node)
+    enum NodeListType {
+        ChildNodeListType,
+        ClassNodeListType,
+        NameNodeListType,
+        TagNodeListType,
+        RadioNodeListType,
+        LabelsNodeListType,
+        MicroDataItemListType,
+    };
+    enum RootType {
+        RootedAtNode,
+        RootedAtDocument,
+    };
+    enum InvalidationType {
+        AlwaysInvalidate,
+        DoNotInvalidateOnAttributeChange,
+    };
+    DynamicNodeList(PassRefPtr<Node> ownerNode, RootType rootType, InvalidationType invalidationType)
+        : m_ownerNode(ownerNode)
+        , m_caches(rootType, invalidationType)
     { }
     virtual ~DynamicNodeList() { }
 
@@ -46,15 +65,29 @@ public:
     virtual Node* itemWithName(const AtomicString&) const;
 
     // Other methods (not part of DOM)
-    Node* node() const { return m_node.get(); }
-
+    Node* ownerNode() const { return m_ownerNode.get(); }
+    bool isRootedAtDocument() const { return m_caches.rootedAtDocument; }
+    bool shouldInvalidateOnAttributeChange() const { return m_caches.shouldInvalidateOnAttributeChange; }
     void invalidateCache() { m_caches.reset(); }
 
 protected:
+    Node* rootNode() const
+    {
+        if (m_caches.rootedAtDocument && m_ownerNode->inDocument())
+            return m_ownerNode->document();
+        return m_ownerNode.get();
+    }
+    Document* document() const { return m_ownerNode->document(); }
     virtual bool nodeMatches(Element*) const = 0;
 
     struct Caches {
-        Caches() { reset(); }
+        Caches(RootType rootType, InvalidationType invalidationType)
+            : rootedAtDocument(rootType == RootedAtDocument)
+            , shouldInvalidateOnAttributeChange(invalidationType == AlwaysInvalidate)
+        {
+            reset();
+        }
+
         void reset()
         {
             lastItem = 0;
@@ -65,12 +98,17 @@ protected:
         Node* lastItem;
         unsigned cachedLength;
         unsigned lastItemOffset;
-        bool isLengthCacheValid : 1;
-        bool isItemCacheValid : 1;
+        unsigned isLengthCacheValid : 1;
+        unsigned isItemCacheValid : 1;
+
+        // Following flags should belong in DynamicSubtreeNode but are here for bit-packing.
+        unsigned type : 4;
+        unsigned rootedAtDocument : 1;
+        unsigned shouldInvalidateOnAttributeChange : 1;
     };
 
+    RefPtr<Node> m_ownerNode;
     mutable Caches m_caches;
-    RefPtr<Node> m_node;
 
 private:
     virtual bool isDynamicNodeList() const OVERRIDE { return true; }
@@ -81,15 +119,13 @@ public:
     virtual ~DynamicSubtreeNodeList();
     virtual unsigned length() const OVERRIDE;
     virtual Node* item(unsigned index) const OVERRIDE;
-    Node* rootNode() const { return node(); }
 
 protected:
-    DynamicSubtreeNodeList(PassRefPtr<Node> rootNode);
+    DynamicSubtreeNodeList(PassRefPtr<Node> node, RootType rootType = RootedAtNode, InvalidationType invalidationType = AlwaysInvalidate)
+        : DynamicNodeList(node, rootType, invalidationType)
+    { }
 
 private:
-    using DynamicNodeList::invalidateCache;
-    friend struct NodeListsNodeData;
-
     Node* itemForwardsFromCurrent(Node* start, unsigned offset, int remainingOffset) const;
     Node* itemBackwardsFromCurrent(Node* start, unsigned offset, int remainingOffset) const;
 };

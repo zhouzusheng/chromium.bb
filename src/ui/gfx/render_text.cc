@@ -6,21 +6,15 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkTypeface.h"
-#include "third_party/skia/include/effects/SkBlurMaskFilter.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
-#include "third_party/skia/include/effects/SkLayerDrawLooper.h"
 #include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
-#include "ui/gfx/native_theme.h"
 #include "ui/gfx/skia_util.h"
-#include "ui/gfx/shadow_value.h"
 
 namespace {
 
@@ -32,6 +26,12 @@ const char16 kPasswordReplacementChar = '*';
 // Default color used for the cursor.
 const SkColor kDefaultCursorColor = SK_ColorBLACK;
 
+// Default color used for drawing selection text.
+const SkColor kDefaultSelectionColor = SK_ColorBLACK;
+
+// Default color used for drawing selection background.
+const SkColor kDefaultSelectionBackgroundColor = SK_ColorGRAY;
+
 #ifndef NDEBUG
 // Check StyleRanges invariant conditions: sorted and non-overlapping ranges.
 void CheckStyleRanges(const gfx::StyleRanges& style_ranges, size_t length) {
@@ -42,11 +42,14 @@ void CheckStyleRanges(const gfx::StyleRanges& style_ranges, size_t length) {
   for (gfx::StyleRanges::size_type i = 0; i < style_ranges.size() - 1; i++) {
     const ui::Range& former = style_ranges[i].range;
     const ui::Range& latter = style_ranges[i + 1].range;
-    DCHECK(!former.is_empty()) << "Empty range at " << i << ":" << former;
-    DCHECK(former.IsValid()) << "Invalid range at " << i << ":" << former;
-    DCHECK(!former.is_reversed()) << "Reversed range at " << i << ":" << former;
+    DCHECK(!former.is_empty()) << "Empty range at " << i << ":" <<
+        former.ToString();
+    DCHECK(former.IsValid()) << "Invalid range at " << i << ":" <<
+        former.ToString();
+    DCHECK(!former.is_reversed()) << "Reversed range at " << i << ":" <<
+        former.ToString();
     DCHECK(former.end() == latter.start()) << "Ranges gap/overlap/unsorted." <<
-        "former:" << former << ", latter:" << latter;
+        "former:" << former.ToString() << ", latter:" << latter.ToString();
   }
   const gfx::StyleRange& end_style = *style_ranges.rbegin();
   DCHECK(!end_style.range.is_empty()) << "Empty range at end.";
@@ -176,15 +179,22 @@ namespace gfx {
 
 namespace internal {
 
+// Value of |underline_thickness_| that indicates that underline metrics have
+// not been set explicitly.
+const SkScalar kUnderlineMetricsNotSet = -1.0f;
+
 SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
     : canvas_skia_(canvas->sk_canvas()),
-      started_drawing_(false) {
+      started_drawing_(false),
+      underline_thickness_(kUnderlineMetricsNotSet),
+      underline_position_(0.0f) {
   DCHECK(canvas_skia_);
   paint_.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
   paint_.setStyle(SkPaint::kFill_Style);
   paint_.setAntiAlias(true);
   paint_.setSubpixelText(true);
   paint_.setLCDRenderText(true);
+  bounds_.setEmpty();
 }
 
 SkiaTextRenderer::~SkiaTextRenderer() {
@@ -217,7 +227,7 @@ void SkiaTextRenderer::SetTypeface(SkTypeface* typeface) {
   paint_.setTypeface(typeface);
 }
 
-void SkiaTextRenderer::SetTextSize(int size) {
+void SkiaTextRenderer::SetTextSize(SkScalar size) {
   paint_.setTextSize(size);
 }
 
@@ -246,6 +256,12 @@ void SkiaTextRenderer::SetForegroundColor(SkColor foreground) {
 void SkiaTextRenderer::SetShader(SkShader* shader, const Rect& bounds) {
   bounds_ = RectToSkRect(bounds);
   paint_.setShader(shader);
+}
+
+void SkiaTextRenderer::SetUnderlineMetrics(SkScalar thickness,
+                                           SkScalar position) {
+  underline_thickness_ = thickness;
+  underline_position_ = position;
 }
 
 void SkiaTextRenderer::DrawPosText(const SkPoint* pos,
@@ -300,9 +316,13 @@ void SkiaTextRenderer::DrawDecorations(int x, int y, int width,
   r.fRight = x + width;
 
   if (style.underline) {
-    SkScalar offset = SkScalarMulAdd(text_size, kUnderlineOffset, y);
-    r.fTop = offset;
-    r.fBottom = offset + height;
+    if (underline_thickness_ == kUnderlineMetricsNotSet) {
+      r.fTop = SkScalarMulAdd(text_size, kUnderlineOffset, y);
+      r.fBottom = r.fTop + height;
+    } else {
+      r.fTop = y + underline_position_;
+      r.fBottom = r.fTop + underline_thickness_;
+    }
     canvas_skia_->drawRect(r, paint_);
   }
   if (style.strike) {
@@ -584,11 +604,7 @@ VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
 }
 
 void RenderText::Draw(Canvas* canvas) {
-  TRACE_EVENT0("gfx", "RenderText::Draw");
-  {
-    TRACE_EVENT0("gfx", "RenderText::EnsureLayout");
-    EnsureLayout();
-  }
+  EnsureLayout();
 
   gfx::Rect clip_rect(display_rect());
   clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
@@ -601,10 +617,8 @@ void RenderText::Draw(Canvas* canvas) {
 
   DrawCursor(canvas);
 
-  if (!text().empty()) {
-    TRACE_EVENT0("gfx", "RenderText::Draw draw text");
+  if (!text().empty())
     DrawVisualText(canvas);
-  }
   canvas->Restore();
 }
 
@@ -647,6 +661,30 @@ const Rect& RenderText::GetUpdatedCursorBounds() {
   return cursor_bounds_;
 }
 
+size_t RenderText::IndexOfAdjacentGrapheme(size_t index,
+    LogicalCursorDirection direction) {
+  if (index > text().length())
+    return text().length();
+
+  EnsureLayout();
+
+  if (direction == CURSOR_FORWARD) {
+    while (index < text().length()) {
+      index++;
+      if (IsCursorablePosition(index))
+        return index;
+    }
+    return text().length();
+  }
+
+  while (index > 0) {
+    index--;
+    if (IsCursorablePosition(index))
+      return index;
+  }
+  return 0;
+}
+
 SelectionModel RenderText::GetSelectionModelForSelectionStart() {
   const ui::Range& sel = selection();
   if (sel.is_empty())
@@ -655,7 +693,7 @@ SelectionModel RenderText::GetSelectionModelForSelectionStart() {
                         sel.is_reversed() ? CURSOR_BACKWARD : CURSOR_FORWARD);
 }
 
-void RenderText::SetTextShadows(const std::vector<ShadowValue>& shadows) {
+void RenderText::SetTextShadows(const ShadowValues& shadows) {
   text_shadows_ = shadows;
 }
 
@@ -665,6 +703,9 @@ RenderText::RenderText()
       cursor_visible_(false),
       insert_mode_(true),
       cursor_color_(kDefaultCursorColor),
+      selection_color_(kDefaultSelectionColor),
+      selection_background_focused_color_(kDefaultSelectionBackgroundColor),
+      selection_background_unfocused_color_(kDefaultSelectionBackgroundColor),
       focused_(false),
       composition_range_(ui::Range::InvalidRange()),
       obscured_(false),
@@ -728,8 +769,7 @@ void RenderText::ApplyCompositionAndSelectionStyles(
   // Apply a selection style override to a copy of the style ranges.
   if (!selection().is_empty()) {
     StyleRange selection_style(default_style_);
-    selection_style.foreground = NativeTheme::instance()->GetSystemColor(
-        NativeTheme::kColorId_TextfieldSelectionColor);
+    selection_style.foreground = selection_color_;
     selection_style.range = ui::Range(selection().GetMin(),
                                       selection().GetMax());
     ApplyStyleRangeImpl(style_ranges, selection_style);
@@ -744,8 +784,7 @@ void RenderText::ApplyCompositionAndSelectionStyles(
   // http://crbug.com/110109
   if (!insert_mode_ && cursor_visible() && focused()) {
     StyleRange replacement_mode_style(default_style_);
-    replacement_mode_style.foreground = NativeTheme::instance()->GetSystemColor(
-        NativeTheme::kColorId_TextfieldSelectionColor);
+    replacement_mode_style.foreground = selection_color_;
     size_t cursor = cursor_position();
     replacement_mode_style.range.set_start(cursor);
     replacement_mode_style.range.set_end(
@@ -843,42 +882,8 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
 }
 
 void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {
-  if (text_shadows_.empty()) {
-    renderer->SetDrawLooper(NULL);
-    return;
-  }
-
-  SkLayerDrawLooper* looper = new SkLayerDrawLooper;
+  SkDrawLooper* looper = gfx::CreateShadowDrawLooper(text_shadows_);
   SkAutoUnref auto_unref(looper);
-
-  looper->addLayer();  // top layer of the original.
-
-  SkLayerDrawLooper::LayerInfo layer_info;
-  layer_info.fPaintBits |= SkLayerDrawLooper::kMaskFilter_Bit;
-  layer_info.fPaintBits |= SkLayerDrawLooper::kColorFilter_Bit;
-  layer_info.fColorMode = SkXfermode::kSrc_Mode;
-
-  for (size_t i = 0; i < text_shadows_.size(); ++i) {
-    const ShadowValue& shadow = text_shadows_[i];
-
-    layer_info.fOffset.set(SkIntToScalar(shadow.x()),
-                           SkIntToScalar(shadow.y()));
-
-    // SkBlurMaskFilter's blur radius defines the range to extend the blur from
-    // original mask, which is half of blur amount as defined in ShadowValue.
-    SkMaskFilter* blur_mask = SkBlurMaskFilter::Create(
-        SkDoubleToScalar(shadow.blur() / 2),
-        SkBlurMaskFilter::kNormal_BlurStyle,
-        SkBlurMaskFilter::kHighQuality_BlurFlag);
-    SkColorFilter* color_filter = SkColorFilter::CreateModeFilter(
-        shadow.color(),
-        SkXfermode::kSrcIn_Mode);
-
-    SkPaint* paint = looper->addLayer(layer_info);
-    SkSafeUnref(paint->setMaskFilter(blur_mask));
-    SkSafeUnref(paint->setColorFilter(color_filter));
-  }
-
   renderer->SetDrawLooper(looper);
 }
 
@@ -946,11 +951,9 @@ void RenderText::UpdateCachedBoundsAndOffset() {
 }
 
 void RenderText::DrawSelection(Canvas* canvas) {
-  std::vector<Rect> sel = GetSubstringBounds(selection());
-  NativeTheme::ColorId color_id = focused() ?
-      NativeTheme::kColorId_TextfieldSelectionBackgroundFocused :
-      NativeTheme::kColorId_TextfieldSelectionBackgroundUnfocused;
-  SkColor color = NativeTheme::instance()->GetSystemColor(color_id);
+  const SkColor color = focused() ? selection_background_focused_color_ :
+                                    selection_background_unfocused_color_;
+  const std::vector<Rect> sel = GetSubstringBounds(selection());
   for (std::vector<Rect>::const_iterator i = sel.begin(); i < sel.end(); ++i)
     canvas->FillRect(*i, color);
 }

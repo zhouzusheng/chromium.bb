@@ -35,6 +35,7 @@
   F(PPB_FileRef_API) \
   F(PPB_FileSystem_API) \
   F(PPB_Find_API) \
+  F(PPB_Flash_DeviceID_API) \
   F(PPB_Flash_Menu_API) \
   F(PPB_Flash_MessageLoop_API) \
   F(PPB_Graphics2D_API) \
@@ -52,7 +53,6 @@
   F(PPB_Talk_Private_API) \
   F(PPB_TCPServerSocket_Private_API) \
   F(PPB_TCPSocket_Private_API) \
-  F(PPB_Transport_API) \
   F(PPB_UDPSocket_Private_API) \
   F(PPB_URLLoader_API) \
   F(PPB_URLRequestInfo_API) \

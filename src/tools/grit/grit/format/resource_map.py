@@ -116,5 +116,5 @@ class SourceFileInclude(interface.ItemFormatter):
   '''Populate the resource mapping.  For each include, we map a filename to
   the resource ID.'''
   def Format(self, item, lang='en', output_dir='.'):
-    filename = item.attrs['file'].replace("\\", "/")
+    filename = item.GetInputPath().replace("\\", "/")
     return '  {"%s", %s},\n' % (filename, item.attrs['name'])

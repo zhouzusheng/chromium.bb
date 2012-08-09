@@ -38,6 +38,12 @@ class TestAutomationProvider;
 class URLRequestAutomationJob;
 class UserScriptListenerTest;
 
+namespace base {
+namespace debug {
+class StackTrace;
+}
+}
+
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 namespace appcache {
@@ -56,7 +62,6 @@ class ResourceDispatcherHostTest;
 // interface.
 namespace fileapi {
 class FileSystemDirURLRequestJobTest;
-class FileSystemOperationWriteTest;
 class FileSystemURLRequestJobTest;
 class FileWriterDelegateTest;
 }
@@ -120,6 +125,21 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 #undef HTTP_ATOM
   };
 
+  // Referrer policies (see set_referrer_policy): During server redirects, the
+  // referrer header might be cleared, if the protocol changes from HTTPS to
+  // HTTP. This is the default behavior of URLRequest, corresponding to
+  // CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE. Alternatively, the
+  // referrer policy can be set to never change the referrer header. This
+  // behavior corresponds to NEVER_CLEAR_REFERRER. Embedders will want to use
+  // NEVER_CLEAR_REFERRER when implementing the meta-referrer support
+  // (http://wiki.whatwg.org/wiki/Meta_referrer) and sending requests with a
+  // non-default referrer policy. Only the default referrer policy requires
+  // the referrer to be cleared on transitions from HTTPS to HTTP.
+  enum ReferrerPolicy {
+    CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+    NEVER_CLEAR_REFERRER,
+  };
+
   // This class handles network interception.  Use with
   // (Un)RegisterRequestInterceptor.
   class NET_EXPORT Interceptor {
@@ -170,7 +190,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     friend class appcache::AppCacheURLRequestJobTest;
     friend class content::ResourceDispatcherHostTest;
     friend class fileapi::FileSystemDirURLRequestJobTest;
-    friend class fileapi::FileSystemOperationWriteTest;
     friend class fileapi::FileSystemURLRequestJobTest;
     friend class fileapi::FileWriterDelegateTest;
     friend class policy::CannedResponseInterceptor;
@@ -212,8 +231,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   //
   class NET_EXPORT Delegate {
    public:
-    virtual ~Delegate() {}
-
     // Called upon a server-initiated redirect.  The delegate may call the
     // request's Cancel method to prevent the redirect from being followed.
     // Since there may be multiple chained redirects, there may also be more
@@ -281,6 +298,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     // If an error occurred, request->status() will contain the error,
     // and bytes read will be -1.
     virtual void OnReadCompleted(URLRequest* request, int bytes_read) = 0;
+
+   protected:
+    virtual ~Delegate() {}
   };
 
   // Initialize an URL request.
@@ -341,6 +361,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void set_referrer(const std::string& referrer);
   // Returns the referrer header with potential username and password removed.
   GURL GetSanitizedReferrer() const;
+
+  // The referrer policy to apply when updating the referrer during redirects.
+  // The referrer policy may only be changed before Start() is called.
+  void set_referrer_policy(ReferrerPolicy referrer_policy);
 
   // Sets the delegate of the request.  This value may be changed at any time,
   // and it is permissible for it to be null.
@@ -592,6 +616,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // TODO(willchan): Undo this. Only temporarily public.
   bool has_delegate() const { return delegate_ != NULL; }
 
+  // NOTE(willchan): This is just temporary for debugging
+  // http://crbug.com/90971.
+  // Allows to setting debug info into the URLRequest.
+  void set_stack_trace(const base::debug::StackTrace& stack_trace);
+  const base::debug::StackTrace* stack_trace() const;
+
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
   void set_is_pending(bool value) { is_pending_ = value; }
@@ -686,7 +716,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Contextual information used for this request (can be NULL). This contains
   // most of the dependencies which are shared between requests (disk cache,
   // cookie store, socket pool, etc.)
-  scoped_refptr<const URLRequestContext> context_;
+  const URLRequestContext* context_;
 
   // Tracks the time spent in various load states throughout this request.
   BoundNetLog net_log_;
@@ -698,6 +728,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   GURL delegate_redirect_url_;
   std::string method_;  // "GET", "POST", etc. Should be all uppercase.
   std::string referrer_;
+  ReferrerPolicy referrer_policy_;
   HttpRequestHeaders extra_request_headers_;
   int load_flags_;  // Flags indicating the request type for the load;
                     // expected values are LOAD_* enums above.
@@ -767,6 +798,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   scoped_refptr<AuthChallengeInfo> auth_info_;
 
   base::TimeTicks creation_time_;
+
+  scoped_ptr<const base::debug::StackTrace> stack_trace_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

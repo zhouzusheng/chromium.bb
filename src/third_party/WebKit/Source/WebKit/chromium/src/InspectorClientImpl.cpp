@@ -128,6 +128,18 @@ void InspectorClientImpl::clearBrowserCookies()
         agent->clearBrowserCookies();
 }
 
+void InspectorClientImpl::startMainThreadMonitoring()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->startMainThreadMonitoring();
+}
+
+void InspectorClientImpl::stopMainThreadMonitoring()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->stopMainThreadMonitoring();
+}
+
 bool InspectorClientImpl::canOverrideDeviceMetrics()
 {
     return true;
@@ -143,6 +155,11 @@ void InspectorClientImpl::autoZoomPageToFitWidth()
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
         agent->autoZoomPageToFitWidth();
+}
+
+bool InspectorClientImpl::supportsFrameInstrumentation()
+{
+    return true;
 }
 
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()

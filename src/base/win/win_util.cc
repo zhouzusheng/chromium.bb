@@ -180,10 +180,10 @@ bool SetStringValueForPropertyStore(IPropertyStore* property_store,
 
 bool SetAppIdForPropertyStore(IPropertyStore* property_store,
                               const wchar_t* app_id) {
-  // App id should be less than 128 chars and contain no space. And recommended
+  // App id should be less than 64 chars and contain no space. And recommended
   // format is CompanyName.ProductName[.SubProduct.ProductNumber].
   // See http://msdn.microsoft.com/en-us/library/dd378459%28VS.85%29.aspx
-  DCHECK(lstrlen(app_id) < 128 && wcschr(app_id, L' ') == NULL);
+  DCHECK(lstrlen(app_id) < 64 && wcschr(app_id, L' ') == NULL);
 
   return SetStringValueForPropertyStore(property_store,
                                         PKEY_AppUserModel_ID,
@@ -191,8 +191,6 @@ bool SetAppIdForPropertyStore(IPropertyStore* property_store,
 }
 
 bool SetDualModeForPropertyStore(IPropertyStore* property_store) {
-  DCHECK_GE(base::win::GetVersion(), base::win::VERSION_WIN8);
-
   return SetBooleanValueForPropertyStore(property_store,
                                          PKEY_AppUserModel_DualMode,
                                          true) &&

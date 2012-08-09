@@ -9,15 +9,19 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_options.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 
 namespace base {
-class MessageLoopProxy;
+class SequencedTaskRunner;
 }
 
 namespace quota {
@@ -33,7 +37,7 @@ class ObfuscatedFileUtil;
 // profile directory in a sandboxed way.
 // This interface also lets one enumerate and remove storage for the origins
 // that use the filesystem.
-class SandboxMountPointProvider
+class FILEAPI_EXPORT SandboxMountPointProvider
     : public FileSystemMountPointProvider,
       public FileSystemQuotaUtil {
  public:
@@ -61,8 +65,10 @@ class SandboxMountPointProvider
   // Where we move the old filesystem directory if migration fails.
   static const FilePath::CharType kRenamedOldFileSystemDirectory[];
 
+  // |file_task_runner| is used to validate the root directory and delete the
+  // obfuscated file util.
   SandboxMountPointProvider(
-      scoped_refptr<base::MessageLoopProxy> file_message_loop,
+      base::SequencedTaskRunner* file_task_runner,
       const FilePath& profile_path,
       const FileSystemOptions& file_system_options);
   virtual ~SandboxMountPointProvider();
@@ -83,7 +89,6 @@ class SandboxMountPointProvider
       FileSystemType type,
       const FilePath& virtual_path) OVERRIDE;
   virtual bool IsRestrictedFileName(const FilePath& filename) const OVERRIDE;
-  virtual std::vector<FilePath> GetRootDirectories() const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil() OVERRIDE;
   virtual FilePath GetPathForPermissionsCheck(const FilePath& virtual_path)
       const OVERRIDE;
@@ -91,13 +96,16 @@ class SandboxMountPointProvider
       const GURL& origin_url,
       FileSystemType file_system_type,
       const FilePath& virtual_path,
-      base::MessageLoopProxy* file_proxy,
       FileSystemContext* context) const OVERRIDE;
-  virtual webkit_blob::FileReader* CreateFileReader(
+  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
     const GURL& url,
     int64 offset,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const OVERRIDE;
+  virtual FileStreamWriter* CreateFileStreamWriter(
+    const GURL& url,
+    int64 offset,
+    FileSystemContext* context) const OVERRIDE;
+  virtual FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
 
   FilePath old_base_path() const;
   FilePath new_base_path() const;
@@ -121,6 +129,7 @@ class SandboxMountPointProvider
   // Deletes the data on the origin and reports the amount of deleted data
   // to the quota manager via |proxy|.
   bool DeleteOriginDataOnFileThread(
+      FileSystemContext* context,
       quota::QuotaManagerProxy* proxy,
       const GURL& origin_url,
       FileSystemType type);
@@ -134,6 +143,7 @@ class SandboxMountPointProvider
       const std::string& host,
       std::set<GURL>* origins) OVERRIDE;
   virtual int64 GetOriginUsageOnFileThread(
+      FileSystemContext* context,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
   virtual void NotifyOriginWasAccessedOnIOThread(
@@ -154,7 +164,7 @@ class SandboxMountPointProvider
   virtual void InvalidateUsageCache(const GURL& origin_url,
                                     FileSystemType type) OVERRIDE;
 
-  FileSystemQuotaUtil* quota_util() { return this; }
+  void CollectOpenFileSystemMetrics(base::PlatformFileError error_code);
 
  private:
   // Returns a path to the usage cache file.
@@ -173,16 +183,20 @@ class SandboxMountPointProvider
   friend class SandboxMountPointProviderMigrationTest;
   friend class SandboxMountPointProviderOriginEnumeratorTest;
 
-  scoped_refptr<base::MessageLoopProxy> file_message_loop_;
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 
   const FilePath profile_path_;
 
   FileSystemOptions file_system_options_;
 
-  scoped_refptr<ObfuscatedFileUtil> sandbox_file_util_;
+  scoped_ptr<ObfuscatedFileUtil> sandbox_file_util_;
 
   // Acccessed only on the file thread.
   std::set<GURL> visited_origins_;
+
+  base::Time next_release_time_for_open_filesystem_stat_;
+
+  base::WeakPtrFactory<SandboxMountPointProvider> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxMountPointProvider);
 };

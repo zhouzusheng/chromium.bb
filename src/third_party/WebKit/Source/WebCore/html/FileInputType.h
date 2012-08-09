@@ -39,6 +39,7 @@
 
 namespace WebCore {
 
+class DragData;
 class FileList;
 
 class FileInputType : public BaseClickableWithKeyInputType, private FileChooserClient, private FileIconLoaderClient {
@@ -58,10 +59,11 @@ private:
     virtual bool canSetStringValue() const OVERRIDE;
     virtual bool canChangeFromAnotherType() const OVERRIDE;
     virtual FileList* files() OVERRIDE;
+    virtual void setFiles(PassRefPtr<FileList>) OVERRIDE;
     virtual bool canSetValue(const String&) OVERRIDE;
     virtual bool getTypeSpecificValue(String&) OVERRIDE; // Checked first, before internal storage or the value attribute.
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
-    virtual void receiveDroppedFiles(const Vector<String>&) OVERRIDE;
+    virtual bool receiveDroppedFiles(const DragData*) OVERRIDE;
     virtual Icon* icon() const OVERRIDE;
     virtual bool isFileUpload() const OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
@@ -74,7 +76,7 @@ private:
     // FileIconLoaderClient implementation.
     virtual void updateRendering(PassRefPtr<Icon>) OVERRIDE;
 
-    void setFileList(const Vector<FileChooserFileInfo>&);
+    PassRefPtr<FileList> createFileList(const Vector<FileChooserFileInfo>& files) const;
 #if ENABLE(DIRECTORY_UPLOAD)
     void receiveDropForDirectoryUpload(const Vector<String>&);
 #endif

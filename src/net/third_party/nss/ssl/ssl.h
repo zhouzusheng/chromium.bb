@@ -191,8 +191,6 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
  */
 #define SSL_CBC_RANDOM_IV 23
 #define SSL_ENABLE_OCSP_STAPLING       24 /* Request OCSP stapling (client) */
-#define SSL_ENABLE_OB_CERTS            25 /* Enable origin bound certs.     */
-#define SSL_ENCRYPT_CLIENT_CERTS       26 /* Enable encrypted client certs. */
 
 #ifdef SSL_DEPRECATED_FUNCTION 
 /* Old deprecated function names */
@@ -836,6 +834,28 @@ NSS_GetClientAuthData(void *                       arg,
                       struct SECKEYPrivateKeyStr **pRetKey);
 
 /*
+** Configure DTLS-SRTP (RFC 5764) cipher suite preferences.
+** Input is a list of ciphers in descending preference order and a length
+** of the list. As a side effect, this causes the use_srtp extension to be
+** negotiated.
+**
+** Invalid or unimplemented cipher suites in |ciphers| are ignored. If at
+** least one cipher suite in |ciphers| is implemented, returns SECSuccess.
+** Otherwise returns SECFailure.
+*/
+SSL_IMPORT SECStatus SSL_SetSRTPCiphers(PRFileDesc *fd,
+					const PRUint16 *ciphers,
+					unsigned int numCiphers);
+
+/*
+** Get the selected DTLS-SRTP cipher suite (if any).
+** To be called after the handshake completes.
+** Returns SECFailure if not negotiated.
+*/
+SSL_IMPORT SECStatus SSL_GetSRTPCipher(PRFileDesc *fd,
+				       PRUint16 *cipher);
+
+/*
  * Look to see if any of the signers in the cert chain for "cert" are found
  * in the list of caNames.  
  * Returns SECSuccess if so, SECFailure if not.
@@ -946,6 +966,34 @@ SSL_IMPORT SECStatus SSL_HandshakeNegotiatedExtension(PRFileDesc * socket,
 
 SSL_IMPORT SECStatus SSL_HandshakeResumedSession(PRFileDesc *fd,
                                                  PRBool *last_handshake_resumed);
+
+/* See SSL_SetClientChannelIDCallback for usage. If the callback returns
+ * SECWouldBlock then SSL_RestartHandshakeAfterChannelIDReq should be called in
+ * the future to restart the handshake.  On SECSuccess, the callback must have
+ * written a P-256, EC key pair to |*out_public_key| and |*out_private_key|. */
+typedef SECStatus (PR_CALLBACK *SSLClientChannelIDCallback)(
+    void *arg,
+    PRFileDesc *fd,
+    SECKEYPublicKey **out_public_key,
+    SECKEYPrivateKey **out_private_key);
+
+/* SSL_RestartHandshakeAfterChannelIDReq attempts to restart the handshake
+ * after a ChannelID callback returned SECWouldBlock.
+ *
+ * This function takes ownership of |channelIDPub| and |channelID|. */
+SSL_IMPORT SECStatus SSL_RestartHandshakeAfterChannelIDReq(
+    PRFileDesc *fd,
+    SECKEYPublicKey *channelIDPub,
+    SECKEYPrivateKey *channelID);
+
+/* SSL_SetClientChannelIDCallback sets a callback function that will be called
+ * once the server's ServerHello has been processed. This is only applicable to
+ * a client socket and setting this callback causes the TLS Channel ID
+ * extension to be advertised. */
+SSL_IMPORT SECStatus SSL_SetClientChannelIDCallback(
+    PRFileDesc *fd,
+    SSLClientChannelIDCallback callback,
+    void *arg);
 
 /*
 ** How long should we wait before retransmitting the next flight of

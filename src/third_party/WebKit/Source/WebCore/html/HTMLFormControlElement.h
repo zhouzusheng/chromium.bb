@@ -77,9 +77,6 @@ public:
 
     const AtomicString& type() const { return formControlType(); }
 
-    void setName(const AtomicString& name);
-
-    virtual const AtomicString& formControlName() const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE = 0;
     virtual bool isEnabledFormControl() const { return !disabled(); }
     virtual bool isReadOnlyFormControl() const { return readOnly(); }
@@ -95,13 +92,12 @@ public:
     virtual void setActivatedSubmit(bool) { }
 
     virtual bool willValidate() const;
-    String validationMessage();
     void updateVisibleValidationMessage();
     void hideVisibleValidationMessage();
     bool checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls = 0);
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
-    void setCustomValidity(const String&);
+    virtual void setCustomValidity(const String&) OVERRIDE;
 
     bool readOnly() const { return m_readOnly; }
 
@@ -110,32 +106,33 @@ public:
 
     static HTMLFormControlElement* enclosingFormControlElement(Node*);
 
-    using TreeShared<ContainerNode>::ref;
-    using TreeShared<ContainerNode>::deref;
+    using Node::ref;
+    using Node::deref;
 
 protected:
     HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*);
 
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
     virtual void requiredAttributeChanged();
     virtual void disabledAttributeChanged();
     virtual void attach();
-    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
-    virtual void removedFrom(Node*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     virtual bool supportsFocus() const;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
 
-    virtual void didRecalcStyle(StyleChange);
+    virtual void didRecalcStyle(StyleChange) OVERRIDE;
 
     virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
-    virtual void detach();
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
     virtual bool recalcWillValidate() const;
+
+    bool validationMessageShadowTreeContains(Node*) const;
 
 private:
     virtual void refFormAssociatedElement() { ref(); }

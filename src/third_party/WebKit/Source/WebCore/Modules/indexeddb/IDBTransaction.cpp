@@ -41,23 +41,58 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBTransaction> IDBTransaction::create(ScriptExecutionContext* context, PassRefPtr<IDBTransactionBackendInterface> backend, IDBDatabase* db)
+PassRefPtr<IDBTransaction> IDBTransaction::create(ScriptExecutionContext* context, PassRefPtr<IDBTransactionBackendInterface> backend, IDBTransaction::Mode mode, IDBDatabase* db)
 {
-    RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, backend, db)));
+    RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, backend, mode, db)));
     transaction->suspendIfNeeded();
     return transaction.release();
 }
 
-IDBTransaction::IDBTransaction(ScriptExecutionContext* context, PassRefPtr<IDBTransactionBackendInterface> backend, IDBDatabase* db)
+const AtomicString& IDBTransaction::modeReadOnly()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, readonly, ("readonly"));
+    return readonly;
+}
+
+const AtomicString& IDBTransaction::modeReadWrite()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, readwrite, ("readwrite"));
+    return readwrite;
+}
+
+const AtomicString& IDBTransaction::modeVersionChange()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, versionchange, ("versionchange"));
+    return versionchange;
+}
+
+const AtomicString& IDBTransaction::modeReadOnlyLegacy()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, readonly, ("0"));
+    return readonly;
+}
+
+const AtomicString& IDBTransaction::modeReadWriteLegacy()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, readwrite, ("1"));
+    return readwrite;
+}
+
+
+IDBTransaction::IDBTransaction(ScriptExecutionContext* context, PassRefPtr<IDBTransactionBackendInterface> backend, IDBTransaction::Mode mode, IDBDatabase* db)
     : ActiveDOMObject(context, this)
     , m_backend(backend)
     , m_database(db)
-    , m_mode(m_backend->mode())
+    , m_mode(mode)
     , m_transactionFinished(false)
     , m_contextStopped(false)
 {
     ASSERT(m_backend);
+    ASSERT(m_mode == m_backend->mode());
     IDBPendingTransactionMonitor::addPendingTransaction(m_backend.get());
+    // We pass a reference of this object before it can be adopted.
+    relaxAdoptionRequirement();
+    m_database->transactionCreated(this);
 }
 
 IDBTransaction::~IDBTransaction()
@@ -69,14 +104,17 @@ IDBTransactionBackendInterface* IDBTransaction::backend() const
     return m_backend.get();
 }
 
-bool IDBTransaction::finished() const
+bool IDBTransaction::isFinished() const
 {
     return m_transactionFinished;
 }
 
-unsigned short IDBTransaction::mode() const
+const String& IDBTransaction::mode() const
 {
-    return m_mode;
+    ExceptionCode ec = 0;
+    const AtomicString& mode = modeToString(m_mode, ec);
+    ASSERT(!ec);
+    return mode;
 }
 
 IDBDatabase* IDBTransaction::db() const
@@ -84,10 +122,30 @@ IDBDatabase* IDBTransaction::db() const
     return m_database.get();
 }
 
+PassRefPtr<DOMError> IDBTransaction::error(ExceptionCode& ec) const
+{
+    if (!m_transactionFinished) {
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
+        return 0;
+    }
+    return m_error;
+}
+
+void IDBTransaction::setError(PassRefPtr<DOMError> error)
+{
+    ASSERT(!m_transactionFinished);
+    ASSERT(error);
+
+    // The first error to be set is the true cause of the
+    // transaction abort.
+    if (!m_error)
+        m_error = error;
+}
+
 PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionCode& ec)
 {
     if (m_transactionFinished) {
-        ec = IDBDatabaseException::NOT_ALLOWED_ERR;
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return 0;
     }
 
@@ -96,10 +154,10 @@ PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, Excep
         return it->second;
 
     RefPtr<IDBObjectStoreBackendInterface> objectStoreBackend = m_backend->objectStore(name, ec);
-    if (!objectStoreBackend) {
-        ASSERT(ec);
+    ASSERT(!objectStoreBackend != !ec); // If we didn't get a store, we should have gotten an exception code. And vice versa.
+    if (ec)
         return 0;
-    }
+
     RefPtr<IDBObjectStore> objectStore = IDBObjectStore::create(objectStoreBackend, this);
     objectStoreCreated(name, objectStore);
     return objectStore.release();
@@ -114,7 +172,12 @@ void IDBTransaction::objectStoreCreated(const String& name, PassRefPtr<IDBObject
 void IDBTransaction::objectStoreDeleted(const String& name)
 {
     ASSERT(!m_transactionFinished);
-    m_objectStoreMap.remove(name);
+    IDBObjectStoreMap::iterator it = m_objectStoreMap.find(name);
+    if (it != m_objectStoreMap.end()) {
+        RefPtr<IDBObjectStore> objectStore = it->second;
+        m_objectStoreMap.remove(name);
+        objectStore->markDeleted();
+    }
 }
 
 void IDBTransaction::abort()
@@ -176,9 +239,8 @@ void IDBTransaction::onAbort()
         request->abort();
     }
 
-    if (m_mode == IDBTransaction::VERSION_CHANGE)
-        m_database->clearVersionChangeTransaction(this);
     closeOpenCursors();
+    m_database->transactionFinished(this);
 
     if (m_contextStopped || !scriptExecutionContext())
         return;
@@ -189,9 +251,8 @@ void IDBTransaction::onAbort()
 void IDBTransaction::onComplete()
 {
     ASSERT(!m_transactionFinished);
-    if (m_mode == IDBTransaction::VERSION_CHANGE)
-        m_database->clearVersionChangeTransaction(this);
     closeOpenCursors();
+    m_database->transactionFinished(this);
 
     if (m_contextStopped || !scriptExecutionContext())
         return;
@@ -205,6 +266,38 @@ bool IDBTransaction::hasPendingActivity() const
     //        get a handle to us or any child request object and any of those have
     //        event listeners. This is  in order to handle user generated events properly.
     return !m_transactionFinished || ActiveDOMObject::hasPendingActivity();
+}
+
+IDBTransaction::Mode IDBTransaction::stringToMode(const String& modeString, ExceptionCode& ec)
+{
+    if (modeString.isNull()
+        || modeString == IDBTransaction::modeReadOnly())
+        return IDBTransaction::READ_ONLY;
+    if (modeString == IDBTransaction::modeReadWrite())
+        return IDBTransaction::READ_WRITE;
+    ec = IDBDatabaseException::IDB_TYPE_ERR;
+    return IDBTransaction::READ_ONLY;
+}
+
+const AtomicString& IDBTransaction::modeToString(IDBTransaction::Mode mode, ExceptionCode& ec)
+{
+    switch (mode) {
+    case IDBTransaction::READ_ONLY:
+        return IDBTransaction::modeReadOnly();
+        break;
+
+    case IDBTransaction::READ_WRITE:
+        return IDBTransaction::modeReadWrite();
+        break;
+
+    case IDBTransaction::VERSION_CHANGE:
+        return IDBTransaction::modeVersionChange();
+        break;
+
+    default:
+        ec = IDBDatabaseException::IDB_TYPE_ERR;
+        return IDBTransaction::modeReadOnly();
+    }
 }
 
 const AtomicString& IDBTransaction::interfaceName() const

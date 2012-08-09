@@ -300,6 +300,10 @@ public:
 
         if (fLooper) {
             fLooper->init(canvas);
+            fIsSimple = false;
+        } else {
+            // can we be marked as simple?
+            fIsSimple = !fFilter && !fDoClearImageFilter;
         }
     }
 
@@ -315,7 +319,17 @@ public:
         return *fPaint;
     }
 
-    bool next(SkDrawFilter::Type drawType);
+    bool next(SkDrawFilter::Type drawType) {
+        if (fDone) {
+            return false;
+        } else if (fIsSimple) {
+            fDone = true;
+            fPaint = &fOrigPaint;
+            return !fPaint->nothingToDraw();
+        } else {
+            return this->doNext(drawType);
+        }
+    }        
 
 private:
     SkLazyPaint     fLazyPaint;
@@ -327,41 +341,38 @@ private:
     int             fSaveCount;
     bool            fDoClearImageFilter;
     bool            fDone;
+    bool            fIsSimple;
+
+    bool doNext(SkDrawFilter::Type drawType);
 };
 
-bool AutoDrawLooper::next(SkDrawFilter::Type drawType) {
+bool AutoDrawLooper::doNext(SkDrawFilter::Type drawType) {
     fPaint = NULL;
-    if (fDone) {
-        return false;
+    SkASSERT(!fIsSimple);
+    SkASSERT(fLooper || fFilter || fDoClearImageFilter);
+
+    SkPaint* paint = fLazyPaint.set(fOrigPaint);
+
+    if (fDoClearImageFilter) {
+        paint->setImageFilter(NULL);
     }
 
-    if (fLooper || fFilter || fDoClearImageFilter) {
-        SkPaint* paint = fLazyPaint.set(fOrigPaint);
-
-        if (fDoClearImageFilter) {
-            paint->setImageFilter(NULL);
-        }
-
-        if (fLooper && !fLooper->next(fCanvas, paint)) {
-            fDone = true;
-            return false;
-        }
-        if (fFilter) {
-            fFilter->filter(paint, drawType);
-            if (NULL == fLooper) {
-                // no looper means we only draw once
-                fDone = true;
-            }
-        }
-        fPaint = paint;
-
-        // if we only came in here for the imagefilter, mark us as done
-        if (!fLooper && !fFilter) {
-            fDone = true;
-        }
-    } else {
+    if (fLooper && !fLooper->next(fCanvas, paint)) {
         fDone = true;
-        fPaint = &fOrigPaint;
+        return false;
+    }
+    if (fFilter) {
+        fFilter->filter(paint, drawType);
+        if (NULL == fLooper) {
+            // no looper means we only draw once
+            fDone = true;
+        }
+    }
+    fPaint = paint;
+
+    // if we only came in here for the imagefilter, mark us as done
+    if (!fLooper && !fFilter) {
+        fDone = true;
     }
 
     // call this after any possible paint modifiers
@@ -689,6 +700,14 @@ int SkCanvas::internalSave(SaveFlags flags) {
     fClipStack.save();
     SkASSERT(fClipStack.getSaveCount() == this->getSaveCount() - 1);
 
+    for (DeviceCM* curLayer = fMCRec->fTopLayer; 
+         curLayer; 
+         curLayer = curLayer->fNext) {
+        if (NULL != curLayer->fDevice) {
+            curLayer->fDevice->postSave();
+        }
+    }
+
     return saveCount;
 }
 
@@ -858,6 +877,14 @@ void SkCanvas::restore() {
 
 void SkCanvas::internalRestore() {
     SkASSERT(fMCStack.count() != 0);
+
+    for (DeviceCM* curLayer = fMCRec->fTopLayer; 
+         curLayer; 
+         curLayer = curLayer->fNext) {
+        if (NULL != curLayer->fDevice) {
+            curLayer->fDevice->preRestore();
+        }
+    }
 
     fDeviceCMDirty = true;
     fLocalBoundsCompareTypeDirty = true;
@@ -1183,7 +1210,7 @@ bool SkCanvas::clipRegion(const SkRegion& rgn, SkRegion::Op op) {
 
     // todo: signal fClipStack that we have a region, and therefore (I guess)
     // we have to ignore it, and use the region directly?
-    fClipStack.clipDevRect(rgn.getBounds());
+    fClipStack.clipDevRect(rgn.getBounds(), op);
 
     return fMCRec->fRasterClip->op(rgn, op);
 }
@@ -1440,6 +1467,21 @@ void SkCanvas::drawPoints(PointMode mode, size_t count, const SkPoint pts[],
     if ((long)count <= 0) {
         return;
     }
+
+    if (paint.canComputeFastBounds()) {
+        SkRect r;
+        // special-case 2 points (common for drawing a single line)
+        if (2 == count) {
+            r.set(pts[0], pts[1]);
+        } else {
+            r.set(pts, count);
+        }
+        SkRect storage;
+        if (this->quickReject(paint.computeFastStrokeBounds(r, &storage),
+                              paint2EdgeType(&paint))) {
+            return;
+        }
+    }    
 
     SkASSERT(pts != NULL);
 

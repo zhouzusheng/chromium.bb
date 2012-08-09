@@ -61,10 +61,10 @@ void SyncCallback::OnFileIOComplete(int bytes_copied) {
     if (entry_->net_log().IsLoggingAllEvents()) {
       entry_->net_log().EndEvent(
           end_event_type_,
-          make_scoped_refptr(
-              new disk_cache::ReadWriteCompleteParameters(bytes_copied)));
+          disk_cache::CreateNetLogReadWriteCompleteCallback(bytes_copied));
     }
     entry_->ReportIOTime(disk_cache::EntryImpl::kAsyncIO, start_);
+    buf_ = NULL;  // Release the buffer before invoking the callback.
     callback_.Run(bytes_copied);
   }
   entry_->Release();
@@ -314,8 +314,7 @@ int EntryImpl::ReadDataImpl(int index, int offset, IOBuffer* buf, int buf_len,
   if (net_log_.IsLoggingAllEvents()) {
     net_log_.BeginEvent(
         net::NetLog::TYPE_ENTRY_READ_DATA,
-        make_scoped_refptr(
-            new ReadWriteDataParameters(index, offset, buf_len, false)));
+        CreateNetLogReadWriteDataCallback(index, offset, buf_len, false));
   }
 
   int result = InternalReadData(index, offset, buf, buf_len, callback);
@@ -323,7 +322,7 @@ int EntryImpl::ReadDataImpl(int index, int offset, IOBuffer* buf, int buf_len,
   if (result != net::ERR_IO_PENDING && net_log_.IsLoggingAllEvents()) {
     net_log_.EndEvent(
         net::NetLog::TYPE_ENTRY_READ_DATA,
-        make_scoped_refptr(new ReadWriteCompleteParameters(result)));
+        CreateNetLogReadWriteCompleteCallback(result));
   }
   return result;
 }
@@ -334,8 +333,7 @@ int EntryImpl::WriteDataImpl(int index, int offset, IOBuffer* buf, int buf_len,
   if (net_log_.IsLoggingAllEvents()) {
     net_log_.BeginEvent(
         net::NetLog::TYPE_ENTRY_WRITE_DATA,
-        make_scoped_refptr(
-            new ReadWriteDataParameters(index, offset, buf_len, truncate)));
+        CreateNetLogReadWriteDataCallback(index, offset, buf_len, truncate));
   }
 
   int result = InternalWriteData(index, offset, buf, buf_len, callback,
@@ -344,7 +342,7 @@ int EntryImpl::WriteDataImpl(int index, int offset, IOBuffer* buf, int buf_len,
   if (result != net::ERR_IO_PENDING && net_log_.IsLoggingAllEvents()) {
     net_log_.EndEvent(
         net::NetLog::TYPE_ENTRY_WRITE_DATA,
-        make_scoped_refptr(new ReadWriteCompleteParameters(result)));
+        CreateNetLogReadWriteCompleteCallback(result));
   }
   return result;
 }
@@ -458,7 +456,7 @@ bool EntryImpl::IsSameEntry(const std::string& key, uint32 hash) {
 }
 
 void EntryImpl::InternalDoom() {
-  net_log_.AddEvent(net::NetLog::TYPE_ENTRY_DOOM, NULL);
+  net_log_.AddEvent(net::NetLog::TYPE_ENTRY_DOOM);
   DCHECK(node_.HasData());
   if (!node_.Data()->dirty) {
     node_.Data()->dirty = backend_->GetCurrentEntryId();
@@ -724,7 +722,7 @@ void EntryImpl::BeginLogging(net::NetLog* net_log, bool created) {
       net_log, net::NetLog::SOURCE_DISK_CACHE_ENTRY);
   net_log_.BeginEvent(
       net::NetLog::TYPE_DISK_CACHE_ENTRY_IMPL,
-      make_scoped_refptr(new EntryCreationParameters(GetKey(), created)));
+      CreateNetLogEntryCreationCallback(this, created));
 }
 
 const net::BoundNetLog& EntryImpl::net_log() const {
@@ -934,7 +932,7 @@ EntryImpl::~EntryImpl() {
 #if defined(NET_BUILD_STRESS_CACHE)
     SanityCheck();
 #endif
-    net_log_.AddEvent(net::NetLog::TYPE_ENTRY_CLOSE, NULL);
+    net_log_.AddEvent(net::NetLog::TYPE_ENTRY_CLOSE);
     bool ret = true;
     for (int index = 0; index < kNumStreams; index++) {
       if (user_buffers_[index].get()) {
@@ -960,7 +958,7 @@ EntryImpl::~EntryImpl() {
   }
 
   Trace("~EntryImpl out 0x%p", reinterpret_cast<void*>(this));
-  net_log_.EndEvent(net::NetLog::TYPE_DISK_CACHE_ENTRY_IMPL, NULL);
+  net_log_.EndEvent(net::NetLog::TYPE_DISK_CACHE_ENTRY_IMPL);
   backend_->OnEntryDestroyEnd();
 }
 

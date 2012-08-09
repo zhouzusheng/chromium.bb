@@ -180,21 +180,22 @@ class NET_EXPORT CookieMonster : public CookieStore {
   void DeleteCanonicalCookieAsync(const CanonicalCookie& cookie,
                                   const DeleteCookieCallback& callback);
 
-  // Override the default list of schemes that are allowed to be set in
-  // this cookie store.  Calling his overrides the value of
-  // "enable_file_scheme_".
+  // Resets the list of cookieable schemes to the supplied schemes.
   // If this this method is called, it must be called before first use of
   // the instance (i.e. as part of the instance initialization process).
   void SetCookieableSchemes(const char* schemes[], size_t num_schemes);
+
+  // Resets the list of cookieable schemes to kDefaultCookieableSchemes with or
+  // without 'file' being included.
+  void SetEnableFileScheme(bool accept);
 
   // Instructs the cookie monster to not delete expired cookies. This is used
   // in cases where the cookie monster is used as a data structure to keep
   // arbitrary cookies.
   void SetKeepExpiredCookies();
 
-  // Delegates the call to set the |clear_local_store_on_exit_| flag of the
-  // PersistentStore if it exists.
-  void SetClearPersistentStoreOnExit(bool clear_local_store);
+  // Protects session cookies from deletion on shutdown.
+  void SetForceKeepSessionState();
 
   // There are some unknowns about how to correctly handle file:// cookies,
   // and our implementation for this is not robust enough. This allows you
@@ -255,15 +256,16 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // (i.e. as part of the instance initialization process).
   void SetPersistSessionCookies(bool persist_session_cookies);
 
-  // Protects session cookies from deletion on shutdown.
-  void SaveSessionCookies();
-
   // Debugging method to perform various validation checks on the map.
   // Currently just checking that there are no null CanonicalCookie pointers
   // in the map.
   // Argument |arg| is to allow retaining of arbitrary data if the CHECKs
   // in the function trip.  TODO(rdsmith):Remove hack.
   void ValidateMap(int arg);
+
+  // Determines if the scheme of the URL is a scheme that cookies will be
+  // stored for.
+  bool IsCookieableScheme(const std::string& scheme);
 
   // The default list of schemes the cookie monster can handle.
   static const char* kDefaultCookieableSchemes[];
@@ -651,7 +653,10 @@ class NET_EXPORT CookieMonster : public CookieStore {
   bool keep_expired_cookies_;
   bool persist_session_cookies_;
 
-  static bool enable_file_scheme_;
+  // Static setting for whether or not file scheme cookies are allows when
+  // a new CookieMonster is created, or the accepted schemes on a CookieMonster
+  // instance are reset back to defaults.
+  static bool default_enable_file_scheme_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieMonster);
 };
@@ -952,9 +957,8 @@ class CookieMonster::PersistentCookieStore
   virtual void UpdateCookieAccessTime(const CanonicalCookie& cc) = 0;
   virtual void DeleteCookie(const CanonicalCookie& cc) = 0;
 
-  // Sets the value of the user preference whether the persistent storage
-  // must be deleted upon destruction.
-  virtual void SetClearLocalStateOnExit(bool clear_local_state) = 0;
+  // Instructs the store to not discard session only cookies on shutdown.
+  virtual void SetForceKeepSessionState() = 0;
 
   // Flushes the store and posts |callback| when complete.
   virtual void Flush(const base::Closure& callback) = 0;

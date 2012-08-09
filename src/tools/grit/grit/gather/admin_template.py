@@ -7,19 +7,15 @@
 '''
 
 import re
-import types
 
 from grit.gather import regexp
 from grit import exception
 from grit import lazy_re
-from grit import tclib
-from grit import util
 
 
 class MalformedAdminTemplateException(exception.Base):
   '''This file doesn't look like a .adm file to me.'''
-  def __init__(self, msg=''):
-    exception.Base.__init__(self, msg)
+  pass
 
 
 class AdmGatherer(regexp.RegexpGatherer):
@@ -41,9 +37,6 @@ class AdmGatherer(regexp.RegexpGatherer):
       '^\s*[A-Za-z0-9_]+\s*=\s*"(?P<text>.+)"\s*$',
       re.MULTILINE)
 
-  def __init__(self, text):
-    regexp.RegexpGatherer.__init__(self, text)
-
   def Escape(self, text):
     return text.replace('\n', '\\n')
 
@@ -53,6 +46,9 @@ class AdmGatherer(regexp.RegexpGatherer):
   def Parse(self):
     if self.have_parsed_:
       return
+    self.have_parsed_ = True
+
+    self.text_ = self._LoadInputFile().strip()
     m = self._STRINGS_SECTION.match(self.text_)
     if not m:
       raise MalformedAdminTemplateException()
@@ -61,22 +57,5 @@ class AdmGatherer(regexp.RegexpGatherer):
     # Then parse the rest using the _TRANSLATEABLES regexp.
     self._RegExpParse(self._TRANSLATEABLES, m.group('strings'))
 
-  # static method
-  def FromFile(adm_file, ext_key=None, encoding='cp1252'):
-    '''Loads the contents of 'adm_file' in encoding 'encoding' and creates
-    an AdmGatherer instance that gathers from those contents.
-
-    The 'ext_key' parameter is ignored.
-
-    Args:
-      adm_file: file('bingo.rc') | 'filename.rc'
-      encoding: 'utf-8'
-
-    Return:
-      AdmGatherer(contents_of_file)
-    '''
-    if isinstance(adm_file, types.StringTypes):
-      adm_file = util.WrapInputStream(file(adm_file, 'r'), encoding)
-    return AdmGatherer(adm_file.read())
-  FromFile = staticmethod(FromFile)
-
+  def GetTextualIds(self):
+    return [self.extkey]

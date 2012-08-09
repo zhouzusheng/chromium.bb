@@ -621,10 +621,10 @@ std::string GLES2Util::GetStringBufferUsage(uint32 value) {
 
 std::string GLES2Util::GetStringCapability(uint32 value) {
   static EnumToString string_table[] = {
+    { GL_DITHER, "GL_DITHER" },
     { GL_BLEND, "GL_BLEND" },
     { GL_CULL_FACE, "GL_CULL_FACE" },
     { GL_DEPTH_TEST, "GL_DEPTH_TEST" },
-    { GL_DITHER, "GL_DITHER" },
     { GL_POLYGON_OFFSET_FILL, "GL_POLYGON_OFFSET_FILL" },
     { GL_SAMPLE_ALPHA_TO_COVERAGE, "GL_SAMPLE_ALPHA_TO_COVERAGE" },
     { GL_SAMPLE_COVERAGE, "GL_SAMPLE_COVERAGE" },
@@ -958,6 +958,17 @@ std::string GLES2Util::GetStringReadPixelFormat(uint32 value) {
     { GL_ALPHA, "GL_ALPHA" },
     { GL_RGB, "GL_RGB" },
     { GL_RGBA, "GL_RGBA" },
+  };
+  return GLES2Util::GetQualifiedEnumString(
+      string_table, arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringReadPixelType(uint32 value) {
+  static EnumToString string_table[] = {
+    { GL_UNSIGNED_BYTE, "GL_UNSIGNED_BYTE" },
+    { GL_UNSIGNED_SHORT_5_6_5, "GL_UNSIGNED_SHORT_5_6_5" },
+    { GL_UNSIGNED_SHORT_4_4_4_4, "GL_UNSIGNED_SHORT_4_4_4_4" },
+    { GL_UNSIGNED_SHORT_5_5_5_1, "GL_UNSIGNED_SHORT_5_5_5_1" },
   };
   return GLES2Util::GetQualifiedEnumString(
       string_table, arraysize(string_table), value);

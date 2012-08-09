@@ -29,6 +29,7 @@
 #if ENABLE(INDEXED_DATABASE)
 
 #include "ActiveDOMObject.h"
+#include "DOMError.h"
 #include "DOMStringList.h"
 #include "Event.h"
 #include "EventListener.h"
@@ -47,20 +48,35 @@ class IDBObjectStore;
 
 class IDBTransaction : public IDBTransactionCallbacks, public EventTarget, public ActiveDOMObject {
 public:
-    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, PassRefPtr<IDBTransactionBackendInterface>, IDBDatabase*);
-    virtual ~IDBTransaction();
-
     enum Mode {
         READ_ONLY = 0,
         READ_WRITE = 1,
         VERSION_CHANGE = 2
     };
 
-    IDBTransactionBackendInterface* backend() const;
-    bool finished() const;
+    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, PassRefPtr<IDBTransactionBackendInterface>, Mode, IDBDatabase*);
+    virtual ~IDBTransaction();
 
-    unsigned short mode() const;
+    static const AtomicString& modeReadOnly();
+    static const AtomicString& modeReadWrite();
+    static const AtomicString& modeVersionChange();
+    static const AtomicString& modeReadOnlyLegacy();
+    static const AtomicString& modeReadWriteLegacy();
+
+    static Mode stringToMode(const String&, ExceptionCode&);
+    static const AtomicString& modeToString(Mode, ExceptionCode&);
+
+    IDBTransactionBackendInterface* backend() const;
+    bool isFinished() const;
+    bool isVersionChange() const { return m_mode == VERSION_CHANGE; }
+
+    // Implement the IDBTransaction IDL
+    const String& mode() const;
+    bool isReadOnly() const { return m_mode == READ_ONLY; }
     IDBDatabase* db() const;
+    PassRefPtr<DOMError> error(ExceptionCode&) const;
+    void setError(PassRefPtr<DOMError>);
+
     PassRefPtr<IDBObjectStore> objectStore(const String& name, ExceptionCode&);
     void abort();
 
@@ -101,7 +117,7 @@ public:
     using RefCounted<IDBTransactionCallbacks>::deref;
 
 private:
-    IDBTransaction(ScriptExecutionContext*, PassRefPtr<IDBTransactionBackendInterface>, IDBDatabase*);
+    IDBTransaction(ScriptExecutionContext*, PassRefPtr<IDBTransactionBackendInterface>, Mode, IDBDatabase*);
 
     void enqueueEvent(PassRefPtr<Event>);
     void closeOpenCursors();
@@ -117,9 +133,10 @@ private:
 
     RefPtr<IDBTransactionBackendInterface> m_backend;
     RefPtr<IDBDatabase> m_database;
-    unsigned short m_mode;
+    const Mode m_mode;
     bool m_transactionFinished; // Is it possible that we'll fire any more events or allow any new requests? If not, we're finished.
     bool m_contextStopped;
+    RefPtr<DOMError> m_error;
 
     ListHashSet<IDBRequest*> m_childRequests;
 

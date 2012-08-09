@@ -24,9 +24,9 @@
 
 #include "base/synchronization/lock.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/audio_renderer.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/buffers.h"
-#include "media/base/filters.h"
 #include "media/filters/audio_renderer_algorithm.h"
 
 namespace media {
@@ -38,7 +38,6 @@ class MEDIA_EXPORT AudioRendererImpl
   // Methods called on Render thread ------------------------------------------
   // An AudioRendererSink is used as the destination for the rendered audio.
   explicit AudioRendererImpl(media::AudioRendererSink* sink);
-  virtual ~AudioRendererImpl();
 
   // Methods called on pipeline thread ----------------------------------------
   // Filter implementation.
@@ -57,6 +56,15 @@ class MEDIA_EXPORT AudioRendererImpl
   virtual bool HasEnded() OVERRIDE;
   virtual void ResumeAfterUnderflow(bool buffer_more_audio) OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
+
+  // Disables underflow support.  When used, |state_| will never transition to
+  // kUnderflow resulting in Render calls that underflow returning 0 frames
+  // instead of some number of silence frames.  Must be called prior to
+  // Initialize().
+  void DisableUnderflowForTesting();
+
+ protected:
+  virtual ~AudioRendererImpl();
 
  private:
   friend class AudioRendererImplTest;
@@ -83,16 +91,10 @@ class MEDIA_EXPORT AudioRendererImpl
   // should the filled buffer be played. If FillBuffer() is called as the audio
   // hardware plays the buffer, then |playback_delay| should be zero.
   //
-  // FillBuffer() calls SignalEndOfStream() when it reaches end of stream.
-  //
   // Safe to call on any thread.
   uint32 FillBuffer(uint8* dest,
                     uint32 requested_frames,
                     const base::TimeDelta& playback_delay);
-
-  // Called at the end of stream when all the hardware buffers become empty
-  // (i.e. when all the data written to the device has been played).
-  void SignalEndOfStream();
 
   // Get the playback rate of |algorithm_|.
   float GetPlaybackRate();
@@ -201,6 +203,8 @@ class MEDIA_EXPORT AudioRendererImpl
   base::Time earliest_end_time_;
 
   AudioParameters audio_parameters_;
+
+  bool underflow_disabled_;
 
   AudioDecoder::ReadCB read_cb_;
 

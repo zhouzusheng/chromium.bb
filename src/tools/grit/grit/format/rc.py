@@ -10,7 +10,6 @@ import os
 import types
 import re
 
-from grit import lazy_re
 from grit import util
 from grit.format import interface
 from grit.node import misc
@@ -217,6 +216,11 @@ _LANGUAGE_DIRECTIVE_PAIR = {
   'fr-CA'       : 'LANG_FRENCH, SUBLANG_FRENCH_CANADIAN',
   'gl'          : 'LANG_GALICIAN, SUBLANG_DEFAULT',
   'zu'          : 'LANG_ZULU, SUBLANG_DEFAULT',
+  'pa'          : 'LANG_PUNJABI, SUBLANG_PUNJABI_INDIA',
+  'sa'          : 'LANG_SANSKRIT, SUBLANG_SANSKRIT_INDIA',
+  'si'          : 'LANG_SINHALESE, SUBLANG_SINHALESE_SRI_LANKA',
+  'ne'          : 'LANG_NEPALI, SUBLANG_NEPALI_NEPAL',
+  'ti'          : 'LANG_TIGRIGNA, SUBLANG_TIGRIGNA_ERITREA',
   'fake-bidi'   : 'LANG_HEBREW, SUBLANG_DEFAULT',
 }
 
@@ -398,8 +402,8 @@ class RcSection(interface.ItemFormatter):
 class RcInclude(interface.ItemFormatter):
   '''Writes out an item that is included in an .rc file (e.g. an ICON)'''
 
-  def __init__(self, type, filenameWithoutPath = 0, relative_path = 0,
-               flatten_html = 0):
+  def __init__(self, type, filenameWithoutPath=False, relative_path=False,
+               process_html=False):
     '''Indicates to the instance what the type of the resource include is,
     e.g. 'ICON' or 'HTML'.  Case must be correct, i.e. if the type is all-caps
     the parameter should be all-caps.
@@ -410,15 +414,16 @@ class RcInclude(interface.ItemFormatter):
     self.type_ = type
     self.filenameWithoutPath = filenameWithoutPath
     self.relative_path_ = relative_path
-    self.flatten_html = flatten_html
+    self.process_html = process_html
 
   def Format(self, item, lang='en', output_dir='.'):
     assert isinstance(lang, types.StringTypes)
     from grit.node import structure
     from grit.node import include
     assert isinstance(item, (structure.StructureNode, include.IncludeNode))
-    assert (isinstance(item, include.IncludeNode) or
-            item.attrs['type'] in ['tr_html', 'admin_template', 'txt', 'muppet'])
+    assert (isinstance(item, include.IncludeNode) or item.attrs['type'] in
+        ['tr_html', 'admin_template', 'txt', 'muppet', 'chrome_scaled_image',
+         'chrome_html'])
 
     # By default, we use relative pathnames to included resources so that
     # sharing the resulting .rc files is possible.
@@ -426,8 +431,8 @@ class RcInclude(interface.ItemFormatter):
     # The FileForLanguage() Function has the side effect of generating the file
     # if needed (e.g. if it is an HTML file include).
     filename = os.path.abspath(item.FileForLanguage(lang, output_dir))
-    if self.flatten_html:
-      filename = item.Flatten(output_dir)
+    if self.process_html:
+      filename = item.Process(output_dir)
     elif self.filenameWithoutPath:
       filename = os.path.basename(filename)
     elif self.relative_path_:

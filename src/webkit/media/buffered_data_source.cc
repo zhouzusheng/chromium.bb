@@ -18,23 +18,24 @@ namespace webkit_media {
 // of FFmpeg.
 static const int kInitialReadBufferSize = 32768;
 
-// Number of cache misses we allow for a single Read() before signalling an
+// Number of cache misses we allow for a single Read() before signaling an
 // error.
 static const int kNumCacheMissRetries = 3;
 
 BufferedDataSource::BufferedDataSource(
     MessageLoop* render_loop,
     WebFrame* frame,
-    media::MediaLog* media_log)
-    : total_bytes_(kPositionNotSpecified),
+    media::MediaLog* media_log,
+    const DownloadingCB& downloading_cb)
+    : cors_mode_(BufferedResourceLoader::kUnspecified),
+      total_bytes_(kPositionNotSpecified),
       buffered_bytes_(0),
       streaming_(false),
       frame_(frame),
       loader_(NULL),
-      is_downloading_data_(false),
-      read_position_(0),
       read_size_(0),
       read_buffer_(NULL),
+      last_read_start_(0),
       intermediate_read_buffer_(new uint8[kInitialReadBufferSize]),
       intermediate_read_buffer_size_(kInitialReadBufferSize),
       render_loop_(render_loop),
@@ -45,13 +46,15 @@ BufferedDataSource::BufferedDataSource(
       cache_miss_retries_left_(kNumCacheMissRetries),
       bitrate_(0),
       playback_rate_(0.0),
-      media_log_(media_log) {
+      media_log_(media_log),
+      downloading_cb_(downloading_cb) {
+  DCHECK(!downloading_cb_.is_null());
 }
 
 BufferedDataSource::~BufferedDataSource() {}
 
 // A factory method to create BufferedResourceLoader using the read parameters.
-// This method can be overrided to inject mock BufferedResourceLoader object
+// This method can be overridden to inject mock BufferedResourceLoader object
 // for testing purpose.
 BufferedResourceLoader* BufferedDataSource::CreateResourceLoader(
     int64 first_byte_position, int64 last_byte_position) {
@@ -214,7 +217,7 @@ void BufferedDataSource::ReadTask(
   }
 
   // Saves the read parameters.
-  read_position_ = position;
+  last_read_start_ = position;
   read_size_ = read_size;
   read_buffer_ = buffer;
   cache_miss_retries_left_ = kNumCacheMissRetries;
@@ -246,7 +249,6 @@ void BufferedDataSource::CleanupTask() {
     loader_->Stop();
 
   // Reset the parameters of the current read request.
-  read_position_ = 0;
   read_size_ = 0;
   read_buffer_ = 0;
 }
@@ -263,7 +265,8 @@ void BufferedDataSource::RestartLoadingTask() {
       return;
   }
 
-  loader_.reset(CreateResourceLoader(read_position_, kPositionNotSpecified));
+  loader_.reset(
+      CreateResourceLoader(last_read_start_, kPositionNotSpecified));
   loader_->Start(
       base::Bind(&BufferedDataSource::PartialReadStartCallback, this),
       base::Bind(&BufferedDataSource::NetworkEventCallback, this),
@@ -287,9 +290,9 @@ void BufferedDataSource::SetPlaybackRateTask(float playback_rate) {
     loader_->UpdateDeferStrategy(BufferedResourceLoader::kThresholdDefer);
   } else if (media_has_played_ && playback_rate == 0) {
     // If the playback has started (at which point the preload value is ignored)
-    // and we're paused, then try to load as much as possible.
-    // TODO(fischman): except, don't do this if we can prove that the media
-    // cache is just throwing away the bits anyway.  http://crbug.com/123074
+    // and we're paused, then try to load as much as possible (the loader will
+    // fall back to kThresholdDefer if it knows the current response won't be
+    // useful from the cache in the future).
     loader_->UpdateDeferStrategy(BufferedResourceLoader::kNeverDefer);
   } else {
     // If media is currently playing or the page indicated preload=auto,
@@ -320,8 +323,9 @@ void BufferedDataSource::ReadInternal() {
   }
 
   // Perform the actual read with BufferedResourceLoader.
-  loader_->Read(read_position_, read_size_, intermediate_read_buffer_.get(),
-                base::Bind(&BufferedDataSource::ReadCallback, this));
+  loader_->Read(
+      last_read_start_, read_size_, intermediate_read_buffer_.get(),
+      base::Bind(&BufferedDataSource::ReadCallback, this));
 }
 
 void BufferedDataSource::DoneRead_Locked(int bytes_read) {
@@ -333,7 +337,6 @@ void BufferedDataSource::DoneRead_Locked(int bytes_read) {
 
   read_cb_.Run(bytes_read);
   read_cb_.Reset();
-  read_position_ = 0;
   read_size_ = 0;
   read_buffer_ = 0;
 }
@@ -533,7 +536,8 @@ void BufferedDataSource::ReadCallback(
 
     if (host() && total_bytes_ != kPositionNotSpecified) {
       host()->SetTotalBytes(total_bytes_);
-      host()->SetBufferedBytes(total_bytes_);
+      host()->AddBufferedByteRange(loader_->first_byte_position(),
+                                   total_bytes_);
     }
   }
   DoneRead_Locked(bytes_read);
@@ -548,11 +552,12 @@ void BufferedDataSource::NetworkEventCallback() {
   if (!url_.SchemeIs(kHttpScheme) && !url_.SchemeIs(kHttpsScheme))
     return;
 
-  bool is_downloading_data = loader_->is_downloading_data();
-  int64 buffered_position = loader_->GetBufferedPosition();
+  downloading_cb_.Run(loader_->is_downloading_data());
+
+  int64 current_buffered_position = loader_->GetBufferedPosition();
 
   // If we get an unspecified value, return immediately.
-  if (buffered_position == kPositionNotSpecified)
+  if (current_buffered_position == kPositionNotSpecified)
     return;
 
   // We need to prevent calling to filter host and running the callback if
@@ -567,15 +572,9 @@ void BufferedDataSource::NetworkEventCallback() {
   if (stop_signal_received_)
     return;
 
-  if (is_downloading_data != is_downloading_data_) {
-    is_downloading_data_ = is_downloading_data;
-    if (host())
-      host()->SetNetworkActivity(is_downloading_data);
-  }
-
-  buffered_bytes_ = buffered_position + 1;
-  if (host())
-    host()->SetBufferedBytes(buffered_bytes_);
+  int64 start = loader_->first_byte_position();
+  if (host() && current_buffered_position > start)
+    host()->AddBufferedByteRange(start, current_buffered_position);
 }
 
 void BufferedDataSource::UpdateHostState_Locked() {
@@ -587,7 +586,9 @@ void BufferedDataSource::UpdateHostState_Locked() {
 
   if (total_bytes_ != kPositionNotSpecified)
     host()->SetTotalBytes(total_bytes_);
-  host()->SetBufferedBytes(buffered_bytes_);
+  int64 start = loader_->first_byte_position();
+  if (buffered_bytes_ > start)
+    host()->AddBufferedByteRange(start, buffered_bytes_);
 }
 
 }  // namespace webkit_media

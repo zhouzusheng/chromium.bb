@@ -37,10 +37,10 @@ static GLenum valid_buffer_usage_table[] = {
 };
 
 static GLenum valid_capability_table[] = {
+  GL_DITHER,
   GL_BLEND,
   GL_CULL_FACE,
   GL_DEPTH_TEST,
-  GL_DITHER,
   GL_POLYGON_OFFSET_FILL,
   GL_SAMPLE_ALPHA_TO_COVERAGE,
   GL_SAMPLE_COVERAGE,
@@ -288,6 +288,13 @@ static GLenum valid_read_pixel_format_table[] = {
   GL_ALPHA,
   GL_RGB,
   GL_RGBA,
+};
+
+static GLenum valid_read_pixel_type_table[] = {
+  GL_UNSIGNED_BYTE,
+  GL_UNSIGNED_SHORT_5_6_5,
+  GL_UNSIGNED_SHORT_4_4_4_4,
+  GL_UNSIGNED_SHORT_5_5_5_1,
 };
 
 static GLenum valid_render_buffer_format_table[] = {
@@ -555,6 +562,8 @@ Validators::Validators()
       read_pixel_format(
           valid_read_pixel_format_table, arraysize(
               valid_read_pixel_format_table)),
+      read_pixel_type(
+          valid_read_pixel_type_table, arraysize(valid_read_pixel_type_table)),
       render_buffer_format(
           valid_render_buffer_format_table, arraysize(
               valid_render_buffer_format_table)),

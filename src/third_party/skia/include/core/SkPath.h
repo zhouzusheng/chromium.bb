@@ -221,6 +221,14 @@ public:
                p3.equalsWithinTolerance(p4);
     }
 
+    /**
+     *  Returns true if the path specifies a single line (i.e. it contains just
+     *  a moveTo and a lineTo). If so, and line[] is not null, it sets the 2
+     *  points in line[] to the end-points of the line. If the path is not a
+     *  line, returns false and ignores line[].
+     */
+    bool isLine(SkPoint line[2]) const;
+
     /** Returns true if the path specifies a rectangle. If so, and if rect is
         not null, set rect to the bounds of the path. If the path does not
         specify a rectangle, return false and ignore rect.
@@ -250,6 +258,21 @@ public:
         @return the actual number of points in the path
     */
     int getPoints(SkPoint points[], int max) const;
+
+    /** Return the number of verbs in the path
+     */
+    int countVerbs() const {
+        return this->getVerbs(NULL, 0);
+    }
+
+    /** Returns the number of verbs in the path. Up to max verbs are copied. The
+        verbs are copied as one byte per verb.
+        
+        @param verbs If not null, receives up to max verbs
+        @param max The maximum number of verbs to copy into verbs
+        @return the actual number of verbs in the path
+    */
+    int getVerbs(uint8_t verbs[], int max) const;
 
     //! Swap contents of this and other. Guaranteed not to throw
     void swap(SkPath& other);
@@ -551,6 +574,19 @@ public:
     void addRoundRect(const SkRect& rect, const SkScalar radii[],
                       Direction dir = kCW_Direction);
 
+    /**
+     *  Add a new contour made of just lines. This is just a fast version of
+     *  the following:
+     *      this->moveTo(pts[0]);
+     *      for (int i = 1; i < count; ++i) {
+     *          this->lineTo(pts[i]);
+     *      }
+     *      if (close) {
+     *          this->close();
+     *      }
+     */
+    void addPoly(const SkPoint pts[], int count, bool close);
+
     /** Add a copy of src to the path, offset by (dx,dy)
         @param src  The path to add as a new contour
         @param dx   The amount to translate the path in X as it is added
@@ -676,9 +712,16 @@ public:
             segments have been visited, return kDone_Verb.
 
             @param  pts The points representing the current verb and/or segment
+            @param doConsumeDegerates If true, first scan for segments that are
+                   deemed degenerate (too short) and skip those.
             @return The verb for the current segment
         */
-        Verb next(SkPoint pts[4]);
+        Verb next(SkPoint pts[4], bool doConsumeDegerates = true) {
+            if (doConsumeDegerates) {
+                this->consumeDegenerateSegments();
+            }
+            return this->doNext(pts);
+        }
 
         /** If next() returns kLine_Verb, then this query returns true if the
             line was the result of a close() command (i.e. the end point is the
@@ -706,9 +749,10 @@ public:
         SkBool8         fCloseLine;
         SkBool8         fSegmentState;
 
-        bool cons_moveTo(SkPoint pts[1]);
+        inline const SkPoint& cons_moveTo();
         Verb autoClose(SkPoint pts[2]);
         void consumeDegenerateSegments();
+        Verb doNext(SkPoint pts[4]);
     };
 
     /** Iterate through the verbs in the path, providing the associated points.
@@ -724,6 +768,7 @@ public:
             segments have been visited, return kDone_Verb.
          
             @param  pts The points representing the current verb and/or segment
+                        This must not be NULL.
             @return The verb for the current segment
         */
         Verb next(SkPoint pts[4]);
@@ -739,8 +784,16 @@ public:
     void dump(bool forceClose, const char title[] = NULL) const;
     void dump() const;
 
-    void flatten(SkWriter32&) const;
-    void unflatten(SkReader32&);
+    /**
+     *  Write the region to the buffer, and return the number of bytes written.
+     *  If buffer is NULL, it still returns the number of bytes.
+     */
+    uint32_t writeToMemory(void* buffer) const;
+    /**
+     *  Initialized the region from the buffer, returning the number
+     *  of bytes actually read.
+     */
+    uint32_t readFromMemory(const void* buffer);
 
 #ifdef SK_BUILD_FOR_ANDROID
     uint32_t getGenerationID() const;

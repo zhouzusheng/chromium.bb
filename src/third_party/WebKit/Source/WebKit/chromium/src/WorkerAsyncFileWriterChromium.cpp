@@ -36,7 +36,6 @@
 #include "AsyncFileSystem.h"
 #include "Blob.h"
 #include "ScriptExecutionContext.h"
-#include "platform/WebFileSystem.h"
 #include "WebFileWriter.h"
 #include "platform/WebURL.h"
 #include "WebWorkerBase.h"
@@ -44,6 +43,7 @@
 #include "WorkerFileWriterCallbacksBridge.h"
 #include "WorkerLoaderProxy.h"
 #include "WorkerThread.h"
+#include <public/WebFileSystem.h>
 #include <wtf/Assertions.h>
 
 using namespace WebKit;
@@ -51,9 +51,8 @@ using namespace WebKit;
 namespace WebCore {
 
 WorkerAsyncFileWriterChromium::WorkerAsyncFileWriterChromium(WebFileSystem* webFileSystem, const WebURL& path, WorkerContext* workerContext, AsyncFileWriterClient* client, WriterType type)
-    : m_type(type)
 {
-    ASSERT(m_type == Asynchronous); // Synchronous is not implemented yet.
+    ASSERT(type == Asynchronous); // Synchronous is not implemented yet.
 
     WorkerLoaderProxy* proxy = &workerContext->thread()->workerLoaderProxy();
     m_bridge = WorkerFileWriterCallbacksBridge::create(path, proxy, workerContext, client);

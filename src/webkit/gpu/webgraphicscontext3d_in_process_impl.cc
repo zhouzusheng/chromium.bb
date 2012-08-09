@@ -11,17 +11,17 @@
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_split.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string_split.h"
 #include "base/synchronization/lock.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "ui/gfx/gl/gl_bindings.h"
-#include "ui/gfx/gl/gl_bindings_skia_in_process.h"
-#include "ui/gfx/gl/gl_context.h"
-#include "ui/gfx/gl/gl_implementation.h"
-#include "ui/gfx/gl/gl_surface.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_bindings_skia_in_process.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_surface.h"
 
 namespace webkit {
 namespace gpu {
@@ -1672,15 +1672,13 @@ DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivARB,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
 void WebGraphicsContext3DInProcessImpl::copyTextureCHROMIUM(
-    WGC3Denum, WGC3Denum, WGC3Denum, WGC3Dint)
+    WGC3Denum, WebGLId, WebGLId, WGC3Dint, WGC3Denum)
 {
 }
 
-#if WEBKIT_USING_SKIA
 GrGLInterface* WebGraphicsContext3DInProcessImpl::onCreateGrGLInterface() {
   return gfx::CreateInProcessSkiaGLBinding();
 }
-#endif
 
 bool WebGraphicsContext3DInProcessImpl::AngleCreateCompilers() {
   if (!ShInitialize())

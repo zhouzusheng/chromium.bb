@@ -44,12 +44,13 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
   virtual PP_Resource CreateFileChooser(
       PP_Instance instance,
       PP_FileChooserMode_Dev mode,
-      const char* accept_mime_types) OVERRIDE;
+      const char* accept_types) OVERRIDE;
   virtual PP_Resource CreateFileIO(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFileRef(PP_Resource file_system,
                                     const char* path) OVERRIDE;
   virtual PP_Resource CreateFileSystem(PP_Instance instance,
                                        PP_FileSystemType type) OVERRIDE;
+  virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) OVERRIDE;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) OVERRIDE;
@@ -67,6 +68,15 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
                                       PP_ImageDataFormat format,
                                       const PP_Size& size,
                                       PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
+                                          PP_InputEvent_Type type,
+                                          PP_TimeTicks time_stamp,
+                                          struct PP_Var text,
+                                          uint32_t segment_number,
+                                          const uint32_t* segment_offsets,
+                                          int32_t target_segment,
+                                          uint32_t selection_start,
+                                          uint32_t selection_end) OVERRIDE;
   virtual PP_Resource CreateKeyboardInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -97,9 +107,6 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
       PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
 
-  virtual PP_Resource CreateTransport(PP_Instance instance,
-                                      const char* name,
-                                      PP_TransportType type) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateURLRequestInfo(

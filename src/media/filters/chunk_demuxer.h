@@ -5,7 +5,7 @@
 #ifndef MEDIA_FILTERS_CHUNK_DEMUXER_H_
 #define MEDIA_FILTERS_CHUNK_DEMUXER_H_
 
-#include <list>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -13,7 +13,8 @@
 #include "base/synchronization/lock.h"
 #include "media/base/byte_queue.h"
 #include "media/base/demuxer.h"
-#include "media/filters/source_buffer.h"
+#include "media/base/stream_parser.h"
+#include "media/filters/source_buffer_stream.h"
 
 namespace media {
 
@@ -34,7 +35,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   typedef std::vector<std::pair<base::TimeDelta, base::TimeDelta> > Ranges;
 
   explicit ChunkDemuxer(ChunkDemuxerClient* client);
-  virtual ~ChunkDemuxer();
 
   // Demuxer implementation.
   virtual void Initialize(DemuxerHost* host,
@@ -46,11 +46,9 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
       DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual int GetBitrate() OVERRIDE;
-  virtual bool IsLocalSource() OVERRIDE;
-  virtual bool IsSeekable() OVERRIDE;
 
   // Methods used by an external object to control this demuxer.
-  void FlushData();
+  void StartWaitingForSeek();
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
@@ -59,7 +57,8 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // kNotSupported is returned if |type| is not a supported format.
   // kReachedIdLimit is returned if the demuxer cannot handle another ID right
   //    now.
-  Status AddId(const std::string& id, const std::string& type);
+  Status AddId(const std::string& id, const std::string& type,
+               std::vector<std::string>& codecs);
 
   // Removed an ID & associated resources that were previously added with
   // AddId().
@@ -79,9 +78,14 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // it can accept a new segment.
   void Abort(const std::string& id);
 
-  void EndOfStream(PipelineStatus status);
-  bool HasEnded();
+  // Signals an EndOfStream request.
+  // Returns false if called in an unexpected state or if there is a gap between
+  // the current position and the end of the buffered data.
+  bool EndOfStream(PipelineStatus status);
   void Shutdown();
+
+ protected:
+  virtual ~ChunkDemuxer();
 
  private:
   enum State {
@@ -99,14 +103,33 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // data.
   void ReportError_Locked(PipelineStatus error);
 
-  void OnSourceBufferInitDone(bool success, base::TimeDelta duration);
+  // Returns true if any stream has seeked to a time without buffered data.
+  bool IsSeekPending_Locked() const;
 
-  // SourceBuffer callbacks.
-  bool OnNewConfigs(const AudioDecoderConfig& audio_config,
+  // Returns true if all streams can successfully call EndOfStream,
+  // false if any can not.
+  bool CanEndOfStream_Locked() const;
+
+  // StreamParser callbacks.
+  void OnStreamParserInitDone(bool success, base::TimeDelta duration);
+  bool OnNewConfigs(bool has_audio, bool has_video,
+                    const AudioDecoderConfig& audio_config,
                     const VideoDecoderConfig& video_config);
-  bool OnAudioBuffers(const StreamParser::BufferQueue& buffer);
-  bool OnVideoBuffers(const StreamParser::BufferQueue& buffer);
-  bool OnKeyNeeded(scoped_array<uint8> init_data, int init_data_size);
+  bool OnAudioBuffers(const StreamParser::BufferQueue& buffers);
+  bool OnVideoBuffers(const StreamParser::BufferQueue& buffers);
+  bool OnNeedKey(scoped_array<uint8> init_data, int init_data_size);
+  void OnNewMediaSegment(const std::string& source_id,
+                         base::TimeDelta start_timestamp);
+
+  // Helper functions for calculating GetBufferedRanges().
+  bool CopyIntoRanges(
+      const SourceBufferStream::TimespanList& timespans,
+      Ranges* ranges_out) const;
+  void AddIntersectionRange(
+      SourceBufferStream::Timespan timespan_a,
+      SourceBufferStream::Timespan timespan_b,
+      bool last_range_after_ended,
+      Ranges* ranges_out) const;
 
   mutable base::Lock lock_;
   State state_;
@@ -123,14 +146,14 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   base::TimeDelta duration_;
 
-  scoped_ptr<SourceBuffer> source_buffer_;
+  typedef std::map<std::string, StreamParser*> StreamParserMap;
+  StreamParserMap stream_parser_map_;
 
-  // Should a Seek() call wait for more data before calling the
-  // callback.
-  bool seek_waits_for_data_;
-
-  // TODO(acolwell): Remove this when fixing http://crbug.com/122909
-  std::string source_id_;
+  // Used to ensure that (1) config data matches the type and codec provided in
+  // AddId(), (2) only 1 audio and 1 video sources are added, and (3) ids may be
+  // removed with RemoveID() but can not be re-added (yet).
+  std::string source_id_audio_;
+  std::string source_id_video_;
 
   DISALLOW_COPY_AND_ASSIGN(ChunkDemuxer);
 };

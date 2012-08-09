@@ -98,7 +98,7 @@ public:
 private:
     void computeAvailableWidthFromLeftAndRight()
     {
-        m_availableWidth = max(0, m_right - m_left) + m_overhangWidth;
+        m_availableWidth = max(0.0f, m_right - m_left) + m_overhangWidth;
     }
 
 private:
@@ -106,8 +106,8 @@ private:
     float m_uncommittedWidth;
     float m_committedWidth;
     float m_overhangWidth; // The amount by which |m_availableWidth| has been inflated to account for possible contraction due to ruby overhang.
-    int m_left;
-    int m_right;
+    float m_left;
+    float m_right;
     float m_availableWidth;
     bool m_isFirstLine;
 };
@@ -115,8 +115,8 @@ private:
 inline void LineWidth::updateAvailableWidth()
 {
     LayoutUnit height = m_block->logicalHeight();
-    m_left = m_block->pixelSnappedLogicalLeftOffsetForLine(height, m_isFirstLine);
-    m_right = m_block->pixelSnappedLogicalRightOffsetForLine(height, m_isFirstLine);
+    m_left = m_block->logicalLeftOffsetForLine(height, m_isFirstLine);
+    m_right = m_block->logicalRightOffsetForLine(height, m_isFirstLine);
 
     computeAvailableWidthFromLeftAndRight();
 }
@@ -315,8 +315,7 @@ static inline BidiRun* createRun(int start, int end, RenderObject* obj, InlineBi
 
 void RenderBlock::appendRunsForObject(BidiRunList<BidiRun>& runs, int start, int end, RenderObject* obj, InlineBidiResolver& resolver)
 {
-    if (start > end || obj->isFloating() ||
-        (obj->isPositioned() && !obj->style()->isOriginalDisplayInlineType() && !obj->container()->isRenderInline()))
+    if (start > end || shouldSkipCreatingRunsForObject(obj))
         return;
 
     LineMidpointState& lineMidpointState = resolver.midpointState();
@@ -555,7 +554,7 @@ ETextAlign RenderBlock::textAlignmentForLine(bool endsWithSoftBreak) const
 {
     ETextAlign alignment = style()->textAlign();
     if (!endsWithSoftBreak && alignment == JUSTIFY)
-        alignment = TAAUTO;
+        alignment = TASTART;
 
     return alignment;
 }
@@ -715,6 +714,14 @@ void RenderBlock::updateLogicalWidthForAlignment(const ETextAlign& textAlign, Bi
     case WEBKIT_LEFT:
         updateLogicalWidthForLeftAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
         break;
+    case RIGHT:
+    case WEBKIT_RIGHT:
+        updateLogicalWidthForRightAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
+        break;
+    case CENTER:
+    case WEBKIT_CENTER:
+        updateLogicalWidthForCenterAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
+        break;
     case JUSTIFY:
         adjustInlineDirectionLineBounds(expansionOpportunityCount, logicalLeft, availableLogicalWidth);
         if (expansionOpportunityCount) {
@@ -724,22 +731,7 @@ void RenderBlock::updateLogicalWidthForAlignment(const ETextAlign& textAlign, Bi
             }
             break;
         }
-        // fall through
-    case TAAUTO:
-        // for right to left fall through to right aligned
-        if (style()->isLeftToRightDirection()) {
-            if (totalLogicalWidth > availableLogicalWidth && trailingSpaceRun)
-                trailingSpaceRun->m_box->setLogicalWidth(max<float>(0, trailingSpaceRun->m_box->logicalWidth() - totalLogicalWidth + availableLogicalWidth));
-            break;
-        }
-    case RIGHT:
-    case WEBKIT_RIGHT:
-        updateLogicalWidthForRightAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
-        break;
-    case CENTER:
-    case WEBKIT_CENTER:
-        updateLogicalWidthForCenterAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
-        break;
+        // Fall through
     case TASTART:
         if (style()->isLeftToRightDirection())
             updateLogicalWidthForLeftAlignedBlock(style()->isLeftToRightDirection(), trailingSpaceRun, logicalLeft, totalLogicalWidth, availableLogicalWidth);
@@ -1001,7 +993,11 @@ static inline void constructBidiRuns(InlineBidiResolver& topResolver, BidiRunLis
         // rniwa says previousLineBrokeCleanly is just a WinIE hack and could always be false here?
         isolatedResolver.createBidiRunsForLine(endOfLine, NoVisualOverride, previousLineBrokeCleanly);
         // Note that we do not delete the runs from the resolver.
-        bidiRuns.replaceRunWithRuns(isolatedRun, isolatedResolver.runs());
+        // We're not guaranteed to get any BidiRuns in the previous step. If we don't, we allow the placeholder
+        // itself to be turned into an InlineBox. We can't remove it here without potentially losing track of
+        // the logically last run.
+        if (isolatedResolver.runs().runCount())
+            bidiRuns.replaceRunWithRuns(isolatedRun, isolatedResolver.runs());
 
         // If we encountered any nested isolate runs, just move them
         // to the top resolver's list for later processing.
@@ -1947,7 +1943,7 @@ static inline float textWidth(RenderText* text, unsigned from, unsigned len, con
     ASSERT(run.charactersLength() >= run.length());
 
     run.setCharacterScanForCodePath(!text->canUseSimpleFontCodePath());
-    run.setAllowTabs(!collapseWhiteSpace);
+    run.setTabSize(!collapseWhiteSpace, text->style()->tabSize());
     run.setXPos(xPos);
     return font.width(run);
 }
@@ -1979,7 +1975,7 @@ static void tryHyphenating(RenderText* text, const Font& font, const AtomicStrin
     run.setCharactersLength(text->textLength() - lastSpace);
     ASSERT(run.charactersLength() >= run.length());
 
-    run.setAllowTabs(!collapseWhiteSpace);
+    run.setTabSize(!collapseWhiteSpace, text->style()->tabSize());
     run.setXPos(xPos + lastSpaceWordSpacing);
 
     unsigned prefixLength = font.offsetForPosition(run, maxPrefixWidth, false);
@@ -2668,7 +2664,7 @@ void RenderBlock::addOverflowFromInlineChildren()
 {
     LayoutUnit endPadding = hasOverflowClip() ? paddingEnd() : ZERO_LAYOUT_UNIT;
     // FIXME: Need to find another way to do this, since scrollbars could show when we don't want them to.
-    if (hasOverflowClip() && !endPadding && node() && node()->rendererIsEditable() && node() == node()->rootEditableElement() && style()->isLeftToRightDirection())
+    if (hasOverflowClip() && !endPadding && node() && node()->isRootEditableElement() && style()->isLeftToRightDirection())
         endPadding = 1;
     for (RootInlineBox* curr = firstRootBox(); curr; curr = curr->nextRootBox()) {
         addLayoutOverflow(curr->paddedLayoutOverflowRect(endPadding));
@@ -2771,7 +2767,7 @@ LayoutUnit RenderBlock::startAlignedOffsetForLine(RenderBox* child, LayoutUnit p
 {
     ETextAlign textAlign = style()->textAlign();
 
-    if (textAlign == TAAUTO)
+    if (textAlign == TASTART) // FIXME: Handle TAEND here
         return startOffsetForLine(position, firstLine);
 
     // updateLogicalWidthForAlignment() handles the direction of the block so no need to consider it here

@@ -7,14 +7,14 @@
 
 #include <deque>
 
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
-#include "media/base/filters.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_renderer.h"
 
 namespace media {
 
@@ -45,7 +45,6 @@ class MEDIA_EXPORT VideoRendererBase
   VideoRendererBase(const base::Closure& paint_cb,
                     const SetOpaqueCB& set_opaque_cb,
                     bool drop_frames);
-  virtual ~VideoRendererBase();
 
   // Filter implementation.
   virtual void Play(const base::Closure& callback) OVERRIDE;
@@ -73,6 +72,9 @@ class MEDIA_EXPORT VideoRendererBase
   // pause/flush/seek.
   void GetCurrentFrame(scoped_refptr<VideoFrame>* frame_out);
   void PutCurrentFrame(scoped_refptr<VideoFrame> frame);
+
+ protected:
+  virtual ~VideoRendererBase();
 
  private:
   // Callback from the video decoder delivering decoded video frames and

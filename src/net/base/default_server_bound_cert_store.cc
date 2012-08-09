@@ -118,6 +118,14 @@ int DefaultServerBoundCertStore::GetCertCount() {
   return server_bound_certs_.size();
 }
 
+void DefaultServerBoundCertStore::SetForceKeepSessionState() {
+  base::AutoLock autolock(lock_);
+  InitIfNecessary();
+
+  if (store_)
+    store_->SetForceKeepSessionState();
+}
+
 DefaultServerBoundCertStore::~DefaultServerBoundCertStore() {
   DeleteAllInMemory();
 }

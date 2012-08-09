@@ -156,7 +156,7 @@ void GrInOrderDrawBuffer::drawRect(const GrRect& rect,
             Draw& lastDraw = fDraws.back();
 
             GrAssert(lastDraw.fIndexBuffer == fQuadIndexBuffer);
-            GrAssert(kTriangles_PrimitiveType == lastDraw.fPrimitiveType);
+            GrAssert(kTriangles_GrPrimitiveType == lastDraw.fPrimitiveType);
             GrAssert(0 == lastDraw.fVertexCount % 4);
             GrAssert(0 == lastDraw.fIndexCount % 6);
             GrAssert(0 == lastDraw.fStartIndex);
@@ -183,7 +183,7 @@ void GrInOrderDrawBuffer::drawRect(const GrRect& rect,
         }
         if (!appendToPreviousDraw) {
             this->setIndexSourceToBuffer(fQuadIndexBuffer);
-            this->drawIndexed(kTriangles_PrimitiveType, 0, 0, 4, 6);
+            this->drawIndexed(kTriangles_GrPrimitiveType, 0, 0, 4, 6);
             fCurrQuad = 1;
             fLastRectVertexLayout = layout;
         }
@@ -223,7 +223,7 @@ void GrInOrderDrawBuffer::drawIndexedInstances(GrPrimitiveType type,
         bool clipChanged = this->needsNewClip();
         bool stateChanged = this->needsNewState();
         if (clipChanged) {
-            this->pushClip();
+            this->storeClip();
         }
         if (stateChanged) {
             this->pushState();
@@ -342,7 +342,7 @@ void GrInOrderDrawBuffer::onDrawIndexed(GrPrimitiveType primitiveType,
 
     draw.fClipChanged = this->needsNewClip();
     if (draw.fClipChanged) {
-       this->pushClip();
+       this->storeClip();
     }
 
     draw.fStateChanged = this->needsNewState();
@@ -409,7 +409,7 @@ void GrInOrderDrawBuffer::onDrawNonIndexed(GrPrimitiveType primitiveType,
 
     draw.fClipChanged = this->needsNewClip();
     if (draw.fClipChanged) {
-        this->pushClip();
+        this->storeClip();
     }
 
     draw.fStateChanged = this->needsNewState();
@@ -439,6 +439,10 @@ void GrInOrderDrawBuffer::onDrawNonIndexed(GrPrimitiveType primitiveType,
     draw.fIndexBuffer = NULL;
 }
 
+void GrInOrderDrawBuffer::onStencilPath(const GrPath&, GrPathFill) {
+    GrCrash("Not implemented yet. Should not get here.");
+}
+
 void GrInOrderDrawBuffer::clear(const GrIRect* rect, GrColor color) {
     GrIRect r;
     if (NULL == rect) {
@@ -466,6 +470,10 @@ void GrInOrderDrawBuffer::reset() {
             GrSafeUnref(fStates[i].getTexture(s));
         }
         GrSafeUnref(fStates[i].getRenderTarget());
+
+        // GrInOrderDrawBuffer is no longer managing the refs/unrefs 
+        // for the stored GrDrawStates
+        fStates[i].disableBehavior(GrDrawState::kTexturesNeedRef_BehaviorBit);
     }
     int numDraws = fDraws.count();
     for (int d = 0; d < numDraws; ++d) {
@@ -782,6 +790,10 @@ void GrInOrderDrawBuffer::pushState() {
     }
     GrSafeRef(drawState.getRenderTarget());
     fStates.push_back(this->getDrawState());
+
+    // Any textures that are added to the stored state need to be
+    // reffed so the unref in reset doesn't inappropriately free them
+    fStates.back().enableBehavior(GrDrawState::kTexturesNeedRef_BehaviorBit);
  }
 
 bool GrInOrderDrawBuffer::needsNewClip() const {
@@ -793,7 +805,7 @@ bool GrInOrderDrawBuffer::needsNewClip() const {
     return false;
 }
 
-void GrInOrderDrawBuffer::pushClip() {
+void GrInOrderDrawBuffer::storeClip() {
     fClips.push_back() = fClip;
     fClipSet = false;
 }

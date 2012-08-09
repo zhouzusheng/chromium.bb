@@ -60,11 +60,18 @@ enum IoMode {
 
 struct MockConnect {
   // Asynchronous connection success.
-  MockConnect() : mode(ASYNC), result(OK) { }
-  MockConnect(IoMode io_mode, int r) : mode(io_mode), result(r) { }
+  // Creates a MockConnect with |mode| ASYC, |result| OK, and
+  // |peer_addr| 192.0.2.33.
+  MockConnect();
+  // Creates a MockConnect with the specified mode and result, with
+  // |peer_addr| 192.0.2.33.
+  MockConnect(IoMode io_mode, int r);
+  MockConnect(IoMode io_mode, int r, IPEndPoint addr);
+  ~MockConnect();
 
   IoMode mode;
   int result;
+  IPEndPoint peer_addr;
 };
 
 struct MockRead {
@@ -589,7 +596,7 @@ class MockClientSocket : public SSLClientSocket {
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(AddressList* address) const OVERRIDE;
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
   virtual const BoundNetLog& NetLog() const OVERRIDE;
   virtual void SetSubresourceSpeculation() OVERRIDE {}
@@ -618,6 +625,9 @@ class MockClientSocket : public SSLClientSocket {
   // True if Connect completed successfully and Disconnect hasn't been called.
   bool connected_;
 
+  // Address of the "remote" peer we're connected to.
+  IPEndPoint peer_addr_;
+
   BoundNetLog net_log_;
 };
 
@@ -627,7 +637,7 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
                       SocketDataProvider* socket);
   virtual ~MockTCPClientSocket();
 
-  AddressList addresses() const { return addresses_; }
+  const AddressList& addresses() const { return addresses_; }
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,
@@ -640,7 +650,7 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(AddressList* address) const OVERRIDE;
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
@@ -744,6 +754,7 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
 
   // SSLClientSocket implementation.

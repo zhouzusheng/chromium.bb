@@ -29,14 +29,16 @@
 
 #include "cc/CCLayerImpl.h"
 
-#include "GraphicsContext3D.h"
 #include "LayerChromium.h"
 #include "LayerRendererChromium.h"
 #include "cc/CCDebugBorderDrawQuad.h"
 #include "cc/CCLayerSorter.h"
+#include "cc/CCMathUtil.h"
 #include "cc/CCQuadCuller.h"
 #include "cc/CCSolidColorDrawQuad.h"
 #include <wtf/text/WTFString.h>
+
+using WebKit::WebTransformationMatrix;
 
 namespace WebCore {
 
@@ -45,6 +47,7 @@ CCLayerImpl::CCLayerImpl(int id)
     , m_maskLayerId(-1)
     , m_replicaLayerId(-1)
     , m_layerId(id)
+    , m_layerTreeHostImpl(0)
     , m_anchorPoint(0.5, 0.5)
     , m_anchorPointZ(0)
     , m_scrollable(false)
@@ -60,6 +63,9 @@ CCLayerImpl::CCLayerImpl(int id)
     , m_usesLayerClipping(false)
     , m_isNonCompositedContent(false)
     , m_drawsContent(false)
+    , m_forceRenderSurface(false)
+    , m_isContainerForFixedPositionLayers(false)
+    , m_fixedToContainerLayer(false)
     , m_pageScaleDelta(1)
     , m_targetRenderSurface(0)
     , m_drawDepth(0)
@@ -136,13 +142,10 @@ bool CCLayerImpl::descendantDrawsContent()
 
 PassOwnPtr<CCSharedQuadState> CCLayerImpl::createSharedQuadState() const
 {
-    IntRect layerClipRect;
-    if (usesLayerClipping())
-        layerClipRect = clipRect();
-    return CCSharedQuadState::create(quadTransform(), drawTransform(), visibleLayerRect(), layerClipRect, drawOpacity(), opaque());
+    return CCSharedQuadState::create(quadTransform(), drawTransform(), visibleLayerRect(), m_scissorRect, drawOpacity(), opaque());
 }
 
-void CCLayerImpl::willDraw(LayerRendererChromium*)
+void CCLayerImpl::willDraw(CCRenderer*, CCGraphicsContext*)
 {
 #ifndef NDEBUG
     // willDraw/didDraw must be matched.
@@ -168,9 +171,10 @@ void CCLayerImpl::appendDebugBorderQuad(CCQuadCuller& quadList, const CCSharedQu
     quadList.append(CCDebugBorderDrawQuad::create(sharedQuadState, layerRect, debugBorderColor(), debugBorderWidth()));
 }
 
-void CCLayerImpl::bindContentsTexture(LayerRendererChromium*)
+unsigned CCLayerImpl::contentsTextureId() const
 {
     ASSERT_NOT_REACHED();
+    return 0;
 }
 
 void CCLayerImpl::scrollBy(const FloatSize& scroll)
@@ -183,6 +187,40 @@ void CCLayerImpl::scrollBy(const FloatSize& scroll)
     noteLayerPropertyChangedForSubtree();
 }
 
+CCInputHandlerClient::ScrollStatus CCLayerImpl::tryScroll(const IntPoint& viewportPoint, CCInputHandlerClient::ScrollInputType type) const
+{
+    if (shouldScrollOnMainThread()) {
+        TRACE_EVENT0("cc", "CCLayerImpl::tryScroll: Failed shouldScrollOnMainThread");
+        return CCInputHandlerClient::ScrollOnMainThread;
+    }
+
+    if (!screenSpaceTransform().isInvertible()) {
+        TRACE_EVENT0("cc", "CCLayerImpl::tryScroll: Ignored nonInvertibleTransform");
+        return CCInputHandlerClient::ScrollIgnored;
+    }
+
+    if (!nonFastScrollableRegion().isEmpty()) {
+        bool clipped = false;
+        FloatPoint hitTestPointInLocalSpace = CCMathUtil::projectPoint(screenSpaceTransform().inverse(), FloatPoint(viewportPoint), clipped);
+        if (!clipped && nonFastScrollableRegion().contains(flooredIntPoint(hitTestPointInLocalSpace))) {
+            TRACE_EVENT0("cc", "CCLayerImpl::tryScroll: Failed nonFastScrollableRegion");
+            return CCInputHandlerClient::ScrollOnMainThread;
+        }
+    }
+
+    if (type == CCInputHandlerClient::Wheel && haveWheelEventHandlers()) {
+        TRACE_EVENT0("cc", "CCLayerImpl::tryScroll: Failed wheelEventHandlers");
+        return CCInputHandlerClient::ScrollOnMainThread;
+    }
+
+    if (!scrollable()) {
+        TRACE_EVENT0("cc", "CCLayerImpl::tryScroll: Ignored not scrollable");
+        return CCInputHandlerClient::ScrollIgnored;
+    }
+
+    return CCInputHandlerClient::ScrollStarted;
+}
+
 const IntRect CCLayerImpl::getDrawRect() const
 {
     // Form the matrix used by the shader to map the corners of the layer's
@@ -192,9 +230,9 @@ const IntRect CCLayerImpl::getDrawRect() const
     return mappedRect;
 }
 
-TransformationMatrix CCLayerImpl::quadTransform() const
+WebTransformationMatrix CCLayerImpl::quadTransform() const
 {
-    TransformationMatrix quadTransformation = drawTransform();
+    WebTransformationMatrix quadTransformation = drawTransform();
 
     float offsetX = -0.5 * bounds().width();
     float offsetY = -0.5 * bounds().height();
@@ -235,7 +273,7 @@ void CCLayerImpl::dumpLayerProperties(TextStream& ts, int indent) const
 
 void sortLayers(Vector<CCLayerImpl*>::iterator first, Vector<CCLayerImpl*>::iterator end, CCLayerSorter* layerSorter)
 {
-    TRACE_EVENT("LayerRendererChromium::sortLayers", 0, 0);
+    TRACE_EVENT0("cc", "LayerRendererChromium::sortLayers");
     layerSorter->sort(first, end);
 }
 
@@ -263,6 +301,13 @@ void CCLayerImpl::dumpLayer(TextStream& ts, int indent) const
     }
     for (size_t i = 0; i < m_children.size(); ++i)
         m_children[i]->dumpLayer(ts, indent+1);
+}
+
+void CCLayerImpl::setStackingOrderChanged(bool stackingOrderChanged)
+{
+    // We don't need to store this flag; we only need to track that the change occurred.
+    if (stackingOrderChanged)
+        noteLayerPropertyChangedForSubtree();
 }
 
 void CCLayerImpl::noteLayerPropertyChangedForSubtree()
@@ -300,7 +345,7 @@ void CCLayerImpl::setOpacityFromAnimation(float opacity)
     setOpacity(opacity);
 }
 
-void CCLayerImpl::setTransformFromAnimation(const TransformationMatrix& transform)
+void CCLayerImpl::setTransformFromAnimation(const WebTransformationMatrix& transform)
 {
     setTransform(transform);
 }
@@ -378,7 +423,7 @@ void CCLayerImpl::setBackgroundColor(const Color& backgroundColor)
     m_layerPropertyChanged = true;
 }
 
-void CCLayerImpl::setFilters(const FilterOperations& filters)
+void CCLayerImpl::setFilters(const WebKit::WebFilterOperations& filters)
 {
     if (m_filters == filters)
         return;
@@ -387,7 +432,7 @@ void CCLayerImpl::setFilters(const FilterOperations& filters)
     noteLayerPropertyChangedForSubtree();
 }
 
-void CCLayerImpl::setBackgroundFilters(const FilterOperations& backgroundFilters)
+void CCLayerImpl::setBackgroundFilters(const WebKit::WebFilterOperations& backgroundFilters)
 {
     if (m_backgroundFilters == backgroundFilters)
         return;
@@ -446,7 +491,7 @@ void CCLayerImpl::setPreserves3D(bool preserves3D)
     noteLayerPropertyChangedForSubtree();
 }
 
-void CCLayerImpl::setSublayerTransform(const TransformationMatrix& sublayerTransform)
+void CCLayerImpl::setSublayerTransform(const WebTransformationMatrix& sublayerTransform)
 {
     if (m_sublayerTransform == sublayerTransform)
         return;
@@ -456,7 +501,7 @@ void CCLayerImpl::setSublayerTransform(const TransformationMatrix& sublayerTrans
     noteLayerPropertyChangedForDescendants();
 }
 
-void CCLayerImpl::setTransform(const TransformationMatrix& transform)
+void CCLayerImpl::setTransform(const WebTransformationMatrix& transform)
 {
     if (m_transform == transform)
         return;

@@ -6,7 +6,6 @@
 '''Support for ALL_ALL.xml format used by Igoogle plug-ins in Google Desktop.'''
 
 import StringIO
-import types
 import re
 import xml.sax
 import xml.sax.handler
@@ -74,9 +73,6 @@ class IgoogleStringsContentHandler(xml.sax.handler.ContentHandler):
 class IgoogleStrings(regexp.RegexpGatherer):
   '''Supports the ALL_ALL.xml format used by Igoogle gadgets.'''
 
-  def __init__(self, text):
-    regexp.RegexpGatherer.__init__(self, text)
-
   def AddMessage(self, msgtext, description, meaning, translateable):
     if msgtext == '':
       return
@@ -112,8 +108,11 @@ class IgoogleStrings(regexp.RegexpGatherer):
   # _RegExpParse method of that class to implement Parse().  Instead, we
   # parse using a SAX parser.
   def Parse(self):
-    if (self.have_parsed_):
+    if self.have_parsed_:
       return
+    self.have_parsed_ = True
+
+    self.text_ = self._LoadInputFile().strip()
     self._AddNontranslateableChunk(u'<messagebundle>\n')
     stream = StringIO.StringIO(self.text_)
     handler = IgoogleStringsContentHandler(self)
@@ -122,12 +121,3 @@ class IgoogleStrings(regexp.RegexpGatherer):
 
   def Escape(self, text):
     return util.EncodeCdata(text)
-
-  def FromFile(filename_or_stream, extkey=None, encoding='cp1252'):
-    if isinstance(filename_or_stream, types.StringTypes):
-      print "IgoogleStrings %s %s" % (
-        filename_or_stream, encoding)
-      filename_or_stream = util.WrapInputStream(file(filename_or_stream, 'r'),
-                                                encoding)
-    return IgoogleStrings(filename_or_stream.read())
-  FromFile = staticmethod(FromFile)

@@ -12,15 +12,16 @@
 #include "media/base/audio_decoder.h"
 
 struct AVCodecContext;
+struct AVFrame;
 
 namespace media {
 
 class DataBuffer;
+class DecoderBuffer;
 
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:
   FFmpegAudioDecoder(const base::Callback<MessageLoop*()>& message_loop_cb);
-  virtual ~FFmpegAudioDecoder();
 
   // AudioDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -32,6 +33,9 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   virtual int samples_per_second() OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
 
+ protected:
+  virtual ~FFmpegAudioDecoder();
+
  private:
   // Methods running on decoder thread.
   void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
@@ -39,11 +43,11 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
                     const StatisticsCB& statistics_cb);
   void DoReset(const base::Closure& closure);
   void DoRead(const ReadCB& read_cb);
-  void DoDecodeBuffer(const scoped_refptr<Buffer>& input);
+  void DoDecodeBuffer(const scoped_refptr<DecoderBuffer>& input);
 
   // Reads from the demuxer stream with corresponding callback method.
   void ReadFromDemuxerStream();
-  void DecodeBuffer(const scoped_refptr<Buffer>& buffer);
+  void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
 
   // Updates the output buffer's duration and timestamp based on the input
   // buffer. Will fall back to an estimated timestamp if the input lacks a
@@ -71,11 +75,8 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
 
   base::TimeDelta estimated_next_timestamp_;
 
-  // Holds decoded audio. As required by FFmpeg, input/output buffers should
-  // be allocated with suitable padding and alignment. av_malloc() provides
-  // us that guarantee.
-  const int decoded_audio_size_;
-  uint8* decoded_audio_;  // Allocated via av_malloc().
+  // Holds decoded audio.
+  AVFrame* av_frame_;
 
   ReadCB read_cb_;
 

@@ -603,14 +603,8 @@ class TrHtml(interface.GathererBase):
   '''Represents a document or message in the template format used by
   Total Recall for HTML documents.'''
 
-  def __init__(self, text):
-    '''Creates a new object that represents 'text'.
-    Args:
-      text: '<html>...</html>'
-    '''
-    super(type(self), self).__init__()
-
-    self.text_ = text
+  def __init__(self, *args, **kwargs):
+    super(TrHtml, self).__init__(*args, **kwargs)
     self.have_parsed_ = False
     self.skeleton_ = []  # list of strings and MessageClique objects
     self.fold_whitespace_ = False
@@ -629,6 +623,9 @@ class TrHtml(interface.GathererBase):
   def GetText(self):
     '''Returns the original text of the HTML document'''
     return self.text_
+
+  def GetTextualIds(self):
+    return [self.extkey]
 
   def GetCliques(self):
     '''Returns the message cliques for each translateable message in the
@@ -676,17 +673,23 @@ class TrHtml(interface.GathererBase):
 
     return ''.join(out)
 
-
-  # Parsing is done in two phases:  First, we break the document into
-  # translateable and nontranslateable chunks.  Second, we run through each
-  # translateable chunk and insert placeholders for any HTML elements, unescape
-  # escaped characters, etc.
   def Parse(self):
     if self.have_parsed_:
       return
     self.have_parsed_ = True
 
-    text = self.text_
+    text = self._LoadInputFile()
+
+    # Ignore the BOM character if the document starts with one.
+    if text.startswith(u'\ufeff'):
+      text = text[1:]
+
+    self.text_ = text
+
+    # Parsing is done in two phases:  First, we break the document into
+    # translateable and nontranslateable chunks.  Second, we run through each
+    # translateable chunk and insert placeholders for any HTML elements,
+    # unescape escaped characters, etc.
 
     # First handle the silly little [!]-prefixed header because it's not
     # handled by our HTML parsers.
@@ -720,32 +723,6 @@ class TrHtml(interface.GathererBase):
             break
         if not got_text:
           self.skeleton_[ix] = msg.GetRealContent()
-
-
-  @staticmethod
-  def FromFile(html, extkey=None, encoding = 'utf-8'):
-    '''Creates a TrHtml object from the contents of 'html' which are decoded
-    using 'encoding'.  Returns a new TrHtml object, upon which Parse() has not
-    been called.
-
-    Args:
-      html: file('') | 'filename.html'
-      extkey: ignored
-      encoding: 'utf-8' (note that encoding is ignored if 'html' is not a file
-                         name but instead an open file or file-like object)
-
-    Return:
-      TrHtml(text_of_file)
-    '''
-    if isinstance(html, types.StringTypes):
-      html = util.WrapInputStream(file(html, 'r'), encoding)
-    doc = html.read()
-
-    # Ignore the BOM character if the document starts with one.
-    if len(doc) and doc[0] == u'\ufeff':
-      doc = doc[1:]
-
-    return TrHtml(doc)
 
   def SubstituteMessages(self, substituter):
     '''Applies substitutions to all messages in the tree.

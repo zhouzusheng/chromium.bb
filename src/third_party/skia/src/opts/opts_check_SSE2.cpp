@@ -14,6 +14,10 @@
 #include "SkUtils_opts_SSE2.h"
 #include "SkUtils.h"
 
+#if defined(_MSC_VER) && defined(_WIN64)
+#include <intrin.h>
+#endif
+
 /* This file must *not* be compiled with -msse or -msse2, otherwise
    gcc may generate sse2 even for scalar ops (and thus give an invalid
    instruction on Pentium3 on the code below).  Only files named *_SSE2.cpp
@@ -22,6 +26,9 @@
 
 #ifdef _MSC_VER
 static inline void getcpuid(int info_type, int info[4]) {
+#if defined(_WIN64)
+    __cpuid(info, info_type);
+#else
     __asm {
         mov    eax, [info_type]
         cpuid
@@ -31,6 +38,7 @@ static inline void getcpuid(int info_type, int info[4]) {
         mov    [edi+8], ecx
         mov    [edi+12], edx
     }
+#endif
 }
 #else
 #if defined(__x86_64__)
@@ -88,6 +96,8 @@ static bool cachedHasSSSE3() {
 
 void SkBitmapProcState::platformProcs() {
     if (cachedHasSSSE3()) {
+#if !defined(SK_BUILD_FOR_ANDROID)
+        // Disable SSSE3 optimization for Android x86
         if (fSampleProc32 == S32_opaque_D32_filter_DX) {
             fSampleProc32 = S32_opaque_D32_filter_DX_SSSE3;
         } else if (fSampleProc32 == S32_alpha_D32_filter_DX) {
@@ -99,6 +109,7 @@ void SkBitmapProcState::platformProcs() {
         } else if (fSampleProc32 == S32_alpha_D32_filter_DXDY) {
             fSampleProc32 = S32_alpha_D32_filter_DXDY_SSSE3;
         }
+#endif
     } else if (cachedHasSSE2()) {
         if (fSampleProc32 == S32_opaque_D32_filter_DX) {
             fSampleProc32 = S32_opaque_D32_filter_DX_SSE2;
@@ -211,6 +222,8 @@ SkMemset32Proc SkMemset32GetPlatformProc() {
         return NULL;
     }
 }
+
+SkBlitRow::ColorRectProc PlatformColorRectProcFactory(); // suppress warning
 
 SkBlitRow::ColorRectProc PlatformColorRectProcFactory() {
     if (cachedHasSSE2()) {

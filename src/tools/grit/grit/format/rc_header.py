@@ -6,11 +6,9 @@
 '''Item formatters for RC headers.
 '''
 
-import re
-
-from grit.format import interface
 from grit import exception
 from grit import util
+from grit.format import interface
 
 from grit.extern import FP
 

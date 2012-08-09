@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 144
+#   For your editing convenience: highest ID currently used: 148
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -268,7 +268,7 @@
       },
       'example_value': True,
       'id': 7,
-      'caption': '''Enable network prediction.''',
+      'caption': '''Enable network prediction''',
       'desc': '''Enables network prediction in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing this setting.
 
       If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
@@ -743,19 +743,18 @@
         'dynamic_refresh': True,
         'can_be_recommended': True,
       },
+      'deprecated': True,
       'example_value': True,
       'id': 65,
-      'caption': '''Clear site data on browser shutdown''',
-      'desc': '''This policy is an override for the "Clear cookies and other site data when I close my browser" content settings option.
+      'caption': '''Clear site data on browser shutdown (deprecated)''',
+      'desc': '''This policy is an override for the "Clear cookies and other site data when I close my browser" content settings option that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> supported prior to version 21.
 
-      When set to enabled <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will delete all locally stored data from the browser when it is shut down.
+      This policy exists only for backward-compatibility and will go away in the future. The recommended way to clear site data on exit on version 21 and later is to configure the DefaultCookiesSetting policy to session-only.
 
-      If set to disabled site data will not be cleared on exit.
+      If this policy is enabled it will be translated to the appropriate policy setting for the DefaultCookiesSetting policy, setting it to session-only if the DefaultCookiesSetting policy is not configured or set to Allow.
 
-      If this policy is left not set <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the default which is to preserve site data on shut down and the user will be able to change this.
-
-      If the "RestoreOnStartup" policy is set to restore URLs from previous sessions this policy will not clear cookies or other data relevant to restoring the previous browsing session completely.''',
-      'label': '''Clear site data on browser shutdown''',
+      If this policy is disabled or left unconfigured the policy for storing site data is determined by the DefaultCookiesSetting policy.''',
+      'label': '''Clear site data on browser shutdown (deprecated)''',
     },
     {
       'name': 'Proxy',
@@ -1104,6 +1103,23 @@
           If this policy is left not set the user can uninstall any extension  in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
           'label': '''Extension IDs and update URLs to be silently installed''',
         },
+        {
+          'name': 'ExtensionInstallSources',
+          'type': 'list',
+          'supported_on': ['chrome.*:21-', 'chrome_os:21-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': ['https://corp.mycompany.com/*'],
+          'id': 148,
+          'caption': '''Configure extension, app, and user script install sources''',
+          'desc': '''Allows you to specify which URLs are allowed to install extensions, apps, and themes.
+
+          Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store. Previously, users could click on a link to a *.crx file, and Chrome would offer to install the file after a few warnings. After Chrome 21, such files must be downloaded an dragged onto the Chrome settings page. This setting allows specific URLs to have the old, easier installation flow.
+
+          Each item in this list is an extension-style match pattern (see http://code.google.com/chrome/extensions/match_patterns.html). Users will be able to easily install items from any URL that matches an item in this list.
+
+          ExtensionInstallBlacklist takes precedence over this policy. That is, an extension on the blacklist won't be installed, even if it happens from a site on this list.''',
+          'label': '''URL patterns to allow extension, app, and user script installs from''',
+        },
       ],
     },
     {
@@ -1370,6 +1386,11 @@
               'name': 'BlockCookies',
               'value': 2,
               'caption': '''Do not allow any site to set local data'''
+            },
+            {
+              'name': 'SessionOnly',
+              'value': 4,
+              'caption': '''Keep cookies for the duration of the session.'''
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1964,7 +1985,7 @@
       'features': {'dynamic_refresh': True},
       'example_value': True,
       'id': 84,
-      'caption': '''Allow invocation of file selection dialogs.''',
+      'caption': '''Allow invocation of file selection dialogs''',
       'desc': '''Allows access to local files on the machine by allowing <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to display file selection dialogs.
 
       If you enable this setting, users can open file selection dialogs as normal.
@@ -2583,6 +2604,31 @@
       '''
     },
     {
+      'name': 'DeviceUpdateScatterFactor',
+      'type': 'int',
+      'supported_on': ['chrome_os:20-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 7200,
+      'id': 145,
+      'caption': '''Auto update scatter factor''',
+      'desc': '''Specifies the number of seconds up to which a device may randomly delay its download of an update from the time the update was first pushed out to the server. The device may wait a portion of this time in terms of wall-clock-time and the remaining portion in terms of the number of update checks. In any case, the scatter is upper bounded to a constant amount of time so that a device does not ever get stuck waiting to download an update forever.'''
+    },
+    {
+      'name': 'DeviceUpdateAllowedConnectionTypes',
+      'type': 'list',
+      'supported_on': ['chrome_os:21-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': [ 'ethernet' ],
+      'id': 146,
+      'caption': '''Connection types allowed for updates''',
+      'desc': ''' The types of connections that are OK to use for OS updates. OS updates potentially put heavy strain on the connection due to their size and may incur additional cost. Therefore, they are by default not enabled for connection types that are considered expensive, which include WiMax, Bluetooth and Cellular at the moment.
+
+      The recognized connection type identifiers are ethernet, wifi, wimax, bluetooth, cellular.
+      '''
+    },
+    {
       'name': 'BackgroundModeEnabled',
       'type': 'main',
       'supported_on': ['chrome.win:19-', 'chrome.linux:19-'],
@@ -2653,6 +2699,22 @@
       If this policy is configured, the set of applications is fixed and can't be changed by the user.
 
       If this policy is left unset, the user may change the list of pinned apps in the launcher.''',
+    },
+    {
+      'name': 'RestrictSigninToPattern',
+      'type': 'string',
+      'supported_on': ['chrome.*:21-'],
+      'features': {
+        'dynamic_refresh': True,
+      },
+      'example_value': '*@domain.com',
+      'id': 147,
+      'caption': '''Restrict which users are allowed to sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
+      'desc': '''Contains a regular expression which is used to determine which users can sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+
+      An appropriate error is displayed if a user tries to log in with a username that does not match this pattern.
+
+      If this policy is left not set or blank, then any user can sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
     },
   ],
   'messages': {

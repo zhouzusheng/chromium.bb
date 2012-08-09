@@ -341,7 +341,6 @@ class Node(grit.format.interface.ItemFormatter):
     Used to determine whether to return item formatters for formats that
     obey conditional output of resources (e.g. the RC formatters).
     '''
-    from grit.node import misc
     if self.parent:
       return self.parent.SatisfiesOutputCondition()
     else:
@@ -401,16 +400,12 @@ class Node(grit.format.interface.ItemFormatter):
     return util.normpath(os.path.join(self.GetRoot().GetBaseDir(),
                                       os.path.expandvars(path_from_basedir)))
 
-  def FilenameToOpen(self):
-    '''Returns a path, either absolute or relative to the current working
-    directory, that points to the file the node refers to.  This is only valid
-    for nodes that have a 'file' or 'path' attribute.  Note that the attribute
-    is a path to the file relative to the 'base-dir' of the .grd file, whereas
-    this function returns a path that can be used to open the file.'''
-    file_attribute = 'file'
-    if not file_attribute in self.attrs:
-      file_attribute = 'path'
-    return self.ToRealPath(self.attrs[file_attribute])
+  def GetInputPath(self):
+    '''Returns a path, relative to the base directory set for the grd file,
+    that points to the file the node refers to.
+    '''
+    # This implementation works for most nodes that have an input file.
+    return self.attrs['file']
 
   def UberClique(self):
     '''Returns the uberclique that should be used for messages originating in
@@ -470,33 +465,34 @@ class Node(grit.format.interface.ItemFormatter):
 
     The expression is given a few local variables:
       - 'lang' is the language currently being output
-      - 'defs' is a map of C preprocessor-style define names to their values
+           (the 'lang' attribute of the <output> element).
+      - 'context' is the current output context
+           (the 'context' attribute of the <output> element).
+      - 'defs' is a map of C preprocessor-style symbol names to their values.
       - 'os' is the current platform (likely 'linux2', 'win32' or 'darwin').
-      - 'pp_ifdef(define)' which behaves just like the C preprocessors #ifdef,
-        i.e. it is shorthand for "define in defs"
-      - 'pp_if(define)' which behaves just like the C preprocessor's #if, i.e.
-        it is shorthand for "define in defs and defs[define]".
+      - 'pp_ifdef(symbol)' is a shorthand for "symbol in defs".
+      - 'pp_if(symbol)' is a shorthand for "symbol in defs and defs[symbol]".
+      - 'is_linux', 'is_macosx', 'is_win', 'is_posix' are true if 'os'
+           matches the given platform.
     '''
     root = self.GetRoot()
-    lang = ''
-    defs = {}
-    def pp_ifdef(define):
-      return define in defs
-    def pp_if(define):
-      return define in defs and defs[define]
-    if hasattr(root, 'output_language'):
-      lang = root.output_language
-    if hasattr(root, 'defines'):
-      defs = root.defines
+    lang = getattr(root, 'output_language', '')
+    context = getattr(root, 'output_context', '')
+    defs = getattr(root, 'defines', {})
+    def pp_ifdef(symbol):
+      return symbol in defs
+    def pp_if(symbol):
+      return symbol in defs and defs[symbol]
     variable_map = {
         'lang' : lang,
+        'context' : context,
         'defs' : defs,
         'os': sys.platform,
         'is_linux': sys.platform.startswith('linux'),
         'is_macosx': sys.platform == 'darwin',
         'is_win': sys.platform in ('cygwin', 'win32'),
         'is_posix': (sys.platform in ('darwin', 'linux2', 'linux3', 'sunos5')
-                     or sys.platform.find('bsd') != -1),
+                     or 'bsd' in sys.platform),
         'pp_ifdef' : pp_ifdef,
         'pp_if' : pp_if,
     }
@@ -514,29 +510,38 @@ class Node(grit.format.interface.ItemFormatter):
           node.GetLang() not in languages):
         node.DisableLoading()
 
+  def FindBooleanAttribute(self, attr, default, skip_self):
+    '''Searches all ancestors of the current node for the nearest enclosing
+    definition of the given boolean attribute.
+
+    Args:
+      attr: 'fallback_to_english'
+      default: What to return if no node defines the attribute.
+      skip_self: Don't check the current node, only its parents.
+    '''
+    p = self.parent if skip_self else self
+    while p:
+      value = p.attrs.get(attr, 'default').lower()
+      if value != 'default':
+        return (value == 'true')
+      p = p.parent
+    return default
+
   def PseudoIsAllowed(self):
     '''Returns true if this node is allowed to use pseudo-translations.  This
     is true by default, unless this node is within a <release> node that has
     the allow_pseudo attribute set to false.
     '''
-    p = self.parent
-    while p:
-      if 'allow_pseudo' in p.attrs:
-        return (p.attrs['allow_pseudo'].lower() == 'true')
-      p = p.parent
-    return True
+    return self.FindBooleanAttribute('allow_pseudo',
+                                     default=True, skip_self=True)
 
   def ShouldFallbackToEnglish(self):
     '''Returns true iff this node should fall back to English when
     pseudotranslations are disabled and no translation is available for a
     given message.
     '''
-    p = self.parent
-    while p:
-      if 'fallback_to_english' in p.attrs:
-        return (p.attrs['fallback_to_english'].lower() == 'true')
-      p = p.parent
-    return False
+    return self.FindBooleanAttribute('fallback_to_english',
+                                     default=False, skip_self=True)
 
   def WhitelistMarkedAsSkip(self):
     '''Returns true if the node is marked to be skipped in the output by a

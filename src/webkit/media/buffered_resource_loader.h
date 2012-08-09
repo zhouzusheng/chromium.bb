@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "googleurl/src/gurl.h"
+#include "media/base/seekable_buffer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
@@ -178,7 +179,10 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   // Only valid to call after Start() has completed.
   bool DidPassCORSAccessCheck() const;
 
-  // Sets the defer strategy to the given value.
+  // Sets the defer strategy to the given value unless it seems unwise.
+  // Specifically downgrade kNeverDefer to kThresholdDefer if we know the
+  // current response will not be used to satisfy future requests (the cache
+  // won't help us).
   void UpdateDeferStrategy(DeferStrategy strategy);
 
   // Sets the playback rate to the given value and updates buffer window
@@ -188,6 +192,9 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   // Sets the bitrate to the given value and updates buffer window
   // accordingly.
   void SetBitrate(int bitrate);
+
+  // Return the |first_byte_position| passed into the ctor.
+  int64 first_byte_position() const;
 
   // Parse a Content-Range header into its component pieces and return true if
   // each of the expected elements was found & parsed correctly.
@@ -264,7 +271,7 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
   void Log();
 
   // A sliding window of buffer.
-  scoped_ptr<media::SeekableBuffer> buffer_;
+  media::SeekableBuffer buffer_;
 
   // Keeps track of an active WebURLLoader and associated state.
   scoped_ptr<ActiveLoader> active_loader_;
@@ -275,6 +282,10 @@ class BufferedResourceLoader : public WebKit::WebURLLoaderClient {
 
   // Current buffering algorithm in place for resource loading.
   DeferStrategy defer_strategy_;
+
+  // True if the currently-reading response might be used to satisfy a future
+  // request from the cache.
+  bool might_be_reused_from_cache_in_future_;
 
   // True if Range header is supported.
   bool range_supported_;

@@ -12,22 +12,17 @@
 #define GrDrawTarget_DEFINED
 
 #include "GrClip.h"
-#include "GrColor.h"
 #include "GrDrawState.h"
 #include "GrIndexBuffer.h"
 #include "GrMatrix.h"
 #include "GrRefCnt.h"
-#include "GrSamplerState.h"
-#include "GrStencil.h"
-#include "GrTexture.h"
 
 #include "SkXfermode.h"
 #include "SkTLazy.h"
 
-class GrTexture;
 class GrClipIterator;
+class GrPath;
 class GrVertexBuffer;
-class GrIndexBuffer;
 
 class GrDrawTarget : public GrRefCnt {
 public:
@@ -52,6 +47,7 @@ public:
         bool fFSAASupport               : 1;
         bool fDualSourceBlendingSupport : 1;
         bool fBufferLockSupport         : 1;
+        bool fPathStencilingSupport     : 1;
         int fMaxRenderTargetSize;
         int fMaxTextureSize;
     };
@@ -189,6 +185,9 @@ public:
         GrAssert(texCoordIdx < GrDrawState::kMaxTexCoords);
         return 1 << (stage + (texCoordIdx * GrDrawState::kNumStages));
     }
+
+    virtual void postClipPush() {};
+    virtual void preClipPop() {};
 
 private:
     static const int TEX_COORD_BIT_CNT = GrDrawState::kNumStages *
@@ -433,7 +432,7 @@ public:
      * Pops the vertex / index sources from the matching push.
      */
     void popGeometrySource();
-    
+
     /**
      * Draws indexed geometry using the current state and current vertex / index
      * sources.
@@ -465,6 +464,13 @@ public:
     void drawNonIndexed(GrPrimitiveType type,
                         int startVertex,
                         int vertexCount);
+
+    /**
+     * Draws path into the stencil buffer. The fill must be either even/odd or
+     * winding (not inverse or hairline). It will respect the HW antialias flag
+     * on the draw state (if possible in the 3D API).
+     */
+    void stencilPath(const GrPath& path, GrPathFill fill);
 
     /**
      * Helper function for drawing rects. This does not use the current index
@@ -546,13 +552,10 @@ public:
     virtual void clear(const GrIRect* rect, GrColor color) = 0;
 
     /**
-     * Returns the maximum number of edges that may be specified in a single
-     * draw call when performing edge antialiasing.  This is usually limited
-     * by the number of fragment uniforms which may be uploaded.  Must be a
-     * minimum of six, since a triangle's vertices each belong to two boundary
-     * edges which may be distinct.
+     * Release any resources that are cached but not currently in use. This
+     * is intended to give an application some recourse when resources are low.
      */
-    virtual int getMaxEdges() const { return 6; }
+    virtual void purgeResources() {};
 
     ////////////////////////////////////////////////////////////////////////////
 
@@ -1042,9 +1045,11 @@ protected:
     virtual void onDrawNonIndexed(GrPrimitiveType type,
                                   int startVertex,
                                   int vertexCount) = 0;
+    virtual void onStencilPath(const GrPath& path, GrPathFill fill) = 0;
+
     // subclass overrides to be notified when clip is set. Must call
     // INHERITED::clipwillBeSet
-    virtual void clipWillBeSet(const GrClip& clip);
+    virtual void clipWillBeSet(const GrClip& clip) {}
 
     // Helpers for drawRect, protected so subclasses that override drawRect
     // can use them.

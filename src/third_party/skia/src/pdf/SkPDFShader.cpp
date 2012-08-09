@@ -466,6 +466,7 @@ SkPDFFunctionShader::SkPDFFunctionShader(SkPDFShader::State* state)
             break;
         case SkShader::kColor_GradientType:
         case SkShader::kNone_GradientType:
+        case SkShader::kConical_GradientType: // similar to twoPointRadialCode? 
         default:
             return;
     }
@@ -786,6 +787,7 @@ bool SkPDFShader::State::operator==(const SkPDFShader::State& b) const {
                 }
                 break;
             case SkShader::kRadial2_GradientType:
+            case SkShader::kConical_GradientType:
                 if (fInfo.fPoint[1] != b.fInfo.fPoint[1] ||
                         fInfo.fRadius[0] != b.fInfo.fRadius[0] ||
                         fInfo.fRadius[1] != b.fInfo.fRadius[1]) {

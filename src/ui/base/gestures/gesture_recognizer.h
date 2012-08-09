@@ -60,10 +60,17 @@ class UI_EXPORT GestureRecognizer {
   // of |location|, returns the target of the nearest active touch.
   virtual GestureConsumer* GetTargetForLocation(const gfx::Point& location) = 0;
 
-  // For each touch on windows other than |capturer|, a cancel event
-  // is fired.  These touches are then ignored until they are released
-  // and pressed again.
-  virtual void CancelNonCapturedTouches(GestureConsumer* capturer) = 0;
+  // Makes |new_consumer| the target for events previously targetting
+  // |current_consumer|. All other targets are cancelled. If |new_consumer| is
+  // NULL, all targets are cancelled.
+  virtual void TransferEventsTo(GestureConsumer* current_consumer,
+                                GestureConsumer* new_consumer) = 0;
+
+  // If a gesture is underway for |consumer| |point| is set to the last touch
+  // point and true is returned. If no touch events have been processed for
+  // |consumer| false is returned and |point| is untouched.
+  virtual bool GetLastTouchPointForTarget(GestureConsumer* consumer,
+                                          gfx::Point* point) = 0;
 };
 
 }  // namespace ui

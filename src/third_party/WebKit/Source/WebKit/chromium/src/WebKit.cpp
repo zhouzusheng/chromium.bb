@@ -46,6 +46,7 @@
 #include "platform/WebThread.h"
 #include "v8.h"
 #include <public/Platform.h>
+#include <public/WebPrerenderingSupport.h>
 #include <wtf/Assertions.h>
 #include <wtf/MainThread.h>
 #include <wtf/Threading.h>
@@ -62,6 +63,7 @@ namespace {
 
 class EndOfTaskRunner : public WebThread::TaskObserver {
 public:
+    virtual void willProcessTask() { }
     virtual void didProcessTask()
     {
         WebCore::WebKitMutationObserver::deliverAllMutations();
@@ -163,6 +165,7 @@ void shutdown()
 #endif
     s_webKitPlatformSupport = 0;
     Platform::shutdown();
+    WebPrerenderingSupport::shutdown();
 }
 
 WebKitPlatformSupport* webKitPlatformSupport()

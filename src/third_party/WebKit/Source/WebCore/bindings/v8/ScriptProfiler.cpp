@@ -121,6 +121,12 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
     return ScriptObject(scriptState, object);
 }
 
+unsigned ScriptProfiler::getHeapObjectId(ScriptValue value)
+{
+    v8::SnapshotObjectId id = v8::HeapProfiler::GetSnapshotObjectId(value.v8Value());
+    return id;
+}
+
 namespace {
 
 class ActivityControlAdapter : public v8::ActivityControl {
@@ -188,6 +194,11 @@ void ScriptProfiler::visitJSDOMWrappers(DOMWrapperVisitor* visitor)
 void ScriptProfiler::visitExternalJSStrings(DOMWrapperVisitor* visitor)
 {
     V8BindingPerIsolateData::current()->visitJSExternalStrings(visitor);
+}
+
+size_t ScriptProfiler::profilerSnapshotsSize()
+{
+    return v8::HeapProfiler::GetMemorySizeUsedByProfiler();
 }
 
 } // namespace WebCore

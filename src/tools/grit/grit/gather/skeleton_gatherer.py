@@ -7,7 +7,6 @@
 list.
 '''
 
-import re
 import types
 
 from grit.gather import interface
@@ -20,8 +19,8 @@ class SkeletonGatherer(interface.GathererBase):
   translatable and nontranslatable chunks.
   '''
 
-  def __init__(self):
-    interface.GathererBase.__init__(self)
+  def __init__(self, *args, **kwargs):
+    super(SkeletonGatherer, self).__init__(*args, **kwargs)
     # List of parts of the document. Translateable parts are
     # clique.MessageClique objects, nontranslateable parts are plain strings.
     # Translated messages are inserted back into the skeleton using the quoting

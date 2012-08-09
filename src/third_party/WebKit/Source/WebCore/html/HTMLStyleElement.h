@@ -59,12 +59,9 @@ private:
     HTMLStyleElement(const QualifiedName&, Document*, bool createdByParser);
 
     // overload from HTMLElement
-    virtual void parseAttribute(Attribute*) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
-    virtual void removedFrom(Node*) OVERRIDE;
-#if ENABLE(STYLE_SCOPED)
-    virtual void willRemove();
-#endif
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     virtual void finishParsingChildren();
@@ -79,14 +76,22 @@ private:
     virtual const AtomicString& media() const;
     virtual const AtomicString& type() const;
 
-    void registerWithScopingNode();
-    void unregisterWithScopingNode();
+#if ENABLE(STYLE_SCOPED)
+    void scopedAttributeChanged(bool);
+    void registerWithScopingNode(bool);
+    void unregisterWithScopingNode(ContainerNode*);
+#endif
 
     bool m_firedLoad;
     bool m_loadedSheet;
 
 #if ENABLE(STYLE_SCOPED)
-    bool m_isRegisteredWithScopingNode;
+    enum ScopedStyleRegistrationState {
+        NotRegistered,
+        RegisteredAsScoped,
+        RegisteredInShadowRoot
+    };
+    ScopedStyleRegistrationState m_scopedStyleRegistrationState;
 #endif
 };
 

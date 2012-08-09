@@ -137,11 +137,18 @@ void RenderImage::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
             imageDimensionsChanged(true /* imageSizeChanged */);
         m_needsToSetSizeForAltText = false;
     }
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    if (diff == StyleDifferenceLayout && oldStyle->imageResolution() != style()->imageResolution())
+        imageDimensionsChanged(true /* imageSizeChanged */);
+#endif
 }
 
 void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
 {
-    if (documentBeingDestroyed())
+    // FIXME (86669): Instead of the RenderImage determining whether its document is in the page
+    // cache, the RenderImage should remove itself as a client when its document is put into the
+    // page cache.
+    if (documentBeingDestroyed() || document()->inPageCache())
         return;
 
     if (hasBoxDecorations() || hasMask())
@@ -188,7 +195,11 @@ bool RenderImage::updateIntrinsicSizeIfNeeded(const IntSize& newSize, bool image
 
 void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* rect)
 {
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    bool intrinsicSizeChanged = updateIntrinsicSizeIfNeeded(m_imageResource->imageSize(style()->effectiveZoom() / style()->imageResolution()), imageSizeChanged);
+#else
     bool intrinsicSizeChanged = updateIntrinsicSizeIfNeeded(m_imageResource->imageSize(style()->effectiveZoom()), imageSizeChanged);
+#endif
 
     // In the case of generated image content using :before/:after/content, we might not be
     // in the render tree yet. In that case, we just need to update our intrinsic size.

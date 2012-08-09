@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "base/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -14,11 +15,13 @@
 #include "ui/base/ui_export.h"
 
 class SkBitmap;
+class SkDrawLooper;
 class SkShader;
 
 namespace gfx {
 
 class Rect;
+class ShadowValue;
 
 // Convert between Skia and gfx rect types.
 UI_EXPORT SkRect RectToSkRect(const gfx::Rect& rect);
@@ -36,6 +39,14 @@ UI_EXPORT SkShader* CreateGradientShader(int start_point,
                                          SkColor start_color,
                                          SkColor end_color);
 
+// Creates a draw looper to generate |shadows|. The caller owns the draw looper.
+// NULL is returned if |shadows| is empty since no draw looper is needed in
+// this case.
+// Example usage to avoid leaks:
+//   SkSafeUnref(paint.setDrawLooper(gfx::CreateShadowDrawLooper(shadows)));
+UI_EXPORT SkDrawLooper* CreateShadowDrawLooper(
+    const std::vector<ShadowValue>& shadows);
+
 // Returns true if the two bitmaps contain the same pixels.
 UI_EXPORT bool BitmapsAreEqual(const SkBitmap& bitmap1,
                                const SkBitmap& bitmap2);
@@ -49,6 +60,11 @@ UI_EXPORT string16 RemoveAcceleratorChar(const string16& s,
                                          char16 accelerator_char,
                                          int* accelerated_char_pos,
                                          int* accelerated_char_span);
+
+// Converts Skia ARGB format pixels in |skia| to RGBA.
+UI_EXPORT void ConvertSkiaToRGBA(const unsigned char* skia,
+                                 int pixel_width,
+                                 unsigned char* rgba);
 
 }  // namespace gfx
 

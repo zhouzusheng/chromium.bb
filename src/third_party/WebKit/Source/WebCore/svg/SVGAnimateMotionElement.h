@@ -37,9 +37,10 @@ private:
     virtual bool hasValidAttributeType();
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
 
-    virtual void resetToBaseValue();
+    virtual void resetAnimatedType();
+    virtual void clearAnimatedType(SVGElement* targetElement);
     virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString);
     virtual bool calculateFromAndToValues(const String& fromString, const String& toString);
     virtual bool calculateFromAndByValues(const String& fromString, const String& byString);

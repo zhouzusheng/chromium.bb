@@ -145,6 +145,11 @@ struct SK_API SkPoint {
     SkScalar x() const { return fX; }
     SkScalar y() const { return fY; }
 
+    /**
+     *  Returns true iff fX and fY are both zero.
+     */
+    bool isZero() const { return (0 == fX) & (0 == fY); }
+
     /** Set the point's X and Y coordinates */
     void set(SkScalar x, SkScalar y) { fX = x; fY = y; }
 
@@ -213,7 +218,13 @@ struct SK_API SkPoint {
      *  Return true if the computed length of the vector is >= the internal
      *  tolerance (used to avoid dividing by tiny values).
      */
-    static bool CanNormalize(SkScalar dx, SkScalar dy);
+    static bool CanNormalize(SkScalar dx, SkScalar dy)
+#ifdef SK_SCALAR_IS_FLOAT
+    // Simple enough (and performance critical sometimes) so we inline it.
+    { return (dx*dx + dy*dy) > (SK_ScalarNearlyZero * SK_ScalarNearlyZero); }
+#else
+    ;
+#endif
 
     bool canNormalize() const {
         return CanNormalize(fX, fY);

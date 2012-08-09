@@ -8,13 +8,16 @@
 #ifndef GrGLCustomStage_DEFINED
 #define GrGLCustomStage_DEFINED
 
-#include "../GrAllocator.h"
+#include "GrAllocator.h"
+#include "GrCustomStage.h"
+#include "GrGLProgram.h"
+#include "GrGLShaderBuilder.h"
 #include "GrGLShaderVar.h"
 #include "GrGLSL.h"
-#include "../GrStringBuilder.h"
+#include "GrStringBuilder.h"
 
-class GrCustomStage;
 struct GrGLInterface;
+class GrGLTexture;
 
 /** @file
     This file contains specializations for OpenGL of the shader stages
@@ -29,38 +32,36 @@ struct GrGLInterface;
 class GrGLProgramStage {
 
 public:
+    typedef GrCustomStage::StageKey StageKey;
+    enum {
+        // the number of bits in StageKey available to GenKey
+        kProgramStageKeyBits = GrProgramStageFactory::kProgramStageKeyBits,
+    };
+
     // TODO: redundant with GrGLProgram.cpp
     enum {
         kUnusedUniform = -1,
         kUseUniform = 2000
     };
 
-    typedef GrTAllocator<GrGLShaderVar> VarArray;
-    
+    GrGLProgramStage(const GrProgramStageFactory&);
+
     virtual ~GrGLProgramStage();
 
-    /** Creates any uniform variables the vertex shader requires
-        and appends them to vsUnis;
-        must guarantee they are unique (typically done by
-        appending the stage number). */
-    virtual void setupVSUnis(VarArray& vsUnis, int stage);
+    /** Create any uniforms or varyings the vertex shader requires. */
+    virtual void setupVariables(GrGLShaderBuilder* state, int stage);
 
-    /** Creates any uniform variables the fragment shader requires
-        and appends them to fsUnis;
-        must guarantee they are unique (typically done by
-        appending the stage number). */
-    virtual void setupFSUnis(VarArray& fsUnis, int stage);
-
-    /** Given an empty GrStringBuilder and the names of variables;
-        must write shader code into that GrStringBuilder.
+    /** Appends vertex code to the appropriate GrStringBuilder
+        on the state.
+        The code will be inside an otherwise-empty block.
         Vertex shader input is a vec2 of coordinates, which may
         be altered.
         The code will be inside an otherwise-empty block. */
-    virtual void emitVS(GrStringBuilder* code,
+    virtual void emitVS(GrGLShaderBuilder* state,
                         const char* vertexCoords) = 0;
 
-    /** Given an empty GrStringBuilder and the names of variables;
-        must write shader code into that GrStringBuilder.
+    /** Appends fragment code to the appropriate GrStringBuilder
+        on the state.
         The code will be inside an otherwise-empty block.
         Fragment shader inputs are a vec2 of coordinates, one texture,
         and a color; output is a color. */
@@ -68,83 +69,29 @@ public:
        a function here for them to call into that'll apply any texture
        domain - but do we force them to be honest about texture domain
        parameters? */
-    virtual void emitFS(GrStringBuilder* code,
+    virtual void emitFS(GrGLShaderBuilder* state,
                         const char* outputColor,
                         const char* inputColor,
-                        const char* samplerName,
-                        const char* sampleCoords) = 0;
+                        const char* samplerName) = 0;
 
     /** Binds uniforms; we must have already bound the program and
         determined its GL program ID. */
-    virtual void initUniforms(const GrGLInterface*, int programID);
+    virtual void initUniforms(const GrGLInterface* gl, int programID);
 
     /** A GrGLCustomStage instance can be reused with any GrCustomStage
         that produces the same stage key; this function reads data from
         a stage and uploads any uniform variables required by the shaders
-        created in emit*().
-        flush() to change the GrCustomStage from which the uniforms
-        are to be read.
-        TODO: since we don't have a factory, we can't assert to enforce
-        this. Shouldn't we? */
-    virtual void setData(const GrGLInterface*, GrCustomStage*);
+        created in emit*(). */
+    virtual void setData(const GrGLInterface* gl,
+                         const GrGLTexture& texture,
+                         const GrCustomStage& stage,
+                         int stageNum);
 
-    // TODO: needs a better name
-    enum SamplerMode {
-        kDefault_SamplerMode,
-        kProj_SamplerMode,
-        kExplicitDivide_SamplerMode  // must do an explicit divide
-    };
-
-    void setSamplerMode(SamplerMode shaderMode) { fSamplerMode = shaderMode; }
-
-    /** Returns the *effective* coord name after any perspective divide
-        or other transform. */
-    GrStringBuilder emitTextureSetup(GrStringBuilder* code,
-                                     const char* coordName,
-                                     int stageNum,
-                                     int coordDims,
-                                     int varyingDims);
+    const char* name() const { return fFactory.name(); }
 
 protected:
 
-    /** Convenience function for subclasses to write texture2D() or
-        texture2DProj(), depending on fSamplerMode. */
-    void emitTextureLookup(GrStringBuilder* code,
-                           const char* samplerName,
-                           const char* coordName);
-
-    SamplerMode fSamplerMode;
-    GrStringBuilder fCoordName;
-
-};
-
-
-/// Every GrGLProgramStage subclass needs a GrGLProgramStageFactory subclass
-/// to manage its creation.
-
-class GrGLProgramStageFactory {
-
-public:
-
-    virtual ~GrGLProgramStageFactory();
-
-    /** Returns a short unique identifier for this subclass x its
-        parameters. If the key differs, different shader code must
-        be generated; if the key matches, shader code can be reused.
-        0 == no custom stage. */
-    virtual uint16_t stageKey(const GrCustomStage*);
-
-    /** Returns a new instance of the appropriate implementation class
-        for the given GrCustomStage; caller is responsible for deleting
-        the object. */
-    virtual GrGLProgramStage* createGLInstance(GrCustomStage*) = 0;
-
-protected:
-
-    /** Disable default constructor - instances should be singletons
-        with static factory functions: our test examples are all stateless,
-        but we suspect that future implementations may want to cache data? */
-    GrGLProgramStageFactory() { }
+    const GrProgramStageFactory& fFactory;
 };
 
 #endif

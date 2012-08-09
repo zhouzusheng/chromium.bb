@@ -13,10 +13,10 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/process.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_operation_interface.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -44,7 +44,8 @@ class FileWriterDelegate;
 class FileSystemOperationTest;
 
 // FileSystemOperation implementation for local file systems.
-class FileSystemOperation : public FileSystemOperationInterface {
+class FILEAPI_EXPORT FileSystemOperation
+    : public NON_EXPORTED_BASE(FileSystemOperationInterface) {
  public:
   virtual ~FileSystemOperation();
 
@@ -122,6 +123,7 @@ class FileSystemOperation : public FileSystemOperationInterface {
   friend class FileSystemTestHelper;
   friend class IsolatedMountPointProvider;
   friend class SandboxMountPointProvider;
+  friend class TestMountPointProvider;
   friend class chromeos::CrosMountPointProvider;
 
   friend class FileSystemOperationTest;
@@ -130,8 +132,7 @@ class FileSystemOperation : public FileSystemOperationInterface {
   friend class FileSystemTestOriginHelper;
   friend class FileSystemQuotaTest;
 
-  FileSystemOperation(scoped_refptr<base::MessageLoopProxy> proxy,
-                      FileSystemContext* file_system_context);
+  explicit FileSystemOperation(FileSystemContext* file_system_context);
 
   FileSystemContext* file_system_context() const {
     return operation_context_.file_system_context();
@@ -175,7 +176,6 @@ class FileSystemOperation : public FileSystemOperationInterface {
                          bool recursive);
   void DoCopy(const StatusCallback& callback);
   void DoMove(const StatusCallback& callback);
-  void DoWrite();
   void DoTruncate(const StatusCallback& callback, int64 length);
   void DoOpenFile(const OpenFileCallback& callback, int file_flags);
 
@@ -219,11 +219,6 @@ class FileSystemOperation : public FileSystemOperationInterface {
                    base::PassPlatformFile file,
                    bool created);
 
-  // Helper for Write().
-  void OnFileOpenedForWrite(base::PlatformFileError rv,
-                            base::PassPlatformFile file,
-                            bool created);
-
   // Checks the validity of a given |path_url| and and populates
   // |path| and |file_util| for |mode|.
   base::PlatformFileError SetUpFileSystemPath(
@@ -235,9 +230,6 @@ class FileSystemOperation : public FileSystemOperationInterface {
   // Used only for internal assertions.
   // Returns false if there's another inflight pending operation.
   bool SetPendingOperationType(OperationType type);
-
-  // Proxy for calling file_util_proxy methods.
-  scoped_refptr<base::MessageLoopProxy> proxy_;
 
   FileSystemOperationContext operation_context_;
   FileSystemPath src_path_;
@@ -254,7 +246,6 @@ class FileSystemOperation : public FileSystemOperationInterface {
   // These are all used only by Write().
   friend class FileWriterDelegate;
   scoped_ptr<FileWriterDelegate> file_writer_delegate_;
-  scoped_ptr<net::URLRequest> blob_request_;
 
   // write_callback is kept in this class for so that we can dispatch it when
   // the operation is cancelled. calcel_callback is kept for canceling a
@@ -272,6 +263,10 @@ class FileSystemOperation : public FileSystemOperationInterface {
 
   // A flag to make sure we call operation only once per instance.
   OperationType pending_operation_;
+
+  // FileSystemOperation instance is usually deleted upon completion but
+  // could be deleted while it has inflight callbacks when Cancel is called.
+  base::WeakPtrFactory<FileSystemOperation> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperation);
 };

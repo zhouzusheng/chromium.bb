@@ -37,13 +37,13 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 SkPath::FillType gr_fill_to_sk_fill(GrPathFill fill) {
     switch (fill) {
-        case kWinding_PathFill:
+        case kWinding_GrPathFill:
             return SkPath::kWinding_FillType;
-        case kEvenOdd_PathFill:
+        case kEvenOdd_GrPathFill:
             return SkPath::kEvenOdd_FillType;
-        case kInverseWinding_PathFill:
+        case kInverseWinding_GrPathFill:
             return SkPath::kInverseWinding_FillType;
-        case kInverseEvenOdd_PathFill:
+        case kInverseEvenOdd_GrPathFill:
             return SkPath::kInverseEvenOdd_FillType;
         default:
             GrCrash("Unexpected fill.");
@@ -94,23 +94,54 @@ bool get_path_and_clip_bounds(const GrDrawTarget* target,
     return true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-/**
- * sw rasterizes path to A8 mask using the context's matrix and uploads to a 
- * scratch texture.
- */
 
-bool sw_draw_path_to_mask_texture(const SkPath& clientPath,
-                                  const GrIRect& pathDevBounds,
-                                  GrPathFill fill,
-                                  GrContext* context,
-                                  const GrPoint* translate,
-                                  GrAutoScratchTexture* tex,
-                                  bool antiAlias) {
+/*
+ * Convert a boolean operation into a transfer mode code
+ */
+SkXfermode::Mode op_to_mode(SkRegion::Op op) {
+
+    static const SkXfermode::Mode modeMap[] = {
+        SkXfermode::kDstOut_Mode,   // kDifference_Op
+        SkXfermode::kMultiply_Mode, // kIntersect_Op
+        SkXfermode::kSrcOver_Mode,  // kUnion_Op
+        SkXfermode::kXor_Mode,      // kXOR_Op
+        SkXfermode::kClear_Mode,    // kReverseDifference_Op
+        SkXfermode::kSrc_Mode,      // kReplace_Op
+    };
+
+    return modeMap[op];
+}
+
+}
+
+/**
+ * Draw a single rect element of the clip stack into the accumulation bitmap
+ */
+void GrSWMaskHelper::draw(const GrRect& clientRect, SkRegion::Op op, 
+                          bool antiAlias, GrColor color) {
+    SkPaint paint;
+
+    SkXfermode* mode = SkXfermode::Create(op_to_mode(op));
+
+    paint.setXfermode(mode);
+    paint.setAntiAlias(antiAlias);
+    paint.setColor(color);
+
+    fDraw.drawRect(clientRect, paint);
+
+    SkSafeUnref(mode);
+}
+
+/**
+ * Draw a single path element of the clip stack into the accumulation bitmap
+ */
+void GrSWMaskHelper::draw(const SkPath& clientPath, SkRegion::Op op,
+                          GrPathFill fill, bool antiAlias, GrColor color) {
+
     SkPaint paint;
     SkPath tmpPath;
     const SkPath* pathToDraw = &clientPath;
-    if (kHairLine_PathFill == fill) {
+    if (kHairLine_GrPathFill == fill) {
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(SK_Scalar1);
     } else {
@@ -122,52 +153,107 @@ bool sw_draw_path_to_mask_texture(const SkPath& clientPath,
             pathToDraw = &tmpPath;
         }
     }
-    paint.setAntiAlias(antiAlias);
-    paint.setColor(SK_ColorWHITE);
+    SkXfermode* mode = SkXfermode::Create(op_to_mode(op));
 
-    GrMatrix matrix = context->getMatrix();
-    if (NULL != translate) {
-        matrix.postTranslate(translate->fX, translate->fY);
+    paint.setXfermode(mode);
+    paint.setAntiAlias(antiAlias);
+    paint.setColor(color);
+
+    fDraw.drawPath(*pathToDraw, paint);
+
+    SkSafeUnref(mode);
+}
+
+bool GrSWMaskHelper::init(const GrIRect& pathDevBounds, 
+                          const GrPoint* translate,
+                          bool useMatrix) {
+    if (useMatrix) {    
+        fMatrix = fContext->getMatrix();
+    } else {
+        fMatrix.setIdentity();
     }
 
-    matrix.postTranslate(-pathDevBounds.fLeft * SK_Scalar1,
-                         -pathDevBounds.fTop * SK_Scalar1);
+    if (NULL != translate) {
+        fMatrix.postTranslate(translate->fX, translate->fY);
+    }
+
+    fMatrix.postTranslate(-pathDevBounds.fLeft * SK_Scalar1,
+                          -pathDevBounds.fTop * SK_Scalar1);
     GrIRect bounds = GrIRect::MakeWH(pathDevBounds.width(),
                                      pathDevBounds.height());
 
-    SkBitmap bm;
-    bm.setConfig(SkBitmap::kA8_Config, bounds.fRight, bounds.fBottom);
-    if (!bm.allocPixels()) {
+    fBM.setConfig(SkBitmap::kA8_Config, bounds.fRight, bounds.fBottom);
+    if (!fBM.allocPixels()) {
         return false;
     }
-    sk_bzero(bm.getPixels(), bm.getSafeSize());
+    sk_bzero(fBM.getPixels(), fBM.getSafeSize());
 
-    SkDraw  draw;
-    sk_bzero(&draw, sizeof(draw));
-    SkRasterClip rc(bounds);
-    draw.fRC    = &rc;
-    draw.fClip  = &rc.bwRgn();
-    draw.fMatrix = &matrix;
-    draw.fBitmap = &bm;
-    draw.drawPath(*pathToDraw, paint);
+    sk_bzero(&fDraw, sizeof(fDraw));
+    fRasterClip.setRect(bounds);
+    fDraw.fRC    = &fRasterClip;
+    fDraw.fClip  = &fRasterClip.bwRgn();
+    fDraw.fMatrix = &fMatrix;
+    fDraw.fBitmap = &fBM;
+    return true;
+}
 
-    const GrTextureDesc desc = {
-        kNone_GrTextureFlags,
-        bounds.fRight,
-        bounds.fBottom,
-        kAlpha_8_GrPixelConfig,
-        0 // samples
-    };
+/**
+ * Get a texture (from the texture cache) of the correct size & format
+ */
+bool GrSWMaskHelper::getTexture(GrAutoScratchTexture* tex) {
+    GrTextureDesc desc;
+    desc.fWidth = fBM.width();
+    desc.fHeight = fBM.height();
+    desc.fConfig = kAlpha_8_GrPixelConfig;
 
-    tex->set(context, desc);
+    tex->set(fContext, desc);
     GrTexture* texture = tex->texture();
 
     if (NULL == texture) {
         return false;
     }
-    SkAutoLockPixels alp(bm);
-    texture->writePixels(0, 0, desc.fWidth, desc.fHeight, desc.fConfig,
-                         bm.getPixels(), bm.rowBytes());
+
+    return true;
+}
+
+/**
+ * Move the result of the software mask generation back to the gpu
+ */
+void GrSWMaskHelper::toTexture(GrTexture *texture) {
+    SkAutoLockPixels alp(fBM);
+    texture->writePixels(0, 0, fBM.width(), fBM.height(), 
+                         kAlpha_8_GrPixelConfig,
+                         fBM.getPixels(), fBM.rowBytes());
+}
+
+namespace {
+////////////////////////////////////////////////////////////////////////////////
+/**
+ * sw rasterizes path to A8 mask using the context's matrix and uploads to a 
+ * scratch texture.
+ */
+bool sw_draw_path_to_mask_texture(const SkPath& clientPath,
+                                  const GrIRect& pathDevBounds,
+                                  GrPathFill fill,
+                                  GrContext* context,
+                                  const GrPoint* translate,
+                                  GrAutoScratchTexture* tex,
+                                  bool antiAlias) {
+    GrSWMaskHelper helper(context);
+
+    if (!helper.init(pathDevBounds, translate, true)) {
+        return false;
+    }
+
+    helper.draw(clientPath, SkRegion::kReplace_Op, 
+                fill, antiAlias, SK_ColorWHITE);
+
+    if (!helper.getTexture(tex)) {
+        return false;
+    }
+
+    helper.toTexture(tex->texture());
+
     return true;
 }
 
@@ -232,6 +318,7 @@ bool GrSoftwarePathRenderer::onDrawPath(const SkPath& path,
             // rendering (kGlyphMaskStage in GrBatchedTextContext)
             kPathMaskStage = GrPaint::kTotalStages,
         };
+        GrAssert(NULL == target->drawState()->getTexture(kPathMaskStage));
         target->drawState()->setTexture(kPathMaskStage, texture);
         target->drawState()->sampler(kPathMaskStage)->reset();
         GrScalar w = GrIntToScalar(pathBounds.width());
@@ -257,4 +344,3 @@ bool GrSoftwarePathRenderer::onDrawPath(const SkPath& path,
 
     return false;
 }
-

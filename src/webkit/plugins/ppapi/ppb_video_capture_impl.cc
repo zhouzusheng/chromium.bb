@@ -112,15 +112,19 @@ void PPB_VideoCapture_Impl::OnBufferReady(
       return;
     }
   }
+
+  // No free slot, just discard the frame and tell the media layer it can
+  // re-use the buffer.
+  platform_video_capture_->FeedBuffer(buffer);
 }
 
 void PPB_VideoCapture_Impl::OnDeviceInfoReceived(
     media::VideoCapture* capture,
     const media::VideoCaptureParams& device_info) {
   PP_VideoCaptureDeviceInfo_Dev info = {
-    device_info.width,
-    device_info.height,
-    device_info.frame_per_second
+    static_cast<uint32_t>(device_info.width),
+    static_cast<uint32_t>(device_info.height),
+    static_cast<uint32_t>(device_info.frame_per_second)
   };
   ReleaseBuffers();
 

@@ -86,23 +86,25 @@ const char* Natives::GetScriptSource() {
 """
 
 
-def JS2C(source, target):
-  filename = str(source)
-
-  lines = ReadFile(filename)
-  Validate(lines, filename)
-  data = ToCArray(lines)
+def JS2C(source_files, target_file):
+  all_lines = []
+  for source in source_files:
+    filename = str(source)
+    lines = ReadFile(filename)
+    Validate(lines, filename)
+    all_lines.extend(lines)
+  data = ToCArray(all_lines)
 
   # Emit result
-  output = open(target, "w")
+  output = open(target_file, "w")
   output.write(HEADER_TEMPLATE % data)
   output.close()
 
 
 def main():
-  target = sys.argv[1]
-  source = sys.argv[2]
-  JS2C(source, target)
+  target_file = sys.argv[1]
+  source_files = sys.argv[2:]
+  JS2C(source_files, target_file)
 
 
 if __name__ == "__main__":

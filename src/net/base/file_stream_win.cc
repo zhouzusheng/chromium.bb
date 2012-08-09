@@ -48,10 +48,8 @@ int RecordAndMapError(int error,
 
   bound_net_log.AddEvent(
       net::NetLog::TYPE_FILE_STREAM_ERROR,
-      make_scoped_refptr(
-          new FileStreamErrorParameters(GetFileErrorSourceName(source),
-                                        error,
-                                        net_error)));
+      base::Bind(&NetLogFileStreamErrorCallback,
+                 source, error, net_error));
 
   RecordFileError(error, source, record_uma);
 
@@ -66,11 +64,10 @@ void OpenFile(const FilePath& path,
               base::PlatformFile* file,
               int* result,
               const net::BoundNetLog& bound_net_log) {
+  std::string file_name = path.AsUTF8Unsafe();
   bound_net_log.BeginEvent(
       net::NetLog::TYPE_FILE_STREAM_OPEN,
-      make_scoped_refptr(
-          new net::NetLogStringParameter("file_name",
-                                         path.AsUTF8Unsafe())));
+      NetLog::StringCallback("file_name", &file_name));
 
   *file = base::CreatePlatformFile(path, open_flags, NULL, NULL);
   if (*file == base::kInvalidPlatformFileValue) {
@@ -80,7 +77,7 @@ void OpenFile(const FilePath& path,
                                 FILE_ERROR_SOURCE_OPEN,
                                 record_uma,
                                 bound_net_log);
-    bound_net_log.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN, NULL);
+    bound_net_log.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN);
     return;
   }
 }
@@ -88,7 +85,7 @@ void OpenFile(const FilePath& path,
 // Closes a file with some network logging.
 void CloseFile(base::PlatformFile file,
                const net::BoundNetLog& bound_net_log) {
-  bound_net_log.AddEvent(net::NetLog::TYPE_FILE_STREAM_CLOSE, NULL);
+  bound_net_log.AddEvent(net::NetLog::TYPE_FILE_STREAM_CLOSE);
   if (file == base::kInvalidPlatformFileValue)
     return;
 
@@ -96,7 +93,7 @@ void CloseFile(base::PlatformFile file,
 
   if (!base::ClosePlatformFile(file))
     NOTREACHED();
-  bound_net_log.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN, NULL);
+  bound_net_log.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN);
 }
 
 // Closes a file with CloseFile() and signals the completion.
@@ -214,7 +211,7 @@ FileStreamWin::FileStreamWin(net::NetLog* net_log)
       bound_net_log_(net::BoundNetLog::Make(net_log,
                                             net::NetLog::SOURCE_FILESTREAM)),
       weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  bound_net_log_.BeginEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE, NULL);
+  bound_net_log_.BeginEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE);
 }
 
 FileStreamWin::FileStreamWin(
@@ -226,7 +223,7 @@ FileStreamWin::FileStreamWin(
       bound_net_log_(net::BoundNetLog::Make(net_log,
                                             net::NetLog::SOURCE_FILESTREAM)),
       weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  bound_net_log_.BeginEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE, NULL);
+  bound_net_log_.BeginEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE);
 
   // If the file handle is opened with base::PLATFORM_FILE_ASYNC, we need to
   // make sure we will perform asynchronous File IO to it.
@@ -262,7 +259,7 @@ FileStreamWin::~FileStreamWin() {
     }
   }
 
-  bound_net_log_.EndEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE, NULL);
+  bound_net_log_.EndEvent(net::NetLog::TYPE_FILE_STREAM_ALIVE);
 }
 
 void FileStreamWin::Close(const CompletionCallback& callback) {
@@ -295,7 +292,7 @@ void FileStreamWin::CloseSync() {
   // once all async clients are migrated to use Close(). crbug.com/114783
   WaitForIOCompletion();
 
-  bound_net_log_.AddEvent(net::NetLog::TYPE_FILE_STREAM_CLOSE, NULL);
+  bound_net_log_.AddEvent(net::NetLog::TYPE_FILE_STREAM_CLOSE);
   if (file_ != base::kInvalidPlatformFileValue)
     CancelIo(file_);
 
@@ -307,7 +304,7 @@ void FileStreamWin::CloseSync() {
       NOTREACHED();
     file_ = base::kInvalidPlatformFileValue;
 
-    bound_net_log_.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN, NULL);
+    bound_net_log_.EndEvent(net::NetLog::TYPE_FILE_STREAM_OPEN);
   }
 }
 
@@ -656,15 +653,11 @@ void FileStreamWin::SetBoundNetLogSource(
 
   bound_net_log_.AddEvent(
       net::NetLog::TYPE_FILE_STREAM_BOUND_TO_OWNER,
-      make_scoped_refptr(
-          new net::NetLogSourceParameter("source_dependency",
-                                         owner_bound_net_log.source())));
+      owner_bound_net_log.source().ToEventParametersCallback());
 
   owner_bound_net_log.AddEvent(
       net::NetLog::TYPE_FILE_STREAM_SOURCE,
-      make_scoped_refptr(
-          new net::NetLogSourceParameter("source_dependency",
-                                         bound_net_log_.source())));
+      bound_net_log_.source().ToEventParametersCallback());
 }
 
 base::PlatformFile FileStreamWin::GetPlatformFileForTesting() {

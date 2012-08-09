@@ -45,24 +45,48 @@
 #include "FileWriter.h"
 #include "FileWriterBaseCallback.h"
 #include "FileWriterCallback.h"
-#include "InspectorFileSystemInstrumentation.h"
 #include "MetadataCallback.h"
 #include "ScriptExecutionContext.h"
+#include "SecurityOrigin.h"
 #include <wtf/OwnPtr.h>
+#include <wtf/text/StringBuilder.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 // static
-PassRefPtr<DOMFileSystem> DOMFileSystem::create(ScriptExecutionContext* context, const String& name, PassOwnPtr<AsyncFileSystem> asyncFileSystem)
+PassRefPtr<DOMFileSystem> DOMFileSystem::create(ScriptExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL, PassOwnPtr<AsyncFileSystem> asyncFileSystem)
 {
-    RefPtr<DOMFileSystem> fileSystem(adoptRef(new DOMFileSystem(context, name, asyncFileSystem)));
+    RefPtr<DOMFileSystem> fileSystem(adoptRef(new DOMFileSystem(context, name, type, rootURL, asyncFileSystem)));
     fileSystem->suspendIfNeeded();
-    InspectorInstrumentation::didOpenFileSystem(fileSystem.get());
     return fileSystem.release();
 }
 
-DOMFileSystem::DOMFileSystem(ScriptExecutionContext* context, const String& name, PassOwnPtr<AsyncFileSystem> asyncFileSystem)
-    : DOMFileSystemBase(context, name, asyncFileSystem)
+PassRefPtr<DOMFileSystem> DOMFileSystem::createIsolatedFileSystem(ScriptExecutionContext* context, const String& filesystemId)
+{
+    StringBuilder filesystemName;
+    filesystemName.append(context->securityOrigin()->databaseIdentifier());
+    filesystemName.append(":");
+    filesystemName.append(isolatedPathPrefix);
+    filesystemName.append("_");
+    filesystemName.append(filesystemId);
+
+    // The rootURL created here is going to be attached to each filesystem request and
+    // is to be validated each time the request is being handled.
+    StringBuilder rootURL;
+    rootURL.append("filesystem:");
+    rootURL.append(context->securityOrigin()->toString());
+    rootURL.append("/");
+    rootURL.append(isolatedPathPrefix);
+    rootURL.append("/");
+    rootURL.append(filesystemId);
+    rootURL.append("/");
+
+    return DOMFileSystem::create(context, filesystemName.toString(), FileSystemTypeIsolated, KURL(ParsedURLString, rootURL.toString()), AsyncFileSystem::create());
+}
+
+DOMFileSystem::DOMFileSystem(ScriptExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL, PassOwnPtr<AsyncFileSystem> asyncFileSystem)
+    : DOMFileSystemBase(context, name, type, rootURL, asyncFileSystem)
     , ActiveDOMObject(context, this)
 {
 }
@@ -118,16 +142,16 @@ void DOMFileSystem::createWriter(const FileEntry* fileEntry, PassRefPtr<FileWrit
     RefPtr<FileWriter> fileWriter = FileWriter::create(scriptExecutionContext());
     RefPtr<FileWriterBaseCallback> conversionCallback = ConvertToFileWriterCallback::create(successCallback);
     OwnPtr<FileWriterBaseCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, conversionCallback, errorCallback);
-    m_asyncFileSystem->createWriter(fileWriter.get(), fileEntry->fullPath(), callbacks.release());
+    m_asyncFileSystem->createWriter(fileWriter.get(), createFileSystemURL(fileEntry), callbacks.release());
 }
 
 namespace {
 
-class GetPathCallback : public FileSystemCallbacksBase {
+class GetMetadataCallback : public FileSystemCallbacksBase {
 public:
-    static PassOwnPtr<GetPathCallback> create(PassRefPtr<DOMFileSystem> filesystem, const String& name, PassRefPtr<FileCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+    static PassOwnPtr<GetMetadataCallback> create(PassRefPtr<DOMFileSystem> filesystem, const String& name, PassRefPtr<FileCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
     {
-        return adoptPtr(new GetPathCallback(filesystem, name, successCallback, errorCallback));
+        return adoptPtr(new GetMetadataCallback(filesystem, name, successCallback, errorCallback));
     }
 
     virtual void didReadMetadata(const FileMetadata& metadata)
@@ -136,12 +160,18 @@ public:
         if (!m_successCallback)
             return;
 
-        m_successCallback->handleEvent(File::createWithName(metadata.platformPath, m_name).get());
+        // For regular filesystem types (temporary or persistent), we should not cache file metadata as it could change File semantics.
+        // For other filesystem types (which could be platform-specific ones), there's a chance that the files are on remote filesystem. If the port has returned metadata just pass it to File constructor (so we may cache the metadata).
+        if (m_filesystem->type() == FileSystemTypeTemporary || m_filesystem->type() == FileSystemTypePersistent)
+            m_successCallback->handleEvent(File::createWithName(metadata.platformPath, m_name).get());
+        else
+            m_successCallback->handleEvent(File::createForFileSystemFile(m_name, metadata).get());
+
         m_successCallback.release();
     }
 
 private:
-    GetPathCallback(PassRefPtr<DOMFileSystem> filesystem, const String& name,  PassRefPtr<FileCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
+    GetMetadataCallback(PassRefPtr<DOMFileSystem> filesystem, const String& name,  PassRefPtr<FileCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
         : FileSystemCallbacksBase(errorCallback)
         , m_filesystem(filesystem)
         , m_name(name)
@@ -158,7 +188,7 @@ private:
 
 void DOMFileSystem::createFile(const FileEntry* fileEntry, PassRefPtr<FileCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
 {
-    m_asyncFileSystem->createSnapshotFileAndReadMetadata(fileEntry->fullPath(), GetPathCallback::create(this, fileEntry->name(), successCallback, errorCallback));
+    m_asyncFileSystem->createSnapshotFileAndReadMetadata(createFileSystemURL(fileEntry), GetMetadataCallback::create(this, fileEntry->name(), successCallback, errorCallback));
 }
 
 } // namespace WebCore

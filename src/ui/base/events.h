@@ -10,6 +10,10 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/native_widget_types.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 namespace gfx {
 class Point;
 }
@@ -49,12 +53,17 @@ enum EventType {
   ET_GESTURE_SCROLL_UPDATE,
   ET_GESTURE_TAP,
   ET_GESTURE_TAP_DOWN,
+  ET_GESTURE_BEGIN,  // Sent before any other gesture types.
+  ET_GESTURE_END,    // Sent after any other gestures.
   ET_GESTURE_DOUBLE_TAP,
+  ET_GESTURE_TWO_FINGER_TAP,
   ET_GESTURE_PINCH_BEGIN,
   ET_GESTURE_PINCH_END,
   ET_GESTURE_PINCH_UPDATE,
   ET_GESTURE_LONG_PRESS,
-  ET_GESTURE_THREE_FINGER_SWIPE,
+  // A SWIPE gesture can happen at the end of a TAP_UP gesture if the
+  // finger(s) were moving quickly before they are released.
+  ET_GESTURE_MULTIFINGER_SWIPE,
 
   // Scroll support.
   // TODO[davemoore] we need to unify these events w/ touch and gestures.
@@ -83,6 +92,8 @@ enum MouseEventFlags {
   EF_IS_TRIPLE_CLICK    = 1 << 17,
   EF_IS_NON_CLIENT      = 1 << 18,
   EF_IS_SYNTHESIZED     = 1 << 19,  // Only for Aura.  See ui/aura/root_window.h
+  EF_FROM_TOUCH         = 1 << 20,  // Indicates this mouse event is generated
+                                    // from an unconsumed touch/gesture event.
 };
 
 enum TouchStatus {
@@ -103,11 +114,6 @@ enum TouchStatus {
   TOUCH_STATUS_QUEUED_END,   // Similar to TOUCH_STATUS_QUEUED, except that
                              // subsequent touch-events can be sent to any
                              // handler.
-};
-
-enum CaptureEventFlags {
-  CW_LOCK_MOUSE = 1 << 0,
-  CW_LOCK_TOUCH = 1 << 1,
 };
 
 // Updates the list of devices for cached properties.
@@ -203,6 +209,10 @@ UI_EXPORT bool IsNoopEvent(const base::NativeEvent& event);
 
 // Creates and returns no-op event.
 UI_EXPORT base::NativeEvent CreateNoopEvent();
+
+#if defined(OS_WIN)
+UI_EXPORT int GetModifiersFromACCEL(const ACCEL& accel);
+#endif
 
 }  // namespace ui
 

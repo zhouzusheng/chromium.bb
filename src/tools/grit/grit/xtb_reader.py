@@ -111,7 +111,7 @@ def Parse(xtb_file, callback_function, defs={}, debug=False):
   (if is_placeholder is True).
 
   Args:
-    xtb_file:           file('fr.xtb')
+    xtb_file:           open('fr.xtb')
     callback_function:  def Callback(msg_id, parts): pass
 
   Return:

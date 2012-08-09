@@ -50,15 +50,13 @@ class SK_API SkFontHost {
 public:
     /** Return a new, closest matching typeface given either an existing family
         (specified by a typeface in that family) or by a familyName and a
-        requested style, or by a set of Unicode codepoitns to cover in a given
-        style.
+        requested style.
         1) If familyFace is null, use familyName.
         2) If familyName is null, use data (UTF-16 to cover).
         3) If all are null, return the default font that best matches style
      */
     static SkTypeface* CreateTypeface(const SkTypeface* familyFace,
                                       const char familyName[],
-                                      const void* data, size_t bytelength,
                                       SkTypeface::Style style);
 
     /** Return a new typeface given the data buffer. If the data does not
@@ -120,12 +118,17 @@ public:
     ///////////////////////////////////////////////////////////////////////////
 
     /** Write a unique identifier to the stream, so that the same typeface can
-        be retrieved with Deserialize().
+        be retrieved with Deserialize(). The standard format is to serialize
+        a SkFontDescriptor followed by a uint32_t length value. If the length
+        is non-zero then the following bytes (of that length) represent a
+        serialized copy of the font which can be recreated from a stream.
     */
     static void Serialize(const SkTypeface*, SkWStream*);
 
     /** Given a stream created by Serialize(), return a new typeface (like
-        CreateTypeface) or return NULL if no match is found.
+        CreateTypeface) which is either an exact match to the one serialized
+        or the best available typeface based on the data in the deserialized
+        SkFontDescriptor.
      */
     static SkTypeface* Deserialize(SkStream*);
 
@@ -242,7 +245,7 @@ public:
     */
     enum LCDOrientation {
         kHorizontal_LCDOrientation = 0,    //!< this is the default
-        kVertical_LCDOrientation   = 1,
+        kVertical_LCDOrientation   = 1
     };
 
     static void SetSubpixelOrientation(LCDOrientation orientation);
@@ -261,7 +264,7 @@ public:
     enum LCDOrder {
         kRGB_LCDOrder = 0,    //!< this is the default
         kBGR_LCDOrder = 1,
-        kNONE_LCDOrder = 2,
+        kNONE_LCDOrder = 2
     };
 
     static void SetSubpixelOrder(LCDOrder order);

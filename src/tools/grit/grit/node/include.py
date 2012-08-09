@@ -18,7 +18,7 @@ from grit import util
 class IncludeNode(base.Node):
   """An <include> element."""
   def __init__(self):
-    base.Node.__init__(self)
+    super(IncludeNode, self).__init__()
 
     # Cache flattened data so that we don't flatten the same file
     # multiple times.
@@ -32,7 +32,7 @@ class IncludeNode(base.Node):
 
   def _GetFlattenedData(self, allow_external_script=False):
     if not self._flattened_data:
-      filename = self.FilenameToOpen()
+      filename = self.ToRealPath(self.GetInputPath())
       self._flattened_data = (
           grit.format.html_inline.InlineToString(filename, self,
               allow_external_script=allow_external_script))
@@ -67,13 +67,13 @@ class IncludeNode(base.Node):
       from grit.format import resource_map
       return resource_map.SourceFileInclude()
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(IncludeNode, self).ItemFormatter(t)
 
   def FileForLanguage(self, lang, output_dir):
     """Returns the file for the specified language.  This allows us to return
     different files for different language variants of the include file.
     """
-    return self.FilenameToOpen()
+    return self.ToRealPath(self.GetInputPath())
 
   def GetDataPackPair(self, lang, encoding):
     """Returns a (id, string) pair that represents the resource id and raw
@@ -86,42 +86,35 @@ class IncludeNode(base.Node):
       allow_external_script = self.attrs['allowexternalscript'] == 'true'
       data = self._GetFlattenedData(allow_external_script=allow_external_script)
     else:
-      filename = self.FilenameToOpen()
-      infile = open(filename, 'rb')
-      data = infile.read()
-      infile.close()
+      filename = self.ToRealPath(self.GetInputPath())
+      data = util.ReadFile(filename, util.BINARY)
 
     # Include does not care about the encoding, because it only returns binary
     # data.
     return id, data
 
-  def Flatten(self, output_dir):
+  def Process(self, output_dir):
     """Rewrite file references to be base64 encoded data URLs.  The new file
     will be written to output_dir and the name of the new file is returned."""
-    filename = self.FilenameToOpen()
+    filename = self.ToRealPath(self.GetInputPath())
     flat_filename = os.path.join(output_dir,
         self.attrs['name'] + '_' + os.path.basename(filename))
 
     if self._last_flat_filename == flat_filename:
       return
 
-    outfile = open(flat_filename, 'wb')
-    outfile.write(self._GetFlattenedData())
-    outfile.close()
+    with open(flat_filename, 'wb') as outfile:
+      outfile.write(self._GetFlattenedData())
 
     self._last_flat_filename = flat_filename
     return os.path.basename(flat_filename)
 
-
   def GetHtmlResourceFilenames(self):
     """Returns a set of all filenames inlined by this file."""
     allow_external_script = self.attrs['allowexternalscript'] == 'true'
-    return grit.format.html_inline.GetResourceFilenames(self.FilenameToOpen(),
+    return grit.format.html_inline.GetResourceFilenames(
+         self.ToRealPath(self.GetInputPath()),
          allow_external_script=allow_external_script)
-
-  def GetFilePath(self):
-    """Returns the file path for the current language."""
-    return self.FilenameToOpen()
 
   @staticmethod
   def Construct(parent, name, type, file, translateable=True,

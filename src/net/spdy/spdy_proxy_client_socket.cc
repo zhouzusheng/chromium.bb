@@ -16,7 +16,6 @@
 #include "net/base/net_util.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_handler_factory.h"
-#include "net/http/http_net_log_params.h"
 #include "net/http/http_response_headers.h"
 #include "net/spdy/spdy_http_utils.h"
 
@@ -275,7 +274,7 @@ bool SpdyProxyClientSocket::SetSendBufferSize(int32 size) {
   return false;
 }
 
-int SpdyProxyClientSocket::GetPeerAddress(AddressList* address) const {
+int SpdyProxyClientSocket::GetPeerAddress(IPEndPoint* address) const {
   if (!IsConnected())
     return ERR_SOCKET_NOT_CONNECTED;
   return spdy_stream_->GetPeerAddress(address);
@@ -314,7 +313,7 @@ int SpdyProxyClientSocket::DoLoop(int last_io_result) {
       case STATE_SEND_REQUEST:
         DCHECK_EQ(OK, rv);
         net_log_.BeginEvent(
-            NetLog::TYPE_HTTP_TRANSACTION_TUNNEL_SEND_REQUEST, NULL);
+            NetLog::TYPE_HTTP_TRANSACTION_TUNNEL_SEND_REQUEST);
         rv = DoSendRequest();
         break;
       case STATE_SEND_REQUEST_COMPLETE:
@@ -365,12 +364,12 @@ int SpdyProxyClientSocket::DoSendRequest() {
   HttpRequestHeaders request_headers;
   BuildTunnelRequest(request_, authorization_headers, endpoint_, &request_line,
                      &request_headers);
-  if (net_log_.IsLoggingAllEvents()) {
-    net_log_.AddEvent(
-        NetLog::TYPE_HTTP_TRANSACTION_SEND_TUNNEL_HEADERS,
-        make_scoped_refptr(new NetLogHttpRequestParameter(
-            request_line, request_headers)));
-  }
+
+  net_log_.AddEvent(
+      NetLog::TYPE_HTTP_TRANSACTION_SEND_TUNNEL_HEADERS,
+      base::Bind(&HttpRequestHeaders::NetLogCallback,
+                 base::Unretained(&request_headers),
+                 &request_line));
 
   request_.extra_headers.MergeFrom(request_headers);
   linked_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
@@ -410,11 +409,9 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
     return ERR_TUNNEL_CONNECTION_FAILED;
 
   next_state_ = STATE_OPEN;
-  if (net_log_.IsLoggingAllEvents()) {
-    net_log_.AddEvent(
-        NetLog::TYPE_HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS,
-        make_scoped_refptr(new NetLogHttpResponseParameter(response_.headers)));
-  }
+  net_log_.AddEvent(
+      NetLog::TYPE_HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS,
+      base::Bind(&HttpResponseHeaders::NetLogCallback, response_.headers));
 
   if (response_.headers->response_code() == 200) {
     return OK;

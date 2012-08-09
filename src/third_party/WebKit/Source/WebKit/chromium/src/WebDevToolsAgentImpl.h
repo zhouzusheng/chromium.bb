@@ -36,6 +36,7 @@
 #include "WebDevToolsAgentPrivate.h"
 #include "WebPageOverlay.h"
 #include "platform/WebSize.h"
+#include "platform/WebThread.h"
 
 #include <wtf/Forward.h>
 #include <wtf/OwnPtr.h>
@@ -65,7 +66,8 @@ struct WebDevToolsMessageData;
 
 class WebDevToolsAgentImpl : public WebDevToolsAgentPrivate,
                              public WebCore::InspectorClient,
-                             public WebPageOverlay {
+                             public WebPageOverlay,
+                             public WebThread::TaskObserver {
 public:
     WebDevToolsAgentImpl(WebViewImpl* webViewImpl, WebDevToolsAgentClient* client);
     virtual ~WebDevToolsAgentImpl();
@@ -84,7 +86,6 @@ public:
     virtual void dispatchOnInspectorBackend(const WebString& message);
     virtual void inspectElementAt(const WebPoint& point);
     virtual void evaluateInWebInspector(long callId, const WebString& script);
-    virtual void setJavaScriptProfilingEnabled(bool);
     virtual void setProcessId(long);
 
     // InspectorClient implementation.
@@ -101,6 +102,9 @@ public:
     virtual void clearBrowserCache();
     virtual void clearBrowserCookies();
 
+    virtual void startMainThreadMonitoring();
+    virtual void stopMainThreadMonitoring();
+
     virtual void overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow);
     virtual void autoZoomPageToFitWidth();
 
@@ -108,6 +112,10 @@ public:
 
     // WebPageOverlay
     virtual void paintPageOverlay(WebCanvas*);
+
+    // WebThread::TaskObserver
+    virtual void willProcessTask();
+    virtual void didProcessTask();
 
 private:
     WebCore::InspectorController* inspectorController();

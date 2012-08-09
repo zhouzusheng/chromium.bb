@@ -58,11 +58,11 @@
 #define GrIsALIGN4(n)   SkIsAlign4(n)
 
 template <typename T> const T& GrMin(const T& a, const T& b) {
-	return (a < b) ? a : b;
+    return (a < b) ? a : b;
 }
 
 template <typename T> const T& GrMax(const T& a, const T& b) {
-	return (b < a) ? a : b;
+    return (b < a) ? a : b;
 }
 
 // compile time versions of min/max
@@ -203,44 +203,46 @@ typedef int GrVertexLayout;
 * Geometric primitives used for drawing.
 */
 enum GrPrimitiveType {
-    kTriangles_PrimitiveType,
-    kTriangleStrip_PrimitiveType,
-    kTriangleFan_PrimitiveType,
-    kPoints_PrimitiveType,
-    kLines_PrimitiveType,     // 1 pix wide only
-    kLineStrip_PrimitiveType  // 1 pix wide only
+    kTriangles_GrPrimitiveType,
+    kTriangleStrip_GrPrimitiveType,
+    kTriangleFan_GrPrimitiveType,
+    kPoints_GrPrimitiveType,
+    kLines_GrPrimitiveType,     // 1 pix wide only
+    kLineStrip_GrPrimitiveType  // 1 pix wide only
 };
 
 static inline bool GrIsPrimTypeLines(GrPrimitiveType type) {
-    return kLines_PrimitiveType == type || kLineStrip_PrimitiveType == type;
+    return kLines_GrPrimitiveType == type || kLineStrip_GrPrimitiveType == type;
 }
 
 static inline bool GrIsPrimTypeTris(GrPrimitiveType type) {
-    return kTriangles_PrimitiveType == type     ||
-           kTriangleStrip_PrimitiveType == type ||
-           kTriangleFan_PrimitiveType == type;
+    return kTriangles_GrPrimitiveType == type     ||
+           kTriangleStrip_GrPrimitiveType == type ||
+           kTriangleFan_GrPrimitiveType == type;
 }
 
 /**
  * Coeffecients for alpha-blending.
  */
 enum GrBlendCoeff {
-    kZero_BlendCoeff,    //<! 0
-    kOne_BlendCoeff,     //<! 1
-    kSC_BlendCoeff,      //<! src color
-    kISC_BlendCoeff,     //<! one minus src color
-    kDC_BlendCoeff,      //<! dst color
-    kIDC_BlendCoeff,     //<! one minus dst color
-    kSA_BlendCoeff,      //<! src alpha
-    kISA_BlendCoeff,     //<! one minus src alpha
-    kDA_BlendCoeff,      //<! dst alpha
-    kIDA_BlendCoeff,     //<! one minus dst alpha
-    kConstC_BlendCoeff,  //<! constant color
-    kIConstC_BlendCoeff, //<! one minus constant color
-    kConstA_BlendCoeff,  //<! constant color alpha
-    kIConstA_BlendCoeff, //<! one minus constant color alpha
+    kInvalid_GrBlendCoeff = -1,
 
-    kPublicBlendCoeffCount
+    kZero_GrBlendCoeff,    //<! 0
+    kOne_GrBlendCoeff,     //<! 1
+    kSC_GrBlendCoeff,      //<! src color
+    kISC_GrBlendCoeff,     //<! one minus src color
+    kDC_GrBlendCoeff,      //<! dst color
+    kIDC_GrBlendCoeff,     //<! one minus dst color
+    kSA_GrBlendCoeff,      //<! src alpha
+    kISA_GrBlendCoeff,     //<! one minus src alpha
+    kDA_GrBlendCoeff,      //<! dst alpha
+    kIDA_GrBlendCoeff,     //<! one minus dst alpha
+    kConstC_GrBlendCoeff,  //<! constant color
+    kIConstC_GrBlendCoeff, //<! one minus constant color
+    kConstA_GrBlendCoeff,  //<! constant color alpha
+    kIConstA_GrBlendCoeff, //<! one minus constant color alpha
+
+    kPublicGrBlendCoeffCount
 };
 
 /**
@@ -457,16 +459,30 @@ enum {
     kGrColorTableSize = 256 * 4 //sizeof(GrColor)
 };
 
+/*
+ * Default value for fClientCacheID
+ */
+static const uint64_t kDefault_CacheID = 0;
+
 /**
  * Describes a texture to be created.
  */
 struct GrTextureDesc {
+    GrTextureDesc() 
+    : fFlags(kNone_GrTextureFlags)
+    , fWidth(0)
+    , fHeight(0)
+    , fConfig(kUnknown_GrPixelConfig)
+    , fSampleCnt(0)
+    , fClientCacheID(kDefault_CacheID) {
+    }
+
     GrTextureFlags         fFlags;  //!< bitfield of TextureFlags
     int                    fWidth;  //!< Width of the texture
     int                    fHeight; //!< Height of the texture
 
     /**
-     * Format of source data of the texture. Not guaraunteed to be the same as
+     * Format of source data of the texture. Not guaranteed to be the same as
      * internal format used by 3D API.
      */
     GrPixelConfig          fConfig;
@@ -478,7 +494,15 @@ struct GrTextureDesc {
      * up to the next supported sample count, or down if it is larger than the
      * max supportex count.
      */
-    int fSampleCnt;
+    int                    fSampleCnt;
+
+    /**
+     * A user-provided texture ID. It should be unique to the texture data and
+     * does not need to take into account the width or height. Two textures
+     * with the same ID but different dimensions will not collide. This field
+     * is only relevant for textures that will be cached.
+     */
+    uint64_t               fClientCacheID;
 };
 
 /**
@@ -526,46 +550,46 @@ static int inline NumPathCmdPoints(GrPathCmd cmd) {
  * Path filling rules
  */
 enum GrPathFill {
-    kWinding_PathFill,
-    kEvenOdd_PathFill,
-    kInverseWinding_PathFill,
-    kInverseEvenOdd_PathFill,
-    kHairLine_PathFill,
+    kWinding_GrPathFill,
+    kEvenOdd_GrPathFill,
+    kInverseWinding_GrPathFill,
+    kInverseEvenOdd_GrPathFill,
+    kHairLine_GrPathFill,
 
-    kPathFillCount
+    kGrPathFillCount
 };
 
 static inline GrPathFill GrNonInvertedFill(GrPathFill fill) {
     static const GrPathFill gNonInvertedFills[] = {
-        kWinding_PathFill, // kWinding_PathFill
-        kEvenOdd_PathFill, // kEvenOdd_PathFill
-        kWinding_PathFill, // kInverseWinding_PathFill
-        kEvenOdd_PathFill, // kInverseEvenOdd_PathFill
-        kHairLine_PathFill,// kHairLine_PathFill
+        kWinding_GrPathFill, // kWinding_GrPathFill
+        kEvenOdd_GrPathFill, // kEvenOdd_GrPathFill
+        kWinding_GrPathFill, // kInverseWinding_GrPathFill
+        kEvenOdd_GrPathFill, // kInverseEvenOdd_GrPathFill
+        kHairLine_GrPathFill,// kHairLine_GrPathFill
     };
-    GR_STATIC_ASSERT(0 == kWinding_PathFill);
-    GR_STATIC_ASSERT(1 == kEvenOdd_PathFill);
-    GR_STATIC_ASSERT(2 == kInverseWinding_PathFill);
-    GR_STATIC_ASSERT(3 == kInverseEvenOdd_PathFill);
-    GR_STATIC_ASSERT(4 == kHairLine_PathFill);
-    GR_STATIC_ASSERT(5 == kPathFillCount);
+    GR_STATIC_ASSERT(0 == kWinding_GrPathFill);
+    GR_STATIC_ASSERT(1 == kEvenOdd_GrPathFill);
+    GR_STATIC_ASSERT(2 == kInverseWinding_GrPathFill);
+    GR_STATIC_ASSERT(3 == kInverseEvenOdd_GrPathFill);
+    GR_STATIC_ASSERT(4 == kHairLine_GrPathFill);
+    GR_STATIC_ASSERT(5 == kGrPathFillCount);
     return gNonInvertedFills[fill];
 }
 
 static inline bool GrIsFillInverted(GrPathFill fill) {
     static const bool gIsFillInverted[] = {
-        false, // kWinding_PathFill
-        false, // kEvenOdd_PathFill
-        true,  // kInverseWinding_PathFill
-        true,  // kInverseEvenOdd_PathFill
-        false, // kHairLine_PathFill
+        false, // kWinding_GrPathFill
+        false, // kEvenOdd_GrPathFill
+        true,  // kInverseWinding_GrPathFill
+        true,  // kInverseEvenOdd_GrPathFill
+        false, // kHairLine_GrPathFill
     };
-    GR_STATIC_ASSERT(0 == kWinding_PathFill);
-    GR_STATIC_ASSERT(1 == kEvenOdd_PathFill);
-    GR_STATIC_ASSERT(2 == kInverseWinding_PathFill);
-    GR_STATIC_ASSERT(3 == kInverseEvenOdd_PathFill);
-    GR_STATIC_ASSERT(4 == kHairLine_PathFill);
-    GR_STATIC_ASSERT(5 == kPathFillCount);
+    GR_STATIC_ASSERT(0 == kWinding_GrPathFill);
+    GR_STATIC_ASSERT(1 == kEvenOdd_GrPathFill);
+    GR_STATIC_ASSERT(2 == kInverseWinding_GrPathFill);
+    GR_STATIC_ASSERT(3 == kInverseEvenOdd_GrPathFill);
+    GR_STATIC_ASSERT(4 == kHairLine_GrPathFill);
+    GR_STATIC_ASSERT(5 == kGrPathFillCount);
     return gIsFillInverted[fill];
 }
 
@@ -591,13 +615,15 @@ typedef intptr_t GrPlatform3DObject;
  * count Gr will create an MSAA buffer that resolves into the texture. Gr auto-
  * resolves when it reads from the texture. The client can explictly resolve
  * using the GrRenderTarget interface.
+ *
+ * Note: These flags currently form a subset of GrTexture's flags.
  */
 
 enum GrPlatformTextureFlags {
     /**
      * No flags enabled
      */
-    kNone_GrPlatformTextureFlag              = 0x0,
+    kNone_GrPlatformTextureFlag              = kNone_GrTextureFlags,
     /**
      * Indicates that the texture is also a render target, and thus should have
      * a GrRenderTarget object.
@@ -605,7 +631,7 @@ enum GrPlatformTextureFlags {
      * D3D (future): client must have created the texture with flags that allow
      * it to be used as a render target.
      */
-    kRenderTarget_GrPlatformTextureFlag      = 0x1,
+    kRenderTarget_GrPlatformTextureFlag      = kRenderTarget_GrTextureFlagBit,
 };
 GR_MAKE_BITFIELD_OPS(GrPlatformTextureFlags)
 

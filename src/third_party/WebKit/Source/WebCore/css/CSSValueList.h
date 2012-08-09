@@ -59,8 +59,11 @@ public:
     PassRefPtr<CSSValueList> copy();
 
     String customCssText() const;
+#if ENABLE(CSS_VARIABLES)
+    String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
+#endif
 
-    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetInternal*);
+    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
     
     PassRefPtr<CSSValueList> cloneForCSSOM() const;
 

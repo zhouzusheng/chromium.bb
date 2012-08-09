@@ -13,6 +13,7 @@
 namespace fileapi {
 
 class IsolatedContext;
+class IsolatedFileUtil;
 
 class IsolatedMountPointProvider : public FileSystemMountPointProvider {
  public:
@@ -37,7 +38,6 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
                                FileSystemType type,
                                const FilePath& virtual_path) OVERRIDE;
   virtual bool IsRestrictedFileName(const FilePath& filename) const OVERRIDE;
-  virtual std::vector<FilePath> GetRootDirectories() const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil() OVERRIDE;
   virtual FilePath GetPathForPermissionsCheck(const FilePath& virtual_path)
       const OVERRIDE;
@@ -45,18 +45,19 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
       const GURL& origin_url,
       FileSystemType file_system_type,
       const FilePath& virtual_path,
-      base::MessageLoopProxy* file_proxy,
       FileSystemContext* context) const OVERRIDE;
-  virtual webkit_blob::FileReader* CreateFileReader(
+  virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
     const GURL& url,
     int64 offset,
-    base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const OVERRIDE;
+  virtual FileStreamWriter* CreateFileStreamWriter(
+    const GURL& url,
+    int64 offset,
+    FileSystemContext* context) const OVERRIDE;
+  virtual FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
 
  private:
-  IsolatedContext* isolated_context() const;
-
-  scoped_ptr<FileSystemFileUtil> isolated_file_util_;
+  scoped_ptr<IsolatedFileUtil> isolated_file_util_;
 };
 
 }  // namespace fileapi

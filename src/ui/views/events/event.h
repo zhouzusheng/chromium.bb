@@ -8,6 +8,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/time.h"
 #include "ui/base/events.h"
 #include "ui/base/gestures/gesture_types.h"
@@ -247,7 +248,10 @@ class VIEWS_EXPORT TouchEvent : public LocatedEvent,
   virtual int GetTouchId() const OVERRIDE;
   virtual int GetEventFlags() const OVERRIDE;
   virtual base::TimeDelta GetTimestamp() const OVERRIDE;
-  virtual TouchEvent* Copy() const OVERRIDE;
+  virtual float RadiusX() const OVERRIDE;
+  virtual float RadiusY() const OVERRIDE;
+  virtual float RotationAngle() const OVERRIDE;
+  virtual float Force() const OVERRIDE;
 
  private:
   friend class internal::RootView;
@@ -287,9 +291,7 @@ class VIEWS_EXPORT KeyEvent : public Event {
   // event from the host environment). This is typically only used in testing as
   // some metadata obtainable from the underlying native event is not present.
   // It's also used by input methods to fabricate keyboard events.
-  KeyEvent(ui::EventType type,
-           ui::KeyboardCode key_code,
-           int event_flags);
+  KeyEvent(ui::EventType type, ui::KeyboardCode key_code, int event_flags);
 
   ui::KeyboardCode key_code() const { return key_code_; }
 
@@ -415,8 +417,7 @@ class VIEWS_EXPORT GestureEvent : public LocatedEvent,
 
   virtual ~GestureEvent();
 
-  float delta_x() const { return delta_x_; }
-  float delta_y() const { return delta_y_; }
+  const ui::GestureEventDetails& details() const { return details_; }
 
  protected:
   GestureEvent(ui::EventType type, int x, int y, int flags);
@@ -429,8 +430,7 @@ class VIEWS_EXPORT GestureEvent : public LocatedEvent,
   // Overridden from ui::GestureEvent.
   virtual int GetLowestTouchId() const OVERRIDE;
 
-  float delta_x_;
-  float delta_y_;
+  ui::GestureEventDetails details_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureEvent);
 };
@@ -442,6 +442,10 @@ class VIEWS_EXPORT GestureEventForTest : public GestureEvent {
  private:
   DISALLOW_COPY_AND_ASSIGN(GestureEventForTest);
 };
+
+#if defined(OS_WIN)
+int GetModifiersFromKeyState();
+#endif
 
 }  // namespace views
 

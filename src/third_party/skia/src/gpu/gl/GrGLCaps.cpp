@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2012 Google Inc.
  *
@@ -23,6 +22,7 @@ void GrGLCaps::reset() {
     fMaxSampleCount = 0;
     fCoverageAAType = kNone_CoverageAAType;
     fMaxFragmentUniformVectors = 0;
+    fMaxVertexAttributes = 0;
     fRGBA8RenderbufferSupport = false;
     fBGRAFormatSupport = false;
     fBGRAIsInternalFormat = false;
@@ -34,6 +34,7 @@ void GrGLCaps::reset() {
     fTextureUsageSupport = false;
     fTexStorageSupport = false;
     fTextureRedSupport = false;
+    fImagingSupport = false;
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) {
@@ -45,6 +46,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fStencilFormats = caps.fStencilFormats;
     fStencilVerifiedColorConfigs = caps.fStencilVerifiedColorConfigs;
     fMaxFragmentUniformVectors = caps.fMaxFragmentUniformVectors;
+    fMaxVertexAttributes = caps.fMaxVertexAttributes;
     fMSFBOType = caps.fMSFBOType;
     fMaxSampleCount = caps.fMaxSampleCount;
     fCoverageAAType = caps.fCoverageAAType;
@@ -60,6 +62,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fTextureUsageSupport = caps.fTextureUsageSupport;
     fTexStorageSupport = caps.fTexStorageSupport;
     fTextureRedSupport = caps.fTextureRedSupport;
+    fImagingSupport = caps.fImagingSupport;
 
     return *this;
 }
@@ -84,6 +87,7 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &max);
         fMaxFragmentUniformVectors = max / 4;
     }
+    GR_GL_GetIntegerv(gli, GR_GL_MAX_VERTEX_ATTRIBS, &fMaxVertexAttributes);
 
     if (kDesktop_GrGLBinding == binding) {
         fRGBA8RenderbufferSupport = true;
@@ -96,7 +100,6 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo) {
         fBGRAFormatSupport = version >= GR_GL_VER(1,2) ||
                              ctxInfo.hasExtension("GL_EXT_bgra");
     } else {
-        bool hasBGRAExt = false;
         if (ctxInfo.hasExtension("GL_APPLE_texture_format_BGRA8888")) {
             fBGRAFormatSupport = true;
         } else if (ctxInfo.hasExtension("GL_EXT_texture_format_BGRA8888")) {
@@ -144,6 +147,9 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo) {
     } else {
         fTextureRedSupport = ctxInfo.hasExtension("GL_EXT_texture_rg");
     }
+
+    fImagingSupport = kDesktop_GrGLBinding == binding &&
+                      ctxInfo.hasExtension("GL_ARB_imaging");
 
     this->initFSAASupport(ctxInfo);
     this->initStencilFormats(ctxInfo);
@@ -200,12 +206,10 @@ void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo) {
                               (int*)&fMSAACoverageModes[0]);
             // The NV driver seems to return the modes already sorted but the
             // spec doesn't require this. So we sort.
-            SkQSortCompareProc compareProc =
-                reinterpret_cast<SkQSortCompareProc>(&coverage_mode_compare);
-            SkQSort(&fMSAACoverageModes[0],
+            qsort(&fMSAACoverageModes[0],
                     count,
                     sizeof(MSAACoverageMode),
-                    compareProc);
+                    SkCastForQSort(coverage_mode_compare));
         }
     }
     if (kNone_MSFBOType != fMSFBOType) {
@@ -256,7 +260,7 @@ void GrGLCaps::initStencilFormats(const GrGLContextInfo& ctxInfo) {
         gS16   = {GR_GL_STENCIL_INDEX16,  16,               16,               false},
         gD24S8 = {GR_GL_DEPTH24_STENCIL8, 8,                32,               true },
         gS4    = {GR_GL_STENCIL_INDEX4,   4,                4,                false},
-        gS     = {GR_GL_STENCIL_INDEX,    kUnknownBitCount, kUnknownBitCount, false},
+    //  gS     = {GR_GL_STENCIL_INDEX,    kUnknownBitCount, kUnknownBitCount, false},
         gDS    = {GR_GL_DEPTH_STENCIL,    kUnknownBitCount, kUnknownBitCount, true };
 
     if (kDesktop_GrGLBinding == ctxInfo.binding()) {

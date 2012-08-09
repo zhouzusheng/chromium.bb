@@ -4,13 +4,9 @@
 
 #include "media/base/stream_parser_buffer.h"
 
-namespace media {
+#include "base/logging.h"
 
-StreamParserBuffer::StreamParserBuffer(const uint8* data, int data_size,
-                                       bool is_keyframe)
-    : DataBuffer(data, data_size),
-      is_keyframe_(is_keyframe) {
-}
+namespace media {
 
 scoped_refptr<StreamParserBuffer> StreamParserBuffer::CreateEOSBuffer() {
   return make_scoped_refptr(new StreamParserBuffer(NULL, 0, false));
@@ -20,6 +16,23 @@ scoped_refptr<StreamParserBuffer> StreamParserBuffer::CopyFrom(
     const uint8* data, int data_size, bool is_keyframe) {
   return make_scoped_refptr(
       new StreamParserBuffer(data, data_size, is_keyframe));
+}
+
+base::TimeDelta StreamParserBuffer::GetEndTimestamp() const {
+  DCHECK(GetTimestamp() != kNoTimestamp());
+  DCHECK(GetDuration() != kNoTimestamp());
+  return GetTimestamp() + GetDuration();
+}
+
+StreamParserBuffer::StreamParserBuffer(const uint8* data, int data_size,
+                                       bool is_keyframe)
+    : DecoderBuffer(data, data_size),
+      is_keyframe_(is_keyframe) {
+  SetDuration(kNoTimestamp());
+}
+
+
+StreamParserBuffer::~StreamParserBuffer() {
 }
 
 }  // namespace media

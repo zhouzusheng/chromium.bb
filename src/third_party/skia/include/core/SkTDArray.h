@@ -154,7 +154,7 @@ public:
         return this->append(1, NULL);
     }
     T* append(size_t count, const T* src = NULL) {
-        unsigned oldCount = fCount;
+        size_t oldCount = fCount;
         if (count)  {
             SkASSERT(src == NULL || fArray == NULL ||
                     src + count <= fArray || fArray + oldCount <= src);
@@ -179,7 +179,7 @@ public:
     T* insert(size_t index, size_t count, const T* src = NULL) {
         SkASSERT(count);
         SkASSERT(index <= fCount);
-        int oldCount = fCount;
+        size_t oldCount = fCount;
         this->growBy(count);
         T* dst = fArray + index;
         memmove(dst + count, dst, sizeof(T) * (oldCount - index));
@@ -197,7 +197,7 @@ public:
 
     void removeShuffle(size_t index) {
         SkASSERT(index < fCount);
-        unsigned newCount = fCount - 1;
+        size_t newCount = fCount - 1;
         fCount = newCount;
         if (index != newCount) {
             memcpy(fArray + index, fArray + newCount, sizeof(T));
@@ -226,6 +226,25 @@ public:
             }
         }
         return -1;
+    }
+
+    /**
+     * Copies up to max elements into dst. The number of items copied is
+     * capped by count - index. The actual number copied is returned.
+     */
+    int copyRange(T* dst, size_t index, int max) const {
+        SkASSERT(max >= 0);
+        SkASSERT(!max || dst);
+        if (index >= fCount) {
+            return 0;
+        }
+        int count = SkMin32(max, fCount - index);
+        memcpy(dst, fArray + index, sizeof(T) * count);
+        return count;
+    }
+
+    void copy(T* dst) const {
+        this->copyRange(0, fCount, dst);
     }
 
     // routines to treat the array like a stack

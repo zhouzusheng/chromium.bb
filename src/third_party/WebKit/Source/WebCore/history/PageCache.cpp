@@ -361,7 +361,7 @@ bool PageCache::canCachePageContainingThisFrame(Frame* frame)
         && frameLoader->client()->canCachePage();
 }
     
-bool PageCache::canCache(Page* page)
+bool PageCache::canCache(Page* page) const
 {
     if (!page)
         return false;
@@ -377,7 +377,8 @@ bool PageCache::canCache(Page* page)
     // over it again when we leave that page.
     FrameLoadType loadType = page->mainFrame()->loader()->loadType();
     
-    return canCachePageContainingThisFrame(page->mainFrame())
+    return m_capacity > 0
+        && canCachePageContainingThisFrame(page->mainFrame())
         && page->backForward()->isActive()
         && page->settings()->usesPageCache()
 #if ENABLE(DEVICE_ORIENTATION)
@@ -535,7 +536,6 @@ void PageCache::releaseAutoreleasedPagesNow()
     m_autoreleaseTimer.stop();
 
     // Postpone dead pruning until all our resources have gone dead.
-    bool pruneWasEnabled = memoryCache()->pruneEnabled();
     memoryCache()->setPruneEnabled(false);
 
     CachedPageSet tmp;
@@ -546,10 +546,8 @@ void PageCache::releaseAutoreleasedPagesNow()
         (*it)->destroy();
 
     // Now do the prune.
-    if (pruneWasEnabled) {
-        memoryCache()->setPruneEnabled(true);
-        memoryCache()->prune();
-    }
+    memoryCache()->setPruneEnabled(true);
+    memoryCache()->prune();
 }
 
 void PageCache::autorelease(PassRefPtr<CachedPage> page)

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2012 Google Inc.
  *
@@ -172,6 +171,9 @@ public:
     /// The maximum number of fragment uniform vectors (GLES has min. 16).
     int maxFragmentUniformVectors() const { return fMaxFragmentUniformVectors; }
 
+    // maximum number of attribute values per vertex
+    int maxVertexAttributes() const { return fMaxVertexAttributes; }
+
     /// ES requires an extension to support RGBA8 in RenderBufferStorage
     bool rgba8RenderbufferSupport() const { return fRGBA8RenderbufferSupport; }
 
@@ -208,6 +210,9 @@ public:
 
     /// Is there support for GL_RED and GL_R8
     bool textureRedSupport() const { return fTextureRedSupport; }
+
+    /// Is GL_ARB_IMAGING supported
+    bool imagingSupport() const { return fImagingSupport; }
 
 private:
     /**
@@ -261,6 +266,8 @@ private:
     SkTArray<VerifiedColorConfigs, true> fStencilVerifiedColorConfigs;
 
     int fMaxFragmentUniformVectors;
+    int fMaxVertexAttributes;
+
     MSFBOType fMSFBOType;
     int fMaxSampleCount;
     CoverageAAType fCoverageAAType;
@@ -277,6 +284,7 @@ private:
     bool fTextureUsageSupport : 1;
     bool fTexStorageSupport : 1;
     bool fTextureRedSupport : 1;
+    bool fImagingSupport  : 1;
 };
 
 #endif

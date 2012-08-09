@@ -8,12 +8,13 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/file_util_proxy.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_types.h"
 
@@ -33,12 +34,12 @@ class FileSystemOperationContext;
 class FileSystemPath;
 
 // An instance of this class is created and owned by *MountPointProvider.
-class LocalFileUtil : public FileSystemFileUtil {
+class FILEAPI_EXPORT_PRIVATE LocalFileUtil : public FileSystemFileUtil {
  public:
   // |underlying_file_util| is owned by the instance.  It will be deleted by
   // the owner instance.  For example, it can be instanciated as follows:
   // FileSystemFileUtil* file_util = new LocalFileUtil(new NativeFileUtil());
-  explicit LocalFileUtil(FileSystemFileUtil* underlying_file_util);
+  LocalFileUtil();
   virtual ~LocalFileUtil();
 
   virtual PlatformFileError CreateOrOpen(
@@ -47,6 +48,9 @@ class LocalFileUtil : public FileSystemFileUtil {
       int file_flags,
       PlatformFile* file_handle,
       bool* created) OVERRIDE;
+  virtual PlatformFileError Close(
+      FileSystemOperationContext* context,
+      PlatformFile file) OVERRIDE;
   virtual PlatformFileError EnsureFileExists(
       FileSystemOperationContext* context,
       const FileSystemPath& path, bool* created) OVERRIDE;
@@ -93,7 +97,7 @@ class LocalFileUtil : public FileSystemFileUtil {
       bool copy) OVERRIDE;
   virtual PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
-        const FileSystemPath& underlying_src_path,
+        const FilePath& src_file_path,
         const FileSystemPath& dest_path) OVERRIDE;
   virtual PlatformFileError DeleteFile(
       FileSystemOperationContext* context,

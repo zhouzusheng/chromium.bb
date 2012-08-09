@@ -37,18 +37,23 @@
 #include "TiledLayerChromium.h"
 #include "cc/CCTiledLayerImpl.h"
 
+class SkCanvas;
+
 namespace WebCore {
 
-class LayerTilerChromium;
+class GraphicsContext;
+class IntRect;
 class LayerTextureUpdater;
 
 class ContentLayerDelegate {
 public:
+    virtual void paintContents(SkCanvas*, const IntRect& clip, IntRect& opaque) = 0;
+
+protected:
     virtual ~ContentLayerDelegate() { }
-    virtual void paintContents(GraphicsContext&, const IntRect& clip) = 0;
 };
 
-// A Layer that requires a GraphicsContext to render its contents.
+// A layer that renders its contents into an SkCanvas.
 class ContentLayerChromium : public TiledLayerChromium {
 public:
     static PassRefPtr<ContentLayerChromium> create(ContentLayerDelegate*);

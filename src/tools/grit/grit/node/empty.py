@@ -23,6 +23,7 @@ class GroupingNode(base.Node):
       'first_id' : '',
       'comment' : '',
       'fallback_to_english' : 'false',
+      'fallback_to_low_resolution' : 'false',
     }
 
 

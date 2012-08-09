@@ -94,6 +94,7 @@ protected:
     float strokeWidth() const;
     void setIsPaintingFallback(bool isFallback) { m_fillFallback = isFallback; }
     bool hasPath() const { return m_path.get(); }
+    bool hasNonScalingStroke() const { return style()->svgStyle()->vectorEffect() == VE_NON_SCALING_STROKE; }
 
 private:
     // Hit-detection separated for the fill and the stroke
@@ -106,7 +107,6 @@ private:
 
     virtual bool isSVGShape() const { return true; }
     virtual const char* renderName() const { return "RenderSVGShape"; }
-    virtual bool isRoundedRect() { return false; }
 
     virtual void layout();
     virtual void paint(PaintInfo&, const LayoutPoint&);
@@ -116,9 +116,11 @@ private:
 
     void updateCachedBoundaries();
 
+    AffineTransform nonScalingStrokeTransform() const;
+    bool setupNonScalingStrokeContext(AffineTransform&, GraphicsContextStateSaver&);
+    Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
+
     Path* zeroLengthLinecapPath(const FloatPoint&);
-    bool setupNonScalingStrokeTransform(AffineTransform&, GraphicsContextStateSaver&);
-    Path* nonScalingStrokePath(const Path*, const AffineTransform&);
     bool shouldStrokeZeroLengthSubpath() const;
     FloatRect zeroLengthSubpathRect(const FloatPoint&, float) const;
     void processZeroLengthSubpaths();
@@ -129,7 +131,7 @@ private:
 
     void fillShape(RenderStyle*, GraphicsContext*, Path*, RenderSVGShape*);
     void strokePath(RenderStyle*, GraphicsContext*, Path*, RenderSVGResource*,
-                    const Color&, bool, const AffineTransform&, int);
+                    const Color&, int);
     void fillAndStrokePath(GraphicsContext*);
     void inflateWithStrokeAndMarkerBounds();
     void drawMarkers(PaintInfo&);

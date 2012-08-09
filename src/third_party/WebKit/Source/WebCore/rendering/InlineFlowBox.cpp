@@ -27,7 +27,6 @@
 #include "GraphicsContext.h"
 #include "InlineTextBox.h"
 #include "HitTestResult.h"
-#include "RootInlineBox.h"
 #include "RenderBlock.h"
 #include "RenderInline.h"
 #include "RenderLayer.h"
@@ -45,7 +44,7 @@ using namespace std;
 
 namespace WebCore {
 
-class SameSizeAsInlineFlowBox : public InlineBox {
+struct SameSizeAsInlineFlowBox : public InlineBox {
     void* pointers[5];
     uint32_t bitfields : 24;
 };
@@ -517,8 +516,8 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
     
     if (isRootInlineBox()) {
         // Examine our root box.
-        LayoutUnit ascent = 0;
-        LayoutUnit descent = 0;
+        int ascent = 0;
+        int descent = 0;
         rootBox->ascentAndDescentForBox(rootBox, textBoxDataMap, ascent, descent, affectsAscent, affectsDescent);
         if (strictMode || hasTextChildren() || (!checkChildren && hasTextDescendants())) {
             if (maxAscent < ascent || !setMaxAscent) {
@@ -549,8 +548,8 @@ void InlineFlowBox::computeLogicalBoxHeights(RootInlineBox* rootBox, LayoutUnit&
         // root box's baseline, and it is positive if the child box's baseline is below the root box's baseline.
         curr->setLogicalTop(rootBox->verticalPositionForBox(curr, verticalPositionCache));
         
-        LayoutUnit ascent = 0;
-        LayoutUnit descent = 0;
+        int ascent = 0;
+        int descent = 0;
         rootBox->ascentAndDescentForBox(curr, textBoxDataMap, ascent, descent, affectsAscent, affectsDescent);
 
         LayoutUnit boxHeight = ascent + descent;

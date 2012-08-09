@@ -29,7 +29,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "media/base/audio_decoder_config.h"
-#include "media/base/buffers.h"
+#include "media/base/decoder_buffer.h"
 #include "media/base/demuxer.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_decoder_config.h"
@@ -40,12 +40,12 @@ struct AVFormatContext;
 struct AVPacket;
 struct AVRational;
 struct AVStream;
-class ScopedPtrAVFreePacket;
 
 namespace media {
 
 class BitstreamConverter;
 class FFmpegDemuxer;
+class ScopedPtrAVFreePacket;
 
 class FFmpegDemuxerStream : public DemuxerStream {
  public:
@@ -58,7 +58,8 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Safe to call on any thread.
   bool HasPendingReads();
 
-  // Enqueues the given AVPacket.
+  // Enqueues the given AVPacket.  If |packet| is NULL an end of stream packet
+  // is enqueued.
   void EnqueuePacket(scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> packet);
 
   // Signals to empty the buffer queue and mark next packet as discontinuous.
@@ -83,10 +84,17 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual void EnableBitstreamConverter() OVERRIDE;
   virtual const AudioDecoderConfig& audio_decoder_config() OVERRIDE;
   virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
+  virtual Ranges<base::TimeDelta> GetBufferedRanges() OVERRIDE;
+
+  // Returns elapsed time based on the already queued packets.
+  // Used to determine stream duration when it's not known ahead of time.
+  base::TimeDelta GetElapsedTime() const;
+
+ protected:
+  virtual ~FFmpegDemuxerStream();
 
  private:
   friend class FFmpegDemuxerTest;
-  virtual ~FFmpegDemuxerStream();
 
   // Carries out enqueuing a pending read on the demuxer thread.
   void ReadTask(const ReadCB& read_cb);
@@ -108,8 +116,10 @@ class FFmpegDemuxerStream : public DemuxerStream {
   base::TimeDelta duration_;
   bool discontinuous_;
   bool stopped_;
+  base::TimeDelta last_packet_timestamp_;
+  Ranges<base::TimeDelta> buffered_ranges_;
 
-  typedef std::deque<scoped_refptr<Buffer> > BufferQueue;
+  typedef std::deque<scoped_refptr<DecoderBuffer> > BufferQueue;
   BufferQueue buffer_queue_;
 
   typedef std::deque<ReadCB> ReadQueue;
@@ -123,7 +133,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // already been demuxed without having the demuxer thread sending the
   // buffers. |lock_| must be acquired before any access to |buffer_queue_|,
   // |read_queue_|, or |stopped_|.
-  base::Lock lock_;
+  mutable base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxerStream);
 };
@@ -131,9 +141,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
 class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
  public:
   FFmpegDemuxer(MessageLoop* message_loop,
-                const scoped_refptr<DataSource>& data_source,
-                bool local_source);
-  virtual ~FFmpegDemuxer();
+                const scoped_refptr<DataSource>& data_source);
 
   // Posts a task to perform additional demuxing.
   virtual void PostDemuxTask();
@@ -149,8 +157,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
       DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual int GetBitrate() OVERRIDE;
-  virtual bool IsLocalSource() OVERRIDE;
-  virtual bool IsSeekable() OVERRIDE;
 
   // FFmpegURLProtocol implementation.
   virtual size_t Read(size_t size, uint8* data) OVERRIDE;
@@ -162,9 +168,15 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // Provide access to FFmpegDemuxerStream.
   MessageLoop* message_loop();
 
+  // Allow FFmpegDemuxerStream to notify us when there is updated information
+  // about what buffered data is available.
+  void NotifyBufferingChanged();
+
  private:
   // To allow tests access to privates.
   friend class FFmpegDemuxerTest;
+
+  virtual ~FFmpegDemuxer();
 
   // Carries out initialization on the demuxer thread.
   void InitializeTask(DemuxerHost* host, const PipelineStatusCB& status_cb);
@@ -203,10 +215,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   DemuxerHost* host_;
 
   MessageLoop* message_loop_;
-
-  // True if the media is a local resource, false if the media require network
-  // access to be loaded.
-  bool local_source_;
 
   // FFmpeg context handle.
   AVFormatContext* format_context_;
@@ -250,6 +258,10 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // Whether audio has been disabled for this demuxer (in which case this class
   // drops packets destined for AUDIO demuxer streams on the floor).
   bool audio_disabled_;
+
+  // Set if we know duration of the audio stream. Used when processing end of
+  // stream -- at this moment we definitely know duration.
+  bool duration_known_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxer);
 };

@@ -5,6 +5,7 @@
 #include "webkit/fileapi/file_system_operation.h"
 
 #include "base/bind.h"
+#include "base/sequenced_task_runner.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
@@ -18,6 +19,7 @@
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/file_writer_delegate.h"
+#include "webkit/fileapi/sandbox_file_stream_writer.h"
 #include "webkit/quota/quota_manager.h"
 #include "webkit/quota/quota_types.h"
 
@@ -78,17 +80,6 @@ FileSystemOperation::TaskParamsForDidGetQuota::TaskParamsForDidGetQuota()
 FileSystemOperation::TaskParamsForDidGetQuota::~TaskParamsForDidGetQuota() {}
 
 FileSystemOperation::~FileSystemOperation() {
-  if (file_writer_delegate_.get()) {
-    FileSystemOperationContext* c =
-        new FileSystemOperationContext(operation_context_);
-    base::FileUtilProxy::RelayClose(
-        proxy_,
-        base::Bind(&FileSystemFileUtil::Close,
-                   base::Unretained(src_util_),
-                   base::Owned(c)),
-        file_writer_delegate_->file(),
-        base::FileUtilProxy::StatusCallback());
-  }
 }
 
 void FileSystemOperation::CreateFile(const GURL& path_url,
@@ -158,6 +149,7 @@ void FileSystemOperation::Move(const GURL& src_path_url,
                                const GURL& dest_path_url,
                                const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationMove));
+  scoped_ptr<FileSystemOperation> deleter(this);
 
   base::PlatformFileError result = SetUpFileSystemPath(
       src_path_url, &src_path_, &src_util_, PATH_FOR_WRITE);
@@ -166,14 +158,24 @@ void FileSystemOperation::Move(const GURL& src_path_url,
         dest_path_url, &dest_path_, &dest_util_, PATH_FOR_CREATE);
   if (result != base::PLATFORM_FILE_OK) {
     callback.Run(result);
-    delete this;
+    return;
+  }
+
+  // Temporarily disables cross-filesystem move for sandbox filesystems.
+  // TODO(kinuko,tzik,kinaba): This special handling must be removed once
+  // we support saner cross-filesystem operation.
+  // (See http://crbug.com/130055)
+  if (src_path_.type() != dest_path_.type() &&
+      (src_path_.type() == kFileSystemTypeTemporary ||
+       src_path_.type() == kFileSystemTypePersistent)) {
+    callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
     return;
   }
 
   GetUsageAndQuotaThenRunTask(
       dest_path_.origin(), dest_path_.type(),
       base::Bind(&FileSystemOperation::DoMove,
-                 base::Unretained(this), callback),
+                 base::Unretained(deleter.release()), callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -190,7 +192,7 @@ void FileSystemOperation::DirectoryExists(const GURL& path_url,
   }
 
   FileSystemFileUtilProxy::GetFileInfo(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_, src_util_, src_path_,
       base::Bind(&FileSystemOperation::DidDirectoryExists,
                  base::Owned(this), callback));
 }
@@ -208,7 +210,7 @@ void FileSystemOperation::FileExists(const GURL& path_url,
   }
 
   FileSystemFileUtilProxy::GetFileInfo(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_, src_util_, src_path_,
       base::Bind(&FileSystemOperation::DidFileExists,
                  base::Owned(this), callback));
 }
@@ -226,7 +228,7 @@ void FileSystemOperation::GetMetadata(const GURL& path_url,
   }
 
   FileSystemFileUtilProxy::GetFileInfo(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_, src_util_, src_path_,
       base::Bind(&FileSystemOperation::DidGetMetadata,
                  base::Owned(this), callback));
 }
@@ -244,7 +246,7 @@ void FileSystemOperation::ReadDirectory(const GURL& path_url,
   }
 
   FileSystemFileUtilProxy::ReadDirectory(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_, src_util_, src_path_,
       base::Bind(&FileSystemOperation::DidReadDirectory,
                  base::Owned(this), callback));
 }
@@ -265,7 +267,7 @@ void FileSystemOperation::Remove(const GURL& path_url, bool recursive,
       file_system_context(), src_path_.origin(), src_path_.type()));
 
   FileSystemFileUtilProxy::Delete(
-      proxy_, &operation_context_, src_util_, src_path_, recursive,
+      &operation_context_, src_util_, src_path_, recursive,
       base::Bind(&FileSystemOperation::DidFinishFileOperation,
                  base::Owned(this), callback));
 }
@@ -285,18 +287,31 @@ void FileSystemOperation::Write(
     delete this;
     return;
   }
+
+  FileSystemMountPointProvider* provider = file_system_context()->
+      GetMountPointProvider(src_path_.type());
+  DCHECK(provider);
+  scoped_ptr<FileStreamWriter> writer(provider->CreateFileStreamWriter(
+          path_url, offset, file_system_context()));
+
+  if (!writer.get()) {
+    // Write is not supported.
+    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY, 0, false);
+    delete this;
+    return;
+  }
+
   DCHECK(blob_url.is_valid());
   file_writer_delegate_.reset(new FileWriterDelegate(
-          this, src_path_, offset, proxy_));
-  set_write_callback(callback);
-  blob_request_.reset(
-      new net::URLRequest(blob_url, file_writer_delegate_.get()));
-  blob_request_->set_context(url_request_context);
+      base::Bind(&FileSystemOperation::DidWrite, weak_factory_.GetWeakPtr()),
+      writer.Pass()));
 
-  GetUsageAndQuotaThenRunTask(
-      src_path_.origin(), src_path_.type(),
-      base::Bind(&FileSystemOperation::DoWrite, base::Unretained(this)),
-      base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED, 0, true));
+  set_write_callback(callback);
+  scoped_ptr<net::URLRequest> blob_request(
+      new net::URLRequest(blob_url, file_writer_delegate_.get()));
+  blob_request->set_context(url_request_context);
+
+  file_writer_delegate_->Start(blob_request.Pass());
 }
 
 void FileSystemOperation::Truncate(const GURL& path_url, int64 length,
@@ -332,7 +347,7 @@ void FileSystemOperation::TouchFile(const GURL& path_url,
   }
 
   FileSystemFileUtilProxy::Touch(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_, src_util_, src_path_,
       last_access_time, last_modified_time,
       base::Bind(&FileSystemOperation::DidTouchFile,
                  base::Owned(this), callback));
@@ -388,23 +403,23 @@ void FileSystemOperation::OpenFile(const GURL& path_url,
 void FileSystemOperation::Cancel(const StatusCallback& cancel_callback) {
   if (file_writer_delegate_.get()) {
     DCHECK_EQ(kOperationWrite, pending_operation_);
+
     // Writes are done without proxying through FileUtilProxy after the initial
     // opening of the PlatformFile.  All state changes are done on this thread,
-    // so we're guaranteed to be able to shut down atomically.  We do need to
-    // check that the file has been opened [which means the blob_request_ has
-    // been created], so we know how much we need to do.
-    if (blob_request_.get())
-      // This halts any calls to file_writer_delegate_ from blob_request_.
-      blob_request_->Cancel();
+    // so we're guaranteed to be able to shut down atomically.
+    const bool delete_now = file_writer_delegate_->Cancel();
 
     if (!write_callback_.is_null()) {
       // Notify the failure status to the ongoing operation's callback.
       write_callback_.Run(base::PLATFORM_FILE_ERROR_ABORT, 0, false);
-      // Do not delete this FileSystemOperation object yet. As a result of
-      // abort, this->DidWrite is called later and there we delete this object.
     }
     cancel_callback.Run(base::PLATFORM_FILE_OK);
     write_callback_.Reset();
+
+    if (delete_now) {
+      delete this;
+      return;
+    }
   } else {
     DCHECK_EQ(kOperationTruncate, pending_operation_);
     // We're cancelling a truncate operation, but we can't actually stop it
@@ -444,14 +459,13 @@ void FileSystemOperation::CreateSnapshotFile(
 }
 
 FileSystemOperation::FileSystemOperation(
-    scoped_refptr<base::MessageLoopProxy> proxy,
     FileSystemContext* file_system_context)
-    : proxy_(proxy),
-      operation_context_(file_system_context),
+    : operation_context_(file_system_context),
       src_util_(NULL),
       dest_util_(NULL),
       peer_handle_(base::kNullProcessHandle),
-      pending_operation_(kOperationNone) {
+      pending_operation_(kOperationNone),
+      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 void FileSystemOperation::GetUsageAndQuotaThenRunTask(
@@ -481,7 +495,7 @@ void FileSystemOperation::GetUsageAndQuotaThenRunTask(
       origin,
       FileSystemTypeToQuotaStorageType(type),
       base::Bind(&FileSystemOperation::DidGetUsageAndQuotaAndRunTask,
-                 base::Unretained(this), params));
+                 weak_factory_.GetWeakPtr(), params));
 }
 
 void FileSystemOperation::DidGetUsageAndQuotaAndRunTask(
@@ -505,7 +519,8 @@ void FileSystemOperation::DoCreateFile(
     const StatusCallback& callback,
     bool exclusive) {
   FileSystemFileUtilProxy::EnsureFileExists(
-      proxy_, &operation_context_, src_util_, src_path_,
+      &operation_context_,
+      src_util_, src_path_,
       base::Bind(
           exclusive ? &FileSystemOperation::DidEnsureFileExistsExclusive
                     : &FileSystemOperation::DidEnsureFileExistsNonExclusive,
@@ -516,14 +531,15 @@ void FileSystemOperation::DoCreateDirectory(
     const StatusCallback& callback,
     bool exclusive, bool recursive) {
   FileSystemFileUtilProxy::CreateDirectory(
-      proxy_, &operation_context_, src_util_, src_path_, exclusive, recursive,
+      &operation_context_,
+      src_util_, src_path_, exclusive, recursive,
       base::Bind(&FileSystemOperation::DidFinishFileOperation,
                  base::Owned(this), callback));
 }
 
 void FileSystemOperation::DoCopy(const StatusCallback& callback) {
   FileSystemFileUtilProxy::Copy(
-      proxy_, &operation_context_,
+      &operation_context_,
       src_util_, dest_util_,
       src_path_, dest_path_,
       base::Bind(&FileSystemOperation::DidFinishFileOperation,
@@ -532,28 +548,17 @@ void FileSystemOperation::DoCopy(const StatusCallback& callback) {
 
 void FileSystemOperation::DoMove(const StatusCallback& callback) {
   FileSystemFileUtilProxy::Move(
-      proxy_, &operation_context_,
+      &operation_context_,
       src_util_, dest_util_,
       src_path_, dest_path_,
       base::Bind(&FileSystemOperation::DidFinishFileOperation,
                  base::Owned(this), callback));
 }
 
-void FileSystemOperation::DoWrite() {
-  int file_flags = base::PLATFORM_FILE_OPEN |
-                   base::PLATFORM_FILE_WRITE |
-                   base::PLATFORM_FILE_ASYNC;
-
-  FileSystemFileUtilProxy::CreateOrOpen(
-      proxy_, &operation_context_, src_util_, src_path_, file_flags,
-      base::Bind(&FileSystemOperation::OnFileOpenedForWrite,
-                 base::Unretained(this)));
-}
-
 void FileSystemOperation::DoTruncate(const StatusCallback& callback,
                                      int64 length) {
   FileSystemFileUtilProxy::Truncate(
-      proxy_, &operation_context_, src_util_, src_path_, length,
+      &operation_context_, src_util_, src_path_, length,
       base::Bind(&FileSystemOperation::DidFinishFileOperation,
                  base::Owned(this), callback));
 }
@@ -561,7 +566,7 @@ void FileSystemOperation::DoTruncate(const StatusCallback& callback,
 void FileSystemOperation::DoOpenFile(const OpenFileCallback& callback,
                                      int file_flags) {
   FileSystemFileUtilProxy::CreateOrOpen(
-      proxy_, &operation_context_, src_util_, src_path_, file_flags,
+      &operation_context_, src_util_, src_path_, file_flags,
       base::Bind(&FileSystemOperation::DidOpenFile,
                  base::Owned(this), callback));
 }
@@ -660,19 +665,6 @@ void FileSystemOperation::DidOpenFile(
   if (rv == base::PLATFORM_FILE_OK)
     CHECK_NE(base::kNullProcessHandle, peer_handle_);
   callback.Run(rv, file.ReleaseValue(), peer_handle_);
-}
-
-void FileSystemOperation::OnFileOpenedForWrite(
-    base::PlatformFileError rv,
-    base::PassPlatformFile file,
-    bool created) {
-  if (rv != base::PLATFORM_FILE_OK) {
-    if (!write_callback_.is_null())
-      write_callback_.Run(rv, 0, false);
-    delete this;
-    return;
-  }
-  file_writer_delegate_->Start(file.ReleaseValue(), blob_request_.get());
 }
 
 base::PlatformFileError FileSystemOperation::SetUpFileSystemPath(

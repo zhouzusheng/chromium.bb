@@ -128,6 +128,7 @@ using WebKit::WebWindowFeatures;
 using WebKit::WebWorker;
 using WebKit::WebVector;
 using WebKit::WebView;
+using webkit_glue::WebPreferences;
 
 namespace {
 
@@ -502,6 +503,7 @@ void TestWebViewDelegate::setStatusText(const WebString& text) {
 }
 
 void TestWebViewDelegate::startDragging(
+    WebFrame* frame,
     const WebDragData& data,
     WebDragOperationsMask mask,
     const WebImage& image,
@@ -646,6 +648,7 @@ WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
       client,
       base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
       collection.release(),
+      NULL,
       NULL,
       message_loop_factory.release(),
       NULL,
@@ -867,7 +870,8 @@ void TestWebViewDelegate::willSendRequest(
   std::string request_url = url.possibly_invalid_spec();
 
   request.setExtraData(
-      new webkit_glue::WebURLRequestExtraDataImpl(frame->referrerPolicy()));
+      new webkit_glue::WebURLRequestExtraDataImpl(
+          frame->document().referrerPolicy(), WebString()));
 
   if (!redirect_response.isNull() && block_redirects_) {
     printf("Returning null for this redirect\n");

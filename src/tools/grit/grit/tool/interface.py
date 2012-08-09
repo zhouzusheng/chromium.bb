@@ -6,7 +6,6 @@
 '''Base class and interface for tools.
 '''
 
-import sys
 
 class Tool(object):
   '''Base class for all tools.  Tools should use their docstring (i.e. the

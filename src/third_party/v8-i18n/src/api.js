@@ -42,7 +42,7 @@ v8Locale = function(localeID) {
   // ICU locale ID every time BreakIterator, Collator and so forth are called.
   this.__icuLocaleID = properties.icuLocaleID;
   this.options = {'localeID': properties.localeID};
-  
+
   return this;
 };
 
@@ -106,7 +106,7 @@ v8Locale.Collator = function(locale, settings) {
     {}, settings,
     ['ignoreCase', 'ignoreAccents', 'numeric']
   );
-  
+
   locale = v8Locale.__createLocaleOrDefault(locale);
   return NativeJSCollator(locale.__icuLocaleID, cleanSettings);
 };
@@ -180,7 +180,7 @@ v8Locale.__copyOptions = function(targetObject, sourceObject, optionList) {
   if (typeof(optionList) === 'string') {
     optionList = [optionList];
   }
-  
+
   for (i = 0; i < optionList.length; i += 1) {
     option = optionList[i];
     value = sourceObject[option];
@@ -188,7 +188,7 @@ v8Locale.__copyOptions = function(targetObject, sourceObject, optionList) {
       targetObject[option] = value;
     }
   }
-  
+
   return targetObject;
 };
 

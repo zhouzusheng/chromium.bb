@@ -47,7 +47,6 @@
 #include "WorkerContextExecutionProxy.h"
 
 #include <wtf/Assertions.h>
-#include "Frame.h"
 
 #include <v8.h>
 
@@ -94,7 +93,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
     }
 
     if (!value->IsObject()) {
-        throwError("TransferArray argument must be an object");
+        V8Proxy::throwTypeError("TransferArray argument must be an object");
         return false;
     }
     uint32_t length = 0;
@@ -107,7 +106,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
         // Sequence-type object - get the length attribute
         v8::Local<v8::Value> sequenceLength = transferrables->Get(v8::String::New("length"));
         if (!sequenceLength->IsNumber()) {
-            throwError("TransferArray argument has no length attribute");
+            V8Proxy::throwTypeError("TransferArray argument has no length attribute");
             return false;
         }
         length = sequenceLength->Uint32Value();
@@ -127,7 +126,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
         else if (V8ArrayBuffer::HasInstance(transferrable))
             arrayBuffers.append(V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(transferrable)));
         else {
-            throwError("TransferArray argument must contain only Transferables");
+            V8Proxy::throwTypeError("TransferArray argument must contain only Transferables");
             return false;
         }
     }
@@ -141,7 +140,7 @@ bool getMessagePortArray(v8::Local<v8::Value> value, MessagePortArray& ports)
     if (!result)
         return false;
     if (arrayBuffers.size() > 0) {
-        throwError("MessagePortArray argument must contain only MessagePorts");
+        V8Proxy::throwTypeError("MessagePortArray argument must contain only MessagePorts");
         return false;
     }
     return true;
@@ -202,9 +201,9 @@ ScriptExecutionContext* getScriptExecutionContext()
     return 0;
 }
 
-void throwTypeMismatchException()
+void throwTypeMismatchException(v8::Isolate* isolate)
 {
-    V8Proxy::throwError(V8Proxy::GeneralError, "TYPE_MISMATCH_ERR: DOM Exception 17");
+    V8Proxy::throwError(V8Proxy::GeneralError, "TYPE_MISMATCH_ERR: DOM Exception 17", isolate);
 }
 
 } // namespace WebCore

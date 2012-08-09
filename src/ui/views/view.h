@@ -20,6 +20,7 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/compositor/layer_delegate.h"
+#include "ui/compositor/layer_owner.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/background.h"
@@ -96,21 +97,10 @@ class RootView;
 //
 /////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT View : public ui::LayerDelegate,
+                          public ui::LayerOwner,
                           public ui::AcceleratorTarget {
  public:
   typedef std::vector<View*> Views;
-
-  // TO BE MOVED ---------------------------------------------------------------
-  // TODO(beng): These methods are to be moved to other files/classes.
-
-  // TODO(beng): delete
-  // Set whether this view is hottracked. A disabled view cannot be hottracked.
-  // If flag differs from the current value, SchedulePaint is invoked.
-  virtual void SetHotTracked(bool flag);
-
-  // TODO(beng): delete
-  // Returns whether the view is hot-tracked.
-  virtual bool IsHotTracked() const;
 
   // Creation and lifetime -----------------------------------------------------
 
@@ -118,8 +108,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual ~View();
 
   // By default a View is owned by its parent unless specified otherwise here.
-  bool parent_owned() const { return parent_owned_; }
-  void set_parent_owned(bool parent_owned) { parent_owned_ = parent_owned; }
+  void set_owned_by_client() { owned_by_client_ = true; }
 
   // Tree operations -----------------------------------------------------------
 
@@ -291,8 +280,12 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Compositor.
   void SetPaintToLayer(bool paint_to_layer);
 
-  const ui::Layer* layer() const { return layer_.get(); }
-  ui::Layer* layer() { return layer_.get(); }
+  // Recreates a layer for the view and returns the old layer. After this call,
+  // the View no longer has a pointer to the old layer (so it won't be able to
+  // update the old layer or destroy it). The caller must free the returned
+  // layer.
+  // Returns NULL and does not recreate layer if view does not own its layer.
+  ui::Layer* RecreateLayer() WARN_UNUSED_RESULT;
 
   // RTL positioning -----------------------------------------------------------
 
@@ -493,7 +486,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // if the UI layout is right-to-left; that is, the canvas will be flipped
   // only if base::i18n::IsRTL() returns true.
   //
-  // Enabling canvas flipping is useful for leaf views that draw a bitmap that
+  // Enabling canvas flipping is useful for leaf views that draw an image that
   // needs to be flipped horizontally when the UI layout is right-to-left
   // (views::Button, for example). This method is helpful for such classes
   // because their drawing logic stays the same and they can become agnostic to
@@ -608,6 +601,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Note: if the mouse handler is no longer connected to a
   // view hierarchy, events won't be sent.
   //
+  // TODO(sky): rename this.
   virtual void SetMouseHandler(View* new_mouse_handler);
 
   // Invoked when a key is pressed or released.
@@ -1009,6 +1003,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Overridden from ui::LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
+  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
   // Finds the layer that this view paints to (it may belong to an ancestor
   // view), then reorders the immediate children of that layer to match the
@@ -1280,8 +1276,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // of OnTouchEvent.
   ui::TouchStatus ProcessTouchEvent(const TouchEvent& event);
 
-  // RootView will invoke this with incoming GestureEvents. Returns the result
-  // of OnGestureEvent.
+  // RootView will invoke this with incoming GestureEvents. This will invoke
+  // OnGestureEvent and return the result.
   ui::GestureStatus ProcessGestureEvent(const GestureEvent& event);
 
   // Accelerators --------------------------------------------------------------
@@ -1326,15 +1322,16 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // WriteDragData to write the data and GetDragOperations to determine the
   // supported drag operations. When done, OnDragDone is invoked. |press_pt| is
   // in the view's coordinate system.
-  void DoDrag(const LocatedEvent& event, const gfx::Point& press_pt);
+  // Returns true if a drag was started.
+  bool DoDrag(const LocatedEvent& event, const gfx::Point& press_pt);
 
   //////////////////////////////////////////////////////////////////////////////
 
   // Creation and lifetime -----------------------------------------------------
 
-  // True if the hierarchy (i.e. the parent View) is responsible for deleting
-  // this View. Default is true.
-  bool parent_owned_;
+  // False if this View is owned by its parent - i.e. it will be deleted by its
+  // parent during its parents destruction. False is the default.
+  bool owned_by_client_;
 
   // Attributes ----------------------------------------------------------------
 
@@ -1423,7 +1420,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Accelerated painting ------------------------------------------------------
 
   bool paint_to_layer_;
-  scoped_ptr<ui::Layer> layer_;
 
   // Accelerators --------------------------------------------------------------
 

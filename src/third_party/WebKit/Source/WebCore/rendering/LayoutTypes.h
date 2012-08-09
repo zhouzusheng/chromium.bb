@@ -37,6 +37,7 @@
 #define LayoutTypes_h
 
 #include "FloatRect.h"
+#include "FractionalLayoutBoxExtent.h"
 #include "FractionalLayoutRect.h"
 #include "FractionalLayoutUnit.h"
 #include "IntRect.h"
@@ -49,6 +50,7 @@ typedef FractionalLayoutUnit LayoutUnit;
 typedef FractionalLayoutPoint LayoutPoint;
 typedef FractionalLayoutSize LayoutSize;
 typedef FractionalLayoutRect LayoutRect;
+typedef FractionalLayoutBoxExtent LayoutBoxExtent;
 
 #define MAX_LAYOUT_UNIT LayoutUnit::max()
 #define MIN_LAYOUT_UNIT LayoutUnit::min()
@@ -153,6 +155,11 @@ inline LayoutUnit layoutMod(const LayoutUnit& numerator, const LayoutUnit& denom
 inline LayoutUnit clampToLayoutUnit(double value)
 {
     return clampTo<FractionalLayoutUnit>(value, FractionalLayoutUnit::min(), FractionalLayoutUnit::max());
+}
+
+inline IntSize pixelSnappedIntSize(const FractionalLayoutSize& s, const FractionalLayoutPoint& p)
+{
+    return IntSize(snapSizeToPixel(s.width(), p.x()), snapSizeToPixel(s.height(), p.y()));
 }
 
 inline IntRect pixelSnappedIntRect(LayoutPoint location, LayoutSize size)

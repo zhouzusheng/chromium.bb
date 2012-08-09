@@ -7,9 +7,10 @@
 #include <set>
 
 #include "base/string_number_conversions.h"
+#include "base/string_util.h"
 #include "gpu/command_buffer/service/gl_utils.h"
-#include "ui/gfx/gl/gl_context.h"
-#include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_implementation.h"
 #if defined(OS_MACOSX)
 #include "ui/surface/io_surface_support_mac.h"
 #endif
@@ -17,10 +18,50 @@
 namespace gpu {
 namespace gles2 {
 
-FeatureInfo::FeatureInfo() {
-}
+namespace {
 
-FeatureInfo::~FeatureInfo() {
+struct FormatInfo {
+   GLenum format;
+   const GLenum* types;
+   size_t count;
+};
+
+}  // anonymous namespace.
+
+FeatureInfo::FeatureInfo() {
+  static const GLenum kAlphaTypes[] = {
+      GL_UNSIGNED_BYTE,
+  };
+  static const GLenum kRGBTypes[] = {
+      GL_UNSIGNED_BYTE,
+      GL_UNSIGNED_SHORT_5_6_5,
+  };
+  static const GLenum kRGBATypes[] = {
+      GL_UNSIGNED_BYTE,
+      GL_UNSIGNED_SHORT_4_4_4_4,
+      GL_UNSIGNED_SHORT_5_5_5_1,
+  };
+  static const GLenum kLuminanceTypes[] = {
+      GL_UNSIGNED_BYTE,
+  };
+  static const GLenum kLuminanceAlphaTypes[] = {
+      GL_UNSIGNED_BYTE,
+  };
+  static const FormatInfo kFormatTypes[] = {
+    { GL_ALPHA, kAlphaTypes, arraysize(kAlphaTypes), },
+    { GL_RGB, kRGBTypes, arraysize(kRGBTypes), },
+    { GL_RGBA, kRGBATypes, arraysize(kRGBATypes), },
+    { GL_LUMINANCE, kLuminanceTypes, arraysize(kLuminanceTypes), },
+    { GL_LUMINANCE_ALPHA, kLuminanceAlphaTypes,
+      arraysize(kLuminanceAlphaTypes), } ,
+  };
+  for (size_t ii = 0; ii < arraysize(kFormatTypes); ++ii) {
+    const FormatInfo& info = kFormatTypes[ii];
+    ValueValidator<GLenum>& validator = texture_format_validators_[info.format];
+    for (size_t jj = 0; jj < info.count; ++jj) {
+      validator.AddValue(info.types[jj]);
+    }
+  }
 }
 
 // Helps query for extensions.
@@ -109,6 +150,29 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
           reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)),
       desired_features);
 
+  // NOTE: We need to check both GL_VENDOR and GL_RENDERER because for example
+  // Sandy Bridge on Linux reports:
+  //   GL_VENDOR: Tungsten Graphics, Inc
+  //   GL_RENDERER:
+  //       Mesa DRI Intel(R) Sandybridge Desktop GEM 20100330 DEVELOPMENT
+
+  static GLenum string_ids[] = {
+    GL_VENDOR,
+    GL_RENDERER,
+  };
+  for (size_t ii = 0; ii < arraysize(string_ids); ++ii) {
+    const char* str = reinterpret_cast<const char*>(
+          glGetString(string_ids[ii]));
+    if (str) {
+      std::string lstr(StringToLowerASCII(std::string(str)));
+      feature_flags_.is_intel |= lstr.find("intel") != std::string::npos;
+      feature_flags_.is_nvidia |= lstr.find("nvidia") != std::string::npos;
+      feature_flags_.is_amd |=
+          lstr.find("amd") != std::string::npos ||
+          lstr.find("ati") != std::string::npos;
+    }
+  }
+
   bool npot_ok = false;
 
   AddExtensionString("GL_CHROMIUM_resource_safe");
@@ -116,12 +180,14 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   AddExtensionString("GL_CHROMIUM_strict_attribs");
   AddExtensionString("GL_CHROMIUM_rate_limit_offscreen_context");
   AddExtensionString("GL_CHROMIUM_set_visibility");
-  AddExtensionString("GL_CHROMIUM_gpu_memory_manager");
   AddExtensionString("GL_CHROMIUM_discard_framebuffer");
   AddExtensionString("GL_CHROMIUM_command_buffer_query");
   AddExtensionString("GL_CHROMIUM_copy_texture");
   AddExtensionString("GL_CHROMIUM_texture_mailbox");
   AddExtensionString("GL_ANGLE_translated_shader_source");
+
+  if (!disallowed_features_.gpu_memory_manager)
+    AddExtensionString("GL_CHROMIUM_gpu_memory_manager");
 
   if (ext.Have("GL_ANGLE_translated_shader_source")) {
     feature_flags_.angle_translated_shader_source = true;
@@ -189,29 +255,44 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   }
 
   // Check if we should support GL_OES_packed_depth_stencil and/or
-  // GL_GOOGLE_depth_texture.
-  // NOTE: GL_OES_depth_texture requires support for depth
-  // cubemaps. GL_ARB_depth_texture requires other features that
-  // GL_OES_packed_depth_stencil does not provide. Therefore we made up
-  // GL_GOOGLE_depth_texture.
+  // GL_GOOGLE_depth_texture / GL_CHROMIUM_depth_texture.
+  //
+  // NOTE: GL_OES_depth_texture requires support for depth cubemaps.
+  // GL_ARB_depth_texture requires other features that
+  // GL_OES_packed_depth_stencil does not provide.
+  //
+  // Therefore we made up GL_GOOGLE_depth_texture / GL_CHROMIUM_depth_texture.
+  //
+  // GL_GOOGLE_depth_texture is legacy. As we exposed it into NaCl we can't
+  // get rid of it.
+  //
   bool enable_depth_texture = false;
-  if (ext.Desire("GL_GOOGLE_depth_texture") &&
+  if ((ext.Desire("GL_GOOGLE_depth_texture") ||
+       ext.Desire("GL_CHROMIUM_depth_texture")) &&
       (ext.Have("GL_ARB_depth_texture") ||
-       ext.Have("GL_OES_depth_texture"))) {
+       ext.Have("GL_OES_depth_texture") ||
+       ext.Have("GL_ANGLE_depth_texture"))) {
     enable_depth_texture = true;
+  }
+
+  if (enable_depth_texture) {
+    AddExtensionString("GL_CHROMIUM_depth_texture");
     AddExtensionString("GL_GOOGLE_depth_texture");
+    texture_format_validators_[GL_DEPTH_COMPONENT].AddValue(GL_UNSIGNED_SHORT);
+    texture_format_validators_[GL_DEPTH_COMPONENT].AddValue(GL_UNSIGNED_INT);
     validators_.texture_internal_format.AddValue(GL_DEPTH_COMPONENT);
     validators_.texture_format.AddValue(GL_DEPTH_COMPONENT);
     validators_.pixel_type.AddValue(GL_UNSIGNED_SHORT);
     validators_.pixel_type.AddValue(GL_UNSIGNED_INT);
   }
-  // TODO(gman): Add depth types fo ElementsPerGroup and BytesPerElement
 
   if (ext.Desire("GL_OES_packed_depth_stencil") &&
       (ext.Have("GL_EXT_packed_depth_stencil") ||
        ext.Have("GL_OES_packed_depth_stencil"))) {
     AddExtensionString("GL_OES_packed_depth_stencil");
     if (enable_depth_texture) {
+      texture_format_validators_[GL_DEPTH_STENCIL].AddValue(
+          GL_UNSIGNED_INT_24_8);
       validators_.texture_internal_format.AddValue(GL_DEPTH_STENCIL);
       validators_.texture_format.AddValue(GL_DEPTH_STENCIL);
       validators_.pixel_type.AddValue(GL_UNSIGNED_INT_24_8);
@@ -242,6 +323,7 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
 
   if (enable_texture_format_bgra8888) {
     AddExtensionString("GL_EXT_texture_format_BGRA8888");
+    texture_format_validators_[GL_BGRA_EXT].AddValue(GL_UNSIGNED_BYTE);
     validators_.texture_internal_format.AddValue(GL_BGRA_EXT);
     validators_.texture_format.AddValue(GL_BGRA_EXT);
   }
@@ -305,7 +387,13 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   }
 
   if (enable_texture_float) {
+    texture_format_validators_[GL_ALPHA].AddValue(GL_FLOAT);
+    texture_format_validators_[GL_RGB].AddValue(GL_FLOAT);
+    texture_format_validators_[GL_RGBA].AddValue(GL_FLOAT);
+    texture_format_validators_[GL_LUMINANCE].AddValue(GL_FLOAT);
+    texture_format_validators_[GL_LUMINANCE_ALPHA].AddValue(GL_FLOAT);
     validators_.pixel_type.AddValue(GL_FLOAT);
+    validators_.read_pixel_type.AddValue(GL_FLOAT);
     AddExtensionString("GL_OES_texture_float");
     if (enable_texture_float_linear) {
       AddExtensionString("GL_OES_texture_float_linear");
@@ -313,7 +401,13 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   }
 
   if (enable_texture_half_float) {
+    texture_format_validators_[GL_ALPHA].AddValue(GL_HALF_FLOAT_OES);
+    texture_format_validators_[GL_RGB].AddValue(GL_HALF_FLOAT_OES);
+    texture_format_validators_[GL_RGBA].AddValue(GL_HALF_FLOAT_OES);
+    texture_format_validators_[GL_LUMINANCE].AddValue(GL_HALF_FLOAT_OES);
+    texture_format_validators_[GL_LUMINANCE_ALPHA].AddValue(GL_HALF_FLOAT_OES);
     validators_.pixel_type.AddValue(GL_HALF_FLOAT_OES);
+    validators_.read_pixel_type.AddValue(GL_HALF_FLOAT_OES);
     AddExtensionString("GL_OES_texture_half_float");
     if (enable_texture_half_float_linear) {
       AddExtensionString("GL_OES_texture_half_float_linear");
@@ -445,12 +539,26 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   bool have_ext_occlusion_query_boolean =
       ext.Have("GL_EXT_occlusion_query_boolean");
   bool have_arb_occlusion_query2 = ext.Have("GL_ARB_occlusion_query2");
-  if (ext.Desire("GL_EXT_occlusion_query_boolean") &&
-      (have_ext_occlusion_query_boolean || have_arb_occlusion_query2)) {
+  bool have_arb_occlusion_query = ext.Have("GL_ARB_occlusion_query");
+  bool ext_occlusion_query_disallowed = false;
+
+#if defined(OS_LINUX)
+  // Intel drivers on Linux appear to be buggy.
+  ext_occlusion_query_disallowed = feature_flags_.is_intel;
+#endif
+
+  if (!ext_occlusion_query_disallowed &&
+      ext.Desire("GL_EXT_occlusion_query_boolean") &&
+      (have_ext_occlusion_query_boolean ||
+       have_arb_occlusion_query2 ||
+       have_arb_occlusion_query)) {
     AddExtensionString("GL_EXT_occlusion_query_boolean");
     feature_flags_.occlusion_query_boolean = true;
     feature_flags_.use_arb_occlusion_query2_for_occlusion_query_boolean =
-        !have_ext_occlusion_query_boolean;
+        !have_ext_occlusion_query_boolean && have_arb_occlusion_query2;
+    feature_flags_.use_arb_occlusion_query_for_occlusion_query_boolean =
+        !have_ext_occlusion_query_boolean && have_arb_occlusion_query &&
+        !have_arb_occlusion_query2;
   }
 
   if (ext.Desire("GL_ANGLE_instanced_arrays") &&
@@ -470,6 +578,9 @@ void FeatureInfo::AddExtensionString(const std::string& str) {
   if (extensions_.find(str) == std::string::npos) {
     extensions_ += (extensions_.empty() ? "" : " ") + str;
   }
+}
+
+FeatureInfo::~FeatureInfo() {
 }
 
 }  // namespace gles2

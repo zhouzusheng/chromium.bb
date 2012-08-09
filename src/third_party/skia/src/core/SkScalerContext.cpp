@@ -341,11 +341,14 @@ SK_ERROR:
     glyph->fMaskFormat = fRec.fMaskFormat;
 }
 
+#if 0 // UNUSED
 static bool isLCD(const SkScalerContext::Rec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat ||
            SkMask::kLCD32_Format == rec.fMaskFormat;
 }
+#endif
 
+#if 0 // UNUSED
 static uint16_t a8_to_rgb565(unsigned a8) {
     return SkPackRGB16(a8 >> 3, a8 >> 2, a8 >> 3);
 }
@@ -368,6 +371,7 @@ static void copyToLCD16(const SkBitmap& src, const SkMask& dst) {
         dstP = (uint16_t*)((char*)dstP + dstRB);
     }
 }
+#endif
 
 #define SK_FREETYPE_LCD_LERP    160
 
@@ -625,26 +629,30 @@ void SkScalerContext::internalGetPath(const SkGlyph& glyph, SkPath* fillPath,
         path.transform(inverse, &localPath);
         // now localPath is only affected by the paint settings, and not the canvas matrix
 
-        SkScalar width = fRec.fFrameWidth;
-
+        SkStrokeRec rec(SkStrokeRec::kFill_InitStyle);
+        
+        if (fRec.fFrameWidth > 0) {
+            rec.setStrokeStyle(fRec.fFrameWidth,
+                               SkToBool(fRec.fFlags & kFrameAndFill_Flag));
+            // glyphs are always closed contours, so cap type is ignored,
+            // so we just pass something.
+            rec.setStrokeParams(SkPaint::kButt_Cap,
+                                (SkPaint::Join)fRec.fStrokeJoin,
+                                fRec.fMiterLimit);
+        }
+        
         if (fPathEffect) {
             SkPath effectPath;
-
-            if (fPathEffect->filterPath(&effectPath, localPath, &width)) {
+            if (fPathEffect->filterPath(&effectPath, localPath, &rec)) {
                 localPath.swap(effectPath);
             }
         }
 
-        if (width > 0) {
-            SkStroke    stroker;
-            SkPath      outline;
-
-            stroker.setWidth(width);
-            stroker.setMiterLimit(fRec.fMiterLimit);
-            stroker.setJoin((SkPaint::Join)fRec.fStrokeJoin);
-            stroker.setDoFill(SkToBool(fRec.fFlags & kFrameAndFill_Flag));
-            stroker.strokePath(localPath, &outline);
-            localPath.swap(outline);
+        if (rec.needToApply()) {
+            SkPath strokePath;
+            if (rec.applyToPath(&strokePath, localPath)) {
+                localPath.swap(strokePath);
+            }
         }
 
         // now return stuff to the caller

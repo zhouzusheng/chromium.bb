@@ -8,7 +8,10 @@ namespace ui {
 
 // Ordered alphabetically ignoring underscores, to align with the
 // associated list of prefs in gesture_prefs_aura.cc.
-double GestureConfiguration::long_press_time_in_seconds_ = 0.5;
+int GestureConfiguration::default_radius_ = 15;
+double GestureConfiguration::long_press_time_in_seconds_ = 1.0;
+double GestureConfiguration::max_distance_for_two_finger_tap_in_pixels_ = 300;
+int GestureConfiguration::max_radius_ = 100;
 double GestureConfiguration::max_seconds_between_double_click_ = 0.7;
 double
   GestureConfiguration::max_separation_for_gesture_touches_in_pixels_ = 150;
@@ -28,7 +31,7 @@ double
 // The number of points used in the linear regression which determines
 // touch velocity. If fewer than this number of points have been seen,
 // velocity is reported as 0.
-int GestureConfiguration::points_buffered_for_velocity_ = 10;
+int GestureConfiguration::points_buffered_for_velocity_ = 3;
 double GestureConfiguration::rail_break_proportion_ = 15;
 double GestureConfiguration::rail_start_proportion_ = 2;
 

@@ -53,13 +53,17 @@ class MEDIA_EXPORT StreamParser {
   //                error should be signalled.
   typedef base::Callback<bool(const BufferQueue&)> NewBuffersCB;
 
+  // Signals the beginning of a new media segment.
+  // First parameter - The earliest timestamp of all the streams in the segment.
+  typedef base::Callback<void(base::TimeDelta)> NewMediaSegmentCB;
+
   // A new potentially encrypted stream has been parsed.
   // First parameter - The initialization data associated with the stream.
   // Second parameter - Number of bytes of the initialization data.
   // Return value - True indicates that the initialization data is accepted.
   //                False if something was wrong with the initialization data
   //                and a parsing error should be signalled.
-  typedef base::Callback<bool(scoped_array<uint8>, int)> KeyNeededCB;
+  typedef base::Callback<bool(scoped_array<uint8>, int)> NeedKeyCB;
 
   // Initialize the parser with necessary callbacks. Must be called before any
   // data is passed to Parse(). |init_cb| will be called once enough data has
@@ -69,7 +73,8 @@ class MEDIA_EXPORT StreamParser {
                     const NewConfigCB& config_cb,
                     const NewBuffersCB& audio_cb,
                     const NewBuffersCB& video_cb,
-                    const KeyNeededCB& key_needed_cb) = 0;
+                    const NeedKeyCB& need_key_cb,
+                    const NewMediaSegmentCB& new_segment_cb) = 0;
 
   // Called when a seek occurs. This flushes the current parser state
   // and puts the parser in a state where it can receive data for the new seek

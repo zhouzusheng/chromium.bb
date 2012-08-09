@@ -43,6 +43,8 @@ class MimeUtil : public PlatformMimeUtil {
   bool MatchesMimeType(const std::string &mime_type_pattern,
                        const std::string &mime_type) const;
 
+  bool IsMimeType(const std::string& type_string) const;
+
   bool AreSupportedMediaCodecs(const std::vector<std::string>& codecs) const;
 
   void ParseCodecString(const std::string& codecs,
@@ -305,8 +307,6 @@ static const char* const supported_non_image_types[] = {
   "image/svg+xml",  // SVG is text-based XML, even though it has an image/ type
   "application/xml",
   "application/xhtml+xml",
-  "application/rss+xml",
-  "application/atom+xml",
   "application/json",
   "application/x-x509-user-cert",
   "multipart/related",  // For MHTML support.
@@ -488,6 +488,49 @@ bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
   return true;
 }
 
+// See http://www.iana.org/assignments/media-types/index.html
+static const char* legal_top_level_types[] = {
+  "application/",
+  "audio/",
+  "example/",
+  "image/",
+  "message/",
+  "model/",
+  "multipart/",
+  "text/",
+  "video/",
+};
+
+bool MimeUtil::IsMimeType(const std::string& type_string) const {
+  // MIME types are always ASCII and case-insensitive (at least, the top-level
+  // and secondary types we care about).
+  if (!IsStringASCII(type_string))
+    return false;
+
+  if (type_string == "*/*" || type_string == "*")
+    return true;
+
+  for (size_t i = 0; i < arraysize(legal_top_level_types); ++i) {
+    if (StartsWithASCII(type_string, legal_top_level_types[i], false) &&
+        type_string.length() > strlen(legal_top_level_types[i])) {
+      return true;
+    }
+  }
+
+  // If there's a "/" separator character, and the token before it is
+  // "x-" + (ascii characters), it is also a MIME type.
+  size_t slash = type_string.find('/');
+  if (slash < 3 ||
+      slash == std::string::npos || slash == type_string.length() - 1) {
+    return false;
+  }
+
+  if (StartsWithASCII(type_string, "x-", false))
+    return true;
+
+  return false;
+}
+
 bool MimeUtil::AreSupportedMediaCodecs(
     const std::vector<std::string>& codecs) const {
   return AreSupportedCodecs(codecs_map_, codecs);
@@ -578,6 +621,10 @@ bool IsSupportedMimeType(const std::string& mime_type) {
 bool MatchesMimeType(const std::string& mime_type_pattern,
                      const std::string& mime_type) {
   return g_mime_util.Get().MatchesMimeType(mime_type_pattern, mime_type);
+}
+
+bool IsMimeType(const std::string& type_string) {
+  return g_mime_util.Get().IsMimeType(type_string);
 }
 
 bool AreSupportedMediaCodecs(const std::vector<std::string>& codecs) {
@@ -690,10 +737,9 @@ void GetExtensionsHelper(const char** standard_types,
                          size_t standard_types_len,
                          const std::string& leading_mime_type,
                          base::hash_set<FilePath::StringType>* extensions) {
-  FilePath::StringType extension;
   for (size_t i = 0; i < standard_types_len; ++i) {
-    if (GetPreferredExtensionForMimeType(standard_types[i], &extension))
-      extensions->insert(extension);
+    g_mime_util.Get().GetPlatformExtensionsForMimeType(standard_types[i],
+                                                       extensions);
   }
 
   // Also look up the extensions from hard-coded mappings in case that some
@@ -746,9 +792,8 @@ void GetVideoExtensions(std::vector<FilePath::StringType>* extensions) {
 void GetExtensionsForMimeType(const std::string& mime_type,
                               std::vector<FilePath::StringType>* extensions) {
   base::hash_set<FilePath::StringType> unique_extensions;
-  FilePath::StringType extension;
-  if (GetPreferredExtensionForMimeType(mime_type, &extension))
-    unique_extensions.insert(extension);
+  g_mime_util.Get().GetPlatformExtensionsForMimeType(mime_type,
+                                                     &unique_extensions);
 
   // Also look up the extensions from hard-coded mappings in case that some
   // supported extensions are not registered in the system registry, like ogg.

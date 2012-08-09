@@ -26,11 +26,11 @@
 
 namespace v8_i18n {
 
-const unsigned int LanguageMatcher::kLanguageWeight = 75;
-const unsigned int LanguageMatcher::kScriptWeight = 20;
-const unsigned int LanguageMatcher::kRegionWeight = 5;
-const unsigned int LanguageMatcher::kThreshold = 50;
-const unsigned int LanguageMatcher::kPositionBonus = 1;
+const int LanguageMatcher::kLanguageWeight = 75;
+const int LanguageMatcher::kScriptWeight = 20;
+const int LanguageMatcher::kRegionWeight = 5;
+const int LanguageMatcher::kThreshold = 50;
+const int LanguageMatcher::kPositionBonus = 1;
 const char* const LanguageMatcher::kDefaultLocale = "root";
 
 static const char* GetLanguageException(const char*);

@@ -19,7 +19,8 @@ GesturePoint::GesturePoint()
       last_tap_time_(0.0),
       velocity_calculator_(
           GestureConfiguration::points_buffered_for_velocity()),
-      point_id_(-1) {
+      point_id_(-1),
+      touch_id_(-1) {
 }
 
 GesturePoint::~GesturePoint() {}
@@ -28,6 +29,7 @@ void GesturePoint::Reset() {
   first_touch_time_ = last_touch_time_ = 0.0;
   velocity_calculator_.ClearHistory();
   point_id_ = -1;
+  clear_enclosing_rectangle();
 }
 
 void GesturePoint::ResetVelocity() {
@@ -53,14 +55,16 @@ void GesturePoint::UpdateValues(const TouchEvent& event) {
     velocity_calculator_.PointSeen(event.GetLocation().x(),
                                    event.GetLocation().y(),
                                    event_timestamp_microseconds);
+    clear_enclosing_rectangle();
   }
+
+  UpdateEnclosingRectangle(event);
 }
 
 void GesturePoint::UpdateForTap() {
   // Update the tap-position and time, and reset every other state.
   last_tap_time_ = last_touch_time_;
   last_tap_position_ = last_touch_position_;
-  Reset();
 }
 
 void GesturePoint::UpdateForScroll() {
@@ -93,12 +97,6 @@ bool GesturePoint::IsInFlickWindow(const TouchEvent& event) {
 bool GesturePoint::DidScroll(const TouchEvent& event, int dist) const {
   return abs(last_touch_position_.x() - first_touch_position_.x()) > dist ||
          abs(last_touch_position_.y() - first_touch_position_.y()) > dist;
-}
-
-float GesturePoint::Distance(const GesturePoint& point) const {
-  float x_diff = point.last_touch_position_.x() - last_touch_position_.x();
-  float y_diff = point.last_touch_position_.y() - last_touch_position_.y();
-  return sqrt(x_diff * x_diff + y_diff * y_diff);
 }
 
 bool GesturePoint::HasEnoughDataToEstablishRail() const {
@@ -170,6 +168,33 @@ bool GesturePoint::IsSecondClickInsideManhattanSquare(
 bool GesturePoint::IsOverMinFlickSpeed() {
   return velocity_calculator_.VelocitySquared() >
       GestureConfiguration::min_flick_speed_squared();
+}
+
+void GesturePoint::UpdateEnclosingRectangle(const TouchEvent& event) {
+  int radius;
+
+  // Ignore this TouchEvent if it has a radius larger than the maximum
+  // allowed radius size.
+  if (event.RadiusX() > GestureConfiguration::max_radius() ||
+      event.RadiusY() > GestureConfiguration::max_radius())
+    return;
+
+  // If the device provides at least one of the radius values, take the larger
+  // of the two and use this as both the x radius and the y radius of the
+  // touch region. Otherwise use the default radius value.
+  // TODO(tdanderson): Implement a more specific check for the exact
+  // information provided by the device (0-2 radii values, force, angle) and
+  // use this to compute a more representative rectangular touch region.
+  if (event.RadiusX() || event.RadiusY())
+    radius = std::max(event.RadiusX(), event.RadiusY());
+  else
+    radius = GestureConfiguration::default_radius();
+
+  gfx::Rect rect(event.GetLocation().x() - radius,
+                 event.GetLocation().y() - radius,
+                 radius * 2,
+                 radius * 2);
+  enclosing_rect_ = enclosing_rect_.Union(rect);
 }
 
 }  // namespace ui

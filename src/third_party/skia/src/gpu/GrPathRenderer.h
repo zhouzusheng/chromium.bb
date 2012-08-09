@@ -21,6 +21,10 @@ struct GrPoint;
 
 /**
  *  Base class for drawing paths into a GrDrawTarget.
+ *
+ *  Derived classes can use stages GrPaint::kTotalStages through 
+ *  GrDrawState::kNumStages-1. The stages before GrPaint::kTotalStages
+ *  are reserved for setting up the draw (i.e., textures and filter masks).
  */
 class GR_API GrPathRenderer : public GrRefCnt {
 public:
@@ -116,7 +120,7 @@ public:
     /**
      * Draws the path to the stencil buffer. Assume the writable stencil bits
      * are already initialized to zero. Fill will always be either
-     * kWinding_PathFill or kEvenOdd_PathFill.
+     * kWinding_GrPathFill or kEvenOdd_GrPathFill.
      *
      * Only called if requiresStencilPass returns true for the same combo of
      * target, path, and fill. Never called with an inverse fill.

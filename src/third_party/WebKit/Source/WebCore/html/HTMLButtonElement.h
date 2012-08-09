@@ -32,6 +32,8 @@ class HTMLButtonElement : public HTMLFormControlElement {
 public:
     static PassRefPtr<HTMLButtonElement> create(const QualifiedName&, Document*, HTMLFormElement*);
 
+    void setType(const AtomicString&);
+    
     String value() const;
 
 private:
@@ -43,7 +45,7 @@ private:
         
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
 
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void defaultEventHandler(Event*);
     virtual bool appendFormData(FormDataList&, bool);
@@ -56,7 +58,7 @@ private:
     virtual void setActivatedSubmit(bool flag);
 
     virtual void accessKeyAction(bool sendMouseEvents);
-    virtual bool isURLAttribute(Attribute*) const;
+    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 
     virtual bool canStartSelection() const { return false; }
 

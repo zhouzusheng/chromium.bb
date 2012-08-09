@@ -32,11 +32,23 @@ class Utils {
   // We can't use OS::SNPrintF, it's only for internal code.
   static void StrNCopy(char* dest, int length, const char* src);
 
-  // Extract a string setting named in |settings| and set it to |result|.
+  // Extract a String setting named in |settings| and set it to |result|.
   // Return true if it's specified. Otherwise, return false.
   static bool ExtractStringSetting(const v8::Handle<v8::Object>& settings,
                                    const char* setting,
                                    icu::UnicodeString* result);
+
+  // Extract a Integer setting named in |settings| and set it to |result|.
+  // Return true if it's specified. Otherwise, return false.
+  static bool ExtractIntegerSetting(const v8::Handle<v8::Object>& settings,
+                                    const char* setting,
+                                    int32_t* result);
+
+  // Extract a Boolean setting named in |settings| and set it to |result|.
+  // Return true if it's specified. Otherwise, return false.
+  static bool ExtractBooleanSetting(const v8::Handle<v8::Object>& settings,
+                                    const char* setting,
+                                    bool* result);
 
   // Converts ASCII array into UChar array.
   // Target is always \0 terminated.
@@ -44,6 +56,12 @@ class Utils {
                            int32_t source_length,
                            UChar* target,
                            int32_t target_length);
+
+  // Creates an ObjectTemplate with one internal field.
+  static v8::Persistent<v8::ObjectTemplate> GetTemplate();
+
+  // Creates an ObjectTemplate with two internal fields.
+  static v8::Persistent<v8::ObjectTemplate> GetTemplate2();
 
  private:
   Utils() {}

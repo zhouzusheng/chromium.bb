@@ -8,9 +8,13 @@
 
 
 #include "SkPath.h"
-#include "SkReader32.h"
-#include "SkWriter32.h"
+#include "SkBuffer.h"
 #include "SkMath.h"
+
+// This value is just made-up for now. When count is 4, calling memset was much
+// slower than just writing the loop. This seems odd, and hopefully in the
+// future this we appear to have been a fluke...
+#define MIN_COUNT_FOR_MEMSET_TO_BE_FAST 16
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -249,6 +253,24 @@ bool SkPath::isEmpty() const {
     return 0 == fVerbs.count();
 }
 
+bool SkPath::isLine(SkPoint line[2]) const {
+    int verbCount = fVerbs.count();
+    int ptCount = fPts.count();
+    
+    if (2 == verbCount && 2 == ptCount) {
+        const uint8_t* verbs = fVerbs.begin();
+        if (kMove_Verb == verbs[0] && kLine_Verb == verbs[1]) {
+            if (line) {
+                const SkPoint* pts = fPts.begin();
+                line[0] = pts[0];
+                line[1] = pts[1];
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 /*
  Determines if path is a rect by keeping track of changes in direction
  and looking for a loop either clockwise or counterclockwise.
@@ -367,14 +389,13 @@ bool SkPath::isRect(SkRect* rect) const {
     return result;
 }
 
-int SkPath::getPoints(SkPoint copy[], int max) const {
+int SkPath::getPoints(SkPoint dst[], int max) const {
     SkDEBUGCODE(this->validate();)
 
     SkASSERT(max >= 0);
+    SkASSERT(!max || dst);
     int count = fPts.count();
-    if (copy && max > 0 && count > 0) {
-        memcpy(copy, fPts.begin(), sizeof(SkPoint) * SkMin32(max, count));
-    }
+    fPts.copyRange(dst, 0, max);
     return count;
 }
 
@@ -383,6 +404,15 @@ SkPoint SkPath::getPoint(int index) const {
         return fPts[index];
     }
     return SkPoint::Make(0, 0);
+}
+
+int SkPath::getVerbs(uint8_t dst[], int max) const {
+    SkDEBUGCODE(this->validate();)
+
+    SkASSERT(max >= 0);
+    SkASSERT(!max || dst);
+    fVerbs.copyRange(dst, 0, max);
+    return fVerbs.count();
 }
 
 bool SkPath::getLastPt(SkPoint* lastPt) const {
@@ -456,7 +486,6 @@ void SkPath::incReserve(U16CPU inc) {
 void SkPath::moveTo(SkScalar x, SkScalar y) {
     SkDEBUGCODE(this->validate();)
 
-    int      vc = fVerbs.count();
     SkPoint* pt;
 
     // remember our index
@@ -607,6 +636,39 @@ void SkPath::addRect(SkScalar left, SkScalar top, SkScalar right,
         this->lineTo(left, bottom);
     }
     this->close();
+}
+
+void SkPath::addPoly(const SkPoint pts[], int count, bool close) {
+    SkDEBUGCODE(this->validate();)
+    if (count <= 0) {
+        return;
+    }
+
+    fLastMoveToIndex = fPts.count();
+    fPts.append(count, pts);
+
+    // +close makes room for the extra kClose_Verb
+    uint8_t* vb = fVerbs.append(count + close);
+    vb[0] = kMove_Verb;
+
+    if (count > 1) {
+        // cast to unsigned, so if MIN_COUNT_FOR_MEMSET_TO_BE_FAST is defined to
+        // be 0, the compiler will remove the test/branch entirely.
+        if ((unsigned)count >= MIN_COUNT_FOR_MEMSET_TO_BE_FAST) {
+            memset(&vb[1], kLine_Verb, count - 1);
+        } else {
+            for (int i = 1; i < count; ++i) {
+                vb[i] = kLine_Verb;
+            }
+        }
+        fSegmentMask |= kLine_SegmentMask;
+    }
+    if (close) {
+        vb[count] = kClose_Verb;
+    }
+
+    GEN_ID_INC;
+    DIRTY_AFTER_EDIT;
 }
 
 #define CUBIC_ARC_FACTOR    ((SK_ScalarSqrt2 - SK_Scalar1) * 4 / 3)
@@ -1150,7 +1212,6 @@ void SkPath::reversePathTo(const SkPath& path) {
 void SkPath::reverseAddPath(const SkPath& src) {
     this->incReserve(src.fPts.count());
 
-    const SkPoint* startPts = src.fPts.begin();
     const SkPoint* pts = src.fPts.end();
     const uint8_t* startVerbs = src.fVerbs.begin();
     const uint8_t* verbs = src.fVerbs.end();
@@ -1247,7 +1308,7 @@ void SkPath::transform(const SkMatrix& matrix, SkPath* dst) const {
         SkPoint         pts[4];
         SkPath::Verb    verb;
 
-        while ((verb = iter.next(pts)) != kDone_Verb) {
+        while ((verb = iter.next(pts, false)) != kDone_Verb) {
             switch (verb) {
                 case kMove_Verb:
                     tmp.moveTo(pts[0]);
@@ -1372,6 +1433,7 @@ bool SkPath::Iter::isClosedContour() const {
 }
 
 SkPath::Verb SkPath::Iter::autoClose(SkPoint pts[2]) {
+    SkASSERT(pts);
     if (fLastPt != fMoveTo) {
         // A special case: if both points are NaN, SkPoint::operation== returns
         // false, but the iterator expects that they are treated as the same.
@@ -1381,10 +1443,8 @@ SkPath::Verb SkPath::Iter::autoClose(SkPoint pts[2]) {
             return kClose_Verb;
         }
 
-        if (pts) {
-            pts[0] = fLastPt;
-            pts[1] = fMoveTo;
-        }
+        pts[0] = fLastPt;
+        pts[1] = fMoveTo;
         fLastPt = fMoveTo;
         fCloseLine = true;
         return kLine_Verb;
@@ -1394,21 +1454,16 @@ SkPath::Verb SkPath::Iter::autoClose(SkPoint pts[2]) {
     }
 }
 
-bool SkPath::Iter::cons_moveTo(SkPoint pts[1]) {
+const SkPoint& SkPath::Iter::cons_moveTo() {
     if (fSegmentState == kAfterMove_SegmentState) {
         // Set the first return pt to the move pt
-        if (pts) {
-            *pts = fMoveTo;
-        }
         fSegmentState = kAfterPrimitive_SegmentState;
+        return fMoveTo;
     } else {
         SkASSERT(fSegmentState == kAfterPrimitive_SegmentState);
          // Set the first return pt to the last pt of the previous primitive.
-        if (pts) {
-            *pts = fPts[-1];
-        }
+        return fPts[-1];
     }
-    return false;
 }
 
 void SkPath::Iter::consumeDegenerateSegments() {
@@ -1430,8 +1485,9 @@ void SkPath::Iter::consumeDegenerateSegments() {
                 break;
 
             case kClose_Verb:
-                // A close when we are in a segment is always valid
-                if (fSegmentState == kAfterPrimitive_SegmentState) {
+                // A close when we are in a segment is always valid except when it
+                // follows a move which follows a segment.
+                if (fSegmentState == kAfterPrimitive_SegmentState && !lastMoveVerb) {
                     return;
                 }
                 // A close at any other time must be ignored
@@ -1486,13 +1542,13 @@ void SkPath::Iter::consumeDegenerateSegments() {
     }
 }
 
-SkPath::Verb SkPath::Iter::next(SkPoint pts[4]) {
-    this->consumeDegenerateSegments();
+SkPath::Verb SkPath::Iter::doNext(SkPoint ptsParam[4]) {
+    SkASSERT(ptsParam);
 
     if (fVerbs == fVerbStop) {
         // Close the curve if requested and if there is some curve to close
         if (fNeedClose && fSegmentState == kAfterPrimitive_SegmentState) {
-            if (kLine_Verb == this->autoClose(pts)) {
+            if (kLine_Verb == this->autoClose(ptsParam)) {
                 return kLine_Verb;
             }
             fNeedClose = false;
@@ -1502,7 +1558,8 @@ SkPath::Verb SkPath::Iter::next(SkPoint pts[4]) {
     }
 
     unsigned        verb = *fVerbs++;
-    const SkPoint*  srcPts = fPts;
+    const SkPoint* SK_RESTRICT srcPts = fPts;
+    SkPoint* SK_RESTRICT       pts = ptsParam;
 
     switch (verb) {
         case kMove_Verb:
@@ -1518,42 +1575,28 @@ SkPath::Verb SkPath::Iter::next(SkPoint pts[4]) {
                 return kDone_Verb;
             }
             fMoveTo = *srcPts;
-            if (pts) {
-                pts[0] = *srcPts;
-            }
+            pts[0] = *srcPts;
             srcPts += 1;
             fSegmentState = kAfterMove_SegmentState;
             fLastPt = fMoveTo;
             fNeedClose = fForceClose;
             break;
         case kLine_Verb:
-            if (this->cons_moveTo(pts)) {
-                return kMove_Verb;
-            }
-            if (pts) {
-                pts[1] = srcPts[0];
-            }
+            pts[0] = this->cons_moveTo();
+            pts[1] = srcPts[0];
             fLastPt = srcPts[0];
             fCloseLine = false;
             srcPts += 1;
             break;
         case kQuad_Verb:
-            if (this->cons_moveTo(pts)) {
-                return kMove_Verb;
-            }
-            if (pts) {
-                memcpy(&pts[1], srcPts, 2 * sizeof(SkPoint));
-            }
+            pts[0] = this->cons_moveTo();
+            memcpy(&pts[1], srcPts, 2 * sizeof(SkPoint));
             fLastPt = srcPts[1];
             srcPts += 2;
             break;
         case kCubic_Verb:
-            if (this->cons_moveTo(pts)) {
-                return kMove_Verb;
-            }
-            if (pts) {
-                memcpy(&pts[1], srcPts, 3 * sizeof(SkPoint));
-            }
+            pts[0] = this->cons_moveTo();
+            memcpy(&pts[1], srcPts, 3 * sizeof(SkPoint));
             fLastPt = srcPts[2];
             srcPts += 3;
             break;
@@ -1597,6 +1640,7 @@ void SkPath::RawIter::setPath(const SkPath& path) {
 }
 
 SkPath::Verb SkPath::RawIter::next(SkPoint pts[4]) {
+    SkASSERT(NULL != pts);
     if (fVerbs == fVerbStop) {
         return kDone_Verb;
     }
@@ -1606,42 +1650,32 @@ SkPath::Verb SkPath::RawIter::next(SkPoint pts[4]) {
 
     switch (verb) {
         case kMove_Verb:
-            if (pts) {
-                pts[0] = *srcPts;
-            }
+            pts[0] = *srcPts;
             fMoveTo = srcPts[0];
             fLastPt = fMoveTo;
             srcPts += 1;
             break;
         case kLine_Verb:
-            if (pts) {
-                pts[0] = fLastPt;
-                pts[1] = srcPts[0];
-            }
+            pts[0] = fLastPt;
+            pts[1] = srcPts[0];
             fLastPt = srcPts[0];
             srcPts += 1;
             break;
         case kQuad_Verb:
-            if (pts) {
-                pts[0] = fLastPt;
-                memcpy(&pts[1], srcPts, 2 * sizeof(SkPoint));
-            }
+            pts[0] = fLastPt;
+            memcpy(&pts[1], srcPts, 2 * sizeof(SkPoint));
             fLastPt = srcPts[1];
             srcPts += 2;
             break;
         case kCubic_Verb:
-            if (pts) {
-                pts[0] = fLastPt;
-                memcpy(&pts[1], srcPts, 3 * sizeof(SkPoint));
-            }
+            pts[0] = fLastPt;
+            memcpy(&pts[1], srcPts, 3 * sizeof(SkPoint));
             fLastPt = srcPts[2];
             srcPts += 3;
             break;
         case kClose_Verb:
             fLastPt = fMoveTo;
-            if (pts) {
-                pts[0] = fMoveTo;
-            }
+            pts[0] = fMoveTo;
             break;
     }
     fPts = srcPts;
@@ -1651,20 +1685,31 @@ SkPath::Verb SkPath::RawIter::next(SkPoint pts[4]) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /*
-    Format in flattened buffer: [ptCount, verbCount, pts[], verbs[]]
+    Format in compressed buffer: [ptCount, verbCount, pts[], verbs[]]
 */
 
-void SkPath::flatten(SkWriter32& buffer) const {
+uint32_t SkPath::writeToMemory(void* storage) const {
     SkDEBUGCODE(this->validate();)
 
+    if (NULL == storage) {
+        const int byteCount = 3 * sizeof(int32_t)
+                      + sizeof(SkPoint) * fPts.count()
+                      + sizeof(uint8_t) * fVerbs.count();
+        return SkAlign4(byteCount);
+    }
+
+    SkWBuffer   buffer(storage);
     buffer.write32(fPts.count());
     buffer.write32(fVerbs.count());
     buffer.write32((fFillType << 8) | fSegmentMask);
-    buffer.writeMul4(fPts.begin(), sizeof(SkPoint) * fPts.count());
-    buffer.writePad(fVerbs.begin(), fVerbs.count());
+    buffer.write(fPts.begin(), sizeof(SkPoint) * fPts.count());
+    buffer.write(fVerbs.begin(), fVerbs.count());
+    buffer.padToAlign4();
+    return buffer.pos();
 }
 
-void SkPath::unflatten(SkReader32& buffer) {
+uint32_t SkPath::readFromMemory(const void* storage) {
+    SkRBuffer   buffer(storage);
     fPts.setCount(buffer.readS32());
     fVerbs.setCount(buffer.readS32());
     uint32_t packed = buffer.readS32();
@@ -1672,11 +1717,13 @@ void SkPath::unflatten(SkReader32& buffer) {
     fSegmentMask = packed & 0xFF;
     buffer.read(fPts.begin(), sizeof(SkPoint) * fPts.count());
     buffer.read(fVerbs.begin(), fVerbs.count());
+    buffer.skipToAlign4();
 
     GEN_ID_INC;
     DIRTY_AFTER_EDIT;
 
     SkDEBUGCODE(this->validate();)
+    return buffer.pos();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1689,45 +1736,26 @@ void SkPath::dump(bool forceClose, const char title[]) const {
     SkDebugf("path: forceClose=%s %s\n", forceClose ? "true" : "false",
              title ? title : "");
 
-    while ((verb = iter.next(pts)) != kDone_Verb) {
+    while ((verb = iter.next(pts, false)) != kDone_Verb) {
         switch (verb) {
             case kMove_Verb:
-#ifdef SK_CAN_USE_FLOAT
                 SkDebugf("  path: moveTo [%g %g]\n",
                         SkScalarToFloat(pts[0].fX), SkScalarToFloat(pts[0].fY));
-#else
-                SkDebugf("  path: moveTo [%x %x]\n", pts[0].fX, pts[0].fY);
-#endif
                 break;
             case kLine_Verb:
-#ifdef SK_CAN_USE_FLOAT
                 SkDebugf("  path: lineTo [%g %g]\n",
                         SkScalarToFloat(pts[1].fX), SkScalarToFloat(pts[1].fY));
-#else
-                SkDebugf("  path: lineTo [%x %x]\n", pts[1].fX, pts[1].fY);
-#endif
                 break;
             case kQuad_Verb:
-#ifdef SK_CAN_USE_FLOAT
                 SkDebugf("  path: quadTo [%g %g] [%g %g]\n",
                         SkScalarToFloat(pts[1].fX), SkScalarToFloat(pts[1].fY),
                         SkScalarToFloat(pts[2].fX), SkScalarToFloat(pts[2].fY));
-#else
-                SkDebugf("  path: quadTo [%x %x] [%x %x]\n",
-                         pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY);
-#endif
                 break;
             case kCubic_Verb:
-#ifdef SK_CAN_USE_FLOAT
                 SkDebugf("  path: cubeTo [%g %g] [%g %g] [%g %g]\n",
                         SkScalarToFloat(pts[1].fX), SkScalarToFloat(pts[1].fY),
                         SkScalarToFloat(pts[2].fX), SkScalarToFloat(pts[2].fY),
                         SkScalarToFloat(pts[3].fX), SkScalarToFloat(pts[3].fY));
-#else
-                SkDebugf("  path: cubeTo [%x %x] [%x %x] [%x %x]\n",
-                         pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY,
-                         pts[3].fX, pts[3].fY);
-#endif
                 break;
             case kClose_Verb:
                 SkDebugf("  path: close\n");

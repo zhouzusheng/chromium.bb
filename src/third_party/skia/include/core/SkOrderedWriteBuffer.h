@@ -22,6 +22,8 @@ public:
                          size_t storageSize);
     virtual ~SkOrderedWriteBuffer() {}
 
+    SkWriter32* getWriter32() { return &fWriter; }
+
     // deprecated naming convention that will be removed after callers are updated
     virtual bool writeBool(bool value) { return fWriter.writeBool(value); }
     virtual void writeInt(int32_t value) { fWriter.writeInt(value); }
@@ -39,7 +41,7 @@ public:
     virtual size_t readFromStream(SkStream* s, size_t length) { return fWriter.readFromStream(s, length); }
 
     virtual void writeMatrix(const SkMatrix& matrix) { fWriter.writeMatrix(matrix); }
-    virtual void writePath(const SkPath& path) { path.flatten(fWriter); };
+    virtual void writePath(const SkPath& path) { fWriter.writePath(path); };
     virtual void writePoint(const SkPoint& point) {
         fWriter.writeScalar(point.fX);
         fWriter.writeScalar(point.fY);

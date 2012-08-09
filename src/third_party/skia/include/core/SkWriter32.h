@@ -13,6 +13,7 @@
 #include "SkTypes.h"
 
 #include "SkScalar.h"
+#include "SkPath.h"
 #include "SkPoint.h"
 #include "SkRect.h"
 #include "SkMatrix.h"
@@ -76,6 +77,17 @@ public:
         *(int32_t*)this->reserve(sizeof(value)) = value;
     }
     
+    void writePtr(void* ptr) {
+        // Since we "know" that we're always 4-byte aligned, we can tell the
+        // compiler that here, by assigning to an int32 ptr.
+        int32_t* addr = (int32_t*)this->reserve(sizeof(void*));
+        if (4 == sizeof(void*)) {
+            *(void**)addr = ptr;
+        } else {
+            memcpy(addr, &ptr, sizeof(void*));
+        }
+    }
+
     void writeScalar(SkScalar value) {
         *(SkScalar*)this->reserve(sizeof(value)) = value;
     }
@@ -88,16 +100,22 @@ public:
         *(SkRect*)this->reserve(sizeof(rect)) = rect;
     }
 
-    void writeMatrix(const SkMatrix& matrix) {
-        size_t size = matrix.flatten(NULL);
+    void writePath(const SkPath& path) {
+        size_t size = path.writeToMemory(NULL);
         SkASSERT(SkAlign4(size) == size);
-        matrix.flatten(this->reserve(size));
+        path.writeToMemory(this->reserve(size));
+    }
+
+    void writeMatrix(const SkMatrix& matrix) {
+        size_t size = matrix.writeToMemory(NULL);
+        SkASSERT(SkAlign4(size) == size);
+        matrix.writeToMemory(this->reserve(size));
     }
     
     void writeRegion(const SkRegion& rgn) {
-        size_t size = rgn.flatten(NULL);
+        size_t size = rgn.writeToMemory(NULL);
         SkASSERT(SkAlign4(size) == size);
-        rgn.flatten(this->reserve(size));
+        rgn.writeToMemory(this->reserve(size));
     }
 
     // write count bytes (must be a multiple of 4)
@@ -167,6 +185,24 @@ private:
     bool fHeadIsExternalStorage;
 
     Block* newBlock(size_t bytes);
+};
+
+/**
+ *  Helper class to allocated SIZE bytes as part of the writer, and to provide
+ *  that storage to the constructor as its initial storage buffer.
+ *
+ *  This wrapper ensures proper alignment rules are met for the storage.
+ */
+template <size_t SIZE> class SkSWriter32 : public SkWriter32 {
+public:
+    SkSWriter32(size_t minSize) : SkWriter32(minSize, fData.fStorage, SIZE) {}
+    
+private:
+    union {
+        void*   fPtrAlignment;
+        double  fDoubleAlignment;
+        char    fStorage[SIZE];
+    } fData;
 };
 
 #endif

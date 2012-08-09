@@ -19,8 +19,20 @@ class UI_EXPORT GestureConfiguration {
  public:
   // Ordered alphabetically ignoring underscores, to align with the
   // associated list of prefs in gesture_prefs_aura.cc.
+  static int default_radius() {
+    return default_radius_;
+  }
   static double long_press_time_in_seconds() {
     return long_press_time_in_seconds_;
+  }
+  static double max_distance_for_two_finger_tap_in_pixels() {
+    return max_distance_for_two_finger_tap_in_pixels_;
+  }
+  static void set_max_distance_for_two_finger_tap_in_pixels(double val) {
+    max_distance_for_two_finger_tap_in_pixels_ = val;
+  }
+  static int max_radius() {
+    return max_radius_;
   }
   static void set_long_press_time_in_seconds(double val) {
     long_press_time_in_seconds_ = val;
@@ -120,6 +132,20 @@ class UI_EXPORT GestureConfiguration {
   // These are listed in alphabetical order ignoring underscores, to
   // align with the associated list of preferences in
   // gesture_prefs_aura.cc. These two lists should be kept in sync.
+
+  // The default touch radius length used when the only information given
+  // by the device is the touch center.
+  static int default_radius_;
+
+  // The maximum allowed distance between two fingers for a two finger tap. If
+  // the distance between two fingers is greater than this value, we will not
+  // recognize a two finger tap.
+  static double max_distance_for_two_finger_tap_in_pixels_;
+
+  // The maximum allowed size for the radius of a touch region used in
+  // forming an ET_GESTURE_TAP event.
+  static int max_radius_;
+
   static double long_press_time_in_seconds_;
   static double max_seconds_between_double_click_;
   static double max_separation_for_gesture_touches_in_pixels_;

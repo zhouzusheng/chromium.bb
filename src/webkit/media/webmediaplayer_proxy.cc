@@ -12,7 +12,6 @@
 #include "media/filters/video_renderer_base.h"
 #include "webkit/media/webmediaplayer_impl.h"
 
-using media::NetworkEvent;
 using media::PipelineStatus;
 
 namespace webkit_media {
@@ -113,11 +112,6 @@ void WebMediaPlayerProxy::PipelineErrorCallback(PipelineStatus error) {
       &WebMediaPlayerProxy::PipelineErrorTask, this, error));
 }
 
-void WebMediaPlayerProxy::NetworkEventCallback(NetworkEvent type) {
-  render_loop_->PostTask(FROM_HERE, base::Bind(
-      &WebMediaPlayerProxy::NetworkEventTask, this, type));
-}
-
 void WebMediaPlayerProxy::RepaintTask() {
   DCHECK(render_loop_->BelongsToCurrentThread());
   {
@@ -154,12 +148,6 @@ void WebMediaPlayerProxy::PipelineErrorTask(PipelineStatus error) {
     webmediaplayer_->OnPipelineError(error);
 }
 
-void WebMediaPlayerProxy::NetworkEventTask(NetworkEvent type) {
-  DCHECK(render_loop_->BelongsToCurrentThread());
-  if (webmediaplayer_)
-    webmediaplayer_->OnNetworkEvent(type);
-}
-
 void WebMediaPlayerProxy::SetOpaqueTask(bool opaque) {
   DCHECK(render_loop_->BelongsToCurrentThread());
   if (webmediaplayer_)
@@ -189,22 +177,23 @@ void WebMediaPlayerProxy::DemuxerClosed() {
       &WebMediaPlayerProxy::DemuxerClosedTask, this));
 }
 
-void WebMediaPlayerProxy::KeyNeeded(scoped_array<uint8> init_data,
-                                    int init_data_size) {
+void WebMediaPlayerProxy::DemuxerNeedKey(scoped_array<uint8> init_data,
+                                         int init_data_size) {
   render_loop_->PostTask(FROM_HERE, base::Bind(
-      &WebMediaPlayerProxy::KeyNeededTask, this,
+      &WebMediaPlayerProxy::NeedKeyTask, this, "", "",
       base::Passed(&init_data), init_data_size));
 }
 
-void WebMediaPlayerProxy::DemuxerFlush() {
+void WebMediaPlayerProxy::DemuxerStartWaitingForSeek() {
   if (chunk_demuxer_.get())
-    chunk_demuxer_->FlushData();
+    chunk_demuxer_->StartWaitingForSeek();
 }
 
 media::ChunkDemuxer::Status WebMediaPlayerProxy::DemuxerAddId(
     const std::string& id,
-    const std::string& type) {
-  return chunk_demuxer_->AddId(id, type);
+    const std::string& type,
+    std::vector<std::string>& codecs) {
+  return chunk_demuxer_->AddId(id, type, codecs);
 }
 
 void WebMediaPlayerProxy::DemuxerRemoveId(const std::string& id) {
@@ -248,11 +237,76 @@ void WebMediaPlayerProxy::DemuxerClosedTask() {
   chunk_demuxer_ = NULL;
 }
 
-void WebMediaPlayerProxy::KeyNeededTask(scoped_array<uint8> init_data,
-                                        int init_data_size) {
+void WebMediaPlayerProxy::KeyAdded(const std::string& key_system,
+                                   const std::string& session_id) {
+  render_loop_->PostTask(FROM_HERE, base::Bind(
+      &WebMediaPlayerProxy::KeyAddedTask, this, key_system, session_id));
+}
+
+void WebMediaPlayerProxy::KeyError(const std::string& key_system,
+                                   const std::string& session_id,
+                                   media::AesDecryptor::KeyError error_code,
+                                   int system_code) {
+  render_loop_->PostTask(FROM_HERE, base::Bind(
+      &WebMediaPlayerProxy::KeyErrorTask, this, key_system, session_id,
+      error_code, system_code));
+}
+
+void WebMediaPlayerProxy::KeyMessage(const std::string& key_system,
+                                     const std::string& session_id,
+                                     scoped_array<uint8> message,
+                                     int message_length,
+                                     const std::string& default_url) {
+  render_loop_->PostTask(FROM_HERE, base::Bind(
+      &WebMediaPlayerProxy::KeyMessageTask, this, key_system, session_id,
+      base::Passed(&message), message_length, default_url));
+}
+
+void WebMediaPlayerProxy::NeedKey(const std::string& key_system,
+                                  const std::string& session_id,
+                                  scoped_array<uint8> init_data,
+                                  int init_data_size) {
+  render_loop_->PostTask(FROM_HERE, base::Bind(
+      &WebMediaPlayerProxy::NeedKeyTask, this, key_system, session_id,
+      base::Passed(&init_data), init_data_size));
+}
+
+void WebMediaPlayerProxy::KeyAddedTask(const std::string& key_system,
+                                       const std::string& session_id) {
   DCHECK(render_loop_->BelongsToCurrentThread());
   if (webmediaplayer_)
-    webmediaplayer_->OnKeyNeeded(init_data.Pass(), init_data_size);
+    webmediaplayer_->OnKeyAdded(key_system, session_id);
+}
+
+void WebMediaPlayerProxy::KeyErrorTask(const std::string& key_system,
+                                       const std::string& session_id,
+                                       media::AesDecryptor::KeyError error_code,
+                                       int system_code) {
+  DCHECK(render_loop_->BelongsToCurrentThread());
+  if (webmediaplayer_)
+    webmediaplayer_->OnKeyError(key_system, session_id,
+                                error_code, system_code);
+}
+
+void WebMediaPlayerProxy::KeyMessageTask(const std::string& key_system,
+                                         const std::string& session_id,
+                                         scoped_array<uint8> message,
+                                         int message_length,
+                                         const std::string& default_url) {
+  DCHECK(render_loop_->BelongsToCurrentThread());
+  if (webmediaplayer_)
+    webmediaplayer_->OnKeyMessage(key_system, session_id,
+                                  message.Pass(), message_length, default_url);
+}
+
+void WebMediaPlayerProxy::NeedKeyTask(const std::string& key_system,
+                                      const std::string& session_id,
+                                      scoped_array<uint8> init_data,
+                                      int init_data_size) {
+  DCHECK(render_loop_->BelongsToCurrentThread());
+  if (webmediaplayer_)
+    webmediaplayer_->OnNeedKey(key_system, session_id,
+                               init_data.Pass(), init_data_size);
 }
 
 }  // namespace webkit_media

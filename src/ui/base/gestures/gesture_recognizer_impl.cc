@@ -12,11 +12,14 @@
 #include "ui/base/gestures/gesture_sequence.h"
 #include "ui/base/gestures/gesture_types.h"
 
+namespace ui {
+
 namespace {
+
 // This is used to pop a std::queue when returning from a function.
 class ScopedPop {
  public:
-  explicit ScopedPop(std::queue<ui::TouchEvent*>* queue) : queue_(queue) {
+  explicit ScopedPop(std::queue<TouchEvent*>* queue) : queue_(queue) {
   }
 
   ~ScopedPop() {
@@ -25,63 +28,138 @@ class ScopedPop {
   }
 
  private:
-  std::queue<ui::TouchEvent*>* queue_;
+  std::queue<TouchEvent*>* queue_;
   DISALLOW_COPY_AND_ASSIGN(ScopedPop);
 };
 
-// CancelledTouchEvent mirrors a ui::TouchEvent object, except for the
-// type, which is always ET_TOUCH_CANCELLED.
-class CancelledTouchEvent : public ui::TouchEvent {
+// CancelledTouchEvent mirrors a TouchEvent object.
+class MirroredTouchEvent : public TouchEvent {
  public:
-  explicit CancelledTouchEvent(ui::TouchEvent* real)
-      : src_event_(real) {
+  explicit MirroredTouchEvent(const TouchEvent* real)
+      : type_(real->GetEventType()),
+        location_(real->GetLocation()),
+        touch_id_(real->GetTouchId()),
+        flags_(real->GetEventFlags()),
+        timestamp_(real->GetTimestamp()),
+        radius_x_(real->RadiusX()),
+        radius_y_(real->RadiusY()),
+        rotation_angle_(real->RotationAngle()),
+        force_(real->Force()) {
   }
 
-  virtual ~CancelledTouchEvent() {
+  virtual ~MirroredTouchEvent() {
   }
 
- private:
-  // Overridden from ui::TouchEvent.
-  virtual ui::EventType GetEventType() const OVERRIDE {
-    return ui::ET_TOUCH_CANCELLED;
+  // Overridden from TouchEvent.
+  virtual EventType GetEventType() const OVERRIDE {
+    return type_;
   }
 
   virtual gfx::Point GetLocation() const OVERRIDE {
-    return src_event_->GetLocation();
+    return location_;
   }
 
   virtual int GetTouchId() const OVERRIDE {
-    return src_event_->GetTouchId();
+    return touch_id_;
   }
 
   virtual int GetEventFlags() const OVERRIDE {
-    return src_event_->GetEventFlags();
+    return flags_;
   }
 
   virtual base::TimeDelta GetTimestamp() const OVERRIDE {
-    return src_event_->GetTimestamp();
+    return timestamp_;
   }
 
-  virtual ui::TouchEvent* Copy() const OVERRIDE {
-    return NULL;
+  virtual float RadiusX() const OVERRIDE {
+    return radius_x_;
   }
 
-  ui::TouchEvent* src_event_;
+  virtual float RadiusY() const OVERRIDE {
+    return radius_y_;
+  }
+
+  virtual float RotationAngle() const OVERRIDE {
+    return rotation_angle_;
+  }
+
+  virtual float Force() const OVERRIDE {
+    return force_;
+  }
+
+ protected:
+  void set_type(const EventType type) { type_ = type; }
+
+ private:
+  EventType type_;
+  gfx::Point location_;
+  int touch_id_;
+  int flags_;
+  base::TimeDelta timestamp_;
+  float radius_x_;
+  float radius_y_;
+  float rotation_angle_;
+  float force_;
+
+  DISALLOW_COPY_AND_ASSIGN(MirroredTouchEvent);
+};
+
+// A mirrored event, except for the type, which is always ET_TOUCH_CANCELLED.
+class CancelledTouchEvent : public MirroredTouchEvent {
+ public:
+  explicit CancelledTouchEvent(const TouchEvent* src)
+      : MirroredTouchEvent(src) {
+    set_type(ET_TOUCH_CANCELLED);
+  }
+
+  virtual ~CancelledTouchEvent() {}
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(CancelledTouchEvent);
 };
 
 // Touches which are cancelled by a touch capture are routed to a
 // GestureEventIgnorer, which ignores them.
-class GestureConsumerIgnorer : public ui::GestureConsumer {
+class GestureConsumerIgnorer : public GestureConsumer {
  public:
   GestureConsumerIgnorer()
       : GestureConsumer(true) {
   }
 };
 
-}  // namespace
+template <typename T>
+void TransferConsumer(GestureConsumer* current_consumer,
+                      GestureConsumer* new_consumer,
+                      std::map<GestureConsumer*, T>* map) {
+  if (map->count(current_consumer)) {
+    (*map)[new_consumer] = (*map)[current_consumer];
+    map->erase(current_consumer);
+  }
+}
 
-namespace ui {
+void RemoveConsumerFromMap(GestureConsumer* consumer,
+                           GestureRecognizerImpl::TouchIdToConsumerMap* map) {
+  for (GestureRecognizerImpl::TouchIdToConsumerMap::iterator i = map->begin();
+       i != map->end();) {
+    if (i->second == consumer)
+      map->erase(i++);
+    else
+      ++i;
+  }
+}
+
+void TransferTouchIdToConsumerMap(
+    GestureConsumer* old_consumer,
+    GestureConsumer* new_consumer,
+    GestureRecognizerImpl::TouchIdToConsumerMap* map) {
+  for (GestureRecognizerImpl::TouchIdToConsumerMap::iterator i = map->begin();
+       i != map->end(); ++i) {
+    if (i->second == old_consumer)
+      i->second = new_consumer;
+  }
+}
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // GestureRecognizerImpl, public:
@@ -94,8 +172,10 @@ GestureRecognizerImpl::GestureRecognizerImpl(GestureEventHelper* helper)
 GestureRecognizerImpl::~GestureRecognizerImpl() {
 }
 
+// Checks if this finger is already down, if so, returns the current target.
+// Otherwise, returns NULL.
 GestureConsumer* GestureRecognizerImpl::GetTouchLockedTarget(
-  TouchEvent* event) {
+    TouchEvent* event) {
   return touch_id_target_[event->GetTouchId()];
 }
 
@@ -120,7 +200,7 @@ GestureConsumer* GestureRecognizerImpl::GetTargetForLocation(
       gfx::Point delta =
           points[j].last_touch_position().Subtract(location);
       int distance = delta.x() * delta.x() + delta.y() * delta.y();
-      if ( !closest_point || distance < closest_distance_squared ) {
+      if (!closest_point || distance < closest_distance_squared) {
         closest_point = &points[j];
         closest_distance_squared = distance;
       }
@@ -136,20 +216,43 @@ GestureConsumer* GestureRecognizerImpl::GetTargetForLocation(
     return NULL;
 }
 
-void GestureRecognizerImpl::CancelNonCapturedTouches(
-    GestureConsumer* capturer) {
-  std::map<int, GestureConsumer*>::iterator i;
-  // Fire touch cancels, and target touch_ids to gesture_consumer_ignorer.
-  for (i = touch_id_target_.begin(); i != touch_id_target_.end(); ++i) {
-    if (capturer != i->second) {
-      scoped_ptr<TouchEvent> touchEvent(helper_->CreateTouchEvent(
+void GestureRecognizerImpl::TransferEventsTo(GestureConsumer* current_consumer,
+                                             GestureConsumer* new_consumer) {
+  // Send cancel to all those save |new_consumer| and |current_consumer|.
+  // Don't send a cancel to |current_consumer|, unless |new_consumer| is NULL.
+  for (TouchIdToConsumerMap::iterator i = touch_id_target_.begin();
+       i != touch_id_target_.end(); ++i) {
+    if (i->second != new_consumer &&
+        (i->second != current_consumer || new_consumer == NULL) &&
+        i->second != gesture_consumer_ignorer_.get()) {
+      scoped_ptr<TouchEvent> touch_event(helper_->CreateTouchEvent(
             ui::ET_TOUCH_CANCELLED, gfx::Point(0, 0),
             i->first,
             base::Time::NowFromSystemTime() - base::Time()));
-      helper_->DispatchCancelTouchEvent(touchEvent.get());
-      touch_id_target_[i->first] = gesture_consumer_ignorer_.get();
+      helper_->DispatchCancelTouchEvent(touch_event.get());
+      i->second = gesture_consumer_ignorer_.get();
     }
   }
+
+  // Transer events from |current_consumer| to |new_consumer|.
+  if (current_consumer && new_consumer) {
+    TransferTouchIdToConsumerMap(current_consumer, new_consumer,
+                                 &touch_id_target_);
+    TransferTouchIdToConsumerMap(current_consumer, new_consumer,
+                                 &touch_id_target_for_gestures_);
+    TransferConsumer(current_consumer, new_consumer, &event_queue_);
+    TransferConsumer(current_consumer, new_consumer, &consumer_sequence_);
+  }
+}
+
+bool GestureRecognizerImpl::GetLastTouchPointForTarget(
+    GestureConsumer* consumer,
+    gfx::Point* point) {
+  if (consumer_sequence_.count(consumer) == 0)
+    return false;
+
+  *point = consumer_sequence_[consumer]->last_touch_location();
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -194,7 +297,7 @@ void GestureRecognizerImpl::QueueTouchEventForGesture(GestureConsumer* consumer,
                                                       const TouchEvent& event) {
   if (!event_queue_[consumer])
     event_queue_[consumer] = new std::queue<TouchEvent*>();
-  event_queue_[consumer]->push(event.Copy());
+  event_queue_[consumer]->push(new MirroredTouchEvent(&event));
 }
 
 GestureSequence::Gestures* GestureRecognizerImpl::AdvanceTouchQueue(
@@ -234,25 +337,8 @@ void GestureRecognizerImpl::FlushTouchQueue(GestureConsumer* consumer) {
     event_queue_.erase(consumer);
   }
 
-  int touch_id = -1;
-  std::map<int, GestureConsumer*>::iterator i;
-  for (i = touch_id_target_.begin(); i != touch_id_target_.end(); ++i) {
-    if (i->second == consumer)
-      touch_id = i->first;
-  }
-
-  if (touch_id_target_.count(touch_id))
-    touch_id_target_.erase(touch_id);
-
-  for (i = touch_id_target_for_gestures_.begin();
-       i != touch_id_target_for_gestures_.end();
-       ++i) {
-    if (i->second == consumer)
-      touch_id = i->first;
-  }
-
-  if (touch_id_target_for_gestures_.count(touch_id))
-    touch_id_target_for_gestures_.erase(touch_id);
+  RemoveConsumerFromMap(consumer, &touch_id_target_);
+  RemoveConsumerFromMap(consumer, &touch_id_target_for_gestures_);
 }
 
 // GestureRecognizer, static

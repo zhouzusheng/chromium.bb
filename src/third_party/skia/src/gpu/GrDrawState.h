@@ -14,6 +14,7 @@
 #include "GrRefCnt.h"
 #include "GrSamplerState.h"
 #include "GrStencil.h"
+#include "GrTexture.h"
 
 #include "SkXfermode.h"
 
@@ -36,6 +37,11 @@ public:
      * the last enabled stage. The presence or absence of texture coordinates
      * for each stage in the vertex layout indicates whether a stage is enabled
      * or not.
+     *
+     * Stages 0 through GrPaint::kTotalStages-1 are reserved for setting up
+     * the draw (i.e., textures and filter masks). Stages GrPaint::kTotalStages 
+     * through kNumStages-1 are earmarked for use by GrTextContext and 
+     * GrPathRenderer-derived classes.
      */
     enum {
         kNumStages = 4,
@@ -77,9 +83,10 @@ public:
         fCoverage = 0xffffffff;
         fFirstCoverageStage = kNumStages;
         fColorFilterMode = SkXfermode::kDst_Mode;
-        fSrcBlend = kOne_BlendCoeff;
-        fDstBlend = kZero_BlendCoeff;
+        fSrcBlend = kOne_GrBlendCoeff;
+        fDstBlend = kZero_GrBlendCoeff;
         fViewMatrix.reset();
+        fBehaviorBits = 0;
 
         // ensure values that will be memcmp'ed in == but not memset in reset()
         // are tightly packed
@@ -87,8 +94,6 @@ public:
                  sizeof(fFirstCoverageStage) + sizeof(fColorFilterMode) +
                  sizeof(fSrcBlend) + sizeof(fDstBlend) ==
                  this->podSize());
-
-        fEdgeAANumEdges = 0;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -169,6 +174,18 @@ public:
      */
     void setTexture(int stage, GrTexture* texture) {
         GrAssert((unsigned)stage < kNumStages);
+
+        if (isBehaviorEnabled(kTexturesNeedRef_BehaviorBit)) {
+            // If we don't clear out the current texture before unreffing
+            // it we can get into an infinite loop as the GrGLTexture's
+            // onRelease method recursively calls setTexture
+            GrTexture* temp = fTextures[stage];
+            fTextures[stage] = NULL;
+
+            SkSafeRef(texture);
+            SkSafeUnref(temp);
+        }
+
         fTextures[stage] = texture;
     }
 
@@ -187,6 +204,27 @@ public:
         GrAssert((unsigned)stage < kNumStages);
         return fTextures[stage];
     }
+
+    /**
+     * Release all the textures referred to by this draw state
+     */
+    void releaseTextures() {
+        for (int i = 0; i < kNumStages; ++i) {
+            this->setTexture(i, NULL);
+        }
+    }
+
+    class AutoTextureRelease : public ::GrNoncopyable {
+    public:
+        AutoTextureRelease(GrDrawState* ds) : fDrawState(ds) {}
+        ~AutoTextureRelease() { 
+            if (NULL != fDrawState) {
+                fDrawState->releaseTextures();
+            }
+        }
+    private:
+        GrDrawState* fDrawState;
+    };
 
     /// @}
 
@@ -273,10 +311,10 @@ public:
         fDstBlend = dstCoeff;
     #if GR_DEBUG
         switch (dstCoeff) {
-        case kDC_BlendCoeff:
-        case kIDC_BlendCoeff:
-        case kDA_BlendCoeff:
-        case kIDA_BlendCoeff:
+        case kDC_GrBlendCoeff:
+        case kIDC_GrBlendCoeff:
+        case kDA_GrBlendCoeff:
+        case kIDA_GrBlendCoeff:
             GrPrintf("Unexpected dst blend coeff. Won't work correctly with"
                      "coverage stages.\n");
             break;
@@ -284,10 +322,10 @@ public:
             break;
         }
         switch (srcCoeff) {
-        case kSC_BlendCoeff:
-        case kISC_BlendCoeff:
-        case kSA_BlendCoeff:
-        case kISA_BlendCoeff:
+        case kSC_GrBlendCoeff:
+        case kISC_GrBlendCoeff:
+        case kSA_GrBlendCoeff:
+        case kISA_GrBlendCoeff:
             GrPrintf("Unexpected src blend coeff. Won't work correctly with"
                      "coverage stages.\n");
             break;
@@ -309,10 +347,10 @@ public:
     /**
      * Sets the blending function constant referenced by the following blending
      * coeffecients:
-     *      kConstC_BlendCoeff
-     *      kIConstC_BlendCoeff
-     *      kConstA_BlendCoeff
-     *      kIConstA_BlendCoeff
+     *      kConstC_GrBlendCoeff
+     *      kIConstC_GrBlendCoeff
+     *      kConstA_GrBlendCoeff
+     *      kIConstA_GrBlendCoeff
      *
      * @param constant the constant to set
      */
@@ -527,12 +565,10 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
     // @name Edge AA
-    // There are two ways to perform antialiasing using edge equations. One
-    // is to specify an (linear or quadratic) edge eq per-vertex. This requires
-    // splitting vertices shared by primitives.
+    // Edge equations can be specified to perform antialiasing. Because the
+    // edges are specified as per-vertex data, vertices that are shared by
+    // multiple edges must be split.
     //
-    // The other is via setEdgeAAData which sets a set of edges and each
-    // is tested against all the edges.
     ////
 
     /**
@@ -574,48 +610,6 @@ public:
 
     VertexEdgeType getVertexEdgeType() const { return fVertexEdgeType; }
 
-    /**
-     * The absolute maximum number of edges that may be specified for
-     * a single draw call when performing edge antialiasing.  This is used for
-     * the size of several static buffers, so implementations of getMaxEdges()
-     * (below) should clamp to this value.
-     */
-    enum {
-        // TODO: this should be 32 when GrTesselatedPathRenderer is used
-        // Visual Studio 2010 does not permit a member array of size 0.
-        kMaxEdges = 1
-    };
-
-    class Edge {
-      public:
-        Edge() {}
-        Edge(float x, float y, float z) : fX(x), fY(y), fZ(z) {}
-        GrPoint intersect(const Edge& other) {
-            return GrPoint::Make(
-                SkFloatToScalar((fY * other.fZ - other.fY * fZ) /
-                                (fX * other.fY - other.fX * fY)),
-                SkFloatToScalar((fX * other.fZ - other.fX * fZ) /
-                                (other.fX * fY - fX * other.fY)));
-        }
-        float fX, fY, fZ;
-    };
-
-    /**
-     * Sets the edge data required for edge antialiasing.
-     *
-     * @param edges       3 * numEdges float values, representing the edge
-     *                    equations in Ax + By + C form
-     */
-    void setEdgeAAData(const Edge* edges, int numEdges) {
-        GrAssert(numEdges <= GrDrawState::kMaxEdges);
-        memcpy(fEdgeAAEdges, edges, numEdges * sizeof(GrDrawState::Edge));
-        fEdgeAANumEdges = numEdges;
-    }
-
-    int getNumAAEdges() const { return fEdgeAANumEdges; }
-
-    const Edge* getAAEdges() const { return fEdgeAAEdges; }
-
     /// @}
 
     ///////////////////////////////////////////////////////////////////////////
@@ -646,12 +640,6 @@ public:
          * operations.
          */
         kNoColorWrites_StateBit = 0x08,
-        /**
-         * Modifies the behavior of edge AA specified by setEdgeAA. If set, 
-         * will test edge pairs for convexity when rasterizing. Set this if the 
-         * source polygon is non-convex.
-         */
-        kEdgeAAConcave_StateBit = 0x10,
         /**
          * Draws will apply the color matrix, otherwise the color matrix is
          * ignored.
@@ -701,16 +689,30 @@ public:
         return 0 != (fFlagBits & kNoColorWrites_StateBit);
     }
 
-    bool isConcaveEdgeAAState() const {
-        return 0 != (fFlagBits & kEdgeAAConcave_StateBit);
-    }
-
     bool isStateFlagEnabled(uint32_t stateBit) const {
         return 0 != (stateBit & fFlagBits);
     }
 
-    void copyStateFlags(const GrDrawState& ds) {
-        fFlagBits = ds.fFlagBits;
+    /**
+     *  Flags that do not affect rendering. 
+     */
+    enum GrBehaviorBits {
+        /**
+         * Calls to setTexture will ref/unref the texture
+         */
+        kTexturesNeedRef_BehaviorBit = 0x01,
+    };
+
+    void enableBehavior(uint32_t behaviorBits) {
+        fBehaviorBits |= behaviorBits;
+    }
+
+    void disableBehavior(uint32_t behaviorBits) {
+        fBehaviorBits &= ~(behaviorBits);
+    }
+
+    bool isBehaviorEnabled(uint32_t behaviorBits) const {
+        return 0 != (behaviorBits & fBehaviorBits);
     }
 
     /// @}
@@ -720,6 +722,8 @@ public:
     ////
 
     enum DrawFace {
+        kInvalid_DrawFace = -1,
+
         kBoth_DrawFace,
         kCCW_DrawFace,
         kCW_DrawFace,
@@ -730,6 +734,7 @@ public:
      * @param face  the face(s) to draw.
      */
     void setDrawFace(DrawFace face) {
+        GrAssert(kInvalid_DrawFace != face);
         fDrawFace = face;
     }
 
@@ -752,6 +757,14 @@ public:
         }
 
         if (!s.fViewMatrix.cheapEqualTo(fViewMatrix)) {
+            return false;
+        }
+
+        // kTexturesNeedRef is an internal flag for altering the draw state's 
+        // behavior rather than a property that will impact drawing - ignore it
+        // here
+        if ((fBehaviorBits & ~kTexturesNeedRef_BehaviorBit) != 
+            (s.fBehaviorBits & ~kTexturesNeedRef_BehaviorBit)) {
             return false;
         }
 
@@ -779,10 +792,8 @@ public:
         memcpy(this->podStart(), s.podStart(), this->podSize());
 
         fViewMatrix = s.fViewMatrix;
+        fBehaviorBits = s.fBehaviorBits;
 
-        GrAssert(0 == s.fEdgeAANumEdges);
-        fEdgeAANumEdges = 0;
-    
         for (int i = 0; i < kNumStages; i++) {
             if (s.fTextures[i]) {
                 this->fSamplerStates[i] = s.fSamplerStates[i];
@@ -810,15 +821,12 @@ private:
     }
     size_t podSize() const {
         // Can't use offsetof() with non-POD types, so stuck with pointer math.
-        // TODO: ignores GrTesselatedPathRenderer data structures. We don't
-        // have a compile-time flag that lets us know if it's being used, and
-        // checking at runtime seems to cost 5% performance.
         return reinterpret_cast<size_t>(&fPodEndMarker) -
                reinterpret_cast<size_t>(&fPodStartMarker) +
                sizeof(fPodEndMarker);
     }
 
-    static const StageMask kIllegalStageMaskBits = ~((1 << kNumStages)-1);
+    static const StageMask kIllegalStageMaskBits = ~((1U << kNumStages)-1);
     // @{ these fields can be initialized with memset to 0
     union {
         GrColor             fBlendConstant;
@@ -849,14 +857,8 @@ private:
     };
     // @}
 
+    uint32_t            fBehaviorBits;
     GrMatrix            fViewMatrix;
-
-    // @{ Data for GrTesselatedPathRenderer
-    // TODO: currently ignored in copying & comparison for performance.
-    // Must be considered if GrTesselatedPathRenderer is being used.
-    int                 fEdgeAANumEdges;
-    Edge                fEdgeAAEdges[kMaxEdges];
-    // @}
 
     // This field must be last; it will not be copied or compared
     // if the corresponding fTexture[] is NULL.

@@ -41,6 +41,8 @@
 
 namespace WebCore {
 
+class ScriptExecutionContext;
+
 class Blob : public RefCounted<Blob> {
 public:
     static PassRefPtr<Blob> create()
@@ -68,7 +70,11 @@ public:
     virtual bool isFile() const { return false; }
 
 #if ENABLE(BLOB)
-    PassRefPtr<Blob> webkitSlice(long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const;
+    PassRefPtr<Blob> slice(long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const;
+
+    // Prefixed version is deprecated. This internally calls sliceInternal() (as slice() does) after showing a deprecation message.
+    PassRefPtr<Blob> webkitSlice(ScriptExecutionContext*, long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const;
+
 #endif
 
 protected:
@@ -78,11 +84,15 @@ protected:
     // For deserialization.
     Blob(const KURL& srcURL, const String& type, long long size);
 
+#if ENABLE(BLOB)
+    PassRefPtr<Blob> sliceInternal(long long start, long long end, const String& contentType) const;
+#endif
+
     // This is an internal URL referring to the blob data associated with this object. It serves
     // as an identifier for this blob. The internal URL is never used to source the blob's content
     // into an HTML or for FileRead'ing, public blob URLs must be used for those purposes.
     KURL m_internalURL;
-    
+
     String m_type;
     long long m_size;
 };

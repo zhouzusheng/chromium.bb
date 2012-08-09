@@ -403,10 +403,13 @@ static inline bool isFastCheckableRelation(CSSSelector::Relation relation)
 
 static inline bool isFastCheckableMatch(const CSSSelector* selector)
 {
-    if (selector->m_match == CSSSelector::Set)
-        return true;
+    if (selector->m_match == CSSSelector::Set) {
+        // Style attribute is generated lazily but the fast path doesn't trigger it.
+        // Disallow them here rather than making the fast path more branchy.
+        return selector->attribute() != styleAttr;
+    }
     if (selector->m_match == CSSSelector::Exact)
-        return !htmlAttributeHasCaseInsensitiveValue(selector->attribute());
+        return selector->attribute() != styleAttr && !htmlAttributeHasCaseInsensitiveValue(selector->attribute());
     return selector->m_match == CSSSelector::None || selector->m_match == CSSSelector::Id || selector->m_match == CSSSelector::Class;
 }
 
@@ -1174,13 +1177,13 @@ bool SelectorChecker::checkOneSelector(const SelectorCheckingContext& context, P
         return false;
     }
     if (selector->m_match == CSSSelector::PseudoElement) {
-        if ((!context.elementStyle && m_mode == ResolvingStyle) || m_mode == QueryingRules)
-            return false;
-
         if (selector->isUnknownPseudoElement()) {
             m_hasUnknownPseudoElements = true;
             return element->shadowPseudoId() == selector->value();
         }
+
+        if ((!context.elementStyle && m_mode == ResolvingStyle) || m_mode == QueryingRules)
+            return false;
 
         PseudoId pseudoId = CSSSelector::pseudoId(selector->pseudoType());
         if (pseudoId == FIRST_LETTER) {

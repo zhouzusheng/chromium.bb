@@ -30,7 +30,7 @@ module core {
         JSGenerateToNativeObject,
         JSGenerateToJSObject
     ] LocalMediaStream : MediaStream {
-        [ImplementedAs=stopFunction] void stop();
+        void stop();
     };
 
 }

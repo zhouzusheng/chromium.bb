@@ -1720,7 +1720,7 @@ const SkMatrix& SkMatrix::I() {
         gOnce = true;
     }
     return gIdentity;
-};
+}
 
 const SkMatrix& SkMatrix::InvalidMatrix() {
     static SkMatrix gInvalid;
@@ -1737,7 +1737,7 @@ const SkMatrix& SkMatrix::InvalidMatrix() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint32_t SkMatrix::flatten(void* buffer) const {
+uint32_t SkMatrix::writeToMemory(void* buffer) const {
     // TODO write less for simple matrices
     if (buffer) {
         memcpy(buffer, fMat, 9 * sizeof(SkScalar));
@@ -1745,7 +1745,7 @@ uint32_t SkMatrix::flatten(void* buffer) const {
     return 9 * sizeof(SkScalar);
 }
 
-uint32_t SkMatrix::unflatten(const void* buffer) {
+uint32_t SkMatrix::readFromMemory(const void* buffer) {
     if (buffer) {
         memcpy(fMat, buffer, 9 * sizeof(SkScalar));
         this->setTypeMask(kUnknown_Mask);
@@ -1760,7 +1760,6 @@ void SkMatrix::dump() const {
 }
 
 void SkMatrix::toDumpString(SkString* str) const {
-#ifdef SK_CAN_USE_FLOAT
     str->printf("[%8.4f %8.4f %8.4f][%8.4f %8.4f %8.4f][%8.4f %8.4f %8.4f]",
 #ifdef SK_SCALAR_IS_FLOAT
              fMat[0], fMat[1], fMat[2], fMat[3], fMat[4], fMat[5],
@@ -1769,10 +1768,5 @@ void SkMatrix::toDumpString(SkString* str) const {
     SkFixedToFloat(fMat[0]), SkFixedToFloat(fMat[1]), SkFixedToFloat(fMat[2]),
     SkFixedToFloat(fMat[3]), SkFixedToFloat(fMat[4]), SkFixedToFloat(fMat[5]),
     SkFractToFloat(fMat[6]), SkFractToFloat(fMat[7]), SkFractToFloat(fMat[8]));
-#endif
-#else   // can't use float
-    str->printf("[%x %x %x][%x %x %x][%x %x %x]",
-                fMat[0], fMat[1], fMat[2], fMat[3], fMat[4], fMat[5],
-                fMat[6], fMat[7], fMat[8]);
 #endif
 }

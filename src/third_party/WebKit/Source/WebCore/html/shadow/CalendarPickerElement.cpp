@@ -81,13 +81,17 @@ RenderObject* CalendarPickerElement::createRenderer(RenderArena* arena, RenderSt
 
 inline HTMLInputElement* CalendarPickerElement::hostInput()
 {
-    ASSERT(shadowAncestorNode());
-    ASSERT(shadowAncestorNode()->hasTagName(inputTag));
-    return static_cast<HTMLInputElement*>(shadowAncestorNode());
+    // JavaScript code can't create CalendarPickerElement objects. This is
+    // always in shadow of <input>.
+    ASSERT(shadowHost());
+    ASSERT(shadowHost()->hasTagName(inputTag));
+    return static_cast<HTMLInputElement*>(shadowHost());
 }
 
 void CalendarPickerElement::defaultEventHandler(Event* event)
 {
+    if (!renderer())
+        return;
     HTMLInputElement* input = hostInput();
     if (input->readOnly() || input->disabled())
         return;
@@ -208,7 +212,7 @@ void CalendarPickerElement::writeDocument(DocumentWriter& writer)
     String minString = date.toString();
     date.setMillisecondsSinceEpochForDate(input->maximum());
     String maxString = date.toString();
-    double step;
+    Decimal step;
     String stepString = input->fastGetAttribute(stepAttr);
     if (stepString.isEmpty() || !input->getAllowedValueStep(&step))
         stepString = "1";

@@ -25,7 +25,7 @@ static const int kFileDragImageMaxWidth = 200;
 static const SkColor kFileDragImageTextColor = SK_ColorBLACK;
 
 void CreateDragImageForFile(const FilePath& file_name,
-                            const SkBitmap* icon,
+                            const gfx::ImageSkia* icon,
                             ui::OSExchangeData* data_object) {
   DCHECK(icon);
   DCHECK(data_object);
@@ -41,19 +41,21 @@ void CreateDragImageForFile(const FilePath& file_name,
   gfx::Canvas canvas(gfx::Size(width, height), false /* translucent */);
 
   // Paint the icon.
-  canvas.DrawBitmapInt(*icon, (width - icon->width()) / 2, 0);
+  canvas.DrawImageInt(*icon, (width - icon->width()) / 2, 0);
 
   string16 name = file_name.BaseName().LossyDisplayName();
+  const int flags = gfx::Canvas::TEXT_ALIGN_CENTER;
 #if defined(OS_WIN)
   // Paint the file name. We inset it one pixel to allow room for the halo.
   canvas.DrawStringWithHalo(name, font, kFileDragImageTextColor, SK_ColorWHITE,
                             1, icon->height() + kLinkDragImageVPadding + 1,
-                            width - 2, font.GetHeight(),
-                            gfx::Canvas::TEXT_ALIGN_CENTER);
+                            width - 2, font.GetHeight(), flags);
 #else
+  // NO_SUBPIXEL_RENDERING is required when drawing to a non-opaque canvas.
   canvas.DrawStringInt(name, font, kFileDragImageTextColor,
                        0, icon->height() + kLinkDragImageVPadding,
-                       width, font.GetHeight(), gfx::Canvas::TEXT_ALIGN_CENTER);
+                       width, font.GetHeight(),
+                       flags | gfx::Canvas::NO_SUBPIXEL_RENDERING);
 #endif
 
   SetDragImageOnDataObject(canvas, gfx::Size(width, height),

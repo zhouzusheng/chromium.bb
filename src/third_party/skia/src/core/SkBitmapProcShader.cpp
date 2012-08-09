@@ -173,7 +173,7 @@ void SkBitmapProcShader::shadeSpan(int x, int y, SkPMColor dstC[], int count) {
 
     SkASSERT(state.fBitmap->getPixels());
     SkASSERT(state.fBitmap->pixelRef() == NULL ||
-             state.fBitmap->pixelRef()->getLockCount());
+             state.fBitmap->pixelRef()->isLocked());
 
     for (;;) {
         int n = count;
@@ -217,7 +217,7 @@ void SkBitmapProcShader::shadeSpan16(int x, int y, uint16_t dstC[], int count) {
 
     SkASSERT(state.fBitmap->getPixels());
     SkASSERT(state.fBitmap->pixelRef() == NULL ||
-             state.fBitmap->pixelRef()->getLockCount());
+             state.fBitmap->pixelRef()->isLocked());
 
     for (;;) {
         int n = count;
@@ -271,12 +271,22 @@ static bool canUseColorShader(const SkBitmap& bm, SkColor* color) {
 
 #include "SkTemplatesPriv.h"
 
+static bool bitmapIsTooBig(const SkBitmap& bm) {
+    // SkBitmapProcShader stores bitmap coordinates in a 16bit buffer, as it
+    // communicates between its matrix-proc and its sampler-proc. Until we can
+    // widen that, we have to reject bitmaps that are larger.
+    //
+    const int maxSize = 65535;
+
+    return bm.width() > maxSize || bm.height() > maxSize;
+}
+
 SkShader* SkShader::CreateBitmapShader(const SkBitmap& src,
                                        TileMode tmx, TileMode tmy,
                                        void* storage, size_t storageSize) {
     SkShader* shader;
     SkColor color;
-    if (src.isNull()) {
+    if (src.isNull() || bitmapIsTooBig(src)) {
         SK_PLACEMENT_NEW(shader, SkEmptyShader, storage, storageSize);
     }
     else if (canUseColorShader(src, &color)) {

@@ -36,7 +36,7 @@ static bool ComputeStep(const SkPoint& a, const SkPoint& b, SkScalar radius,
 }
 
 bool SkCornerPathEffect::filterPath(SkPath* dst, const SkPath& src,
-                                    SkScalar* width) {
+                                    SkStrokeRec*) {
     if (fRadius == 0) {
         return false;
     }
@@ -56,7 +56,7 @@ bool SkCornerPathEffect::filterPath(SkPath* dst, const SkPath& src,
     lastCorner.set(0, 0);
 
     for (;;) {
-        switch (verb = iter.next(pts)) {
+        switch (verb = iter.next(pts, false)) {
             case SkPath::kMove_Verb:
                     // close out the previous (open) contour
                 if (SkPath::kLine_Verb == prevVerb) {

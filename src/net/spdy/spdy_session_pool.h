@@ -13,7 +13,6 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "net/base/cert_database.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
@@ -182,7 +181,7 @@ class NET_EXPORT SpdySessionPool
                        AddressList* addresses) const;
 
   // Add |address| as an IP-equivalent address for |pair|.
-  void AddAlias(const addrinfo* address, const HostPortProxyPair& pair);
+  void AddAlias(const IPEndPoint& address, const HostPortProxyPair& pair);
 
   // Remove all aliases for |pair| from the aliases table.
   void RemoveAliases(const HostPortProxyPair& pair);
@@ -208,6 +207,8 @@ class NET_EXPORT SpdySessionPool
 
   // Defaults to true. May be controlled via SpdySessionPoolPeer for tests.
   bool verify_domain_authentication_;
+
+  bool enable_sending_initial_settings_;
 
   // This SPDY proxy is allowed to push resources from origins that are
   // different from those of their associated streams.

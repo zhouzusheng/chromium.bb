@@ -28,7 +28,9 @@ NetworkChangeNotifierFactory* g_network_change_notifier_factory = NULL;
 
 class MockNetworkChangeNotifier : public NetworkChangeNotifier {
  public:
-  virtual bool IsCurrentlyOffline() const { return false; }
+  virtual ConnectionType GetCurrentConnectionType() const {
+    return CONNECTION_UNKNOWN;
+  }
 };
 
 }  // namespace
@@ -75,9 +77,19 @@ NetworkChangeNotifier* NetworkChangeNotifier::Create() {
 }
 
 // static
-bool NetworkChangeNotifier::IsOffline() {
-  return g_network_change_notifier &&
-         g_network_change_notifier->IsCurrentlyOffline();
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifier::GetConnectionType() {
+  return g_network_change_notifier ?
+      g_network_change_notifier->GetCurrentConnectionType() :
+      CONNECTION_UNKNOWN;
+}
+
+// static
+bool NetworkChangeNotifier::IsWatchingDNS() {
+  if (!g_network_change_notifier)
+    return false;
+  base::AutoLock lock(g_network_change_notifier->watching_dns_lock_);
+  return g_network_change_notifier->watching_dns_;
 }
 
 // static
@@ -90,10 +102,10 @@ void NetworkChangeNotifier::AddIPAddressObserver(IPAddressObserver* observer) {
     g_network_change_notifier->ip_address_observer_list_->AddObserver(observer);
 }
 
-void NetworkChangeNotifier::AddOnlineStateObserver(
-    OnlineStateObserver* observer) {
+void NetworkChangeNotifier::AddConnectionTypeObserver(
+    ConnectionTypeObserver* observer) {
   if (g_network_change_notifier) {
-    g_network_change_notifier->online_state_observer_list_->AddObserver(
+    g_network_change_notifier->connection_type_observer_list_->AddObserver(
         observer);
   }
 }
@@ -113,10 +125,10 @@ void NetworkChangeNotifier::RemoveIPAddressObserver(
   }
 }
 
-void NetworkChangeNotifier::RemoveOnlineStateObserver(
-    OnlineStateObserver* observer) {
+void NetworkChangeNotifier::RemoveConnectionTypeObserver(
+    ConnectionTypeObserver* observer) {
   if (g_network_change_notifier) {
-    g_network_change_notifier->online_state_observer_list_->RemoveObserver(
+    g_network_change_notifier->connection_type_observer_list_->RemoveObserver(
         observer);
   }
 }
@@ -132,16 +144,18 @@ NetworkChangeNotifier::NetworkChangeNotifier()
     : ip_address_observer_list_(
         new ObserverListThreadSafe<IPAddressObserver>(
             ObserverListBase<IPAddressObserver>::NOTIFY_EXISTING_ONLY)),
-      online_state_observer_list_(
-        new ObserverListThreadSafe<OnlineStateObserver>(
-            ObserverListBase<OnlineStateObserver>::NOTIFY_EXISTING_ONLY)),
+      connection_type_observer_list_(
+        new ObserverListThreadSafe<ConnectionTypeObserver>(
+            ObserverListBase<ConnectionTypeObserver>::NOTIFY_EXISTING_ONLY)),
       resolver_state_observer_list_(
         new ObserverListThreadSafe<DNSObserver>(
-            ObserverListBase<DNSObserver>::NOTIFY_EXISTING_ONLY)) {
+            ObserverListBase<DNSObserver>::NOTIFY_EXISTING_ONLY)),
+      watching_dns_(false) {
   DCHECK(!g_network_change_notifier);
   g_network_change_notifier = this;
 }
 
+// static
 void NetworkChangeNotifier::NotifyObserversOfIPAddressChange() {
   if (g_network_change_notifier) {
     g_network_change_notifier->ip_address_observer_list_->Notify(
@@ -149,17 +163,32 @@ void NetworkChangeNotifier::NotifyObserversOfIPAddressChange() {
   }
 }
 
+// static
 void NetworkChangeNotifier::NotifyObserversOfDNSChange(unsigned detail) {
   if (g_network_change_notifier) {
+    {
+      base::AutoLock lock(g_network_change_notifier->watching_dns_lock_);
+      if (detail & NetworkChangeNotifier::CHANGE_DNS_WATCH_STARTED) {
+        g_network_change_notifier->watching_dns_ = true;
+      } else if (detail & NetworkChangeNotifier::CHANGE_DNS_WATCH_FAILED) {
+        g_network_change_notifier->watching_dns_ = false;
+      }
+      // Include detail that watch is off to spare the call to IsWatchingDNS.
+      if (!g_network_change_notifier->watching_dns_)
+        detail |= NetworkChangeNotifier::CHANGE_DNS_WATCH_FAILED;
+    }
+    DCHECK(!(detail & NetworkChangeNotifier::CHANGE_DNS_WATCH_FAILED) ||
+           !(detail & NetworkChangeNotifier::CHANGE_DNS_WATCH_STARTED));
     g_network_change_notifier->resolver_state_observer_list_->Notify(
         &DNSObserver::OnDNSChanged, detail);
   }
 }
 
-void NetworkChangeNotifier::NotifyObserversOfOnlineStateChange() {
+void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange() {
   if (g_network_change_notifier) {
-    g_network_change_notifier->online_state_observer_list_->Notify(
-        &OnlineStateObserver::OnOnlineStateChanged, !IsOffline());
+    g_network_change_notifier->connection_type_observer_list_->Notify(
+        &ConnectionTypeObserver::OnConnectionTypeChanged,
+        GetConnectionType());
   }
 }
 

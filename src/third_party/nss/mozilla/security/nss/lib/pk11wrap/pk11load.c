@@ -483,7 +483,9 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule) {
 	    mod->moduleDBFunc = (void *)
 			PR_FindSymbol(library, "NSS_ReturnModuleSpecData");
 	}
+#if defined(NSS_STATIC) && !defined(NSS_DISABLE_ROOT_CERTS)
 library_loaded:
+#endif
 	if (mod->moduleDBFunc == NULL) mod->isModuleDB = PR_FALSE;
 	if (entry == NULL) {
 	    if (mod->isModuleDB) {

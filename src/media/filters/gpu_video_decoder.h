@@ -22,6 +22,8 @@ class SharedMemory;
 
 namespace media {
 
+class DecoderBuffer;
+
 // GPU-accelerated video decoder implementation.  Relies on
 // AcceleratedVideoDecoderMsg_Decode and friends.
 // All methods internally trampoline to the |message_loop| passed to the ctor.
@@ -40,7 +42,7 @@ class MEDIA_EXPORT GpuVideoDecoder
     // Allocate & delete native textures.
     virtual bool CreateTextures(int32 count, const gfx::Size& size,
                                 std::vector<uint32>* texture_ids,
-                                uint32* texture_target) = 0;
+                                uint32 texture_target) = 0;
     virtual void DeleteTexture(uint32 texture_id) = 0;
 
     // Allocate & return a shared memory segment.  Caller is responsible for
@@ -55,7 +57,6 @@ class MEDIA_EXPORT GpuVideoDecoder
   GpuVideoDecoder(MessageLoop* message_loop,
                   MessageLoop* vda_loop,
                   const scoped_refptr<Factories>& factories);
-  virtual ~GpuVideoDecoder();
 
   // VideoDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -71,13 +72,17 @@ class MEDIA_EXPORT GpuVideoDecoder
   // VideoDecodeAccelerator::Client implementation.
   virtual void NotifyInitializeDone() OVERRIDE;
   virtual void ProvidePictureBuffers(uint32 count,
-                                     const gfx::Size& size) OVERRIDE;
+                                     const gfx::Size& size,
+                                     uint32 texture_target) OVERRIDE;
   virtual void DismissPictureBuffer(int32 id) OVERRIDE;
   virtual void PictureReady(const media::Picture& picture) OVERRIDE;
   virtual void NotifyEndOfBitstreamBuffer(int32 id) OVERRIDE;
   virtual void NotifyFlushDone() OVERRIDE;
   virtual void NotifyResetDone() OVERRIDE;
   virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+
+ protected:
+  virtual ~GpuVideoDecoder();
 
  private:
   enum State {
@@ -96,7 +101,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   void EnsureDemuxOrDecode();
 
   // Callback to pass to demuxer_stream_->Read() for receiving encoded bits.
-  void RequestBufferDecode(const scoped_refptr<Buffer>& buffer);
+  void RequestBufferDecode(const scoped_refptr<DecoderBuffer>& buffer);
 
   // Enqueue a frame for later delivery (or drop it on the floor if a
   // vda->Reset() is in progress) and trigger out-of-line delivery of the oldest
@@ -173,10 +178,10 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // Book-keeping variables.
   struct BufferPair {
-    BufferPair(SHMBuffer* s, const scoped_refptr<Buffer>& b);
+    BufferPair(SHMBuffer* s, const scoped_refptr<DecoderBuffer>& b);
     ~BufferPair();
     SHMBuffer* shm_buffer;
-    scoped_refptr<Buffer> buffer;
+    scoped_refptr<DecoderBuffer> buffer;
   };
   std::map<int32, BufferPair> bitstream_buffers_in_decoder_;
   std::map<int32, PictureBuffer> picture_buffers_in_decoder_;

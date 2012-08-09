@@ -158,7 +158,7 @@ class Message(BaseMessage):
 
   def __init__(self, text='', placeholders=[], description='', meaning='',
                assigned_id=None):
-    BaseMessage.__init__(self, text, placeholders, description, meaning)
+    super(Message, self).__init__(text, placeholders, description, meaning)
     self.assigned_id = assigned_id
 
   def ToTclibMessage(self):
@@ -171,14 +171,14 @@ class Message(BaseMessage):
     if self.assigned_id:
       return self.assigned_id
 
-    return BaseMessage.GetId(self)
+    return super(Message, self).GetId()
 
 
 class Translation(BaseMessage):
   '''A translation.'''
 
   def __init__(self, text='', id='', placeholders=[], description='', meaning=''):
-    BaseMessage.__init__(self, text, placeholders, description, meaning)
+    super(Translation, self).__init__(text, placeholders, description, meaning)
     self.id = id
 
   def GetId(self):

@@ -11,6 +11,7 @@
 #include "base/time.h"
 #include "ui/base/events.h"
 #include "ui/base/gestures/gesture_configuration.h"
+#include "ui/gfx/rect.h"
 
 namespace ui {
 
@@ -87,6 +88,27 @@ enum EdgeStateSignatureType {
   GST_SCROLL_SECOND_PRESSED =
       G(GS_SCROLL, 1, TS_PRESSED, false),
 
+  GST_PENDING_TWO_FINGER_TAP_FIRST_RELEASED =
+      G(GS_PENDING_TWO_FINGER_TAP, 0, TS_RELEASED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED =
+      G(GS_PENDING_TWO_FINGER_TAP, 1, TS_RELEASED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_FIRST_MOVED =
+      G(GS_PENDING_TWO_FINGER_TAP, 0, TS_MOVED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_SECOND_MOVED =
+      G(GS_PENDING_TWO_FINGER_TAP, 1, TS_MOVED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_FIRST_CANCELLED =
+      G(GS_PENDING_TWO_FINGER_TAP, 0, TS_CANCELLED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_SECOND_CANCELLED =
+      G(GS_PENDING_TWO_FINGER_TAP, 1, TS_CANCELLED, false),
+
+  GST_PENDING_TWO_FINGER_TAP_THIRD_PRESSED =
+      G(GS_PENDING_TWO_FINGER_TAP, 2, TS_PRESSED, false),
+
   GST_PINCH_FIRST_MOVED =
       G(GS_PINCH, 0, TS_MOVED, false),
 
@@ -108,32 +130,38 @@ enum EdgeStateSignatureType {
   GST_PINCH_THIRD_PRESSED =
       G(GS_PINCH, 2, TS_PRESSED, false),
 
-  GST_THREE_FINGER_SWIPE_FIRST_RELEASED =
-      G(GS_THREE_FINGER_SWIPE, 0, TS_RELEASED, false),
+  GST_PINCH_THIRD_MOVED =
+      G(GS_PINCH, 2, TS_MOVED, false),
 
-  GST_THREE_FINGER_SWIPE_SECOND_RELEASED =
-      G(GS_THREE_FINGER_SWIPE, 1, TS_RELEASED, false),
+  GST_PINCH_THIRD_RELEASED =
+      G(GS_PINCH, 2, TS_RELEASED, false),
 
-  GST_THREE_FINGER_SWIPE_THIRD_RELEASED =
-      G(GS_THREE_FINGER_SWIPE, 2, TS_RELEASED, false),
+  GST_PINCH_THIRD_CANCELLED =
+      G(GS_PINCH, 2, TS_CANCELLED, false),
 
-  GST_THREE_FINGER_SWIPE_FIRST_MOVED =
-      G(GS_THREE_FINGER_SWIPE, 0, TS_MOVED, false),
+  GST_PINCH_FOURTH_PRESSED =
+      G(GS_PINCH, 3, TS_PRESSED, false),
 
-  GST_THREE_FINGER_SWIPE_SECOND_MOVED =
-      G(GS_THREE_FINGER_SWIPE, 1, TS_MOVED, false),
+  GST_PINCH_FOURTH_MOVED =
+      G(GS_PINCH, 3, TS_MOVED, false),
 
-  GST_THREE_FINGER_SWIPE_THIRD_MOVED =
-      G(GS_THREE_FINGER_SWIPE, 2, TS_MOVED, false),
+  GST_PINCH_FOURTH_RELEASED =
+      G(GS_PINCH, 3, TS_RELEASED, false),
 
-  GST_THREE_FINGER_SWIPE_FIRST_CANCELLED =
-      G(GS_THREE_FINGER_SWIPE, 0, TS_CANCELLED, false),
+  GST_PINCH_FOURTH_CANCELLED =
+      G(GS_PINCH, 3, TS_CANCELLED, false),
 
-  GST_THREE_FINGER_SWIPE_SECOND_CANCELLED =
-      G(GS_THREE_FINGER_SWIPE, 1, TS_CANCELLED, false),
+  GST_PINCH_FIFTH_PRESSED =
+      G(GS_PINCH, 4, TS_PRESSED, false),
 
-  GST_THREE_FINGER_SWIPE_THIRD_CANCELLED =
-      G(GS_THREE_FINGER_SWIPE, 2, TS_CANCELLED, false),
+  GST_PINCH_FIFTH_MOVED =
+      G(GS_PINCH, 4, TS_MOVED, false),
+
+  GST_PINCH_FIFTH_RELEASED =
+      G(GS_PINCH, 4, TS_RELEASED, false),
+
+  GST_PINCH_FIFTH_CANCELLED =
+      G(GS_PINCH, 4, TS_CANCELLED, false),
 };
 
 // Builds a signature. Signatures are assembled by joining together
@@ -154,6 +182,21 @@ EdgeStateSignatureType Signature(GestureState gesture_state,
 }
 #undef G
 
+float BoundingBoxDiagonal(const gfx::Rect& rect) {
+  float width = rect.width() * rect.width();
+  float height = rect.height() * rect.height();
+  return sqrt(width + height);
+}
+
+unsigned int ComputeTouchBitmask(const GesturePoint* points) {
+  unsigned int touch_bitmask = 0;
+  for (int i = 0; i < GestureSequence::kMaxGesturePoints; ++i) {
+    if (points[i].in_use())
+      touch_bitmask |= 1 << points[i].touch_id();
+  }
+  return touch_bitmask;
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -164,6 +207,7 @@ GestureSequence::GestureSequence(GestureEventHelper* helper)
       flags_(0),
       pinch_distance_start_(0.f),
       pinch_distance_current_(0.f),
+      scroll_type_(ST_FREE),
       long_press_timer_(CreateTimer()),
       point_count_(0),
       helper_(helper) {
@@ -175,6 +219,7 @@ GestureSequence::~GestureSequence() {
 GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     const TouchEvent& event,
     ui::TouchStatus status) {
+  last_touch_location_ = event.GetLocation();
   if (status != ui::TOUCH_STATUS_UNKNOWN)
     return NULL;  // The event was consumed by a touch sequence.
 
@@ -199,10 +244,16 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
   scoped_ptr<Gestures> gestures(new Gestures());
   GesturePoint& point = GesturePointForEvent(event);
   point.UpdateValues(event);
+  RecreateBoundingBox();
   flags_ = event.GetEventFlags();
   const int point_id = points_[event.GetTouchId()].point_id();
   if (point_id < 0)
     return NULL;
+
+  // Send GESTURE_BEGIN for any touch pressed.
+  if (event.GetEventType() == ui::ET_TOUCH_PRESSED)
+    AppendBeginGestureEvent(point, gestures.get());
+
   switch (Signature(state_, point_id, event.GetEventType(), false)) {
     case GST_NO_GESTURE_FIRST_PRESSED:
       TouchDown(event, point, gestures.get());
@@ -238,53 +289,82 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
       break;
     case GST_SCROLL_SECOND_PRESSED:
     case GST_PENDING_SYNTHETIC_CLICK_SECOND_PRESSED:
+      if (IsSecondTouchDownCloseEnoughForTwoFingerTap()) {
+        TwoFingerTouchDown(event, point, gestures.get());
+        set_state(GS_PENDING_TWO_FINGER_TAP);
+      } else {
+        PinchStart(event, point, gestures.get());
+        set_state(GS_PINCH);
+      }
+      break;
+    case GST_PENDING_TWO_FINGER_TAP_FIRST_RELEASED:
+    case GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED:
+      TwoFingerTouchReleased(event, point, gestures.get());
+      set_state(GS_SCROLL);
+      break;
+    case GST_PENDING_TWO_FINGER_TAP_FIRST_MOVED:
+    case GST_PENDING_TWO_FINGER_TAP_SECOND_MOVED:
+      if (TwoFingerTouchMove(event, point, gestures.get()))
+        set_state(GS_PINCH);
+      break;
+    case GST_PENDING_TWO_FINGER_TAP_FIRST_CANCELLED:
+    case GST_PENDING_TWO_FINGER_TAP_SECOND_CANCELLED:
+      scroll_type_ = ST_FREE;
+      set_state(GS_SCROLL);
+      break;
+    case GST_PENDING_TWO_FINGER_TAP_THIRD_PRESSED:
       PinchStart(event, point, gestures.get());
       set_state(GS_PINCH);
       break;
     case GST_PINCH_FIRST_MOVED:
     case GST_PINCH_SECOND_MOVED:
+    case GST_PINCH_THIRD_MOVED:
+    case GST_PINCH_FOURTH_MOVED:
+    case GST_PINCH_FIFTH_MOVED:
       if (PinchUpdate(event, point, gestures.get())) {
-        GetPointByPointId(0)->UpdateForScroll();
-        GetPointByPointId(1)->UpdateForScroll();
+        for (int i = 0; i < point_count_; ++i)
+          GetPointByPointId(i)->UpdateForScroll();
       }
       break;
     case GST_PINCH_FIRST_RELEASED:
     case GST_PINCH_SECOND_RELEASED:
+    case GST_PINCH_THIRD_RELEASED:
+    case GST_PINCH_FOURTH_RELEASED:
+    case GST_PINCH_FIFTH_RELEASED:
     case GST_PINCH_FIRST_CANCELLED:
     case GST_PINCH_SECOND_CANCELLED:
-      PinchEnd(event, point, gestures.get());
+    case GST_PINCH_THIRD_CANCELLED:
+    case GST_PINCH_FOURTH_CANCELLED:
+    case GST_PINCH_FIFTH_CANCELLED:
+      if (point_count_ == 2) {
+        PinchEnd(event, point, gestures.get());
 
-      // Once pinch ends, it should still be possible to scroll with the
-      // remaining finger on the screen.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+        // Once pinch ends, it should still be possible to scroll with the
+        // remaining finger on the screen.
+        set_state(GS_SCROLL);
+      } else {
+        // Was it a swipe? i.e. were all the fingers moving in the same
+        // direction?
+        MaybeSwipe(event, point, gestures.get());
+
+        // Nothing else to do if we have more than 2 fingers active, since after
+        // the release/cancel, there are still enough fingers to do pinch.
+        // pinch_distance_current_ and pinch_distance_start_ will be updated
+        // when the bounding-box is updated.
+      }
+      ResetVelocities();
       break;
     case GST_PINCH_THIRD_PRESSED:
-      three_finger_swipe_has_fired_ = false;
-      set_state(GS_THREE_FINGER_SWIPE);
-      break;
-    case GST_THREE_FINGER_SWIPE_FIRST_RELEASED:
-    case GST_THREE_FINGER_SWIPE_SECOND_RELEASED:
-    case GST_THREE_FINGER_SWIPE_THIRD_RELEASED:
-    case GST_THREE_FINGER_SWIPE_FIRST_CANCELLED:
-    case GST_THREE_FINGER_SWIPE_SECOND_CANCELLED:
-    case GST_THREE_FINGER_SWIPE_THIRD_CANCELLED:
-      GetPointByPointId(0)->ResetVelocity();
-      GetPointByPointId(1)->ResetVelocity();
-      GetPointByPointId(2)->ResetVelocity();
-      set_state(GS_PINCH);
-      break;
-    case GST_THREE_FINGER_SWIPE_FIRST_MOVED:
-    case GST_THREE_FINGER_SWIPE_SECOND_MOVED:
-    case GST_THREE_FINGER_SWIPE_THIRD_MOVED:
-      if (!three_finger_swipe_has_fired_) {
-        ThreeFingerSwipeUpdate(event, point, gestures.get());
-        GetPointByPointId(0)->UpdateForScroll();
-        GetPointByPointId(1)->UpdateForScroll();
-        GetPointByPointId(2)->UpdateForScroll();
-      }
+    case GST_PINCH_FOURTH_PRESSED:
+    case GST_PINCH_FIFTH_PRESSED:
+      pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
+      pinch_distance_start_ = pinch_distance_current_;
       break;
   }
+
+  if (event.GetEventType() == ui::ET_TOUCH_RELEASED ||
+      event.GetEventType() == ui::ET_TOUCH_CANCELLED)
+    AppendEndGestureEvent(point, gestures.get());
 
   if (state_ != last_state)
     DVLOG(4) << "Gesture Sequence"
@@ -306,8 +386,17 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
       if (point.point_id() > old_point.point_id())
         point.set_point_id(point.point_id() - 1);
     }
-    old_point.Reset();
-    --point_count_;
+
+    if (old_point.in_use()) {
+      old_point.Reset();
+      --point_count_;
+      DCHECK_GE(point_count_, 0);
+      RecreateBoundingBox();
+      if (state_ == GS_PINCH) {
+        pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
+        pinch_distance_start_ = pinch_distance_current_;
+      }
+    }
   }
 
   return gestures.release();
@@ -318,6 +407,33 @@ void GestureSequence::Reset() {
   for (int i = 0; i < kMaxGesturePoints; ++i)
     points_[i].Reset();
   point_count_ = 0;
+}
+
+void GestureSequence::RecreateBoundingBox() {
+  // TODO(sad): Recreating the bounding box at every touch-event is not very
+  // efficient. This should be made better.
+  int left = INT_MAX, top = INT_MAX, right = INT_MIN, bottom = INT_MIN;
+  for (int i = 0; i < kMaxGesturePoints; ++i) {
+    if (!points_[i].in_use())
+      continue;
+    if (left > points_[i].x())
+      left = points_[i].x();
+    if (right < points_[i].x())
+      right = points_[i].x();
+    if (top > points_[i].y())
+      top = points_[i].y();
+    if (bottom < points_[i].y())
+      bottom = points_[i].y();
+  }
+  bounding_box_last_center_ = bounding_box_.CenterPoint();
+  bounding_box_.SetRect(left, top, right - left, bottom - top);
+}
+
+void GestureSequence::ResetVelocities() {
+  for (int i = 0; i < kMaxGesturePoints; ++i) {
+    if (points_[i].in_use())
+      points_[i].ResetVelocity();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -346,6 +462,18 @@ GesturePoint* GestureSequence::GetPointByPointId(int point_id) {
   return NULL;
 }
 
+bool GestureSequence::IsSecondTouchDownCloseEnoughForTwoFingerTap() {
+  gfx::Point p1 = GetPointByPointId(0)->last_touch_position();
+  gfx::Point p2 = GetPointByPointId(1)->last_touch_position();
+  double max_distance =
+      ui::GestureConfiguration::max_distance_for_two_finger_tap_in_pixels();
+  double distance = (p1.x() - p2.x()) * (p1.x() - p2.x()) +
+      (p1.y() - p2.y()) * (p1.y() - p2.y());
+  if (distance < max_distance * max_distance)
+    return true;
+  return false;
+}
+
 void GestureSequence::AppendTapDownGestureEvent(const GesturePoint& point,
                                                 Gestures* gestures) {
   gestures->push_back(helper_->CreateGestureEvent(
@@ -353,17 +481,41 @@ void GestureSequence::AppendTapDownGestureEvent(const GesturePoint& point,
       point.first_touch_position(),
       flags_,
       base::Time::FromDoubleT(point.last_touch_time()),
-      0.f, 0.f, 1 << point.touch_id()));
+      0, 0.f, 1 << point.touch_id()));
+}
+
+void GestureSequence::AppendBeginGestureEvent(const GesturePoint& point,
+                                              Gestures* gestures) {
+  gestures->push_back(helper_->CreateGestureEvent(
+      ui::ET_GESTURE_BEGIN,
+      point.first_touch_position(),
+      flags_,
+      base::Time::FromDoubleT(point.last_touch_time()),
+      point_count_, 0.f, 1 << point.touch_id()));
+}
+
+void GestureSequence::AppendEndGestureEvent(const GesturePoint& point,
+                                              Gestures* gestures) {
+  gestures->push_back(helper_->CreateGestureEvent(
+      ui::ET_GESTURE_END,
+      point.first_touch_position(),
+      flags_,
+      base::Time::FromDoubleT(point.last_touch_time()),
+      point_count_, 0.f, 1 << point.touch_id()));
 }
 
 void GestureSequence::AppendClickGestureEvent(const GesturePoint& point,
                                               Gestures* gestures) {
+  gfx::Rect er = point.enclosing_rectangle();
+  gfx::Point center = er.CenterPoint();
   gestures->push_back(helper_->CreateGestureEvent(
       ui::ET_GESTURE_TAP,
-      point.first_touch_position(),
+      center,
       flags_,
       base::Time::FromDoubleT(point.last_touch_time()),
-      0.f, 0.f, 1 << point.touch_id()));
+      er.width() / 2,
+      er.height() / 2,
+      1 << point.touch_id()));
 }
 
 void GestureSequence::AppendDoubleClickGestureEvent(const GesturePoint& point,
@@ -400,25 +552,29 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
   else if (scroll_type_ == ST_VERTICAL)
     railed_x_velocity = 0;
 
+  // TODO(rjkroege): It is conceivable that we could suppress sending the
+  // GestureScrollEnd if it is immediately followed by a GestureFlingStart.
   gestures->push_back(helper_->CreateGestureEvent(
       ui::ET_GESTURE_SCROLL_END,
       location,
       flags_,
       base::Time::FromDoubleT(point.last_touch_time()),
-      railed_x_velocity, railed_y_velocity, 1 << point.touch_id()));
+      0., 0., 1 << point.touch_id()));
 
   if (railed_x_velocity != 0 || railed_y_velocity != 0) {
     // TODO(sad|rjkroege): fling-curve is currently configured to work well with
     // touchpad scroll-events. This curve needs to be adjusted to work correctly
-    // with both touchpad and touchscreen. Until then, multiply the velocity for
-    // touchscreen with a constant.
+    // with both touchpad and touchscreen. Until then, scale quadratically.
     // http://crbug.com/120154
+    const float velocity_scaling  = 1.f / 900.f;
+
     gestures->push_back(helper_->CreateGestureEvent(
         ui::ET_SCROLL_FLING_START,
         location,
         flags_,
         base::Time::FromDoubleT(point.last_touch_time()),
-        railed_x_velocity * 2.5, railed_y_velocity * 2.5,
+        velocity_scaling * railed_x_velocity * fabsf(railed_x_velocity),
+        velocity_scaling * railed_y_velocity * fabsf(railed_y_velocity),
         1 << point.touch_id()));
   }
 }
@@ -426,9 +582,10 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
 void GestureSequence::AppendScrollGestureUpdate(const GesturePoint& point,
                                                 const gfx::Point& location,
                                                 Gestures* gestures) {
-  int dx = point.x_delta();
-  int dy = point.y_delta();
-
+  int dx = location.x() - bounding_box_last_center_.x();
+  int dy = location.y() - bounding_box_last_center_.y();
+  if (dx == 0 && dy == 0)
+    return;
   if (scroll_type_ == ST_HORIZONTAL)
     dy = 0;
   else if (scroll_type_ == ST_VERTICAL)
@@ -439,13 +596,13 @@ void GestureSequence::AppendScrollGestureUpdate(const GesturePoint& point,
       location,
       flags_,
       base::Time::FromDoubleT(point.last_touch_time()),
-      dx, dy, 1 << point.touch_id()));
+      dx, dy, ComputeTouchBitmask(points_)));
 }
 
 void GestureSequence::AppendPinchGestureBegin(const GesturePoint& p1,
                                               const GesturePoint& p2,
                                               Gestures* gestures) {
-  gfx::Point center = p1.last_touch_position().Middle(p2.last_touch_position());
+  gfx::Point center = bounding_box_.CenterPoint();
   gestures->push_back(helper_->CreateGestureEvent(
       ui::ET_GESTURE_PINCH_BEGIN,
       center,
@@ -458,52 +615,50 @@ void GestureSequence::AppendPinchGestureEnd(const GesturePoint& p1,
                                             const GesturePoint& p2,
                                             float scale,
                                             Gestures* gestures) {
-  gfx::Point center = p1.last_touch_position().Middle(p2.last_touch_position());
+  gfx::Point center = bounding_box_.CenterPoint();
   gestures->push_back(helper_->CreateGestureEvent(
       ui::ET_GESTURE_PINCH_END,
       center,
       flags_,
       base::Time::FromDoubleT(p1.last_touch_time()),
-      scale, 0.f, 1 << p1.touch_id() | 1 << p2.touch_id()));
+      0.f, 0.f,
+      1 << p1.touch_id() | 1 << p2.touch_id()));
 }
 
-void GestureSequence::AppendPinchGestureUpdate(const GesturePoint& p1,
-                                               const GesturePoint& p2,
+void GestureSequence::AppendPinchGestureUpdate(const GesturePoint& point,
                                                float scale,
                                                Gestures* gestures) {
   // TODO(sad): Compute rotation and include it in delta_y.
   // http://crbug.com/113145
-  gfx::Point center = p1.last_touch_position().Middle(p2.last_touch_position());
   gestures->push_back(helper_->CreateGestureEvent(
       ui::ET_GESTURE_PINCH_UPDATE,
-      center,
+      bounding_box_.CenterPoint(),
       flags_,
-      base::Time::FromDoubleT(p1.last_touch_time()),
-      scale, 0.f, 1 << p1.touch_id() | 1 << p2.touch_id()));
+      base::Time::FromDoubleT(point.last_touch_time()),
+      scale, 0.f,
+      ComputeTouchBitmask(points_)));
 }
 
-void GestureSequence::AppendThreeFingerSwipeGestureEvent(const GesturePoint& p1,
-                                                         const GesturePoint& p2,
-                                                         const GesturePoint& p3,
-                                                         float x_velocity,
-                                                         float y_velocity,
-                                                         Gestures* gestures) {
-  int x = (
-      p1.last_touch_position().x() +
-      p2.last_touch_position().x() +
-      p3.last_touch_position().x()) / 3;
-  int y = (
-      p1.last_touch_position().y() +
-      p2.last_touch_position().y() +
-      p3.last_touch_position().y()) / 3;
-  gfx::Point center(x, y);
+void GestureSequence::AppendSwipeGesture(const GesturePoint& point,
+                                         int swipe_x,
+                                         int swipe_y,
+                                         Gestures* gestures) {
   gestures->push_back(helper_->CreateGestureEvent(
-      ui::ET_GESTURE_THREE_FINGER_SWIPE,
-      center,
+      ui::ET_GESTURE_MULTIFINGER_SWIPE,
+      bounding_box_.CenterPoint(),
       flags_,
-      base::Time::FromDoubleT(p1.last_touch_time()),
-      x_velocity, y_velocity,
-      1 << p1.touch_id() | 1 << p2.touch_id() | 1 << p3.touch_id()));
+      base::Time::FromDoubleT(point.last_touch_time()),
+      swipe_x, swipe_y, ComputeTouchBitmask(points_)));
+}
+
+void GestureSequence::AppendTwoFingerTapGestureEvent(Gestures* gestures) {
+  const GesturePoint* point = GetPointByPointId(0);
+  gestures->push_back(helper_->CreateGestureEvent(
+      ui::ET_GESTURE_TWO_FINGER_TAP,
+      point->enclosing_rectangle().CenterPoint(),
+      flags_,
+      base::Time::FromDoubleT(point->last_touch_time()),
+      0.f, 0.f, 1 << point->touch_id()));
 }
 
 bool GestureSequence::Click(const TouchEvent& event,
@@ -574,6 +729,42 @@ bool GestureSequence::TouchDown(const TouchEvent& event,
   return true;
 }
 
+bool GestureSequence::TwoFingerTouchDown(const TouchEvent& event,
+    const GesturePoint& point, Gestures* gestures) {
+  DCHECK(state_ == GS_PENDING_SYNTHETIC_CLICK || state_ == GS_SCROLL);
+  if (state_ == GS_SCROLL) {
+    AppendScrollGestureEnd(point, point.last_touch_position(), gestures,
+        0.f, 0.f);
+  }
+  second_touch_time_ = event.GetTimestamp();
+  return true;
+}
+
+bool GestureSequence::TwoFingerTouchMove(const TouchEvent& event,
+    const GesturePoint& point, Gestures* gestures) {
+  DCHECK(state_ == GS_PENDING_TWO_FINGER_TAP);
+
+  base::TimeDelta time_delta = event.GetTimestamp() - second_touch_time_;
+  base::TimeDelta max_delta = base::TimeDelta::FromMilliseconds(1000 *
+      ui::GestureConfiguration::max_touch_down_duration_in_seconds_for_click());
+  if (time_delta > max_delta || !point.IsInsideManhattanSquare(event)) {
+    PinchStart(event, point, gestures);
+    return true;
+  }
+  return false;
+}
+
+bool GestureSequence::TwoFingerTouchReleased(const TouchEvent& event,
+    const GesturePoint& point, Gestures* gestures) {
+  DCHECK(state_ == GS_PENDING_TWO_FINGER_TAP);
+  base::TimeDelta time_delta = event.GetTimestamp() - second_touch_time_;
+  base::TimeDelta max_delta = base::TimeDelta::FromMilliseconds(1000 *
+      ui::GestureConfiguration::max_touch_down_duration_in_seconds_for_click());
+  if (time_delta < max_delta && point.IsInsideManhattanSquare(event))
+    AppendTwoFingerTapGestureEvent(gestures);
+  return true;
+}
+
 void GestureSequence::AppendLongPressGestureEvent() {
   const GesturePoint* point = GetPointByPointId(0);
   scoped_ptr<GestureEvent> gesture(helper_->CreateGestureEvent(
@@ -581,7 +772,7 @@ void GestureSequence::AppendLongPressGestureEvent() {
       point->first_touch_position(),
       flags_,
       base::Time::FromDoubleT(point->last_touch_time()),
-      point->point_id(), 0.f, 1 << point->touch_id()));
+      0.f, 0.f, 1 << point->touch_id()));
   helper_->DispatchLongPressGestureEvent(gesture.get());
 }
 
@@ -601,19 +792,22 @@ bool GestureSequence::ScrollEnd(const TouchEvent& event,
 bool GestureSequence::PinchStart(const TouchEvent& event,
     const GesturePoint& point, Gestures* gestures) {
   DCHECK(state_ == GS_SCROLL ||
-         state_ == GS_PENDING_SYNTHETIC_CLICK);
-  AppendTapDownGestureEvent(point, gestures);
+         state_ == GS_PENDING_SYNTHETIC_CLICK ||
+         state_ == GS_PENDING_TWO_FINGER_TAP);
+
+  // Once pinch starts, we immediately break rail scroll.
+  scroll_type_ = ST_FREE;
 
   const GesturePoint* point1 = GetPointByPointId(0);
   const GesturePoint* point2 = GetPointByPointId(1);
 
-  pinch_distance_current_ = point1->Distance(*point2);
+  pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
   pinch_distance_start_ = pinch_distance_current_;
   AppendPinchGestureBegin(*point1, *point2, gestures);
 
-  if (state_ == GS_PENDING_SYNTHETIC_CLICK) {
-    gfx::Point center = point1->last_touch_position().Middle(
-        point2->last_touch_position());
+  if (state_ == GS_PENDING_SYNTHETIC_CLICK ||
+      state_ == GS_PENDING_TWO_FINGER_TAP) {
+    gfx::Point center = bounding_box_.CenterPoint();
     AppendScrollGestureBegin(point, center, gestures);
   }
 
@@ -624,29 +818,18 @@ bool GestureSequence::PinchUpdate(const TouchEvent& event,
     const GesturePoint& point, Gestures* gestures) {
   DCHECK(state_ == GS_PINCH);
 
-  const GesturePoint* point1 = GetPointByPointId(0);
-  const GesturePoint* point2 = GetPointByPointId(1);
+  float distance = BoundingBoxDiagonal(bounding_box_);
 
-  float distance = point1->Distance(*point2);
-  if (abs(distance - pinch_distance_current_) <
+  if (abs(distance - pinch_distance_current_) >=
       GestureConfiguration::min_pinch_update_distance_in_pixels()) {
-    // The fingers didn't move towards each other, or away from each other,
-    // enough to constitute a pinch. But perhaps they moved enough in the same
-    // direction to do a two-finger scroll.
-    if (!point1->DidScroll(event,
-        GestureConfiguration::min_distance_for_pinch_scroll_in_pixels()) ||
-        !point2->DidScroll(event,
-        GestureConfiguration::min_distance_for_pinch_scroll_in_pixels()))
-      return false;
-
-    gfx::Point center = point1->last_touch_position().Middle(
-                        point2->last_touch_position());
-    AppendScrollGestureUpdate(point, center, gestures);
-  } else {
-    AppendPinchGestureUpdate(*point1, *point2,
+    AppendPinchGestureUpdate(point,
         distance / pinch_distance_current_, gestures);
     pinch_distance_current_ = distance;
+  } else {
+    gfx::Point center = bounding_box_.CenterPoint();
+    AppendScrollGestureUpdate(point, center, gestures);
   }
+
   return true;
 }
 
@@ -657,70 +840,79 @@ bool GestureSequence::PinchEnd(const TouchEvent& event,
   GesturePoint* point1 = GetPointByPointId(0);
   GesturePoint* point2 = GetPointByPointId(1);
 
-  float distance = point1->Distance(*point2);
+  float distance = BoundingBoxDiagonal(bounding_box_);
   AppendPinchGestureEnd(*point1, *point2,
       distance / pinch_distance_start_, gestures);
-
-  point1->ResetVelocity();
-  point2->ResetVelocity();
 
   pinch_distance_start_ = 0;
   pinch_distance_current_ = 0;
   return true;
 }
 
-bool GestureSequence::ThreeFingerSwipeUpdate(const TouchEvent& event,
-    const GesturePoint& point, Gestures* gestures) {
-  DCHECK(state_ == GS_THREE_FINGER_SWIPE);
+bool GestureSequence::MaybeSwipe(const TouchEvent& event,
+                                 const GesturePoint& point,
+                                 Gestures* gestures) {
+  DCHECK(state_ == GS_PINCH);
+  float velocity_x = 0.f, velocity_y = 0.f;
+  bool swipe_x = true, swipe_y = true;
+  int sign_x = 0, sign_y = 0;
+  int i = 0;
 
-  GesturePoint* point1 = GetPointByPointId(0);
-  GesturePoint* point2 = GetPointByPointId(1);
-  GesturePoint* point3 = GetPointByPointId(2);
+  for (i = 0; i < kMaxGesturePoints; ++i) {
+    if (points_[i].in_use())
+      break;
+  }
+  DCHECK(i < kMaxGesturePoints);
 
-  int min_velocity = GestureConfiguration::min_swipe_speed();
+  velocity_x = points_[i].XVelocity();
+  velocity_y = points_[i].YVelocity();
+  sign_x = velocity_x < 0 ? -1 : 1;
+  sign_y = velocity_y < 0 ? -1 : 1;
 
-  float vx1 = point1->XVelocity();
-  float vx2 = point2->XVelocity();
-  float vx3 = point3->XVelocity();
-  float vy1 = point1->YVelocity();
-  float vy2 = point2->YVelocity();
-  float vy3 = point3->YVelocity();
+  for (++i; i < kMaxGesturePoints; ++i) {
+    if (!points_[i].in_use())
+      continue;
 
-  float vx = (vx1 + vx2 + vx3) / 3;
-  float vy = (vy1 + vy2 + vy3) / 3;
+    if (sign_x * points_[i].XVelocity() < 0)
+      swipe_x = false;
 
-  // Not moving fast enough
-  if (fabs(vx) < min_velocity && fabs(vy) < min_velocity)
+    if (sign_y * points_[i].YVelocity() < 0)
+      swipe_y = false;
+
+    velocity_x += points_[i].XVelocity();
+    velocity_y += points_[i].YVelocity();
+  }
+
+  float min_velocity = GestureConfiguration::min_swipe_speed();
+  min_velocity *= min_velocity;
+
+  velocity_x = fabs(velocity_x / point_count_);
+  velocity_y = fabs(velocity_y / point_count_);
+  if (velocity_x < min_velocity)
+    swipe_x = false;
+  if (velocity_y < min_velocity)
+    swipe_y = false;
+
+  if (!swipe_x && !swipe_y)
     return false;
 
-  // Diagonal swipe, no event fired
-  // TODO(tdresser|sadrul): consider adding diagonal swipes
-  float ratio = fabs(vx) > fabs(vy) ? fabs(vx / vy) : fabs(vy / vx);
+  if (!swipe_x)
+    velocity_x = 0.001f;
+  if (!swipe_y)
+    velocity_y = 0.001f;
+
+  float ratio = velocity_x > velocity_y ? velocity_x / velocity_y :
+                                          velocity_y / velocity_x;
   if (ratio < GestureConfiguration::max_swipe_deviation_ratio())
     return false;
 
-  if (fabs(vx) > fabs(vy)) {
-    int sign = vx > 0 ? 1 : -1;
-    // ensure all touches are moving in the same direction, and are
-    // all moving faster than min_velocity.
-    if (vx1 * sign < min_velocity ||
-        vx2 * sign < min_velocity ||
-        vx3 * sign < min_velocity)
-        return false;
-    AppendThreeFingerSwipeGestureEvent(*point1, *point2, *point3,
-                                       sign, 0, gestures);
-  } else {
-    int sign = vy > 0 ? 1 : -1;
-    // ensure all touches are moving in the same direction, and are
-    // all moving faster than min_velocity.
-    if (vy1 * sign < min_velocity ||
-        vy2 * sign < min_velocity ||
-        vy3 * sign < min_velocity)
-      return false;
-    AppendThreeFingerSwipeGestureEvent(*point1, *point2, *point3,
-                                       0, sign, gestures);
-  }
-  three_finger_swipe_has_fired_ = true;
+  if (velocity_x > velocity_y)
+    sign_y = 0;
+  else
+    sign_x = 0;
+
+  AppendSwipeGesture(point, sign_x, sign_y, gestures);
+
   return true;
 }
 

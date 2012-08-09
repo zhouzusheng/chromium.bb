@@ -21,6 +21,7 @@
 #include "base/shared_memory.h"
 #include "base/time.h"
 #if defined(OS_WIN)
+#include "base/sys_info.h"
 #include "base/win/windows_version.h"
 #include "media/audio/audio_manager_base.h"
 #endif
@@ -213,7 +214,7 @@ bool DeinterleaveAudioChannel(void* source,
     case 4:
     {
       int32* source32 = reinterpret_cast<int32*>(source) + channel_index;
-      const float kScale = 1.0f / (1L << 31);
+      const float kScale = 1.0f / 2147483648.0f;
       for (unsigned i = 0; i < number_of_frames; ++i) {
         destination[i] = kScale * *source32;
         source32 += channels;
@@ -260,7 +261,7 @@ static void InterleaveFloatToInt(const std::vector<float*>& source,
 
 void InterleaveFloatToInt(const std::vector<float*>& source, void* dst,
                           size_t number_of_frames, int bytes_per_sample) {
-  switch(bytes_per_sample) {
+  switch (bytes_per_sample) {
     case 1:
       InterleaveFloatToInt<uint8, int32>(source, dst, number_of_frames);
       break;
@@ -281,6 +282,8 @@ void InterleaveFloatToInt(const std::vector<float*>& source, void* dst,
 //             when we have to adjust volume as well.
 template<class Format, class Fixed, int min_value, int max_value, int bias>
 static void MixStreams(Format* dst, Format* src, int count, float volume) {
+  if (volume == 0.0f)
+    return;
   if (volume == 1.0f) {
     // Most common case -- no need to adjust volume.
     for (int i = 0; i < count; ++i) {
@@ -515,6 +518,20 @@ bool IsWASAPISupported() {
   // Note: that function correctly returns that Windows Server 2003 does not
   // support WASAPI.
   return base::win::GetVersion() >= base::win::VERSION_VISTA;
+}
+
+int NumberOfWaveOutBuffers() {
+  // Simple heuristic: use 3 buffers on single-core system or on Vista,
+  // 2 otherwise.
+  // Entire Windows audio stack was rewritten for Windows Vista, and wave out
+  // API is simulated on top of new API, so there is noticeable performance
+  // degradation compared to Windows XP. Part of regression was apparently fixed
+  // in Windows 7, but problems remain at least with some configurations.
+  if ((base::SysInfo::NumberOfProcessors() < 2) ||
+      (base::win::GetVersion() >= base::win::VERSION_VISTA)) {
+    return 3;
+  }
+  return 2;
 }
 
 #endif

@@ -32,7 +32,7 @@
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
 #if defined(USE_AURA)
-#include "base/message_pump_x.h"
+#include "base/message_pump_aurax11.h"
 #else
 #include "base/message_pump_gtk.h"
 #endif
@@ -42,7 +42,8 @@
 
 namespace base {
 class Histogram;
-}
+class ThreadTaskRunnerHandle;
+}  // namespace base
 
 // A MessageLoop is used to process events for a particular thread.  There is
 // at most one MessageLoop instance per thread.
@@ -519,6 +520,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   // The message loop proxy associated with this message loop, if one exists.
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
+  scoped_ptr<base::ThreadTaskRunnerHandle> thread_task_runner_handle_;
 
  private:
   template <class T, class R> friend class base::subtle::DeleteHelperInternal;

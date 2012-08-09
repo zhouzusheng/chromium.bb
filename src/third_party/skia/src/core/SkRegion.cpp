@@ -925,10 +925,12 @@ static int operate(const SkRegion::RunType a_runs[],
     interval, but we can first trim off the const overhead of the initial TOP
     value, plus the final BOTTOM + 2 sentinels.
  */
+#if 0 // UNUSED
 static int count_to_intervals(int count) {
     SkASSERT(count >= 6);   // a single rect is 6 values
     return (count - 4) >> 1;
 }
+#endif
 
 /*  Given a number of intervals, what is the worst case representation of that
     many intervals?
@@ -992,8 +994,12 @@ bool SkRegion::Oper(const SkRegion& rgnaOrig, const SkRegion& rgnbOrig, Op op,
         if (a_empty) {
             return setEmptyCheck(result);
         }
-        if (b_empty || !SkIRect::Intersects(rgna->fBounds, rgnb->fBounds)) {
+        if (b_empty || !SkIRect::IntersectsNoEmptyCheck(rgna->fBounds,
+                                                        rgnb->fBounds)) {
             return setRegionCheck(result, *rgna);
+        }
+        if (b_rect && rgnb->fBounds.containsNoEmptyCheck(rgna->fBounds)) {
+            return setEmptyCheck(result);
         }
         break;
 
@@ -1070,7 +1076,7 @@ bool SkRegion::op(const SkRegion& rgna, const SkRegion& rgnb, Op op) {
 
 #include "SkBuffer.h"
 
-uint32_t SkRegion::flatten(void* storage) const {
+uint32_t SkRegion::writeToMemory(void* storage) const {
     if (NULL == storage) {
         uint32_t size = sizeof(int32_t); // -1 (empty), 0 (rect), runCount
         if (!this->isEmpty()) {
@@ -1103,7 +1109,7 @@ uint32_t SkRegion::flatten(void* storage) const {
     return buffer.pos();
 }
 
-uint32_t SkRegion::unflatten(const void* storage) {
+uint32_t SkRegion::readFromMemory(const void* storage) {
     SkRBuffer   buffer(storage);
     SkRegion    tmp;
     int32_t     count;

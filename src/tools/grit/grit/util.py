@@ -6,17 +6,24 @@
 '''Utilities used by GRIT.
 '''
 
-import sys
-import os.path
 import codecs
 import htmlentitydefs
+import os
 import re
+import shutil
+import sys
+import tempfile
 import time
+import types
 from xml.sax import saxutils
 
 from grit import lazy_re
 
 _root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+# Unique constants for use by ReadFile().
+BINARY, RAW_TEXT = range(2)
 
 
 # Matches all different types of linebreaks.
@@ -136,9 +143,6 @@ def SetupSystemIdentifiers(ids):
 
 
 # Matches all of the resource IDs predefined by Windows.
-# The '\b' before and after each word makes sure these match only whole words and
-# not the beginning of any word.. eg. ID_FILE_NEW will not match ID_FILE_NEW_PROJECT
-# see http://www.amk.ca/python/howto/regex/ (search for "\bclass\b" inside the html page)
 SetupSystemIdentifiers((
     'IDOK', 'IDCANCEL', 'IDC_STATIC', 'IDYES', 'IDNO',
     'ID_FILE_NEW', 'ID_FILE_OPEN', 'ID_FILE_CLOSE', 'ID_FILE_SAVE',
@@ -173,18 +177,27 @@ _HTML_CHARS_TO_ESCAPE = lazy_re.compile(
     re.IGNORECASE | re.MULTILINE)
 
 
-def WrapInputStream(stream, encoding = 'utf-8'):
-  '''Returns a stream that wraps the provided stream, making it read characters
-  using the specified encoding.'''
-  (e, d, sr, sw) = codecs.lookup(encoding)
-  return sr(stream)
+def ReadFile(filename, encoding):
+  '''Reads and returns the entire contents of the given file.
+
+  Args:
+    filename: The path to the file.
+    encoding: A Python codec name or one of two special values: BINARY to read
+              the file in binary mode, or RAW_TEXT to read it with newline
+              conversion but without decoding to Unicode.
+  '''
+  mode = 'rb' if encoding == BINARY else 'rU'
+  with open(filename, mode) as f:
+    data = f.read()
+  if encoding not in (BINARY, RAW_TEXT):
+    data = data.decode(encoding)
+  return data
 
 
 def WrapOutputStream(stream, encoding = 'utf-8'):
   '''Returns a stream that wraps the provided stream, making it write
   characters using the specified encoding.'''
-  (e, d, sr, sw) = codecs.lookup(encoding)
-  return sw(stream)
+  return codecs.getwriter(encoding)(stream)
 
 
 def ChangeStdoutEncoding(encoding = 'utf-8'):
@@ -573,3 +586,45 @@ class Substituter(object):
                            msg.GetDescription(), msg.GetMeaning())
     else:
       return msg
+
+
+class TempDir(object):
+  '''Creates files with the specified contents in a temporary directory,
+  for unit testing.
+  '''
+  def __init__(self, file_data):
+    self._tmp_dir_name = tempfile.mkdtemp()
+    assert not os.listdir(self.GetPath())
+    for name, contents in file_data.items():
+      file_path = self.GetPath(name)
+      dir_path = os.path.split(file_path)[0]
+      if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+      with open(file_path, 'w') as f:
+        f.write(file_data[name])
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, *exc_info):
+    self.CleanUp()
+
+  def CleanUp(self):
+    shutil.rmtree(self.GetPath())
+
+  def GetPath(self, name=''):
+    name = os.path.join(self._tmp_dir_name, name)
+    assert name.startswith(self._tmp_dir_name)
+    return name
+
+  def AsCurrentDir(self):
+    return self._AsCurrentDirClass(self.GetPath())
+
+  class _AsCurrentDirClass(object):
+    def __init__(self, path):
+      self.path = path
+    def __enter__(self):
+      self.oldpath = os.getcwd()
+      os.chdir(self.path)
+    def __exit__(self, *exc_info):
+      os.chdir(self.oldpath)

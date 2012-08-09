@@ -105,24 +105,39 @@ bool ScrollingCoordinator::coordinatesScrollingForFrameView(FrameView* frameView
 #endif
 }
 
-static Region computeNonFastScrollableRegion(Frame* mainFrame)
+static Region computeNonFastScrollableRegion(Frame* frame, const IntPoint& frameLocation)
 {
     Region nonFastScrollableRegion;
+    FrameView* frameView = frame->view();
+    if (!frameView)
+        return nonFastScrollableRegion;
 
-    for (Frame* frame = mainFrame; frame; frame = frame->tree()->traverseNext()) {
-        FrameView* frameView = frame->view();
-        if (!frameView)
-            continue;
+    IntPoint offset = frameLocation;
+    offset.moveBy(frameView->frameRect().location());
 
-        const FrameView::ScrollableAreaSet* scrollableAreas = frameView->scrollableAreas();
-        if (!scrollableAreas)
-            continue;
-
+    if (const FrameView::ScrollableAreaSet* scrollableAreas = frameView->scrollableAreas()) {
         for (FrameView::ScrollableAreaSet::const_iterator it = scrollableAreas->begin(), end = scrollableAreas->end(); it != end; ++it) {
             ScrollableArea* scrollableArea = *it;
-            nonFastScrollableRegion.unite(scrollableArea->scrollableAreaBoundingBox());
+            IntRect box = scrollableArea->scrollableAreaBoundingBox();
+            box.moveBy(offset);
+            nonFastScrollableRegion.unite(box);
         }
     }
+
+    if (const HashSet<RefPtr<Widget> >* children = frameView->children()) {
+        for (HashSet<RefPtr<Widget> >::const_iterator it = children->begin(), end = children->end(); it != end; ++it) {
+            if (!(*it)->isPluginViewBase())
+                continue;
+
+            PluginViewBase* pluginViewBase = static_cast<PluginViewBase*>((*it).get());
+            if (pluginViewBase->wantsWheelEvents())
+                nonFastScrollableRegion.unite(pluginViewBase->frameRect());
+        }
+    }
+
+    FrameTree* tree = frame->tree();
+    for (Frame* subFrame = tree->firstChild(); subFrame; subFrame = subFrame->tree()->nextSibling())
+        nonFastScrollableRegion.unite(computeNonFastScrollableRegion(subFrame, offset));
 
     return nonFastScrollableRegion;
 }
@@ -135,7 +150,7 @@ void ScrollingCoordinator::frameViewLayoutUpdated(FrameView* frameView)
     // Compute the region of the page that we can't do fast scrolling for. This currently includes
     // all scrollable areas, such as subframes, overflow divs and list boxes. We need to do this even if the
     // frame view whose layout was updated is not the main frame.
-    Region nonFastScrollableRegion = computeNonFastScrollableRegion(m_page->mainFrame());
+    Region nonFastScrollableRegion = computeNonFastScrollableRegion(m_page->mainFrame(), IntPoint());
     setNonFastScrollableRegion(nonFastScrollableRegion);
 
     if (!coordinatesScrollingForFrameView(frameView))
@@ -149,6 +164,7 @@ void ScrollingCoordinator::frameViewLayoutUpdated(FrameView* frameView)
     scrollParameters.horizontalScrollbarMode = frameView->horizontalScrollbarMode();
     scrollParameters.verticalScrollbarMode = frameView->verticalScrollbarMode();
 
+    scrollParameters.scrollOrigin = frameView->scrollOrigin();
     scrollParameters.viewportRect = IntRect(IntPoint(), frameView->visibleContentRect().size());
     scrollParameters.contentsSize = frameView->contentsSize();
 
@@ -174,7 +190,7 @@ void ScrollingCoordinator::frameViewHasSlowRepaintObjectsDidChange(FrameView* fr
     updateShouldUpdateScrollLayerPositionOnMainThread();
 }
 
-void ScrollingCoordinator::frameViewHasFixedObjectsDidChange(FrameView* frameView)
+void ScrollingCoordinator::frameViewFixedObjectsDidChange(FrameView* frameView)
 {
     ASSERT(isMainThread());
     ASSERT(m_page);
@@ -321,12 +337,36 @@ void ScrollingCoordinator::recomputeWheelEventHandlerCount()
     setWheelEventHandlerCount(wheelEventHandlerCount);
 }
 
+bool ScrollingCoordinator::hasNonLayerFixedObjects(FrameView* frameView)
+{
+    const FrameView::FixedObjectSet* fixedObjects = frameView->fixedObjects();
+    if (!fixedObjects)
+        return false;
+
+#if USE(ACCELERATED_COMPOSITING)
+    for (FrameView::FixedObjectSet::const_iterator it = fixedObjects->begin(), end = fixedObjects->end(); it != end; ++it) {
+        RenderObject* fixedObject = *it;
+        if (!fixedObject->isBoxModelObject() || !fixedObject->hasLayer())
+            return true;
+        RenderBoxModelObject* fixedBoxModelObject = toRenderBoxModelObject(fixedObject);
+        if (!fixedBoxModelObject->layer()->backing())
+            return true;
+    }
+    return false;
+#else
+    return fixedObjects->size();
+#endif
+}
+
 void ScrollingCoordinator::updateShouldUpdateScrollLayerPositionOnMainThread()
 {
     FrameView* frameView = m_page->mainFrame()->view();
 
-    // FIXME: Having fixed objects on the page should not trigger the slow path.
-    setShouldUpdateScrollLayerPositionOnMainThread(m_forceMainThreadScrollLayerPositionUpdates || frameView->hasSlowRepaintObjects() || frameView->hasFixedObjects() || m_page->mainFrame()->document()->isImageDocument());
+    setShouldUpdateScrollLayerPositionOnMainThread(m_forceMainThreadScrollLayerPositionUpdates
+        || frameView->hasSlowRepaintObjects()
+        || (!supportsFixedPositionLayers() && frameView->hasFixedObjects())
+        || (supportsFixedPositionLayers() && hasNonLayerFixedObjects(frameView))
+        || m_page->mainFrame()->document()->isImageDocument());
 }
 
 void ScrollingCoordinator::setForceMainThreadScrollLayerPositionUpdates(bool forceMainThreadScrollLayerPositionUpdates)
@@ -360,6 +400,7 @@ void ScrollingCoordinator::setScrollParameters(const ScrollParameters& scrollPar
     m_scrollingTreeState->setHorizontalScrollbarMode(scrollParameters.horizontalScrollbarMode);
     m_scrollingTreeState->setVerticalScrollbarMode(scrollParameters.verticalScrollbarMode);
 
+    m_scrollingTreeState->setScrollOrigin(scrollParameters.scrollOrigin);
     m_scrollingTreeState->setViewportRect(scrollParameters.viewportRect);
     m_scrollingTreeState->setContentsSize(scrollParameters.contentsSize);
     scheduleTreeStateCommit();
@@ -410,6 +451,21 @@ void ScrollingCoordinator::commitTreeState()
     OwnPtr<ScrollingTreeState> treeState = m_scrollingTreeState->commit();
     ScrollingThread::dispatch(bind(&ScrollingTree::commitNewTreeState, m_scrollingTree.get(), treeState.release()));
 }
-#endif
+
+bool ScrollingCoordinator::supportsFixedPositionLayers() const
+{
+    return false;
+}
+
+void ScrollingCoordinator::setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool)
+{
+    // FIXME: Implement!
+}
+
+void ScrollingCoordinator::setLayerIsFixedToContainerLayer(GraphicsLayer*, bool)
+{
+    // FIXME: Implement!
+}
+#endif // !ENABLE(THREADED_SCROLLING)
 
 } // namespace WebCore

@@ -30,7 +30,6 @@
 
 #include "EventQueue.h"
 #include "ExceptionCode.h"
-#include "EventQueue.h"
 #include "IDBAny.h"
 #include "IDBDatabaseCallbacksImpl.h"
 #include "IDBDatabaseError.h"
@@ -73,35 +72,63 @@ IDBDatabase::~IDBDatabase()
     m_databaseCallbacks->unregisterDatabase(this);
 }
 
-void IDBDatabase::setVersionChangeTransaction(IDBTransaction* transaction)
+void IDBDatabase::transactionCreated(IDBTransaction* transaction)
 {
-    ASSERT(!m_versionChangeTransaction);
-    m_versionChangeTransaction = transaction;
+    ASSERT(transaction);
+    ASSERT(!m_transactions.contains(transaction));
+    m_transactions.add(transaction);
+
+    if (transaction->isVersionChange()) {
+        ASSERT(!m_versionChangeTransaction);
+        m_versionChangeTransaction = transaction;
+    }
 }
 
-void IDBDatabase::clearVersionChangeTransaction(IDBTransaction* transaction)
+void IDBDatabase::transactionFinished(IDBTransaction* transaction)
 {
-    ASSERT_UNUSED(transaction, m_versionChangeTransaction == transaction);
-    m_versionChangeTransaction = 0;
+    ASSERT(transaction);
+    ASSERT(m_transactions.contains(transaction));
+    m_transactions.remove(transaction);
+
+    if (transaction->isVersionChange()) {
+        ASSERT(m_versionChangeTransaction == transaction);
+        m_versionChangeTransaction = 0;
+    }
+
+    if (m_closePending && m_transactions.isEmpty())
+        closeConnection();
 }
 
 PassRefPtr<IDBObjectStore> IDBDatabase::createObjectStore(const String& name, const Dictionary& options, ExceptionCode& ec)
 {
     if (!m_versionChangeTransaction) {
-        ec = IDBDatabaseException::NOT_ALLOWED_ERR;
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return 0;
     }
 
-    String keyPath;
-    bool keyPathExists = options.getWithUndefinedOrNullCheck("keyPath", keyPath);
-    if (keyPathExists && !IDBIsValidKeyPath(keyPath)) {
-        ec = IDBDatabaseException::NON_TRANSIENT_ERR;
+    IDBKeyPath keyPath;
+    if (!options.isUndefinedOrNull()) {
+        String keyPathString;
+        Vector<String> keyPathArray;
+        if (options.get("keyPath", keyPathArray))
+            keyPath = IDBKeyPath(keyPathArray);
+        else if (options.getWithUndefinedOrNullCheck("keyPath", keyPathString))
+            keyPath = IDBKeyPath(keyPathString);
+    }
+
+    if (!keyPath.isNull() && !keyPath.isValid()) {
+        ec = IDBDatabaseException::IDB_SYNTAX_ERR;
         return 0;
     }
 
     bool autoIncrement = false;
-    options.get("autoIncrement", autoIncrement);
-    // FIXME: Look up evictable and pass that on as well.
+    if (!options.isUndefinedOrNull())
+        options.get("autoIncrement", autoIncrement);
+
+    if (autoIncrement && ((keyPath.type() == IDBKeyPath::StringType && keyPath.string().isEmpty()) || keyPath.type() == IDBKeyPath::ArrayType)) {
+        ec = IDBDatabaseException::IDB_INVALID_ACCESS_ERR;
+        return 0;
+    }
 
     RefPtr<IDBObjectStoreBackendInterface> objectStoreBackend = m_backend->createObjectStore(name, keyPath, autoIncrement, m_versionChangeTransaction->backend(), ec);
     if (!objectStoreBackend) {
@@ -117,18 +144,24 @@ PassRefPtr<IDBObjectStore> IDBDatabase::createObjectStore(const String& name, co
 void IDBDatabase::deleteObjectStore(const String& name, ExceptionCode& ec)
 {
     if (!m_versionChangeTransaction) {
-        ec = IDBDatabaseException::NOT_ALLOWED_ERR;
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return;
     }
 
     m_backend->deleteObjectStore(name, m_versionChangeTransaction->backend(), ec);
-    m_versionChangeTransaction->objectStoreDeleted(name);
+    if (!ec)
+        m_versionChangeTransaction->objectStoreDeleted(name);
 }
 
 PassRefPtr<IDBVersionChangeRequest> IDBDatabase::setVersion(ScriptExecutionContext* context, const String& version, ExceptionCode& ec)
 {
     if (version.isNull()) {
-        ec = IDBDatabaseException::NON_TRANSIENT_ERR;
+        ec = IDBDatabaseException::IDB_TYPE_ERR;
+        return 0;
+    }
+
+    if (m_versionChangeTransaction) {
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return 0;
     }
 
@@ -137,27 +170,20 @@ PassRefPtr<IDBVersionChangeRequest> IDBDatabase::setVersion(ScriptExecutionConte
     return request;
 }
 
-PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, const String& storeName, unsigned short mode, ExceptionCode& ec)
-{
-    RefPtr<DOMStringList> storeNames = DOMStringList::create();
-    storeNames->append(storeName);
-    return transaction(context, storeNames, mode, ec);
-}
-
-PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> prpStoreNames, unsigned short mode, ExceptionCode& ec)
+PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> prpStoreNames, const String& modeString, ExceptionCode& ec)
 {
     RefPtr<DOMStringList> storeNames = prpStoreNames;
     if (!storeNames || storeNames->isEmpty()) {
-        ec = INVALID_ACCESS_ERR;
+        ec = IDBDatabaseException::IDB_INVALID_ACCESS_ERR;
         return 0;
     }
 
-    if (mode != IDBTransaction::READ_WRITE && mode != IDBTransaction::READ_ONLY) {
-        ec = IDBDatabaseException::NON_TRANSIENT_ERR;
+    IDBTransaction::Mode mode = IDBTransaction::stringToMode(modeString, ec);
+    if (ec)
         return 0;
-    }
-    if (m_closePending) {
-        ec = IDBDatabaseException::NOT_ALLOWED_ERR;
+
+    if (m_versionChangeTransaction || m_closePending) {
+        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return 0;
     }
 
@@ -170,9 +196,34 @@ PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* cont
         ASSERT(ec);
         return 0;
     }
-    RefPtr<IDBTransaction> transaction = IDBTransaction::create(context, transactionBackend, this);
+    RefPtr<IDBTransaction> transaction = IDBTransaction::create(context, transactionBackend, mode, this);
     transactionBackend->setCallbacks(transaction.get());
     return transaction.release();
+}
+
+PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, const String& storeName, const String& mode, ExceptionCode& ec)
+{
+    RefPtr<DOMStringList> storeNames = DOMStringList::create();
+    storeNames->append(storeName);
+    return transaction(context, storeNames, mode, ec);
+}
+
+PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, const String& storeName, unsigned short mode, ExceptionCode& ec)
+{
+    RefPtr<DOMStringList> storeNames = DOMStringList::create();
+    storeNames->append(storeName);
+    return transaction(context, storeNames, mode, ec);
+}
+
+PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> prpStoreNames, unsigned short mode, ExceptionCode& ec)
+{
+    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Numeric transaction modes are deprecated in IDBDatabase.transaction. Use \"readonly\" or \"readwrite\"."));
+    context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
+    AtomicString modeString = IDBTransaction::modeToString(IDBTransaction::Mode(mode), ec);
+    if (ec)
+        return 0;
+
+    return transaction(context, prpStoreNames, modeString, ec);
 }
 
 void IDBDatabase::close()
@@ -181,6 +232,16 @@ void IDBDatabase::close()
         return;
 
     m_closePending = true;
+
+    if (m_transactions.isEmpty())
+        closeConnection();
+}
+
+void IDBDatabase::closeConnection()
+{
+    ASSERT(m_closePending);
+    ASSERT(m_transactions.isEmpty());
+
     m_backend->close(m_databaseCallbacks);
 
     if (m_contextStopped || !scriptExecutionContext())
@@ -205,9 +266,9 @@ void IDBDatabase::onVersionChange(const String& version)
     enqueueEvent(IDBVersionChangeEvent::create(version, eventNames().versionchangeEvent));
 }
 
-void IDBDatabase::open()
+void IDBDatabase::registerFrontendCallbacks()
 {
-    m_backend->open(m_databaseCallbacks);
+    m_backend->registerFrontendCallbacks(m_databaseCallbacks);
 }
 
 void IDBDatabase::enqueueEvent(PassRefPtr<Event> event)

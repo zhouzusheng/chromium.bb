@@ -132,6 +132,8 @@ public:
 
 // Flags for language modes and experimental language features.
 DEFINE_bool(use_strict, false, "enforce strict mode")
+DEFINE_bool(es5_readonly, false,
+            "activate correct semantics for inheriting readonliness")
 DEFINE_bool(es52_globals, false,
             "activate new semantics for global var declarations")
 
@@ -150,6 +152,7 @@ DEFINE_implication(harmony, harmony_collections)
 DEFINE_implication(harmony_modules, harmony_scoping)
 
 // Flags for experimental implementation features.
+DEFINE_bool(packed_arrays, false, "optimizes arrays that have no holes")
 DEFINE_bool(smi_only_arrays, true, "tracks arrays with only smi values")
 DEFINE_bool(clever_optimizations,
             true,
@@ -197,6 +200,8 @@ DEFINE_bool(polymorphic_inlining, true, "polymorphic inlining")
 DEFINE_bool(use_osr, true, "use on-stack replacement")
 DEFINE_bool(array_bounds_checks_elimination, false,
             "perform array bounds checks elimination")
+DEFINE_bool(array_index_dehoisting, false,
+            "perform array index dehoisting")
 
 DEFINE_bool(trace_osr, false, "trace on-stack replacement")
 DEFINE_int(stress_runs, 0, "number of stress runs")

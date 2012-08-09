@@ -38,7 +38,6 @@
 #include "ScriptCallStackFactory.h"
 #include "ScriptableDocumentParser.h"
 #include "DOMWindow.h"
-#include "DOMWindowPagePopup.h"
 #include "Event.h"
 #include "EventListener.h"
 #include "EventNames.h"
@@ -178,14 +177,11 @@ void ScriptController::evaluateInIsolatedWorld(unsigned worldID, const Vector<Sc
 void ScriptController::evaluateInIsolatedWorld(unsigned worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<ScriptValue>* results)
 {
     v8::HandleScope handleScope;
-    if (results) {
-        Vector<v8::Local<v8::Value> > v8Results;
-        m_proxy->evaluateInIsolatedWorld(worldID, sources, extensionGroup, &v8Results);
-        Vector<v8::Local<v8::Value> >::iterator itr;
-        for (itr = v8Results.begin(); itr != v8Results.end(); ++itr)
-            results->append(ScriptValue(*itr));
-    } else
-        m_proxy->evaluateInIsolatedWorld(worldID, sources, extensionGroup, 0);
+    v8::Local<v8::Array> v8Results = m_proxy->evaluateInIsolatedWorld(worldID, sources, extensionGroup);
+    if (results && !v8Results.IsEmpty()) {
+        for (size_t i = 0; i < v8Results->Length(); ++i)
+            results->append(ScriptValue(v8Results->Get(i)));
+    }
 }
 
 void ScriptController::setIsolatedWorldSecurityOrigin(int worldID, PassRefPtr<SecurityOrigin> securityOrigin)
@@ -250,36 +246,6 @@ void ScriptController::bindToWindowObject(Frame* frame, const String& key, NPObj
     global->Set(v8String(key), value);
 }
 
-#if ENABLE(PAGE_POPUP)
-static v8::Handle<v8::Value> setValueAndClosePopupCallback(const v8::Arguments& args)
-{
-    if (args.Length() < 2)
-        return V8Proxy::throwNotEnoughArgumentsError();
-    DOMWindow* imp = V8DOMWindow::toNative(args.Data()->ToObject());
-    EXCEPTION_BLOCK(int, intValue, toInt32(MAYBE_MISSING_PARAMETER(args, 0, DefaultIsUndefined)));
-    STRING_TO_V8PARAMETER_EXCEPTION_BLOCK(V8Parameter<>, stringValue, MAYBE_MISSING_PARAMETER(args, 1, DefaultIsUndefined));
-    DOMWindowPagePopup::setValueAndClosePopup(imp, intValue, stringValue);
-    // setValueAndClosePopup() deletes the window. Do not access it.
-    return v8::Undefined();
-}
-
-void ScriptController::installFunctionsForPagePopup(Frame* frame, PagePopupClient* popupClient)
-{
-    ASSERT(frame);
-    ASSERT(popupClient);
-    v8::HandleScope handleScope;
-    v8::Handle<v8::Context> context = V8Proxy::mainWorldContext(frame);
-    if (context.IsEmpty()) {
-        ASSERT_NOT_REACHED();
-        return;
-    }
-    v8::Context::Scope scope(context);
-    DOMWindowPagePopup::install(frame->existingDOMWindow(), popupClient);
-    v8::Local<v8::FunctionTemplate> templ = v8::FunctionTemplate::New(setValueAndClosePopupCallback, V8DOMWindow::wrap(frame->existingDOMWindow()));
-    context->Global()->Set(v8::String::New("setValueAndClosePopup"), v8::Handle<v8::Function>(templ->GetFunction()));
-}
-#endif
-
 void ScriptController::collectGarbage()
 {
     v8::HandleScope handleScope;
@@ -310,13 +276,25 @@ bool ScriptController::haveInterpreter() const
     return m_proxy->windowShell()->isContextInitialized();
 }
 
+void ScriptController::enableEval()
+{
+    // We don't call initContextIfNeeded because contexts have eval enabled by default.
+
+    v8::HandleScope handleScope;
+    v8::Handle<v8::Context> v8Context = proxy()->windowShell()->context();
+    if (v8Context.IsEmpty())
+        return;
+
+    v8Context->AllowCodeGenerationFromStrings(true);
+}
+
 void ScriptController::disableEval()
 {
-    if (!m_proxy->windowShell()->initContextIfNeeded())
+    if (!proxy()->windowShell()->initContextIfNeeded())
         return;
 
     v8::HandleScope handleScope;
-    v8::Handle<v8::Context> v8Context = V8Proxy::mainWorldContext(m_frame);
+    v8::Handle<v8::Context> v8Context = proxy()->windowShell()->context();
     if (v8Context.IsEmpty())
         return;
 
@@ -466,6 +444,11 @@ void ScriptController::clearWindowShell(bool)
 void ScriptController::setCaptureCallStackForUncaughtExceptions(bool value)
 {
     v8::V8::SetCaptureStackTraceForUncaughtExceptions(value, ScriptCallStack::maxCallStackSizeToCapture, stackTraceOptions);
+}
+
+void ScriptController::collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*> >& result)
+{
+    m_proxy->collectIsolatedContexts(result);
 }
 #endif
 

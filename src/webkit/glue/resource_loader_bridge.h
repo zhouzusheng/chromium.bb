@@ -25,7 +25,6 @@
 #endif
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/time.h"
 #include "base/values.h"
@@ -295,8 +294,6 @@ class ResourceLoaderBridge {
   // for more information.
   class Peer {
    public:
-    virtual ~Peer() {}
-
     // Called as upload progress is made.
     // note: only for requests with LOAD_ENABLE_UPLOAD_PROGRESS set
     virtual void OnUploadProgress(uint64 position, uint64 size) = 0;
@@ -342,6 +339,9 @@ class ResourceLoaderBridge {
         const net::URLRequestStatus& status,
         const std::string& security_info,
         const base::TimeTicks& completion_time) = 0;
+
+   protected:
+    virtual ~Peer() {}
   };
 
   // use WebKitPlatformSupportImpl::CreateResourceLoader() for construction, but
@@ -397,10 +397,6 @@ class ResourceLoaderBridge {
   // interrupt this method.  Errors are reported via the status field of the
   // response parameter.
   virtual void SyncLoad(SyncLoadResponse* response) = 0;
-
-  // When loader is transferred from one page to another, the IPC routing id
-  // can change (they are associated with pages).
-  virtual void UpdateRoutingId(int new_routing_id) = 0;
 
  protected:
   // Construction must go through

@@ -60,6 +60,7 @@ class WebMouseEvent;
 class WebPluginContainer;
 struct WebCompositionUnderline;
 struct WebCursorInfo;
+struct WebPrintParams;
 }
 
 namespace ppapi {
@@ -227,7 +228,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   bool SupportsPrintInterface();
   bool IsPrintScalingDisabled();
-  int PrintBegin(const gfx::Rect& printable_area, int printer_dpi);
+  int PrintBegin(const WebKit::WebPrintParams& print_params);
   bool PrintPage(int page_number, WebKit::WebCanvas* canvas);
   void PrintEnd();
 
@@ -265,6 +266,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // true, it will delay it. When called from the plugin, delay_report should
   // be true to avoid re-entrancy.
   void FlashSetFullscreen(bool fullscreen, bool delay_report);
+
+  // Updates |flash_fullscreen_| and sends focus change notification if
+  // necessary.
+  void UpdateFlashFullscreenState(bool flash_fullscreen);
 
   FullscreenContainer* fullscreen_container() const {
     return fullscreen_container_;
@@ -325,6 +330,12 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // which sends it back up to the plugin as if it came from the user.
   void SimulateInputEvent(const ::ppapi::InputEventData& input_event);
 
+  // Simulates an IME event at the level of RenderView which sends it back up to
+  // the plugin as if it came from the user.
+  bool SimulateIMEEvent(const ::ppapi::InputEventData& input_event);
+  void SimulateImeSetCompositionEvent(
+      const ::ppapi::InputEventData& input_event);
+
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
                                PP_Resource device) OVERRIDE;
@@ -371,6 +382,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   virtual int32_t LockMouse(PP_Instance instance,
                             PP_CompletionCallback callback) OVERRIDE;
   virtual void UnlockMouse(PP_Instance instance) OVERRIDE;
+  virtual PP_Bool GetDefaultPrintSettings(
+      PP_Instance instance,
+      PP_PrintSettings_Dev* print_settings) OVERRIDE;
   virtual void SetTextInputType(PP_Instance instance,
                                 PP_TextInput_Type type) OVERRIDE;
   virtual void UpdateCaretPosition(PP_Instance instance,
@@ -418,6 +432,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Determines if we think the plugin has focus, both content area and webkit
   // (see has_webkit_focus_ below).
   bool PluginHasFocus() const;
+  void SendFocusChangeNotification();
 
   void ScheduleAsyncDidChangeView(const ::ppapi::ViewData& previous_view);
   void SendAsyncDidChangeView(const ::ppapi::ViewData& previous_view);

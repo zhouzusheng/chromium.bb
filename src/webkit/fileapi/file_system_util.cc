@@ -24,11 +24,13 @@ const char kPersistentDir[] = "/persistent";
 const char kTemporaryDir[] = "/temporary";
 const char kIsolatedDir[] = "/isolated";
 const char kExternalDir[] = "/external";
+const char kTestDir[] = "/test";
 
 const char kPersistentName[] = "Persistent";
 const char kTemporaryName[] = "Temporary";
 const char kIsolatedName[] = "Isolated";
 const char kExternalName[] = "External";
+const char kTestName[] = "Test";
 
 bool CrackFileSystemURL(const GURL& url, GURL* origin_url, FileSystemType* type,
                         FilePath* file_path) {
@@ -49,6 +51,7 @@ bool CrackFileSystemURL(const GURL& url, GURL* origin_url, FileSystemType* type,
     { kFileSystemTypeTemporary, kTemporaryDir },
     { kFileSystemTypeIsolated, kIsolatedDir },
     { kFileSystemTypeExternal, kExternalDir },
+    { kFileSystemTypeTest, kTestDir },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kValidTypes); ++i) {
     if (StartsWithASCII(inner_path, kValidTypes[i].dir, true)) {
@@ -147,7 +150,11 @@ GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
     url += (kExternalDir + 1);  // We don't want the leading slash.
     return GURL(url + "/");
   case kFileSystemTypeIsolated:
-    // Falling through; we won't call this for isolated filesystems.
+    url += (kIsolatedDir + 1);  // We don't want the leading slash.
+    return GURL(url + "/");
+  case kFileSystemTypeTest:
+    url += (kTestDir + 1);  // We don't want the leading slash.
+    return GURL(url + "/");
   case kFileSystemTypeUnknown:
     NOTREACHED();
   }
@@ -216,6 +223,10 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return fileapi::kPersistentName;
     case kFileSystemTypeExternal:
       return fileapi::kExternalName;
+    case kFileSystemTypeIsolated:
+      return fileapi::kIsolatedName;
+    case kFileSystemTypeTest:
+      return fileapi::kTestName;
     case kFileSystemTypeUnknown:
     default:
       return std::string();
@@ -236,6 +247,69 @@ FilePath StringToFilePath(const std::string& file_path_string) {
 #elif defined(OS_POSIX)
   return FilePath(file_path_string);
 #endif
+}
+
+WebKit::WebFileError PlatformFileErrorToWebFileError(
+    base::PlatformFileError error_code) {
+  switch (error_code) {
+    case base::PLATFORM_FILE_ERROR_NOT_FOUND:
+      return WebKit::WebFileErrorNotFound;
+    case base::PLATFORM_FILE_ERROR_INVALID_OPERATION:
+    case base::PLATFORM_FILE_ERROR_EXISTS:
+    case base::PLATFORM_FILE_ERROR_NOT_EMPTY:
+      return WebKit::WebFileErrorInvalidModification;
+    case base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY:
+    case base::PLATFORM_FILE_ERROR_NOT_A_FILE:
+      return WebKit::WebFileErrorTypeMismatch;
+    case base::PLATFORM_FILE_ERROR_ACCESS_DENIED:
+      return WebKit::WebFileErrorNoModificationAllowed;
+    case base::PLATFORM_FILE_ERROR_FAILED:
+      return WebKit::WebFileErrorInvalidState;
+    case base::PLATFORM_FILE_ERROR_ABORT:
+      return WebKit::WebFileErrorAbort;
+    case base::PLATFORM_FILE_ERROR_SECURITY:
+      return WebKit::WebFileErrorSecurity;
+    case base::PLATFORM_FILE_ERROR_NO_SPACE:
+      return WebKit::WebFileErrorQuotaExceeded;
+    default:
+      return WebKit::WebFileErrorInvalidModification;
+  }
+}
+
+std::string GetIsolatedFileSystemName(const GURL& origin_url,
+                                      const std::string& filesystem_id) {
+  std::string name(fileapi::GetFileSystemName(origin_url,
+      fileapi::kFileSystemTypeIsolated));
+  name.append("_");
+  name.append(filesystem_id);
+  return name;
+}
+
+bool CrackIsolatedFileSystemName(const std::string& filesystem_name,
+                                 std::string* filesystem_id) {
+  DCHECK(filesystem_id);
+
+  // |filesystem_name| is of the form {origin}:isolated_{filesystem_id}.
+  std::string start_token(":");
+  start_token = start_token.append(kIsolatedName).append("_");
+  // WebKit uses different case in its constant for isolated file system
+  // names, so we do a case insensitive compare by converting both strings
+  // to uppercase.
+  // TODO(benwells): Remove this when WebKit uses the same constant.
+  start_token = StringToUpperASCII(start_token);
+  std::string filesystem_name_upper = StringToUpperASCII(filesystem_name);
+  size_t pos = filesystem_name_upper.find(start_token);
+  if (pos == std::string::npos)
+    return false;
+  if (pos == 0)
+    return false;
+
+  *filesystem_id = filesystem_name.substr(pos + start_token.length(),
+                                          std::string::npos);
+  if (filesystem_id->empty())
+    return false;
+
+  return true;
 }
 
 }  // namespace fileapi

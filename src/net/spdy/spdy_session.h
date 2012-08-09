@@ -19,7 +19,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_states.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/upload_data_stream.h"
@@ -32,10 +31,6 @@
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session_pool.h"
 
-namespace base {
-class Value;
-}
-
 namespace net {
 
 // This is somewhat arbitrary and not really fixed, but it will always work
@@ -44,6 +39,9 @@ namespace net {
 // ACKs quickly from TCP (because TCP tries to only ACK every other packet).
 const int kMss = 1430;
 const int kMaxSpdyFrameChunkSize = (2 * kMss) - SpdyFrame::kHeaderSize;
+
+// Specifies the maxiumum concurrent streams server could send.
+const int kInitialMaxConcurrentStreams = 1000;
 
 class BoundNetLog;
 class SpdyStream;
@@ -107,6 +105,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
               SpdySessionPool* spdy_session_pool,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
+              bool enable_sending_initial_settings,
               const HostPortPair& trusted_spdy_proxy,
               NetLog* net_log);
 
@@ -232,6 +231,9 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // server via SETTINGS.
   static void set_init_max_concurrent_streams(size_t value);
 
+  // Sets the initial receive window size for newly created sessions.
+  static void set_default_initial_recv_window_size(size_t value);
+
   // Send WINDOW_UPDATE frame, called by a stream whenever receive window
   // size is increased.
   void SendWindowUpdate(SpdyStreamId stream_id, int32 delta_window_size);
@@ -300,7 +302,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   const BoundNetLog& net_log() const { return net_log_; }
 
-  int GetPeerAddress(AddressList* address) const;
+  int GetPeerAddress(IPEndPoint* address) const;
   int GetLocalAddress(IPEndPoint* address) const;
 
   // Returns true if requests on this session require credentials.
@@ -389,7 +391,10 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   void OnWriteComplete(int result);
 
   // Send relevant SETTINGS.  This is generally called on connection setup.
-  void SendSettings();
+  void SendInitialSettings();
+
+  // Helper method to send SETTINGS a frame.
+  void SendSettings(const SettingsMap& settings);
 
   // Handle SETTING.  Either when we send settings, or when we receive a
   // SETTINGS control frame, update our SpdySession accordingly.
@@ -629,8 +634,9 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   BoundNetLog net_log_;
 
-  // Outside of tests, this should always be true.
+  // Outside of tests, these should always be true.
   bool verify_domain_authentication_;
+  bool enable_sending_initial_settings_;
 
   SpdyCredentialState credential_state_;
 
@@ -659,66 +665,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // This SPDY proxy is allowed to push resources from origins that are
   // different from those of their associated streams.
   HostPortPair trusted_spdy_proxy_;
-};
-
-class NetLogSpdySynParameter : public NetLog::EventParameters {
- public:
-  NetLogSpdySynParameter(const linked_ptr<SpdyHeaderBlock>& headers,
-                         SpdyControlFlags flags,
-                         SpdyStreamId id,
-                         SpdyStreamId associated_stream);
-
-  const linked_ptr<SpdyHeaderBlock>& GetHeaders() const {
-    return headers_;
-  }
-
-  virtual base::Value* ToValue() const OVERRIDE;
-
- protected:
-  virtual ~NetLogSpdySynParameter();
-
- private:
-  const linked_ptr<SpdyHeaderBlock> headers_;
-  const SpdyControlFlags flags_;
-  const SpdyStreamId id_;
-  const SpdyStreamId associated_stream_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetLogSpdySynParameter);
-};
-
-
-class NetLogSpdyCredentialParameter : public NetLog::EventParameters {
- public:
-  NetLogSpdyCredentialParameter(size_t slot, const std::string& origin);
-
-  virtual base::Value* ToValue() const OVERRIDE;
-
- protected:
-  virtual ~NetLogSpdyCredentialParameter();
-
- private:
-  const size_t slot_;
-  const std::string origin_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetLogSpdyCredentialParameter);
-};
-
-class NetLogSpdySessionCloseParameter : public NetLog::EventParameters {
- public:
-  NetLogSpdySessionCloseParameter(int status,
-                                  const std::string& description);
-
-  int status() const { return status_; }
-  virtual base::Value* ToValue() const  OVERRIDE;
-
- protected:
-  virtual ~NetLogSpdySessionCloseParameter();
-
- private:
-  const int status_;
-  const std::string description_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetLogSpdySessionCloseParameter);
 };
 
 }  // namespace net

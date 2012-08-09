@@ -36,8 +36,9 @@
 // // FieldTrialList.
 // // Note: This field trial will run in Chrome instances compiled through
 // //       8 July, 2015, and after that all instances will be in "StandardMem".
-// scoped_refptr<FieldTrial> trial = new FieldTrial("MemoryExperiment", 1000,
-//                                                  "StandardMem", 2015, 7, 8);
+// scoped_refptr<base::FieldTrial> trial(
+//     base::FieldTrialList::FactoryGetFieldTrial("MemoryExperiment", 1000,
+//                                                "StandardMem", 2015, 7, 8));
 // const int kHighMemGroup =
 //     trial->AppendGroup("HighMem", 20);  // 2% in HighMem group.
 // const int kLowMemGroup =
@@ -152,6 +153,16 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
   // Enable benchmarking sets field trials to a common setting.
   static void EnableBenchmarking();
 
+  // Set the field trial as forced, meaning that it was setup earlier than
+  // the hard coded registration of the field trial to override it.
+  // This allows the code that was hard coded to register the field trial to
+  // still succeed even though the field trial has already been registered.
+  // This must be called after appending all the groups, since we will make
+  // the group choice here. Note that this is a NOOP for already forced trials.
+  // And, as the rest of the FieldTrial code, this is not thread safe and must
+  // be done from the UI thread.
+  void SetForced();
+
  private:
   // Allow tests to access our innards for testing purposes.
   FRIEND_TEST_ALL_PREFIXES(FieldTrialTest, Registration);
@@ -178,9 +189,9 @@ class BASE_EXPORT FieldTrial : public RefCounted<FieldTrial> {
   // consumers don't use it by mistake in cases where the group was forced.
   static const int kDefaultGroupNumber;
 
-  FieldTrial(const std::string& name, Probability total_probability,
-             const std::string& default_group_name, const int year,
-             const int month, const int day_of_month);
+  FieldTrial(const std::string& name,
+             Probability total_probability,
+             const std::string& default_group_name);
   virtual ~FieldTrial();
 
   // Return the default group name of the FieldTrial.

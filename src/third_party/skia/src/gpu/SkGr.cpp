@@ -57,7 +57,7 @@ static void build_compressed_data(void* buffer, const SkBitmap& bitmap) {
 ////////////////////////////////////////////////////////////////////////////////
 
 GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
-                                                GrContext::TextureKey key,
+                                                uint64_t key,
                                                 const GrSamplerState* sampler,
                                                 const SkBitmap& origBitmap) {
     SkAutoLockPixels alp(origBitmap);
@@ -71,13 +71,11 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
 
     const SkBitmap* bitmap = &origBitmap;
 
-    GrTextureDesc desc = {
-        kNone_GrTextureFlags,
-        bitmap->width(),
-        bitmap->height(),
-        SkGr::Bitmap2PixelConfig(*bitmap),
-        0 // samples
-    };
+    GrTextureDesc desc;
+    desc.fWidth = bitmap->width();
+    desc.fHeight = bitmap->height();
+    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap->config());
+    desc.fClientCacheID = key;
 
     if (SkBitmap::kIndex8_Config == bitmap->config()) {
         // build_compressed_data doesn't do npot->pot expansion
@@ -93,8 +91,8 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
             // our compressed data will be trimmed, so pass width() for its
             // "rowBytes", since they are the same now.
             
-            if (gUNCACHED_KEY != key) {
-                return ctx->createAndLockTexture(key, sampler, desc, storage.get(),
+            if (kUncached_CacheID != key) {
+                return ctx->createAndLockTexture(sampler, desc, storage.get(),
                                                  bitmap->width());
             } else {
                 entry = ctx->lockScratchTexture(desc,
@@ -112,9 +110,9 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
         }
     }
 
-    desc.fConfig = SkGr::Bitmap2PixelConfig(*bitmap);
-    if (gUNCACHED_KEY != key) {
-        return ctx->createAndLockTexture(key, sampler, desc,
+    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap->config());
+    if (kUncached_CacheID != key) {
+        return ctx->createAndLockTexture(sampler, desc,
                                          bitmap->getPixels(),
                                          bitmap->rowBytes());
     } else {
@@ -179,23 +177,22 @@ bool SkGrClipIterator::getDoAA() const {
 GrPathFill SkGrClipIterator::getPathFill() const {
     switch (fCurr->fPath->getFillType()) {
         case SkPath::kWinding_FillType:
-            return kWinding_PathFill;
+            return kWinding_GrPathFill;
         case SkPath::kEvenOdd_FillType:
-            return  kEvenOdd_PathFill;
+            return  kEvenOdd_GrPathFill;
         case SkPath::kInverseWinding_FillType:
-            return kInverseWinding_PathFill;
+            return kInverseWinding_GrPathFill;
         case SkPath::kInverseEvenOdd_FillType:
-            return kInverseEvenOdd_PathFill;
+            return kInverseEvenOdd_GrPathFill;
         default:
             GrCrash("Unsupported path fill in clip.");
-            return kWinding_PathFill; // suppress warning
+            return kWinding_GrPathFill; // suppress warning
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrPixelConfig SkGr::BitmapConfig2PixelConfig(SkBitmap::Config config,
-                                                    bool isOpaque) {
+GrPixelConfig SkGr::BitmapConfig2PixelConfig(SkBitmap::Config config) {
     switch (config) {
         case SkBitmap::kA8_Config:
             return kAlpha_8_GrPixelConfig;
@@ -208,6 +205,7 @@ GrPixelConfig SkGr::BitmapConfig2PixelConfig(SkBitmap::Config config,
         case SkBitmap::kARGB_8888_Config:
             return kSkia8888_PM_GrPixelConfig;
         default:
+            // kNo_Config, kA1_Config missing, and kRLE_Index8_Config
             return kUnknown_GrPixelConfig;
     }
 }

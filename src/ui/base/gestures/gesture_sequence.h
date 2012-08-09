@@ -10,6 +10,7 @@
 #include "ui/base/events.h"
 #include "ui/base/gestures/gesture_point.h"
 #include "ui/base/gestures/gesture_recognizer.h"
+#include "ui/gfx/rect.h"
 
 namespace ui {
 class TouchEvent;
@@ -21,7 +22,7 @@ enum GestureState {
   GS_PENDING_SYNTHETIC_CLICK,
   GS_SCROLL,
   GS_PINCH,
-  GS_THREE_FINGER_SWIPE
+  GS_PENDING_TWO_FINGER_TAP,
 };
 
 enum ScrollType {
@@ -33,6 +34,9 @@ enum ScrollType {
 // A GestureSequence recognizes gestures from touch sequences.
 class UI_EXPORT GestureSequence {
  public:
+  // Maximum number of points in a single gesture.
+  static const int kMaxGesturePoints = 12;
+
   explicit GestureSequence(GestureEventHelper* consumer);
   virtual ~GestureSequence();
 
@@ -47,8 +51,7 @@ class UI_EXPORT GestureSequence {
   const GesturePoint* points() const { return points_; }
   int point_count() const { return point_count_; }
 
-  // Maximum number of points in a single gesture.
-  static const int kMaxGesturePoints = 12;
+  const gfx::Point& last_touch_location() const { return last_touch_location_; }
 
  protected:
   virtual base::OneShotTimer<GestureSequence>* CreateTimer();
@@ -59,16 +62,26 @@ class UI_EXPORT GestureSequence {
  private:
   void Reset();
 
+  // Recreates the axis-aligned bounding box that contains all the touch-points
+  // at their most recent position.
+  void RecreateBoundingBox();
+
+  void ResetVelocities();
+
   GesturePoint& GesturePointForEvent(const TouchEvent& event);
 
   // Do a linear scan through points_ to find the GesturePoint
   // with id |point_id|.
   GesturePoint* GetPointByPointId(int point_id);
 
+  bool IsSecondTouchDownCloseEnoughForTwoFingerTap();
+
   // Functions to be called to add GestureEvents, after successful recognition.
 
   // Tap gestures.
   void AppendTapDownGestureEvent(const GesturePoint& point, Gestures* gestures);
+  void AppendBeginGestureEvent(const GesturePoint& point, Gestures* gestures);
+  void AppendEndGestureEvent(const GesturePoint& point, Gestures* gestures);
   void AppendClickGestureEvent(const GesturePoint& point, Gestures* gestures);
   void AppendDoubleClickGestureEvent(const GesturePoint& point,
                                      Gestures* gestures);
@@ -95,19 +108,16 @@ class UI_EXPORT GestureSequence {
                              const GesturePoint& p2,
                              float scale,
                              Gestures* gestures);
-  void AppendPinchGestureUpdate(const GesturePoint& p1,
-                                const GesturePoint& p2,
+  void AppendPinchGestureUpdate(const GesturePoint& point,
                                 float scale,
                                 Gestures* gestures);
+  void AppendSwipeGesture(const GesturePoint& point,
+                          int swipe_x,
+                          int swipe_y,
+                          Gestures* gestures);
+  void AppendTwoFingerTapGestureEvent(Gestures* gestures);
 
-  void AppendThreeFingerSwipeGestureEvent(const GesturePoint& p1,
-                                          const GesturePoint& p2,
-                                          const GesturePoint& p3,
-                                          float x_velocity,
-                                          float y_velocity,
-                                          Gestures* gestures);
-
-  void set_state(const GestureState state ) { state_ = state; }
+  void set_state(const GestureState state) { state_ = state; }
 
   // Various GestureTransitionFunctions for a signature.
   // There is, 1:many mapping from GestureTransitionFunction to Signature
@@ -116,11 +126,11 @@ class UI_EXPORT GestureSequence {
              const GesturePoint& point,
              Gestures* gestures);
   bool ScrollStart(const TouchEvent& event,
-                             GesturePoint& point,
-                             Gestures* gestures);
+                   GesturePoint& point,
+                   Gestures* gestures);
   void BreakRailScroll(const TouchEvent& event,
-                               GesturePoint& point,
-                               Gestures* gestures);
+                       GesturePoint& point,
+                       Gestures* gestures);
   bool ScrollUpdate(const TouchEvent& event,
                     const GesturePoint& point,
                     Gestures* gestures);
@@ -130,6 +140,15 @@ class UI_EXPORT GestureSequence {
   bool TouchDown(const TouchEvent& event,
                  const GesturePoint& point,
                  Gestures* gestures);
+  bool TwoFingerTouchDown(const TouchEvent& event,
+                          const GesturePoint& point,
+                          Gestures* gestures);
+  bool TwoFingerTouchMove(const TouchEvent& event,
+                          const GesturePoint& point,
+                          Gestures* gestures);
+  bool TwoFingerTouchReleased(const TouchEvent& event,
+                              const GesturePoint& point,
+                              Gestures* gestures);
   bool ScrollEnd(const TouchEvent& event,
                  GesturePoint& point,
                  Gestures* gestures);
@@ -142,9 +161,9 @@ class UI_EXPORT GestureSequence {
   bool PinchEnd(const TouchEvent& event,
                 const GesturePoint& point,
                 Gestures* gestures);
-  bool ThreeFingerSwipeUpdate(const TouchEvent& event,
-                              const GesturePoint& point,
-                              Gestures* gestures);
+  bool MaybeSwipe(const TouchEvent& event,
+                  const GesturePoint& point,
+                  Gestures* gestures);
 
   // Current state of gesture recognizer.
   GestureState state_;
@@ -152,18 +171,33 @@ class UI_EXPORT GestureSequence {
   // ui::EventFlags.
   int flags_;
 
+  // We maintain the smallest axis-aligned rectangle that contains all the
+  // current touch-points. The 'distance' represents the diagonal distance.
+  // This box is updated after every touch-event.
+  gfx::Rect bounding_box_;
+  gfx::Point bounding_box_last_center_;
+
+  // For pinch, the 'distance' represents the diagonal distance of
+  // |bounding_box_|.
+
   // The distance between the two points at PINCH_START.
   float pinch_distance_start_;
 
   // This distance is updated after each PINCH_UPDATE.
   float pinch_distance_current_;
 
+  // This is the time when second touch down was received. Used for determining
+  // if a two finger double tap has happened.
+  base::TimeDelta second_touch_time_;
+
   ScrollType scroll_type_;
-  bool three_finger_swipe_has_fired_;
   scoped_ptr<base::OneShotTimer<GestureSequence> > long_press_timer_;
 
   GesturePoint points_[kMaxGesturePoints];
   int point_count_;
+
+  // Location of the last touch event.
+  gfx::Point last_touch_location_;
 
   GestureEventHelper* helper_;
 

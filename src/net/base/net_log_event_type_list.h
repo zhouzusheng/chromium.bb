@@ -487,12 +487,16 @@ EVENT_TYPE(SSL_HANDSHAKE_ERROR)
 EVENT_TYPE(SSL_READ_ERROR)
 EVENT_TYPE(SSL_WRITE_ERROR)
 
-// An SSL Snap Start was attempted
+// An SSL connection needs to be retried with a lower protocol version because
+// the server may be intolerant of the protocol version we offered.
 // The following parameters are attached to the event:
 //   {
-//     "type": <Integer code for the Snap Start result>,
+//     "host_and_port": <String encoding the host and port>,
+//     "net_error": <Net integer error code>,
+//     "version_before": <SSL version before the fallback>,
+//     "version_after": <SSL version after the fallback>,
 //   }
-EVENT_TYPE(SSL_SNAP_START)
+EVENT_TYPE(SSL_VERSION_FALLBACK)
 
 // We found that our prediction of the server's certificates was correct and
 // we merged the verification with the SSLHostInfo.
@@ -527,6 +531,15 @@ EVENT_TYPE(SSL_SOCKET_BYTES_SENT)
 //   }
 EVENT_TYPE(SOCKET_BYTES_RECEIVED)
 EVENT_TYPE(SSL_SOCKET_BYTES_RECEIVED)
+
+// A socket error occurred while trying to do the indicated activity.
+// The following parameters are attached to the event:
+//   {
+//     "net_error": <Integer code for the specific error type>,
+//     "os_error": <Integer error code the operating system returned>
+//   }
+EVENT_TYPE(SOCKET_READ_ERROR)
+EVENT_TYPE(SOCKET_WRITE_ERROR)
 
 // Certificates were received from the SSL server (during a handshake or
 // renegotiation). This event is only present when logging at LOG_ALL.
@@ -1035,7 +1048,7 @@ EVENT_TYPE(SPDY_SESSION_SENT_WINDOW_UPDATE)
 // Sending of a SPDY CREDENTIAL frame (which sends a certificate or
 // certificate chain to the server).
 //   {
-//     "slot"     : <The slot that this certificate should be stored in >,
+//     "slot"     : <The slot that this certificate should be stored in>,
 //     "origin"   : <The origin this certificate should be used for>,
 //   }
 EVENT_TYPE(SPDY_SESSION_SEND_CREDENTIAL)
@@ -1061,7 +1074,7 @@ EVENT_TYPE(SPDY_SESSION_STALLED_ON_SEND_WINDOW)
 
 // Session is closing
 //   {
-//     "status"     : <The error status of the closure>,
+//     "net_error"  : <The error status of the closure>,
 //     "description": <The textual description for the closure>,
 //   }
 EVENT_TYPE(SPDY_SESSION_CLOSE)
@@ -1575,11 +1588,13 @@ EVENT_TYPE(DOWNLOAD_ITEM_CANCELED)
 //   }
 EVENT_TYPE(DOWNLOAD_FILE_OPENED)
 
-// This event is created when a download file is written to.
+// This event is created when the stream between download source
+// and download file is drained.
 //   {
-//     "byte_count": <Number of bytes written in this call>,
+//     "stream_size": <Total size of all bytes drained from the stream>
+//     "num_buffers": <How many separate buffers those bytes were in>
 //   }
-EVENT_TYPE(DOWNLOAD_FILE_WRITTEN)
+EVENT_TYPE(DOWNLOAD_STREAM_DRAINED)
 
 // This event is created when a download file is renamed.
 //   {

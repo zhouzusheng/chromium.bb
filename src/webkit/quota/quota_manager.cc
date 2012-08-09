@@ -12,7 +12,8 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
-#include "base/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
+#include "base/single_thread_task_runner.h"
 #include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
 #include "base/sys_info.h"
@@ -61,6 +62,8 @@ void CountOriginType(const std::set<GURL>& origins,
 
 }  // anonymous namespace
 
+const int64 QuotaManager::kNoLimit = kint64max;
+
 const int QuotaManager::kPerHostTemporaryPortion = 5;  // 20%
 
 const char QuotaManager::kDatabaseName[] = "QuotaManager";
@@ -78,7 +81,7 @@ void CallGetUsageAndQuotaCallback(
     const QuotaAndUsage& quota_and_usage) {
   int64 usage =
       unlimited ? quota_and_usage.unlimited_usage : quota_and_usage.usage;
-  int64 quota = unlimited ? kint64max : quota_and_usage.quota;
+  int64 quota = unlimited ? QuotaManager::kNoLimit : quota_and_usage.quota;
   callback.Run(status, usage, quota);
 }
 
@@ -304,6 +307,7 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
         callback_(callback),
         weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   }
+
  protected:
   virtual void Run() OVERRIDE {
     remaining_trackers_ = 2;
@@ -670,7 +674,7 @@ class QuotaManager::DatabaseTaskBase : public QuotaThreadTask {
 
 class QuotaManager::InitializeTask : public QuotaManager::DatabaseTaskBase {
  public:
-  InitializeTask(QuotaManager* manager)
+  explicit InitializeTask(QuotaManager* manager)
       : DatabaseTaskBase(manager),
         temporary_quota_override_(-1),
         desired_available_space_(-1) {
@@ -1181,8 +1185,8 @@ class QuotaManager::DumpOriginInfoTableTask
 
 QuotaManager::QuotaManager(bool is_incognito,
                            const FilePath& profile_path,
-                           base::MessageLoopProxy* io_thread,
-                           base::MessageLoopProxy* db_thread,
+                           base::SingleThreadTaskRunner* io_thread,
+                           base::SequencedTaskRunner* db_thread,
                            SpecialStoragePolicy* special_storage_policy)
   : is_incognito_(is_incognito),
     profile_path_(profile_path),
@@ -1408,7 +1412,6 @@ void QuotaManager::DeleteHostData(const std::string& host,
                                   StorageType type,
                                   int quota_client_mask,
                                   const StatusCallback& callback) {
-
   LazyInitialize();
 
   if (host.empty() || clients_.empty()) {
@@ -1735,7 +1738,7 @@ void QuotaManager::DidGetDatabaseLRUOrigin(const GURL& origin) {
 }
 
 void QuotaManager::DeleteOnCorrectThread() const {
-  if (!io_thread_->BelongsToCurrentThread() && 
+  if (!io_thread_->BelongsToCurrentThread() &&
       io_thread_->DeleteSoon(FROM_HERE, this)) {
     return;
   }
@@ -1823,7 +1826,7 @@ QuotaManager* QuotaManagerProxy::quota_manager() const {
 }
 
 QuotaManagerProxy::QuotaManagerProxy(
-    QuotaManager* manager, base::MessageLoopProxy* io_thread)
+    QuotaManager* manager, base::SingleThreadTaskRunner* io_thread)
     : manager_(manager), io_thread_(io_thread) {
 }
 

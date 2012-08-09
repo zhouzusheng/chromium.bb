@@ -74,7 +74,7 @@ void HTMLImageLoader::notifyFinished(CachedResource*)
 {
     CachedImage* cachedImage = image();
 
-    Element* elem = element();
+    RefPtr<Element> elem = element();
     ImageLoader::notifyFinished(cachedImage);
 
     bool loadError = cachedImage->errorOccurred() || cachedImage->response().httpStatusCode() >= 400;
@@ -89,7 +89,7 @@ void HTMLImageLoader::notifyFinished(CachedResource*)
 #endif
 
     if (loadError && elem->hasTagName(HTMLNames::objectTag))
-        static_cast<HTMLObjectElement*>(elem)->renderFallbackContent();
+        static_cast<HTMLObjectElement*>(elem.get())->renderFallbackContent();
 }
 
 }

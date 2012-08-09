@@ -113,4 +113,18 @@ bool NetworkDelegate::CanAccessFile(const URLRequest& request,
   return OnCanAccessFile(request, path);
 }
 
+bool NetworkDelegate::CanThrottleRequest(const URLRequest& request) const {
+  DCHECK(CalledOnValidThread());
+  return OnCanThrottleRequest(request);
+}
+
+int NetworkDelegate::NotifyBeforeSocketStreamConnect(
+    SocketStream* socket,
+    const CompletionCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(socket);
+  DCHECK(!callback.is_null());
+  return OnBeforeSocketStreamConnect(socket, callback);
+}
+
 }  // namespace net

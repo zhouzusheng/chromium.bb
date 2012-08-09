@@ -229,6 +229,14 @@ void PopulateURLResponse(
   if (!headers)
     return;
 
+  WebURLResponse::HTTPVersion version = WebURLResponse::Unknown;
+  if (headers->GetHttpVersion() == net::HttpVersion(0, 9))
+    version = WebURLResponse::HTTP_0_9;
+  else if (headers->GetHttpVersion() == net::HttpVersion(1, 0))
+    version = WebURLResponse::HTTP_1_0;
+  else if (headers->GetHttpVersion() == net::HttpVersion(1, 1))
+    version = WebURLResponse::HTTP_1_1;
+  response->setHTTPVersion(version);
   response->setHTTPStatusCode(headers->response_code());
   response->setHTTPStatusText(WebString::fromUTF8(headers->GetStatusText()));
 
@@ -276,7 +284,6 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
       const WebURLRequest& request,
       ResourceLoaderBridge::SyncLoadResponse* sync_load_response,
       WebKitPlatformSupportImpl* platform);
-  void UpdateRoutingId(int new_routing_id);
 
   // ResourceLoaderBridge::Peer methods:
   virtual void OnUploadProgress(uint64 position, uint64 size);
@@ -338,11 +345,6 @@ void WebURLLoaderImpl::Context::Cancel() {
 void WebURLLoaderImpl::Context::SetDefersLoading(bool value) {
   if (bridge_.get())
     bridge_->SetDefersLoading(value);
-}
-
-void WebURLLoaderImpl::Context::UpdateRoutingId(int new_routing_id) {
-  if (bridge_.get())
-    bridge_->UpdateRoutingId(new_routing_id);
 }
 
 void WebURLLoaderImpl::Context::Start(
@@ -760,10 +762,6 @@ void WebURLLoaderImpl::cancel() {
 
 void WebURLLoaderImpl::setDefersLoading(bool value) {
   context_->SetDefersLoading(value);
-}
-
-void WebURLLoaderImpl::UpdateRoutingId(int new_routing_id) {
-  context_->UpdateRoutingId(new_routing_id);
 }
 
 }  // namespace webkit_glue

@@ -40,11 +40,11 @@ class PPAPI_THUNK_EXPORT PPB_Flash_API {
   virtual void QuitMessageLoop(PP_Instance instance) = 0;
   virtual double GetLocalTimeZoneOffset(PP_Instance instance, PP_Time t) = 0;
   virtual PP_Bool IsRectTopmost(PP_Instance instance, const PP_Rect* rect) = 0;
-  virtual int32_t InvokePrinting(PP_Instance instance) = 0;
   virtual void UpdateActivity(PP_Instance instance) = 0;
   virtual PP_Var GetDeviceID(PP_Instance instance) = 0;
   virtual int32_t GetSettingInt(PP_Instance instance,
                                 PP_FlashSetting setting) = 0;
+  virtual PP_Var GetSetting(PP_Instance instance, PP_FlashSetting setting) = 0;
 
   // FlashClipboard.
   virtual PP_Bool IsClipboardFormatAvailable(
@@ -82,6 +82,8 @@ class PPAPI_THUNK_EXPORT PPB_Flash_API {
                                  PP_DirContents_Dev** contents) = 0;
   virtual void FreeDirContents(PP_Instance instance,
                                PP_DirContents_Dev* contents) = 0;
+  virtual int32_t CreateTemporaryFile(PP_Instance instance,
+                                      PP_FileHandle* file) = 0;
 
   // FlashFile_FileRef.
   virtual int32_t OpenFileRef(PP_Instance instance,

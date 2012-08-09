@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/threading/thread.h"
+#include "base/thread_task_runner_handle.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
@@ -100,6 +101,16 @@ class BasicNetworkDelegate : public NetworkDelegate {
     return true;
   }
 
+  virtual bool OnCanThrottleRequest(const URLRequest& request) const OVERRIDE {
+    return false;
+  }
+
+  virtual int OnBeforeSocketStreamConnect(
+      SocketStream* stream,
+      const CompletionCallback& callback) OVERRIDE {
+    return OK;
+  }
+
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
@@ -179,7 +190,7 @@ void URLRequestContextBuilder::set_proxy_config_service(
 }
 #endif  // defined(OS_LINUX)
 
-scoped_refptr<URLRequestContext> URLRequestContextBuilder::Build() {
+URLRequestContext* URLRequestContextBuilder::Build() {
   BasicURLRequestContext* context = new BasicURLRequestContext;
   URLRequestContextStorage* storage = context->storage();
 
@@ -207,7 +218,7 @@ scoped_refptr<URLRequestContext> URLRequestContextBuilder::Build() {
 #else
   ProxyConfigService* proxy_config_service =
       ProxyService::CreateSystemProxyConfigService(
-          MessageLoop::current(),
+          base::ThreadTaskRunnerHandle::Get(),
           context->file_message_loop());
 #endif  // defined(OS_LINUX)
   storage->set_proxy_service(

@@ -7,7 +7,6 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
@@ -225,9 +224,6 @@ class MEDIA_EXPORT AudioOutputController
   // shutdown and force it to wait for the most delayed task.
   // Also, if we're shutting down, we do not want to poll for more data.
   base::WeakPtrFactory<AudioOutputController> weak_this_;
-
-  // Workaround for Mac OS X bug, see crbug.com/128128.
-  base::Time previous_stop_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioOutputController);
 };

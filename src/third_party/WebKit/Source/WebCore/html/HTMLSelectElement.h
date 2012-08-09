@@ -46,7 +46,8 @@ public:
     void optionSelectedByUser(int index, bool dispatchChangeEvent, bool allowMultipleSelection = false);
 
     // For ValidityState
-    bool valueMissing() const;
+    virtual String validationMessage() const OVERRIDE;
+    virtual bool valueMissing() const OVERRIDE;
 
     unsigned length() const;
 
@@ -63,7 +64,6 @@ public:
     void setValue(const String&);
 
     HTMLOptionsCollection* options();
-    HTMLCollection* selectedOptions();
 
     void optionElementChildrenChanged();
 
@@ -123,7 +123,7 @@ private:
     virtual bool saveFormControlState(String& value) const;
     virtual void restoreFormControlState(const String&);
 
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const Attribute&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
 
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
@@ -142,7 +142,7 @@ private:
     void typeAheadFind(KeyboardEvent*);
     void saveLastSelection();
 
-    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
     virtual bool isOptionalFormControl() const { return !isRequiredFormControl(); }
     virtual bool isRequiredFormControl() const;
@@ -157,7 +157,7 @@ private:
     typedef unsigned SelectOptionFlags;
     void selectOption(int optionIndex, SelectOptionFlags = 0);
     void deselectItemsWithoutValidation(HTMLElement* elementToExclude = 0);
-    void parseMultipleAttribute(const Attribute*);
+    void parseMultipleAttribute(const Attribute&);
     int lastSelectedListIndex() const;
     void updateSelectedState(int listIndex, bool multi, bool shift);
     void menuListDefaultEventHandler(Event*);
@@ -179,7 +179,6 @@ private:
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     OwnPtr<HTMLOptionsCollection> m_optionsCollection;
-    OwnPtr<HTMLCollection> m_selectedOptionsCollection;
 
     // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
     mutable Vector<HTMLElement*> m_listItems;

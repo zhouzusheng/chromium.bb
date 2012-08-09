@@ -8,15 +8,14 @@
 
 import os.path
 import re
-import sys
 
-from grit import exception
 from grit import constants
+from grit import exception
 from grit import util
 import grit.format.rc_header
 from grit.node import base
-from grit.node import message
 from grit.node import io
+from grit.node import message
 
 
 # RTL languages
@@ -42,7 +41,7 @@ def _ReadFirstIdsFromFile(filename, defines):
   Returns a tuple, the absolute path of SRCDIR followed by the
   first_ids dictionary.
   """
-  first_ids_dict = eval(open(filename).read())
+  first_ids_dict = eval(util.ReadFile(filename, util.RAW_TEXT))
   src_root_dir = os.path.abspath(os.path.join(os.path.dirname(filename),
                                               first_ids_dict['SRCDIR']))
 
@@ -112,7 +111,7 @@ class IfNode(base.Node):
     if not self.IsConditionSatisfied():
       return False
     else:
-      return base.Node.SatisfiesOutputCondition(self)
+      return super(IfNode, self).SatisfiesOutputCondition()
 
 
 class ReleaseNode(base.Node):
@@ -144,16 +143,16 @@ class ReleaseNode(base.Node):
       from grit.format import data_pack
       return data_pack.DataPack()
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(ReleaseNode, self).ItemFormatter(t)
 
 class GritNode(base.Node):
   """The <grit> root element."""
 
   def __init__(self):
-    base.Node.__init__(self)
+    super(GritNode, self).__init__()
     self.output_language = ''
     self.defines = {}
-    self.substituter = util.Substituter()
+    self.substituter = None
 
   def _IsValidChild(self, child):
     from grit.node import empty
@@ -186,7 +185,7 @@ class GritNode(base.Node):
     }
 
   def EndParsing(self):
-    base.Node.EndParsing(self)
+    super(GritNode, self).EndParsing()
     if (int(self.attrs['latest_public_release'])
         > int(self.attrs['current_release'])):
       raise exception.Parsing('latest_public_release cannot have a greater '
@@ -299,27 +298,24 @@ class GritNode(base.Node):
     input_nodes.extend(self.GetChildrenOfType(structure.StructureNode))
     input_nodes.extend(self.GetChildrenOfType(variant.SkeletonNode))
 
-    # Collect all possible output languages.
-    langs = set()
+    # Collect all output languages and contexts.
+    configs = set()
     for output in self.GetOutputFiles():
-      if output.attrs['lang']:
-        langs.add(output.attrs['lang'])
+      configs.add((output.GetLanguage() or self.GetSourceLanguage(),
+                   output.GetContext()))
 
-    # Check if inputs is required for output in any language.
-    # By default SatisfiesOutputCondition() check only for one language.
-    result = []
-    for node in input_nodes:
-      insert = node.SatisfiesOutputCondition()
-      old_output_language = self.output_language
-      for lang in langs:
-        self.SetOutputContext(lang, self.defines)
+    # Check if the input is required for any output configuration.
+    # SatisfiesOutputCondition() checks only one configuration at a time.
+    input_files = set()
+    old_output_language = self.output_language
+    for lang, ctx in configs:
+      self.SetOutputLanguage(lang)
+      self.SetOutputContext(ctx)
+      for node in input_nodes:
         if node.SatisfiesOutputCondition():
-          insert = True
-          break;
-      self.SetOutputContext(old_output_language, self.defines)
-      if insert:
-        result.append(node)
-    return result
+          input_files.add(node.GetInputPath())
+    self.SetOutputLanguage(old_output_language)
+    return map(self.ToRealPath, sorted(input_files))
 
   def GetFirstIdsFile(self):
     """Returns a usable path to the first_ids file, if set, otherwise
@@ -397,39 +393,51 @@ class GritNode(base.Node):
       from grit.format.policy_templates import template_formatter
       return template_formatter.TemplateFormatter(t)
     else:
-      return super(type(self), self).ItemFormatter(t)
+      return super(GritNode, self).ItemFormatter(t)
 
-  def SetOutputContext(self, output_language, defines):
-    """Set the output context: language and defines. Prepares substitutions.
+  def SetOutputLanguage(self, output_language):
+    """Set the output language. Prepares substitutions.
 
-    The substitutions are reset every time the OutputContext is changed.
+    The substitutions are reset every time the language is changed.
     They include messages designated as variables, and language codes for html
     and rc files.
 
     Args:
       output_language: a two-letter language code (eg: 'en', 'ar'...) or ''
-      defines: a map of names to values (strings or booleans.)
     """
-    # We do not specify the output language for .grh files; so we get an empty
-    # string as the default. The value should match
-    # grit.clique.MessageClique.source_language.
-    self.output_language = output_language or self.GetSourceLanguage()
-    self.defines = defines
-    self.substituter.AddMessages(self.GetSubstitutionMessages(),
-                                 self.output_language)
-    if self.output_language in _RTL_LANGS:
-      direction = 'dir="RTL"'
-    else:
-      direction = 'dir="LTR"'
-    self.substituter.AddSubstitutions({
-        'GRITLANGCODE': self.output_language,
-        'GRITDIR': direction,
-    })
-    from grit.format import rc  # avoid circular dep
-    rc.RcSubstitutions(self.substituter, self.output_language)
+    if not output_language:
+      # We do not specify the output language for .grh files,
+      # so we get an empty string as the default.
+      # The value should match grit.clique.MessageClique.source_language.
+      output_language = self.GetSourceLanguage()
+    if output_language != self.output_language:
+      self.output_language = output_language
+      self.substituter = None  # force recalculate
+
+  def SetOutputContext(self, output_context):
+    self.output_context = output_context
+    self.substituter = None  # force recalculate
 
   def SetDefines(self, defines):
     self.defines = defines
+    self.substituter = None  # force recalculate
+
+  def GetSubstituter(self):
+    if self.substituter is None:
+      self.substituter = util.Substituter()
+      self.substituter.AddMessages(self.GetSubstitutionMessages(),
+                                   self.output_language)
+      if self.output_language in _RTL_LANGS:
+        direction = 'dir="RTL"'
+      else:
+        direction = 'dir="LTR"'
+      self.substituter.AddSubstitutions({
+          'GRITLANGCODE': self.output_language,
+          'GRITDIR': direction,
+      })
+      from grit.format import rc  # avoid circular dep
+      rc.RcSubstitutions(self.substituter, self.output_language)
+    return self.substituter
 
   def AssignFirstIds(self, filename_or_stream, defines):
     """Assign first ids to each grouping node based on values from the
@@ -503,7 +511,7 @@ class GritNode(base.Node):
           child.RunGatherers(recursive=recursive, debug=debug)
 
       assert self.output_language
-      self.SubstituteMessages(self.substituter)
+      self.SubstituteMessages(self.GetSubstituter())
 
       for child in process_last:
         child.RunGatherers(recursive=recursive, debug=debug)
@@ -534,7 +542,7 @@ class IdentifierNode(base.Node):
 
   def EndParsing(self):
     """Handles system identifiers."""
-    base.Node.EndParsing(self)
+    super(IdentifierNode, self).EndParsing()
     if self.attrs['systemid'] == 'true':
       util.SetupSystemIdentifiers((self.attrs['name'],))
 

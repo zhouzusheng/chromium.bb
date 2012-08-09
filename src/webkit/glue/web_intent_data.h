@@ -35,6 +35,9 @@ struct WEBKIT_GLUE_EXPORT WebIntentData {
   // invocation. |service.is_valid()| will be false otherwise.
   GURL service;
 
+  // Any suggested service url the client attached to the intent.
+  std::vector<GURL> suggestions;
+
   // String payload data.
   string16 unserialized_data;
 
@@ -57,6 +60,9 @@ struct WEBKIT_GLUE_EXPORT WebIntentData {
   DataType data_type;
 
   WebIntentData();
+
+  // NOTE! Constructors do not initialize message_port_ids. Caller must do this.
+
   WebIntentData(const WebKit::WebIntent& intent);
   WebIntentData(const string16& action_in,
                 const string16& type_in,

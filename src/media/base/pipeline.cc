@@ -16,12 +16,15 @@
 #include "base/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/audio_renderer.h"
 #include "media/base/clock.h"
 #include "media/base/composite_filter.h"
 #include "media/base/filter_collection.h"
-#include "media/base/filters.h"
 #include "media/base/media_log.h"
 #include "media/base/video_decoder.h"
+#include "media/base/video_renderer.h"
+
+using base::TimeDelta;
 
 namespace media {
 
@@ -61,6 +64,8 @@ media::PipelineStatus PipelineStatusNotification::status() {
 struct Pipeline::PipelineInitState {
   scoped_refptr<AudioDecoder> audio_decoder;
   scoped_refptr<VideoDecoder> video_decoder;
+  scoped_refptr<AudioRenderer> audio_renderer;
+  scoped_refptr<VideoRenderer> video_renderer;
   scoped_refptr<CompositeFilter> composite;
 };
 
@@ -70,9 +75,7 @@ Pipeline::Pipeline(MessageLoop* message_loop, MediaLog* media_log)
       clock_(new Clock(&base::Time::Now)),
       waiting_for_clock_update_(false),
       state_(kCreated),
-      current_bytes_(0),
-      creation_time_(base::Time::Now()),
-      is_downloading_data_(false) {
+      creation_time_(base::Time::Now()) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
   ResetState();
   media_log_->AddEvent(
@@ -92,7 +95,6 @@ Pipeline::~Pipeline() {
 void Pipeline::Start(scoped_ptr<FilterCollection> collection,
                      const PipelineStatusCB& ended_cb,
                      const PipelineStatusCB& error_cb,
-                     const NetworkEventCB& network_cb,
                      const PipelineStatusCB& start_cb) {
   base::AutoLock auto_lock(lock_);
   CHECK(!running_) << "Media pipeline is already running";
@@ -100,7 +102,7 @@ void Pipeline::Start(scoped_ptr<FilterCollection> collection,
   running_ = true;
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &Pipeline::StartTask, this, base::Passed(&collection),
-      ended_cb, error_cb, network_cb, start_cb));
+      ended_cb, error_cb, start_cb));
 }
 
 void Pipeline::Stop(const base::Closure& stop_cb) {
@@ -112,12 +114,9 @@ void Pipeline::Stop(const base::Closure& stop_cb) {
       &Pipeline::StopTask, this, stop_cb));
 }
 
-void Pipeline::Seek(base::TimeDelta time,
-                    const PipelineStatusCB& seek_cb) {
+void Pipeline::Seek(TimeDelta time, const PipelineStatusCB& seek_cb) {
   base::AutoLock auto_lock(lock_);
   CHECK(running_) << "Media pipeline isn't running";
-
-  download_rate_monitor_.Stop();
 
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &Pipeline::SeekTask, this, time, seek_cb));
@@ -190,64 +189,39 @@ void Pipeline::SetVolume(float volume) {
   }
 }
 
-base::TimeDelta Pipeline::GetCurrentTime() const {
+TimeDelta Pipeline::GetCurrentTime() const {
   base::AutoLock auto_lock(lock_);
   return GetCurrentTime_Locked();
 }
 
-base::TimeDelta Pipeline::GetCurrentTime_Locked() const {
+TimeDelta Pipeline::GetCurrentTime_Locked() const {
   lock_.AssertAcquired();
   return clock_->Elapsed();
 }
 
-base::TimeDelta Pipeline::GetBufferedTime() {
+Ranges<TimeDelta> Pipeline::GetBufferedTimeRanges() {
   base::AutoLock auto_lock(lock_);
-
-  // If media is fully loaded, then return duration.
-  if (local_source_ || total_bytes_ == buffered_bytes_) {
-    max_buffered_time_ = clock_->Duration();
-    return max_buffered_time_;
+  Ranges<TimeDelta> time_ranges;
+  if (clock_->Duration() == TimeDelta() || total_bytes_ == 0)
+    return time_ranges;
+  for (size_t i = 0; i < buffered_time_ranges_.size(); ++i) {
+    time_ranges.Add(buffered_time_ranges_.start(i),
+                    buffered_time_ranges_.end(i));
+  }
+  for (size_t i = 0; i < buffered_byte_ranges_.size(); ++i) {
+    TimeDelta start = TimeForByteOffset_Locked(buffered_byte_ranges_.start(i));
+    TimeDelta end = TimeForByteOffset_Locked(buffered_byte_ranges_.end(i));
+    // Cap approximated buffered time at the length of the video.
+    end = std::min(end, clock_->Duration());
+    time_ranges.Add(start, end);
   }
 
-  base::TimeDelta current_time = GetCurrentTime_Locked();
-
-  // If buffered time was set, we report that value directly.
-  if (buffered_time_.ToInternalValue() > 0)
-    return std::max(buffered_time_, current_time);
-
-  if (total_bytes_ == 0)
-    return base::TimeDelta();
-
-  // If buffered time was not set, we use current time, current bytes, and
-  // buffered bytes to estimate the buffered time.
-  double estimated_rate =
-      clock_->Duration().InMillisecondsF() / total_bytes_;
-  double estimated_current_time = estimated_rate * current_bytes_;
-  DCHECK_GE(buffered_bytes_, current_bytes_);
-  base::TimeDelta buffered_time = base::TimeDelta::FromMilliseconds(
-      static_cast<int64>(estimated_rate * (buffered_bytes_ - current_bytes_) +
-                         estimated_current_time));
-
-  // Cap approximated buffered time at the length of the video.
-  buffered_time = std::min(buffered_time, clock_->Duration());
-
-  // Make sure buffered_time is at least the current time
-  buffered_time = std::max(buffered_time, current_time);
-
-  // Only print the max buffered time for smooth buffering.
-  max_buffered_time_ = std::max(buffered_time, max_buffered_time_);
-
-  return max_buffered_time_;
+  return time_ranges;
 }
 
-base::TimeDelta Pipeline::GetMediaDuration() const {
+TimeDelta Pipeline::GetMediaDuration() const {
   base::AutoLock auto_lock(lock_);
   return clock_->Duration();
-}
-
-int64 Pipeline::GetBufferedBytes() const {
-  base::AutoLock auto_lock(lock_);
-  return buffered_bytes_;
 }
 
 int64 Pipeline::GetTotalBytes() const {
@@ -261,14 +235,11 @@ void Pipeline::GetNaturalVideoSize(gfx::Size* out_size) const {
   *out_size = natural_size_;
 }
 
-bool Pipeline::IsStreaming() const {
+bool Pipeline::DidLoadingProgress() const {
   base::AutoLock auto_lock(lock_);
-  return streaming_;
-}
-
-bool Pipeline::IsLocalSource() const {
-  base::AutoLock auto_lock(lock_);
-  return local_source_;
+  bool ret = did_loading_progress_;
+  did_loading_progress_ = false;
+  return ret;
 }
 
 PipelineStatistics Pipeline::GetStatistics() const {
@@ -280,33 +251,17 @@ void Pipeline::SetClockForTesting(Clock* clock) {
   clock_.reset(clock);
 }
 
-void Pipeline::SetCurrentReadPosition(int64 offset) {
-  base::AutoLock auto_lock(lock_);
-
-  // The current read position should never be ahead of the buffered byte
-  // position but threading issues between BufferedDataSource::DoneRead_Locked()
-  // and BufferedDataSource::NetworkEventCallback() can cause them to be
-  // temporarily out of sync. The easiest fix for this is to cap both
-  // buffered_bytes_ and current_bytes_ to always be legal values in
-  // SetCurrentReadPosition() and in SetBufferedBytes().
-  if (offset > buffered_bytes_)
-    buffered_bytes_ = offset;
-  current_bytes_ = offset;
-}
-
 void Pipeline::ResetState() {
   base::AutoLock auto_lock(lock_);
-  const base::TimeDelta kZero;
+  const TimeDelta kZero;
   running_          = false;
   stop_pending_     = false;
   seek_pending_     = false;
   tearing_down_     = false;
   error_caused_teardown_ = false;
   playback_rate_change_pending_ = false;
-  buffered_time_    = kZero;
-  buffered_bytes_   = 0;
-  streaming_        = false;
-  local_source_     = false;
+  buffered_byte_ranges_.clear();
+  did_loading_progress_ = false;
   total_bytes_      = 0;
   natural_size_.SetSize(0, 0);
   volume_           = 1.0f;
@@ -318,7 +273,6 @@ void Pipeline::ResetState() {
   waiting_for_clock_update_ = false;
   audio_disabled_   = false;
   clock_->Reset();
-  download_rate_monitor_.Reset();
 }
 
 void Pipeline::SetState(State next_state) {
@@ -426,18 +380,17 @@ void Pipeline::SetError(PipelineStatus error) {
   media_log_->AddEvent(media_log_->CreatePipelineErrorEvent(error));
 }
 
-base::TimeDelta Pipeline::GetTime() const {
+TimeDelta Pipeline::GetTime() const {
   DCHECK(IsRunning());
   return GetCurrentTime();
 }
 
-base::TimeDelta Pipeline::GetDuration() const {
+TimeDelta Pipeline::GetDuration() const {
   DCHECK(IsRunning());
   return GetMediaDuration();
 }
 
-void Pipeline::OnAudioTimeUpdate(base::TimeDelta time,
-                                 base::TimeDelta max_time) {
+void Pipeline::OnAudioTimeUpdate(TimeDelta time, TimeDelta max_time) {
   DCHECK(time <= max_time);
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
@@ -451,7 +404,7 @@ void Pipeline::OnAudioTimeUpdate(base::TimeDelta time,
   StartClockIfWaitingForTimeUpdate_Locked();
 }
 
-void Pipeline::OnVideoTimeUpdate(base::TimeDelta max_time) {
+void Pipeline::OnVideoTimeUpdate(TimeDelta max_time) {
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
 
@@ -462,7 +415,7 @@ void Pipeline::OnVideoTimeUpdate(base::TimeDelta max_time) {
   clock_->SetMaxTime(max_time);
 }
 
-void Pipeline::SetDuration(base::TimeDelta duration) {
+void Pipeline::SetDuration(TimeDelta duration) {
   DCHECK(IsRunning());
   media_log_->AddEvent(
       media_log_->CreateTimeEvent(
@@ -471,12 +424,6 @@ void Pipeline::SetDuration(base::TimeDelta duration) {
 
   base::AutoLock auto_lock(lock_);
   clock_->SetDuration(duration);
-}
-
-void Pipeline::SetBufferedTime(base::TimeDelta buffered_time) {
-  DCHECK(IsRunning());
-  base::AutoLock auto_lock(lock_);
-  buffered_time_ = buffered_time;
 }
 
 void Pipeline::SetTotalBytes(int64 total_bytes) {
@@ -492,17 +439,34 @@ void Pipeline::SetTotalBytes(int64 total_bytes) {
 
   base::AutoLock auto_lock(lock_);
   total_bytes_ = total_bytes;
-  download_rate_monitor_.set_total_bytes(total_bytes_);
 }
 
-void Pipeline::SetBufferedBytes(int64 buffered_bytes) {
+TimeDelta Pipeline::TimeForByteOffset_Locked(int64 byte_offset) const {
+  lock_.AssertAcquired();
+  TimeDelta time_offset = byte_offset * clock_->Duration() / total_bytes_;
+  // Since the byte->time calculation is approximate, fudge the beginning &
+  // ending areas to look better.
+  TimeDelta epsilon = clock_->Duration() / 100;
+  if (time_offset < epsilon)
+    return TimeDelta();
+  if (time_offset + epsilon > clock_->Duration())
+    return clock_->Duration();
+  return time_offset;
+}
+
+void Pipeline::AddBufferedByteRange(int64 start, int64 end) {
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
-  // See comments in SetCurrentReadPosition() about capping.
-  if (buffered_bytes < current_bytes_)
-    current_bytes_ = buffered_bytes;
-  buffered_bytes_ = buffered_bytes;
-  download_rate_monitor_.SetBufferedBytes(buffered_bytes, base::Time::Now());
+  buffered_byte_ranges_.Add(start, end);
+  did_loading_progress_ = true;
+}
+
+void Pipeline::AddBufferedTimeRange(base::TimeDelta start,
+                                    base::TimeDelta end) {
+  DCHECK(IsRunning());
+  base::AutoLock auto_lock(lock_);
+  buffered_time_ranges_.Add(start, end);
+  did_loading_progress_ = true;
 }
 
 void Pipeline::SetNaturalVideoSize(const gfx::Size& size) {
@@ -519,26 +483,6 @@ void Pipeline::NotifyEnded() {
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &Pipeline::NotifyEndedTask, this));
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::ENDED));
-}
-
-void Pipeline::SetNetworkActivity(bool is_downloading_data) {
-  DCHECK(IsRunning());
-
-  NetworkEvent type = DOWNLOAD_PAUSED;
-  if (is_downloading_data)
-    type = DOWNLOAD_CONTINUED;
-
-  {
-    base::AutoLock auto_lock(lock_);
-    download_rate_monitor_.SetNetworkActivity(is_downloading_data);
-  }
-
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::NotifyNetworkEventTask, this, type));
-  media_log_->AddEvent(
-      media_log_->CreateBooleanEvent(
-          MediaLogEvent::NETWORK_ACTIVITY_SET,
-          "is_downloading_data", is_downloading_data));
 }
 
 void Pipeline::DisableAudioRenderer() {
@@ -589,20 +533,17 @@ void Pipeline::OnUpdateStatistics(const PipelineStatistics& stats) {
   statistics_.video_bytes_decoded += stats.video_bytes_decoded;
   statistics_.video_frames_decoded += stats.video_frames_decoded;
   statistics_.video_frames_dropped += stats.video_frames_dropped;
-  media_log_->QueueStatisticsUpdatedEvent(statistics_);
 }
 
 void Pipeline::StartTask(scoped_ptr<FilterCollection> filter_collection,
                          const PipelineStatusCB& ended_cb,
                          const PipelineStatusCB& error_cb,
-                         const NetworkEventCB& network_cb,
                          const PipelineStatusCB& start_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(kCreated, state_);
   filter_collection_ = filter_collection.Pass();
   ended_cb_ = ended_cb;
   error_cb_ = error_cb;
-  network_cb_ = network_cb;
   seek_cb_ = start_cb;
 
   // Kick off initialization.
@@ -827,8 +768,7 @@ void Pipeline::VolumeChangedTask(float volume) {
     audio_renderer_->SetVolume(volume);
 }
 
-void Pipeline::SeekTask(base::TimeDelta time,
-                        const PipelineStatusCB& seek_cb) {
+void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(!IsPipelineStopPending());
 
@@ -902,12 +842,6 @@ void Pipeline::NotifyEndedTask() {
   ReportStatus(ended_cb_, status_);
 }
 
-void Pipeline::NotifyNetworkEventTask(NetworkEvent type) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  if (!network_cb_.is_null())
-    network_cb_.Run(type);
-}
-
 void Pipeline::DisableAudioRendererTask() {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
@@ -979,8 +913,7 @@ void Pipeline::FilterStateTransitionTask() {
   } else if (state_ == kStarted) {
     FinishInitialization();
 
-    // Finally, reset our seeking timestamp back to zero.
-    seek_timestamp_ = base::TimeDelta();
+    // Finally, complete the seek.
     seek_pending_ = false;
 
     // If a playback rate change was requested during a seek, do it now that
@@ -998,20 +931,6 @@ void Pipeline::FilterStateTransitionTask() {
       clock_->SetMaxTime(clock_->Duration());
       StartClockIfWaitingForTimeUpdate_Locked();
     }
-
-    // Start monitoring rate of downloading.
-    int bitrate = 0;
-    if (demuxer_) {
-      bitrate = demuxer_->GetBitrate();
-      local_source_ = demuxer_->IsLocalSource();
-      streaming_ = !demuxer_->IsSeekable();
-    }
-    // Needs to be locked because most other calls to |download_rate_monitor_|
-    // occur on the renderer thread.
-    download_rate_monitor_.Start(
-        base::Bind(&Pipeline::OnCanPlayThrough, this),
-        bitrate, streaming_, local_source_);
-    download_rate_monitor_.SetBufferedBytes(buffered_bytes_, base::Time::Now());
 
     if (IsPipelineStopPending()) {
       // We had a pending stop request need to be honored right now.
@@ -1180,20 +1099,23 @@ bool Pipeline::InitializeAudioRenderer(
   if (!decoder)
     return false;
 
-  filter_collection_->SelectAudioRenderer(&audio_renderer_);
-  if (!audio_renderer_) {
+  filter_collection_->SelectAudioRenderer(
+      &pipeline_init_state_->audio_renderer);
+  if (!pipeline_init_state_->audio_renderer) {
     SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
     return false;
   }
 
-  pipeline_init_state_->composite->AddFilter(audio_renderer_);
+  pipeline_init_state_->composite->AddFilter(
+      pipeline_init_state_->audio_renderer);
 
-  audio_renderer_->Initialize(
+  pipeline_init_state_->audio_renderer->Initialize(
       decoder,
       base::Bind(&Pipeline::OnFilterInitialize, this),
       base::Bind(&Pipeline::OnAudioUnderflow, this),
       base::Bind(&Pipeline::OnAudioTimeUpdate, this));
 
+  audio_renderer_ = pipeline_init_state_->audio_renderer;
   return true;
 }
 
@@ -1205,19 +1127,23 @@ bool Pipeline::InitializeVideoRenderer(
   if (!decoder)
     return false;
 
-  filter_collection_->SelectVideoRenderer(&video_renderer_);
-  if (!video_renderer_) {
+  filter_collection_->SelectVideoRenderer(
+      &pipeline_init_state_->video_renderer);
+  if (!pipeline_init_state_->video_renderer) {
     SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
     return false;
   }
 
-  pipeline_init_state_->composite->AddFilter(video_renderer_);
+  pipeline_init_state_->composite->AddFilter(
+      pipeline_init_state_->video_renderer);
 
-  video_renderer_->Initialize(
+  pipeline_init_state_->video_renderer->Initialize(
       decoder,
       base::Bind(&Pipeline::OnFilterInitialize, this),
       base::Bind(&Pipeline::OnUpdateStatistics, this),
       base::Bind(&Pipeline::OnVideoTimeUpdate, this));
+
+  video_renderer_ = pipeline_init_state_->video_renderer;
   return true;
 }
 
@@ -1313,7 +1239,7 @@ void Pipeline::OnDemuxerStopDone(const base::Closure& callback) {
   callback.Run();
 }
 
-void Pipeline::DoSeek(base::TimeDelta seek_timestamp) {
+void Pipeline::DoSeek(TimeDelta seek_timestamp) {
   // TODO(acolwell): We might be able to convert this if (demuxer_) into a
   // DCHECK(). Further investigation is needed to make sure this won't introduce
   // a bug.
@@ -1326,7 +1252,7 @@ void Pipeline::DoSeek(base::TimeDelta seek_timestamp) {
   OnDemuxerSeekDone(seek_timestamp, PIPELINE_OK);
 }
 
-void Pipeline::OnDemuxerSeekDone(base::TimeDelta seek_timestamp,
+void Pipeline::OnDemuxerSeekDone(TimeDelta seek_timestamp,
                                  PipelineStatus status) {
   if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
@@ -1357,16 +1283,6 @@ void Pipeline::OnAudioUnderflow() {
 
   if (audio_renderer_)
     audio_renderer_->ResumeAfterUnderflow(true);
-}
-
-void Pipeline::OnCanPlayThrough() {
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::NotifyCanPlayThrough, this));
-}
-
-void Pipeline::NotifyCanPlayThrough() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  NotifyNetworkEventTask(CAN_PLAY_THROUGH);
 }
 
 void Pipeline::StartClockIfWaitingForTimeUpdate_Locked() {

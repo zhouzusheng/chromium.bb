@@ -42,8 +42,8 @@ class GPU_EXPORT ProgramManager {
       ~UniformInfo();
 
       bool IsSampler() const {
-        return type == GL_SAMPLER_2D || type == GL_SAMPLER_CUBE ||
-               type == GL_SAMPLER_EXTERNAL_OES;
+        return type == GL_SAMPLER_2D || type == GL_SAMPLER_2D_RECT_ARB ||
+               type == GL_SAMPLER_CUBE || type == GL_SAMPLER_EXTERNAL_OES;
       }
 
       GLsizei size;
@@ -172,11 +172,6 @@ class GPU_EXPORT ProgramManager {
     // glBindAttribLocation() calls.
     // We only consider the declared attributes in the program.
     bool DetectAttribLocationBindingConflicts() const;
-
-    static inline GLint GetFakeLocation(
-        GLint fake_base_location, GLint element_index) {
-      return fake_base_location | element_index << 16;
-    }
 
    private:
     friend class base::RefCounted<ProgramInfo>;
@@ -322,9 +317,6 @@ class GPU_EXPORT ProgramManager {
   // Check if a ProgramInfo is owned by this ProgramManager.
   bool IsOwned(ProgramInfo* info);
 
-  GLint SwizzleLocation(GLint unswizzled_location) const;
-  GLint UnswizzleLocation(GLint swizzled_location) const;
-
  private:
   void StartTracking(ProgramInfo* info);
   void StopTracking(ProgramInfo* info);
@@ -334,13 +326,13 @@ class GPU_EXPORT ProgramManager {
   typedef std::map<GLuint, ProgramInfo::Ref> ProgramInfoMap;
   ProgramInfoMap program_infos_;
 
-  int uniform_swizzle_;
-
   // Counts the number of ProgramInfo allocated with 'this' as its manager.
   // Allows to check no ProgramInfo will outlive this.
   unsigned int program_info_count_;
 
   bool have_context_;
+
+  bool disable_workarounds_;
 
   // Used to clear uniforms.
   std::vector<uint8> zero_;

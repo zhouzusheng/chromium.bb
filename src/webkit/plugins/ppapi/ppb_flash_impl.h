@@ -52,11 +52,12 @@ class PPB_Flash_Impl : public ::ppapi::PPB_Flash_Shared {
                                         PP_Time t) OVERRIDE;
   virtual PP_Bool IsRectTopmost(PP_Instance instance,
                                 const PP_Rect* rect) OVERRIDE;
-  virtual int32_t InvokePrinting(PP_Instance instance) OVERRIDE;
   virtual void UpdateActivity(PP_Instance instance) OVERRIDE;
   virtual PP_Var GetDeviceID(PP_Instance instance) OVERRIDE;
   virtual int32_t GetSettingInt(PP_Instance instance,
-                                PP_FlashSetting settiny) OVERRIDE;
+                                PP_FlashSetting setting) OVERRIDE;
+  virtual PP_Var GetSetting(PP_Instance instance,
+                            PP_FlashSetting setting) OVERRIDE;
   virtual PP_Bool IsClipboardFormatAvailable(
       PP_Instance instance,
       PP_Flash_Clipboard_Type clipboard_type,
@@ -88,6 +89,8 @@ class PPB_Flash_Impl : public ::ppapi::PPB_Flash_Shared {
   virtual int32_t GetDirContents(PP_Instance instance,
                                  const char* path,
                                  PP_DirContents_Dev** contents) OVERRIDE;
+  virtual int32_t CreateTemporaryFile(PP_Instance instance,
+                                      PP_FileHandle* file) OVERRIDE;
   virtual int32_t OpenFileRef(PP_Instance instance,
                               PP_Resource file_ref,
                               int32_t mode,

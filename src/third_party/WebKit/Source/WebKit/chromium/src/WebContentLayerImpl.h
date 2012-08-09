@@ -36,14 +36,12 @@ class WebContentLayerImpl : public WebCore::ContentLayerChromium, public WebCore
 public:
     static PassRefPtr<WebContentLayerImpl> create(WebContentLayerClient* contentClient);
 
-    void setDrawsContent(bool);
-
 protected:
     explicit WebContentLayerImpl(WebContentLayerClient* contentClient);
     virtual ~WebContentLayerImpl();
 
     // ContentLayerDelegate implementation.
-    virtual void paintContents(WebCore::GraphicsContext&, const WebCore::IntRect& clip);
+    virtual void paintContents(SkCanvas*, const WebCore::IntRect& clip, WebCore::IntRect& opaque);
 
     WebContentLayerClient* m_contentClient;
     bool m_drawsContent;

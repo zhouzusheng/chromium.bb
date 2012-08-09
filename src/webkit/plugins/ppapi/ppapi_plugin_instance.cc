@@ -38,7 +38,6 @@
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "printing/custom_scaling.h"
 #include "printing/units.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
@@ -51,6 +50,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
@@ -121,6 +122,8 @@ using WebKit::WebFrame;
 using WebKit::WebInputEvent;
 using WebKit::WebPlugin;
 using WebKit::WebPluginContainer;
+using WebKit::WebPrintParams;
+using WebKit::WebPrintScalingOption;
 using WebKit::WebScopedUserGesture;
 using WebKit::WebString;
 using WebKit::WebURLRequest;
@@ -179,6 +182,11 @@ const ui::TextInputType kPluginDefaultTextInputType = ui::TEXT_INPUT_TYPE_TEXT;
 #define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, np_name) \
     COMPILE_ASSERT(static_cast<int>(WebCursorInfo::webkit_name) \
                        == static_cast<int>(np_name), \
+                   mismatching_enums)
+
+#define COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(webkit_name, pp_name) \
+    COMPILE_ASSERT(static_cast<int>(webkit_name) \
+                       == static_cast<int>(pp_name), \
                    mismatching_enums)
 
 // <embed>/<object> attributes.
@@ -249,6 +257,14 @@ COMPILE_ASSERT_MATCHING_ENUM(TypeGrab, PP_MOUSECURSOR_TYPE_GRAB);
 COMPILE_ASSERT_MATCHING_ENUM(TypeGrabbing, PP_MOUSECURSOR_TYPE_GRABBING);
 // Do not assert WebCursorInfo::TypeCustom == PP_CURSORTYPE_CUSTOM;
 // PP_CURSORTYPE_CUSTOM is pinned to allow new cursor types.
+
+COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(WebKit::WebPrintScalingOptionNone,
+                                           PP_PRINTSCALINGOPTION_NONE);
+COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(
+    WebKit::WebPrintScalingOptionFitToPrintableArea,
+    PP_PRINTSCALINGOPTION_FIT_TO_PRINTABLE_AREA);
+COMPILE_ASSERT_PRINT_SCALING_MATCHING_ENUM(
+    WebKit::WebPrintScalingOptionSourceSize, PP_PRINTSCALINGOPTION_SOURCE_SIZE);
 
 // Sets |*security_origin| to be the WebKit security origin associated with the
 // document containing the given plugin instance. On success, returns true. If
@@ -762,7 +778,8 @@ void PluginInstance::ViewChanged(const gfx::Rect& position,
     }
   }
 
-  flash_fullscreen_ = (fullscreen_container_ != NULL);
+  UpdateFlashFullscreenState(fullscreen_container_ != NULL);
+
   SendDidChangeView(previous_view);
 }
 
@@ -772,11 +789,8 @@ void PluginInstance::SetWebKitFocus(bool has_focus) {
 
   bool old_plugin_focus = PluginHasFocus();
   has_webkit_focus_ = has_focus;
-  if (PluginHasFocus() != old_plugin_focus) {
-    delegate()->PluginFocusChanged(this, PluginHasFocus());
-    instance_interface_->DidChangeFocus(pp_instance(),
-                                        PP_FromBool(PluginHasFocus()));
-  }
+  if (PluginHasFocus() != old_plugin_focus)
+    SendFocusChangeNotification();
 }
 
 void PluginInstance::SetContentAreaFocus(bool has_focus) {
@@ -785,10 +799,8 @@ void PluginInstance::SetContentAreaFocus(bool has_focus) {
 
   bool old_plugin_focus = PluginHasFocus();
   has_content_area_focus_ = has_focus;
-  if (PluginHasFocus() != old_plugin_focus) {
-    instance_interface_->DidChangeFocus(pp_instance(),
-                                        PP_FromBool(PluginHasFocus()));
-  }
+  if (PluginHasFocus() != old_plugin_focus)
+    SendFocusChangeNotification();
 }
 
 void PluginInstance::PageVisibilityChanged(bool is_visible) {
@@ -1035,7 +1047,13 @@ bool PluginInstance::LoadZoomInterface() {
 }
 
 bool PluginInstance::PluginHasFocus() const {
-  return has_webkit_focus_ && has_content_area_focus_;
+  return flash_fullscreen_ || (has_webkit_focus_ && has_content_area_focus_);
+}
+
+void PluginInstance::SendFocusChangeNotification() {
+  bool has_focus = PluginHasFocus();
+  delegate()->PluginFocusChanged(this, has_focus);
+  instance_interface_->DidChangeFocus(pp_instance(), PP_FromBool(has_focus));
 }
 
 void PluginInstance::ScheduleAsyncDidChangeView(
@@ -1119,8 +1137,7 @@ bool PluginInstance::IsPrintScalingDisabled() {
   return plugin_print_interface_->IsScalingDisabled(pp_instance()) == PP_TRUE;
 }
 
-int PluginInstance::PrintBegin(const gfx::Rect& printable_area,
-                               int printer_dpi) {
+int PluginInstance::PrintBegin(const WebPrintParams& print_params) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
   PP_PrintOutputFormat_Dev format;
@@ -1130,13 +1147,16 @@ int PluginInstance::PrintBegin(const gfx::Rect& printable_area,
     NOTREACHED();
     return 0;
   }
-
   int num_pages = 0;
   PP_PrintSettings_Dev print_settings;
-  print_settings.printable_area = PP_FromGfxRect(printable_area);
-  print_settings.dpi = printer_dpi;
+  print_settings.printable_area = PP_FromGfxRect(print_params.printableArea);
+  print_settings.content_area = PP_FromGfxRect(print_params.printContentArea);
+  print_settings.paper_size = PP_FromGfxSize(print_params.paperSize);
+  print_settings.dpi = print_params.printerDPI;
   print_settings.orientation = PP_PRINTORIENTATION_NORMAL;
   print_settings.grayscale = PP_FALSE;
+  print_settings.print_scaling_option = static_cast<PP_PrintScalingOption_Dev>(
+      print_params.printScalingOption);
   print_settings.format = format;
   num_pages = plugin_print_interface_->Begin(pp_instance(),
                                              &print_settings);
@@ -1151,6 +1171,7 @@ int PluginInstance::PrintBegin(const gfx::Rect& printable_area,
 }
 
 bool PluginInstance::PrintPage(int page_number, WebKit::WebCanvas* canvas) {
+#if defined(ENABLE_PRINTING)
   DCHECK(plugin_print_interface_);
   PP_PrintPageNumberRange_Dev page_range;
   page_range.first_page_number = page_range.last_page_number = page_number;
@@ -1170,6 +1191,9 @@ bool PluginInstance::PrintPage(int page_number, WebKit::WebCanvas* canvas) {
   {
     return PrintPageHelper(&page_range, 1, canvas);
   }
+#else  // defined(ENABLED_PRINTING)
+  return false;
+#endif
 }
 
 bool PluginInstance::PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
@@ -1298,7 +1322,7 @@ void PluginInstance::FlashSetFullscreen(bool fullscreen, bool delay_report) {
     DCHECK(fullscreen_container_);
     fullscreen_container_->Destroy();
     fullscreen_container_ = NULL;
-    flash_fullscreen_ = false;
+    UpdateFlashFullscreenState(false);
     if (!delay_report) {
       ReportGeometry();
     } else {
@@ -1306,6 +1330,27 @@ void PluginInstance::FlashSetFullscreen(bool fullscreen, bool delay_report) {
           FROM_HERE, base::Bind(&PluginInstance::ReportGeometry, this));
     }
   }
+}
+
+void PluginInstance::UpdateFlashFullscreenState(bool flash_fullscreen) {
+  bool is_mouselock_pending = !!lock_mouse_callback_.func;
+
+  if (flash_fullscreen == flash_fullscreen_) {
+    // Manually clear callback when fullscreen fails with mouselock pending.
+    if (!flash_fullscreen && is_mouselock_pending)
+      PP_RunAndClearCompletionCallback(&lock_mouse_callback_, PP_ERROR_FAILED);
+    return;
+  }
+
+  bool old_plugin_focus = PluginHasFocus();
+  flash_fullscreen_ = flash_fullscreen;
+  if (is_mouselock_pending && !delegate()->IsMouseLocked(this)) {
+    if (!delegate()->LockMouse(this))
+      PP_RunAndClearCompletionCallback(&lock_mouse_callback_, PP_ERROR_FAILED);
+  }
+
+  if (PluginHasFocus() != old_plugin_focus)
+    SendFocusChangeNotification();
 }
 
 int32_t PluginInstance::Navigate(PPB_URLRequestInfo_Impl* request,
@@ -1397,6 +1442,7 @@ PluginDelegate::PlatformContext3D* PluginInstance::CreateContext3D() {
 
 bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
                                     WebKit::WebCanvas* canvas) {
+#if defined(ENABLE_PRINTING)
   ::ppapi::thunk::EnterResourceNoLock<PPB_Buffer_API> enter(print_output, true);
   if (enter.failed())
     return false;
@@ -1485,7 +1531,8 @@ bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
 
     if (dynamic_scale < page_scale) {
       page_scale = dynamic_scale;
-      printing::SetCustomPrintingPageScale(page_scale);
+      printing::MetafileSkiaWrapper::SetCustomScaleOnCanvas(*canvas,
+                                                            page_scale);
     }
 
     gfx::ScaleDC(dc, page_scale);
@@ -1499,6 +1546,9 @@ bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
 #endif  // defined(OS_WIN)
 
   return ret;
+#else  // defined(ENABLE_PRINTING)
+  return false;
+#endif
 }
 
 PPB_Graphics2D_Impl* PluginInstance::GetBoundGraphics2D() const {
@@ -1592,6 +1642,10 @@ void PluginInstance::SimulateInputEvent(const InputEventData& input_event) {
     return;
   }
 
+  bool handled = SimulateIMEEvent(input_event);
+  if (handled)
+    return;
+
   std::vector<linked_ptr<WebInputEvent> > events =
       CreateSimulatedWebInputEvents(
           input_event,
@@ -1603,13 +1657,57 @@ void PluginInstance::SimulateInputEvent(const InputEventData& input_event) {
   }
 }
 
+bool PluginInstance::SimulateIMEEvent(const InputEventData& input_event) {
+  switch (input_event.event_type) {
+    case PP_INPUTEVENT_TYPE_IME_COMPOSITION_START:
+    case PP_INPUTEVENT_TYPE_IME_COMPOSITION_UPDATE:
+      SimulateImeSetCompositionEvent(input_event);
+      break;
+    case PP_INPUTEVENT_TYPE_IME_COMPOSITION_END:
+      DCHECK(input_event.character_text.empty());
+      SimulateImeSetCompositionEvent(input_event);
+      break;
+    case PP_INPUTEVENT_TYPE_IME_TEXT:
+      delegate()->SimulateImeConfirmComposition(
+          UTF8ToUTF16(input_event.character_text));
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+void PluginInstance::SimulateImeSetCompositionEvent(
+    const InputEventData& input_event) {
+  std::vector<size_t> offsets;
+  offsets.push_back(input_event.composition_selection_start);
+  offsets.push_back(input_event.composition_selection_end);
+  offsets.insert(offsets.end(),
+                 input_event.composition_segment_offsets.begin(),
+                 input_event.composition_segment_offsets.end());
+
+  string16 utf16_text =
+      UTF8ToUTF16AndAdjustOffsets(input_event.character_text, &offsets);
+
+  std::vector<WebKit::WebCompositionUnderline> underlines;
+  for (size_t i = 2; i + 1 < offsets.size(); ++i) {
+    WebKit::WebCompositionUnderline underline;
+    underline.startOffset = offsets[i];
+    underline.endOffset = offsets[i + 1];
+    if (input_event.composition_target_segment == static_cast<int32_t>(i - 2))
+      underline.thick = true;
+    underlines.push_back(underline);
+  }
+
+  delegate()->SimulateImeSetComposition(
+      utf16_text, underlines, offsets[0], offsets[1]);
+}
+
 void PluginInstance::ClosePendingUserGesture(PP_Instance instance,
                                              PP_TimeTicks timestamp) {
-  // Close the pending user gesture if the plugin had a chance to respond.
-  // Don't close the pending user gesture if the timestamps are equal since
-  // there may be multiple input events with the same timestamp.
-  if (timestamp > pending_user_gesture_)
-    pending_user_gesture_ = 0.0;
+  // Do nothing so that the pending user gesture will stay open for
+  // kUserGestureDurationInSeconds.
+  // TODO(yzshen): remove the code for closing pending user gesture.
 }
 
 PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
@@ -1861,7 +1959,6 @@ PP_Bool PluginInstance::SetCursor(PP_Instance instance,
   custom_cursor->hotSpot.x = hot_spot->x;
   custom_cursor->hotSpot.y = hot_spot->y;
 
-#if WEBKIT_USING_SKIA
   const SkBitmap* bitmap = image_data->GetMappedBitmap();
   // Make a deep copy, so that the cursor remains valid even after the original
   // image data gets freed.
@@ -1869,11 +1966,6 @@ PP_Bool PluginInstance::SetCursor(PP_Instance instance,
                       bitmap->config())) {
     return PP_FALSE;
   }
-#elif WEBKIT_USING_CG
-  // TODO(yzshen): Implement it.
-  NOTIMPLEMENTED();
-  return false;
-#endif
 
   DoSetCursor(custom_cursor.release());
   return PP_TRUE;
@@ -1894,16 +1986,27 @@ int32_t PluginInstance::LockMouse(PP_Instance instance,
   if (!CanAccessMainFrame())
     return PP_ERROR_NOACCESS;
 
-  if (delegate()->LockMouse(this)) {
-    lock_mouse_callback_ = callback;
-    return PP_OK_COMPLETIONPENDING;
-  } else {
-    return PP_ERROR_FAILED;
+  // Attempt mouselock only if Flash isn't waiting on fullscreen, otherwise
+  // we wait and call LockMouse() in UpdateFlashFullscreenState().
+  if (!FlashIsFullscreenOrPending() || flash_fullscreen()) {
+    if (!delegate()->LockMouse(this))
+      return PP_ERROR_FAILED;
   }
+
+  // Either mouselock succeeded or a Flash fullscreen is pending.
+  lock_mouse_callback_ = callback;
+  return PP_OK_COMPLETIONPENDING;
 }
 
 void PluginInstance::UnlockMouse(PP_Instance instance) {
   delegate()->UnlockMouse(this);
+}
+
+PP_Bool PluginInstance::GetDefaultPrintSettings(
+    PP_Instance instance,
+    PP_PrintSettings_Dev* print_settings) {
+  // TODO(raymes): Not implemented for in-process.
+  return PP_FALSE;
 }
 
 void PluginInstance::SetTextInputType(PP_Instance instance,

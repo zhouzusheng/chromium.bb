@@ -8,6 +8,7 @@
 #include "base/callback_helpers.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
+#include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/filter_host.h"
 #include "media/base/pipeline.h"
@@ -29,7 +30,8 @@ GpuVideoDecoder::SHMBuffer::SHMBuffer(base::SharedMemory* m, size_t s)
 GpuVideoDecoder::SHMBuffer::~SHMBuffer() {}
 
 GpuVideoDecoder::BufferPair::BufferPair(
-    SHMBuffer* s, const scoped_refptr<Buffer>& b) : shm_buffer(s), buffer(b) {
+    SHMBuffer* s, const scoped_refptr<DecoderBuffer>& b)
+    : shm_buffer(s), buffer(b) {
 }
 
 GpuVideoDecoder::BufferPair::~BufferPair() {}
@@ -56,22 +58,6 @@ GpuVideoDecoder::GpuVideoDecoder(
       shutting_down_(false),
       error_occured_(false) {
   DCHECK(gvd_loop_proxy_ && factories_);
-}
-
-GpuVideoDecoder::~GpuVideoDecoder() {
-  DCHECK(!vda_);  // Stop should have been already called.
-  DCHECK(pending_read_cb_.is_null());
-  for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
-    available_shm_segments_[i]->shm->Close();
-    delete available_shm_segments_[i];
-  }
-  available_shm_segments_.clear();
-  for (std::map<int32, BufferPair>::iterator it =
-           bitstream_buffers_in_decoder_.begin();
-       it != bitstream_buffers_in_decoder_.end(); ++it) {
-    it->second.shm_buffer->shm->Close();
-  }
-  bitstream_buffers_in_decoder_.clear();
 }
 
 void GpuVideoDecoder::Reset(const base::Closure& closure)  {
@@ -101,7 +87,7 @@ void GpuVideoDecoder::Reset(const base::Closure& closure)  {
   if (shutting_down_) {
     // Immediately fire the callback instead of waiting for the reset to
     // complete (which will happen after PipelineImpl::Stop() completes).
-    closure.Run();
+    gvd_loop_proxy_->PostTask(FROM_HERE, closure);
   } else {
     pending_reset_cb_ = closure;
   }
@@ -209,7 +195,8 @@ void GpuVideoDecoder::Read(const ReadCB& read_cb) {
   }
 }
 
-void GpuVideoDecoder::RequestBufferDecode(const scoped_refptr<Buffer>& buffer) {
+void GpuVideoDecoder::RequestBufferDecode(
+    const scoped_refptr<DecoderBuffer>& buffer) {
   if (!gvd_loop_proxy_->BelongsToCurrentThread()) {
     gvd_loop_proxy_->PostTask(FROM_HERE, base::Bind(
         &GpuVideoDecoder::RequestBufferDecode, this, buffer));
@@ -311,16 +298,19 @@ void GpuVideoDecoder::NotifyInitializeDone() {
 }
 
 void GpuVideoDecoder::ProvidePictureBuffers(uint32 count,
-                                            const gfx::Size& size) {
+                                            const gfx::Size& size,
+                                            uint32 texture_target) {
   if (!gvd_loop_proxy_->BelongsToCurrentThread()) {
     gvd_loop_proxy_->PostTask(FROM_HERE, base::Bind(
-        &GpuVideoDecoder::ProvidePictureBuffers, this, count, size));
+        &GpuVideoDecoder::ProvidePictureBuffers, this, count, size,
+        texture_target));
     return;
   }
 
   std::vector<uint32> texture_ids;
+  decoder_texture_target_ = texture_target;
   if (!factories_->CreateTextures(
-      count, size, &texture_ids, &decoder_texture_target_)) {
+      count, size, &texture_ids, decoder_texture_target_)) {
     NotifyError(VideoDecodeAccelerator::PLATFORM_FAILURE);
     return;
   }
@@ -456,7 +446,7 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
   }
 
   PutSHM(it->second.shm_buffer);
-  const scoped_refptr<Buffer>& buffer = it->second.buffer;
+  const scoped_refptr<DecoderBuffer>& buffer = it->second.buffer;
   if (buffer->GetDataSize()) {
     PipelineStatistics statistics;
     statistics.video_bytes_decoded = buffer->GetDataSize();
@@ -472,13 +462,30 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
   }
 }
 
+GpuVideoDecoder::~GpuVideoDecoder() {
+  DCHECK(!vda_);  // Stop should have been already called.
+  DCHECK(pending_read_cb_.is_null());
+  for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
+    available_shm_segments_[i]->shm->Close();
+    delete available_shm_segments_[i];
+  }
+  available_shm_segments_.clear();
+  for (std::map<int32, BufferPair>::iterator it =
+           bitstream_buffers_in_decoder_.begin();
+       it != bitstream_buffers_in_decoder_.end(); ++it) {
+    it->second.shm_buffer->shm->Close();
+  }
+  bitstream_buffers_in_decoder_.clear();
+}
+
 void GpuVideoDecoder::EnsureDemuxOrDecode() {
   DCHECK(gvd_loop_proxy_->BelongsToCurrentThread());
   if (demuxer_read_in_progress_)
     return;
   demuxer_read_in_progress_ = true;
-  demuxer_stream_->Read(base::Bind(
-      &GpuVideoDecoder::RequestBufferDecode, this));
+  gvd_loop_proxy_->PostTask(FROM_HERE, base::Bind(
+      &DemuxerStream::Read, demuxer_stream_.get(),
+      base::Bind(&GpuVideoDecoder::RequestBufferDecode, this)));
 }
 
 void GpuVideoDecoder::NotifyFlushDone() {

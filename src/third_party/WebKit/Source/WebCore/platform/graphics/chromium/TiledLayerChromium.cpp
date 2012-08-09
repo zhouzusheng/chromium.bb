@@ -43,13 +43,8 @@
 #include <wtf/CurrentTime.h>
 #include <wtf/MathExtras.h>
 
-// Start tiling when the width and height of a layer are larger than this size.
-static int maxUntiledSize = 512;
-
-// When tiling is enabled, use tiles of this dimension squared.
-static int defaultTileSize = 256;
-
 using namespace std;
+using WebKit::WebTransformationMatrix;
 
 namespace WebCore {
 
@@ -100,7 +95,7 @@ TiledLayerChromium::TiledLayerChromium()
     , m_didPaint(false)
     , m_tilingOption(AutoTile)
 {
-    m_tiler = CCLayerTilingData::create(IntSize(defaultTileSize, defaultTileSize), CCLayerTilingData::HasBorderTexels);
+    m_tiler = CCLayerTilingData::create(IntSize(), CCLayerTilingData::HasBorderTexels);
 }
 
 TiledLayerChromium::~TiledLayerChromium()
@@ -114,13 +109,23 @@ PassOwnPtr<CCLayerImpl> TiledLayerChromium::createCCLayerImpl()
 
 void TiledLayerChromium::updateTileSizeAndTilingOption()
 {
-    const IntSize tileSize(min(defaultTileSize, contentBounds().width()), min(defaultTileSize, contentBounds().height()));
+    ASSERT(layerTreeHost());
+
+    const IntSize& defaultTileSize = layerTreeHost()->settings().defaultTileSize;
+    const IntSize& maxUntiledLayerSize = layerTreeHost()->settings().maxUntiledLayerSize;
+    int layerWidth = contentBounds().width();
+    int layerHeight = contentBounds().height();
+
+    const IntSize tileSize(min(defaultTileSize.width(), layerWidth), min(defaultTileSize.height(), layerHeight));
 
     // Tile if both dimensions large, or any one dimension large and the other
-    // extends into a second tile. This heuristic allows for long skinny layers
-    // (e.g. scrollbars) that are Nx1 tiles to minimize wasted texture space.
-    const bool anyDimensionLarge = contentBounds().width() > maxUntiledSize || contentBounds().height() > maxUntiledSize;
-    const bool anyDimensionOneTile = contentBounds().width() <= defaultTileSize || contentBounds().height() <= defaultTileSize;
+    // extends into a second tile but the total layer area isn't larger than that
+    // of the largest possible untiled layer. This heuristic allows for long skinny layers
+    // (e.g. scrollbars) that are Nx1 tiles to minimize wasted texture space but still avoids
+    // creating very large tiles.
+    const bool anyDimensionLarge = layerWidth > maxUntiledLayerSize.width() || layerHeight > maxUntiledLayerSize.height();
+    const bool anyDimensionOneTile = (layerWidth <= defaultTileSize.width() || layerHeight <= defaultTileSize.height())
+                                      && (layerWidth * layerHeight) <= (maxUntiledLayerSize.width() * maxUntiledLayerSize.height());
     const bool autoTiled = anyDimensionLarge && !anyDimensionOneTile;
 
     bool isTiled;
@@ -211,6 +216,9 @@ void TiledLayerChromium::pushPropertiesTo(CCLayerImpl* layer)
         int i = iter->first.first;
         int j = iter->first.second;
         UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second.get());
+        // FIXME: This should not ever be null.
+        if (!tile)
+            continue;
         tile->isInUseOnImpl = false;
         if (!tile->managedTexture()->isValid(m_tiler->tileSize(), m_textureFormat)) {
             invalidTiles.append(tile);
@@ -238,6 +246,9 @@ void TiledLayerChromium::setLayerTreeHost(CCLayerTreeHost* host)
     if (host && host != layerTreeHost()) {
         for (CCLayerTilingData::TileMap::const_iterator iter = m_tiler->tiles().begin(); iter != m_tiler->tiles().end(); ++iter) {
             UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second.get());
+            // FIXME: This should not ever be null.
+            if (!tile)
+                continue;
             tile->managedTexture()->setTextureManager(host->contentsTextureManager());
         }
     }
@@ -256,6 +267,13 @@ UpdatableTile* TiledLayerChromium::createTile(int i, int j)
     m_tiler->addTile(tile.release(), i, j);
 
     addedTile->dirtyRect = m_tiler->tileRect(addedTile);
+
+    // Temporary diagnostic crash.
+    if (!addedTile)
+        CRASH();
+    if (!tileAt(i, j))
+        CRASH();
+
     return addedTile;
 }
 
@@ -291,6 +309,9 @@ void TiledLayerChromium::invalidateRect(const IntRect& layerRect)
     for (CCLayerTilingData::TileMap::const_iterator iter = m_tiler->tiles().begin(); iter != m_tiler->tiles().end(); ++iter) {
         UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second.get());
         ASSERT(tile);
+        // FIXME: This should not ever be null.
+        if (!tile)
+            continue;
         IntRect bound = m_tiler->tileRect(tile);
         bound.intersect(layerRect);
         tile->dirtyRect.unite(bound);
@@ -353,6 +374,10 @@ void TiledLayerChromium::updateTiles(bool idle, int left, int top, int right, in
             if (!tile)
                 tile = createTile(i, j);
 
+            // Temporary diagnostic crash
+            if (!m_tiler)
+                CRASH();
+
             if (!tile->managedTexture()->isValid(m_tiler->tileSize(), m_textureFormat)) {
                 // Sets the dirty rect to a full-sized tile with border texels.
                 tile->dirtyRect = m_tiler->tileRect(tile);
@@ -402,6 +427,9 @@ void TiledLayerChromium::updateTiles(bool idle, int left, int top, int right, in
     for (int j = top; j <= bottom; ++j) {
         for (int i = left; i <= right; ++i) {
             UpdatableTile* tile = tileAt(i, j);
+            // FIXME: This should not ever be null.
+            if (!tile)
+                continue;
             if (tile->updated)
                 tile->copyAndClearDirty();
             else if (!idle && occlusion && tile->isDirty())
@@ -427,12 +455,15 @@ void TiledLayerChromium::updateTiles(bool idle, int left, int top, int right, in
     // so we grab a local reference here to hold the updater alive until the paint completes.
     RefPtr<LayerTextureUpdater> protector(textureUpdater());
     IntRect paintedOpaqueRect;
-    textureUpdater()->prepareToUpdate(paintRect, m_tiler->tileSize(), m_tiler->hasBorderTexels(), contentsScale(), paintedOpaqueRect);
+    textureUpdater()->prepareToUpdate(paintRect, m_tiler->tileSize(), contentsScale(), paintedOpaqueRect);
     m_didPaint = true;
 
     for (int j = top; j <= bottom; ++j) {
         for (int i = left; i <= right; ++i) {
             UpdatableTile* tile = tileAt(i, j);
+            // FIXME: This should not ever be null.
+            if (!tile)
+                continue;
 
             IntRect tileRect = m_tiler->tileBounds(i, j);
 
@@ -471,7 +502,7 @@ void TiledLayerChromium::updateTiles(bool idle, int left, int top, int right, in
 
             tile->texture()->prepareRect(sourceRect);
             if (occlusion)
-                occlusion->overdrawMetrics().didUpload(TransformationMatrix(), sourceRect, tile->opaqueRect());
+                occlusion->overdrawMetrics().didUpload(WebTransformationMatrix(), sourceRect, tile->opaqueRect());
 
             const IntPoint anchor = m_tiler->tileRect(tile).location();
 
@@ -542,6 +573,9 @@ void TiledLayerChromium::resetUpdateState()
     CCLayerTilingData::TileMap::const_iterator end = m_tiler->tiles().end();
     for (CCLayerTilingData::TileMap::const_iterator iter = m_tiler->tiles().begin(); iter != end; ++iter) {
         UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second.get());
+        // FIXME: This should not ever be null.
+        if (!tile)
+            continue;
         tile->updateRect = IntRect();
         tile->partialUpdate = false;
         tile->updated = false;

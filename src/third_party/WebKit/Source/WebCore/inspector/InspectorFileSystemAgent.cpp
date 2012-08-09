@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2011, 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -35,8 +35,26 @@
 #include "InspectorFileSystemAgent.h"
 
 #include "DOMFileSystem.h"
+#include "DirectoryEntry.h"
+#include "DirectoryReader.h"
+#include "Document.h"
+#include "EntriesCallback.h"
+#include "EntryArray.h"
+#include "EntryCallback.h"
+#include "ErrorCallback.h"
+#include "FileError.h"
+#include "FileSystemCallback.h"
+#include "FileSystemCallbacks.h"
+#include "Frame.h"
+#include "InspectorPageAgent.h"
 #include "InspectorState.h"
 #include "InstrumentingAgents.h"
+#include "KURL.h"
+#include "LocalFileSystem.h"
+#include "MIMETypeRegistry.h"
+#include "SecurityOrigin.h"
+
+using WebCore::TypeBuilder::Array;
 
 namespace WebCore {
 
@@ -44,30 +62,235 @@ namespace FileSystemAgentState {
 static const char fileSystemAgentEnabled[] = "fileSystemAgentEnabled";
 }
 
-// static
-PassOwnPtr<InspectorFileSystemAgent> InspectorFileSystemAgent::create(InstrumentingAgents* instrumentingAgents, InspectorState* state)
+class InspectorFileSystemAgent::FrontendProvider : public RefCounted<FrontendProvider> {
+    WTF_MAKE_NONCOPYABLE(FrontendProvider);
+public:
+    static PassRefPtr<FrontendProvider> create(InspectorFileSystemAgent* agent, InspectorFrontend::FileSystem* frontend)
+    {
+        return adoptRef(new FrontendProvider(agent, frontend));
+    }
+
+    InspectorFrontend::FileSystem* frontend() const
+    {
+        if (m_agent && m_agent->m_enabled)
+            return m_frontend;
+        return 0;
+    }
+
+    void clear()
+    {
+        m_agent = 0;
+        m_frontend = 0;
+    }
+
+private:
+    FrontendProvider(InspectorFileSystemAgent* agent, InspectorFrontend::FileSystem* frontend)
+        : m_agent(agent)
+        , m_frontend(frontend) { }
+
+    InspectorFileSystemAgent* m_agent;
+    InspectorFrontend::FileSystem* m_frontend;
+};
+
+typedef InspectorFileSystemAgent::FrontendProvider FrontendProvider;
+
+namespace {
+
+class ReadDirectoryTask : public RefCounted<ReadDirectoryTask> {
+    WTF_MAKE_NONCOPYABLE(ReadDirectoryTask);
+public:
+    static PassRefPtr<ReadDirectoryTask> create(PassRefPtr<FrontendProvider> frontendProvider, int requestId, const String& url)
+    {
+        return adoptRef(new ReadDirectoryTask(frontendProvider, requestId, url));
+    }
+
+    virtual ~ReadDirectoryTask()
+    {
+        reportResult(FileError::ABORT_ERR, 0);
+    }
+
+    void start(ScriptExecutionContext*);
+
+private:
+    class ErrorCallback;
+    class GetEntryCallback;
+    class ReadDirectoryEntriesCallback;
+
+    void gotEntry(Entry*);
+    void didReadDirectoryEntries(EntryArray*);
+
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries)
+    {
+        if (!m_frontendProvider || !m_frontendProvider->frontend())
+            return;
+        m_frontendProvider->frontend()->didReadDirectory(m_requestId, static_cast<int>(errorCode), entries);
+        m_frontendProvider = 0;
+    }
+
+    ReadDirectoryTask(PassRefPtr<FrontendProvider> frontendProvider, int requestId, const String& url)
+        : m_frontendProvider(frontendProvider)
+        , m_requestId(requestId)
+        , m_url(ParsedURLString, url) { }
+
+    void readDirectoryEntries();
+
+    RefPtr<FrontendProvider> m_frontendProvider;
+    int m_requestId;
+    KURL m_url;
+    RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
+    RefPtr<DirectoryReader> m_directoryReader;
+};
+
+class ReadDirectoryTask::ErrorCallback : public WebCore::ErrorCallback {
+    WTF_MAKE_NONCOPYABLE(ErrorCallback);
+public:
+    static PassRefPtr<ReadDirectoryTask::ErrorCallback> create(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+    {
+        return adoptRef(new ReadDirectoryTask::ErrorCallback(readDirectoryTask));
+    }
+
+    virtual bool handleEvent(FileError* error) OVERRIDE
+    {
+        if (m_readDirectoryTask)
+            m_readDirectoryTask->reportResult(error->code(), 0);
+        return true;
+    }
+
+private:
+    ErrorCallback(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+        : m_readDirectoryTask(readDirectoryTask) { }
+    RefPtr<ReadDirectoryTask> m_readDirectoryTask;
+};
+
+class ReadDirectoryTask::GetEntryCallback : public EntryCallback {
+    WTF_MAKE_NONCOPYABLE(GetEntryCallback);
+public:
+    static PassRefPtr<ReadDirectoryTask::GetEntryCallback> create(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+    {
+        return adoptRef(new ReadDirectoryTask::GetEntryCallback(readDirectoryTask));
+    }
+
+    virtual bool handleEvent(Entry* fileSystem) OVERRIDE
+    {
+        m_readDirectoryTask->gotEntry(fileSystem);
+        return true;
+    }
+
+private:
+    GetEntryCallback(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+        : m_readDirectoryTask(readDirectoryTask) { }
+    RefPtr<ReadDirectoryTask> m_readDirectoryTask;
+};
+
+class ReadDirectoryTask::ReadDirectoryEntriesCallback : public EntriesCallback {
+    WTF_MAKE_NONCOPYABLE(ReadDirectoryEntriesCallback);
+public:
+    static PassRefPtr<ReadDirectoryTask::ReadDirectoryEntriesCallback> create(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+    {
+        return adoptRef(new ReadDirectoryTask::ReadDirectoryEntriesCallback(readDirectoryTask));
+    }
+
+    virtual bool handleEvent(EntryArray* entries) OVERRIDE
+    {
+        ASSERT(entries);
+        m_readDirectoryTask->didReadDirectoryEntries(entries);
+        return true;
+    }
+
+private:
+    ReadDirectoryEntriesCallback(PassRefPtr<ReadDirectoryTask> readDirectoryTask)
+        : m_readDirectoryTask(readDirectoryTask) { }
+    RefPtr<ReadDirectoryTask> m_readDirectoryTask;
+};
+
+void ReadDirectoryTask::start(ScriptExecutionContext* scriptExecutionContext)
 {
-    return adoptPtr(new InspectorFileSystemAgent(instrumentingAgents, state));
+    ASSERT(scriptExecutionContext);
+
+    FileSystemType type;
+    String path;
+    if (!DOMFileSystemBase::crackFileSystemURL(m_url, type, path)) {
+        reportResult(FileError::SYNTAX_ERR, 0);
+        return;
+    }
+
+    RefPtr<EntryCallback> successCallback = ReadDirectoryTask::GetEntryCallback::create(this);
+    RefPtr<ErrorCallback> errorCallback = ReadDirectoryTask::ErrorCallback::create(this);
+    OwnPtr<ResolveURICallbacks> fileSystemCallbacks = ResolveURICallbacks::create(successCallback, errorCallback, scriptExecutionContext, type, path);
+
+    LocalFileSystem::localFileSystem().readFileSystem(scriptExecutionContext, type, fileSystemCallbacks.release());
+}
+
+void ReadDirectoryTask::gotEntry(Entry* entry)
+{
+    if (!entry->isDirectory()) {
+        reportResult(FileError::TYPE_MISMATCH_ERR, 0);
+        return;
+    }
+
+    m_directoryReader = static_cast<DirectoryEntry*>(entry)->createReader();
+    m_entries = Array<TypeBuilder::FileSystem::Entry>::create();
+    readDirectoryEntries();
+}
+
+void ReadDirectoryTask::readDirectoryEntries()
+{
+    if (!m_directoryReader->filesystem()->scriptExecutionContext()) {
+        reportResult(FileError::ABORT_ERR, 0);
+        return;
+    }
+
+    RefPtr<EntriesCallback> successCallback = ReadDirectoryTask::ReadDirectoryEntriesCallback::create(this);
+    RefPtr<ErrorCallback> errorCallback = ReadDirectoryTask::ErrorCallback::create(this);
+    m_directoryReader->readEntries(successCallback, errorCallback);
+}
+
+void ReadDirectoryTask::didReadDirectoryEntries(EntryArray* entries)
+{
+    if (!entries->length()) {
+        reportResult(static_cast<FileError::ErrorCode>(0), m_entries);
+        return;
+    }
+
+    for (unsigned i = 0; i < entries->length(); ++i) {
+        Entry* entry = entries->item(i);
+        RefPtr<TypeBuilder::FileSystem::Entry> entryForFrontend = TypeBuilder::FileSystem::Entry::create().setUrl(entry->toURL()).setName(entry->name()).setIsDirectory(entry->isDirectory());
+
+        using TypeBuilder::Page::ResourceType;
+        if (!entry->isDirectory()) {
+            String mimeType = MIMETypeRegistry::getMIMETypeForPath(entry->name());
+            ResourceType::Enum resourceType;
+            if (MIMETypeRegistry::isSupportedImageMIMEType(mimeType))
+                resourceType = ResourceType::Image;
+            else if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType))
+                resourceType = ResourceType::Script;
+            else if (MIMETypeRegistry::isSupportedNonImageMIMEType(mimeType))
+                resourceType = ResourceType::Document;
+            else
+                resourceType = ResourceType::Other;
+
+            entryForFrontend->setMimeType(mimeType);
+            entryForFrontend->setResourceType(resourceType);
+        }
+
+        m_entries->addItem(entryForFrontend);
+    }
+    readDirectoryEntries();
+}
+
+}
+
+// static
+PassOwnPtr<InspectorFileSystemAgent> InspectorFileSystemAgent::create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorState* state)
+{
+    return adoptPtr(new InspectorFileSystemAgent(instrumentingAgents, pageAgent, state));
 }
 
 InspectorFileSystemAgent::~InspectorFileSystemAgent()
 {
+    if (m_frontendProvider)
+        m_frontendProvider->clear();
     m_instrumentingAgents->setInspectorFileSystemAgent(0);
-}
-
-void InspectorFileSystemAgent::didOpenFileSystem(PassRefPtr<DOMFileSystem> fileSystem)
-{
-    // TODO(tzik):
-    // Store fileSystem and notify the frontend using fileSystemAdded event.
-    // fileSystem should be associated with its name.
-}
-
-void InspectorFileSystemAgent::fileSystemInvalidated(PassRefPtr<DOMFileSystem> fileSystem)
-{
-    // TODO(tzik):
-    // Discard fileSystem if we have.
-    // If there is no other fileSystem who has same name with fileSystem,
-    // notify the frontend using fileSystemInvalidated event.
 }
 
 void InspectorFileSystemAgent::enable(ErrorString*)
@@ -76,9 +299,6 @@ void InspectorFileSystemAgent::enable(ErrorString*)
         return;
     m_enabled = true;
     m_state->setBoolean(FileSystemAgentState::fileSystemAgentEnabled, m_enabled);
-
-    // TODO(tzik):
-    // Pass all available FileSystem to the frontend, using fileSystemAdded event.
 }
 
 void InspectorFileSystemAgent::disable(ErrorString*)
@@ -89,15 +309,30 @@ void InspectorFileSystemAgent::disable(ErrorString*)
     m_state->setBoolean(FileSystemAgentState::fileSystemAgentEnabled, m_enabled);
 }
 
+void InspectorFileSystemAgent::readDirectory(ErrorString*, int requestId, const String& url)
+{
+    if (!m_enabled || !m_frontendProvider)
+        return;
+    ASSERT(m_frontendProvider->frontend());
+
+    if (ScriptExecutionContext* scriptExecutionContext = scriptExecutionContextForOrigin(SecurityOrigin::createFromString(url).get()))
+        ReadDirectoryTask::create(m_frontendProvider, requestId, url)->start(scriptExecutionContext);
+    else
+        m_frontendProvider->frontend()->didReadDirectory(requestId, static_cast<int>(FileError::ABORT_ERR), 0);
+}
+
 void InspectorFileSystemAgent::setFrontend(InspectorFrontend* frontend)
 {
     ASSERT(frontend);
-    m_frontend = frontend->filesystem();
+    m_frontendProvider = FrontendProvider::create(this, frontend->filesystem());
 }
 
 void InspectorFileSystemAgent::clearFrontend()
 {
-    m_frontend = 0;
+    if (m_frontendProvider) {
+        m_frontendProvider->clear();
+        m_frontendProvider = 0;
+    }
     m_enabled = false;
     m_state->setBoolean(FileSystemAgentState::fileSystemAgentEnabled, m_enabled);
 }
@@ -107,14 +342,24 @@ void InspectorFileSystemAgent::restore()
     m_enabled = m_state->getBoolean(FileSystemAgentState::fileSystemAgentEnabled);
 }
 
-InspectorFileSystemAgent::InspectorFileSystemAgent(InstrumentingAgents* instrumentingAgents, InspectorState* state)
-    : InspectorBaseAgent<InspectorFileSystemAgent>("FileSystem", instrumentingAgents, state),
-      m_frontend(0),
-      m_enabled(false)
+InspectorFileSystemAgent::InspectorFileSystemAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorState* state)
+    : InspectorBaseAgent<InspectorFileSystemAgent>("FileSystem", instrumentingAgents, state)
+    , m_pageAgent(pageAgent)
+    , m_enabled(false)
 {
     ASSERT(instrumentingAgents);
     ASSERT(state);
+    ASSERT(m_pageAgent);
     m_instrumentingAgents->setInspectorFileSystemAgent(this);
+}
+
+ScriptExecutionContext* InspectorFileSystemAgent::scriptExecutionContextForOrigin(SecurityOrigin* origin)
+{
+    for (Frame* frame = m_pageAgent->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        if (frame->document() && frame->document()->securityOrigin()->isSameSchemeHostPort(origin))
+            return frame->document();
+    }
+    return 0;
 }
 
 } // namespace WebCore

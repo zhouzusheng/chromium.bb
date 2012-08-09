@@ -51,7 +51,6 @@ enum CollectionType {
     TSectionRows, // all row elements in this table section
     TRCells,      // all cells in this row
     SelectOptions,
-    SelectedOptions,
     DataListOptions,
     MapAreas,
 
@@ -59,6 +58,7 @@ enum CollectionType {
     ItemProperties, // Microdata item properties in the document
 #endif
 
+    FormControls,
     OtherCollection
 };
 

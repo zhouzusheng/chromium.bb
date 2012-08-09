@@ -86,6 +86,7 @@ static SECStatus ssl3_SendCertificate(       sslSocket *ss);
 static SECStatus ssl3_SendEmptyCertificate(  sslSocket *ss);
 static SECStatus ssl3_SendCertificateRequest(sslSocket *ss);
 static SECStatus ssl3_SendNextProto(         sslSocket *ss);
+static SECStatus ssl3_SendEncryptedExtensions(sslSocket *ss);
 static SECStatus ssl3_SendFinished(          sslSocket *ss, PRInt32 flags);
 static SECStatus ssl3_SendServerHello(       sslSocket *ss);
 static SECStatus ssl3_SendServerHelloDone(   sslSocket *ss);
@@ -2991,14 +2992,7 @@ ssl3_HandleChangeCipherSpecs(sslSocket *ss, sslBuffer *buf)
 
     ss->ssl3.prSpec  = ss->ssl3.crSpec;
     ss->ssl3.crSpec  = prSpec;
-
-    if (ss->sec.isServer &&
-	ss->opt.requestCertificate &&
-	ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	ss->ssl3.hs.ws = wait_client_cert;
-    } else {
-	ss->ssl3.hs.ws = wait_finished;
-    }
+    ss->ssl3.hs.ws   = wait_finished;
 
     SSL_TRC(3, ("%d: SSL3[%d] Set Current Read Cipher Suite to Pending",
 		SSL_GETPID(), ss->fd ));
@@ -4799,6 +4793,17 @@ done:
     return unwrappedWrappingKey;
 }
 
+/* hexEncode hex encodes |length| bytes from |in| and writes it as |length*2|
+ * bytes to |out|. */
+static void hexEncode(char *out, const unsigned char *in, size_t length) {
+    static const char hextable[] = "0123456789abcdef";
+    size_t i;
+
+    for (i = 0; i < length; i++) {
+	*(out++) = hextable[in[i] >> 4];
+	*(out++) = hextable[in[i] & 15];
+    }
+}
 
 /* Called from ssl3_SendClientKeyExchange(). */
 /* Presently, this always uses PKCS11.  There is no bypass for this. */
@@ -4838,16 +4843,17 @@ sendRSAClientKeyExchange(sslSocket * ss, SECKEYPublicKey * svrPubKey)
 	goto loser;
     }
 
-#if defined(TRACE)
-    if (ssl_trace >= 100 || ssl_keylog_iob) {
+    if (ssl_keylog_iob) {
 	SECStatus extractRV = PK11_ExtractKeyValue(pms);
 	if (extractRV == SECSuccess) {
 	    SECItem * keyData = PK11_GetKeyData(pms);
 	    if (keyData && keyData->data && keyData->len) {
+#ifdef TRACE
 		if (ssl_trace >= 100) {
 		    ssl_PrintBuf(ss, "Pre-Master Secret",
 				 keyData->data, keyData->len);
 		}
+#endif
 		if (ssl_keylog_iob && enc_pms.len >= 8 && keyData->len == 48) {
 		    /* https://developer.mozilla.org/en/NSS_Key_Log_Format */
 
@@ -4855,21 +4861,11 @@ sendRSAClientKeyExchange(sslSocket * ss, SECKEYPublicKey * svrPubKey)
 		     * keylog, so we have to do everything in a single call to
 		     * fwrite. */
 		    char buf[4 + 8*2 + 1 + 48*2 + 1];
-		    static const char hextable[16] = "0123456789abcdef";
-		    unsigned int i;
 
 		    strcpy(buf, "RSA ");
-
-		    for (i = 0; i < 8; i++) {
-			buf[4 + i*2] = hextable[enc_pms.data[i] >> 4];
-			buf[4 + i*2 + 1] = hextable[enc_pms.data[i] & 15];
-		    }
+		    hexEncode(buf + 4, enc_pms.data, 8);
 		    buf[20] = ' ';
-
-		    for (i = 0; i < 48; i++) {
-			buf[21 + i*2] = hextable[keyData->data[i] >> 4];
-			buf[21 + i*2 + 1] = hextable[keyData->data[i] & 15];
-		    }
+		    hexEncode(buf + 21, keyData->data, 48);
 		    buf[sizeof(buf) - 1] = '\n';
 
 		    fwrite(buf, sizeof(buf), 1, ssl_keylog_iob);
@@ -4878,7 +4874,6 @@ sendRSAClientKeyExchange(sslSocket * ss, SECKEYPublicKey * svrPubKey)
 	    }
 	}
     }
-#endif
 
     rv = ssl3_InitPendingCipherSpec(ss,  pms);
     PK11_FreeSymKey(pms); pms = NULL;
@@ -5087,11 +5082,10 @@ loser:
 static SECStatus
 ssl3_SendCertificateVerify(sslSocket *ss)
 {
-    SECStatus      rv		= SECFailure;
-    PRBool         isTLS;
-    SECItem        buf		= {siBuffer, NULL, 0};
-    SSL3Hashes     hashes;
-    ssl3CipherSpec *spec;
+    SECStatus     rv		= SECFailure;
+    PRBool        isTLS;
+    SECItem       buf           = {siBuffer, NULL, 0};
+    SSL3Hashes    hashes;
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
@@ -5100,17 +5094,13 @@ ssl3_SendCertificateVerify(sslSocket *ss)
 		SSL_GETPID(), ss->fd));
 
     ssl_GetSpecReadLock(ss);
-    spec = ss->ssl3.pwSpec;
-    if (ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	spec = ss->ssl3.cwSpec;
-    }
-    rv = ssl3_ComputeHandshakeHashes(ss, spec, &hashes, 0);
+    rv = ssl3_ComputeHandshakeHashes(ss, ss->ssl3.pwSpec, &hashes, 0);
     ssl_ReleaseSpecReadLock(ss);
     if (rv != SECSuccess) {
 	goto done;	/* err code was set by ssl3_ComputeHandshakeHashes */
     }
 
-    isTLS = (PRBool)(spec->version > SSL_LIBRARY_VERSION_3_0);
+    isTLS = (PRBool)(ss->ssl3.pwSpec->version > SSL_LIBRARY_VERSION_3_0);
     if (ss->ssl3.platformClientKey) {
 #ifdef NSS_PLATFORM_CLIENT_AUTH
 	rv = ssl3_PlatformSignHashes(&hashes, ss->ssl3.platformClientKey,
@@ -5211,6 +5201,15 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
        ss->ssl3.platformClientKey = (PlatformKey)NULL;
     }
 #endif  /* NSS_PLATFORM_CLIENT_AUTH */
+
+    if (ss->ssl3.channelID != NULL) {
+	SECKEY_DestroyPrivateKey(ss->ssl3.channelID);
+	ss->ssl3.channelID = NULL;
+    }
+    if (ss->ssl3.channelIDPub != NULL) {
+	SECKEY_DestroyPublicKey(ss->ssl3.channelIDPub);
+	ss->ssl3.channelIDPub = NULL;
+    }
 
     temp = ssl3_ConsumeHandshakeNumber(ss, 2, &b, &length);
     if (temp < 0) {
@@ -5464,13 +5463,12 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	    ssl3_CopyPeerCertsFromSID(ss, sid);
 	}
 
-
 	/* NULL value for PMS signifies re-use of the old MS */
 	rv = ssl3_InitPendingCipherSpec(ss,  NULL);
 	if (rv != SECSuccess) {
 	    goto alert_loser;	/* err code was set */
 	}
-	return SECSuccess;
+	goto winner;
     } while (0);
 
     if (sid_match)
@@ -5495,6 +5493,26 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 
     ss->ssl3.hs.isResuming = PR_FALSE;
     ss->ssl3.hs.ws         = wait_server_cert;
+
+winner:
+    /* If we will need a ChannelID key then we make the callback now. This
+     * allows the handshake to be restarted cleanly if the callback returns
+     * SECWouldBlock. */
+    if (ssl3_ExtensionNegotiated(ss, ssl_channel_id_xtn)) {
+	rv = ss->getChannelID(ss->getChannelIDArg, ss->fd,
+			      &ss->ssl3.channelIDPub, &ss->ssl3.channelID);
+	if (rv == SECWouldBlock) {
+	    ssl3_SetAlwaysBlock(ss);
+	    return rv;
+	}
+	if (rv != SECSuccess ||
+	    ss->ssl3.channelIDPub == NULL ||
+	    ss->ssl3.channelID == NULL) {
+	    PORT_SetError(SSL_ERROR_GET_CHANNEL_ID_FAILED);
+	    goto loser;
+	}
+    }
+
     return SECSuccess;
 
 alert_loser:
@@ -6087,6 +6105,7 @@ ssl3_RestartHandshakeAfterCertReq(sslSocket *         ss,
 	if (certChain) {
 	    CERT_DestroyCertificateList(certChain);
 	}
+	PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
 	rv = SECFailure;
     }
     return rv;
@@ -6164,10 +6183,6 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 {
     SECStatus rv;
     PRBool sendClientCert;
-    PRBool sendEmptyCert;
-    int n = 0, i;
-    typedef SECStatus (*SendFunction)(sslSocket*);
-    SendFunction  send_funcs[5];
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss) );
@@ -6214,40 +6229,35 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 
     ssl_GetXmitBufLock(ss);		/*******************************/
 
-    sendEmptyCert = ss->ssl3.sendEmptyCert;
-    ss->ssl3.sendEmptyCert = PR_FALSE;
-
-    if (ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	send_funcs[n++] = ssl3_SendClientKeyExchange;
-	send_funcs[n++] = ssl3_SendChangeCipherSpecs;
-	if (sendEmptyCert) {
-	    send_funcs[n++] = ssl3_SendEmptyCertificate;
-	}
-	if (sendClientCert) {
-	    send_funcs[n++] = ssl3_SendCertificate;
-	    send_funcs[n++] = ssl3_SendCertificateVerify;
-	}
-    } else {
-	if (sendEmptyCert) {
-	    send_funcs[n++] = ssl3_SendEmptyCertificate;
-	}
-	if (sendClientCert) {
-	    send_funcs[n++] = ssl3_SendCertificate;
-	}
-	send_funcs[n++] = ssl3_SendClientKeyExchange;
-	if (sendClientCert) {
-	    send_funcs[n++] = ssl3_SendCertificateVerify;
-	}
-	send_funcs[n++] = ssl3_SendChangeCipherSpecs;
+    if (ss->ssl3.sendEmptyCert) {
+	ss->ssl3.sendEmptyCert = PR_FALSE;
+	rv = ssl3_SendEmptyCertificate(ss);
+	/* Don't send verify */
+	if (rv != SECSuccess) {
+	    goto loser;	/* error code is set. */
+    	}
+    } else if (sendClientCert) {
+	rv = ssl3_SendCertificate(ss);
+	if (rv != SECSuccess) {
+	    goto loser;	/* error code is set. */
+    	}
     }
 
-    PORT_Assert(n <= sizeof(send_funcs)/sizeof(send_funcs[0]));
+    rv = ssl3_SendClientKeyExchange(ss);
+    if (rv != SECSuccess) {
+    	goto loser;	/* err is set. */
+    }
 
-    for (i = 0; i < n; i++) {
-	rv = send_funcs[i](ss);
+    if (sendClientCert) {
+	rv = ssl3_SendCertificateVerify(ss);
 	if (rv != SECSuccess) {
-	    goto loser;	/* err code was set. */
-	}
+	    goto loser;	/* err is set. */
+        }
+    }
+
+    rv = ssl3_SendChangeCipherSpecs(ss);
+    if (rv != SECSuccess) {
+	goto loser;	/* err code was set. */
     }
 
     /* XXX: If the server's certificate hasn't been authenticated by this
@@ -6258,6 +6268,10 @@ ssl3_SendClientSecondRound(sslSocket *ss)
 	if (rv != SECSuccess) {
 	    goto loser;	/* err code was set. */
 	}
+    }
+    rv = ssl3_SendEncryptedExtensions(ss);
+    if (rv != SECSuccess) {
+	goto loser; /* err code was set. */
     }
 
     rv = ssl3_SendFinished(ss, 0);
@@ -6462,13 +6476,8 @@ ssl3_SendServerHelloSequence(sslSocket *ss)
 	return rv;		/* err code is set. */
     }
 
-    if (ss->opt.requestCertificate &&
-	!ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	ss->ssl3.hs.ws = wait_client_cert;
-    } else {
-	ss->ssl3.hs.ws = wait_client_key;
-    }
-
+    ss->ssl3.hs.ws = (ss->opt.requestCertificate) ? wait_client_cert
+                                               : wait_client_key;
     return SECSuccess;
 }
 
@@ -7765,11 +7774,7 @@ ssl3_HandleCertificateVerify(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
 	desc    = isTLS ? decode_error : illegal_parameter;
 	goto alert_loser;	/* malformed */
     }
-    if (ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	ss->ssl3.hs.ws = wait_finished;
-    } else {
-	ss->ssl3.hs.ws = wait_change_cipher;
-    }
+    ss->ssl3.hs.ws = wait_change_cipher;
     return SECSuccess;
 
 alert_loser:
@@ -8682,11 +8687,7 @@ ssl3_HandleCertificate(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 	}
     } else {
 server_no_cert:
-	if (ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
-	    ss->ssl3.hs.ws = wait_cert_verify;
-	} else {
-	    ss->ssl3.hs.ws = wait_client_key;
-	}
+	ss->ssl3.hs.ws = wait_client_key;
     }
 
     PORT_Assert(rv == SECSuccess);
@@ -8888,6 +8889,227 @@ ssl3_SendNextProto(sslSocket *ss)
     return rv;
 }
 
+/* called from ssl3_SendClientSecondRound
+ *	     ssl3_HandleFinished
+ */
+static SECStatus
+ssl3_SendEncryptedExtensions(sslSocket *ss)
+{
+    static const char CHANNEL_ID_MAGIC[] = "TLS Channel ID signature";
+    /* This is the ASN.1 prefix for a P-256 public key. Specifically it's:
+     * SEQUENCE
+     *   SEQUENCE
+     *     OID id-ecPublicKey
+     *     OID prime256v1
+     *   BIT STRING, length 66, 0 trailing bits: 0x04
+     *
+     * The 0x04 in the BIT STRING is the prefix for an uncompressed, X9.62
+     * public key. Following that are the two field elements as 32-byte,
+     * big-endian numbers, as required by the Channel ID. */
+    static const unsigned char P256_SPKI_PREFIX[] = {
+	0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
+	0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
+	0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03,
+	0x42, 0x00, 0x04
+    };
+    /* ChannelIDs are always 128 bytes long: 64 bytes of P-256 public key and 64
+     * bytes of ECDSA signature. */
+    static const int CHANNEL_ID_PUBLIC_KEY_LENGTH = 64;
+    static const int CHANNEL_ID_LENGTH = 128;
+
+    SECStatus rv = SECFailure;
+    SECItem *spki = NULL;
+    SSL3Hashes hashes;
+    const unsigned char *pub_bytes;
+    unsigned char signed_data[sizeof(CHANNEL_ID_MAGIC) + sizeof(SSL3Hashes)];
+    unsigned char digest[SHA256_LENGTH];
+    SECItem digest_item;
+    unsigned char signature[64];
+    SECItem signature_item;
+
+    PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
+    PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
+
+    if (ss->ssl3.channelID == NULL)
+	return SECSuccess;
+
+    PORT_Assert(ssl3_ExtensionNegotiated(ss, ssl_channel_id_xtn));
+
+    if (SECKEY_GetPrivateKeyType(ss->ssl3.channelID) != ecKey ||
+	PK11_SignatureLen(ss->ssl3.channelID) != sizeof(signature)) {
+	PORT_SetError(SSL_ERROR_INVALID_CHANNEL_ID_KEY);
+	rv = SECFailure;
+	goto loser;
+    }
+
+    ssl_GetSpecReadLock(ss);
+    rv = ssl3_ComputeHandshakeHashes(ss, ss->ssl3.cwSpec, &hashes, 0);
+    ssl_ReleaseSpecReadLock(ss);
+
+    if (rv != SECSuccess)
+	goto loser;
+
+    rv = ssl3_AppendHandshakeHeader(ss, encrypted_extensions,
+				    2 + 2 + CHANNEL_ID_LENGTH);
+    if (rv != SECSuccess)
+	goto loser;	/* error code set by AppendHandshakeHeader */
+    rv = ssl3_AppendHandshakeNumber(ss, ssl_channel_id_xtn, 2);
+    if (rv != SECSuccess)
+	goto loser;	/* error code set by AppendHandshake */
+    rv = ssl3_AppendHandshakeNumber(ss, CHANNEL_ID_LENGTH, 2);
+    if (rv != SECSuccess)
+	goto loser;	/* error code set by AppendHandshake */
+
+    spki = SECKEY_EncodeDERSubjectPublicKeyInfo(ss->ssl3.channelIDPub);
+
+    if (spki->len != sizeof(P256_SPKI_PREFIX) + CHANNEL_ID_PUBLIC_KEY_LENGTH ||
+	memcmp(spki->data, P256_SPKI_PREFIX, sizeof(P256_SPKI_PREFIX) != 0)) {
+	PORT_SetError(SSL_ERROR_INVALID_CHANNEL_ID_KEY);
+	rv = SECFailure;
+	goto loser;
+    }
+
+    pub_bytes = spki->data + sizeof(P256_SPKI_PREFIX);
+
+    memcpy(signed_data, CHANNEL_ID_MAGIC, sizeof(CHANNEL_ID_MAGIC));
+    memcpy(signed_data + sizeof(CHANNEL_ID_MAGIC), &hashes, sizeof(hashes));
+
+    rv = PK11_HashBuf(SEC_OID_SHA256, digest, signed_data, sizeof(signed_data));
+    if (rv != SECSuccess)
+	goto loser;
+
+    digest_item.data = digest;
+    digest_item.len = sizeof(digest);
+
+    signature_item.data = signature;
+    signature_item.len = sizeof(signature);
+
+    rv = PK11_Sign(ss->ssl3.channelID, &signature_item, &digest_item);
+    if (rv != SECSuccess)
+	goto loser;
+
+    rv = ssl3_AppendHandshake(ss, pub_bytes, CHANNEL_ID_PUBLIC_KEY_LENGTH);
+    if (rv != SECSuccess)
+	goto loser;
+    rv = ssl3_AppendHandshake(ss, signature, sizeof(signature));
+
+loser:
+    if (spki)
+	SECITEM_FreeItem(spki, PR_TRUE);
+    if (ss->ssl3.channelID) {
+	SECKEY_DestroyPrivateKey(ss->ssl3.channelID);
+	ss->ssl3.channelID = NULL;
+    }
+    if (ss->ssl3.channelIDPub) {
+	SECKEY_DestroyPublicKey(ss->ssl3.channelIDPub);
+	ss->ssl3.channelIDPub = NULL;
+    }
+
+    return rv;
+}
+
+/* ssl3_RestartHandshakeAfterChannelIDReq is called to restart a handshake
+ * after a ChannelID callback returned SECWouldBlock. At this point we have
+ * processed the server's ServerHello but not yet any further messages. We will
+ * always get a message from the server after a ServerHello so either they are
+ * waiting in the buffer or we'll get network I/O. */
+SECStatus
+ssl3_RestartHandshakeAfterChannelIDReq(sslSocket *ss,
+				       SECKEYPublicKey *channelIDPub,
+				       SECKEYPrivateKey *channelID)
+{
+    if (ss->handshake == 0) {
+	SECKEY_DestroyPublicKey(channelIDPub);
+	SECKEY_DestroyPrivateKey(channelID);
+	PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+	return SECFailure;
+    }
+
+    if (channelIDPub == NULL ||
+	channelID == NULL) {
+	if (channelIDPub)
+	    SECKEY_DestroyPublicKey(channelIDPub);
+	if (channelID)
+	    SECKEY_DestroyPrivateKey(channelID);
+	PORT_SetError(PR_INVALID_ARGUMENT_ERROR);
+	return SECFailure;
+    }
+
+    if (ss->ssl3.channelID)
+	SECKEY_DestroyPrivateKey(ss->ssl3.channelID);
+    if (ss->ssl3.channelIDPub)
+	SECKEY_DestroyPublicKey(ss->ssl3.channelIDPub);
+
+    ss->handshake = ssl_GatherRecord1stHandshake;
+    ss->ssl3.channelID = channelID;
+    ss->ssl3.channelIDPub = channelIDPub;
+
+    return SECSuccess;
+}
+
+/* called from ssl3_SendFinished
+ *
+ * Caller must already hold the SpecReadLock. (wish we could assert that!).
+ * This function is simply a debugging aid and therefore does not return a
+ * SECStatus. */
+static void
+ssl3_RecordKeyLog(sslSocket *ss)
+{
+    sslSessionID *sid;
+    SECStatus rv;
+    SECItem *keyData;
+    char buf[14 /* "CLIENT_RANDOM " */ +
+	     SSL3_RANDOM_LENGTH*2 /* client_random */ +
+	     1 /* " " */ +
+	     48*2 /* master secret */ +
+             1 /* new line */];
+    unsigned int j;
+
+    PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
+
+    sid = ss->sec.ci.sid;
+
+    if (!ssl_keylog_iob)
+	return;
+
+    rv = PK11_ExtractKeyValue(ss->ssl3.cwSpec->master_secret);
+    if (rv != SECSuccess)
+	return;
+
+    ssl_GetSpecReadLock(ss);
+
+    /* keyData does not need to be freed. */
+    keyData = PK11_GetKeyData(ss->ssl3.cwSpec->master_secret);
+    if (!keyData || !keyData->data || keyData->len != 48) {
+	ssl_ReleaseSpecReadLock(ss);
+	return;
+    }
+
+    /* https://developer.mozilla.org/en/NSS_Key_Log_Format */
+
+    /* There could be multiple, concurrent writers to the
+     * keylog, so we have to do everything in a single call to
+     * fwrite. */
+
+    memcpy(buf, "CLIENT_RANDOM ", 14);
+    j = 14;
+    hexEncode(buf + j, ss->ssl3.hs.client_random.rand, SSL3_RANDOM_LENGTH);
+    j += SSL3_RANDOM_LENGTH*2;
+    buf[j++] = ' ';
+    hexEncode(buf + j, keyData->data, 48);
+    j += 48*2;
+    buf[j++] = '\n';
+
+    PORT_Assert(j == sizeof(buf));
+
+    ssl_ReleaseSpecReadLock(ss);
+
+    if (fwrite(buf, sizeof(buf), 1, ssl_keylog_iob) != 1)
+        return;
+    fflush(ssl_keylog_iob);
+    return;
+}
+
 /* called from ssl3_HandleServerHelloDone
  *             ssl3_HandleClientHello
  *             ssl3_HandleFinished
@@ -8949,6 +9171,9 @@ ssl3_SendFinished(sslSocket *ss, PRInt32 flags)
     if (rv != SECSuccess) {
 	goto fail;	/* error code set by ssl3_FlushHandshake */
     }
+
+    ssl3_RecordKeyLog(ss);
+
     return SECSuccess;
 
 fail:
@@ -9138,11 +9363,16 @@ ssl3_HandleFinished(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
 	    flags = ssl_SEND_FLAG_FORCE_INTO_BUFFER;
 	}
 
-	if (!isServer && !ss->firstHsDone) {
-	    rv = ssl3_SendNextProto(ss);
-	    if (rv != SECSuccess) {
-		goto xmit_loser; /* err code was set. */
+	if (!isServer) {
+	    if (!ss->firstHsDone) {
+		rv = ssl3_SendNextProto(ss);
+		if (rv != SECSuccess) {
+		    goto xmit_loser; /* err code was set. */
+		}
 	    }
+	    rv = ssl3_SendEncryptedExtensions(ss);
+	    if (rv != SECSuccess)
+		goto xmit_loser; /* err code was set. */
 	}
 
 	if (IS_DTLS(ss)) {
@@ -9300,8 +9530,6 @@ ssl3_HandleHandshakeMessage(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 
 	if (type == finished) {
 	    sender = ss->sec.isServer ? sender_client : sender_server;
-	    rSpec  = ss->ssl3.crSpec;
-	} else if (ssl3_ExtensionNegotiated(ss, ssl_encrypted_client_certs)) {
 	    rSpec  = ss->ssl3.crSpec;
 	}
 	rv = ssl3_ComputeHandshakeHashes(ss, rSpec, &hashes, sender);
@@ -10410,6 +10638,11 @@ ssl3_DestroySSL3Info(sslSocket *ss)
     if (ss->ssl3.platformClientKey)
 	ssl_FreePlatformKey(ss->ssl3.platformClientKey);
 #endif /* NSS_PLATFORM_CLIENT_AUTH */
+
+    if (ss->ssl3.channelID)
+	SECKEY_DestroyPrivateKey(ss->ssl3.channelID);
+    if (ss->ssl3.channelIDPub)
+	SECKEY_DestroyPublicKey(ss->ssl3.channelIDPub);
 
     if (ss->ssl3.peerCertArena != NULL)
 	ssl3_CleanupPeerCerts(ss);

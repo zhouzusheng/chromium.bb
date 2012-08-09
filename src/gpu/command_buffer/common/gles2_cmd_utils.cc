@@ -346,6 +346,10 @@ int ElementsPerGroup(int format, int type) {
     case GL_ALPHA:
     case GL_LUMINANCE:
     case GL_DEPTH_COMPONENT:
+    case GL_DEPTH_COMPONENT24_OES:
+    case GL_DEPTH_COMPONENT32_OES:
+    case GL_DEPTH_COMPONENT16:
+    case GL_DEPTH24_STENCIL8_OES:
     case GL_DEPTH_STENCIL_OES:
        return 1;
     default:
@@ -493,6 +497,8 @@ uint32 GLES2Util::GetGLDataTypeSizeForUniforms(int type) {
       return sizeof(GLfloat) * 4 * 4;      // NOLINT
     case GL_SAMPLER_2D:
       return sizeof(GLint);                // NOLINT
+    case GL_SAMPLER_2D_RECT_ARB:
+      return sizeof(GLint);                // NOLINT
     case GL_SAMPLER_CUBE:
       return sizeof(GLint);                // NOLINT
     case GL_SAMPLER_EXTERNAL_OES:
@@ -598,6 +604,8 @@ uint32 GLES2Util::GetChannelsForFormat(int format) {
     case GL_RGBA4:
     case GL_RGB5_A1:
       return kRGBA;
+    case GL_DEPTH_COMPONENT32_OES:
+    case GL_DEPTH_COMPONENT24_OES:
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH_COMPONENT:
       return kDepth;
@@ -646,7 +654,7 @@ std::string GLES2Util::GetStringError(uint32 value) {
 }
 
 std::string GLES2Util::GetStringBool(uint32 value) {
-  return value ? "true" : "false";
+  return value ? "GL_TRUE" : "GL_FALSE";
 }
 
 std::string GLES2Util::GetQualifiedEnumString(
@@ -748,6 +756,29 @@ bool ContextCreationAttribParser::Parse(const std::vector<int32>& attribs) {
   }
 
   return true;
+}
+
+// Swizzles the locations to prevent developers from assuming they
+// can do math on uniforms. According to the OpenGL ES 2.0 spec
+// the location of "someuniform[1]" is not '1' more than "someuniform[0]".
+static int32 Swizzle(int32 location) {
+  return (location & 0xF0000000U) |
+         ((location & 0x0AAAAAAAU) >> 1) |
+         ((location & 0x05555555U) << 1);
+}
+
+// Adds uniform_swizzle_ to prevent developers from assuming that locations are
+// always the same across GPUs and drivers.
+int32 GLES2Util::SwizzleLocation(int32 v) {
+  return v < 0 ? v : Swizzle(v);
+}
+
+int32 GLES2Util::UnswizzleLocation(int32 v) {
+  return v < 0 ? v : Swizzle(v);
+}
+
+int32 GLES2Util::MakeFakeLocation(int32 index, int32 element) {
+  return index + element * 0x10000;
 }
 
 #include "../common/gles2_cmd_utils_implementation_autogen.h"

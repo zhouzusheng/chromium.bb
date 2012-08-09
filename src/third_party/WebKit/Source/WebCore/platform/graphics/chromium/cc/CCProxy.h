@@ -35,7 +35,7 @@ namespace WebCore {
 
 class CCFontAtlas;
 class CCThread;
-class GraphicsContext3D;
+class CCGraphicsContext;
 struct LayerRendererCapabilities;
 
 // Abstract class responsible for proxying commands from the main-thread side of
@@ -70,6 +70,8 @@ public:
     // Indicates that the compositing surface associated with our context is ready to use.
     virtual void setSurfaceReady() = 0;
 
+    virtual void setVisible(bool) = 0;
+
     // Attempts to initialize the layer renderer. Returns false if the context isn't usable for compositing.
     virtual bool initializeLayerRenderer() = 0;
 
@@ -83,7 +85,6 @@ public:
 
     virtual void setNeedsAnimate() = 0;
     virtual void setNeedsCommit() = 0;
-    virtual void setNeedsForcedCommit() = 0;
     virtual void setNeedsRedraw() = 0;
 
     virtual void didAddAnimation() = 0;
@@ -108,10 +109,12 @@ public:
 #ifndef NDEBUG
     static bool isMainThread();
     static bool isImplThread();
+    static bool isMainThreadBlocked();
+    static void setMainThreadBlocked(bool);
 #endif
 
     // Temporary hack while render_widget still does scheduling for CCLayerTreeHostMainThreadI
-    virtual GraphicsContext3D* context() = 0;
+    virtual CCGraphicsContext* context() = 0;
 
     // Testing hooks
     virtual void loseContext() = 0;
@@ -123,6 +126,25 @@ public:
 protected:
     CCProxy();
     friend class DebugScopedSetImplThread;
+    friend class DebugScopedSetMainThreadBlocked;
+};
+
+class DebugScopedSetMainThreadBlocked {
+public:
+    DebugScopedSetMainThreadBlocked()
+    {
+#if !ASSERT_DISABLED
+        ASSERT(!CCProxy::isMainThreadBlocked());
+        CCProxy::setMainThreadBlocked(true);
+#endif
+    }
+    ~DebugScopedSetMainThreadBlocked()
+    {
+#if !ASSERT_DISABLED
+        ASSERT(CCProxy::isMainThreadBlocked());
+        CCProxy::setMainThreadBlocked(false);
+#endif
+    }
 };
 
 }

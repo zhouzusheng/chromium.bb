@@ -56,7 +56,7 @@ WebInspector.NetworkItemView = function(request)
         var timingView = new WebInspector.RequestTimingView(request);
         this.appendTab("timing", WebInspector.UIString("Timing"), timingView);
     }
-
+    this._request = request;
     if (request.frames().length > 0) {
         var frameView = new WebInspector.ResourceWebSocketFrameView(request);
         this.appendTab("webSocketFrames", WebInspector.UIString("WebSocket Frames"), frameView);
@@ -91,6 +91,14 @@ WebInspector.NetworkItemView.prototype = {
     {
         if (event.data.isUserGesture)
             WebInspector.settings.resourceViewTab.set(event.data.tabId);
+    },
+
+    /**
+      * @return {WebInspector.NetworkRequest}
+      */
+    request: function()
+    {
+        return this._request;
     }
 }
 

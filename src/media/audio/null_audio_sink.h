@@ -15,6 +15,7 @@
 
 #include <vector>
 
+#include "base/md5.h"
 #include "base/threading/thread.h"
 #include "media/base/audio_renderer_sink.h"
 
@@ -24,7 +25,6 @@ class MEDIA_EXPORT NullAudioSink
     : NON_EXPORTED_BASE(public AudioRendererSink) {
  public:
   NullAudioSink();
-  virtual ~NullAudioSink();
 
   // AudioRendererSink implementation.
   virtual void Initialize(const AudioParameters& params,
@@ -36,6 +36,16 @@ class MEDIA_EXPORT NullAudioSink
   virtual void SetPlaybackRate(float rate) OVERRIDE;
   virtual bool SetVolume(double volume) OVERRIDE;
   virtual void GetVolume(double* volume) OVERRIDE;
+
+  // Enables audio frame hashing and reinitializes the MD5 context.  Must be
+  // called prior to Initialize().
+  void StartAudioHashForTesting();
+
+  // Returns the MD5 hash of all audio frames seen since the last reset.
+  std::string GetAudioHashForTesting();
+
+ protected:
+  virtual ~NullAudioSink();
 
  private:
   // Audio thread task that periodically calls FillBuffer() to consume
@@ -56,6 +66,10 @@ class MEDIA_EXPORT NullAudioSink
   // Separate thread used to throw away data.
   base::Thread thread_;
   base::Lock lock_;
+
+  // Controls whether or not a running MD5 hash is computed for audio frames.
+  bool hash_audio_for_testing_;
+  scoped_array<base::MD5Context> md5_channel_contexts_;
 
   DISALLOW_COPY_AND_ASSIGN(NullAudioSink);
 };

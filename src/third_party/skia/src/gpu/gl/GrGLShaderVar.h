@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -11,7 +10,7 @@
 
 #include "GrGLContextInfo.h"
 #include "GrGLSL.h"
-#include "../GrStringBuilder.h"
+#include "GrStringBuilder.h"
 
 #define USE_UNIFORM_FLOAT_ARRAYS true
 
@@ -243,14 +242,14 @@ public:
         }
     }
 
-    void appendArrayAccess(int index, GrStringBuilder* out) {
+    void appendArrayAccess(int index, GrStringBuilder* out) const {
         out->appendf("%s[%d]%s",
                      this->getName().c_str(),
                      index,
                      fUseUniformFloatArrays ? "" : ".x");
     }
 
-    void appendArrayAccess(const char* indexName, GrStringBuilder* out) {
+    void appendArrayAccess(const char* indexName, GrStringBuilder* out) const {
         out->appendf("%s[%s]%s",
                      this->getName().c_str(),
                      indexName,

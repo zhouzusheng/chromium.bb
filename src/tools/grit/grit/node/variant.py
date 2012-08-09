@@ -37,6 +37,6 @@ class SkeletonNode(base.Node):
     else:
       return self.attrs['encoding']
 
-  def GetFilePath(self):
-    return self.ToRealPath(self.attrs['file'])
+  def GetInputPath(self):
+    return self.attrs['file']
 

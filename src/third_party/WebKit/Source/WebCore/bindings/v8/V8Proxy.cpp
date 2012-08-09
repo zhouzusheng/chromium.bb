@@ -69,6 +69,7 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/StringExtras.h>
 #include <wtf/UnusedParam.h>
+#include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 
 #if PLATFORM(CHROMIUM)
@@ -160,7 +161,7 @@ static void handleFatalErrorInV8()
 
 static v8::Local<v8::Value> handleMaxRecursionDepthExceeded()
 {
-    throwError("Maximum call stack size exceeded.", V8Proxy::RangeError);
+    V8Proxy::throwError(V8Proxy::RangeError, "Maximum call stack size exceeded.");
     return v8::Local<v8::Value>();
 }
 
@@ -217,11 +218,11 @@ bool V8Proxy::handleOutOfMemory()
     return true;
 }
 
-void V8Proxy::evaluateInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, WTF::Vector<v8::Local<v8::Value> >* results)
+v8::Local<v8::Array> V8Proxy::evaluateInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup)
 {
     // FIXME: This will need to get reorganized once we have a windowShell for the isolated world.
     if (!windowShell()->initContextIfNeeded())
-        return;
+        return v8::Local<v8::Array>();
 
     v8::HandleScope handleScope;
     V8IsolatedContext* isolatedContext = 0;
@@ -234,7 +235,7 @@ void V8Proxy::evaluateInIsolatedWorld(int worldID, const Vector<ScriptSourceCode
             isolatedContext = new V8IsolatedContext(this, extensionGroup, worldID);
             if (isolatedContext->context().IsEmpty()) {
                 delete isolatedContext;
-                return;
+                return v8::Local<v8::Array>();
             }
 
             // FIXME: We should change this to using window shells to match JSC.
@@ -248,23 +249,25 @@ void V8Proxy::evaluateInIsolatedWorld(int worldID, const Vector<ScriptSourceCode
         isolatedContext = new V8IsolatedContext(this, extensionGroup, worldID);
         if (isolatedContext->context().IsEmpty()) {
             delete isolatedContext;
-            return;
+            return v8::Local<v8::Array>();
         }
     }
 
     v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolatedContext->context());
     v8::Context::Scope context_scope(context);
+    v8::Local<v8::Array> results = v8::Array::New(sources.size());
 
-    if (results) {
-        for (size_t i = 0; i < sources.size(); ++i)
-            results->append(evaluate(sources[i], 0));
-    } else {
-        for (size_t i = 0; i < sources.size(); ++i)
-            evaluate(sources[i], 0);
+    for (size_t i = 0; i < sources.size(); ++i) {
+        v8::Local<v8::Value> evaluationResult = evaluate(sources[i], 0);
+        if (evaluationResult.IsEmpty())
+            evaluationResult = v8::Local<v8::Value>::New(v8::Undefined());
+        results->Set(i, evaluationResult);
     }
 
     if (worldID == 0)
         isolatedContext->destroy();
+
+    return handleScope.Close(results);
 }
 
 void V8Proxy::setIsolatedWorldSecurityOrigin(int worldID, PassRefPtr<SecurityOrigin> prpSecurityOriginIn)
@@ -341,7 +344,7 @@ v8::Local<v8::Value> V8Proxy::evaluate(const ScriptSourceCode& source, Node* nod
 v8::Local<v8::Value> V8Proxy::runScript(v8::Handle<v8::Script> script)
 {
     if (script.IsEmpty())
-        return notHandledByInterceptor();
+        return v8::Local<v8::Value>();
 
     V8GCController::checkMemoryUsage();
     if (V8RecursionScope::recursionLevel() >= kMaxRecursionDepth)
@@ -368,11 +371,11 @@ v8::Local<v8::Value> V8Proxy::runScript(v8::Handle<v8::Script> script)
     // Handle V8 internal error situation (Out-of-memory).
     if (tryCatch.HasCaught()) {
         ASSERT(result.IsEmpty());
-        return notHandledByInterceptor();
+        return v8::Local<v8::Value>();
     }
 
     if (result.IsEmpty())
-        return notHandledByInterceptor();
+        return v8::Local<v8::Value>();
 
     if (v8::V8::IsDead())
         handleFatalErrorInV8();
@@ -387,6 +390,31 @@ v8::Local<v8::Value> V8Proxy::callFunction(v8::Handle<v8::Function> function, v8
     return V8Proxy::instrumentedCallFunction(frame(), function, receiver, argc, args);
 }
 
+static inline void resourceInfo(const v8::Handle<v8::Function> function, String& resourceName, int& lineNumber)
+{
+    v8::ScriptOrigin origin = function->GetScriptOrigin();
+    if (origin.ResourceName().IsEmpty()) {
+        resourceName = "undefined";
+        lineNumber = 1;
+    } else {
+        resourceName = toWebCoreString(origin.ResourceName());
+        lineNumber = function->GetScriptLineNumber() + 1;
+    }
+}
+
+static inline String resourceString(const v8::Handle<v8::Function> function)
+{
+    String resourceName;
+    int lineNumber;
+    resourceInfo(function, resourceName, lineNumber);
+
+    StringBuilder builder;
+    builder.append(resourceName);
+    builder.append(':');
+    builder.append(String::number(lineNumber));
+    return builder.toString();
+}
+
 v8::Local<v8::Value> V8Proxy::instrumentedCallFunction(Frame* frame, v8::Handle<v8::Function> function, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> args[])
 {
     V8GCController::checkMemoryUsage();
@@ -398,20 +426,16 @@ v8::Local<v8::Value> V8Proxy::instrumentedCallFunction(Frame* frame, v8::Handle<
 
     InspectorInstrumentationCookie cookie;
     if (InspectorInstrumentation::hasFrontends() && context) {
-        String resourceName("undefined");
-        int lineNumber = 1;
-        v8::ScriptOrigin origin = function->GetScriptOrigin();
-        if (!origin.ResourceName().IsEmpty()) {
-            resourceName = toWebCoreString(origin.ResourceName());
-            lineNumber = function->GetScriptLineNumber() + 1;
-        }
+        String resourceName;
+        int lineNumber;
+        resourceInfo(function, resourceName, lineNumber);
         cookie = InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
     }
 
     v8::Local<v8::Value> result;
     {
 #if PLATFORM(CHROMIUM)
-        TRACE_EVENT0("v8", "v8.callFunction");
+        TRACE_EVENT1("v8", "v8.callFunction", "callsite", resourceString(function).utf8());
 #endif
         V8RecursionScope recursionScope(context);
         result = function->Call(receiver, argc, args);
@@ -547,15 +571,27 @@ void V8Proxy::clearForNavigation()
     windowShell()->clearForNavigation();
 }
 
+static v8::Handle<v8::Value> DOMExceptionStackGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
+{
+    ASSERT(info.Data()->IsObject());
+    return info.Data()->ToObject()->Get(v8String("stack", info.GetIsolate()));
+}
+
+static void DOMExceptionStackSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
+{
+    ASSERT(info.Data()->IsObject());
+    info.Data()->ToObject()->Set(v8String("stack", info.GetIsolate()), value);
+}
+
 #define TRY_TO_CREATE_EXCEPTION(interfaceName) \
     case interfaceName##Type: \
         exception = toV8(interfaceName::create(description), isolate); \
         break;
 
-void V8Proxy::setDOMException(int ec, v8::Isolate* isolate)
+v8::Handle<v8::Value> V8Proxy::setDOMException(int ec, v8::Isolate* isolate)
 {
     if (ec <= 0)
-        return;
+        return v8::Handle<v8::Value>();
 
     ExceptionCodeDescription description(ec);
 
@@ -564,8 +600,16 @@ void V8Proxy::setDOMException(int ec, v8::Isolate* isolate)
         DOM_EXCEPTION_INTERFACES_FOR_EACH(TRY_TO_CREATE_EXCEPTION)
     }
 
-    if (!exception.IsEmpty())
-        v8::ThrowException(exception);
+    if (exception.IsEmpty())
+        return v8::Handle<v8::Value>();
+
+    // Attach an Error object to the DOMException. This is then lazily used to get the stack value.
+    v8::Handle<v8::Value> error = v8::Exception::Error(v8String(description.description, isolate));
+    ASSERT(!error.IsEmpty());
+    ASSERT(exception->IsObject());
+    exception->ToObject()->SetAccessor(v8String("stack", isolate), DOMExceptionStackGetter, DOMExceptionStackSetter, error);
+
+    return v8::ThrowException(exception);
 }
 
 #undef TRY_TO_CREATE_EXCEPTION
@@ -585,18 +629,18 @@ v8::Handle<v8::Value> V8Proxy::throwError(ErrorType type, const char* message, v
         return v8::ThrowException(v8::Exception::Error(v8String(message, isolate)));
     default:
         ASSERT_NOT_REACHED();
-        return notHandledByInterceptor();
+        return v8::Handle<v8::Value>();
     }
 }
 
-v8::Handle<v8::Value> V8Proxy::throwTypeError()
+v8::Handle<v8::Value> V8Proxy::throwTypeError(const char* message, v8::Isolate* isolate)
 {
-    return throwError(TypeError, "Type error");
+    return throwError(TypeError, (message ? message : "Type error"), isolate);
 }
 
-v8::Handle<v8::Value> V8Proxy::throwNotEnoughArgumentsError()
+v8::Handle<v8::Value> V8Proxy::throwNotEnoughArgumentsError(v8::Isolate* isolate)
 {
-    return throwError(TypeError, "Not enough arguments");
+    return throwError(TypeError, "Not enough arguments", isolate);
 }
 
 v8::Local<v8::Context> V8Proxy::context(Frame* frame)
@@ -631,6 +675,14 @@ v8::Local<v8::Context> V8Proxy::mainWorldContext()
     return v8::Local<v8::Context>::New(windowShell()->context());
 }
 
+v8::Local<v8::Context> V8Proxy::isolatedWorldContext(int worldId)
+{
+    IsolatedWorldMap::iterator iter = m_isolatedWorlds.find(worldId);
+    if (iter == m_isolatedWorlds.end())
+        return v8::Local<v8::Context>();
+    return v8::Local<v8::Context>::New(iter->second->context());
+}
+
 bool V8Proxy::matchesCurrentContext()
 {
     v8::Handle<v8::Context> context;
@@ -662,7 +714,7 @@ v8::Local<v8::Context> V8Proxy::currentContext()
 v8::Handle<v8::Value> V8Proxy::checkNewLegal(const v8::Arguments& args)
 {
     if (ConstructorMode::current() == ConstructorMode::CreateNewObject)
-        return throwError(TypeError, "Illegal constructor");
+        return throwError(TypeError, "Illegal constructor", args.GetIsolate());
 
     return args.This();
 }
@@ -725,6 +777,21 @@ int V8Proxy::contextDebugId(v8::Handle<v8::Context> context)
     if (!comma)
         return -1;
     return atoi(comma + 1);
+}
+
+void V8Proxy::collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*> >& result)
+{
+    v8::HandleScope handleScope;
+    for (IsolatedWorldMap::iterator it = m_isolatedWorlds.begin(); it != m_isolatedWorlds.end(); ++it) {
+        V8IsolatedContext* isolatedContext = it->second;
+        if (!isolatedContext->securityOrigin())
+            continue;
+        v8::Handle<v8::Context> v8Context = isolatedContext->context();
+        if (v8Context.IsEmpty())
+            continue;
+        ScriptState* scriptState = ScriptState::forContext(v8::Local<v8::Context>::New(v8Context));
+        result.append(std::pair<ScriptState*, SecurityOrigin*>(scriptState, isolatedContext->securityOrigin()));
+    }
 }
 
 v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, const WorldContextHandle& worldContext)

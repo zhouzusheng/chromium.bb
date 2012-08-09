@@ -7,9 +7,6 @@
 '''
 
 
-import re
-
-
 class ItemFormatter(object):
   """Base class for a formatter that knows how to format a single item."""
 

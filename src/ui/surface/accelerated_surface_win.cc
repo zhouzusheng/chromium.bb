@@ -25,7 +25,7 @@
 #include "base/tracked_objects.h"
 #include "base/win/wrapped_window_proc.h"
 #include "ui/base/win/hwnd_util.h"
-#include "ui/gfx/gl/gl_switches.h"
+#include "ui/gl/gl_switches.h"
 
 namespace {
 
@@ -34,6 +34,83 @@ typedef HRESULT (WINAPI *Direct3DCreate9ExFunc)(UINT sdk_version,
 
 const wchar_t kD3D9ModuleName[] = L"d3d9.dll";
 const char kCreate3D9DeviceExName[] = "Direct3DCreate9Ex";
+const char kReverseImageTransportSurfaceRows[] =
+    "reverse-image-transport-surface-rows";
+
+struct Vertex {
+  float x, y, z, w;
+  float u, v;
+};
+
+// See accelerated_surface_win.hlsl for source and compilation instructions.
+const BYTE g_vertexMain[] = {
+    0,   2, 254, 255, 254, 255,
+   22,   0,  67,  84,  65,  66,
+   28,   0,   0,   0,  35,   0,
+    0,   0,   0,   2, 254, 255,
+    0,   0,   0,   0,   0,   0,
+    0,   0,   0,   1,   0,   0,
+   28,   0,   0,   0, 118, 115,
+   95,  50,  95,  48,   0,  77,
+  105,  99, 114, 111, 115, 111,
+  102, 116,  32,  40,  82,  41,
+   32,  72,  76,  83,  76,  32,
+   83, 104,  97, 100, 101, 114,
+   32,  67, 111, 109, 112, 105,
+  108, 101, 114,  32,  57,  46,
+   50,  57,  46,  57,  53,  50,
+   46,  51,  49,  49,  49,   0,
+   31,   0,   0,   2,   0,   0,
+    0, 128,   0,   0,  15, 144,
+   31,   0,   0,   2,   5,   0,
+    0, 128,   1,   0,  15, 144,
+    1,   0,   0,   2,   0,   0,
+   15, 192,   0,   0, 228, 144,
+    1,   0,   0,   2,   0,   0,
+    3, 224,   1,   0, 228, 144,
+  255, 255,   0,   0
+};
+
+const BYTE g_pixelMain[] = {
+    0,   2, 255, 255, 254, 255,
+   32,   0,  67,  84,  65,  66,
+   28,   0,   0,   0,  75,   0,
+    0,   0,   0,   2, 255, 255,
+    1,   0,   0,   0,  28,   0,
+    0,   0,   0,   1,   0,   0,
+   68,   0,   0,   0,  48,   0,
+    0,   0,   3,   0,   0,   0,
+    1,   0,   0,   0,  52,   0,
+    0,   0,   0,   0,   0,   0,
+  115,   0, 171, 171,   4,   0,
+   12,   0,   1,   0,   1,   0,
+    1,   0,   0,   0,   0,   0,
+    0,   0, 112, 115,  95,  50,
+   95,  48,   0,  77, 105,  99,
+  114, 111, 115, 111, 102, 116,
+   32,  40,  82,  41,  32,  72,
+   76,  83,  76,  32,  83, 104,
+   97, 100, 101, 114,  32,  67,
+  111, 109, 112, 105, 108, 101,
+  114,  32,  57,  46,  50,  57,
+   46,  57,  53,  50,  46,  51,
+   49,  49,  49,   0,  31,   0,
+    0,   2,   0,   0,   0, 128,
+    0,   0,   3, 176,  31,   0,
+    0,   2,   0,   0,   0, 144,
+    0,   8,  15, 160,  66,   0,
+    0,   3,   0,   0,  15, 128,
+    0,   0, 228, 176,   0,   8,
+  228, 160,   1,   0,   0,   2,
+    0,   8,  15, 128,   0,   0,
+  228, 128, 255, 255,   0,   0
+};
+
+const static D3DVERTEXELEMENT9 g_vertexElements[] = {
+  { 0, 0, D3DDECLTYPE_FLOAT4, 0, D3DDECLUSAGE_POSITION, 0 },
+  { 0, 16, D3DDECLTYPE_FLOAT2, 0, D3DDECLUSAGE_TEXCOORD, 0 },
+  D3DDECL_END()
+};
 
 UINT GetPresentationInterval() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
@@ -161,13 +238,13 @@ void PresentThread::InitDevice() {
   if (device_)
     return;
 
-  TRACE_EVENT0("surface", "PresentThread::Init");
+  TRACE_EVENT0("gpu", "PresentThread::Init");
   d3d_module_.Reset(base::LoadNativeLibrary(FilePath(kD3D9ModuleName), NULL));
   ResetDevice();
 }
 
 void PresentThread::ResetDevice() {
-  TRACE_EVENT0("surface", "PresentThread::ResetDevice");
+  TRACE_EVENT0("gpu", "PresentThread::ResetDevice");
 
   // This will crash some Intel drivers but we can't render anything without
   // reseting the device, which would be disappointing.
@@ -212,8 +289,44 @@ void PresentThread::ResetDevice() {
     return;
 
   hr = device_->CreateQuery(D3DQUERYTYPE_EVENT, query_.Receive());
-  if (FAILED(hr))
+  if (FAILED(hr)) {
     device_ = NULL;
+    return;
+  }
+
+  base::win::ScopedComPtr<IDirect3DVertexShader9> vertex_shader;
+  hr = device_->CreateVertexShader(reinterpret_cast<const DWORD*>(g_vertexMain),
+                                   vertex_shader.Receive());
+  if (FAILED(hr)) {
+    device_ = NULL;
+    query_ = NULL;
+    return;
+  }
+
+  device_->SetVertexShader(vertex_shader);
+
+  base::win::ScopedComPtr<IDirect3DPixelShader9> pixel_shader;
+  hr = device_->CreatePixelShader(reinterpret_cast<const DWORD*>(g_pixelMain),
+                                  pixel_shader.Receive());
+
+  if (FAILED(hr)) {
+    device_ = NULL;
+    query_ = NULL;
+    return;
+  }
+
+  device_->SetPixelShader(pixel_shader);
+
+  base::win::ScopedComPtr<IDirect3DVertexDeclaration9> vertex_declaration;
+  hr = device_->CreateVertexDeclaration(g_vertexElements,
+                                        vertex_declaration.Receive());
+  if (FAILED(hr)) {
+    device_ = NULL;
+    query_ = NULL;
+    return;
+  }
+
+  device_->SetVertexDeclaration(vertex_declaration);
 }
 
 void PresentThread::CleanUp() {
@@ -285,7 +398,10 @@ scoped_refptr<AcceleratedPresenter> AcceleratedPresenterMap::GetPresenter(
 AcceleratedPresenter::AcceleratedPresenter(gfx::NativeWindow window)
     : present_thread_(g_present_thread_pool.Pointer()->NextThread()),
       window_(window),
-      event_(false, false) {
+      event_(false, false),
+      hidden_(true) {
+  reverse_rows_ = CommandLine::ForCurrentProcess()->HasSwitch(
+      kReverseImageTransportSurfaceRows);
 }
 
 scoped_refptr<AcceleratedPresenter> AcceleratedPresenter::GetForWindow(
@@ -311,8 +427,8 @@ void AcceleratedPresenter::AsyncPresentAndAcknowledge(
                  completion_task));
 }
 
-bool AcceleratedPresenter::Present() {
-  TRACE_EVENT0("surface", "Present");
+bool AcceleratedPresenter::Present(HDC dc) {
+  TRACE_EVENT0("gpu", "Present");
 
   bool result;
 
@@ -320,6 +436,7 @@ bool AcceleratedPresenter::Present() {
       FROM_HERE,
       base::Bind(&AcceleratedPresenter::DoPresent,
                  this,
+                 dc,
                  &result));
   // http://crbug.com/125391
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
@@ -327,37 +444,58 @@ bool AcceleratedPresenter::Present() {
   return result;
 }
 
-void AcceleratedPresenter::DoPresent(bool* result)
+void AcceleratedPresenter::DoPresent(HDC dc, bool* result)
 {
-  *result = DoRealPresent();
+  *result = DoRealPresent(dc);
   event_.Signal();
 }
 
-bool AcceleratedPresenter::DoRealPresent()
+bool AcceleratedPresenter::DoRealPresent(HDC dc)
 {
-  TRACE_EVENT0("surface", "DoRealPresent");
+  TRACE_EVENT0("gpu", "DoRealPresent");
   HRESULT hr;
 
   base::AutoLock locked(lock_);
+
+  // If invalidated, do nothing. The window is gone.
+  if (!window_)
+    return true;
+
+
+  RECT window_rect;
+  GetClientRect(window_, &window_rect);
+  if (window_rect.right != present_size_.width() ||
+      window_rect.bottom != present_size_.height()) {
+    // If the window is a different size than the swap chain that was previously
+    // presented and it is becoming visible then signal the caller to
+    // recomposite at the new size.
+    if (hidden_)
+      return false;
+
+    HBRUSH brush = static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+    RECT fill_rect = window_rect;
+    fill_rect.top = present_size_.height();
+    FillRect(dc, &fill_rect, brush);
+    fill_rect = window_rect;
+    fill_rect.left = present_size_.width();
+    fill_rect.bottom = present_size_.height();
+    FillRect(dc, &fill_rect, brush);
+  }
 
   // Signal the caller to recomposite if the presenter has been suspended or no
   // surface has ever been presented.
   if (!swap_chain_)
     return false;
 
-  // If invalidated, do nothing. The window is gone.
-  if (!window_)
-    return true;
-
-  RECT rect = {
+  RECT present_rect = {
     0, 0,
-    size_.width(), size_.height()
+    present_size_.width(), present_size_.height()
   };
 
   {
-    TRACE_EVENT0("surface", "PresentEx");
-    hr = swap_chain_->Present(&rect,
-                              &rect,
+    TRACE_EVENT0("gpu", "PresentEx");
+    hr = swap_chain_->Present(&present_rect,
+                              &present_rect,
                               window_,
                               NULL,
                               D3DPRESENT_INTERVAL_IMMEDIATE);
@@ -475,6 +613,11 @@ void AcceleratedPresenter::Suspend() {
                  this));
 }
 
+void AcceleratedPresenter::WasHidden() {
+  base::AutoLock locked(lock_);
+  hidden_ = true;
+}
+
 void AcceleratedPresenter::ReleaseSurface() {
   present_thread_->message_loop()->PostTask(
       FROM_HERE,
@@ -509,7 +652,7 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     int64 surface_handle,
     const base::Callback<void(bool)>& completion_task) {
   TRACE_EVENT1(
-      "surface", "DoPresentAndAcknowledge", "surface_handle", surface_handle);
+      "gpu", "DoPresentAndAcknowledge", "surface_handle", surface_handle);
 
   HRESULT hr;
 
@@ -532,6 +675,15 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   if (!window_)
     return;
 
+  // If the window is a different size than the swap chain that is being
+  // presented then drop the frame.
+  RECT window_rect;
+  GetClientRect(window_, &window_rect);
+  if (hidden_ && (window_rect.right != size.width() ||
+      window_rect.bottom != size.height())) {
+    return;
+  }
+
   // Round up size so the swap chain is not continuously resized with the
   // surface, which could lead to memory fragmentation.
   const int kRound = 64;
@@ -541,9 +693,9 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
 
   // Ensure the swap chain exists and is the same size (rounded up) as the
   // surface to be presented.
-  if (!swap_chain_ || size_ != quantized_size) {
-    TRACE_EVENT0("surface", "CreateAdditionalSwapChain");
-    size_ = quantized_size;
+  if (!swap_chain_ || quantized_size_ != quantized_size) {
+    TRACE_EVENT0("gpu", "CreateAdditionalSwapChain");
+    quantized_size_ = quantized_size;
 
     D3DPRESENT_PARAMETERS parameters = { 0 };
     parameters.BackBufferWidth = quantized_size.width();
@@ -565,7 +717,7 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   }
 
   if (!source_texture_.get()) {
-    TRACE_EVENT0("surface", "CreateTexture");
+    TRACE_EVENT0("gpu", "CreateTexture");
     HANDLE handle = reinterpret_cast<HANDLE>(surface_handle);
     hr = present_thread_->device()->CreateTexture(size.width(),
                                                   size.height(),
@@ -597,14 +749,54 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   };
 
   {
-    TRACE_EVENT0("surface", "StretchRect");
-    hr = present_thread_->device()->StretchRect(source_surface,
-                                                &rect,
-                                                dest_surface,
-                                                &rect,
-                                                D3DTEXF_NONE);
-    if (FAILED(hr))
-      return;
+    TRACE_EVENT0("gpu", "Copy");
+
+    if (reverse_rows_) {
+      // Use a simple pixel / vertex shader pair to render a quad that flips the
+      // source texture on the vertical axis.
+      IDirect3DSurface9 *default_render_target = NULL;
+      present_thread_->device()->GetRenderTarget(0, &default_render_target);
+
+      present_thread_->device()->SetRenderTarget(0, dest_surface);
+      present_thread_->device()->SetTexture(0, source_texture_);
+
+      D3DVIEWPORT9 viewport = {
+        0, 0,
+        size.width(), size.height(),
+        0, 1
+      };
+      present_thread_->device()->SetViewport(&viewport);
+
+      float halfPixelX = -1.0f / size.width();
+      float halfPixelY = 1.0f / size.height();
+      Vertex vertices[] = {
+        { halfPixelX - 1, halfPixelY + 1, 0.5f, 1, 0, 1 },
+        { halfPixelX + 1, halfPixelY + 1, 0.5f, 1, 1, 1 },
+        { halfPixelX + 1, halfPixelY - 1, 0.5f, 1, 1, 0 },
+        { halfPixelX - 1, halfPixelY - 1, 0.5f, 1, 0, 0 }
+      };
+
+      present_thread_->device()->BeginScene();
+      present_thread_->device()->DrawPrimitiveUP(D3DPT_TRIANGLEFAN,
+                                                 arraysize(vertices),
+                                                 vertices,
+                                                 sizeof(vertices[0]));
+      present_thread_->device()->EndScene();
+
+      present_thread_->device()->SetTexture(0, NULL);
+      present_thread_->device()->SetRenderTarget(0, default_render_target);
+      default_render_target->Release();
+    } else {
+      // Copy the source texture directly into the swap chain without reversing
+      // the rows.
+      hr = present_thread_->device()->StretchRect(source_surface,
+                                                  &rect,
+                                                  dest_surface,
+                                                  &rect,
+                                                  D3DTEXF_NONE);
+      if (FAILED(hr))
+        return;
+    }
   }
 
   hr = present_thread_->query()->Issue(D3DISSUE_END);
@@ -615,19 +807,12 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
   // being resized.
   present_thread_->query()->GetData(NULL, 0, D3DGETDATA_FLUSH);
 
-  ::SetWindowPos(
-      window_,
-      NULL,
-      0, 0,
-      size.width(), size.height(),
-      SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOMOVE |SWP_NOOWNERZORDER |
-          SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSENDCHANGING |
-          SWP_ASYNCWINDOWPOS | SWP_NOZORDER);
+  present_size_ = size;
 
   // Wait for the StretchRect to complete before notifying the GPU process
   // that it is safe to write to its backing store again.
   {
-    TRACE_EVENT0("surface", "spin");
+    TRACE_EVENT0("gpu", "spin");
     do {
       hr = present_thread_->query()->GetData(NULL, 0, D3DGETDATA_FLUSH);
 
@@ -641,13 +826,15 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     base::PlatformThread::Sleep(swap_delay);
 
   {
-    TRACE_EVENT0("surface", "Present");
+    TRACE_EVENT0("gpu", "Present");
     hr = swap_chain_->Present(&rect, &rect, window_, NULL, 0);
     if (FAILED(hr) &&
         FAILED(present_thread_->device()->CheckDeviceState(window_))) {
       present_thread_->ResetDevice();
     }
   }
+
+  hidden_ = false;
 }
 
 void AcceleratedPresenter::DoSuspend() {
@@ -670,8 +857,8 @@ AcceleratedSurface::~AcceleratedSurface() {
   presenter_->Invalidate();
 }
 
-bool AcceleratedSurface::Present() {
-  return presenter_->Present();
+bool AcceleratedSurface::Present(HDC dc) {
+  return presenter_->Present(dc);
 }
 
 bool AcceleratedSurface::CopyTo(const gfx::Size& size, void* buf) {
@@ -680,4 +867,8 @@ bool AcceleratedSurface::CopyTo(const gfx::Size& size, void* buf) {
 
 void AcceleratedSurface::Suspend() {
   presenter_->Suspend();
+}
+
+void AcceleratedSurface::WasHidden() {
+  presenter_->WasHidden();
 }

@@ -11,7 +11,7 @@
 #define SkTypeface_DEFINED
 
 #include "SkAdvancedTypefaceMetrics.h"
-#include "SkRefCnt.h"
+#include "SkWeakRefCnt.h"
 
 class SkStream;
 class SkAdvancedTypefaceMetrics;
@@ -29,7 +29,7 @@ typedef uint32_t SkFontTableTag;
 
     Typeface objects are immutable, and so they can be shared between threads.
 */
-class SK_API SkTypeface : public SkRefCnt {
+class SK_API SkTypeface : public SkWeakRefCnt {
 public:
     /** Style specifies the intrinsic style attributes of a given typeface
     */
@@ -84,18 +84,6 @@ public:
                 unref() when they are done.
     */
     static SkTypeface* CreateFromName(const char familyName[], Style style);
-
-    /** Return a new reference to the typeface that covers a set of Unicode
-        code points with the specified Style. Use this call if you want to
-        pick any font that covers a given string of text.
-
-        @param data        UTF-16 characters
-        @param bytelength  length of data, in bytes
-        @return reference to the closest-matching typeface. Call must call
-                unref() when they are done.
-    */
-    static SkTypeface* CreateForChars(const void* data, size_t bytelength,
-                                      Style s);
 
     /** Return a new reference to the typeface that most closely matches the
         requested typeface and specified Style. Use this call if you want to
@@ -198,7 +186,7 @@ private:
     Style       fStyle;
     bool        fIsFixedWidth;
 
-    typedef SkRefCnt INHERITED;
+    typedef SkWeakRefCnt INHERITED;
 };
 
 #endif

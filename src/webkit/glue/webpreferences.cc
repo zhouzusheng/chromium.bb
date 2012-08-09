@@ -4,40 +4,39 @@
 
 #include "webkit/glue/webpreferences.h"
 
-#include <unicode/uchar.h>
-
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "unicode/uchar.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebNetworkStateNotifier;
 using WebKit::WebRuntimeFeatures;
 using WebKit::WebSettings;
+using WebKit::WebSize;
 using WebKit::WebString;
 using WebKit::WebURL;
 using WebKit::WebView;
 
+namespace webkit_glue {
+
+// "Zyyy" is the ISO 15924 script code for undetermined script aka Common.
+const char WebPreferences::kCommonScript[] = "Zyyy";
+
 WebPreferences::WebPreferences()
-    : standard_font_family(ASCIIToUTF16("Times New Roman")),
-      fixed_font_family(ASCIIToUTF16("Courier New")),
-      serif_font_family(ASCIIToUTF16("Times New Roman")),
-      sans_serif_font_family(ASCIIToUTF16("Arial")),
-      cursive_font_family(ASCIIToUTF16("Script")),
-      fantasy_font_family(),  // Not sure what to use on Windows.
-      default_font_size(16),
+    : default_font_size(16),
       default_fixed_font_size(13),
       minimum_font_size(0),
       minimum_logical_font_size(6),
-      default_device_scale_factor(1),
       default_encoding("ISO-8859-1"),
+      apply_default_device_scale_factor_in_compositor(false),
       javascript_enabled(true),
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
@@ -71,15 +70,17 @@ WebPreferences::WebPreferences()
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
       experimental_webgl_enabled(false),
+      flash_3d_enabled(true),
+      flash_stage3d_enabled(false),
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
       show_composited_layer_borders(false),
       show_composited_layer_tree(false),
       show_fps_counter(false),
+      show_paint_rects(false),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
-      threaded_animation_enabled(false),
       accelerated_compositing_enabled(false),
       force_compositing_mode(false),
       fixed_position_compositing_enabled(false),
@@ -91,7 +92,6 @@ WebPreferences::WebPreferences()
       accelerated_painting_enabled(false),
       accelerated_filters_enabled(false),
       accelerated_plugins_enabled(false),
-      partial_swap_enabled(false),
       memory_info_enabled(false),
       interactive_form_validation_enabled(true),
       fullscreen_enabled(false),
@@ -102,9 +102,33 @@ WebPreferences::WebPreferences()
       enable_scroll_animator(false),
       hixie76_websocket_protocol_enabled(false),
       visual_word_movement_enabled(false),
-      per_tile_painting_enabled(false),
       css_regions_enabled(false),
-      css_shaders_enabled(false) {
+      css_shaders_enabled(false),
+      device_supports_touch(false),
+#if !defined(WEBCOMPOSITOR_OWNS_SETTINGS)
+      threaded_animation_enabled(false),
+      per_tile_painting_enabled(false),
+      partial_swap_enabled(false),
+#endif
+      default_tile_width(256),
+      default_tile_height(256),
+      max_untiled_layer_width(512),
+      max_untiled_layer_height(512),
+      fixed_position_creates_stacking_context(false),
+      sync_xhr_in_documents_enabled(true),
+      number_of_cpu_cores(1) {
+  standard_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Times New Roman");
+  fixed_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Courier New");
+  serif_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Times New Roman");
+  sans_serif_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Arial");
+  cursive_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Script");
+  fantasy_font_family_map[kCommonScript] =
+      ASCIIToUTF16("Impact");
 }
 
 WebPreferences::~WebPreferences() {
@@ -166,12 +190,6 @@ void ApplyFontsFromMap(const WebPreferences::ScriptFontFamilyMap& map,
 
 void WebPreferences::Apply(WebView* web_view) const {
   WebSettings* settings = web_view->settings();
-  settings->setStandardFontFamily(standard_font_family);
-  settings->setFixedFontFamily(fixed_font_family);
-  settings->setSerifFontFamily(serif_font_family);
-  settings->setSansSerifFontFamily(sans_serif_font_family);
-  settings->setCursiveFontFamily(cursive_font_family);
-  settings->setFantasyFontFamily(fantasy_font_family);
   ApplyFontsFromMap(standard_font_family_map, setStandardFontFamilyWrapper,
                     settings);
   ApplyFontsFromMap(fixed_font_family_map, setFixedFontFamilyWrapper, settings);
@@ -186,8 +204,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setDefaultFixedFontSize(default_fixed_font_size);
   settings->setMinimumFontSize(minimum_font_size);
   settings->setMinimumLogicalFontSize(minimum_logical_font_size);
-  settings->setDefaultDeviceScaleFactor(default_device_scale_factor);
   settings->setDefaultTextEncodingName(ASCIIToUTF16(default_encoding));
+  settings->setApplyDefaultDeviceScaleFactorInCompositor(
+      apply_default_device_scale_factor_in_compositor);
   settings->setJavaScriptEnabled(javascript_enabled);
   settings->setWebSecurityEnabled(web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
@@ -213,6 +232,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setXSSAuditorEnabled(xss_auditor_enabled);
   settings->setDNSPrefetchingEnabled(dns_prefetching_enabled);
   settings->setLocalStorageEnabled(local_storage_enabled);
+  settings->setSyncXHRInDocumentsEnabled(sync_xhr_in_documents_enabled);
   WebRuntimeFeatures::enableDatabase(databases_enabled);
   settings->setOfflineWebApplicationCacheEnabled(application_cache_enabled);
   settings->setCaretBrowsingEnabled(caret_browsing_enabled);
@@ -270,7 +290,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   // the command line
   settings->setShowPlatformLayerTree(show_composited_layer_tree);
 
-  settings->setThreadedAnimationEnabled(threaded_animation_enabled);
+  // Display visualization of what has changed on the screen using an
+  // overlay of rects, if requested on the command line.
+  settings->setShowPaintRects(show_paint_rects);
 
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
@@ -312,9 +334,6 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setAcceleratedCompositingForCanvasEnabled(
       experimental_webgl_enabled || accelerated_2d_canvas_enabled);
 
-  // Enable partial swaps if specified form the command line.
-  settings->setPartialSwapEnabled(partial_swap_enabled);
-
   // Enable memory info reporting to page if requested on the command line.
   settings->setMemoryInfoEnabled(memory_info_enabled);
 
@@ -344,11 +363,30 @@ void WebPreferences::Apply(WebView* web_view) const {
       hixie76_websocket_protocol_enabled);
   settings->setVisualWordMovementEnabled(visual_word_movement_enabled);
 
-  // Enable per-tile painting if requested on the command line.
-  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
-
   settings->setExperimentalCSSRegionsEnabled(css_regions_enabled);
   settings->setExperimentalCSSCustomFilterEnabled(css_shaders_enabled);
 
+  settings->setDeviceSupportsTouch(device_supports_touch);
+
+#if !defined(WEBCOMPOSITOR_OWNS_SETTINGS)
+  settings->setThreadedAnimationEnabled(threaded_animation_enabled);
+
+  // Enable per-tile painting if requested on the command line.
+  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
+
+  // Enable partial swaps if specified form the command line.
+  settings->setPartialSwapEnabled(partial_swap_enabled);
+#endif
+
+  settings->setDefaultTileSize(
+      WebSize(default_tile_width, default_tile_height));
+  settings->setMaxUntiledLayerSize(
+      WebSize(max_untiled_layer_width, max_untiled_layer_height));
+
+  settings->setFixedPositionCreatesStackingContext(
+      fixed_position_creates_stacking_context);
+
   WebNetworkStateNotifier::setOnLine(is_online);
 }
+
+}  // namespace webkit_glue

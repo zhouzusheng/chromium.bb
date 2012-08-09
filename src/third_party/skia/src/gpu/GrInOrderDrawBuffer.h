@@ -143,31 +143,34 @@ private:
                                int startVertex,
                                int startIndex,
                                int vertexCount,
-                               int indexCount);
+                               int indexCount) SK_OVERRIDE;
     virtual void onDrawNonIndexed(GrPrimitiveType primitiveType,
                                   int startVertex,
-                                  int vertexCount);
+                                  int vertexCount) SK_OVERRIDE;
+    virtual void onStencilPath(const GrPath&, GrPathFill) SK_OVERRIDE;
     virtual bool onReserveVertexSpace(GrVertexLayout layout, 
                                       int vertexCount,
-                                      void** vertices);
-    virtual bool onReserveIndexSpace(int indexCount, void** indices);
-    virtual void releaseReservedVertexSpace();
-    virtual void releaseReservedIndexSpace();
+                                      void** vertices) SK_OVERRIDE;
+    virtual bool onReserveIndexSpace(int indexCount,
+                                     void** indices) SK_OVERRIDE;
+    virtual void releaseReservedVertexSpace() SK_OVERRIDE;
+    virtual void releaseReservedIndexSpace() SK_OVERRIDE;
     virtual void onSetVertexSourceToArray(const void* vertexArray,
-                                          int vertexCount);
+                                          int vertexCount) SK_OVERRIDE;
     virtual void onSetIndexSourceToArray(const void* indexArray,
-                                         int indexCount);
-    virtual void releaseVertexArray();
-    virtual void releaseIndexArray();
-    virtual void geometrySourceWillPush();
-    virtual void geometrySourceWillPop(const GeometrySrcState& restoredState);
-    virtual void clipWillBeSet(const GrClip& newClip);
+                                         int indexCount) SK_OVERRIDE;
+    virtual void releaseVertexArray() SK_OVERRIDE;
+    virtual void releaseIndexArray() SK_OVERRIDE;
+    virtual void geometrySourceWillPush() SK_OVERRIDE;
+    virtual void geometrySourceWillPop(
+        const GeometrySrcState& restoredState) SK_OVERRIDE;
+    virtual void clipWillBeSet(const GrClip& newClip) SK_OVERRIDE;
 
     bool needsNewState() const;
     bool needsNewClip() const;
 
     void pushState();
-    void pushClip();
+    void storeClip();
 
     // call this to invalidate the tracking data that is used to concatenate 
     // multiple draws into a single draw.

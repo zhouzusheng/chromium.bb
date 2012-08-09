@@ -110,17 +110,12 @@ SkScalar SkPoint::Normalize(SkPoint* pt) {
     float mag2;
     if (!isLengthNearlyZero(pt->fX, pt->fY, &mag2)) {
         float mag = sk_float_sqrt(mag2);
-        float scale = 1.0 / mag;
+        float scale = 1.0f / mag;
         pt->fX = pt->fX * scale;
         pt->fY = pt->fY * scale;
         return mag;
     }
     return 0;
-}
-
-bool SkPoint::CanNormalize(SkScalar dx, SkScalar dy) {
-    float mag2_unused;
-    return !isLengthNearlyZero(dx, dy, &mag2_unused);
 }
 
 SkScalar SkPoint::Length(SkScalar dx, SkScalar dy) {

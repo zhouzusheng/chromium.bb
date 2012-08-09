@@ -42,16 +42,16 @@ GR_STATIC_ASSERT((int)GrSamplerState::kMirror_WrapMode ==
 
 #define sk_tile_mode_to_grwrap(X) ((GrSamplerState::WrapMode)(X))
 
-GR_STATIC_ASSERT((int)kZero_BlendCoeff == (int)SkXfermode::kZero_Coeff);
-GR_STATIC_ASSERT((int)kOne_BlendCoeff  == (int)SkXfermode::kOne_Coeff);
-GR_STATIC_ASSERT((int)kSC_BlendCoeff   == (int)SkXfermode::kSC_Coeff);
-GR_STATIC_ASSERT((int)kISC_BlendCoeff  == (int)SkXfermode::kISC_Coeff);
-GR_STATIC_ASSERT((int)kDC_BlendCoeff   == (int)SkXfermode::kDC_Coeff);
-GR_STATIC_ASSERT((int)kIDC_BlendCoeff  == (int)SkXfermode::kIDC_Coeff);
-GR_STATIC_ASSERT((int)kSA_BlendCoeff   == (int)SkXfermode::kSA_Coeff);
-GR_STATIC_ASSERT((int)kISA_BlendCoeff  == (int)SkXfermode::kISA_Coeff);
-GR_STATIC_ASSERT((int)kDA_BlendCoeff   == (int)SkXfermode::kDA_Coeff);
-GR_STATIC_ASSERT((int)kIDA_BlendCoeff  == (int)SkXfermode::kIDA_Coeff);
+GR_STATIC_ASSERT((int)kZero_GrBlendCoeff == (int)SkXfermode::kZero_Coeff);
+GR_STATIC_ASSERT((int)kOne_GrBlendCoeff  == (int)SkXfermode::kOne_Coeff);
+GR_STATIC_ASSERT((int)kSC_GrBlendCoeff   == (int)SkXfermode::kSC_Coeff);
+GR_STATIC_ASSERT((int)kISC_GrBlendCoeff  == (int)SkXfermode::kISC_Coeff);
+GR_STATIC_ASSERT((int)kDC_GrBlendCoeff   == (int)SkXfermode::kDC_Coeff);
+GR_STATIC_ASSERT((int)kIDC_GrBlendCoeff  == (int)SkXfermode::kIDC_Coeff);
+GR_STATIC_ASSERT((int)kSA_GrBlendCoeff   == (int)SkXfermode::kSA_Coeff);
+GR_STATIC_ASSERT((int)kISA_GrBlendCoeff  == (int)SkXfermode::kISA_Coeff);
+GR_STATIC_ASSERT((int)kDA_GrBlendCoeff   == (int)SkXfermode::kDA_Coeff);
+GR_STATIC_ASSERT((int)kIDA_GrBlendCoeff  == (int)SkXfermode::kIDA_Coeff);
 
 #define sk_blend_to_grblend(X) ((GrBlendCoeff)(X))
 
@@ -74,12 +74,7 @@ public:
      *  Convert the SkBitmap::Config to the corresponding PixelConfig, or
      *  kUnknown_PixelConfig if the conversion cannot be done.
      */
-    static GrPixelConfig BitmapConfig2PixelConfig(SkBitmap::Config,
-                                                  bool isOpaque);
-
-    static GrPixelConfig Bitmap2PixelConfig(const SkBitmap& bm) {
-        return BitmapConfig2PixelConfig(bm.config(), bm.isOpaque());
-    }
+    static GrPixelConfig BitmapConfig2PixelConfig(SkBitmap::Config);
 
     static GrColor SkColor2GrColor(SkColor c) {
         SkPMColor pm = SkPreMultiplyColor(c);
@@ -157,9 +152,8 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 
-static const GrContext::TextureKey gUNCACHED_KEY = ~0;
 GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
-                                                GrContext::TextureKey key,
+                                                uint64_t key,
                                                 const GrSamplerState* sampler,
                                                 const SkBitmap& bitmap);
 

@@ -167,7 +167,7 @@ LayoutUnit RenderSVGRoot::computeReplacedLogicalWidth(bool includeMaxWidth) cons
     if (!m_containerSize.isEmpty())
         return m_containerSize.width();
 
-    if (style()->logicalWidth().isSpecified())
+    if (style()->logicalWidth().isSpecified() || style()->logicalMaxWidth().isSpecified())
         return RenderReplaced::computeReplacedLogicalWidth(includeMaxWidth);
 
     if (svg->widthAttributeEstablishesViewport())
@@ -187,7 +187,7 @@ LayoutUnit RenderSVGRoot::computeReplacedLogicalHeight() const
     if (!m_containerSize.isEmpty())
         return m_containerSize.height();
 
-    if (hasReplacedLogicalHeight())
+    if (style()->logicalHeight().isSpecified() || style()->logicalMaxHeight().isSpecified())
         return RenderReplaced::computeReplacedLogicalHeight();
 
     if (svg->heightAttributeEstablishesViewport()) {
@@ -397,13 +397,13 @@ void RenderSVGRoot::mapLocalToContainer(RenderBoxModelObject* repaintContainer, 
     RenderReplaced::mapLocalToContainer(repaintContainer, fixed, useTransforms, transformState, ApplyContainerFlip, wasFixed);
 }
 
+const RenderObject* RenderSVGRoot::pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+{
+    return RenderReplaced::pushMappingToContainer(ancestorToStopAt, geometryMap);
+}
+
 void RenderSVGRoot::updateCachedBoundaries()
 {
-    m_objectBoundingBox = FloatRect();
-    m_objectBoundingBoxValid = false;
-    m_strokeBoundingBox = FloatRect();
-    m_repaintBoundingBox = FloatRect();
-
     SVGRenderSupport::computeContainerBoundingBoxes(this, m_objectBoundingBox, m_objectBoundingBoxValid, m_strokeBoundingBox, m_repaintBoundingBox);
     SVGRenderSupport::intersectRepaintRectWithResources(this, m_repaintBoundingBox);
     m_repaintBoundingBox.inflate(borderAndPaddingWidth());

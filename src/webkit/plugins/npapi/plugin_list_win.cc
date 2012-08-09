@@ -16,9 +16,11 @@
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/win/metro.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/windows_version.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/plugin_switches.h"
@@ -77,11 +79,19 @@ bool GetInstalledPath(const char16* app, FilePath* out) {
   reg_path.append(L"\\");
   reg_path.append(app);
 
-  base::win::RegKey key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ);
+  base::win::RegKey hkcu_key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ);
   std::wstring path;
-  if (key.ReadValue(kRegistryPath, &path) == ERROR_SUCCESS) {
+  // As of Win7 AppPaths can also be registered in HKCU: http://goo.gl/UgFOf.
+  if (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
+      hkcu_key.ReadValue(kRegistryPath, &path) == ERROR_SUCCESS) {
     *out = FilePath(path);
     return true;
+  } else {
+    base::win::RegKey hklm_key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_READ);
+    if (hklm_key.ReadValue(kRegistryPath, &path) == ERROR_SUCCESS) {
+      *out = FilePath(path);
+      return true;
+    }
   }
 
   return false;
@@ -344,7 +354,6 @@ bool PluginList::ShouldLoadPlugin(const webkit::WebPluginInfo& info,
           (plugin1 == kJavaDeploy2 && plugin2 == kJavaDeploy1)) {
         if (!IsNewerVersion(plugins[j].version, info.version))
           return false;  // We have loaded a plugin whose version is newer.
-
         (*plugin_groups)[i]->RemovePlugin(plugins[j].path);
         break;
       }
@@ -384,6 +393,12 @@ bool PluginList::ShouldLoadPlugin(const webkit::WebPluginInfo& info,
       if (major == 6 && minor == 0 && update < 120)
         return false;  // Java SE6 Update 11 or older.
     }
+  }
+
+  if (base::win::IsMetroProcess()) {
+    // In metro mode we only allow pepper plugins.
+    if (info.type == WebPluginInfo::PLUGIN_TYPE_NPAPI)
+      return false;
   }
 
   // Special WMP handling

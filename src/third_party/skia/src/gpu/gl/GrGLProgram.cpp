@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -6,13 +5,14 @@
  * found in the LICENSE file.
  */
 
-
 #include "GrGLProgram.h"
 
-#include "../GrAllocator.h"
+#include "GrAllocator.h"
 #include "GrCustomStage.h"
 #include "GrGLProgramStage.h"
+#include "gl/GrGLShaderBuilder.h"
 #include "GrGLShaderVar.h"
+#include "GrProgramStageFactory.h"
 #include "SkTrace.h"
 #include "SkXfermode.h"
 
@@ -28,49 +28,9 @@ enum {
 
 #define PRINT_SHADERS 0
 
-typedef GrTAllocator<GrGLShaderVar> VarArray;
-
-// number of each input/output type in a single allocation block
-static const int gVarsPerBlock = 8;
-// except FS outputs where we expect 2 at most.
-static const int gMaxFSOutputs = 2;
-
-struct ShaderCodeSegments {
-    ShaderCodeSegments() 
-    : fVSUnis(gVarsPerBlock)
-    , fVSAttrs(gVarsPerBlock)
-    , fVSOutputs(gVarsPerBlock)
-    , fGSInputs(gVarsPerBlock)
-    , fGSOutputs(gVarsPerBlock)
-    , fFSInputs(gVarsPerBlock)
-    , fFSUnis(gVarsPerBlock)
-    , fFSOutputs(gMaxFSOutputs)
-    , fUsesGS(false) {}
-    GrStringBuilder fHeader; // VS+FS, GLSL version, etc
-    VarArray        fVSUnis;
-    VarArray        fVSAttrs;
-    VarArray        fVSOutputs;
-    VarArray        fGSInputs;
-    VarArray        fGSOutputs;
-    VarArray        fFSInputs;
-    GrStringBuilder fGSHeader; // layout qualifiers specific to GS
-    VarArray        fFSUnis;
-    VarArray        fFSOutputs;
-    GrStringBuilder fFSFunctions;
-    GrStringBuilder fVSCode;
-    GrStringBuilder fGSCode;
-    GrStringBuilder fFSCode;
-
-    bool            fUsesGS;
-};
-
 typedef GrGLProgram::ProgramDesc::StageDesc StageDesc;
 
-#if GR_GL_ATTRIBUTE_MATRICES
-    #define VIEW_MATRIX_NAME "aViewM"
-#else
-    #define VIEW_MATRIX_NAME "uViewM"
-#endif
+#define VIEW_MATRIX_NAME "uViewM"
 
 #define POS_ATTR_NAME "aPosition"
 #define COL_ATTR_NAME "aColor"
@@ -78,7 +38,6 @@ typedef GrGLProgram::ProgramDesc::StageDesc StageDesc;
 #define EDGE_ATTR_NAME "aEdge"
 #define COL_UNI_NAME "uColor"
 #define COV_UNI_NAME "uCoverage"
-#define EDGES_UNI_NAME "uEdges"
 #define COL_FILTER_UNI_NAME "uColorFilter"
 #define COL_MATRIX_UNI_NAME "uColorMatrix"
 #define COL_MATRIX_VEC_UNI_NAME "uColorMatrixVec"
@@ -117,39 +76,13 @@ inline const char* declared_color_output_name() { return "fsColorOut"; }
 inline const char* dual_source_output_name() { return "dualSourceOut"; }
 
 inline void tex_matrix_name(int stage, GrStringBuilder* s) {
-#if GR_GL_ATTRIBUTE_MATRICES
-    *s = "aTexM";
-#else
     *s = "uTexM";
-#endif
-    s->appendS32(stage);
-}
-
-inline void normalized_texel_size_name(int stage, GrStringBuilder* s) {
-    *s = "uTexelSize";
     s->appendS32(stage);
 }
 
 inline void sampler_name(int stage, GrStringBuilder* s) {
     *s = "uSampler";
     s->appendS32(stage);
-}
-
-inline void radial2_param_name(int stage, GrStringBuilder* s) {
-    *s = "uRadial2Params";
-    s->appendS32(stage);
-}
-
-inline void convolve_param_names(int stage, GrStringBuilder* k, GrStringBuilder* i) {
-    *k = "uKernel";
-    k->appendS32(stage);
-    *i = "uImageIncrement";
-    i->appendS32(stage);
-}
-
-inline void image_increment_param_name(int stage, GrStringBuilder* i) {
-    *i = "uImageIncrement";
-    i->appendS32(stage);
 }
 
 inline void tex_domain_name(int stage, GrStringBuilder* s) {
@@ -174,7 +107,7 @@ void GrGLProgram::overrideBlend(GrBlendCoeff* srcCoeff,
         case ProgramDesc::kCoverage_DualSrcOutput:
         case ProgramDesc::kCoverageISA_DualSrcOutput:
         case ProgramDesc::kCoverageISC_DualSrcOutput:
-        *dstCoeff = (GrBlendCoeff)GrGpu::kIS2C_BlendCoeff;
+        *dstCoeff = (GrBlendCoeff)GrGpu::kIS2C_GrBlendCoeff;
         break;
         default:
             GrCrash("Unexpected dual source blend output");
@@ -347,127 +280,14 @@ static void addColorMatrix(GrStringBuilder* fsCode, const char * outputVar,
     fsCode->appendf("\t%s.rgb *= %s.a;\n", outputVar, outputVar);
 }
 
-namespace {
-
-// Adds a var that is computed in the VS and read in FS.
-// If there is a GS it will just pass it through.
-void append_varying(GrSLType type,
-                    const char* name,
-                    ShaderCodeSegments* segments,
-                    const char** vsOutName = NULL,
-                    const char** fsInName = NULL) {
-    segments->fVSOutputs.push_back();
-    segments->fVSOutputs.back().setType(type);
-    segments->fVSOutputs.back().setTypeModifier(
-        GrGLShaderVar::kOut_TypeModifier);
-    segments->fVSOutputs.back().accessName()->printf("v%s", name);
-    if (vsOutName) {
-        *vsOutName = segments->fVSOutputs.back().getName().c_str();
-    }
-    // input to FS comes either from VS or GS
-    const GrStringBuilder* fsName;
-    if (segments->fUsesGS) {
-        // if we have a GS take each varying in as an array
-        // and output as non-array.
-        segments->fGSInputs.push_back();
-        segments->fGSInputs.back().setType(type);
-        segments->fGSInputs.back().setTypeModifier(
-            GrGLShaderVar::kIn_TypeModifier);
-        segments->fGSInputs.back().setUnsizedArray();
-        *segments->fGSInputs.back().accessName() =
-            segments->fVSOutputs.back().getName();
-        segments->fGSOutputs.push_back();
-        segments->fGSOutputs.back().setType(type);
-        segments->fGSOutputs.back().setTypeModifier(
-            GrGLShaderVar::kOut_TypeModifier);
-        segments->fGSOutputs.back().accessName()->printf("g%s", name);
-        fsName = segments->fGSOutputs.back().accessName();
-    } else {
-        fsName = segments->fVSOutputs.back().accessName();
-    }
-    segments->fFSInputs.push_back();
-    segments->fFSInputs.back().setType(type);
-    segments->fFSInputs.back().setTypeModifier(
-        GrGLShaderVar::kIn_TypeModifier);
-    segments->fFSInputs.back().setName(*fsName);
-    if (fsInName) {
-        *fsInName = fsName->c_str();
-    }
-}
-
-// version of above that adds a stage number to the
-// the var name (for uniqueness)
-void append_varying(GrSLType type,
-                    const char* name,
-                    int stageNum,
-                    ShaderCodeSegments* segments,
-                    const char** vsOutName = NULL,
-                    const char** fsInName = NULL) {
-    GrStringBuilder nameWithStage(name);
-    nameWithStage.appendS32(stageNum);
-    append_varying(type, nameWithStage.c_str(), segments, vsOutName, fsInName);
-}
-}
-
 void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
                                   GrVertexLayout layout,
                                   CachedData* programData,
                                   GrStringBuilder* coverageVar,
-                                  ShaderCodeSegments* segments) const {
-    if (fProgramDesc.fEdgeAANumEdges > 0) {
-        segments->fFSUnis.push_back().set(kVec3f_GrSLType,
-                                          GrGLShaderVar::kUniform_TypeModifier,
-                                          EDGES_UNI_NAME,
-                                          fProgramDesc.fEdgeAANumEdges);
-        programData->fUniLocations.fEdgesUni = kUseUniform;
-        int count = fProgramDesc.fEdgeAANumEdges;
-        segments->fFSCode.append(
-            "\tvec3 pos = vec3(gl_FragCoord.xy, 1);\n");
-        for (int i = 0; i < count; i++) {
-            segments->fFSCode.append("\tfloat a");
-            segments->fFSCode.appendS32(i);
-            segments->fFSCode.append(" = clamp(dot(" EDGES_UNI_NAME "[");
-            segments->fFSCode.appendS32(i);
-            segments->fFSCode.append("], pos), 0.0, 1.0);\n");
-        }
-        if (fProgramDesc.fEdgeAAConcave && (count & 0x01) == 0) {
-            // For concave polys, we consider the edges in pairs.
-            segments->fFSFunctions.append("float cross2(vec2 a, vec2 b) {\n");
-            segments->fFSFunctions.append("\treturn dot(a, vec2(b.y, -b.x));\n");
-            segments->fFSFunctions.append("}\n");
-            for (int i = 0; i < count; i += 2) {
-                segments->fFSCode.appendf("\tfloat eb%d;\n", i / 2);
-                segments->fFSCode.appendf("\tif (cross2(" EDGES_UNI_NAME "[%d].xy, " EDGES_UNI_NAME "[%d].xy) < 0.0) {\n", i, i + 1);
-                segments->fFSCode.appendf("\t\teb%d = a%d * a%d;\n", i / 2, i, i + 1);
-                segments->fFSCode.append("\t} else {\n");
-                segments->fFSCode.appendf("\t\teb%d = a%d + a%d - a%d * a%d;\n", i / 2, i, i + 1, i, i + 1);
-                segments->fFSCode.append("\t}\n");
-            }
-            segments->fFSCode.append("\tfloat edgeAlpha = ");
-            for (int i = 0; i < count / 2 - 1; i++) {
-                segments->fFSCode.appendf("min(eb%d, ", i);
-            }
-            segments->fFSCode.appendf("eb%d", count / 2 - 1);
-            for (int i = 0; i < count / 2 - 1; i++) {
-                segments->fFSCode.append(")");
-            }
-            segments->fFSCode.append(";\n");
-        } else {
-            segments->fFSCode.append("\tfloat edgeAlpha = ");
-            for (int i = 0; i < count - 1; i++) {
-                segments->fFSCode.appendf("min(a%d * a%d, ", i, i + 1);
-            }
-            segments->fFSCode.appendf("a%d * a0", count - 1);
-            for (int i = 0; i < count - 1; i++) {
-                segments->fFSCode.append(")");
-            }
-            segments->fFSCode.append(";\n");
-        }
-        *coverageVar = "edgeAlpha";
-    } else  if (layout & GrDrawTarget::kEdge_VertexLayoutBit) {
+                                  GrGLShaderBuilder* segments) const {
+    if (layout & GrDrawTarget::kEdge_VertexLayoutBit) {
         const char *vsName, *fsName;
-        append_varying(kVec4f_GrSLType, "Edge", segments,
-            &vsName, &fsName);
+        segments->addVarying(kVec4f_GrSLType, "Edge", &vsName, &fsName);
         segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
             GrGLShaderVar::kAttribute_TypeModifier, EDGE_ATTR_NAME);
         segments->fVSCode.appendf("\t%s = " EDGE_ATTR_NAME ";\n", vsName);
@@ -529,7 +349,7 @@ namespace {
 
 void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
                    GrGLProgram::CachedData* programData,
-                   ShaderCodeSegments* segments,
+                   GrGLShaderBuilder* segments,
                    GrStringBuilder* inColor) {
     switch (colorInput) {
         case GrGLProgram::ProgramDesc::kAttribute_ColorInput: {
@@ -537,14 +357,13 @@ void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
                 GrGLShaderVar::kAttribute_TypeModifier,
                 COL_ATTR_NAME);
             const char *vsName, *fsName;
-            append_varying(kVec4f_GrSLType, "Color", segments, &vsName, &fsName);
+            segments->addVarying(kVec4f_GrSLType, "Color", &vsName, &fsName);
             segments->fVSCode.appendf("\t%s = " COL_ATTR_NAME ";\n", vsName);
             *inColor = fsName;
             } break;
         case GrGLProgram::ProgramDesc::kUniform_ColorInput:
-            segments->fFSUnis.push_back().set(kVec4f_GrSLType,
-                GrGLShaderVar::kUniform_TypeModifier,
-                COL_UNI_NAME);
+            segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+                                 kVec4f_GrSLType, COL_UNI_NAME);
             programData->fUniLocations.fColorUni = kUseUniform;
             *inColor = COL_UNI_NAME;
             break;
@@ -559,14 +378,13 @@ void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
     }
 }
 
-void genAttributeCoverage(ShaderCodeSegments* segments,
+void genAttributeCoverage(GrGLShaderBuilder* segments,
                           GrStringBuilder* inOutCoverage) {
     segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
                                        GrGLShaderVar::kAttribute_TypeModifier,
                                        COV_ATTR_NAME);
     const char *vsName, *fsName;
-    append_varying(kVec4f_GrSLType, "Coverage", 
-                   segments, &vsName, &fsName);
+    segments->addVarying(kVec4f_GrSLType, "Coverage", &vsName, &fsName);
     segments->fVSCode.appendf("\t%s = " COV_ATTR_NAME ";\n", vsName);
     if (inOutCoverage->size()) {
         segments->fFSCode.appendf("\tvec4 attrCoverage = %s * %s;\n",
@@ -577,12 +395,11 @@ void genAttributeCoverage(ShaderCodeSegments* segments,
     }
 }
     
-void genUniformCoverage(ShaderCodeSegments* segments,
+void genUniformCoverage(GrGLShaderBuilder* segments,
                         GrGLProgram::CachedData* programData,
                         GrStringBuilder* inOutCoverage) {
-    segments->fFSUnis.push_back().set(kVec4f_GrSLType,
-                                      GrGLShaderVar::kUniform_TypeModifier,
-                                      COV_UNI_NAME);
+    segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+                         kVec4f_GrSLType, COV_UNI_NAME);
     programData->fUniLocations.fCoverageUni = kUseUniform;
     if (inOutCoverage->size()) {
         segments->fFSCode.appendf("\tvec4 uniCoverage = %s * %s;\n",
@@ -596,7 +413,7 @@ void genUniformCoverage(ShaderCodeSegments* segments,
 }
 
 void GrGLProgram::genGeometryShader(const GrGLContextInfo& gl,
-                                    ShaderCodeSegments* segments) const {
+                                    GrGLShaderBuilder* segments) const {
 #if GR_GL_EXPERIMENTAL_GS
     if (fProgramDesc.fExperimentalGS) {
         GrAssert(gl.glslGeneration() >= k150_GrGLSLGeneration);
@@ -647,8 +464,7 @@ GrGLProgram::CachedData::~CachedData() {
 bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                              GrCustomStage** customStages,
                              GrGLProgram::CachedData* programData) const {
-
-    ShaderCodeSegments segments;
+    GrGLShaderBuilder segments;
     const uint32_t& layout = fProgramDesc.fVertexLayout;
 
     programData->fUniLocations.reset();
@@ -713,15 +529,10 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
         segments.fFSOutputs.push_back(colorOutput);
     }
 
-#if GR_GL_ATTRIBUTE_MATRICES
-    segments.fVSAttrs.push_back().set(kMat33f_GrSLType,
-        GrGLShaderVar::kAttribute_TypeModifier, VIEW_MATRIX_NAME);
-    programData->fUniLocations.fViewMatrixUni = kSetAsAttribute;
-#else
-    segments.fVSUnis.push_back().set(kMat33f_GrSLType,
-        GrGLShaderVar::kUniform_TypeModifier, VIEW_MATRIX_NAME);
+    segments.addUniform(GrGLShaderBuilder::kVertex_VariableLifetime,
+                        kMat33f_GrSLType, VIEW_MATRIX_NAME);
     programData->fUniLocations.fViewMatrixUni = kUseUniform;
-#endif
+
     segments.fVSAttrs.push_back().set(kVec2f_GrSLType,
         GrGLShaderVar::kAttribute_TypeModifier, POS_ATTR_NAME);
 
@@ -757,18 +568,12 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     }
 
     ///////////////////////////////////////////////////////////////////////////
-    // Convert generic effect representation to GL-specific backend so they
-    // can be accesseed in genStageCode() and in subsequent uses of
-    // programData.
+    // We need to convert generic effect representations to GL-specific
+    // backends so they can be accesseed in genStageCode() and in subsequent,
+    // uses of programData, but it's safest to do so below when we're *sure*
+    // we need them.
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        GrCustomStage* customStage = customStages[s];
-        if (NULL != customStage) {
-            GrGLProgramStageFactory* factory = customStage->getGLFactory();
-            programData->fCustomStage[s] =
-                factory->createGLInstance(customStage);
-        } else {
-            programData->fCustomStage[s] = NULL;
-        }
+        programData->fCustomStage[s] = NULL;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -798,6 +603,12 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                     inCoords = texCoordAttrs[tcIdx].c_str();
                 }
 
+                if (NULL != customStages[s]) {
+                    const GrProgramStageFactory& factory =
+                        customStages[s]->getFactory();
+                    programData->fCustomStage[s] =
+                        factory.createGLInstance(*customStages[s]);
+                }
                 this->genStageCode(gl,
                                    s,
                                    fProgramDesc.fStages[s],
@@ -826,9 +637,8 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
         }
     }
     if (needColorFilterUniform) {
-        segments.fFSUnis.push_back().set(kVec4f_GrSLType,
-                                         GrGLShaderVar::kUniform_TypeModifier,
-                                         COL_FILTER_UNI_NAME);
+        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+                            kVec4f_GrSLType, COL_FILTER_UNI_NAME);
         programData->fUniLocations.fColorFilterUni = kUseUniform;
     }
     bool wroteFragColorZero = false;
@@ -847,12 +657,10 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
         inColor = "filteredColor";
     }
     if (applyColorMatrix) {
-        segments.fFSUnis.push_back().set(kMat44f_GrSLType,
-                                         GrGLShaderVar::kUniform_TypeModifier,
-                                         COL_MATRIX_UNI_NAME);
-        segments.fFSUnis.push_back().set(kVec4f_GrSLType,
-                                         GrGLShaderVar::kUniform_TypeModifier,
-                                         COL_MATRIX_VEC_UNI_NAME);
+        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+                            kMat44f_GrSLType, COL_MATRIX_UNI_NAME);
+        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+                            kVec4f_GrSLType, COL_MATRIX_VEC_UNI_NAME);
         programData->fUniLocations.fColorMatrixUni = kUseUniform;
         programData->fUniLocations.fColorMatrixVecUni = kUseUniform;
         segments.fFSCode.append("\tvec4 matrixedColor;\n");
@@ -918,6 +726,12 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                         inCoords = texCoordAttrs[tcIdx].c_str();
                     }
 
+                    if (NULL != customStages[s]) {
+                        const GrProgramStageFactory& factory =
+                            customStages[s]->getFactory();
+                        programData->fCustomStage[s] =
+                            factory.createGLInstance(*customStages[s]);
+                    }
                     this->genStageCode(gl, s,
                         fProgramDesc.fStages[s],
                         inCoverage.size() ? inCoverage.c_str() : NULL,
@@ -1081,7 +895,7 @@ inline void append_decls(const VarArray& vars,
 }
 
 bool GrGLProgram::CompileShaders(const GrGLContextInfo& gl,
-                                 const ShaderCodeSegments& segments,
+                                 const GrGLShaderBuilder& segments,
                                  CachedData* programData) {
     enum { kPreAllocStringCnt = 8 };
 
@@ -1242,23 +1056,6 @@ bool GrGLProgram::bindOutputsAttribsAndLinkProgram(
         }
     }
 
-    if (kSetAsAttribute == programData->fUniLocations.fViewMatrixUni) {
-        GL_CALL(BindAttribLocation(progID,
-                                   ViewMatrixAttributeIdx(),
-                                   VIEW_MATRIX_NAME));
-    }
-
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        const StageUniLocations& unis = programData->fUniLocations.fStages[s];
-        if (kSetAsAttribute == unis.fTextureMatrixUni) {
-            GrStringBuilder matName;
-            tex_matrix_name(s, &matName);
-            GL_CALL(BindAttribLocation(progID,
-                                       TextureMatrixAttributeIdx(s),
-                                       matName.c_str()));
-        }
-    }
-
     GL_CALL(BindAttribLocation(progID, ColorAttributeIdx(), COL_ATTR_NAME));
     GL_CALL(BindAttribLocation(progID, CoverageAttributeIdx(), COV_ATTR_NAME));
     GL_CALL(BindAttribLocation(progID, EdgeAttributeIdx(), EDGE_ATTR_NAME));
@@ -1324,14 +1121,6 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
         GrAssert(kUnusedUniform != programData->fUniLocations.fCoverageUni);
     }
 
-    if (kUseUniform == programData->fUniLocations.fEdgesUni) {
-        GL_CALL_RET(programData->fUniLocations.fEdgesUni,
-                    GetUniformLocation(progID, EDGES_UNI_NAME));
-        GrAssert(kUnusedUniform != programData->fUniLocations.fEdgesUni);
-    } else {
-        programData->fUniLocations.fEdgesUni = kUnusedUniform;
-    }
-
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
         StageUniLocations& locations = programData->fUniLocations.fStages[s];
         if (fProgramDesc.fStages[s].isEnabled()) {
@@ -1351,43 +1140,12 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
                 GrAssert(kUnusedUniform != locations.fSamplerUni);
             }
 
-            if (kUseUniform == locations.fNormalizedTexelSizeUni) {
-                GrStringBuilder texelSizeName;
-                normalized_texel_size_name(s, &texelSizeName);
-                GL_CALL_RET(locations.fNormalizedTexelSizeUni,
-                            GetUniformLocation(progID, texelSizeName.c_str()));
-                GrAssert(kUnusedUniform != locations.fNormalizedTexelSizeUni);
-            }
-
-            if (kUseUniform == locations.fRadial2Uni) {
-                GrStringBuilder radial2ParamName;
-                radial2_param_name(s, &radial2ParamName);
-                GL_CALL_RET(locations.fRadial2Uni,
-                            GetUniformLocation(progID, radial2ParamName.c_str()));
-                GrAssert(kUnusedUniform != locations.fRadial2Uni);
-            }
-
             if (kUseUniform == locations.fTexDomUni) {
                 GrStringBuilder texDomName;
                 tex_domain_name(s, &texDomName);
                 GL_CALL_RET(locations.fTexDomUni,
                             GetUniformLocation(progID, texDomName.c_str()));
                 GrAssert(kUnusedUniform != locations.fTexDomUni);
-            }
-
-            GrStringBuilder kernelName, imageIncrementName;
-            convolve_param_names(s, &kernelName, &imageIncrementName);
-            if (kUseUniform == locations.fKernelUni) {
-                GL_CALL_RET(locations.fKernelUni,
-                            GetUniformLocation(progID, kernelName.c_str()));
-                GrAssert(kUnusedUniform != locations.fKernelUni);
-            }
-
-            if (kUseUniform == locations.fImageIncrementUni) {
-                GL_CALL_RET(locations.fImageIncrementUni, 
-                            GetUniformLocation(progID, 
-                                               imageIncrementName.c_str()));
-                GrAssert(kUnusedUniform != locations.fImageIncrementUni);
             }
 
             if (NULL != programData->fCustomStage[s]) {
@@ -1404,14 +1162,14 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
             GL_CALL(Uniform1i(programData->fUniLocations.fStages[s].fSamplerUni, s));
         }
         programData->fTextureMatrices[s] = GrMatrix::InvalidMatrix();
-        programData->fRadial2CenterX1[s] = GR_ScalarMax;
-        programData->fRadial2Radius0[s] = -GR_ScalarMax;
-        programData->fTextureWidth[s] = -1;
-        programData->fTextureHeight[s] = -1;
         programData->fTextureDomain[s].setEmpty();
+        // this is arbitrary, just initialize to something
+        programData->fTextureOrientation[s] =
+            GrGLTexture::kBottomUp_Orientation;
         // Must not reset fStageOverride[] here.
     }
     programData->fViewMatrix = GrMatrix::InvalidMatrix();
+    programData->fViewportSize.set(-1, -1);
     programData->fColor = GrColor_ILLEGAL;
     programData->fColorFilterColor = GrColor_ILLEGAL;
 }
@@ -1420,345 +1178,13 @@ void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
 // Stage code generation
 //============================================================================
 
-namespace {
-
-bool isRadialMapping(GrGLProgram::StageDesc::CoordMapping mapping) {
-    return
-       (GrGLProgram::StageDesc::kRadial2Gradient_CoordMapping == mapping ||
-        GrGLProgram::StageDesc::kRadial2GradientDegenerate_CoordMapping == mapping);
-}
-
-GrGLShaderVar* genRadialVS(int stageNum,
-                        ShaderCodeSegments* segments,
-                        GrGLProgram::StageUniLocations* locations,
-                        const char** radial2VaryingVSName,
-                        const char** radial2VaryingFSName,
-                        const char* varyingVSName,
-                        int varyingDims, int coordDims) {
-
-    GrGLShaderVar* radial2FSParams = &segments->fFSUnis.push_back();
-    radial2FSParams->setType(kFloat_GrSLType);
-    radial2FSParams->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
-    radial2FSParams->setArrayCount(6);
-    radial2_param_name(stageNum, radial2FSParams->accessName());
-    segments->fVSUnis.push_back(*radial2FSParams).setEmitPrecision(true);
-
-    locations->fRadial2Uni = kUseUniform;
-
-    // for radial grads without perspective we can pass the linear
-    // part of the quadratic as a varying.
-    if (varyingDims == coordDims) {
-        GrAssert(2 == coordDims);
-        append_varying(kFloat_GrSLType,
-                       "Radial2BCoeff",
-                       stageNum,
-                       segments,
-                       radial2VaryingVSName,
-                       radial2VaryingFSName);
-
-        GrStringBuilder radial2p2;
-        GrStringBuilder radial2p3;
-        radial2FSParams->appendArrayAccess(2, &radial2p2);
-        radial2FSParams->appendArrayAccess(3, &radial2p3);
-
-        // r2Var = 2 * (r2Parm[2] * varCoord.x - r2Param[3])
-        const char* r2ParamName = radial2FSParams->getName().c_str();
-        segments->fVSCode.appendf("\t%s = 2.0 *(%s * %s.x - %s);\n",
-                                  *radial2VaryingVSName, radial2p2.c_str(),
-                                  varyingVSName, radial2p3.c_str());
-    }
-
-    return radial2FSParams;
-}
-
-bool genRadial2GradientCoordMapping(int stageNum,
-                                    ShaderCodeSegments* segments,
-                                    const char* radial2VaryingFSName,
-                                    GrGLShaderVar* radial2Params,
-                                    GrStringBuilder& sampleCoords,
-                                    GrStringBuilder& fsCoordName,
-                                    int varyingDims,
-                                    int coordDims) {
-    GrStringBuilder cName("c");
-    GrStringBuilder ac4Name("ac4");
-    GrStringBuilder rootName("root");
-
-    cName.appendS32(stageNum);
-    ac4Name.appendS32(stageNum);
-    rootName.appendS32(stageNum);
-
-    GrStringBuilder radial2p0;
-    GrStringBuilder radial2p1;
-    GrStringBuilder radial2p2;
-    GrStringBuilder radial2p3;
-    GrStringBuilder radial2p4;
-    GrStringBuilder radial2p5;
-    radial2Params->appendArrayAccess(0, &radial2p0);
-    radial2Params->appendArrayAccess(1, &radial2p1);
-    radial2Params->appendArrayAccess(2, &radial2p2);
-    radial2Params->appendArrayAccess(3, &radial2p3);
-    radial2Params->appendArrayAccess(4, &radial2p4);
-    radial2Params->appendArrayAccess(5, &radial2p5);
-
-    // if we were able to interpolate the linear component bVar is the varying
-    // otherwise compute it
-    GrStringBuilder bVar;
-    if (coordDims == varyingDims) {
-        bVar = radial2VaryingFSName;
-        GrAssert(2 == varyingDims);
-    } else {
-        GrAssert(3 == varyingDims);
-        bVar = "b";
-        bVar.appendS32(stageNum);
-        segments->fFSCode.appendf("\tfloat %s = 2.0 * (%s * %s.x - %s);\n",
-                                    bVar.c_str(), radial2p2.c_str(),
-                                    fsCoordName.c_str(), radial2p3.c_str());
-    }
-
-    // c = (x^2)+(y^2) - params[4]
-    segments->fFSCode.appendf("\tfloat %s = dot(%s, %s) - %s;\n",
-                              cName.c_str(), fsCoordName.c_str(),
-                              fsCoordName.c_str(),
-                              radial2p4.c_str());
-    // ac4 = 4.0 * params[0] * c
-    segments->fFSCode.appendf("\tfloat %s = %s * 4.0 * %s;\n",
-                              ac4Name.c_str(), radial2p0.c_str(),
-                              cName.c_str());
-
-    // root = sqrt(b^2-4ac)
-    // (abs to avoid exception due to fp precision)
-    segments->fFSCode.appendf("\tfloat %s = sqrt(abs(%s*%s - %s));\n",
-                              rootName.c_str(), bVar.c_str(), bVar.c_str(),
-                              ac4Name.c_str());
-
-    // x coord is: (-b + params[5] * sqrt(b^2-4ac)) * params[1]
-    // y coord is 0.5 (texture is effectively 1D)
-    sampleCoords.printf("vec2((-%s + %s * %s) * %s, 0.5)",
-                        bVar.c_str(), radial2p5.c_str(),
-                        rootName.c_str(), radial2p1.c_str());
-    return true;
-}
-
-bool genRadial2GradientDegenerateCoordMapping(int stageNum,
-                                              ShaderCodeSegments* segments,
-                                              const char* radial2VaryingFSName,
-                                              GrGLShaderVar* radial2Params,
-                                              GrStringBuilder& sampleCoords,
-                                              GrStringBuilder& fsCoordName,
-                                              int varyingDims,
-                                              int coordDims) {
-    GrStringBuilder cName("c");
-
-    cName.appendS32(stageNum);
-
-    GrStringBuilder radial2p2;
-    GrStringBuilder radial2p3;
-    GrStringBuilder radial2p4;
-    radial2Params->appendArrayAccess(2, &radial2p2);
-    radial2Params->appendArrayAccess(3, &radial2p3);
-    radial2Params->appendArrayAccess(4, &radial2p4);
-
-    // if we were able to interpolate the linear component bVar is the varying
-    // otherwise compute it
-    GrStringBuilder bVar;
-    if (coordDims == varyingDims) {
-        bVar = radial2VaryingFSName;
-        GrAssert(2 == varyingDims);
-    } else {
-        GrAssert(3 == varyingDims);
-        bVar = "b";
-        bVar.appendS32(stageNum);
-        segments->fFSCode.appendf("\tfloat %s = 2.0 * (%s * %s.x - %s);\n",
-                                    bVar.c_str(), radial2p2.c_str(),
-                                    fsCoordName.c_str(), radial2p3.c_str());
-    }
-
-    // c = (x^2)+(y^2) - params[4]
-    segments->fFSCode.appendf("\tfloat %s = dot(%s, %s) - %s;\n",
-                              cName.c_str(), fsCoordName.c_str(),
-                              fsCoordName.c_str(),
-                              radial2p4.c_str());
-
-    // x coord is: -c/b
-    // y coord is 0.5 (texture is effectively 1D)
-    sampleCoords.printf("vec2((-%s / %s), 0.5)", cName.c_str(), bVar.c_str());
-    return true;
-}
-
-void gen2x2FS(int stageNum,
-              ShaderCodeSegments* segments,
-              GrGLProgram::StageUniLocations* locations,
-              GrStringBuilder* sampleCoords,
-              const char* samplerName,
-              const char* texelSizeName,
-              const char* swizzle,
-              const char* fsOutColor,
-              GrStringBuilder& texFunc,
-              GrStringBuilder& modulate,
-              bool complexCoord,
-              int coordDims) {
-    locations->fNormalizedTexelSizeUni = kUseUniform;
-    if (complexCoord) {
-        // assign the coord to a var rather than compute 4x.
-        GrStringBuilder coordVar("tCoord");
-        coordVar.appendS32(stageNum);
-        segments->fFSCode.appendf("\t%s %s = %s;\n",
-                            float_vector_type_str(coordDims),
-                            coordVar.c_str(), sampleCoords->c_str());
-        *sampleCoords = coordVar;
-    }
-    GrAssert(2 == coordDims);
-    GrStringBuilder accumVar("accum");
-    accumVar.appendS32(stageNum);
-    segments->fFSCode.appendf("\tvec4 %s  = %s(%s, %s + vec2(-%s.x,-%s.y))%s;\n", accumVar.c_str(), texFunc.c_str(), samplerName, sampleCoords->c_str(), texelSizeName, texelSizeName, swizzle);
-    segments->fFSCode.appendf("\t%s += %s(%s, %s + vec2(+%s.x,-%s.y))%s;\n", accumVar.c_str(), texFunc.c_str(), samplerName, sampleCoords->c_str(), texelSizeName, texelSizeName, swizzle);
-    segments->fFSCode.appendf("\t%s += %s(%s, %s + vec2(-%s.x,+%s.y))%s;\n", accumVar.c_str(), texFunc.c_str(), samplerName, sampleCoords->c_str(), texelSizeName, texelSizeName, swizzle);
-    segments->fFSCode.appendf("\t%s += %s(%s, %s + vec2(+%s.x,+%s.y))%s;\n", accumVar.c_str(), texFunc.c_str(), samplerName, sampleCoords->c_str(), texelSizeName, texelSizeName, swizzle);
-    segments->fFSCode.appendf("\t%s = .25 * %s%s;\n", fsOutColor, accumVar.c_str(), modulate.c_str());
-
-}
-
-void genConvolutionVS(int stageNum,
-                      const StageDesc& desc,
-                      ShaderCodeSegments* segments,
-                      GrGLProgram::StageUniLocations* locations,
-                      GrGLShaderVar** kernel,
-                      const char** imageIncrementName,
-                      const char* varyingVSName) {
-    //GrGLShaderVar* kernel = &segments->fFSUnis.push_back();
-    *kernel = &segments->fFSUnis.push_back();
-    (*kernel)->setType(kFloat_GrSLType);
-    (*kernel)->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
-    (*kernel)->setArrayCount(desc.fKernelWidth);
-    GrGLShaderVar* imgInc = &segments->fFSUnis.push_back();
-    imgInc->setType(kVec2f_GrSLType);
-    imgInc->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
-
-    convolve_param_names(stageNum,
-                         (*kernel)->accessName(),
-                         imgInc->accessName());
-    *imageIncrementName = imgInc->getName().c_str();
-
-    // need image increment in both VS and FS
-    segments->fVSUnis.push_back(*imgInc).setEmitPrecision(true);
-
-    locations->fKernelUni = kUseUniform;
-    locations->fImageIncrementUni = kUseUniform;
-    float scale = (desc.fKernelWidth - 1) * 0.5f;
-    segments->fVSCode.appendf("\t%s -= vec2(%g, %g) * %s;\n",
-                                  varyingVSName, scale, scale,
-                                  *imageIncrementName);
-}
-
-void genConvolutionFS(int stageNum,
-                      const StageDesc& desc,
-                      ShaderCodeSegments* segments,
-                      const char* samplerName,
-                      GrGLShaderVar* kernel,
-                      const char* swizzle,
-                      const char* imageIncrementName,
-                      const char* fsOutColor,
-                      GrStringBuilder& sampleCoords,
-                      GrStringBuilder& texFunc,
-                      GrStringBuilder& modulate) {
-    GrStringBuilder sumVar("sum");
-    sumVar.appendS32(stageNum);
-    GrStringBuilder coordVar("coord");
-    coordVar.appendS32(stageNum);
-
-    GrStringBuilder kernelIndex;
-    kernel->appendArrayAccess("i", &kernelIndex);
-
-    segments->fFSCode.appendf("\tvec4 %s = vec4(0, 0, 0, 0);\n",
-                              sumVar.c_str());
-    segments->fFSCode.appendf("\tvec2 %s = %s;\n", 
-                              coordVar.c_str(),
-                              sampleCoords.c_str());
-    segments->fFSCode.appendf("\tfor (int i = 0; i < %d; i++) {\n",
-                              desc.fKernelWidth);
-    segments->fFSCode.appendf("\t\t%s += %s(%s, %s)%s * %s;\n",
-                              sumVar.c_str(), texFunc.c_str(),
-                              samplerName, coordVar.c_str(), swizzle,
-                              kernelIndex.c_str());
-    segments->fFSCode.appendf("\t\t%s += %s;\n",
-                              coordVar.c_str(),
-                              imageIncrementName);
-    segments->fFSCode.append("\t}\n");
-    segments->fFSCode.appendf("\t%s = %s%s;\n", fsOutColor,
-                              sumVar.c_str(), modulate.c_str());
-}
- 
-void genMorphologyVS(int stageNum,
-                     const StageDesc& desc,
-                     ShaderCodeSegments* segments,
-                     GrGLProgram::StageUniLocations* locations,
-                     const char** imageIncrementName,
-                     const char* varyingVSName) {
-    GrGLShaderVar* imgInc = &segments->fFSUnis.push_back();
-    imgInc->setType(kVec2f_GrSLType);
-    imgInc->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
-
-    image_increment_param_name(stageNum, imgInc->accessName());
-    *imageIncrementName = imgInc->getName().c_str();
-
-    // need image increment in both VS and FS
-    segments->fVSUnis.push_back(*imgInc).setEmitPrecision(true);
-
-    locations->fImageIncrementUni = kUseUniform;
-    segments->fVSCode.appendf("\t%s -= vec2(%d, %d) * %s;\n",
-                                  varyingVSName, desc.fKernelWidth,
-                                  desc.fKernelWidth, *imageIncrementName);
-}
- 
-void genMorphologyFS(int stageNum,
-                     const StageDesc& desc,
-                     ShaderCodeSegments* segments,
-                     const char* samplerName,
-                     const char* swizzle,
-                     const char* imageIncrementName,
-                     const char* fsOutColor,
-                     GrStringBuilder& sampleCoords,
-                     GrStringBuilder& texFunc,
-                     GrStringBuilder& modulate) {
-    GrStringBuilder valueVar("value");
-    valueVar.appendS32(stageNum);
-    GrStringBuilder coordVar("coord");
-    coordVar.appendS32(stageNum);
-    bool isDilate = StageDesc::kDilate_FetchMode == desc.fFetchMode;
-
-   if (isDilate) {
-        segments->fFSCode.appendf("\tvec4 %s = vec4(0, 0, 0, 0);\n",
-                                  valueVar.c_str());
-    } else {
-        segments->fFSCode.appendf("\tvec4 %s = vec4(1, 1, 1, 1);\n",
-                                  valueVar.c_str());
-    }
-    segments->fFSCode.appendf("\tvec2 %s = %s;\n", 
-                              coordVar.c_str(),
-                              sampleCoords.c_str());
-    segments->fFSCode.appendf("\tfor (int i = 0; i < %d; i++) {\n",
-                              desc.fKernelWidth * 2 + 1);
-    segments->fFSCode.appendf("\t\t%s = %s(%s, %s(%s, %s)%s);\n",
-                              valueVar.c_str(), isDilate ? "max" : "min",
-                              valueVar.c_str(), texFunc.c_str(),
-                              samplerName, coordVar.c_str(), swizzle);
-    segments->fFSCode.appendf("\t\t%s += %s;\n",
-                              coordVar.c_str(),
-                              imageIncrementName);
-    segments->fFSCode.appendf("\t}\n");
-    segments->fFSCode.appendf("\t%s = %s%s;\n", fsOutColor,
-                              valueVar.c_str(), modulate.c_str());
-}
-
-}
-
 void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
                                int stageNum,
                                const GrGLProgram::StageDesc& desc,
                                const char* fsInColor, // NULL means no incoming color
                                const char* fsOutColor,
                                const char* vsInCoord,
-                               ShaderCodeSegments* segments,
+                               GrGLShaderBuilder* segments,
                                StageUniLocations* locations,
                                GrGLProgramStage* customStage) const {
 
@@ -1766,237 +1192,110 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
     GrAssert((desc.fInConfigFlags & StageDesc::kInConfigBitMask) ==
              desc.fInConfigFlags);
 
-    // First decide how many coords are needed to access the texture
-    // Right now it's always 2 but we could start using 1D textures for
-    // gradients.
-    static const int coordDims = 2;
-    int varyingDims;
-
     /// Vertex Shader Stuff
-
-    if (NULL != customStage) {
-        customStage->setupVSUnis(segments->fVSUnis, stageNum);
-    }
 
     // decide whether we need a matrix to transform texture coords
     // and whether the varying needs a perspective coord.
     const char* matName = NULL;
     if (desc.fOptFlags & StageDesc::kIdentityMatrix_OptFlagBit) {
-        varyingDims = coordDims;
+        segments->fVaryingDims = segments->fCoordDims;
     } else {
-        GrGLShaderVar* mat;
-    #if GR_GL_ATTRIBUTE_MATRICES
-        mat = &segments->fVSAttrs.push_back();
-        mat->setTypeModifier(GrGLShaderVar::kAttribute_TypeModifier);
-        locations->fTextureMatrixUni = kSetAsAttribute;
-    #else
-        mat = &segments->fVSUnis.push_back();
-        mat->setTypeModifier(GrGLShaderVar::kUniform_TypeModifier);
-        locations->fTextureMatrixUni = kUseUniform;
-    #endif
-        tex_matrix_name(stageNum, mat->accessName());
-        mat->setType(kMat33f_GrSLType);
+        GrStringBuilder texMatName;
+        tex_matrix_name(stageNum, &texMatName);
+        const GrGLShaderVar* mat = &segments->addUniform(
+            GrGLShaderBuilder::kVertex_VariableLifetime, kMat33f_GrSLType,
+            texMatName.c_str());
+        // Can't use texMatName.c_str() because it's on the stack!
         matName = mat->getName().c_str();
+        locations->fTextureMatrixUni = kUseUniform;
 
         if (desc.fOptFlags & StageDesc::kNoPerspective_OptFlagBit) {
-            varyingDims = coordDims;
+            segments->fVaryingDims = segments->fCoordDims;
         } else {
-            varyingDims = coordDims + 1;
+            segments->fVaryingDims = segments->fCoordDims + 1;
         }
     }
+    GrAssert(segments->fVaryingDims > 0);
 
-    segments->fFSUnis.push_back().set(kSampler2D_GrSLType,
-        GrGLShaderVar::kUniform_TypeModifier, "");
-    sampler_name(stageNum, segments->fFSUnis.back().accessName());
-    locations->fSamplerUni = kUseUniform;
-    const char* samplerName = segments->fFSUnis.back().getName().c_str();
-
-    const char* texelSizeName = NULL;
-    if (StageDesc::k2x2_FetchMode == desc.fFetchMode) {
-        segments->fFSUnis.push_back().set(kVec2f_GrSLType,
-            GrGLShaderVar::kUniform_TypeModifier, "");
-        normalized_texel_size_name(stageNum, segments->fFSUnis.back().accessName());
-        texelSizeName = segments->fFSUnis.back().getName().c_str();
+    // Must setup variables after computing segments->fVaryingDims
+    if (NULL != customStage) {
+        customStage->setupVariables(segments, stageNum);
     }
 
+    GrStringBuilder samplerName;
+    sampler_name(stageNum, &samplerName);
+    // const GrGLShaderVar* sampler = &
+        segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
+        kSampler2D_GrSLType, samplerName.c_str());
+    locations->fSamplerUni = kUseUniform;
+
     const char *varyingVSName, *varyingFSName;
-    append_varying(GrSLFloatVectorType(varyingDims),
-                    "Stage",
-                   stageNum,
-                   segments,
-                   &varyingVSName,
-                   &varyingFSName);
+    segments->addVarying(GrSLFloatVectorType(segments->fVaryingDims),
+                         "Stage",
+                        stageNum,
+                        &varyingVSName,
+                        &varyingFSName);
 
     if (!matName) {
-        GrAssert(varyingDims == coordDims);
+        GrAssert(segments->fVaryingDims == segments->fCoordDims);
         segments->fVSCode.appendf("\t%s = %s;\n", varyingVSName, vsInCoord);
     } else {
         // varying = texMatrix * texCoord
         segments->fVSCode.appendf("\t%s = (%s * vec3(%s, 1))%s;\n",
                                   varyingVSName, matName, vsInCoord,
-                                  vector_all_coords(varyingDims));
+                                  vector_all_coords(segments->fVaryingDims));
     }
 
-    GrGLShaderVar* radial2Params = NULL;
-    const char* radial2VaryingVSName = NULL;
-    const char* radial2VaryingFSName = NULL;
-
-    if (isRadialMapping((StageDesc::CoordMapping) desc.fCoordMapping)) {
-        radial2Params = genRadialVS(stageNum, segments,
-                                    locations,
-                                    &radial2VaryingVSName,
-                                    &radial2VaryingFSName,
-                                    varyingVSName,
-                                    varyingDims, coordDims);
-    }
-
-    GrGLShaderVar* kernel = NULL;
-    const char* imageIncrementName = NULL;
-    if (StageDesc::kConvolution_FetchMode == desc.fFetchMode) {
-        genConvolutionVS(stageNum, desc, segments, locations,
-                         &kernel, &imageIncrementName, varyingVSName);
-    } else if (StageDesc::kDilate_FetchMode == desc.fFetchMode ||
-               StageDesc::kErode_FetchMode == desc.fFetchMode) {
-        genMorphologyVS(stageNum, desc, segments, locations,
-                        &imageIncrementName, varyingVSName);
-    }
-
+    // GrGLShaderVar* kernel = NULL;
+    // const char* imageIncrementName = NULL;
     if (NULL != customStage) {
-        GrStringBuilder vertexShader;
-        customStage->emitVS(&vertexShader, varyingVSName);
-        segments->fVSCode.appendf("{\n");
-        segments->fVSCode.append(vertexShader);
-        segments->fVSCode.appendf("}\n");
+        segments->fVSCode.appendf("\t{ // stage %d %s\n",
+                                  stageNum, customStage->name());
+        customStage->emitVS(segments, varyingVSName);
+        segments->fVSCode.appendf("\t}\n");
     }
 
     /// Fragment Shader Stuff
 
-    if (NULL != customStage) {
-        customStage->setupFSUnis(segments->fFSUnis, stageNum);
-    }
+    segments->fSampleCoords = varyingFSName;
 
-    GrStringBuilder fsCoordName;
-    // function used to access the shader, may be made projective
-    GrStringBuilder texFunc("texture2D");
+    GrGLShaderBuilder::SamplerMode sampleMode =
+        GrGLShaderBuilder::kExplicitDivide_SamplerMode;
     if (desc.fOptFlags & (StageDesc::kIdentityMatrix_OptFlagBit |
                           StageDesc::kNoPerspective_OptFlagBit)) {
-        GrAssert(varyingDims == coordDims);
-        fsCoordName = varyingFSName;
-    } else {
-        // if we have to do some special op on the varyings to get
-        // our final tex coords then when in perspective we have to
-        // do an explicit divide. Otherwise, we can use a Proj func.
-        if  (StageDesc::kIdentity_CoordMapping == desc.fCoordMapping &&
-             StageDesc::kSingle_FetchMode == desc.fFetchMode) {
-            texFunc.append("Proj");
-            fsCoordName = varyingFSName;
-        } else {
-            fsCoordName = "inCoord";
-            fsCoordName.appendS32(stageNum);
-            segments->fFSCode.appendf("\t%s %s = %s%s / %s%s;\n",
-                GrGLShaderVar::TypeString(GrSLFloatVectorType(coordDims)),
-                fsCoordName.c_str(),
-                varyingFSName,
-                GrGLSLVectorNonhomogCoords(varyingDims),
-                varyingFSName,
-                GrGLSLVectorHomogCoord(varyingDims));
-        }
+        sampleMode = GrGLShaderBuilder::kDefault_SamplerMode;
+    } else if (NULL == customStage) {
+        sampleMode = GrGLShaderBuilder::kProj_SamplerMode;
     }
+    segments->setupTextureAccess(sampleMode, stageNum);
 
-    GrStringBuilder sampleCoords;
-    bool complexCoord = false;
-    switch (desc.fCoordMapping) {
-    case StageDesc::kIdentity_CoordMapping:
-        sampleCoords = fsCoordName;
-        break;
-    case StageDesc::kSweepGradient_CoordMapping:
-        sampleCoords.printf("vec2(atan(- %s.y, - %s.x) * 0.1591549430918 + 0.5, 0.5)", fsCoordName.c_str(), fsCoordName.c_str());
-        complexCoord = true;
-        break;
-    case StageDesc::kRadialGradient_CoordMapping:
-        sampleCoords.printf("vec2(length(%s.xy), 0.5)", fsCoordName.c_str());
-        complexCoord = true;
-        break;
-    case StageDesc::kRadial2Gradient_CoordMapping:
-        complexCoord = genRadial2GradientCoordMapping(
-                           stageNum, segments,
-                           radial2VaryingFSName, radial2Params,
-                           sampleCoords, fsCoordName,
-                           varyingDims, coordDims);
-
-        break;
-    case StageDesc::kRadial2GradientDegenerate_CoordMapping:
-        complexCoord = genRadial2GradientDegenerateCoordMapping(
-                           stageNum, segments,
-                           radial2VaryingFSName, radial2Params,
-                           sampleCoords, fsCoordName,
-                           varyingDims, coordDims);
-        break;
-
-    };
+    segments->computeSwizzle(desc.fInConfigFlags);
+    segments->computeModulate(fsInColor);
 
     static const uint32_t kMulByAlphaMask =
         (StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag |
          StageDesc::kMulRGBByAlpha_RoundDown_InConfigFlag);
 
-    const char* swizzle = "";
-    if (desc.fInConfigFlags & StageDesc::kSwapRAndB_InConfigFlag) {
-        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag));
-        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag));
-        swizzle = ".bgra";
-    } else if (desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag) {
-        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
-        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag));
-        swizzle = ".aaaa";
-    } else if (desc.fInConfigFlags & StageDesc::kSmearRed_InConfigFlag) {
-        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
-        GrAssert(!(desc.fInConfigFlags & StageDesc::kSmearAlpha_InConfigFlag));
-        swizzle = ".rrrr";
-    }
-
-    GrStringBuilder modulate;
-    if (NULL != fsInColor) {
-        modulate.printf(" * %s", fsInColor);
-    }
-
-    if (desc.fOptFlags &
-        StageDesc::kCustomTextureDomain_OptFlagBit) {
+    if (desc.fOptFlags & StageDesc::kCustomTextureDomain_OptFlagBit) {
         GrStringBuilder texDomainName;
         tex_domain_name(stageNum, &texDomainName);
-        segments->fFSUnis.push_back().set(kVec4f_GrSLType,
-            GrGLShaderVar::kUniform_TypeModifier, texDomainName);
+        // const GrGLShaderVar* texDomain = &
+            segments->addUniform(
+                GrGLShaderBuilder::kFragment_VariableLifetime,
+                kVec4f_GrSLType, texDomainName.c_str());
         GrStringBuilder coordVar("clampCoord");
         segments->fFSCode.appendf("\t%s %s = clamp(%s, %s.xy, %s.zw);\n",
-                                  float_vector_type_str(coordDims),
+                                  float_vector_type_str(segments->fCoordDims),
                                   coordVar.c_str(),
-                                  sampleCoords.c_str(),
+                                  segments->fSampleCoords.c_str(),
                                   texDomainName.c_str(),
                                   texDomainName.c_str());
-        sampleCoords = coordVar;
+        segments->fSampleCoords = coordVar;
         locations->fTexDomUni = kUseUniform;
     }
 
-    switch (desc.fFetchMode) {
-    case StageDesc::k2x2_FetchMode:
-        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
-        gen2x2FS(stageNum, segments, locations, &sampleCoords,
-            samplerName, texelSizeName, swizzle, fsOutColor,
-            texFunc, modulate, complexCoord, coordDims);
-        break;
-    case StageDesc::kConvolution_FetchMode:
-        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
-        genConvolutionFS(stageNum, desc, segments,
-            samplerName, kernel, swizzle, imageIncrementName, fsOutColor,
-            sampleCoords, texFunc, modulate);
-        break;
-    case StageDesc::kDilate_FetchMode:
-    case StageDesc::kErode_FetchMode:
-        GrAssert(!(desc.fInConfigFlags & kMulByAlphaMask));
-        genMorphologyFS(stageNum, desc, segments,
-            samplerName, swizzle, imageIncrementName, fsOutColor,
-            sampleCoords, texFunc, modulate);
-        break;
-    default:
+    // NOTE: GrGLProgramStages are now responsible for fetching
+    if (NULL == customStage) {
         if (desc.fInConfigFlags & kMulByAlphaMask) {
             // only one of the mul by alpha flags should be set
             GrAssert(GrIsPow2(kMulByAlphaMask & desc.fInConfigFlags));
@@ -2005,50 +1304,33 @@ void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
             GrAssert(!(desc.fInConfigFlags & 
                        StageDesc::kSmearRed_InConfigFlag));
             segments->fFSCode.appendf("\t%s = %s(%s, %s)%s;\n",
-                                      fsOutColor, texFunc.c_str(), 
-                                      samplerName, sampleCoords.c_str(),
-                                      swizzle);
+                                      fsOutColor,
+                                      segments->fTexFunc.c_str(), 
+                                      samplerName.c_str(),
+                                      segments->fSampleCoords.c_str(),
+                                      segments->fSwizzle.c_str());
             if (desc.fInConfigFlags &
                 StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag) {
                 segments->fFSCode.appendf("\t%s = vec4(ceil(%s.rgb*%s.a*255.0)/255.0,%s.a)%s;\n",
                                           fsOutColor, fsOutColor, fsOutColor,
-                                          fsOutColor, modulate.c_str());
+                                          fsOutColor, segments->fModulate.c_str());
             } else {
                 segments->fFSCode.appendf("\t%s = vec4(floor(%s.rgb*%s.a*255.0)/255.0,%s.a)%s;\n",
                                           fsOutColor, fsOutColor, fsOutColor,
-                                          fsOutColor, modulate.c_str());
+                                          fsOutColor, segments->fModulate.c_str());
             }
         } else {
-            segments->fFSCode.appendf("\t%s = %s(%s, %s)%s%s;\n",
-                                      fsOutColor, texFunc.c_str(), 
-                                      samplerName, sampleCoords.c_str(),
-                                      swizzle, modulate.c_str());
+            segments->emitDefaultFetch(fsOutColor, samplerName.c_str());
         }
     }
 
     if (NULL != customStage) {
-        if (desc.fOptFlags & (StageDesc::kIdentityMatrix_OptFlagBit |
-                              StageDesc::kNoPerspective_OptFlagBit)) {
-            customStage->setSamplerMode(GrGLProgramStage::kDefault_SamplerMode);
-        } else if (StageDesc::kIdentity_CoordMapping == desc.fCoordMapping &&
-                   StageDesc::kSingle_FetchMode == desc.fFetchMode) {
-            customStage->setSamplerMode(GrGLProgramStage::kProj_SamplerMode);
-        } else {
-            customStage->setSamplerMode(
-                GrGLProgramStage::kExplicitDivide_SamplerMode);
-        }
-
-        GrStringBuilder fragmentShader;
-        fsCoordName = customStage->emitTextureSetup(
-                          &fragmentShader, varyingFSName,
-                          stageNum, coordDims, varyingDims);
-        customStage->emitFS(&fragmentShader, fsOutColor, fsInColor,
-                            samplerName, fsCoordName.c_str());
-      
         // Enclose custom code in a block to avoid namespace conflicts
-        segments->fFSCode.appendf("{\n");
-        segments->fFSCode.append(fragmentShader);
-        segments->fFSCode.appendf("}\n");
+        segments->fFSCode.appendf("\t{ // stage %d %s \n",
+                                  stageNum, customStage->name());
+        customStage->emitFS(segments, fsOutColor, fsInColor,
+                            samplerName.c_str());
+        segments->fFSCode.appendf("\t}\n");
     }
 }
 

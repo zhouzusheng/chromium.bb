@@ -73,16 +73,12 @@ TextureManager::~TextureManager() {
 void TextureManager::Destroy(bool have_context) {
   have_context_ = have_context;
   texture_infos_.clear();
-  GLuint ids[kNumDefaultTextures * 2];
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
-    TextureInfo* texture = default_textures_[ii].get();
-    mem_represented_ -= texture ? texture->estimated_size() : 0;
-    ids[ii * 2 + 0] = texture ? texture->service_id() : 0;
-    ids[ii * 2 + 1] = black_texture_ids_[ii];
+    default_textures_[ii] = NULL;
   }
 
   if (have_context) {
-    glDeleteTextures(arraysize(ids), ids);
+    glDeleteTextures(arraysize(black_texture_ids_), black_texture_ids_);
   }
 
   DCHECK_EQ(0u, mem_represented_);
@@ -210,7 +206,13 @@ bool TextureManager::TextureInfo::CanGenerateMipmaps(
     return false;
   }
 
+  // Can't generate mips for depth or stencil textures.
   const TextureInfo::LevelInfo& first = level_infos_[0][0];
+  uint32 channels = GLES2Util::GetChannelsForFormat(first.format);
+  if (channels & (GLES2Util::kDepth | GLES2Util::kStencil)) {
+    return false;
+  }
+
   // TODO(gman): Check internal_format, format and type.
   for (size_t ii = 0; ii < level_infos_.size(); ++ii) {
     const LevelInfo& info = level_infos_[ii][0];
@@ -677,7 +679,7 @@ TextureManager::TextureInfo::Ref TextureManager::CreateDefaultAndBlackTextures(
   // we need to manually manipulate some of the their bookkeeping.
   ++num_unrenderable_textures_;
   TextureInfo::Ref default_texture = TextureInfo::Ref(
-      new TextureInfo(NULL, ids[1]));
+      new TextureInfo(this, ids[1]));
   SetInfoTarget(default_texture, target);
   if (needs_faces) {
     for (int ii = 0; ii < GLES2Util::kNumFaces; ++ii) {

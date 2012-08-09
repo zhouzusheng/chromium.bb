@@ -52,19 +52,19 @@ class LanguageMatcher {
 
  private:
   // If langauge subtags match add this amount to the score.
-  static const unsigned int kLanguageWeight;
+  static const int kLanguageWeight;
 
   // If script subtags match add this amount to the score.
-  static const unsigned int kScriptWeight;
+  static const int kScriptWeight;
 
   // If region subtags match add this amount to the score.
-  static const unsigned int kRegionWeight;
+  static const int kRegionWeight;
 
   // LocaleID match score has to be over this number to accept the match.
-  static const unsigned int kThreshold;
+  static const int kThreshold;
 
   // For breaking ties in priority queue.
-  static const unsigned int kPositionBonus;
+  static const int kPositionBonus;
 
   LanguageMatcher();
 

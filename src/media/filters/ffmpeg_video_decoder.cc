@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/string_number_conversions.h"
+#include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
@@ -17,6 +18,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/ffmpeg/ffmpeg_common.h"
+#include "media/filters/ffmpeg_glue.h"
 
 namespace media {
 
@@ -56,16 +58,16 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(
       codec_context_(NULL),
       av_frame_(NULL),
       frame_rate_numerator_(0),
-      frame_rate_denominator_(0) {
-}
-
-FFmpegVideoDecoder::~FFmpegVideoDecoder() {
-  ReleaseFFmpegResources();
+      frame_rate_denominator_(0),
+      decryptor_(NULL) {
 }
 
 void FFmpegVideoDecoder::Initialize(const scoped_refptr<DemuxerStream>& stream,
                                     const PipelineStatusCB& status_cb,
                                     const StatisticsCB& statistics_cb) {
+  // Ensure FFmpeg has been initialized
+  FFmpegGlue::GetInstance();
+
   if (!message_loop_) {
     message_loop_ = message_loop_factory_cb_.Run();
     message_loop_factory_cb_.Reset();
@@ -98,7 +100,7 @@ void FFmpegVideoDecoder::Initialize(const scoped_refptr<DemuxerStream>& stream,
   }
 
   // Initialize AVCodecContext structure.
-  codec_context_ = avcodec_alloc_context();
+  codec_context_ = avcodec_alloc_context3(NULL);
   VideoDecoderConfigToAVCodecContext(config, codec_context_);
 
   // Enable motion vector search (potentially slow), strong deblocking filter
@@ -175,8 +177,13 @@ const gfx::Size& FFmpegVideoDecoder::natural_size() {
   return natural_size_;
 }
 
-AesDecryptor* FFmpegVideoDecoder::decryptor() {
-  return &decryptor_;
+void FFmpegVideoDecoder::set_decryptor(AesDecryptor* decryptor) {
+  DCHECK_EQ(state_, kUninitialized);
+  decryptor_ = decryptor;
+}
+
+FFmpegVideoDecoder::~FFmpegVideoDecoder() {
+  ReleaseFFmpegResources();
 }
 
 void FFmpegVideoDecoder::DoRead(const ReadCB& read_cb) {
@@ -208,14 +215,16 @@ void FFmpegVideoDecoder::ReadFromDemuxerStream() {
   demuxer_stream_->Read(base::Bind(&FFmpegVideoDecoder::DecodeBuffer, this));
 }
 
-void FFmpegVideoDecoder::DecodeBuffer(const scoped_refptr<Buffer>& buffer) {
+void FFmpegVideoDecoder::DecodeBuffer(
+    const scoped_refptr<DecoderBuffer>& buffer) {
   // TODO(scherkus): fix FFmpegDemuxerStream::Read() to not execute our read
   // callback on the same execution stack so we can get rid of forced task post.
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &FFmpegVideoDecoder::DoDecodeBuffer, this, buffer));
 }
 
-void FFmpegVideoDecoder::DoDecodeBuffer(const scoped_refptr<Buffer>& buffer) {
+void FFmpegVideoDecoder::DoDecodeBuffer(
+    const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
@@ -262,9 +271,10 @@ void FFmpegVideoDecoder::DoDecodeBuffer(const scoped_refptr<Buffer>& buffer) {
     state_ = kFlushCodec;
   }
 
-  scoped_refptr<Buffer> unencrypted_buffer = buffer;
+  scoped_refptr<DecoderBuffer> unencrypted_buffer = buffer;
   if (buffer->GetDecryptConfig() && buffer->GetDataSize()) {
-    unencrypted_buffer = decryptor_.Decrypt(buffer);
+    unencrypted_buffer = decryptor_->Decrypt(buffer);
+
     if (!unencrypted_buffer || !unencrypted_buffer->GetDataSize()) {
       state_ = kDecodeFinished;
       base::ResetAndReturn(&read_cb_).Run(kDecryptError, NULL);
@@ -303,7 +313,7 @@ void FFmpegVideoDecoder::DoDecodeBuffer(const scoped_refptr<Buffer>& buffer) {
 }
 
 bool FFmpegVideoDecoder::Decode(
-    const scoped_refptr<Buffer>& buffer,
+    const scoped_refptr<DecoderBuffer>& buffer,
     scoped_refptr<VideoFrame>* video_frame) {
   DCHECK(video_frame);
 
@@ -316,6 +326,9 @@ bool FFmpegVideoDecoder::Decode(
 
   // Let FFmpeg handle presentation timestamp reordering.
   codec_context_->reordered_opaque = buffer->GetTimestamp().InMicroseconds();
+
+  // Reset frame to default values.
+  avcodec_get_frame_defaults(av_frame_);
 
   // This is for codecs not using get_buffer to initialize
   // |av_frame_->reordered_opaque|

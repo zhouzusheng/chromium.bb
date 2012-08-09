@@ -5,6 +5,8 @@
 #include "media/audio/null_audio_sink.h"
 
 #include "base/bind.h"
+#include "base/stringprintf.h"
+#include "base/sys_byteorder.h"
 #include "base/threading/platform_thread.h"
 
 namespace media {
@@ -14,13 +16,29 @@ NullAudioSink::NullAudioSink()
       playback_rate_(0.0),
       playing_(false),
       callback_(NULL),
-      thread_("NullAudioThread") {
+      thread_("NullAudioThread"),
+      hash_audio_for_testing_(false) {
 }
 
-NullAudioSink::~NullAudioSink() {
-  DCHECK(!thread_.IsRunning());
-  for (size_t i = 0; i < audio_data_.size(); ++i)
-    delete [] audio_data_[i];
+void NullAudioSink::Initialize(const AudioParameters& params,
+                               RenderCallback* callback) {
+  DCHECK(!initialized_);
+  params_ = params;
+
+  audio_data_.reserve(params.channels());
+  for (int i = 0; i < params.channels(); ++i) {
+    float* channel_data = new float[params.frames_per_buffer()];
+    audio_data_.push_back(channel_data);
+  }
+
+  if (hash_audio_for_testing_) {
+    md5_channel_contexts_.reset(new base::MD5Context[params.channels()]);
+    for (int i = 0; i < params.channels(); i++)
+      base::MD5Init(&md5_channel_contexts_[i]);
+  }
+
+  callback_ = callback;
+  initialized_ = true;
 }
 
 void NullAudioSink::Start() {
@@ -64,19 +82,10 @@ void NullAudioSink::SetPlaying(bool is_playing) {
   playing_ = is_playing;
 }
 
-void NullAudioSink::Initialize(const AudioParameters& params,
-                               RenderCallback* callback) {
-  DCHECK(!initialized_);
-  params_ = params;
-
-  audio_data_.reserve(params.channels());
-  for (int i = 0; i < params.channels(); ++i) {
-    float* channel_data = new float[params.frames_per_buffer()];
-    audio_data_.push_back(channel_data);
-  }
-
-  callback_ = callback;
-  initialized_ = true;
+NullAudioSink::~NullAudioSink() {
+  DCHECK(!thread_.IsRunning());
+  for (size_t i = 0; i < audio_data_.size(); ++i)
+    delete [] audio_data_[i];
 }
 
 void NullAudioSink::FillBufferTask() {
@@ -91,6 +100,21 @@ void NullAudioSink::FillBufferTask() {
     int frames_per_millisecond =
         params_.sample_rate() / base::Time::kMillisecondsPerSecond;
 
+    if (hash_audio_for_testing_ && frames_received > 0) {
+      DCHECK_EQ(sizeof(float), sizeof(uint32));
+      int channels = audio_data_.size();
+      for (int channel_idx = 0; channel_idx < channels; ++channel_idx) {
+        for (int frame_idx = 0; frame_idx < frames_received; frame_idx++) {
+          // Convert float to uint32 w/o conversion loss.
+          uint32 frame = base::ByteSwapToLE32(*reinterpret_cast<uint32*>(
+              &audio_data_[channel_idx][frame_idx]));
+          base::MD5Update(
+              &md5_channel_contexts_[channel_idx], base::StringPiece(
+                  reinterpret_cast<char*>(&frame), sizeof(frame)));
+        }
+      }
+    }
+
     // Calculate our sleep duration, taking playback rate into consideration.
     delay = base::TimeDelta::FromMilliseconds(
         frames_received / (frames_per_millisecond * playback_rate_));
@@ -104,6 +128,32 @@ void NullAudioSink::FillBufferTask() {
       FROM_HERE,
       base::Bind(&NullAudioSink::FillBufferTask, this),
       std::max(delay, base::TimeDelta::FromMilliseconds(1)));
+}
+
+void NullAudioSink::StartAudioHashForTesting() {
+  DCHECK(!initialized_);
+  hash_audio_for_testing_ = true;
+}
+
+std::string NullAudioSink::GetAudioHashForTesting() {
+  DCHECK(hash_audio_for_testing_);
+
+  // If initialize failed or was never called, ensure we return an empty hash.
+  if (!initialized_) {
+    md5_channel_contexts_.reset(new base::MD5Context[1]);
+    base::MD5Init(&md5_channel_contexts_[0]);
+  }
+
+  // Hash all channels into the first channel.
+  base::MD5Digest digest;
+  for (size_t i = 1; i < audio_data_.size(); i++) {
+    base::MD5Final(&digest, &md5_channel_contexts_[i]);
+    base::MD5Update(&md5_channel_contexts_[0], base::StringPiece(
+        reinterpret_cast<char*>(&digest), sizeof(base::MD5Digest)));
+  }
+
+  base::MD5Final(&digest, &md5_channel_contexts_[0]);
+  return base::MD5DigestToBase16(digest);
 }
 
 }  // namespace media

@@ -224,6 +224,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     typedef pair<SVGElement*, QualifiedName> ElementAttributePair;
     typedef HashMap<ElementAttributePair, RefPtr<SVGSMILElement> > ResultElementMap;
     ResultElementMap resultsElements;
+    HashSet<SVGSMILElement*> contributingElements;
     for (unsigned n = 0; n < toAnimate.size(); ++n) {
         SVGSMILElement* animation = toAnimate[n];
         ASSERT(animation->timeContainer() == this);
@@ -240,19 +241,23 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
                 continue;
         }
         
-        // Results are accumulated to the first animation that animates a particular element/attribute pair.
+        // Results are accumulated to the first animation that animates and contributes to a particular element/attribute pair.
         ElementAttributePair key(targetElement, attributeName); 
         SVGSMILElement* resultElement = resultsElements.get(key).get();
+        bool accumulatedResultElement = false;
         if (!resultElement) {
             if (!animation->hasValidAttributeType())
                 continue;
             resultElement = animation;
-            resultElement->resetToBaseValue();
             resultsElements.add(key, resultElement);
+            accumulatedResultElement = true;
         }
 
         // This will calculate the contribution from the animation and add it to the resultsElement.
-        animation->progress(elapsed, resultElement, seekToTime);
+        if (animation->progress(elapsed, resultElement, seekToTime))
+            contributingElements.add(resultElement);
+        else if (accumulatedResultElement)
+            resultsElements.remove(key);
 
         SMILTime nextFireTime = animation->nextProgressTime();
         if (nextFireTime.isFinite())
@@ -261,19 +266,27 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     
     Vector<SVGSMILElement*> animationsToApply;
     ResultElementMap::iterator end = resultsElements.end();
-    for (ResultElementMap::iterator it = resultsElements.begin(); it != end; ++it)
-        animationsToApply.append(it->second.get());
+    for (ResultElementMap::iterator it = resultsElements.begin(); it != end; ++it) {
+        SVGSMILElement* animation = it->second.get();
+        if (contributingElements.contains(animation))
+            animationsToApply.append(animation);
+    }
+
+    unsigned animationsToApplySize = animationsToApply.size();
+    if (!animationsToApplySize) {
+        startTimer(earliersFireTime, animationFrameDelay);
+        return;
+    }
 
     // Sort <animateTranform> to be the last one to be applied. <animate> may change transform attribute as
     // well (directly or indirectly by modifying <use> x/y) and this way transforms combine properly.
     sortByApplyOrder(animationsToApply);
-    
+
     // Apply results to target elements.
-    for (unsigned n = 0; n < animationsToApply.size(); ++n)
-        animationsToApply[n]->applyResultsToTarget();
+    for (unsigned i = 0; i < animationsToApplySize; ++i)
+        animationsToApply[i]->applyResultsToTarget();
 
     startTimer(earliersFireTime, animationFrameDelay);
-    
     Document::updateStyleForAllDocuments();
 }
 

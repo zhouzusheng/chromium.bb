@@ -33,12 +33,11 @@ module window {
 
     interface [
         ActiveDOMObject,
-        ConstructorParameters=1,
         Constructor(in DOMString scriptUrl),
         CallWith=ScriptExecutionContext,
         ConstructorRaisesException,
         EventTarget,
-        NoStaticTables
+        JSNoStaticTables
     ] EventSource {
 
         readonly attribute DOMString URL; // Lowercased .url is the one in the spec, but leaving .URL for compatibility reasons.

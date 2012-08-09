@@ -28,7 +28,6 @@
 #include "v8/include/v8.h"
 #include "webkit/media/buffered_data_source.h"
 #include "webkit/media/filter_helpers.h"
-#include "webkit/media/simple_data_source.h"
 #include "webkit/media/webmediaplayer_delegate.h"
 #include "webkit/media/webmediaplayer_proxy.h"
 #include "webkit/media/webvideoframe_impl.h"
@@ -119,7 +118,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       delegate_(delegate),
       media_stream_client_(media_stream_client),
       media_log_(media_log),
-      is_accelerated_compositing_active_(false),
+      accelerated_compositing_reported_(false),
       incremented_externally_allocated_memory_(false),
       audio_source_provider_(audio_source_provider) {
   media_log_->AddEvent(
@@ -127,7 +126,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 
   MessageLoop* pipeline_message_loop =
       message_loop_factory_->GetMessageLoop("PipelineThread");
-  CHECK(pipeline_message_loop) << "Failed to create a new thread";
   pipeline_ = new media::Pipeline(pipeline_message_loop, media_log_);
 
   // Let V8 know we started new thread if we did not did it yet.
@@ -141,9 +139,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       base::Bind(&WebMediaPlayerImpl::IncrementExternallyAllocatedMemory,
                  AsWeakPtr()));
 
-  is_accelerated_compositing_active_ =
-      frame->view()->isAcceleratedCompositingActive();
-
   // Also we want to be notified of |main_loop_| destruction.
   main_loop_->AddDestructionObserver(this);
 
@@ -151,7 +146,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
   scoped_refptr<media::VideoRendererBase> video_renderer =
       new media::VideoRendererBase(
           base::Bind(&WebMediaPlayerProxy::Repaint, proxy_),
-          base::Bind(&WebMediaPlayerProxy::SetOpaque, proxy_.get()));
+          base::Bind(&WebMediaPlayerProxy::SetOpaque, proxy_.get()),
+          true);
   filter_collection_->AddVideoRenderer(video_renderer);
   proxy_->set_frame_provider(video_renderer);
 
@@ -238,14 +234,9 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url) {
   }
 
   // Otherwise it's a regular request which requires resolving the URL first.
-  scoped_refptr<WebDataSource> data_source;
-  if (gurl.SchemeIs(kDataScheme)) {
-    data_source = new SimpleDataSource(main_loop_, frame_);
-  } else {
-    data_source = new BufferedDataSource(main_loop_, frame_, media_log_);
-  }
-  proxy_->set_data_source(data_source);
-  data_source->Initialize(url, base::Bind(
+  proxy_->set_data_source(
+      new BufferedDataSource(main_loop_, frame_, media_log_));
+  proxy_->data_source()->Initialize(url, base::Bind(
       &WebMediaPlayerImpl::DataSourceInitialized,
       base::Unretained(this), gurl));
 }
@@ -505,13 +496,21 @@ void WebMediaPlayerImpl::setSize(const WebSize& size) {
   // Don't need to do anything as we use the dimensions passed in via paint().
 }
 
+// This variant (without alpha) is just present during staging of this API
+// change. Later we will again only have one virtual paint().
+void WebMediaPlayerImpl::paint(WebKit::WebCanvas* canvas,
+                               const WebKit::WebRect& rect) {
+  paint(canvas, rect, 0xFF);
+}
+
 void WebMediaPlayerImpl::paint(WebCanvas* canvas,
-                               const WebRect& rect) {
+                               const WebRect& rect,
+                               uint8_t alpha) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
   DCHECK(proxy_);
 
 #if WEBKIT_USING_SKIA
-  proxy_->Paint(canvas, rect);
+  proxy_->Paint(canvas, rect, alpha);
 #elif WEBKIT_USING_CG
   // Get the current scaling in X and Y.
   CGAffineTransform mat = CGContextGetCTM(canvas);
@@ -627,6 +626,11 @@ WebKit::WebVideoFrame* WebMediaPlayerImpl::getCurrentFrame() {
 
 void WebMediaPlayerImpl::putCurrentFrame(
     WebKit::WebVideoFrame* web_video_frame) {
+  if (!accelerated_compositing_reported_) {
+    accelerated_compositing_reported_ = true;
+    UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive",
+                          frame_->view()->isAcceleratedCompositingActive());
+  }
   if (web_video_frame) {
     scoped_refptr<media::VideoFrame> video_frame(
         WebVideoFrameImpl::toVideoFrame(web_video_frame));
@@ -684,12 +688,8 @@ void WebMediaPlayerImpl::OnPipelineInitialize(PipelineStatus status) {
         static_cast<float>(pipeline_->GetMediaDuration().InSecondsF());
     buffered_.swap(new_buffered);
 
-    if (hasVideo()) {
-      UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive",
-                            is_accelerated_compositing_active_);
-    } else {
+    if (!hasVideo())
       GetClient()->disableAcceleratedCompositing();
-    }
 
     if (pipeline_->IsLocalSource())
       SetNetworkState(WebKit::WebMediaPlayer::Loaded);
@@ -815,6 +815,7 @@ void WebMediaPlayerImpl::DataSourceInitialized(
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
   if (status != media::PIPELINE_OK) {
+    DVLOG(1) << "DataSourceInitialized status: " << status;
     SetNetworkState(WebKit::WebMediaPlayer::FormatError);
     Repaint();
     return;
@@ -841,16 +842,18 @@ void WebMediaPlayerImpl::StartPipeline(const GURL& gurl) {
 void WebMediaPlayerImpl::SetNetworkState(
     WebKit::WebMediaPlayer::NetworkState state) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-  // Always notify to ensure client has the latest value.
+  DVLOG(1) << "SetNetworkState: " << state;
   network_state_ = state;
+  // Always notify to ensure client has the latest value.
   GetClient()->networkStateChanged();
 }
 
 void WebMediaPlayerImpl::SetReadyState(
     WebKit::WebMediaPlayer::ReadyState state) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
-  // Always notify to ensure client has the latest value.
+  DVLOG(1) << "SetReadyState: " << state;
   ready_state_ = state;
+  // Always notify to ensure client has the latest value.
   GetClient()->readyStateChanged();
 }
 
@@ -867,9 +870,10 @@ void WebMediaPlayerImpl::Destroy() {
   // Make sure to kill the pipeline so there's no more media threads running.
   // Note: stopping the pipeline might block for a long time.
   if (started_) {
-    media::PipelineStatusNotification note;
-    pipeline_->Stop(note.Callback());
-    note.Wait();
+    base::WaitableEvent waiter(false, false);
+    pipeline_->Stop(base::Bind(
+        &base::WaitableEvent::Signal, base::Unretained(&waiter)));
+    waiter.Wait();
     started_ = false;
   }
 

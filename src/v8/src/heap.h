@@ -45,12 +45,6 @@
 namespace v8 {
 namespace internal {
 
-// TODO(isolates): remove HEAP here
-#define HEAP (_inline_get_heap_())
-class Heap;
-inline Heap* _inline_get_heap_();
-
-
 // Defines all the roots in Heap.
 #define STRONG_ROOT_LIST(V)                                                    \
   V(Map, byte_array_map, ByteArrayMap)                                         \
@@ -80,7 +74,6 @@ inline Heap* _inline_get_heap_();
   V(Map, hash_table_map, HashTableMap)                                         \
   V(FixedArray, empty_fixed_array, EmptyFixedArray)                            \
   V(ByteArray, empty_byte_array, EmptyByteArray)                               \
-  V(FixedDoubleArray, empty_fixed_double_array, EmptyFixedDoubleArray)         \
   V(String, empty_string, EmptyString)                                         \
   V(DescriptorArray, empty_descriptor_array, EmptyDescriptorArray)             \
   V(Smi, stack_limit, StackLimit)                                              \
@@ -136,6 +129,7 @@ inline Heap* _inline_get_heap_();
   V(Map, catch_context_map, CatchContextMap)                                   \
   V(Map, with_context_map, WithContextMap)                                     \
   V(Map, block_context_map, BlockContextMap)                                   \
+  V(Map, module_context_map, ModuleContextMap)                                 \
   V(Map, oddball_map, OddballMap)                                              \
   V(Map, message_object_map, JSMessageObjectMap)                               \
   V(Map, foreign_map, ForeignMap)                                              \
@@ -155,7 +149,8 @@ inline Heap* _inline_get_heap_();
   V(Script, empty_script, EmptyScript)                                         \
   V(Smi, real_stack_limit, RealStackLimit)                                     \
   V(StringDictionary, intrinsic_function_names, IntrinsicFunctionNames)        \
-  V(Smi, arguments_adaptor_deopt_pc_offset, ArgumentsAdaptorDeoptPCOffset)
+  V(Smi, arguments_adaptor_deopt_pc_offset, ArgumentsAdaptorDeoptPCOffset)     \
+  V(Smi, construct_stub_deopt_pc_offset, ConstructStubDeoptPCOffset)
 
 #define ROOT_LIST(V)                                  \
   STRONG_ROOT_LIST(V)                                 \
@@ -182,6 +177,7 @@ inline Heap* _inline_get_heap_();
   V(eval_symbol, "eval")                                                 \
   V(function_symbol, "function")                                         \
   V(length_symbol, "length")                                             \
+  V(module_symbol, "module")                                             \
   V(name_symbol, "name")                                                 \
   V(native_symbol, "native")                                             \
   V(null_symbol, "null")                                                 \
@@ -210,12 +206,10 @@ inline Heap* _inline_get_heap_();
   V(InitializeConstGlobal_symbol, "InitializeConstGlobal")               \
   V(KeyedLoadElementMonomorphic_symbol,                                  \
     "KeyedLoadElementMonomorphic")                                       \
-  V(KeyedLoadElementPolymorphic_symbol,                                  \
-    "KeyedLoadElementPolymorphic")                                       \
   V(KeyedStoreElementMonomorphic_symbol,                                 \
     "KeyedStoreElementMonomorphic")                                      \
-  V(KeyedStoreElementPolymorphic_symbol,                                 \
-    "KeyedStoreElementPolymorphic")                                      \
+  V(KeyedStoreAndGrowElementMonomorphic_symbol,                          \
+    "KeyedStoreAndGrowElementMonomorphic")                               \
   V(stack_overflow_symbol, "kStackOverflowBoilerplate")                  \
   V(illegal_access_symbol, "illegal access")                             \
   V(out_of_memory_symbol, "out-of-memory")                               \
@@ -246,9 +240,10 @@ inline Heap* _inline_get_heap_();
   V(use_strict, "use strict")                                            \
   V(dot_symbol, ".")                                                     \
   V(anonymous_function_symbol, "(anonymous function)")                   \
-  V(compare_ic_symbol, ".compare_ic")                                   \
+  V(compare_ic_symbol, ".compare_ic")                                    \
   V(infinity_symbol, "Infinity")                                         \
-  V(minus_infinity_symbol, "-Infinity")
+  V(minus_infinity_symbol, "-Infinity")                                  \
+  V(hidden_stack_trace_symbol, "v8::hidden_stack_trace")
 
 // Forward declarations.
 class GCTracer;
@@ -431,6 +426,11 @@ class ExternalStringTable {
 };
 
 
+enum ArrayStorageAllocationMode {
+  DONT_INITIALIZE_ARRAY_ELEMENTS,
+  INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE
+};
+
 class Heap {
  public:
   // Configure heap size before setup. Return false if the heap has been
@@ -529,6 +529,30 @@ class Heap {
   MUST_USE_RESULT MaybeObject* AllocateJSObject(
       JSFunction* constructor, PretenureFlag pretenure = NOT_TENURED);
 
+  // Allocate a JSArray with no elements
+  MUST_USE_RESULT MaybeObject* AllocateEmptyJSArray(
+      ElementsKind elements_kind,
+      PretenureFlag pretenure = NOT_TENURED) {
+    return AllocateJSArrayAndStorage(elements_kind, 0, 0,
+                                     DONT_INITIALIZE_ARRAY_ELEMENTS,
+                                     pretenure);
+  }
+
+  // Allocate a JSArray with a specified length but elements that are left
+  // uninitialized.
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayAndStorage(
+      ElementsKind elements_kind,
+      int length,
+      int capacity,
+      ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS,
+      PretenureFlag pretenure = NOT_TENURED);
+
+  // Allocate a JSArray with no elements
+  MUST_USE_RESULT MaybeObject* AllocateJSArrayWithElements(
+      FixedArrayBase* array_base,
+      ElementsKind elements_kind,
+      PretenureFlag pretenure = NOT_TENURED);
+
   // Allocates and initializes a new global object based on a constructor.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
@@ -614,6 +638,12 @@ class Heap {
 
   // Allocates a pre-tenured empty AccessorPair.
   MUST_USE_RESULT MaybeObject* AllocateAccessorPair();
+
+  // Allocates an empty TypeFeedbackInfo.
+  MUST_USE_RESULT MaybeObject* AllocateTypeFeedbackInfo();
+
+  // Allocates an AliasedArgumentsEntry.
+  MUST_USE_RESULT MaybeObject* AllocateAliasedArgumentsEntry(int slot);
 
   // Clear the Instanceof cache (used when a prototype changes).
   inline void ClearInstanceofCache();
@@ -772,6 +802,13 @@ class Heap {
   // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
   // Please note this does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* AllocateUninitializedFixedDoubleArray(
+      int length,
+      PretenureFlag pretenure = NOT_TENURED);
+
+  // Allocates a fixed double array with hole values. Returns
+  // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
+  // Please note this does not perform a garbage collection.
+  MUST_USE_RESULT MaybeObject* AllocateFixedDoubleArrayWithHoles(
       int length,
       PretenureFlag pretenure = NOT_TENURED);
 
@@ -1003,8 +1040,14 @@ class Heap {
                              const char* gc_reason = NULL);
 
   static const int kNoGCFlags = 0;
-  static const int kMakeHeapIterableMask = 1;
+  static const int kSweepPreciselyMask = 1;
   static const int kReduceMemoryFootprintMask = 2;
+  static const int kAbortIncrementalMarkingMask = 4;
+
+  // Making the heap iterable requires us to sweep precisely and abort any
+  // incremental marking as well.
+  static const int kMakeHeapIterableMask =
+      kSweepPreciselyMask | kAbortIncrementalMarkingMask;
 
   // Performs a full garbage collection.  If (flags & kMakeHeapIterableMask) is
   // non-zero, then the slower precise sweeper is used, which leaves the heap
@@ -1187,6 +1230,10 @@ class Heap {
   // Verify the heap is in its normal state before or after a GC.
   void Verify();
 
+  // Verify that AccessorPairs are not shared, i.e. make sure that they have
+  // exactly one pointer to them.
+  void VerifyNoAccessorPairSharing();
+
   void OldPointerSpaceCheckStoreBuffer();
   void MapSpaceCheckStoreBuffer();
   void LargeObjectSpaceCheckStoreBuffer();
@@ -1298,6 +1345,10 @@ class Heap {
 
   inline intptr_t OldGenerationSpaceAvailable() {
     return old_gen_allocation_limit_ - PromotedTotalSize();
+  }
+
+  inline intptr_t OldGenerationCapacityAvailable() {
+    return max_old_generation_size_ - PromotedTotalSize();
   }
 
   static const intptr_t kMinimumPromotionLimit = 5 * Page::kPageSize;
@@ -1429,6 +1480,13 @@ class Heap {
 
   void ClearNormalizedMapCaches();
 
+  // Clears the cache of ICs related to this map.
+  void ClearCacheOnMap(Map* map) {
+    if (FLAG_cleanup_code_caches_at_gc) {
+      map->ClearCodeCache(this);
+    }
+  }
+
   GCTracer* tracer() { return tracer_; }
 
   // Returns the size of objects residing in non new spaces.
@@ -1511,10 +1569,6 @@ class Heap {
   // The roots that have an index less than this are always in old space.
   static const int kOldSpaceRoots = 0x20;
 
-  bool idle_notification_will_schedule_next_gc() {
-    return idle_notification_will_schedule_next_gc_;
-  }
-
   uint32_t HashSeed() {
     uint32_t seed = static_cast<uint32_t>(hash_seed()->value());
     ASSERT(FLAG_randomize_hashes || seed == 0);
@@ -1524,6 +1578,24 @@ class Heap {
   void SetArgumentsAdaptorDeoptPCOffset(int pc_offset) {
     ASSERT(arguments_adaptor_deopt_pc_offset() == Smi::FromInt(0));
     set_arguments_adaptor_deopt_pc_offset(Smi::FromInt(pc_offset));
+  }
+
+  void SetConstructStubDeoptPCOffset(int pc_offset) {
+    ASSERT(construct_stub_deopt_pc_offset() == Smi::FromInt(0));
+    set_construct_stub_deopt_pc_offset(Smi::FromInt(pc_offset));
+  }
+
+  // For post mortem debugging.
+  void RememberUnmappedPage(Address page, bool compacted);
+
+  // Global inline caching age: it is incremented on some GCs after context
+  // disposal. We use it to flush inline caches.
+  int global_ic_age() {
+    return global_ic_age_;
+  }
+
+  void AgeInlineCaches() {
+    ++global_ic_age_;
   }
 
  private:
@@ -1553,6 +1625,8 @@ class Heap {
   // For keeping track of context disposals.
   int contexts_disposed_;
 
+  int global_ic_age_;
+
   int scan_on_scavenge_pages_;
 
 #if defined(V8_TARGET_ARCH_X64)
@@ -1576,6 +1650,11 @@ class Heap {
 
   int ms_count_;  // how many mark-sweep collections happened
   unsigned int gc_count_;  // how many gc happened
+
+  // For post mortem debugging.
+  static const int kRememberedUnmappedPages = 128;
+  int remembered_unmapped_pages_index_;
+  Address remembered_unmapped_pages_[kRememberedUnmappedPages];
 
   // Total length of the strings we failed to flatten since the last GC.
   int unflattened_strings_length_;
@@ -1724,7 +1803,6 @@ class Heap {
 
   inline void UpdateOldSpaceLimits();
 
-
   // Allocate an uninitialized object in map space.  The behavior is identical
   // to Heap::AllocateRaw(size_in_bytes, MAP_SPACE), except that (a) it doesn't
   // have to test the allocation space argument and (b) can reduce code size
@@ -1752,6 +1830,11 @@ class Heap {
   MaybeObject* CreateOddball(const char* to_string,
                              Object* to_number,
                              byte kind);
+
+  // Allocate a JSArray with no elements
+  MUST_USE_RESULT MaybeObject* AllocateJSArray(
+      ElementsKind elements_kind,
+      PretenureFlag pretenure = NOT_TENURED);
 
   // Allocate empty fixed array.
   MUST_USE_RESULT MaybeObject* AllocateEmptyFixedArray();
@@ -1800,8 +1883,13 @@ class Heap {
   GCTracer* tracer_;
 
 
-  // Initializes the number to string cache based on the max semispace size.
-  MUST_USE_RESULT MaybeObject* InitializeNumberStringCache();
+  // Allocates a small number to string cache.
+  MUST_USE_RESULT MaybeObject* AllocateInitialNumberStringCache();
+  // Creates and installs the full-sized number string cache.
+  void AllocateFullSizeNumberStringCache();
+  // Get the length of the number to string cache based on the max semispace
+  // size.
+  int FullSizeNumberStringCacheLength();
   // Flush the number to string cache.
   void FlushNumberStringCache();
 
@@ -1893,11 +1981,27 @@ class Heap {
     return incremental_marking()->WorthActivating();
   }
 
+  // Estimates how many milliseconds a Mark-Sweep would take to complete.
+  // In idle notification handler we assume that this function will return:
+  // - a number less than 10 for small heaps, which are less than 8Mb.
+  // - a number greater than 10 for large heaps, which are greater than 32Mb.
+  int TimeMarkSweepWouldTakeInMs() {
+    // Rough estimate of how many megabytes of heap can be processed in 1 ms.
+    static const int kMbPerMs = 2;
+
+    int heap_size_mb = static_cast<int>(SizeOfObjects() / MB);
+    return heap_size_mb / kMbPerMs;
+  }
+
   // Returns true if no more GC work is left.
   bool IdleGlobalGC();
 
+  void AdvanceIdleIncrementalMarking(intptr_t step_size);
+
+
   static const int kInitialSymbolTableSize = 2048;
   static const int kInitialEvalCacheSize = 64;
+  static const int kInitialNumberStringCacheSize = 256;
 
   // Maximum GC pause.
   int max_gc_pause_;
@@ -1925,7 +2029,6 @@ class Heap {
   unsigned int last_idle_notification_gc_count_;
   bool last_idle_notification_gc_count_init_;
 
-  bool idle_notification_will_schedule_next_gc_;
   int mark_sweeps_since_idle_round_started_;
   int ms_count_at_last_idle_notification_;
   unsigned int gc_count_at_last_idle_gc_;
@@ -1997,32 +2100,15 @@ class HeapStats {
 
 class AlwaysAllocateScope {
  public:
-  AlwaysAllocateScope() {
-    // We shouldn't hit any nested scopes, because that requires
-    // non-handle code to call handle code. The code still works but
-    // performance will degrade, so we want to catch this situation
-    // in debug mode.
-    ASSERT(HEAP->always_allocate_scope_depth_ == 0);
-    HEAP->always_allocate_scope_depth_++;
-  }
-
-  ~AlwaysAllocateScope() {
-    HEAP->always_allocate_scope_depth_--;
-    ASSERT(HEAP->always_allocate_scope_depth_ == 0);
-  }
+  inline AlwaysAllocateScope();
+  inline ~AlwaysAllocateScope();
 };
 
 
 class LinearAllocationScope {
  public:
-  LinearAllocationScope() {
-    HEAP->linear_allocation_scope_depth_++;
-  }
-
-  ~LinearAllocationScope() {
-    HEAP->linear_allocation_scope_depth_--;
-    ASSERT(HEAP->linear_allocation_scope_depth_ >= 0);
-  }
+  inline LinearAllocationScope();
+  inline ~LinearAllocationScope();
 };
 
 
@@ -2034,15 +2120,7 @@ class LinearAllocationScope {
 // objects in a heap space but above the allocation pointer.
 class VerifyPointersVisitor: public ObjectVisitor {
  public:
-  void VisitPointers(Object** start, Object** end) {
-    for (Object** current = start; current < end; current++) {
-      if ((*current)->IsHeapObject()) {
-        HeapObject* object = HeapObject::cast(*current);
-        ASSERT(HEAP->Contains(object));
-        ASSERT(object->map()->IsMap());
-      }
-    }
-  }
+  inline void VisitPointers(Object** start, Object** end);
 };
 #endif
 
@@ -2268,6 +2346,18 @@ class DescriptorLookupCache {
 };
 
 
+#ifdef DEBUG
+class DisallowAllocationFailure {
+ public:
+  inline DisallowAllocationFailure();
+  inline ~DisallowAllocationFailure();
+
+ private:
+  bool old_state_;
+};
+#endif
+
+
 // A helper class to document/test C++ scopes where we do not
 // expect a GC. Usage:
 //
@@ -2275,65 +2365,28 @@ class DescriptorLookupCache {
 // { AssertNoAllocation nogc;
 //   ...
 // }
+class AssertNoAllocation {
+ public:
+  inline AssertNoAllocation();
+  inline ~AssertNoAllocation();
 
 #ifdef DEBUG
-
-class DisallowAllocationFailure {
- public:
-  DisallowAllocationFailure() {
-    old_state_ = HEAP->disallow_allocation_failure_;
-    HEAP->disallow_allocation_failure_ = true;
-  }
-  ~DisallowAllocationFailure() {
-    HEAP->disallow_allocation_failure_ = old_state_;
-  }
  private:
   bool old_state_;
-};
-
-class AssertNoAllocation {
- public:
-  AssertNoAllocation() {
-    old_state_ = HEAP->allow_allocation(false);
-  }
-
-  ~AssertNoAllocation() {
-    HEAP->allow_allocation(old_state_);
-  }
-
- private:
-  bool old_state_;
-};
-
-class DisableAssertNoAllocation {
- public:
-  DisableAssertNoAllocation() {
-    old_state_ = HEAP->allow_allocation(true);
-  }
-
-  ~DisableAssertNoAllocation() {
-    HEAP->allow_allocation(old_state_);
-  }
-
- private:
-  bool old_state_;
-};
-
-#else  // ndef DEBUG
-
-class AssertNoAllocation {
- public:
-  AssertNoAllocation() { }
-  ~AssertNoAllocation() { }
-};
-
-class DisableAssertNoAllocation {
- public:
-  DisableAssertNoAllocation() { }
-  ~DisableAssertNoAllocation() { }
-};
-
 #endif
+};
+
+
+class DisableAssertNoAllocation {
+ public:
+  inline DisableAssertNoAllocation();
+  inline ~DisableAssertNoAllocation();
+
+#ifdef DEBUG
+ private:
+  bool old_state_;
+#endif
+};
 
 // GCTracer collects and prints ONE line after each garbage collector
 // invocation IFF --trace_gc is used.
@@ -2398,13 +2451,19 @@ class GCTracer BASE_EMBEDDED {
   const char* CollectorString();
 
   // Returns size of object in heap (in MB).
-  double SizeOfHeapObjects() {
-    return (static_cast<double>(HEAP->SizeOfObjects())) / MB;
-  }
+  inline double SizeOfHeapObjects();
 
-  double start_time_;  // Timestamp set in the constructor.
-  intptr_t start_size_;  // Size of objects in heap set in constructor.
-  GarbageCollector collector_;  // Type of collector.
+  // Timestamp set in the constructor.
+  double start_time_;
+
+  // Size of objects in heap set in constructor.
+  intptr_t start_object_size_;
+
+  // Size of memory allocated from OS set in constructor.
+  intptr_t start_memory_size_;
+
+  // Type of collector.
+  GarbageCollector collector_;
 
   // A count (including this one, e.g. the first collection is 1) of the
   // number of garbage collections.
@@ -2652,7 +2711,5 @@ class PathTracer : public ObjectVisitor {
 #endif  // DEBUG || LIVE_OBJECT_LIST
 
 } }  // namespace v8::internal
-
-#undef HEAP
 
 #endif  // V8_HEAP_H_

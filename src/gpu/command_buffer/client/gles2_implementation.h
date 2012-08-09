@@ -16,7 +16,9 @@
 #include "../common/gles2_cmd_utils.h"
 #include "../common/scoped_ptr.h"
 #include "../client/gles2_cmd_helper.h"
+#include "../client/query_tracker.h"
 #include "../client/ring_buffer.h"
+#include "gles2_impl_export.h"
 
 #if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
   #if defined(GLES2_INLINE_OPTIMIZATION)
@@ -104,8 +106,14 @@ class IdHandlerInterface {
 // be had by changing your code to use command buffers directly by using the
 // GLES2CmdHelper but that entails changing your code to use and deal with
 // shared memory and synchronization issues.
-class GLES2Implementation {
+class GLES2_IMPL_EXPORT GLES2Implementation {
  public:
+  class ErrorMessageCallback {
+   public:
+    virtual ~ErrorMessageCallback() { }
+    virtual void OnErrorMessage(const char* msg, int id) = 0;
+  };
+
   // Stores client side cached GL state.
   struct GLState {
     GLState()
@@ -142,6 +150,9 @@ class GLES2Implementation {
 
   // used for testing only. If more things are reseved add them here.
   static const unsigned int kStartingOffset = kMaxSizeOfSimpleResult;
+
+  // Size in bytes to issue async flush for transfer buffer.
+  static const unsigned int kSizeToFlush = 256 * 1024;
 
   // The bucket used for results. Public for testing only.
   static const uint32 kResultBucketId = 1;
@@ -210,8 +221,13 @@ class GLES2Implementation {
   void FreeUnusedSharedMemory();
   void FreeEverything();
 
+  void SetErrorMessageCallback(ErrorMessageCallback* callback) {
+    error_message_callback_ = callback;
+  }
+
  private:
   friend class ClientSideBufferHelper;
+  friend class GLES2ImplementationTest;
 
   // Used to track whether an extension is available
   enum ExtensionStatus {
@@ -389,6 +405,7 @@ class GLES2Implementation {
   void DeleteTexturesHelper(GLsizei n, const GLuint* textures);
   bool DeleteProgramHelper(GLuint program);
   bool DeleteShaderHelper(GLuint shader);
+  void DeleteQueriesEXTHelper(GLsizei n, const GLuint* textures);
 
   void BufferDataHelper(
       GLenum target, GLsizeiptr size, const void* data, GLenum usage);
@@ -511,6 +528,11 @@ class GLES2Implementation {
   scoped_ptr<MappedMemoryManager> mapped_memory_;
 
   scoped_ptr<ProgramInfoManager> program_info_manager_;
+
+  scoped_ptr<QueryTracker> query_tracker_;
+  QueryTracker::Query* current_query_;
+
+  ErrorMessageCallback* error_message_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };

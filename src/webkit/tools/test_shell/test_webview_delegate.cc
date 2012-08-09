@@ -18,7 +18,7 @@
 #include "base/utf_string_conversions.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media_log.h"
-#include "media/base/message_loop_factory_impl.h"
+#include "media/base/message_loop_factory.h"
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
@@ -44,9 +44,6 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputController.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputControllerMock.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputListener.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
@@ -73,6 +70,7 @@
 #include "webkit/tools/test_shell/mock_spellcheck.h"
 #include "webkit/tools/test_shell/notification_presenter.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
+#include "webkit/tools/test_shell/simple_dom_storage_system.h"
 #include "webkit/tools/test_shell/simple_file_system.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
 #include "webkit/tools/test_shell/test_shell.h"
@@ -161,10 +159,13 @@ std::string DescriptionSuitableForTestResult(const std::string& url) {
   return url.substr(pos + 1);
 }
 
-// Adds a file called "DRTFakeFile" to |data_object| (CF_HDROP).  Use to fake
-// dragging a file.
+// Adds a file called "DRTFakeFile" to |data_object|.  Use to fake dragging a
+// file.
 void AddDRTFakeFileToDataObject(WebDragData* drag_data) {
-  drag_data->appendToFilenames(WebString::fromUTF8("DRTFakeFile"));
+  WebDragData::Item item;
+  item.storageType = WebDragData::Item::StorageTypeFilename;
+  item.filenameData = WebString::fromUTF8("DRTFakeFile");
+  drag_data->addItem(item);
 }
 
 // Get a debugging string from a WebNavigationType.
@@ -321,7 +322,8 @@ WebView* TestWebViewDelegate::createView(
     WebFrame* creator,
     const WebURLRequest& request,
     const WebWindowFeatures& window_features,
-    const WebString& frame_name) {
+    const WebString& frame_name,
+    WebNavigationPolicy policy) {
   return shell_->CreateWebView();
 }
 
@@ -333,22 +335,19 @@ WebWidget* TestWebViewDelegate::createPopupMenu(WebPopupType popup_type) {
 
 WebStorageNamespace* TestWebViewDelegate::createSessionStorageNamespace(
     unsigned quota) {
+#ifdef ENABLE_NEW_DOM_STORAGE_BACKEND
+  return SimpleDomStorageSystem::instance().CreateSessionStorageNamespace();
+#else
   // Enforce quota, ignoring the parameter from WebCore as in Chrome.
   return WebKit::WebStorageNamespace::createSessionStorageNamespace(
       WebStorageNamespace::m_sessionStorageQuota);
+#endif
 }
 
 WebGraphicsContext3D* TestWebViewDelegate::createGraphicsContext3D(
-    const WebGraphicsContext3D::Attributes& attributes,
-    bool direct) {
-  if (!shell_->webView())
-    return NULL;
-  scoped_ptr<WebGraphicsContext3D> context(
-      new webkit::gpu::WebGraphicsContext3DInProcessImpl(
-          gfx::kNullPluginWindow, NULL));
-  if (!context->initialize(attributes, shell_->webView(), direct))
-    return NULL;
-  return context.release();
+    const WebGraphicsContext3D::Attributes& attributes) {
+  return webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWebView(
+      attributes, true);
 }
 
 void TestWebViewDelegate::didAddMessageToConsole(
@@ -502,19 +501,6 @@ bool TestWebViewDelegate::runModalBeforeUnloadDialog(
   return true;  // Allow window closure.
 }
 
-void TestWebViewDelegate::showContextMenu(
-    WebFrame* frame, const WebContextMenuData& data) {
-  CapturedContextMenuEvent context(data.mediaType,
-                                   data.mousePosition.x,
-                                   data.mousePosition.y);
-  captured_context_menu_events_.push_back(context);
-  last_context_menu_data_.reset(new WebContextMenuData(data));
-}
-
-void TestWebViewDelegate::ClearContextMenuData() {
-  last_context_menu_data_.reset();
-}
-
 
 
 
@@ -560,7 +546,7 @@ TestWebViewDelegate::deviceOrientationClient() {
 
 WebKit::WebSpeechInputController* TestWebViewDelegate::speechInputController(
     WebKit::WebSpeechInputListener* listener) {
-  return shell_->CreateSpeechInputControllerMock(listener);
+  return 0;
 }
 
 // WebWidgetClient -----------------------------------------------------------
@@ -656,7 +642,7 @@ WebPlugin* TestWebViewDelegate::createPlugin(WebFrame* frame,
 WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
     WebFrame* frame, WebMediaPlayerClient* client) {
   scoped_ptr<media::MessageLoopFactory> message_loop_factory(
-      new media::MessageLoopFactoryImpl());
+      new media::MessageLoopFactory());
 
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
@@ -1000,8 +986,6 @@ void TestWebViewDelegate::Reset() {
   TestShell* shell = shell_;
   this->~TestWebViewDelegate();
   new (this) TestWebViewDelegate(shell);
-  if (shell->speech_input_controller_mock())
-    shell->speech_input_controller_mock()->clearResults();
 }
 
 void TestWebViewDelegate::SetSmartInsertDeleteEnabled(bool enabled) {

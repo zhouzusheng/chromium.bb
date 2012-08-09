@@ -22,33 +22,32 @@
 #include "config.h"
 #include "CSSStyleRule.h"
 
-#include "CSSMutableStyleDeclaration.h"
-#include "CSSPageRule.h"
 #include "CSSParser.h"
 #include "CSSSelector.h"
 #include "CSSStyleSheet.h"
 #include "Document.h"
-#include "StyledElement.h"
-#include "StyleSheet.h"
-
+#include "StylePropertySet.h"
+#include "StyleRule.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
-CSSStyleRule::CSSStyleRule(CSSStyleSheet* parent, int line, CSSRule::Type type)
-    : CSSRule(parent, type)
+CSSStyleRule::CSSStyleRule(CSSStyleSheet* parent, int line)
+    : CSSRule(parent, CSSRule::STYLE_RULE)
+    , m_styleRule(adoptPtr(new StyleRule(line, this)))
 {
-    setSourceLine(line);
-
-    // m_sourceLine is a bitfield, so let's catch any overflow early in debug mode.
-    ASSERT(sourceLine() == line);
 }
 
 CSSStyleRule::~CSSStyleRule()
 {
-    if (m_style)
-        m_style->clearParentRule();
+    if (m_styleRule->properties())
+        m_styleRule->properties()->clearParentRule(this);
     cleanup();
+}
+
+CSSStyleDeclaration* CSSStyleRule::style() const
+{
+    return m_styleRule->properties()->ensureRuleCSSStyleDeclaration(this);
 }
 
 typedef HashMap<const CSSStyleRule*, String> SelectorTextCache;
@@ -68,17 +67,13 @@ inline void CSSStyleRule::cleanup()
 
 String CSSStyleRule::generateSelectorText() const
 {
-    if (isPageRule())
-        return static_cast<const CSSPageRule*>(this)->pageSelectorText();
-    else {
-        StringBuilder builder;
-        for (CSSSelector* s = selectorList().first(); s; s = CSSSelectorList::next(s)) {
-            if (s != selectorList().first())
-                builder.append(", ");
-            builder.append(s->selectorText());
-        }
-        return builder.toString();
+    StringBuilder builder;
+    for (CSSSelector* s = m_styleRule->selectorList().first(); s; s = CSSSelectorList::next(s)) {
+        if (s != m_styleRule->selectorList().first())
+            builder.append(", ");
+        builder.append(s->selectorText());
     }
+    return builder.toString();
 }
 
 String CSSStyleRule::selectorText() const
@@ -98,7 +93,7 @@ String CSSStyleRule::selectorText() const
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
     Document* doc = 0;
-    if (CSSStyleSheet* styleSheet = m_style->parentStyleSheet())
+    if (CSSStyleSheet* styleSheet = parentStyleSheet())
         doc = styleSheet->findDocument();
     if (!doc)
         return;
@@ -110,15 +105,12 @@ void CSSStyleRule::setSelectorText(const String& selectorText)
         return;
 
     String oldSelectorText = this->selectorText();
-    m_selectorList.adopt(selectorList);
+    m_styleRule->adoptSelectorList(selectorList);
 
     if (hasCachedSelectorText()) {
         ASSERT(selectorTextCache().contains(this));
         selectorTextCache().set(this, generateSelectorText());
     }
-
-    if (this->selectorText() == oldSelectorText)
-        return;
 
     doc->styleSelectorChanged(DeferRecalcStyle);
 }
@@ -128,16 +120,10 @@ String CSSStyleRule::cssText() const
     String result = selectorText();
 
     result += " { ";
-    result += m_style->asText();
+    result += m_styleRule->properties()->asText();
     result += "}";
 
     return result;
-}
-
-void CSSStyleRule::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
-{
-    if (m_style)
-        m_style->addSubresourceStyleURLs(urls);
 }
 
 } // namespace WebCore

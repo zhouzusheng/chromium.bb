@@ -50,6 +50,7 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_compositeToTextureEnabled(false)
     , m_showFPSCounter(false)
     , m_showPlatformLayerTree(false)
+    , m_viewportEnabled(false)
 {
     ASSERT(settings);
 }
@@ -107,6 +108,11 @@ void WebSettingsImpl::setMinimumFontSize(int size)
 void WebSettingsImpl::setMinimumLogicalFontSize(int size)
 {
     m_settings->setMinimumLogicalFontSize(size);
+}
+
+void WebSettingsImpl::setDefaultDeviceScaleFactor(int defaultDeviceScaleFactor)
+{
+    m_settings->setDefaultDeviceScaleFactor(defaultDeviceScaleFactor);
 }
 
 void WebSettingsImpl::setDefaultTextEncodingName(const WebString& encoding)
@@ -288,6 +294,16 @@ void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
     m_settings->setWebGLEnabled(enabled);
 }
 
+void WebSettingsImpl::setExperimentalCSSRegionsEnabled(bool enabled)
+{
+    m_settings->setCSSRegionsEnabled(enabled);
+}
+
+void WebSettingsImpl::setExperimentalCSSCustomFilterEnabled(bool enabled)
+{
+    m_settings->setCSSCustomFilterEnabled(enabled);
+}
+
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 {
     m_settings->setOpenGLMultisamplingEnabled(enabled);
@@ -296,6 +312,11 @@ void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 void WebSettingsImpl::setPrivilegedWebGLExtensionsEnabled(bool enabled)
 {
     m_settings->setPrivilegedWebGLExtensionsEnabled(enabled);
+}
+
+void WebSettingsImpl::setWebGLErrorsToConsoleEnabled(bool enabled)
+{
+    m_settings->setWebGLErrorsToConsoleEnabled(enabled);
 }
 
 void WebSettingsImpl::setShowDebugBorders(bool show)
@@ -321,6 +342,7 @@ void WebSettingsImpl::setEditingBehavior(EditingBehavior behavior)
 void WebSettingsImpl::setAcceleratedCompositingEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingEnabled(enabled);
+    m_settings->setScrollingCoordinatorEnabled(enabled);
 }
 
 void WebSettingsImpl::setForceCompositingMode(bool enabled)
@@ -373,6 +395,11 @@ void WebSettingsImpl::setAccelerated2dCanvasEnabled(bool enabled)
     m_settings->setAccelerated2dCanvasEnabled(enabled);
 }
 
+void WebSettingsImpl::setDeferred2dCanvasEnabled(bool enabled)
+{
+    m_settings->setDeferred2dCanvasEnabled(enabled);
+}
+
 void WebSettingsImpl::setAcceleratedCompositingForFixedPositionEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForFixedPositionEnabled(enabled);
@@ -391,6 +418,11 @@ void WebSettingsImpl::setMemoryInfoEnabled(bool enabled)
 void WebSettingsImpl::setHyperlinkAuditingEnabled(bool enabled)
 {
     m_settings->setHyperlinkAuditingEnabled(enabled);
+}
+
+void WebSettingsImpl::setLayoutFallbackWidth(int width)
+{
+    m_settings->setLayoutFallbackWidth(width);
 }
 
 void WebSettingsImpl::setAsynchronousSpellCheckingEnabled(bool enabled)
@@ -442,6 +474,16 @@ void WebSettingsImpl::setAllowRunningOfInsecureContent(bool enabled)
     m_settings->setAllowRunningOfInsecureContent(enabled);
 }
 
+void WebSettingsImpl::setPasswordEchoEnabled(bool flag)
+{
+    m_settings->setPasswordEchoEnabled(flag);
+}
+
+void WebSettingsImpl::setPasswordEchoDurationInSeconds(double durationInSeconds)
+{
+    m_settings->setPasswordEchoDurationInSeconds(durationInSeconds);
+}
+
 void WebSettingsImpl::setShouldPrintBackgrounds(bool enabled)
 {
     m_settings->setShouldPrintBackgrounds(enabled);
@@ -453,6 +495,15 @@ void WebSettingsImpl::setEnableScrollAnimator(bool enabled)
     m_settings->setEnableScrollAnimator(enabled);
 #else
     UNUSED_PARAM(enabled);
+#endif
+}
+
+bool WebSettingsImpl::scrollAnimatorEnabled() const
+{
+#if ENABLE(SMOOTH_SCROLLING)
+    return m_settings->scrollAnimatorEnabled();
+#else
+    return false;
 #endif
 }
 
@@ -510,6 +561,16 @@ void WebSettingsImpl::setPerTilePaintingEnabled(bool enabled)
 void WebSettingsImpl::setPartialSwapEnabled(bool enabled)
 {
     m_settings->setPartialSwapEnabled(enabled);
+}
+
+void WebSettingsImpl::setThreadedAnimationEnabled(bool enabled)
+{
+    m_settings->setThreadedAnimationEnabled(enabled);
+}
+
+void WebSettingsImpl::setViewportEnabled(bool enabled)
+{
+    m_viewportEnabled = enabled;
 }
 
 } // namespace WebKit

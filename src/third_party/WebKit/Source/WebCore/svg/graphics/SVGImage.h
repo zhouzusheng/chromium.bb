@@ -34,6 +34,7 @@
 
 namespace WebCore {
 
+class FrameView;
 class ImageBuffer;
 class Page;
 class RenderBox;
@@ -53,6 +54,7 @@ public:
 
     void drawSVGToImageBuffer(ImageBuffer*, const IntSize&, float zoom, ShouldClearBuffer);
     RenderBox* embeddedContentBox() const;
+    FrameView* frameView() const;
 
     virtual bool isSVGImage() const { return true; }
     virtual IntSize size() const;
@@ -61,13 +63,14 @@ public:
     virtual bool hasRelativeHeight() const;
 
 private:
+    friend class SVGImageChromeClient;
     virtual ~SVGImage();
 
     virtual String filenameExtension() const;
 
     virtual void setContainerSize(const IntSize&);
-    virtual bool usesContainerSize() const;
-    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
+    virtual bool usesContainerSize() const { return true; }
+    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio, float scaleFactor = 1);
 
     virtual bool dataChanged(bool allDataReceived);
 

@@ -29,6 +29,7 @@
 #define V8_SPACES_H_
 
 #include "allocation.h"
+#include "hashmap.h"
 #include "list.h"
 #include "log.h"
 
@@ -1039,7 +1040,9 @@ class MemoryAllocator {
     return CodePageAreaEndOffset() - CodePageAreaStartOffset();
   }
 
-  static bool CommitCodePage(VirtualMemory* vm, Address start, size_t size);
+  MUST_USE_RESULT static bool CommitCodePage(VirtualMemory* vm,
+                                             Address start,
+                                             size_t size);
 
  private:
   Isolate* isolate_;
@@ -2386,12 +2389,9 @@ class FixedSpace : public PagedSpace {
 class MapSpace : public FixedSpace {
  public:
   // Creates a map space object with a maximum capacity.
-  MapSpace(Heap* heap,
-           intptr_t max_capacity,
-           int max_map_space_pages,
-           AllocationSpace id)
+  MapSpace(Heap* heap, intptr_t max_capacity, AllocationSpace id)
       : FixedSpace(heap, max_capacity, id, Map::kSize, "map"),
-        max_map_space_pages_(max_map_space_pages) {
+        max_map_space_pages_(kMaxMapPageIndex - 1) {
   }
 
   // Given an index, returns the page address.
@@ -2502,9 +2502,9 @@ class LargeObjectSpace : public Space {
   // space, may be slow.
   MaybeObject* FindObject(Address a);
 
-  // Finds a large object page containing the given pc, returns NULL
+  // Finds a large object page containing the given address, returns NULL
   // if such a page doesn't exist.
-  LargePage* FindPageContainingPc(Address pc);
+  LargePage* FindPage(Address a);
 
   // Frees unmarked objects.
   void FreeUnmarkedObjects();
@@ -2539,6 +2539,8 @@ class LargeObjectSpace : public Space {
   intptr_t size_;  // allocated bytes
   int page_count_;  // number of chunks
   intptr_t objects_size_;  // size of objects
+  // Map MemoryChunk::kAlignment-aligned chunks to large pages covering them
+  HashMap chunk_map_;
 
   friend class LargeObjectIterator;
 

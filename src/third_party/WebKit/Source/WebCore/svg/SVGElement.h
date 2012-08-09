@@ -46,6 +46,8 @@ public:
     static PassRefPtr<SVGElement> create(const QualifiedName&, Document*);
     virtual ~SVGElement();
 
+    bool isOutermostSVGSVGElement() const;
+
     String xmlbase() const;
     void setXmlbase(const String&, ExceptionCode&);
 
@@ -105,14 +107,19 @@ public:
     static bool isAnimatableAttribute(const QualifiedName&);
 #endif
 
+    StylePropertySet* animatedSMILStyleProperties() const;
+    StylePropertySet* ensureAnimatedSMILStyleProperties();
+
+    virtual bool haveLoadedRequiredResources();
+
 protected:
     SVGElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
 
-    virtual void parseMappedAttribute(Attribute*);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
 
     virtual void finishParsingChildren();
-    virtual void attributeChanged(Attribute*, bool preserveDecls = false);
-    virtual bool childShouldCreateRenderer(Node*) const;
+    virtual void attributeChanged(Attribute*) OVERRIDE;
+    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
     
     virtual void removedFromDocument();
 
@@ -131,7 +138,6 @@ private:
     void mapInstanceToElement(SVGElementInstance*);
     void removeInstanceMapping(SVGElementInstance*);
 
-    virtual bool haveLoadedRequiredResources();
 };
 
 struct SVGAttributeHashTranslator {
@@ -142,6 +148,12 @@ struct SVGAttributeHashTranslator {
     }
     static bool equal(QualifiedName a, QualifiedName b) { return a.matches(b); }
 };
+
+inline SVGElement* toSVGElement(Element* element)
+{
+    ASSERT(!element || element->isSVGElement());
+    return static_cast<SVGElement*>(element);
+}
 
 }
 

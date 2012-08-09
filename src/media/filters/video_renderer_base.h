@@ -37,10 +37,13 @@ class MEDIA_EXPORT VideoRendererBase
   // instead post a task to a common/worker thread to handle rendering.  Slowing
   // down the video thread may result in losing synchronization with audio.
   //
+  // Setting |drop_frames_| to true causes the renderer to drop expired frames.
+  //
   // TODO(scherkus): pass the VideoFrame* to this callback and remove
   // Get/PutCurrentFrame() http://crbug.com/108435
   VideoRendererBase(const base::Closure& paint_cb,
-                    const SetOpaqueCB& set_opaque_cb);
+                    const SetOpaqueCB& set_opaque_cb,
+                    bool drop_frames);
   virtual ~VideoRendererBase();
 
   // Filter implementation.
@@ -49,12 +52,13 @@ class MEDIA_EXPORT VideoRendererBase
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) OVERRIDE;
+  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
 
   // VideoRenderer implementation.
-  virtual void Initialize(VideoDecoder* decoder,
-                          const base::Closure& callback,
-                          const StatisticsCallback& stats_callback) OVERRIDE;
+  virtual void Initialize(const scoped_refptr<VideoDecoder>& decoder,
+                          const PipelineStatusCB& status_cb,
+                          const StatisticsCB& statistics_cb,
+                          const TimeCB& time_cb) OVERRIDE;
   virtual bool HasEnded() OVERRIDE;
 
   // PlatformThread::Delegate implementation.
@@ -178,12 +182,15 @@ class MEDIA_EXPORT VideoRendererBase
   bool pending_paint_;
   bool pending_paint_with_last_available_;
 
+  bool drop_frames_;
+
   float playback_rate_;
 
   // Filter callbacks.
-  base::Closure flush_callback_;
-  FilterStatusCB seek_cb_;
-  StatisticsCallback statistics_callback_;
+  base::Closure flush_cb_;
+  PipelineStatusCB seek_cb_;
+  StatisticsCB statistics_cb_;
+  TimeCB time_cb_;
 
   base::TimeDelta seek_timestamp_;
 

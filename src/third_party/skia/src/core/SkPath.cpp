@@ -121,6 +121,7 @@ SkPath::SkPath()
     fLastMoveToIndex = INITIAL_LASTMOVETOINDEX_VALUE;
 #ifdef SK_BUILD_FOR_ANDROID
     fGenerationID = 0;
+    fSourcePath = NULL;
 #endif
 }
 
@@ -129,7 +130,8 @@ SkPath::SkPath(const SkPath& src) {
     *this = src;
 #ifdef SK_BUILD_FOR_ANDROID
     // the assignment operator above increments the ID so correct for that here
-    fGenerationID--;
+    fGenerationID = src.fGenerationID;
+    fSourcePath = NULL;
 #endif
 }
 
@@ -187,6 +189,14 @@ void SkPath::swap(SkPath& other) {
 #ifdef SK_BUILD_FOR_ANDROID
 uint32_t SkPath::getGenerationID() const {
     return fGenerationID;
+}
+
+const SkPath* SkPath::getSourcePath() const {
+    return fSourcePath;
+}
+
+void SkPath::setSourcePath(const SkPath* path) {
+    fSourcePath = path;
 }
 #endif
 
@@ -1909,8 +1919,26 @@ CONTOUR_END:
     SkDEBUGCODE(++fContourCounter;)
 }
 
+// returns cross product of (p1 - p0) and (p2 - p0)
 static SkScalar cross_prod(const SkPoint& p0, const SkPoint& p1, const SkPoint& p2) {
-    return SkPoint::CrossProduct(p1 - p0, p2 - p0);
+    SkScalar cross = SkPoint::CrossProduct(p1 - p0, p2 - p0);
+    // We may get 0 when the above subtracts underflow. We expect this to be
+    // very rare and lazily promote to double.
+    if (0 == cross) {
+        double p0x = SkScalarToDouble(p0.fX);
+        double p0y = SkScalarToDouble(p0.fY);
+
+        double p1x = SkScalarToDouble(p1.fX);
+        double p1y = SkScalarToDouble(p1.fY);
+
+        double p2x = SkScalarToDouble(p2.fX);
+        double p2y = SkScalarToDouble(p2.fY);
+
+        cross = SkDoubleToScalar((p1x - p0x) * (p2y - p0y) -
+                                 (p1y - p0y) * (p2x - p0x));
+
+    }
+    return cross;
 }
 
 // Returns the first pt with the maximum Y coordinate
@@ -2012,7 +2040,7 @@ bool SkPath::cheapComputeDirection(Direction* dir) const {
         if (n < 3) {
             continue;
         }
-        
+
         const SkPoint* pts = iter.pts();
         SkScalar cross = 0;
         if (kConvex_Convexity == conv) {

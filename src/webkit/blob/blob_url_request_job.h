@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,9 @@ struct PlatformFileInfo;
 }
 
 namespace net {
+class DrainableIOBuffer;
 class FileStream;
+class IOBuffer;
 }
 
 namespace webkit_blob {
@@ -45,45 +47,49 @@ class BLOB_EXPORT BlobURLRequestJob : public net::URLRequestJob {
       const net::HttpRequestHeaders& headers) OVERRIDE;
 
  private:
-  void CloseStream();
-  void ResolveFile(const FilePath& file_path);
+  // For preparing for read: get the size, apply the range and perform seek.
+  void DidStart();
   void CountSize();
+  void DidCountSize(int error);
+  void DidGetFileItemInfo(size_t index,
+                          base::PlatformFileError error,
+                          const base::PlatformFileInfo& file_info);
   void Seek(int64 offset);
-  void AdvanceItem();
-  void AdvanceBytesRead(int result);
-  int ComputeBytesToRead() const;
+
+  // For reading the blob.
   bool ReadLoop(int* bytes_read);
   bool ReadItem();
-  bool ReadBytes(const BlobData::Item& item);
-  bool DispatchReadFile(const BlobData::Item& item);
-  bool ReadFile(const BlobData::Item& item);
-  void HeadersCompleted(int status_code, const std::string& status_txt);
-  int ReadCompleted();
+  void AdvanceItem();
+  void AdvanceBytesRead(int result);
+  bool ReadBytesItem(const BlobData::Item& item, int bytes_to_read);
+  bool ReadFileItem(const BlobData::Item& item, int bytes_to_read);
+
+  void DidOpenFile(int bytes_to_read,
+                   base::PlatformFileError rv,
+                   base::PassPlatformFile file,
+                   bool created);
+  bool ReadFileStream(int bytes_to_read);
+  void DidReadFileStream(int result);
+  void CloseFileStream();
+
+  int ComputeBytesToRead() const;
+  int BytesReadCompleted();
+
   void NotifySuccess();
   void NotifyFailure(int);
-
-  void DidStart();
-  void DidResolve(base::PlatformFileError rv,
-                  const base::PlatformFileInfo& file_info);
-  void DidOpen(base::PlatformFileError rv,
-               base::PassPlatformFile file,
-               bool created);
-  void DidRead(int result);
+  void HeadersCompleted(int status_code, const std::string& status_txt);
 
   base::WeakPtrFactory<BlobURLRequestJob> weak_factory_;
   scoped_refptr<BlobData> blob_data_;
   scoped_refptr<base::MessageLoopProxy> file_thread_proxy_;
   std::vector<int64> item_length_list_;
-  scoped_ptr<net::FileStream> stream_;
-  size_t item_index_;
   int64 total_size_;
-  int64 current_item_offset_;
   int64 remaining_bytes_;
-  scoped_refptr<net::IOBuffer> read_buf_;
-  int read_buf_offset_;
-  int read_buf_size_;
-  int read_buf_remaining_bytes_;
-  int bytes_to_read_;
+  int pending_get_file_info_count_;
+  scoped_ptr<net::FileStream> stream_;
+  size_t current_item_index_;
+  int64 current_item_offset_;
+  scoped_refptr<net::DrainableIOBuffer> read_buf_;
   bool error_;
   bool headers_set_;
   bool byte_range_set_;

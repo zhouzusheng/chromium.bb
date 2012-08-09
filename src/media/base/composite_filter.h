@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,20 +12,21 @@
 #include "media/base/filter_host.h"
 #include "media/base/filters.h"
 
-class MessageLoop;
+namespace base {
+class MessageLoopProxy;
+}
 
 namespace media {
 
 class MEDIA_EXPORT CompositeFilter : public Filter {
  public:
-  explicit CompositeFilter(MessageLoop* message_loop);
+  explicit CompositeFilter(
+      const scoped_refptr<base::MessageLoopProxy>& message_loop);
 
   // Adds a filter to the composite. This is only allowed after set_host()
   // is called and before the first state changing operation such as Play(),
-  // Flush(), Stop(), or Seek(). True is returned if the filter was successfully
-  // added to the composite. False is returned if the filter couldn't be added
-  // because the composite is in the wrong state.
-  bool AddFilter(scoped_refptr<Filter> filter);
+  // Flush(), Stop(), or Seek(). CHECK-fails if preconditions are not met.
+  void AddFilter(scoped_refptr<Filter> filter);
 
   // Undoes AddFilter's actions.  CHECK-fails if |filter| is unknown.
   void RemoveFilter(scoped_refptr<Filter> filter);
@@ -33,13 +34,13 @@ class MEDIA_EXPORT CompositeFilter : public Filter {
   // media::Filter methods.
   virtual void set_host(FilterHost* host) OVERRIDE;
   virtual FilterHost* host() OVERRIDE;
-  virtual void Play(const base::Closure& play_callback) OVERRIDE;
-  virtual void Pause(const base::Closure& pause_callback) OVERRIDE;
-  virtual void Flush(const base::Closure& flush_callback) OVERRIDE;
-  virtual void Stop(const base::Closure& stop_callback) OVERRIDE;
+  virtual void Play(const base::Closure& play_cb) OVERRIDE;
+  virtual void Pause(const base::Closure& pause_cb) OVERRIDE;
+  virtual void Flush(const base::Closure& flush_cb) OVERRIDE;
+  virtual void Stop(const base::Closure& stop_cb) OVERRIDE;
   virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
   virtual void Seek(
-      base::TimeDelta time, const FilterStatusCB& seek_cb) OVERRIDE;
+      base::TimeDelta time, const PipelineStatusCB& seek_cb) OVERRIDE;
   virtual void OnAudioRendererDisabled() OVERRIDE;
 
  protected:
@@ -110,8 +111,8 @@ class MEDIA_EXPORT CompositeFilter : public Filter {
   // pending.
   bool IsOperationPending() const;
 
-  // Called by operations that take a FilterStatusCB instead of a Closure.
-  // TODO: Remove when Closures are replaced by FilterStatusCB.
+  // Called by operations that take a PipelineStatusCB instead of a Closure.
+  // TODO: Remove when Closures are replaced by PipelineStatusCB.
   void OnStatusCB(const base::Closure& callback, PipelineStatus status);
 
   // Vector of the filters added to the composite.
@@ -119,9 +120,9 @@ class MEDIA_EXPORT CompositeFilter : public Filter {
   FilterVector filters_;
 
   // Callback for the pending request.
-  // TODO: Remove callback_ when Closures are replaced by FilterStatusCB.
+  // TODO: Remove callback_ when Closures are replaced by PipelineStatusCB.
   base::Closure callback_;
-  FilterStatusCB status_cb_;
+  PipelineStatusCB status_cb_;
 
   // Time parameter for the pending Seek() request.
   base::TimeDelta pending_seek_time_;
@@ -133,7 +134,7 @@ class MEDIA_EXPORT CompositeFilter : public Filter {
   unsigned int sequence_index_;
 
   // Message loop passed into the constructor.
-  MessageLoop* message_loop_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
 
   // FilterHost implementation passed to Filters owned by this
   // object.

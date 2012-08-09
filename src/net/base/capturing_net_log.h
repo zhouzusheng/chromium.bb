@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 #include "net/base/net_export.h"
@@ -57,14 +56,17 @@ class NET_EXPORT CapturingNetLog : public NetLog {
   void SetLogLevel(NetLog::LogLevel log_level);
 
   // NetLog implementation:
-  virtual void AddEntry(EventType type,
-                        const base::TimeTicks& time,
-                        const Source& source,
-                        EventPhase phase,
-                        EventParameters* extra_parameters) OVERRIDE;
+  virtual void AddEntry(
+      EventType type,
+      const Source& source,
+      EventPhase phase,
+      const scoped_refptr<EventParameters>& extra_parameters) OVERRIDE;
   virtual uint32 NextID() OVERRIDE;
   virtual LogLevel GetLogLevel() const OVERRIDE;
-  virtual void AddThreadSafeObserver(ThreadSafeObserver* observer) OVERRIDE;
+  virtual void AddThreadSafeObserver(ThreadSafeObserver* observer,
+                                     LogLevel log_level) OVERRIDE;
+  virtual void SetObserverLogLevel(ThreadSafeObserver* observer,
+                                   LogLevel log_level) OVERRIDE;
   virtual void RemoveThreadSafeObserver(ThreadSafeObserver* observer) OVERRIDE;
 
  private:
@@ -89,16 +91,12 @@ class NET_EXPORT CapturingNetLog : public NetLog {
 // bound() method.
 class NET_EXPORT_PRIVATE CapturingBoundNetLog {
  public:
-  CapturingBoundNetLog(const NetLog::Source& source, CapturingNetLog* net_log);
-
   explicit CapturingBoundNetLog(size_t max_num_entries);
 
   ~CapturingBoundNetLog();
 
   // The returned BoundNetLog is only valid while |this| is alive.
-  BoundNetLog bound() const {
-    return BoundNetLog(source_, capturing_net_log_.get());
-  }
+  BoundNetLog bound() const { return net_log_; }
 
   // Fills |entry_list| with all entries in the log.
   void GetEntries(CapturingNetLog::EntryList* entry_list) const;
@@ -109,8 +107,8 @@ class NET_EXPORT_PRIVATE CapturingBoundNetLog {
   void SetLogLevel(NetLog::LogLevel log_level);
 
  private:
-  NetLog::Source source_;
-  scoped_ptr<CapturingNetLog> capturing_net_log_;
+  CapturingNetLog capturing_net_log_;
+  const BoundNetLog net_log_;
 
   DISALLOW_COPY_AND_ASSIGN(CapturingBoundNetLog);
 };

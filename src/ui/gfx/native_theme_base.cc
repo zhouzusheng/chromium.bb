@@ -31,6 +31,11 @@ const SkColor kSliderThumbDarkGrey = SkColorSetRGB(0xea, 0xe5, 0xe0);
 const SkColor kSliderThumbBorderDarkGrey =
     SkColorSetRGB(0x9d, 0x96, 0x8e);
 
+const SkColor kMenuPopupBackgroundColor = SkColorSetRGB(210, 225, 246);
+
+const unsigned int kDefaultScrollbarWidth = 15;
+const unsigned int kDefaultScrollbarButtonLength = 14;
+
 // Get lightness adjusted color.
 SkColor BrightenColor(const color_utils::HSL& hsl, SkAlpha alpha,
     double lightness_amount) {
@@ -47,9 +52,6 @@ SkColor BrightenColor(const color_utils::HSL& hsl, SkAlpha alpha,
 }  // namespace
 
 namespace gfx {
-
-unsigned int NativeThemeBase::button_length_ = 14;
-unsigned int NativeThemeBase::scrollbar_width_ = 15;
 
 gfx::Size NativeThemeBase::GetPartSize(Part part,
                                        State state,
@@ -81,10 +83,10 @@ gfx::Size NativeThemeBase::GetPartSize(Part part,
       return gfx::Size(kCheckboxAndRadioWidth, kCheckboxAndRadioHeight);
     case kScrollbarDownArrow:
     case kScrollbarUpArrow:
-      return gfx::Size(scrollbar_width_, button_length_);
+      return gfx::Size(scrollbar_width_, scrollbar_button_length_);
     case kScrollbarLeftArrow:
     case kScrollbarRightArrow:
-      return gfx::Size(button_length_, scrollbar_width_);
+      return gfx::Size(scrollbar_button_length_, scrollbar_width_);
     case kScrollbarHorizontalThumb:
       // This matches Firefox on Linux.
       return gfx::Size(2 * scrollbar_width_, scrollbar_width_);
@@ -143,7 +145,7 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
       NOTIMPLEMENTED();
       break;
     case kMenuPopupBackground:
-      PaintMenuPopupBackground(canvas, state, rect, extra.menu_list);
+      PaintMenuPopupBackground(canvas, rect.size());
       break;
     case kMenuPopupGutter:
     case kMenuPopupSeparator:
@@ -202,7 +204,9 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
   }
 }
 
-NativeThemeBase::NativeThemeBase() {
+NativeThemeBase::NativeThemeBase()
+    : scrollbar_width_(kDefaultScrollbarWidth),
+      scrollbar_button_length_(kDefaultScrollbarButtonLength) {
 }
 
 NativeThemeBase::~NativeThemeBase() {
@@ -518,10 +522,8 @@ void NativeThemeBase::PaintButton(SkCanvas* canvas,
   const int kLightEnd = state == kPressed ? 1 : 0;
   const int kDarkEnd = !kLightEnd;
   SkPoint gradient_bounds[2];
-  gradient_bounds[kLightEnd].set(SkIntToScalar(rect.x()),
-                                 SkIntToScalar(rect.y()));
-  gradient_bounds[kDarkEnd].set(SkIntToScalar(rect.x()),
-                                SkIntToScalar(kBottom - 1));
+  gradient_bounds[kLightEnd].iset(rect.x(), rect.y());
+  gradient_bounds[kDarkEnd].iset(rect.x(), kBottom - 1);
   SkColor colors[2];
   colors[0] = light_color;
   colors[1] = base_color;
@@ -666,14 +668,9 @@ void NativeThemeBase::PaintMenuList(
   canvas->drawPath(path, paint);
 }
 
-void NativeThemeBase::PaintMenuPopupBackground(
-    SkCanvas* canvas,
-    State state,
-    const gfx::Rect& rect,
-    const MenuListExtraParams& menu_list) const {
-  // This is the same as COLOR_TOOLBAR.
-  canvas->drawColor(SkColorSetRGB(210, 225, 246),
-                    SkXfermode::kSrc_Mode);
+void NativeThemeBase::PaintMenuPopupBackground(SkCanvas* canvas,
+                                               const gfx::Size& size) const {
+  canvas->drawColor(kMenuPopupBackgroundColor, SkXfermode::kSrc_Mode);
 }
 
 void NativeThemeBase::PaintMenuItemBackground(
@@ -804,25 +801,20 @@ void NativeThemeBase::PaintProgressBar(SkCanvas* canvas,
 
   int dest_left_border_width = static_cast<int>(left_border_image->width() *
       tile_scale);
-  SkRect dest_rect = {
-      SkIntToScalar(rect.x()),
-      SkIntToScalar(rect.y()),
-      SkIntToScalar(rect.x() + dest_left_border_width),
-      SkIntToScalar(rect.bottom())
-  };
+  SkRect dest_rect;
+  dest_rect.iset(rect.x(), rect.y(), rect.x() + dest_left_border_width,
+                 rect.bottom());
   canvas->drawBitmapRect(*left_border_image, NULL, dest_rect);
 
   int dest_right_border_width = static_cast<int>(right_border_image->width() *
       tile_scale);
-  dest_rect.set(SkIntToScalar(rect.right() - dest_right_border_width),
-      SkIntToScalar(rect.y()),
-      SkIntToScalar(rect.right()),
-      SkIntToScalar(rect.bottom()));
+  dest_rect.iset(rect.right() - dest_right_border_width, rect.y(), rect.right(),
+                 rect.bottom());
   canvas->drawBitmapRect(*right_border_image, NULL, dest_rect);
 }
 
-bool NativeThemeBase::IntersectsClipRectInt(
-    SkCanvas* canvas, int x, int y, int w, int h) const {
+bool NativeThemeBase::IntersectsClipRectInt(SkCanvas* canvas,
+                                            int x, int y, int w, int h) const {
   SkRect clip;
   return canvas->getClipBounds(&clip) &&
       clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),

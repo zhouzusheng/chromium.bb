@@ -35,7 +35,7 @@
 #include "RenderSVGInlineText.h"
 #include "RenderSVGResource.h"
 #include "RenderSVGResourceSolidColor.h"
-#include "SVGImageBufferTools.h"
+#include "SVGRenderingContext.h"
 #include "SVGResourcesCache.h"
 #include "SVGRootInlineBox.h"
 #include "SVGTextRunRenderingContext.h"
@@ -128,13 +128,13 @@ FloatRect SVGInlineTextBox::selectionRectForTextFragment(const SVGTextFragment& 
     return selectionRect;
 }
 
-IntRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPosition)
+LayoutRect SVGInlineTextBox::localSelectionRect(int startPosition, int endPosition)
 {
     int boxStart = start();
     startPosition = max(startPosition - boxStart, 0);
     endPosition = min(endPosition - boxStart, static_cast<int>(len()));
     if (startPosition >= endPosition)
-        return IntRect();
+        return LayoutRect();
 
     RenderText* text = textRenderer();
     ASSERT(text);

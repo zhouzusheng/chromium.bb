@@ -91,8 +91,14 @@ public:
      *  installed. Note that this can change on other calls like save/restore,
      *  so do not access this device after subsequent canvas calls.
      *  The reference count of the device is not changed.
+     *
+     * @param updateMatrixClip If this is true, then before the device is
+     *        returned, we ensure that its has been notified about the current
+     *        matrix and clip. Note: this happens automatically when the device
+     *        is drawn to, but is optional here, as there is a small perf hit
+     *        sometimes.
      */
-    SkDevice* getTopDevice() const;
+    SkDevice* getTopDevice(bool updateMatrixClip = false) const;
 
     /**
      *  Create a new raster device and make it current. This also returns
@@ -283,7 +289,7 @@ public:
     /** Returns the number of matrix/clip states on the SkCanvas' private stack.
         This will equal # save() calls - # restore() calls.
     */
-    virtual int getSaveCount() const;
+    int getSaveCount() const;
 
     /** Efficient way to pop any calls to save() that happened after the save
         count reached saveCount. It is an error for saveCount to be less than
@@ -295,7 +301,7 @@ public:
     /** Returns true if drawing is currently going to a layer (from saveLayer)
      *  rather than to the root device.
      */
-    bool isDrawingToLayer() const;
+    virtual bool isDrawingToLayer() const;
 
     /** Preconcat the current matrix with the specified translation
         @param dx   The distance to translate in X
@@ -429,7 +435,16 @@ public:
         @return true if the horizontal band is completely clipped out (i.e. does
                      not intersect the current clip)
     */
-    bool quickRejectY(SkScalar top, SkScalar bottom, EdgeType et) const;
+    bool quickRejectY(SkScalar top, SkScalar bottom, EdgeType et) const {
+        SkASSERT(SkScalarToCompareType(top) <= SkScalarToCompareType(bottom));
+        const SkRectCompareType& clipR = this->getLocalClipBoundsCompareType(et);
+        // In the case where the clip is empty and we are provided with a
+        // negative top and positive bottom parameter then this test will return
+        // false even though it will be clipped. We have chosen to exclude that
+        // check as it is rare and would result double the comparisons.
+        return SkScalarToCompareType(top) >= clipR.fBottom
+            || SkScalarToCompareType(bottom) <= clipR.fTop;
+    }
 
     /** Return the bounds of the current clip (in local coordinates) in the
         bounds parameter, and return true if it is non-empty. This can be useful
@@ -850,7 +865,7 @@ public:
         This does not account for the translate in any of the devices.
         @return The current matrix on the canvas.
     */
-    virtual const SkMatrix& getTotalMatrix() const;
+    const SkMatrix& getTotalMatrix() const;
 
     enum ClipType {
         kEmpty_ClipType = 0,
@@ -933,8 +948,13 @@ protected:
     virtual SkCanvas* canvasForDrawIter();
 
     // all of the drawBitmap variants call this guy
-    virtual void commonDrawBitmap(const SkBitmap&, const SkIRect*,
-                                  const SkMatrix&, const SkPaint& paint);
+    void commonDrawBitmap(const SkBitmap&, const SkIRect*, const SkMatrix&,
+                          const SkPaint& paint);
+
+    // Clip rectangle bounds. Called internally by saveLayer.
+    // returns false if the entire rectangle is entirely clipped out
+    bool clipRectBounds(const SkRect* bounds, SaveFlags flags,
+                        SkIRect* intersection);
 
 private:
     class MCRec;
@@ -957,6 +977,7 @@ private:
     void updateDeviceCMCache();
 
     friend class SkDrawIter;    // needs setupDrawForLayerDevice()
+    friend class AutoDrawLooper;
 
     SkDevice* createLayerDevice(SkBitmap::Config, int width, int height,
                                 bool isOpaque);
@@ -972,9 +993,10 @@ private:
     void internalDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,
                                 const SkRect& dst, const SkPaint* paint);
     void internalDrawPaint(const SkPaint& paint);
+    int internalSaveLayer(const SkRect* bounds, const SkPaint* paint,
+                          SaveFlags, bool justForImageFilter);
+    void internalDrawDevice(SkDevice*, int x, int y, const SkPaint*);
 
-
-    void drawDevice(SkDevice*, int x, int y, const SkPaint*);
     // shared by save() and saveLayer()
     int internalSave(SaveFlags flags);
     void internalRestore();

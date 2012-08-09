@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,7 +51,7 @@ class HttpServerProperties;
 class IOBuffer;
 class NetLog;
 class NetworkDelegate;
-class OriginBoundCertService;
+class ServerBoundCertService;
 class ProxyService;
 class SSLConfigService;
 class TransportSecurityState;
@@ -121,7 +121,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // The HttpCache takes ownership of the |backend_factory|.
   HttpCache(HostResolver* host_resolver,
             CertVerifier* cert_verifier,
-            OriginBoundCertService* origin_bound_cert_service,
+            ServerBoundCertService* server_bound_cert_service,
             TransportSecurityState* transport_security_state,
             ProxyService* proxy_service,
             const std::string& ssl_session_cache_shard,
@@ -253,6 +253,10 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   // Generates the cache key for this request.
   std::string GenerateCacheKey(const HttpRequestInfo*);
+
+  // Dooms the entry selected by |key|, if it is currently in the list of active
+  // entries.
+  void DoomActiveEntry(const std::string& key);
 
   // Dooms the entry selected by |key|. |trans| will be notified via its IO
   // callback if this method returns ERR_IO_PENDING. The entry can be

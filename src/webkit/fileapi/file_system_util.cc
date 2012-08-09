@@ -86,14 +86,55 @@ bool CrackFileSystemURL(const GURL& url, GURL* origin_url, FileSystemType* type,
   if (type)
     *type = file_system_type;
   if (file_path)
-#if defined(OS_WIN)
-    *file_path = FilePath(base::SysUTF8ToWide(path)).
-        NormalizeWindowsPathSeparators().StripTrailingSeparators();
-#elif defined(OS_POSIX)
-    *file_path = FilePath(path).StripTrailingSeparators();
-#endif
+    *file_path = FilePath::FromUTF8Unsafe(path).
+        NormalizePathSeparators().StripTrailingSeparators();
 
   return true;
+}
+
+//TODO(ericu): Consider removing support for '\', even on Windows, if possible.
+// There's a lot of test code that will need reworking, and we may have trouble
+// with FilePath elsewhere [e.g. DirName and other methods may also need
+// replacement].
+FilePath VirtualPath::BaseName(const FilePath& virtual_path) {
+  FilePath::StringType path = virtual_path.value();
+
+  // Keep everything after the final separator, but if the pathname is only
+  // one character and it's a separator, leave it alone.
+  while (path.size() > 1 && FilePath::IsSeparator(path[path.size() - 1]))
+    path.resize(path.size() - 1);
+  FilePath::StringType::size_type last_separator =
+      path.find_last_of(FilePath::kSeparators);
+  if (last_separator != FilePath::StringType::npos &&
+      last_separator < path.size() - 1)
+    path.erase(0, last_separator + 1);
+
+  return FilePath(path);
+}
+
+void VirtualPath::GetComponents(
+    const FilePath& path, std::vector<FilePath::StringType>* components) {
+  DCHECK(components);
+  if (!components)
+    return;
+  components->clear();
+  if (path.value().empty())
+    return;
+
+  std::vector<FilePath::StringType> ret_val;
+  FilePath current = path;
+  FilePath base;
+
+  // Due to the way things are implemented, FilePath::DirName works here,
+  // whereas FilePath::BaseName doesn't.
+  while (current != current.DirName()) {
+    base = BaseName(current);
+    ret_val.push_back(base.value());
+    current = current.DirName();
+  }
+
+  *components =
+      std::vector<FilePath::StringType>(ret_val.rbegin(), ret_val.rend());
 }
 
 GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
@@ -148,6 +189,7 @@ quota::StorageType FileSystemTypeToQuotaStorageType(FileSystemType type) {
 
 // TODO(kinuko): Merge these two methods (conversion methods between
 // origin url <==> identifier) with the ones in the database module.
+// http://crbug.com/116476
 std::string GetOriginIdentifierFromURL(const GURL& url) {
   WebKit::WebSecurityOrigin web_security_origin =
       WebKit::WebSecurityOrigin::createFromString(UTF8ToUTF16(url.spec()));
@@ -180,6 +222,22 @@ std::string GetFileSystemTypeString(FileSystemType type) {
     default:
       return std::string();
   }
+}
+
+std::string FilePathToString(const FilePath& file_path) {
+#if defined(OS_WIN)
+  return UTF16ToUTF8(file_path.value());
+#elif defined(OS_POSIX)
+  return file_path.value();
+#endif
+}
+
+FilePath StringToFilePath(const std::string& file_path_string) {
+#if defined(OS_WIN)
+  return FilePath(UTF8ToUTF16(file_path_string));
+#elif defined(OS_POSIX)
+  return FilePath(file_path_string);
+#endif
 }
 
 }  // namespace fileapi

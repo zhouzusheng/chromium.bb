@@ -32,6 +32,7 @@ enum EventType {
   ET_KEY_PRESSED,
   ET_KEY_RELEASED,
   ET_MOUSEWHEEL,
+  ET_MOUSE_CAPTURE_CHANGED,  // Event has no location.
   ET_TOUCH_RELEASED,
   ET_TOUCH_PRESSED,
   ET_TOUCH_MOVED,
@@ -39,7 +40,6 @@ enum EventType {
   ET_TOUCH_CANCELLED,
   ET_DROP_TARGET_EVENT,
   ET_FOCUS_CHANGE,
-  ET_SCROLL,
   ET_TRANSLATED_KEY_PRESS,
   ET_TRANSLATED_KEY_RELEASE,
 
@@ -50,6 +50,16 @@ enum EventType {
   ET_GESTURE_TAP,
   ET_GESTURE_TAP_DOWN,
   ET_GESTURE_DOUBLE_TAP,
+  ET_GESTURE_PINCH_BEGIN,
+  ET_GESTURE_PINCH_END,
+  ET_GESTURE_PINCH_UPDATE,
+  ET_GESTURE_LONG_PRESS,
+
+  // Scroll support.
+  // TODO[davemoore] we need to unify these events w/ touch and gestures.
+  ET_SCROLL,
+  ET_SCROLL_FLING_START,
+  ET_SCROLL_FLING_CANCEL,
 };
 
 // Event flags currently supported
@@ -69,7 +79,8 @@ enum EventFlags {
 enum MouseEventFlags {
   EF_IS_DOUBLE_CLICK    = 1 << 16,
   EF_IS_TRIPLE_CLICK    = 1 << 17,
-  EF_IS_NON_CLIENT      = 1 << 18
+  EF_IS_NON_CLIENT      = 1 << 18,
+  EF_IS_SYNTHESIZED     = 1 << 19,  // Only for Aura.  See ui/aura/root_window.h
 };
 
 enum TouchStatus {
@@ -85,7 +96,13 @@ enum TouchStatus {
                              // synthetic mouse event generated from the
                              // unused touch event was handled.
   TOUCH_STATUS_QUEUED,       // The touch event has not been processed yet, but
-                             // may be processed asynchronously later.
+                             // may be processed asynchronously later. This also
+                             // places a lock on touch-events (i.e. all
+                             // subsequent touch-events should be sent to the
+                             // current handler).
+  TOUCH_STATUS_QUEUED_END,   // Similar to TOUCH_STATUS_QUEUED, except that
+                             // subsequent touch-events can be sent to any
+                             // handler.
 };
 
 // Updates the list of devices for cached properties.
@@ -148,6 +165,13 @@ UI_EXPORT float GetTouchAngle(const base::NativeEvent& native_event);
 // Gets the force from a native_event. Normalized to be [0, 1]. Default is 0.0.
 UI_EXPORT float GetTouchForce(const base::NativeEvent& native_event);
 
+// Gets the fling velocity from a native event. is_cancel is set to true if
+// this was a tap down, intended to stop an ongoing fling.
+UI_EXPORT bool GetFlingData(const base::NativeEvent& native_event,
+                            float* vx,
+                            float* vy,
+                            bool* is_cancel);
+
 // Returns whether this is a scroll event and optionally gets the amount to be
 // scrolled. |x_offset| and |y_offset| can be NULL.
 UI_EXPORT bool GetScrollOffsets(const base::NativeEvent& native_event,
@@ -157,6 +181,12 @@ UI_EXPORT bool GetScrollOffsets(const base::NativeEvent& native_event,
 UI_EXPORT bool GetGestureTimes(const base::NativeEvent& native_event,
                                double* start_time,
                                double* end_time);
+
+// Enable/disable natural scrolling for touchpads.
+UI_EXPORT void SetNaturalScroll(bool enabled);
+
+// Returns true if event is noop.
+UI_EXPORT bool IsNoopEvent(const base::NativeEvent& event);
 
 // Creates and returns no-op event.
 UI_EXPORT base::NativeEvent CreateNoopEvent();

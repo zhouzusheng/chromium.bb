@@ -28,6 +28,7 @@
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_layer_compositor_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
+#include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_testing_dev.h"
@@ -70,18 +71,24 @@
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
+#include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_tcp_socket.h"
 #include "ppapi/c/private/ppb_gpu_blacklist_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
+#include "ppapi/c/private/ppb_network_list_private.h"
+#include "ppapi/c/private/ppb_network_monitor_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
+#include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/c/trusted/ppb_audio_input_trusted_dev.h"
 #include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
+#include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 #include "ppapi/c/trusted/ppb_buffer_trusted.h"
+#include "ppapi/c/trusted/ppb_char_set_trusted.h"
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
 #include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_graphics_3d_trusted.h"
@@ -105,7 +112,6 @@
 #include "webkit/plugins/ppapi/ppb_flash_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_net_connector_impl.h"
-#include "webkit/plugins/ppapi/ppb_font_impl.h"
 #include "webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
@@ -179,7 +185,7 @@ void CallOnMainThread(int delay_in_msec,
     GetMainThreadMessageLoop()->PostDelayedTask(
         FROM_HERE,
         base::Bind(callback.func, callback.user_data, result),
-        delay_in_msec);
+        base::TimeDelta::FromMilliseconds(delay_in_msec));
   }
 }
 
@@ -209,10 +215,8 @@ PP_Bool ReadImageData(PP_Resource device_context_2d,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  bool old_state = MessageLoop::current()->NestableTasksAllowed();
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
   MessageLoop::current()->Run();
-  MessageLoop::current()->SetNestableTasksAllowed(old_state);
 }
 
 void QuitMessageLoop(PP_Instance instance) {
@@ -311,6 +315,10 @@ const void* GetInterface(const char* name) {
     return PPB_Flash_Impl::GetInterface11();
   if (strcmp(name, PPB_FLASH_INTERFACE_12_0) == 0)
     return PPB_Flash_Impl::GetInterface12_0();
+  if (strcmp(name, PPB_FLASH_INTERFACE_12_1) == 0)
+    return PPB_Flash_Impl::GetInterface12_1();
+  if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_4_0) == 0)
+    return ::ppapi::thunk::GetPPB_Flash_Clipboard_4_0_Thunk();
   if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_3_0) == 0)
     return ::ppapi::thunk::GetPPB_Flash_Clipboard_3_0_Thunk();
   if (strcmp(name, PPB_FLASH_CLIPBOARD_INTERFACE_3_LEGACY) == 0)
@@ -321,6 +329,8 @@ const void* GetInterface(const char* name) {
     return PPB_Flash_File_ModuleLocal_Impl::GetInterface();
   if (strcmp(name, PPB_FLASH_MENU_INTERFACE_0_2) == 0)
     return ::ppapi::thunk::GetPPB_Flash_Menu_0_2_Thunk();
+  if (strcmp(name, PPB_FLASH_MESSAGELOOP_INTERFACE_0_1) == 0)
+    return ::ppapi::thunk::GetPPB_Flash_MessageLoop_0_1_Thunk();
   if (strcmp(name, PPB_FLASH_TCPSOCKET_INTERFACE_0_2) == 0)
     return ::ppapi::thunk::GetPPB_TCPSocket_Private_0_3_Thunk();
   if (strcmp(name, PPB_FULLSCREEN_DEV_INTERFACE_0_5) == 0)
@@ -337,6 +347,18 @@ const void* GetInterface(const char* name) {
     return ::ppapi::thunk::GetPPB_Instance_Private_0_1_Thunk();
   if (strcmp(name, PPB_OPENGLES2_INTERFACE) == 0)
     return ::ppapi::PPB_OpenGLES2_Shared::GetInterface();
+  if (strcmp(name, PPB_OPENGLES2_INSTANCEDARRAYS_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetInstancedArraysInterface();
+  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERBLIT_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferBlitInterface();
+  if (strcmp(name, PPB_OPENGLES2_FRAMEBUFFERMULTISAMPLE_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetFramebufferMultisampleInterface();
+  if (strcmp(name, PPB_OPENGLES2_CHROMIUMENABLEFEATURE_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumEnableFeatureInterface();
+  if (strcmp(name, PPB_OPENGLES2_CHROMIUMMAPSUB_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetChromiumMapSubInterface();
+  if (strcmp(name, PPB_OPENGLES2_QUERY_DEV_INTERFACE) == 0)
+    return ::ppapi::PPB_OpenGLES2_Shared::GetQueryInterface();
   if (strcmp(name, PPB_PROXY_PRIVATE_INTERFACE) == 0)
     return PPB_Proxy_Impl::GetInterface();
   if (strcmp(name, PPB_UMA_PRIVATE_INTERFACE) == 0)
@@ -456,7 +478,7 @@ PluginModule::~PluginModule() {
 
   // Notifications that we've been deleted should be last.
   HostGlobals::Get()->ModuleDeleted(pp_module_);
-  if (!is_crashed_) {
+  if (!is_crashed_ && lifetime_delegate_) {
     // When the plugin crashes, we immediately tell the lifetime delegate that
     // we're gone, so we don't want to tell it again.
     lifetime_delegate_->PluginModuleDead(this);
@@ -567,7 +589,8 @@ void PluginModule::PluginCrashed() {
        i != instances_.end(); ++i)
     (*i)->InstanceCrashed();
 
-  lifetime_delegate_->PluginModuleDead(this);
+  if (lifetime_delegate_)
+    lifetime_delegate_->PluginModuleDead(this);
 }
 
 void PluginModule::SetReserveInstanceIDCallback(
@@ -582,12 +605,12 @@ bool PluginModule::ReserveInstanceID(PP_Instance instance) {
   return true;  // Instance ID is usable.
 }
 
-void PluginModule::SetBroker(PluginDelegate::PpapiBroker* broker) {
+void PluginModule::SetBroker(PluginDelegate::Broker* broker) {
   DCHECK(!broker_ || !broker);
   broker_ = broker;
 }
 
-PluginDelegate::PpapiBroker* PluginModule::GetBroker() {
+PluginDelegate::Broker* PluginModule::GetBroker() {
   return broker_;
 }
 

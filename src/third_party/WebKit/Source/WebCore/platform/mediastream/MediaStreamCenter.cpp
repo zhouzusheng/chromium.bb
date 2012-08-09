@@ -34,8 +34,11 @@
 
 #include "MediaStreamCenter.h"
 
-#include "MainThread.h"
+#include "IceCandidateDescriptor.h"
 #include "MediaStreamDescriptor.h"
+#include "SessionDescriptionDescriptor.h"
+
+#include <wtf/MainThread.h>
 
 namespace WebCore {
 
@@ -55,8 +58,9 @@ void MediaStreamCenter::endLocalMediaStream(MediaStreamDescriptor* streamDescrip
         streamDescriptor->setEnded();
 }
 
-// FIXME: remove when real implementations are available
-// Empty implementations for ports that build with MEDIA_STREAM enabled by default.
+#if !PLATFORM(CHROMIUM)
+
+// Empty implementations for ports that build with MEDIA_STREAM enabled by default, but haven't yet implemented MediaStreamCenter.
 
 MediaStreamCenter::MediaStreamCenter()
 {
@@ -69,7 +73,7 @@ MediaStreamCenter::~MediaStreamCenter()
 void MediaStreamCenter::queryMediaStreamSources(PassRefPtr<MediaStreamSourcesQueryClient> client)
 {
     MediaStreamSourceVector audioSources, videoSources;
-    client->mediaStreamSourcesQueryCompleted(audioSources, videoSources);
+    client->didCompleteQuery(audioSources, videoSources);
 }
 
 void MediaStreamCenter::didSetMediaStreamTrackEnabled(MediaStreamDescriptor*, MediaStreamComponent*)
@@ -83,6 +87,18 @@ void MediaStreamCenter::didStopLocalMediaStream(MediaStreamDescriptor*)
 void MediaStreamCenter::didConstructMediaStream(MediaStreamDescriptor*)
 {
 }
+
+String MediaStreamCenter::constructSDP(IceCandidateDescriptor*)
+{
+    return "";
+}
+
+String MediaStreamCenter::constructSDP(SessionDescriptionDescriptor*)
+{
+    return "";
+}
+
+#endif // !PLATFORM(CHROMIUM)
 
 } // namespace WebCore
 

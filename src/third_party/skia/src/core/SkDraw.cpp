@@ -1308,7 +1308,7 @@ void SkDraw::drawText_asPaths(const char text[], size_t byteLength,
                               const SkPaint& paint) const {
     SkDEBUGCODE(this->validate();)
 
-    SkTextToPathIter iter(text, byteLength, paint, true, true);
+    SkTextToPathIter iter(text, byteLength, paint, true);
 
     SkMatrix    matrix;
     matrix.setScale(iter.getPathScale(), iter.getPathScale());
@@ -1955,7 +1955,7 @@ void SkDraw::drawTextOnPath(const char text[], size_t byteLength,
         return;
     }
 
-    SkTextToPathIter    iter(text, byteLength, paint, true, true);
+    SkTextToPathIter    iter(text, byteLength, paint, true);
     SkPathMeasure       meas(follow, false);
     SkScalar            hOffset = 0;
 
@@ -2212,18 +2212,15 @@ public:
 
     virtual void shadeSpan(int x, int y, SkPMColor dstC[], int count);
 
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkTriColorShader)
+
 protected:
     SkTriColorShader(SkFlattenableReadBuffer& buffer) : SkShader(buffer) {}
-
-    virtual Factory getFactory() { return CreateProc; }
 
 private:
     SkMatrix    fDstToUnit;
     SkPMColor   fColors[3];
 
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer& buffer) {
-        return SkNEW_ARGS(SkTriColorShader, (buffer));
-    }
     typedef SkShader INHERITED;
 };
 
@@ -2553,7 +2550,7 @@ static bool compute_bounds(const SkPath& devPath, const SkIRect* clipBounds,
         pathBounds.roundOut(bounds);
     }
 
-    SkIPoint margin;
+    SkIPoint margin = SkIPoint::Make(0, 0);
     if (filter) {
         SkASSERT(filterMatrix);
 

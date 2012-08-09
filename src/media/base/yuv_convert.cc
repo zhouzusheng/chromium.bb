@@ -299,7 +299,8 @@ void ScaleYUVToRGB32WithRect(const uint8* y_buf,
     filter_proc = ChooseFilterYUVRowsProc();
 
   // This routine doesn't currently support up-scaling.
-  CHECK(dest_width <= source_width && dest_height <= source_height);
+  CHECK_LE(dest_width, source_width);
+  CHECK_LE(dest_height, source_height);
 
   // Sanity-check the destination rectangle.
   DCHECK(dest_rect_left >= 0 && dest_rect_right <= dest_width);
@@ -335,8 +336,9 @@ void ScaleYUVToRGB32WithRect(const uint8* y_buf,
 
   // Determine the parts of the Y, U and V buffers to interpolate.
   int source_y_left = source_left >> kFractionBits;
-  int source_y_right = (source_right >> kFractionBits) + 2;
-  DCHECK(source_y_right <= source_width);
+  int source_y_right = std::min(
+      (source_right >> kFractionBits) + 2,
+      source_width + 1);
 
   int source_uv_left = source_y_left / 2;
   int source_uv_right = std::min(

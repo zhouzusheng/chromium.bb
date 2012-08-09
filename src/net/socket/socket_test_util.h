@@ -48,16 +48,22 @@ enum {
 
 class AsyncSocket;
 class MockClientSocket;
+class ServerBoundCertService;
 class SSLClientSocket;
 class SSLHostInfo;
 class StreamSocket;
 
+enum IoMode {
+  ASYNC,
+  SYNCHRONOUS
+};
+
 struct MockConnect {
   // Asynchronous connection success.
-  MockConnect() : async(true), result(OK) { }
-  MockConnect(bool a, int r) : async(a), result(r) { }
+  MockConnect() : mode(ASYNC), result(OK) { }
+  MockConnect(IoMode io_mode, int r) : mode(io_mode), result(r) { }
 
-  bool async;
+  IoMode mode;
   int result;
 };
 
@@ -68,44 +74,45 @@ struct MockRead {
   };
 
   // Default
-  MockRead() : async(false), result(0), data(NULL), data_len(0),
+  MockRead() : mode(SYNCHRONOUS), result(0), data(NULL), data_len(0),
       sequence_number(0), time_stamp(base::Time::Now()) {}
 
   // Read failure (no data).
-  MockRead(bool async, int result) : async(async) , result(result), data(NULL),
-      data_len(0), sequence_number(0), time_stamp(base::Time::Now()) { }
+  MockRead(IoMode io_mode, int result) : mode(io_mode), result(result),
+      data(NULL), data_len(0), sequence_number(0),
+      time_stamp(base::Time::Now()) { }
 
   // Read failure (no data), with sequence information.
-  MockRead(bool async, int result, int seq) : async(async) , result(result),
-      data(NULL), data_len(0), sequence_number(seq),
+  MockRead(IoMode io_mode, int result, int seq) : mode(io_mode),
+      result(result), data(NULL), data_len(0), sequence_number(seq),
       time_stamp(base::Time::Now()) { }
 
   // Asynchronous read success (inferred data length).
-  explicit MockRead(const char* data) : async(true),  result(0), data(data),
+  explicit MockRead(const char* data) : mode(ASYNC),  result(0), data(data),
       data_len(strlen(data)), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
   // Read success (inferred data length).
-  MockRead(bool async, const char* data) : async(async), result(0), data(data),
-      data_len(strlen(data)), sequence_number(0),
+  MockRead(IoMode io_mode, const char* data) : mode(io_mode), result(0),
+      data(data), data_len(strlen(data)), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
   // Read success.
-  MockRead(bool async, const char* data, int data_len) : async(async),
+  MockRead(IoMode io_mode, const char* data, int data_len) : mode(io_mode),
       result(0), data(data), data_len(data_len), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
   // Read success (inferred data length) with sequence information.
-  MockRead(bool async, int seq, const char* data) : async(async),
+  MockRead(IoMode io_mode, int seq, const char* data) : mode(io_mode),
       result(0), data(data), data_len(strlen(data)), sequence_number(seq),
       time_stamp(base::Time::Now()) { }
 
   // Read success with sequence information.
-  MockRead(bool async, const char* data, int data_len, int seq) : async(async),
-      result(0), data(data), data_len(data_len), sequence_number(seq),
-      time_stamp(base::Time::Now()) { }
+  MockRead(IoMode io_mode, const char* data, int data_len, int seq) :
+      mode(io_mode), result(0), data(data), data_len(data_len),
+      sequence_number(seq), time_stamp(base::Time::Now()) { }
 
-  bool async;
+  IoMode mode;
   int result;
   const char* data;
   int data_len;
@@ -125,9 +132,11 @@ struct MockRead {
 typedef MockRead MockWrite;
 
 struct MockWriteResult {
-  MockWriteResult(bool async, int result) : async(async), result(result) {}
+  MockWriteResult(IoMode io_mode, int result)
+      : mode(io_mode),
+        result(result) {}
 
-  bool async;
+  IoMode mode;
   int result;
 };
 
@@ -257,18 +266,22 @@ class DynamicSocketDataProvider : public SocketDataProvider {
 // SSLSocketDataProviders only need to keep track of the return code from calls
 // to Connect().
 struct SSLSocketDataProvider {
-  SSLSocketDataProvider(bool async, int result);
+  SSLSocketDataProvider(IoMode mode, int result);
   ~SSLSocketDataProvider();
+
+  void SetNextProto(NextProto proto);
 
   MockConnect connect;
   SSLClientSocket::NextProtoStatus next_proto_status;
   std::string next_proto;
   std::string server_protos;
   bool was_npn_negotiated;
-  SSLClientSocket::NextProto protocol_negotiated;
+  NextProto protocol_negotiated;
   bool client_cert_sent;
   SSLCertRequestInfo* cert_request_info;
   scoped_refptr<X509Certificate> cert;
+  SSLClientCertType domain_bound_cert_type;
+  ServerBoundCertService* server_bound_cert_service;
 };
 
 // A DataProvider where the client must write a request before the reads (e.g.
@@ -583,11 +596,13 @@ class MockClientSocket : public SSLClientSocket {
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual int ExportKeyingMaterial(const base::StringPiece& label,
+                                   bool has_context,
                                    const base::StringPiece& context,
-                                   unsigned char *out,
+                                   unsigned char* out,
                                    unsigned int outlen) OVERRIDE;
   virtual NextProtoStatus GetNextProto(std::string* proto,
                                        std::string* server_protos) OVERRIDE;
+  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
 
  protected:
   virtual ~MockClientSocket();
@@ -735,12 +750,18 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
                                        std::string* server_protos) OVERRIDE;
   virtual bool was_npn_negotiated() const OVERRIDE;
   virtual bool set_was_npn_negotiated(bool negotiated) OVERRIDE;
-  virtual SSLClientSocket::NextProto protocol_negotiated() const OVERRIDE;
   virtual void set_protocol_negotiated(
-      SSLClientSocket::NextProto protocol_negotiated) OVERRIDE;
+      NextProto protocol_negotiated) OVERRIDE;
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
 
   // This MockSocket does not implement the manual async IO feature.
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
+
+  virtual bool WasDomainBoundCertSent() const OVERRIDE;
+  virtual SSLClientCertType domain_bound_cert_type() const OVERRIDE;
+  virtual SSLClientCertType set_domain_bound_cert_type(
+      SSLClientCertType type) OVERRIDE;
+  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
 
  private:
   static void ConnectCallback(MockSSLClientSocket *ssl_client_socket,
@@ -753,7 +774,7 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   bool new_npn_value_;
   bool was_used_to_convey_data_;
   bool is_protocol_negotiated_set_;
-  SSLClientSocket::NextProto protocol_negotiated_;
+  NextProto protocol_negotiated_;
 };
 
 class MockUDPClientSocket : public DatagramClientSocket,

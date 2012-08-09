@@ -11,21 +11,24 @@
 #include <map>
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
+#include "base/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
-#include "base/string_util.h"
 #include "base/string16.h"
+#include "base/string_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/cert_verifier.h"
-#include "net/base/cookie_monster.h"
 #include "net/base/host_resolver.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
 #include "net/base/ssl_config_service_defaults.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
@@ -34,8 +37,8 @@
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context_storage.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 using base::TimeDelta;
 
@@ -72,6 +75,29 @@ class TestURLRequestContext : public net::URLRequestContext {
 
 //-----------------------------------------------------------------------------
 
+// Used to return a dummy context, which lives on the message loop
+// given in the constructor.
+class TestURLRequestContextGetter : public net::URLRequestContextGetter {
+ public:
+  // |io_message_loop_proxy| must not be NULL.
+  explicit TestURLRequestContextGetter(
+      const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy);
+
+  // net::URLRequestContextGetter implementation.
+  virtual TestURLRequestContext* GetURLRequestContext() OVERRIDE;
+  virtual scoped_refptr<base::MessageLoopProxy>
+      GetIOMessageLoopProxy() const OVERRIDE;
+
+ protected:
+  virtual ~TestURLRequestContextGetter();
+
+ private:
+  const scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
+  scoped_refptr<TestURLRequestContext> context_;
+};
+
+//-----------------------------------------------------------------------------
+
 class TestURLRequest : public net::URLRequest {
  public:
   TestURLRequest(const GURL& url, Delegate* delegate);
@@ -82,12 +108,6 @@ class TestURLRequest : public net::URLRequest {
 
 class TestDelegate : public net::URLRequest::Delegate {
  public:
-  enum Options {
-    NO_GET_COOKIES = 1 << 0,
-    NO_SET_COOKIE  = 1 << 1,
-    FORCE_SESSION  = 1 << 2,
-  };
-
   TestDelegate();
   virtual ~TestDelegate();
 
@@ -102,7 +122,6 @@ class TestDelegate : public net::URLRequest::Delegate {
   void set_allow_certificate_errors(bool val) {
     allow_certificate_errors_ = val;
   }
-  void set_cookie_options(int o) {cookie_options_bit_mask_ = o; }
   void set_credentials(const net::AuthCredentials& credentials) {
     credentials_ = credentials;
   }
@@ -112,9 +131,6 @@ class TestDelegate : public net::URLRequest::Delegate {
   int bytes_received() const { return static_cast<int>(data_received_.size()); }
   int response_started_count() const { return response_started_count_; }
   int received_redirect_count() const { return received_redirect_count_; }
-  int blocked_get_cookies_count() const { return blocked_get_cookies_count_; }
-  int blocked_set_cookie_count() const { return blocked_set_cookie_count_; }
-  int set_cookie_count() const { return set_cookie_count_; }
   bool received_data_before_response() const {
     return received_data_before_response_;
   }
@@ -136,11 +152,6 @@ class TestDelegate : public net::URLRequest::Delegate {
   virtual void OnSSLCertificateError(net::URLRequest* request,
                                      const net::SSLInfo& ssl_info,
                                      bool fatal) OVERRIDE;
-  virtual bool CanGetCookies(const net::URLRequest* request,
-                             const net::CookieList& cookie_list) const OVERRIDE;
-  virtual bool CanSetCookie(const net::URLRequest* request,
-                            const std::string& cookie_line,
-                            net::CookieOptions* options) const OVERRIDE;
   virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
   virtual void OnReadCompleted(net::URLRequest* request,
                                int bytes_read) OVERRIDE;
@@ -158,16 +169,12 @@ class TestDelegate : public net::URLRequest::Delegate {
   bool quit_on_complete_;
   bool quit_on_redirect_;
   bool allow_certificate_errors_;
-  int cookie_options_bit_mask_;
   net::AuthCredentials credentials_;
 
   // tracks status of callbacks
   int response_started_count_;
   int received_bytes_count_;
   int received_redirect_count_;
-  mutable int blocked_get_cookies_count_;
-  mutable int blocked_set_cookie_count_;
-  mutable int set_cookie_count_;
   bool received_data_before_response_;
   bool request_failed_;
   bool have_certificate_errors_;
@@ -183,14 +190,25 @@ class TestDelegate : public net::URLRequest::Delegate {
 
 class TestNetworkDelegate : public net::NetworkDelegate {
  public:
+  enum Options {
+    NO_GET_COOKIES = 1 << 0,
+    NO_SET_COOKIE  = 1 << 1,
+    FORCE_SESSION  = 1 << 2,
+  };
+
   TestNetworkDelegate();
   virtual ~TestNetworkDelegate();
+
+  void set_cookie_options(int o) {cookie_options_bit_mask_ = o; }
 
   int last_error() const { return last_error_; }
   int error_count() const { return error_count_; }
   int created_requests() const { return created_requests_; }
   int destroyed_requests() const { return destroyed_requests_; }
   int completed_requests() const { return completed_requests_; }
+  int blocked_get_cookies_count() const { return blocked_get_cookies_count_; }
+  int blocked_set_cookie_count() const { return blocked_set_cookie_count_; }
+  int set_cookie_count() const { return set_cookie_count_; }
 
  protected:
   // net::NetworkDelegate:
@@ -222,6 +240,11 @@ class TestNetworkDelegate : public net::NetworkDelegate {
       const net::AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
       net::AuthCredentials* credentials) OVERRIDE;
+  virtual bool CanGetCookies(const net::URLRequest* request,
+                             const net::CookieList& cookie_list) OVERRIDE;
+  virtual bool CanSetCookie(const net::URLRequest* request,
+                            const std::string& cookie_line,
+                            net::CookieOptions* options) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
 
@@ -230,6 +253,10 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   int created_requests_;
   int destroyed_requests_;
   int completed_requests_;
+  int cookie_options_bit_mask_;
+  int blocked_get_cookies_count_;
+  int blocked_set_cookie_count_;
+  int set_cookie_count_;
 
   // net::NetworkDelegate callbacks happen in a particular order (e.g.
   // OnBeforeURLRequest is always called before OnBeforeSendHeaders).
@@ -240,6 +267,31 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   // A log that records for each request id (key) the order in which On...
   // functions were called.
   std::map<int, std::string> event_order_;
+};
+
+// Overrides the host used by the LocalHttpTestServer in
+// url_request_unittest.cc . This is used by the chrome_frame_net_tests due to
+// a mysterious bug when tests execute over the loopback adapter. See
+// http://crbug.com/114369 .
+class ScopedCustomUrlRequestTestHttpHost {
+ public:
+  // Sets the host name to be used. The previous hostname will be stored and
+  // restored upon destruction. Note that if the lifetimes of two or more
+  // instances of this class overlap, they must be strictly nested.
+  explicit ScopedCustomUrlRequestTestHttpHost(const std::string& new_value);
+
+  ~ScopedCustomUrlRequestTestHttpHost();
+
+  // Returns the current value to be used by HTTP tests in
+  // url_request_unittest.cc .
+  static const std::string& value();
+
+ private:
+  static std::string value_;
+  const std::string old_value_;
+  const std::string new_value_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedCustomUrlRequestTestHttpHost);
 };
 
 #endif  // NET_URL_REQUEST_URL_REQUEST_TEST_UTIL_H_

@@ -33,16 +33,10 @@
 #include "FrameView.h"
 #include "InspectorController.h"
 #include "Language.h"
+#include "LocaleToScriptMapping.h"
 #include "Page.h"
+#include "RuntimeEnabledFeatures.h"
 #include "Settings.h"
-
-#if ENABLE(GESTURE_EVENTS)
-#include "PlatformGestureEvent.h"
-#endif
-
-#if ENABLE(SMOOTH_SCROLLING)
-#include "ScrollAnimator.h"
-#endif
 
 #if ENABLE(INPUT_COLOR)
 #include "ColorChooser.h"
@@ -87,27 +81,34 @@
 namespace WebCore {
 
 
-PassRefPtr<InternalSettings> InternalSettings::create(Frame* frame, InternalSettings* old)
+PassRefPtr<InternalSettings> InternalSettings::create(Frame* frame)
 {
-    return adoptRef(new InternalSettings(frame, old));
+    return adoptRef(new InternalSettings(frame));
 }
 
 InternalSettings::~InternalSettings()
 {
 }
 
-InternalSettings::InternalSettings(Frame* frame, InternalSettings* old)
+InternalSettings::InternalSettings(Frame* frame)
     : FrameDestructionObserver(frame)
-    , m_passwordEchoDurationInSecondsBackup(0)
-    , m_passwordEchoDurationInSecondsBackedUp(false)
-    , m_passwordEchoEnabledBackedUp(false)
+    , m_originalPasswordEchoDurationInSeconds(settings()->passwordEchoDurationInSeconds())
+    , m_originalPasswordEchoEnabled(settings()->passwordEchoEnabled())
+#if ENABLE(SHADOW_DOM)
+    , m_originalShadowDOMEnabled(RuntimeEnabledFeatures::shadowDOMEnabled())
+#endif
+
+
 {
-    if (old && settings()) {
-        if (old->m_passwordEchoDurationInSecondsBackedUp)
-            settings()->setPasswordEchoDurationInSeconds(old->m_passwordEchoDurationInSecondsBackup);
-        if (old->m_passwordEchoEnabledBackedUp)
-            settings()->setPasswordEchoEnabled(old->m_passwordEchoEnabledBackup);
-    }
+}
+
+void InternalSettings::restoreTo(Settings* settings)
+{
+    settings->setPasswordEchoDurationInSeconds(m_originalPasswordEchoDurationInSeconds);
+    settings->setPasswordEchoEnabled(m_originalPasswordEchoEnabled);
+#if ENABLE(SHADOW_DOM)
+    RuntimeEnabledFeatures::setShadowDOMEnabled(m_originalShadowDOMEnabled);
+#endif
 }
 
 Settings* InternalSettings::settings() const
@@ -172,43 +173,6 @@ void InternalSettings::setAcceleratedDrawingEnabled(bool enabled, ExceptionCode&
     settings()->setAcceleratedDrawingEnabled(enabled);
 }
 
-void InternalSettings::setEnableScrollAnimator(bool enabled, ExceptionCode& ec)
-{
-    InternalSettingsGuardForSettings();
-#if ENABLE(SMOOTH_SCROLLING)
-    settings()->setEnableScrollAnimator(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
-}
-
-void InternalSettings::setZoomAnimatorTransform(float scale, float tx, float ty, ExceptionCode& ec)
-{
-    InternalSettingsGuardForFrame();
-
-#if ENABLE(GESTURE_EVENTS)
-    PlatformGestureEvent pge(PlatformEvent::GestureDoubleTap, IntPoint(tx, ty), IntPoint(tx, ty), 0, scale, 0.f, 0, 0, 0, 0);
-    frame()->eventHandler()->handleGestureEvent(pge);
-#else
-    UNUSED_PARAM(scale);
-    UNUSED_PARAM(tx);
-    UNUSED_PARAM(ty);
-#endif
-}
-
-void InternalSettings::setZoomParameters(float scale, float x, float y, ExceptionCode& ec)
-{
-    InternalSettingsGuardForFrameView();
-
-#if ENABLE(SMOOTH_SCROLLING)
-    frame()->view()->scrollAnimator()->setZoomParametersForTest(scale, x, y);
-#else
-    UNUSED_PARAM(scale);
-    UNUSED_PARAM(x);
-    UNUSED_PARAM(y);
-#endif
-}
-
 void InternalSettings::setMockScrollbarsEnabled(bool enabled, ExceptionCode& ec)
 {
     InternalSettingsGuardForSettings();
@@ -218,20 +182,12 @@ void InternalSettings::setMockScrollbarsEnabled(bool enabled, ExceptionCode& ec)
 void InternalSettings::setPasswordEchoEnabled(bool enabled, ExceptionCode& ec)
 {
     InternalSettingsGuardForSettings();
-    if (!m_passwordEchoEnabledBackedUp) {
-        m_passwordEchoEnabledBackup = settings()->passwordEchoEnabled();
-        m_passwordEchoEnabledBackedUp = true;
-    }
     settings()->setPasswordEchoEnabled(enabled);
 }
 
 void InternalSettings::setPasswordEchoDurationInSeconds(double durationInSeconds, ExceptionCode& ec)
 {
     InternalSettingsGuardForSettings();
-    if (!m_passwordEchoDurationInSecondsBackedUp) {
-        m_passwordEchoDurationInSecondsBackup = settings()->passwordEchoDurationInSeconds();
-        m_passwordEchoDurationInSecondsBackedUp = true;
-    }
     settings()->setPasswordEchoDurationInSeconds(durationInSeconds);
 }
 
@@ -253,12 +209,6 @@ bool InternalSettings::unifiedTextCheckingEnabled(ExceptionCode& ec)
     return settings()->unifiedTextCheckerEnabled();
 }
 
-float InternalSettings::pageScaleFactor(ExceptionCode& ec)
-{
-    InternalSettingsGuardForPageReturn(0);
-    return page()->pageScaleFactor();
-}
-
 void InternalSettings::setPageScaleFactor(float scaleFactor, int x, int y, ExceptionCode& ec)
 {
     InternalSettingsGuardForPage();
@@ -269,6 +219,102 @@ void InternalSettings::setPerTileDrawingEnabled(bool enabled, ExceptionCode& ec)
 {
     InternalSettingsGuardForSettings();
     settings()->setPerTileDrawingEnabled(enabled);
+}
+
+void InternalSettings::setShadowDOMEnabled(bool enabled, ExceptionCode& ec)
+{
+#if ENABLE(SHADOW_DOM)
+    UNUSED_PARAM(ec);
+    RuntimeEnabledFeatures::setShadowDOMEnabled(enabled);
+#else
+    // Even SHADOW_DOM is off, InternalSettings allows setShadowDOMEnabled(false) to
+    // have broader test coverage. But it cannot be setShadowDOMEnabled(true).
+    if (enabled)
+        ec = INVALID_ACCESS_ERR;
+#endif
+}
+
+void InternalSettings::setTouchEventEmulationEnabled(bool enabled, ExceptionCode& ec)
+{
+#if ENABLE(TOUCH_EVENTS)
+    InternalSettingsGuardForSettings();
+    settings()->setTouchEventEmulationEnabled(enabled);
+#else
+    UNUSED_PARAM(enabled);
+    UNUSED_PARAM(ec);
+#endif
+}
+
+typedef void (Settings::*SetFontFamilyFunction)(const AtomicString&, UScriptCode);
+static void setFontFamily(Settings* settings, const String& family, const String& script, SetFontFamilyFunction setter)
+{
+    UScriptCode code = scriptNameToCode(script);
+    if (code != USCRIPT_INVALID_CODE)
+        (settings->*setter)(family, code);
+}
+
+void InternalSettings::setStandardFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setStandardFontFamily);
+}
+
+void InternalSettings::setSerifFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setSerifFontFamily);
+}
+
+void InternalSettings::setSansSerifFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setSansSerifFontFamily);
+}
+
+void InternalSettings::setFixedFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setFixedFontFamily);
+}
+
+void InternalSettings::setCursiveFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setCursiveFontFamily);
+}
+
+void InternalSettings::setFantasyFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setFantasyFontFamily);
+}
+
+void InternalSettings::setPictographFontFamily(const String& family, const String& script, ExceptionCode& ec)
+{
+    InternalSettingsGuardForSettings();
+    setFontFamily(settings(), family, script, &Settings::setPictographFontFamily);
+}
+
+void InternalSettings::setEnableScrollAnimator(bool enabled, ExceptionCode& ec)
+{
+#if ENABLE(SMOOTH_SCROLLING)
+    InternalSettingsGuardForSettings();
+    settings()->setEnableScrollAnimator(enabled);
+#else
+    UNUSED_PARAM(enabled);
+    UNUSED_PARAM(ec);
+#endif
+}
+
+bool InternalSettings::scrollAnimatorEnabled(ExceptionCode& ec)
+{
+#if ENABLE(SMOOTH_SCROLLING)
+    InternalSettingsGuardForSettingsReturn(false);
+    return settings()->scrollAnimatorEnabled();
+#else
+    UNUSED_PARAM(ec);
+    return false;
+#endif
 }
 
 }

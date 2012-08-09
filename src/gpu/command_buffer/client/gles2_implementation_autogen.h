@@ -1409,6 +1409,53 @@ void TexStorage2DEXT(
   helper_->TexStorage2DEXT(target, levels, internalFormat, width, height);
 }
 
+void GenQueriesEXT(GLsizei n, GLuint* queries) {
+  GPU_CLIENT_LOG("[" << this << "] glGenQueriesEXT(" << n << ", " << static_cast<const void*>(queries) << ")");  // NOLINT
+  if (n < 0) {
+    SetGLError(GL_INVALID_VALUE, "glGenQueriesEXT: n < 0");
+    return;
+  }
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  id_handlers_[id_namespaces::kQueries]->
+      MakeIds(0, n, queries);
+  helper_->GenQueriesEXTImmediate(n, queries);
+  GPU_CLIENT_LOG_CODE_BLOCK({
+    for (GLsizei i = 0; i < n; ++i) {
+      GPU_CLIENT_LOG("  " << i << ": " << queries[i]);
+    }
+  });
+}
+
+void DeleteQueriesEXT(GLsizei n, const GLuint* queries) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << this << "] glDeleteQueriesEXT(" << n << ", " << static_cast<const void*>(queries) << ")");  // NOLINT
+  GPU_CLIENT_LOG_CODE_BLOCK({
+    for (GLsizei i = 0; i < n; ++i) {
+      GPU_CLIENT_LOG("  " << i << ": " << queries[i]);
+    }
+  });
+  GPU_CLIENT_DCHECK_CODE_BLOCK({
+    for (GLsizei i = 0; i < n; ++i) {
+      GPU_DCHECK(queries[i] != 0);
+    }
+  });
+  if (n < 0) {
+    SetGLError(GL_INVALID_VALUE, "glDeleteQueriesEXT: n < 0");
+    return;
+  }
+  DeleteQueriesEXTHelper(n, queries);
+}
+
+GLboolean IsQueryEXT(GLuint id);
+
+void BeginQueryEXT(GLenum target, GLuint id);
+
+void EndQueryEXT(GLenum target);
+
+void GetQueryivEXT(GLenum target, GLenum pname, GLint* params);
+
+void GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params);
+
 void SwapBuffers();
 
 GLuint GetMaxValueInBufferCHROMIUM(
@@ -1498,6 +1545,15 @@ void TexImageIOSurface2DCHROMIUM(
   helper_->TexImageIOSurface2DCHROMIUM(
       target, width, height, ioSurfaceId, plane);
 }
+
+void DrawArraysInstancedANGLE(
+    GLenum mode, GLint first, GLsizei count, GLsizei primcount);
+
+void DrawElementsInstancedANGLE(
+    GLenum mode, GLsizei count, GLenum type, const void* indices,
+    GLsizei primcount);
+
+void VertexAttribDivisorANGLE(GLuint index, GLuint divisor);
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_AUTOGEN_H_
 

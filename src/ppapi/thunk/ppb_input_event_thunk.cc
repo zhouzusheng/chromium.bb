@@ -22,7 +22,7 @@ typedef EnterResource<PPB_InputEvent_API> EnterInputEvent;
 int32_t RequestInputEvents(PP_Instance instance, uint32_t event_classes) {
   EnterInstance enter(instance, true);
   if (enter.failed())
-    return PP_ERROR_BADARGUMENT;
+    return enter.retval();
   return enter.functions()->RequestInputEvents(instance, event_classes);
 }
 
@@ -30,7 +30,7 @@ int32_t RequestFilteringInputEvents(PP_Instance instance,
                                     uint32_t event_classes) {
   EnterInstance enter(instance, true);
   if (enter.failed())
-    return PP_ERROR_BADARGUMENT;
+    return enter.retval();
   return enter.functions()->RequestFilteringInputEvents(instance,
                                                         event_classes);
 }
@@ -271,6 +271,27 @@ const PPB_KeyboardInputEvent g_ppb_keyboard_input_event_thunk = {
   &GetCharacterText
 };
 
+// _Dev interface.
+
+PP_Bool SetUsbKeyCode(PP_Resource key_event, uint32_t usb_key_code) {
+  EnterInputEvent enter(key_event, true);
+  if (enter.failed())
+    return PP_FALSE;
+  return enter.object()->SetUsbKeyCode(usb_key_code);
+}
+
+uint32_t GetUsbKeyCode(PP_Resource key_event) {
+  EnterInputEvent enter(key_event, true);
+  if (enter.failed())
+    return 0;
+  return enter.object()->GetUsbKeyCode();
+}
+
+const PPB_KeyboardInputEvent_Dev g_ppb_keyboard_input_event_dev_thunk = {
+  &SetUsbKeyCode,
+  &GetUsbKeyCode,
+};
+
 // Composition -----------------------------------------------------------------
 
 PP_Bool IsIMEInputEvent(PP_Resource resource) {
@@ -345,6 +366,11 @@ const PPB_MouseInputEvent_1_1* GetPPB_MouseInputEvent_1_1_Thunk() {
 
 const PPB_KeyboardInputEvent_1_0* GetPPB_KeyboardInputEvent_1_0_Thunk() {
   return &g_ppb_keyboard_input_event_thunk;
+}
+
+const PPB_KeyboardInputEvent_Dev_0_1*
+    GetPPB_KeyboardInputEvent_Dev_0_1_Thunk() {
+  return &g_ppb_keyboard_input_event_dev_thunk;
 }
 
 const PPB_WheelInputEvent_1_0* GetPPB_WheelInputEvent_1_0_Thunk() {

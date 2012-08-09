@@ -49,33 +49,37 @@ static SkPoint unflatten_point(SkReader32& buffer) {
     return retval;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-typedef SkFixed (*TileProc)(SkFixed);
+//  Clamp
 
 static SkFixed clamp_tileproc(SkFixed x) {
     return SkClampMax(x, 0xFFFF);
 }
 
+// Repeat
+
 static SkFixed repeat_tileproc(SkFixed x) {
     return x & 0xFFFF;
 }
 
+static inline int repeat_bits(int x, const int bits) {
+    return x & ((1 << bits) - 1);
+}
+
+static inline int repeat_8bits(int x) {
+    return x & 0xFF;
+}
+
+// Mirror
+
+// Visual Studio 2010 (MSC_VER=1600) optimizes bit-shift code incorrectly.
+// See http://code.google.com/p/skia/issues/detail?id=472
+#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+#pragma optimize("", off)
+#endif
+
 static inline SkFixed mirror_tileproc(SkFixed x) {
     int s = x << 15 >> 31;
     return (x ^ s) & 0xFFFF;
-}
-
-static const TileProc gTileProcs[] = {
-    clamp_tileproc,
-    repeat_tileproc,
-    mirror_tileproc
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-static inline int repeat_bits(int x, const int bits) {
-    return x & ((1 << bits) - 1);
 }
 
 static inline int mirror_bits(int x, const int bits) {
@@ -87,10 +91,6 @@ static inline int mirror_bits(int x, const int bits) {
     int s = x << (31 - bits) >> 31;
     return (x ^ s) & ((1 << bits) - 1);
 #endif
-}
-
-static inline int repeat_8bits(int x) {
-    return x & 0xFF;
 }
 
 static inline int mirror_8bits(int x) {
@@ -105,6 +105,21 @@ static inline int mirror_8bits(int x) {
 #endif
 }
 
+#if defined(_MSC_VER) && (_MSC_VER >= 1600)
+#pragma optimize("", on)
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+
+typedef SkFixed (*TileProc)(SkFixed);
+
+static const TileProc gTileProcs[] = {
+    clamp_tileproc,
+    repeat_tileproc,
+    mirror_tileproc
+};
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 class Gradient_Shader : public SkShader {
@@ -834,10 +849,6 @@ public:
                              SkScalar* twoPointRadialParams) const SK_OVERRIDE;
     virtual GradientType asAGradient(GradientInfo* info) const SK_OVERRIDE;
 
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer& buffer) {
-        return SkNEW_ARGS(Linear_Gradient, (buffer));
-    }
-
     virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.writeScalar(fStart.fX);
@@ -846,7 +857,7 @@ public:
         buffer.writeScalar(fEnd.fY);
     }
 
-    SK_DECLARE_FLATTENABLE_REGISTRAR()
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Linear_Gradient)
 
 protected:
     Linear_Gradient(SkFlattenableReadBuffer& buffer)
@@ -854,7 +865,6 @@ protected:
           fStart(unflatten_point(buffer)),
           fEnd(unflatten_point(buffer)) {
     }
-    virtual Factory getFactory() SK_OVERRIDE { return CreateProc; }
 
 private:
     typedef Gradient_Shader INHERITED;
@@ -1497,10 +1507,6 @@ public:
         return kRadial_GradientType;
     }
 
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer& buffer) {
-        return SkNEW_ARGS(Radial_Gradient, (buffer));
-    }
-
     virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.writeScalar(fCenter.fX);
@@ -1508,13 +1514,14 @@ public:
         buffer.writeScalar(fRadius);
     }
 
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Radial_Gradient)
+
 protected:
     Radial_Gradient(SkFlattenableReadBuffer& buffer)
         : Gradient_Shader(buffer),
           fCenter(unflatten_point(buffer)),
           fRadius(buffer.readScalar()) {
     }
-    virtual Factory getFactory() SK_OVERRIDE { return CreateProc; }
 
 private:
     typedef Gradient_Shader INHERITED;
@@ -2032,10 +2039,6 @@ public:
         return true;
     }
 
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer& buffer) {
-        return SkNEW_ARGS(Two_Point_Radial_Gradient, (buffer));
-    }
-
     virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.writeScalar(fCenter1.fX);
@@ -2046,6 +2049,8 @@ public:
         buffer.writeScalar(fRadius2);
     }
 
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Two_Point_Radial_Gradient)
+
 protected:
     Two_Point_Radial_Gradient(SkFlattenableReadBuffer& buffer)
             : Gradient_Shader(buffer),
@@ -2055,7 +2060,6 @@ protected:
               fRadius2(buffer.readScalar()) {
         init();
     };
-    virtual Factory getFactory() SK_OVERRIDE { return CreateProc; }
 
 private:
     typedef Gradient_Shader INHERITED;
@@ -2121,23 +2125,19 @@ public:
         return kSweep_GradientType;
     }
 
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer& buffer) {
-        return SkNEW_ARGS(Sweep_Gradient, (buffer));
-    }
-
     virtual void flatten(SkFlattenableWriteBuffer& buffer) SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
         buffer.writeScalar(fCenter.fX);
         buffer.writeScalar(fCenter.fY);
     }
 
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Sweep_Gradient)
+
 protected:
     Sweep_Gradient(SkFlattenableReadBuffer& buffer)
         : Gradient_Shader(buffer),
           fCenter(unflatten_point(buffer)) {
     }
-
-    virtual Factory getFactory() SK_OVERRIDE { return CreateProc; }
 
 private:
     typedef Gradient_Shader INHERITED;
@@ -2544,8 +2544,6 @@ SkShader* SkGradientShader::CreateSweep(SkScalar cx, SkScalar cy,
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkGradientShader)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(Linear_Gradient)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(Radial_Gradient)
-
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(Sweep_Gradient)
-
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(Two_Point_Radial_Gradient)
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END

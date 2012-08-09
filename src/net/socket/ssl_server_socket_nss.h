@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,8 +34,9 @@ class SSLServerSocketNSS : public SSLServerSocket {
   // SSLServerSocket interface.
   virtual int Handshake(const CompletionCallback& callback) OVERRIDE;
   virtual int ExportKeyingMaterial(const base::StringPiece& label,
+                                   bool has_context,
                                    const base::StringPiece& context,
-                                   unsigned char *out,
+                                   unsigned char* out,
                                    unsigned int outlen) OVERRIDE;
 
   // Socket interface (via StreamSocket).
@@ -60,6 +61,7 @@ class SSLServerSocketNSS : public SSLServerSocket {
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
 
  private:
   enum State {

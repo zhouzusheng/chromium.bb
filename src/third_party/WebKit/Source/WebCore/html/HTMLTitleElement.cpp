@@ -58,10 +58,10 @@ void HTMLTitleElement::removedFromDocument()
 
 void HTMLTitleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
+    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     m_title = textWithDirection();
     if (inDocument())
         document()->setTitleElement(m_title, this);
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
 
 String HTMLTitleElement::text() const
@@ -70,7 +70,7 @@ String HTMLTitleElement::text() const
     
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
         if (n->isTextNode())
-            val += static_cast<Text*>(n)->data();
+            val += toText(n)->data();
     }
 
     return val;
@@ -94,7 +94,7 @@ void HTMLTitleElement::setText(const String &value)
     int numChildren = childNodeCount();
     
     if (numChildren == 1 && firstChild()->isTextNode())
-        static_cast<Text*>(firstChild())->setData(value, ec);
+        toText(firstChild())->setData(value, ec);
     else {
         // We make a copy here because entity of "value" argument can be Document::m_title,
         // which goes empty during removeChildren() invocation below,

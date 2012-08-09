@@ -50,6 +50,7 @@ class Frame;
 class Frontend;
 class InjectedScriptManager;
 class InspectorArray;
+class InspectorClient;
 class InspectorObject;
 class InspectorState;
 class InstrumentingAgents;
@@ -57,10 +58,11 @@ class KURL;
 class Page;
 class RegularExpression;
 class SharedBuffer;
+class TextResourceDecoder;
 
 typedef String ErrorString;
 
-class InspectorPageAgent : public InspectorBaseAgent<InspectorPageAgent> {
+class InspectorPageAgent : public InspectorBaseAgent<InspectorPageAgent>, public InspectorBackendDispatcher::PageCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorPageAgent);
 public:
     enum ResourceType {
@@ -74,7 +76,7 @@ public:
         OtherResource
     };
 
-    static PassOwnPtr<InspectorPageAgent> create(InstrumentingAgents*, Page*, InspectorState*, InjectedScriptManager*);
+    static PassOwnPtr<InspectorPageAgent> create(InstrumentingAgents*, Page*, InspectorState*, InjectedScriptManager*, InspectorClient*);
 
     static bool cachedResourceContent(CachedResource*, String* result, bool* base64Encoded);
     static bool sharedBufferContent(PassRefPtr<SharedBuffer>, const String& textEncodingName, bool withBase64Encode, String* result);
@@ -87,20 +89,21 @@ public:
     static String cachedResourceTypeString(const CachedResource&);
 
     // Page API for InspectorFrontend
-    void enable(ErrorString*);
-    void disable(ErrorString*);
-    void addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* result);
-    void removeScriptToEvaluateOnLoad(ErrorString*, const String& identifier);
-    void reload(ErrorString*, const bool* const optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad);
-    void navigate(ErrorString*, const String& url);
-    void getCookies(ErrorString*, RefPtr<InspectorArray>& cookies, WTF::String* cookiesString);
-    void deleteCookie(ErrorString*, const String& cookieName, const String& domain);
-    void getResourceTree(ErrorString*, RefPtr<InspectorObject>&);
-    void getResourceContent(ErrorString*, const String& frameId, const String& url, String* content, bool* base64Encoded);
-    void searchInResource(ErrorString*, const String& frameId, const String& url, const String& query, const bool* const optionalCaseSensitive, const bool* const optionalIsRegex, RefPtr<InspectorArray>&);
-    void searchInResources(ErrorString*, const String&, const bool* const caseSensitive, const bool* const isRegex, RefPtr<InspectorArray>&);
-    void setDocumentContent(ErrorString*, const String& frameId, const String& html);
-    void setScreenSizeOverride(ErrorString*, const int width, const int height);
+    virtual void enable(ErrorString*);
+    virtual void disable(ErrorString*);
+    virtual void addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* result);
+    virtual void removeScriptToEvaluateOnLoad(ErrorString*, const String& identifier);
+    virtual void reload(ErrorString*, const bool* optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad);
+    virtual void navigate(ErrorString*, const String& url);
+    virtual void getCookies(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::Cookie> >& cookies, WTF::String* cookiesString);
+    virtual void deleteCookie(ErrorString*, const String& cookieName, const String& domain);
+    virtual void getResourceTree(ErrorString*, RefPtr<TypeBuilder::Page::FrameResourceTree>&);
+    virtual void getResourceContent(ErrorString*, const String& frameId, const String& url, String* content, bool* base64Encoded);
+    virtual void searchInResource(ErrorString*, const String& frameId, const String& url, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> >&);
+    virtual void searchInResources(ErrorString*, const String&, const bool* caseSensitive, const bool* isRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchResult> >&);
+    virtual void setDocumentContent(ErrorString*, const String& frameId, const String& html);
+    virtual void setScreenSizeOverride(ErrorString*, int width, int height);
+    virtual void setShowPaintRects(ErrorString*, bool show);
 
     // InspectorInstrumentation API
     void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
@@ -111,6 +114,8 @@ public:
     void loaderDetachedFromFrame(DocumentLoader*);
     void applyScreenWidthOverride(long*);
     void applyScreenHeightOverride(long*);
+    void willPaint(GraphicsContext*, const LayoutRect&);
+    void didPaint();
 
     // Inspector Controller API
     virtual void setFrontend(InspectorFrontend*);
@@ -127,15 +132,16 @@ public:
     static DocumentLoader* assertDocumentLoader(ErrorString*, Frame*);
 
 private:
-    InspectorPageAgent(InstrumentingAgents*, Page*, InspectorState*, InjectedScriptManager*);
+    InspectorPageAgent(InstrumentingAgents*, Page*, InspectorState*, InjectedScriptManager*, InspectorClient*);
     void updateFrameViewFixedLayout(int, int);
     void setFrameViewFixedLayout(int, int);
     void clearFrameViewFixedLayout();
 
-    PassRefPtr<InspectorObject> buildObjectForFrame(Frame*);
-    PassRefPtr<InspectorObject> buildObjectForFrameTree(Frame*);
+    PassRefPtr<TypeBuilder::Page::Frame> buildObjectForFrame(Frame*);
+    PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(Frame*);
     Page* m_page;
     InjectedScriptManager* m_injectedScriptManager;
+    InspectorClient* m_client;
     InspectorFrontend::Page* m_frontend;
     long m_lastScriptIdentifier;
     String m_pendingScriptToEvaluateOnLoadOnce;
@@ -145,6 +151,8 @@ private:
     HashMap<DocumentLoader*, String> m_loaderToIdentifier;
     OwnPtr<IntSize> m_originalFixedLayoutSize;
     bool m_originalUseFixedLayout;
+    GraphicsContext* m_lastPaintContext;
+    LayoutRect m_lastPaintRect;
 };
 
 

@@ -21,6 +21,7 @@
 #include "webkit/tools/test_shell/mock_webclipboard_impl.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
 #include "webkit/tools/test_shell/simple_clipboard_impl.h"
+#include "webkit/tools/test_shell/simple_dom_storage_system.h"
 #include "webkit/tools/test_shell/simple_file_system.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 #include "webkit/tools/test_shell/simple_webcookiejar_impl.h"
@@ -106,7 +107,6 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
 #endif
 
   virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository() OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* createGraphicsContext3D() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
@@ -130,6 +130,7 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   ScopedTempDir appcache_dir_;
   SimpleAppCacheSystem appcache_system_;
   SimpleDatabaseSystem database_system_;
+  SimpleDomStorageSystem dom_storage_system_;
   SimpleWebCookieJarImpl cookie_jar_;
   scoped_refptr<TestShellWebBlobRegistryImpl> blob_registry_;
   SimpleFileSystem file_system_;

@@ -22,13 +22,14 @@
 #include "SkTLazy.h"
 #include "SkTrace.h"
 
-// Using MSAA seems to be slower for some yet unknown reason.
-#define PREFER_MSAA_OFFSCREEN_AA 0
-#define OFFSCREEN_SSAA_SCALE 4 // super sample at 4x4
-
 #define DEFER_TEXT_RENDERING 1
 
+#define DEFER_PATHS 1
+
 #define BATCH_RECT_TO_RECT (1 && !GR_STATIC_RECT_VB)
+
+#define MAX_BLUR_SIGMA 4.0f
+
 
 // When we're using coverage AA but the blend is incompatible (given gpu
 // limitations) should we disable AA or draw wrong?
@@ -37,13 +38,12 @@
 static const size_t MAX_TEXTURE_CACHE_COUNT = 256;
 static const size_t MAX_TEXTURE_CACHE_BYTES = 16 * 1024 * 1024;
 
-static const size_t DRAW_BUFFER_VBPOOL_BUFFER_SIZE = 1 << 18;
+static const size_t DRAW_BUFFER_VBPOOL_BUFFER_SIZE = 1 << 15;
 static const int DRAW_BUFFER_VBPOOL_PREALLOC_BUFFERS = 4;
 
-// We are currently only batching Text and drawRectToRect, both
-// of which use the quad index buffer.
-static const size_t DRAW_BUFFER_IBPOOL_BUFFER_SIZE = 0;
-static const int DRAW_BUFFER_IBPOOL_PREALLOC_BUFFERS = 0;
+// path rendering is the only thing we defer today that uses non-static indices
+static const size_t DRAW_BUFFER_IBPOOL_BUFFER_SIZE = DEFER_PATHS ? 1 << 11 : 0;
+static const int DRAW_BUFFER_IBPOOL_PREALLOC_BUFFERS = DEFER_PATHS ? 4 : 0;
 
 #define ASSERT_OWNED_RESOURCE(R) GrAssert(!(R) || (R)->getContext() == this)
 
@@ -220,6 +220,88 @@ void gen_stencil_key_values(const GrStencilBuffer* sb,
                             uint32_t v[4]) {
     gen_stencil_key_values(sb->width(), sb->height(),
                            sb->numSamples(), v);
+}
+
+void build_kernel(float sigma, float* kernel, int kernelWidth) {
+    int halfWidth = (kernelWidth - 1) / 2;
+    float sum = 0.0f;
+    float denom = 1.0f / (2.0f * sigma * sigma);
+    for (int i = 0; i < kernelWidth; ++i) {
+        float x = static_cast<float>(i - halfWidth);
+        // Note that the constant term (1/(sqrt(2*pi*sigma^2)) of the Gaussian
+        // is dropped here, since we renormalize the kernel below.
+        kernel[i] = sk_float_exp(- x * x * denom);
+        sum += kernel[i];
+    }
+    // Normalize the kernel
+    float scale = 1.0f / sum;
+    for (int i = 0; i < kernelWidth; ++i)
+        kernel[i] *= scale;
+}
+
+void scale_rect(SkRect* rect, float xScale, float yScale) {
+    rect->fLeft *= xScale;
+    rect->fTop *= yScale;
+    rect->fRight *= xScale;
+    rect->fBottom *= yScale;
+}
+
+float adjust_sigma(float sigma, int *scaleFactor, int *halfWidth,
+                          int *kernelWidth) {
+    *scaleFactor = 1;
+    while (sigma > MAX_BLUR_SIGMA) {
+        *scaleFactor *= 2;
+        sigma *= 0.5f;
+    }
+    *halfWidth = static_cast<int>(ceilf(sigma * 3.0f));
+    *kernelWidth = *halfWidth * 2 + 1;
+    return sigma;
+}
+
+void apply_morphology(GrGpu* gpu,
+                      GrTexture* texture,
+                      const SkRect& rect,
+                      int radius,
+                      GrSamplerState::Filter filter,
+                      GrSamplerState::FilterDirection direction) {
+    GrAssert(filter == GrSamplerState::kErode_Filter ||
+             filter == GrSamplerState::kDilate_Filter);
+
+    GrDrawTarget::AutoStateRestore asr(gpu);
+    GrDrawState* drawState = gpu->drawState();
+    GrRenderTarget* target = drawState->getRenderTarget();
+    drawState->reset();
+    drawState->setRenderTarget(target);
+    GrMatrix sampleM;
+    sampleM.setIDiv(texture->width(), texture->height());
+    drawState->sampler(0)->reset(GrSamplerState::kClamp_WrapMode, filter,
+                                 sampleM);
+    drawState->sampler(0)->setMorphologyRadius(radius);
+    drawState->sampler(0)->setFilterDirection(direction);
+    drawState->setTexture(0, texture);
+    gpu->drawSimpleRect(rect, NULL, 1 << 0);
+}
+
+void convolve(GrGpu* gpu,
+              GrTexture* texture,
+              const SkRect& rect,
+              const float* kernel,
+              int kernelWidth,
+              GrSamplerState::FilterDirection direction) {
+    GrDrawTarget::AutoStateRestore asr(gpu);
+    GrDrawState* drawState = gpu->drawState();
+    GrRenderTarget* target = drawState->getRenderTarget();
+    drawState->reset();
+    drawState->setRenderTarget(target);
+    GrMatrix sampleM;
+    sampleM.setIDiv(texture->width(), texture->height());
+    drawState->sampler(0)->reset(GrSamplerState::kClamp_WrapMode,
+                                 GrSamplerState::kConvolution_Filter,
+                                 sampleM);
+    drawState->sampler(0)->setConvolutionParams(kernelWidth, kernel);
+    drawState->sampler(0)->setFilterDirection(direction);
+    drawState->setTexture(0, texture);
+    gpu->drawSimpleRect(rect, NULL, 1 << 0);
 }
 
 }
@@ -641,246 +723,6 @@ namespace {
 inline bool disable_coverage_aa_for_blend(GrDrawTarget* target) {
     return DISABLE_COVERAGE_AA_FOR_BLEND && !target->canApplyCoverage();
 }
-}
-
-struct GrContext::OffscreenRecord {
-    enum Downsample {
-        k4x4SinglePass_Downsample,
-        kFSAA_Downsample
-    }                              fDownsample;
-    int                            fTileSizeX;
-    int                            fTileSizeY;
-    int                            fTileCountX;
-    int                            fTileCountY;
-    int                            fScale;
-    GrAutoScratchTexture           fOffscreen;
-    GrDrawTarget::SavedDrawState   fSavedState;
-    GrClip                         fClip;
-};
-
-bool GrContext::doOffscreenAA(GrDrawTarget* target,
-                              bool isHairLines) const {
-#if !GR_USE_OFFSCREEN_AA
-    return false;
-#else
-    // Line primitves are always rasterized as 1 pixel wide.
-    // Super-sampling would make them too thin but MSAA would be OK.
-    if (isHairLines &&
-        (!PREFER_MSAA_OFFSCREEN_AA || !fGpu->getCaps().fFSAASupport)) {
-        return false;
-    }
-    if (target->getDrawState().getRenderTarget()->isMultisampled()) {
-        return false;
-    }
-    if (disable_coverage_aa_for_blend(target)) {
-#if GR_DEBUG
-        //GrPrintf("Turning off AA to correctly apply blend.\n");
-#endif
-        return false;
-    }
-    return true;
-#endif
-}
-
-bool GrContext::prepareForOffscreenAA(GrDrawTarget* target,
-                                      bool requireStencil,
-                                      const GrIRect& boundRect,
-                                      GrPathRenderer* pr,
-                                      OffscreenRecord* record) {
-
-    GrAssert(GR_USE_OFFSCREEN_AA);
-
-    GrAssert(NULL == record->fOffscreen.texture());
-    GrAssert(!boundRect.isEmpty());
-
-    int boundW = boundRect.width();
-    int boundH = boundRect.height();
-
-    GrTextureDesc desc;
-
-    desc.fWidth  = GrMin(fMaxOffscreenAASize, boundW);
-    desc.fHeight = GrMin(fMaxOffscreenAASize, boundH);
-
-    if (requireStencil) {
-        desc.fFlags = kRenderTarget_GrTextureFlagBit;
-    } else {
-        desc.fFlags = kRenderTarget_GrTextureFlagBit | 
-                      kNoStencil_GrTextureFlagBit;
-    }
-
-    desc.fConfig = kRGBA_8888_PM_GrPixelConfig;
-
-    if (PREFER_MSAA_OFFSCREEN_AA && fGpu->getCaps().fFSAASupport) {
-        record->fDownsample = OffscreenRecord::kFSAA_Downsample;
-        record->fScale = 1;
-        // 16 samples matches what the skia sw rasterizer uses. (There is no
-        // accessible constant to reference from sw code).
-        desc.fSampleCnt = 16;
-    } else {
-        record->fDownsample = OffscreenRecord::k4x4SinglePass_Downsample;
-        record->fScale = OFFSCREEN_SSAA_SCALE;
-        // both downsample paths assume this
-        GR_STATIC_ASSERT(4 == OFFSCREEN_SSAA_SCALE);
-        desc.fSampleCnt = 0;
-    }
-    
-    desc.fWidth *= record->fScale;
-    desc.fHeight *= record->fScale;
-    record->fOffscreen.set(this, desc);
-    if (NULL == record->fOffscreen.texture()) {
-        return false;
-    }
-    // the approximate lookup might have given us some slop space, might as well
-    // use it when computing the tiles size.
-    // these are scale values, will adjust after considering
-    // the possible second offscreen.
-    record->fTileSizeX = record->fOffscreen.texture()->width();
-    record->fTileSizeY = record->fOffscreen.texture()->height();
-
-    record->fTileSizeX /= record->fScale;
-    record->fTileSizeY /= record->fScale;
-
-    record->fTileCountX = GrIDivRoundUp(boundW, record->fTileSizeX);
-    record->fTileCountY = GrIDivRoundUp(boundH, record->fTileSizeY);
-
-    record->fClip = target->getClip();
-
-    target->saveCurrentDrawState(&record->fSavedState);
-    return true;
-}
-
-void GrContext::setupOffscreenAAPass1(GrDrawTarget* target,
-                                      const GrIRect& boundRect,
-                                      int tileX, int tileY,
-                                      OffscreenRecord* record) {
-
-    GrRenderTarget* offRT = record->fOffscreen.texture()->asRenderTarget();
-    GrAssert(NULL != offRT);
-
-    GrDrawState* drawState = target->drawState();
-    GrMatrix vm = drawState->getViewMatrix();
-    drawState->reset();
-    *drawState->viewMatrix() = vm;
-    drawState->setRenderTarget(offRT);
-
-#if PREFER_MSAA_OFFSCREEN_AA
-    drawState->enableState(GrDrawState::kHWAntialias_StateBit);
-#endif
-
-    GrMatrix transM;
-    int left = boundRect.fLeft + tileX * record->fTileSizeX;
-    int top =  boundRect.fTop  + tileY * record->fTileSizeY;
-    transM.setTranslate(-left * GR_Scalar1, -top * GR_Scalar1);
-    drawState->viewMatrix()->postConcat(transM);
-    GrMatrix scaleM;
-    scaleM.setScale(record->fScale * GR_Scalar1, record->fScale * GR_Scalar1);
-    drawState->viewMatrix()->postConcat(scaleM);
-
-    int w = (tileX == record->fTileCountX-1) ? boundRect.fRight - left :
-                                               record->fTileSizeX;
-    int h = (tileY == record->fTileCountY-1) ? boundRect.fBottom - top :
-                                               record->fTileSizeY;
-    GrIRect clear = SkIRect::MakeWH(record->fScale * w, 
-                                    record->fScale * h);
-    target->setClip(GrClip(clear));
-    drawState->enableState(GrDrawState::kClip_StateBit);
-
-#if 0
-    // visualize tile boundaries by setting edges of offscreen to white
-    // and interior to tranparent. black.
-    target->clear(&clear, 0xffffffff);
-
-    static const int gOffset = 2;
-    GrIRect clear2 = SkIRect::MakeLTRB(gOffset, gOffset,
-                                       record->fScale * w - gOffset,
-                                       record->fScale * h - gOffset);
-    target->clear(&clear2, 0x0);
-#else
-    target->clear(&clear, 0x0);
-#endif
-}
-
-void GrContext::doOffscreenAAPass2(GrDrawTarget* target,
-                                 const GrPaint& paint,
-                                 const GrIRect& boundRect,
-                                 int tileX, int tileY,
-                                 OffscreenRecord* record) {
-    SK_TRACE_EVENT0("GrContext::doOffscreenAAPass2");
-    GrAssert(NULL != record->fOffscreen.texture());
-    GrDrawTarget::AutoGeometryPush agp(target);
-    GrIRect tileRect;
-    tileRect.fLeft = boundRect.fLeft + tileX * record->fTileSizeX;
-    tileRect.fTop  = boundRect.fTop  + tileY * record->fTileSizeY,
-    tileRect.fRight = (tileX == record->fTileCountX-1) ? 
-                        boundRect.fRight :
-                        tileRect.fLeft + record->fTileSizeX;
-    tileRect.fBottom = (tileY == record->fTileCountY-1) ? 
-                        boundRect.fBottom :
-                        tileRect.fTop + record->fTileSizeY;
-
-    GrSamplerState::Filter filter;
-    if (OffscreenRecord::k4x4SinglePass_Downsample == record->fDownsample) {
-        filter = GrSamplerState::k4x4Downsample_Filter;
-    } else {
-        filter = GrSamplerState::kBilinear_Filter;
-    }
-
-    GrTexture* src = record->fOffscreen.texture();
-    int scale;
-
-    enum {
-        kOffscreenStage = GrPaint::kTotalStages,
-    };
-
-    GrDrawState* drawState = target->drawState();
-
-    if (OffscreenRecord::kFSAA_Downsample == record->fDownsample) {
-        scale = 1;
-        GrIRect rect = SkIRect::MakeWH(tileRect.width(), tileRect.height());
-        src->asRenderTarget()->overrideResolveRect(rect);
-    } else {
-        GrAssert(OffscreenRecord::k4x4SinglePass_Downsample == 
-                 record->fDownsample);
-        scale = 4;
-    }
-
-    // setup for draw back to main RT, we use the original
-    // draw state setup by the caller plus an additional coverage
-    // stage to handle the AA resolve. Also, we use an identity
-    // view matrix and so pre-concat sampler matrices with view inv.
-    int stageMask = paint.getActiveStageMask();
-
-    target->restoreDrawState(record->fSavedState);
-    target->setClip(record->fClip);
-
-    if (stageMask) {
-        GrMatrix invVM;
-        if (drawState->getViewInverse(&invVM)) {
-            drawState->preConcatSamplerMatrices(stageMask, invVM);
-        }
-    }
-    // This is important when tiling, otherwise second tile's 
-    // pass 1 view matrix will be incorrect.
-    GrDrawState::AutoViewMatrixRestore avmr(drawState, GrMatrix::I());
-
-    drawState->setTexture(kOffscreenStage, src);
-    GrSamplerState* sampler = drawState->sampler(kOffscreenStage);
-    sampler->reset(GrSamplerState::kClamp_WrapMode, filter);
-    sampler->matrix()->setScale(scale * GR_Scalar1 / src->width(),
-                                scale * GR_Scalar1 / src->height());
-    sampler->matrix()->preTranslate(SkIntToScalar(-tileRect.fLeft),
-                                    SkIntToScalar(-tileRect.fTop));
-
-    GrRect dstRect;
-    int stages = (1 << kOffscreenStage) | stageMask;
-    dstRect.set(tileRect);
-    target->drawSimpleRect(dstRect, NULL, stages);
-}
-
-void GrContext::cleanupOffscreenAA(GrDrawTarget* target,
-                                   GrPathRenderer* pr,
-                                   OffscreenRecord* record) {
-    target->restoreDrawState(record->fSavedState);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1607,7 +1449,14 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
        return;
     }
 
-    GrDrawTarget* target = this->prepareToDraw(paint, kUnbuffered_DrawCategory);
+    // Note that below we may sw-rasterize the path into a scratch texture.
+    // Scratch textures can be recycled after they are returned to the texture
+    // cache. This presents a potential hazard for buffered drawing. However,
+    // the writePixels that uploads to the scratch will perform a flush so we're
+    // OK.
+    DrawCategory category = (DEFER_PATHS) ? kBuffered_DrawCategory :
+                                            kUnbuffered_DrawCategory;
+    GrDrawTarget* target = this->prepareToDraw(paint, category);
     GrDrawState::StageMask stageMask = paint.getActiveStageMask();
 
     bool prAA = paint.fAntiAlias && !this->getRenderTarget()->isMultisampled();
@@ -1623,21 +1472,15 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
         prAA = false;
     }
 
-    bool doOSAA = false;
     GrPathRenderer* pr = NULL;
     if (prAA) {
-        pr = this->getPathRenderer(path, fill, true);
+        pr = this->getPathRenderer(path, fill, target, true);
         if (NULL == pr) {
             GrAutoScratchTexture ast;
             GrIRect pathBounds, clipBounds;
             if (!get_path_and_clip_bounds(target, path, translate,
                                           &pathBounds, &clipBounds)) {
                 return;
-            }
-            prAA = false;
-            if (this->doOffscreenAA(target, kHairLine_PathFill == fill)) {
-                pr = this->getPathRenderer(path, fill, false);
-                doOSAA = true;
             }
             if (NULL == pr && sw_draw_path_to_mask_texture(path, pathBounds,
                                                            fill, this,
@@ -1672,7 +1515,7 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
             }
         }
     } else {
-        pr = this->getPathRenderer(path, fill, false);
+        pr = this->getPathRenderer(path, fill, target, false);
     }
 
     if (NULL == pr) {
@@ -1682,36 +1525,7 @@ void GrContext::drawPath(const GrPaint& paint, const GrPath& path,
         return;
     }
 
-    GrPathRenderer::AutoClearPath arp(pr, target, &path, fill, prAA, translate);
-
-    if (doOSAA) {
-        bool needsStencil = pr->requiresStencilPass(target, path, fill);
-        GrIRect pathBounds;
-        GrIRect clipBounds;
-        if (!get_path_and_clip_bounds(target, path, translate,
-                                      &pathBounds, &clipBounds)) {
-            return;
-        }
-        OffscreenRecord record;
-        if (this->prepareForOffscreenAA(target, needsStencil, pathBounds,
-                                        pr, &record)) {
-            for (int tx = 0; tx < record.fTileCountX; ++tx) {
-                for (int ty = 0; ty < record.fTileCountY; ++ty) {
-                    this->setupOffscreenAAPass1(target, pathBounds,
-                                                tx, ty, &record);
-                    pr->drawPath(0);
-                    this->doOffscreenAAPass2(target, paint, pathBounds,
-                                             tx, ty, &record);
-                }
-            }
-            this->cleanupOffscreenAA(target, pr, &record);
-            if (GrIsFillInverted(fill)) {
-                draw_around_inv_path(target, stageMask, clipBounds, pathBounds);
-            }
-            return;
-        }
-    } 
-    pr->drawPath(stageMask);
+    pr->drawPath(path, fill, translate, target, stageMask, prAA);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1736,8 +1550,7 @@ void GrContext::flushText() {
 void GrContext::flushDrawBuffer() {
 #if BATCH_RECT_TO_RECT || DEFER_TEXT_RENDERING
     if (fDrawBuffer) {
-        fDrawBuffer->playback(fGpu);
-        fDrawBuffer->reset();
+        fDrawBuffer->flushTo(fGpu);
     }
 #endif
 }
@@ -1787,6 +1600,35 @@ bool GrContext::internalReadTexturePixels(GrTexture* texture,
     }
 }
 
+#include "SkConfig8888.h"
+
+namespace {
+/**
+ * Converts a GrPixelConfig to a SkCanvas::Config8888. Only byte-per-channel
+ * formats are representable as Config8888 and so the function returns false
+ * if the GrPixelConfig has no equivalent Config8888.
+ */
+bool grconfig_to_config8888(GrPixelConfig config,
+                            SkCanvas::Config8888* config8888) {
+    switch (config) {
+        case kRGBA_8888_PM_GrPixelConfig:
+            *config8888 = SkCanvas::kRGBA_Premul_Config8888;
+            return true;
+        case kRGBA_8888_UPM_GrPixelConfig:
+            *config8888 = SkCanvas::kRGBA_Unpremul_Config8888;
+            return true;
+        case kBGRA_8888_PM_GrPixelConfig:
+            *config8888 = SkCanvas::kBGRA_Premul_Config8888;
+            return true;
+        case kBGRA_8888_UPM_GrPixelConfig:
+            *config8888 = SkCanvas::kBGRA_Unpremul_Config8888;
+            return true;
+        default:
+            return false;
+    }
+}
+}
+
 bool GrContext::internalReadRenderTargetPixels(GrRenderTarget* target,
                                                int left, int top,
                                                int width, int height,
@@ -1803,17 +1645,32 @@ bool GrContext::internalReadRenderTargetPixels(GrRenderTarget* target,
             return false;
         }
     }
-    
-    // PM <-> UPM conversion requires a draw. Currently we only support drawing
-    // into a UPM target, not reading from a UPM texture. Thus, UPM->PM is not
-    // not supported at this time.
-    if (GrPixelConfigIsUnpremultiplied(target->config()) && 
-        !GrPixelConfigIsUnpremultiplied(config)) {
-        return false;
-    }
 
     if (!(kDontFlush_PixelOpsFlag & flags)) {
         this->flush();
+    }
+
+    if (!GrPixelConfigIsUnpremultiplied(target->config()) &&
+        GrPixelConfigIsUnpremultiplied(config) &&
+        !fGpu->canPreserveReadWriteUnpremulPixels()) {
+        SkCanvas::Config8888 srcConfig8888, dstConfig8888;
+        if (!grconfig_to_config8888(target->config(), &srcConfig8888) ||
+            !grconfig_to_config8888(config, &dstConfig8888)) {
+            return false;
+        }
+        // do read back using target's own config
+        this->internalReadRenderTargetPixels(target,
+                                             left, top,
+                                             width, height,
+                                             target->config(),
+                                             buffer, rowBytes,
+                                             kDontFlush_PixelOpsFlag);
+        // sw convert the pixels to unpremul config
+        uint32_t* pixels = reinterpret_cast<uint32_t*>(buffer);
+        SkConvertConfig8888Pixels(pixels, rowBytes, dstConfig8888,
+                                  pixels, rowBytes, srcConfig8888,
+                                  width, height);
+        return true;
     }
 
     GrTexture* src = target->asTexture();
@@ -1968,6 +1825,28 @@ void GrContext::internalWriteRenderTargetPixels(GrRenderTarget* target,
         return;
     }
 #endif
+    if (!GrPixelConfigIsUnpremultiplied(target->config()) &&
+        GrPixelConfigIsUnpremultiplied(config) &&
+        !fGpu->canPreserveReadWriteUnpremulPixels()) {
+        SkCanvas::Config8888 srcConfig8888, dstConfig8888;
+        if (!grconfig_to_config8888(config, &srcConfig8888) ||
+            !grconfig_to_config8888(target->config(), &dstConfig8888)) {
+            return;
+        }
+        // allocate a tmp buffer and sw convert the pixels to premul
+        SkAutoSTMalloc<128 * 128, uint32_t> tmpPixels(width * height);
+        const uint32_t* src = reinterpret_cast<const uint32_t*>(buffer);
+        SkConvertConfig8888Pixels(tmpPixels.get(), 4 * width, dstConfig8888,
+                                  src, rowBytes, srcConfig8888,
+                                  width, height);
+        // upload the already premul pixels
+        this->internalWriteRenderTargetPixels(target,
+                                             left, top,
+                                             width, height,
+                                             target->config(),
+                                             tmpPixels, 4 * width, flags);
+        return;
+    }
 
     bool swapRAndB = fGpu->preferredReadPixelsConfig(config) ==
                      GrPixelConfigSwapRAndB(config);
@@ -2037,6 +1916,11 @@ void GrContext::setPaint(const GrPaint& paint, GrDrawTarget* target) {
             *drawState->sampler(s) = paint.getMaskSampler(i);
         }
     }
+    
+    // disable all stages not accessible via the paint
+    for (int s = GrPaint::kTotalStages; s < GrDrawState::kNumStages; ++s) {
+        drawState->setTexture(s, NULL);
+    }
 
     drawState->setColor(paint.fColor);
 
@@ -2052,23 +1936,26 @@ void GrContext::setPaint(const GrPaint& paint, GrDrawTarget* target) {
     }
     if (paint.fColorMatrixEnabled) {
         drawState->enableState(GrDrawState::kColorMatrix_StateBit);
+        drawState->setColorMatrix(paint.fColorMatrix);
     } else {
         drawState->disableState(GrDrawState::kColorMatrix_StateBit);
     }
     drawState->setBlendFunc(paint.fSrcBlendCoeff, paint.fDstBlendCoeff);
     drawState->setColorFilter(paint.fColorFilterColor, paint.fColorFilterXfermode);
-    drawState->setColorMatrix(paint.fColorMatrix);
     drawState->setCoverage(paint.fCoverage);
 
+#if 0 // this code is broken. canApplyCoverage incorrectly looks at the
+      // the vertex layout when the vertex src hasn't been set yet
     if (paint.getActiveMaskStageMask() && !target->canApplyCoverage()) {
         GrPrintf("Partial pixel coverage will be incorrectly blended.\n");
     }
+#endif
 }
 
 GrDrawTarget* GrContext::prepareToDraw(const GrPaint& paint,
                                        DrawCategory category) {
     if (category != fLastDrawCategory) {
-        flushDrawBuffer();
+        this->flushDrawBuffer();
         fLastDrawCategory = category;
     }
     this->setPaint(paint, fGpu);
@@ -2095,21 +1982,23 @@ GrDrawTarget* GrContext::prepareToDraw(const GrPaint& paint,
 
 GrPathRenderer* GrContext::getPathRenderer(const GrPath& path,
                                            GrPathFill fill,
+                                           const GrDrawTarget* target,
                                            bool antiAlias) {
     if (NULL == fPathRendererChain) {
         fPathRendererChain = 
             new GrPathRendererChain(this, GrPathRendererChain::kNone_UsageFlag);
     }
-    return fPathRendererChain->getPathRenderer(fGpu->getCaps(), path,
-                                               fill, antiAlias);
+    return fPathRendererChain->getPathRenderer(path, fill, target, antiAlias);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 void GrContext::setRenderTarget(GrRenderTarget* target) {
     ASSERT_OWNED_RESOURCE(target);
-    this->flush(false);
-    fGpu->drawState()->setRenderTarget(target);
+    if (fGpu->drawState()->getRenderTarget() != target) {
+        this->flush(false);
+        fGpu->drawState()->setRenderTarget(target);
+    }
 }
 
 GrRenderTarget* GrContext::getRenderTarget() {
@@ -2174,12 +2063,6 @@ GrContext::GrContext(GrGpu* gpu) {
     fAAFillRectIndexBuffer = NULL;
     fAAStrokeRectIndexBuffer = NULL;
     
-    int gpuMaxOffscreen = gpu->getCaps().fMaxRenderTargetSize;
-    if (!PREFER_MSAA_OFFSCREEN_AA || !gpu->getCaps().fFSAASupport) {
-        gpuMaxOffscreen /= OFFSCREEN_SSAA_SCALE;
-    }
-    fMaxOffscreenAASize = GrMin(GR_MAX_OFFSCREEN_AA_SIZE, gpuMaxOffscreen);
-
     this->setupDrawBuffer();
 }
 
@@ -2207,6 +2090,7 @@ void GrContext::setupDrawBuffer() {
 #if BATCH_RECT_TO_RECT
     fDrawBuffer->setQuadIndexBuffer(this->getQuadIndexBuffer());
 #endif
+    fDrawBuffer->setAutoFlushTarget(fGpu);
 }
 
 GrDrawTarget* GrContext::getTextTarget(const GrPaint& paint) {
@@ -2224,49 +2108,153 @@ const GrIndexBuffer* GrContext::getQuadIndexBuffer() const {
     return fGpu->getQuadIndexBuffer();
 }
 
-void GrContext::convolveInX(GrTexture* texture,
-                            const SkRect& rect,
-                            const float* kernel,
-                            int kernelWidth) {
-    ASSERT_OWNED_RESOURCE(texture);
+GrTexture* GrContext::gaussianBlur(GrTexture* srcTexture,
+                                   GrAutoScratchTexture* temp1,
+                                   GrAutoScratchTexture* temp2,
+                                   const SkRect& rect,
+                                   float sigmaX, float sigmaY) {
+    ASSERT_OWNED_RESOURCE(srcTexture);
+    GrRenderTarget* oldRenderTarget = this->getRenderTarget();
+    GrClip oldClip = this->getClip();
+    GrTexture* origTexture = srcTexture;
+    GrAutoMatrix avm(this, GrMatrix::I());
+    SkIRect clearRect;
+    int scaleFactorX, halfWidthX, kernelWidthX;
+    int scaleFactorY, halfWidthY, kernelWidthY;
+    sigmaX = adjust_sigma(sigmaX, &scaleFactorX, &halfWidthX, &kernelWidthX);
+    sigmaY = adjust_sigma(sigmaY, &scaleFactorY, &halfWidthY, &kernelWidthY);
 
-    float imageIncrement[2] = {1.0f / texture->width(), 0.0f};
-    convolve(texture, rect, imageIncrement, kernel, kernelWidth);
+    SkRect srcRect(rect);
+    scale_rect(&srcRect, 1.0f / scaleFactorX, 1.0f / scaleFactorY);
+    srcRect.roundOut();
+    scale_rect(&srcRect, scaleFactorX, scaleFactorY);
+    this->setClip(srcRect);
+
+    const GrTextureDesc desc = {
+        kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit,
+        SkScalarFloorToInt(srcRect.width()),
+        SkScalarFloorToInt(srcRect.height()),
+        kRGBA_8888_GrPixelConfig,
+        {0} // samples 
+    };
+
+    temp1->set(this, desc);
+    if (temp2) temp2->set(this, desc);
+
+    GrTexture* dstTexture = temp1->texture();
+    GrPaint paint;
+    paint.reset();
+    paint.textureSampler(0)->setFilter(GrSamplerState::kBilinear_Filter);
+
+    for (int i = 1; i < scaleFactorX || i < scaleFactorY; i *= 2) {
+        paint.textureSampler(0)->matrix()->setIDiv(srcTexture->width(),
+                                                   srcTexture->height());
+        this->setRenderTarget(dstTexture->asRenderTarget());
+        SkRect dstRect(srcRect);
+        scale_rect(&dstRect, i < scaleFactorX ? 0.5f : 1.0f,
+                            i < scaleFactorY ? 0.5f : 1.0f);
+        paint.setTexture(0, srcTexture);
+        this->drawRectToRect(paint, dstRect, srcRect);
+        srcRect = dstRect;
+        SkTSwap(srcTexture, dstTexture);
+        // If temp2 is non-NULL, don't render back to origTexture
+        if (temp2 && dstTexture == origTexture) dstTexture = temp2->texture();
+    }
+
+    if (sigmaX > 0.0f) {
+        SkAutoTMalloc<float> kernelStorageX(kernelWidthX);
+        float* kernelX = kernelStorageX.get();
+        build_kernel(sigmaX, kernelX, kernelWidthX);
+
+        if (scaleFactorX > 1) {
+            // Clear out a halfWidth to the right of the srcRect to prevent the
+            // X convolution from reading garbage.
+            clearRect = SkIRect::MakeXYWH(
+                srcRect.fRight, srcRect.fTop, halfWidthX, srcRect.height());
+            this->clear(&clearRect, 0x0);
+        }
+
+        this->setRenderTarget(dstTexture->asRenderTarget());
+        convolve(fGpu, srcTexture, srcRect, kernelX, kernelWidthX,
+                 GrSamplerState::kX_FilterDirection);
+        SkTSwap(srcTexture, dstTexture);
+        if (temp2 && dstTexture == origTexture) dstTexture = temp2->texture();
+    }
+
+    if (sigmaY > 0.0f) {
+        SkAutoTMalloc<float> kernelStorageY(kernelWidthY);
+        float* kernelY = kernelStorageY.get();
+        build_kernel(sigmaY, kernelY, kernelWidthY);
+
+        if (scaleFactorY > 1 || sigmaX > 0.0f) {
+            // Clear out a halfWidth below the srcRect to prevent the Y
+            // convolution from reading garbage.
+            clearRect = SkIRect::MakeXYWH(
+                srcRect.fLeft, srcRect.fBottom, srcRect.width(), halfWidthY);
+            this->clear(&clearRect, 0x0);
+        }
+
+        this->setRenderTarget(dstTexture->asRenderTarget());
+        convolve(fGpu, srcTexture, srcRect, kernelY, kernelWidthY,
+                 GrSamplerState::kY_FilterDirection);
+        SkTSwap(srcTexture, dstTexture);
+        if (temp2 && dstTexture == origTexture) dstTexture = temp2->texture();
+    }
+
+    if (scaleFactorX > 1 || scaleFactorY > 1) {
+        // Clear one pixel to the right and below, to accommodate bilinear
+        // upsampling.
+        clearRect = SkIRect::MakeXYWH(
+            srcRect.fLeft, srcRect.fBottom, srcRect.width() + 1, 1);
+        this->clear(&clearRect, 0x0);
+        clearRect = SkIRect::MakeXYWH(
+            srcRect.fRight, srcRect.fTop, 1, srcRect.height());
+        this->clear(&clearRect, 0x0);
+        // FIXME:  This should be mitchell, not bilinear.
+        paint.textureSampler(0)->setFilter(GrSamplerState::kBilinear_Filter);
+        paint.textureSampler(0)->matrix()->setIDiv(srcTexture->width(),
+                                                   srcTexture->height());
+        this->setRenderTarget(dstTexture->asRenderTarget());
+        paint.setTexture(0, srcTexture);
+        SkRect dstRect(srcRect);
+        scale_rect(&dstRect, scaleFactorX, scaleFactorY);
+        this->drawRectToRect(paint, dstRect, srcRect);
+        srcRect = dstRect;
+        SkTSwap(srcTexture, dstTexture);
+    }
+    this->setRenderTarget(oldRenderTarget);
+    this->setClip(oldClip);
+    return srcTexture;
 }
 
-void GrContext::convolveInY(GrTexture* texture,
-                            const SkRect& rect,
-                            const float* kernel,
-                            int kernelWidth) {
-    ASSERT_OWNED_RESOURCE(texture);
-
-    float imageIncrement[2] = {0.0f, 1.0f / texture->height()};
-    convolve(texture, rect, imageIncrement, kernel, kernelWidth);
-}
-
-void GrContext::convolve(GrTexture* texture,
-                         const SkRect& rect,
-                         float imageIncrement[2],
-                         const float* kernel,
-                         int kernelWidth) {
-    ASSERT_OWNED_RESOURCE(texture);
-
-    GrDrawTarget::AutoStateRestore asr(fGpu);
-    GrDrawState* drawState = fGpu->drawState();
-    GrRenderTarget* target = drawState->getRenderTarget();
-    drawState->reset();
-    drawState->setRenderTarget(target);
-    GrMatrix sampleM;
-    sampleM.setIDiv(texture->width(), texture->height());
-    drawState->sampler(0)->reset(GrSamplerState::kClamp_WrapMode,
-                                 GrSamplerState::kConvolution_Filter,
-                                 sampleM);
-    drawState->sampler(0)->setConvolutionParams(kernelWidth,
-                                                kernel,
-                                                imageIncrement);
-
-    drawState->setTexture(0, texture);
-    fGpu->drawSimpleRect(rect, NULL, 1 << 0);
+GrTexture* GrContext::applyMorphology(GrTexture* srcTexture,
+                                      const GrRect& rect,
+                                      GrTexture* temp1, GrTexture* temp2,
+                                      GrSamplerState::Filter filter,
+                                      SkISize radius) {
+    ASSERT_OWNED_RESOURCE(srcTexture);
+    GrRenderTarget* oldRenderTarget = this->getRenderTarget();
+    GrAutoMatrix avm(this, GrMatrix::I());
+    GrClip oldClip = this->getClip();
+    this->setClip(GrRect::MakeWH(srcTexture->width(), srcTexture->height()));
+    if (radius.fWidth > 0) {
+        this->setRenderTarget(temp1->asRenderTarget());
+        apply_morphology(fGpu, srcTexture, rect, radius.fWidth, filter,
+                         GrSamplerState::kX_FilterDirection);
+        SkIRect clearRect = SkIRect::MakeXYWH(rect.fLeft, rect.fBottom,
+                                              rect.width(), radius.fHeight);
+        this->clear(&clearRect, 0x0);
+        srcTexture = temp1;
+    }
+    if (radius.fHeight > 0) {
+        this->setRenderTarget(temp2->asRenderTarget());
+        apply_morphology(fGpu, srcTexture, rect, radius.fHeight, filter,
+                         GrSamplerState::kY_FilterDirection);
+        srcTexture = temp2;
+    }
+    this->setRenderTarget(oldRenderTarget);
+    this->setClip(oldClip);
+    return srcTexture;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

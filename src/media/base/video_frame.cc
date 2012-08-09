@@ -5,6 +5,8 @@
 #include "media/base/video_frame.h"
 
 #include "base/logging.h"
+#include "base/string_piece.h"
+#include "media/base/limits.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -16,8 +18,7 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
     size_t height,
     base::TimeDelta timestamp,
     base::TimeDelta duration) {
-  DCHECK(width > 0 && height > 0);
-  DCHECK(width * height < 100000000);
+  DCHECK(IsValidConfig(format, width, height));
   scoped_refptr<VideoFrame> frame(new VideoFrame(
       format, width, height, timestamp, duration));
   switch (format) {
@@ -47,8 +48,21 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(
 }
 
 // static
+bool VideoFrame::IsValidConfig(
+    VideoFrame::Format format,
+    size_t width,
+    size_t height) {
+
+  return (format != VideoFrame::INVALID &&
+          width > 0 && height > 0 &&
+          width <= limits::kMaxDimension && height <= limits::kMaxDimension &&
+          width * height <= limits::kMaxCanvas);
+}
+
+// static
 scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
     uint32 texture_id,
+    uint32 texture_target,
     size_t width,
     size_t height,
     base::TimeDelta timestamp,
@@ -57,6 +71,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
   scoped_refptr<VideoFrame> frame(
       new VideoFrame(NATIVE_TEXTURE, width, height, timestamp, duration));
   frame->texture_id_ = texture_id;
+  frame->texture_target_ = texture_target;
   frame->texture_no_longer_needed_ = no_longer_needed;
   return frame;
 }
@@ -138,9 +153,10 @@ VideoFrame::VideoFrame(VideoFrame::Format format,
     : format_(format),
       width_(width),
       height_(height),
-      texture_id_(0) {
-  SetTimestamp(timestamp);
-  SetDuration(duration);
+      texture_id_(0),
+      texture_target_(0),
+      timestamp_(timestamp),
+      duration_(duration) {
   memset(&strides_, 0, sizeof(strides_));
   memset(&data_, 0, sizeof(data_));
 }
@@ -191,13 +207,21 @@ int VideoFrame::stride(size_t plane) const {
 int VideoFrame::row_bytes(size_t plane) const {
   DCHECK(IsValidPlane(plane));
   switch (format_) {
+    // 16bpp.
     case RGB555:
     case RGB565:
+      return width_ * 2;
+
+    // 24bpp.
     case RGB24:
+      return width_ * 3;
+
+    // 32bpp.
     case RGB32:
     case RGBA:
-      return width_;
+      return width_ * 4;
 
+    // Planar, 8bpp.
     case YV12:
     case YV16:
       if (plane == kYPlane)
@@ -248,8 +272,25 @@ uint32 VideoFrame::texture_id() const {
   return texture_id_;
 }
 
+uint32 VideoFrame::texture_target() const {
+  DCHECK_EQ(format_, NATIVE_TEXTURE);
+  return texture_target_;
+}
+
 bool VideoFrame::IsEndOfStream() const {
   return format_ == VideoFrame::EMPTY;
+}
+
+void VideoFrame::HashFrameForTesting(base::MD5Context* context) {
+  for(int plane = 0; plane < kMaxPlanes; plane++) {
+    if (!IsValidPlane(plane))
+      break;
+    for(int row = 0; row < rows(plane); row++) {
+      base::MD5Update(context, base::StringPiece(
+          reinterpret_cast<char*>(data(plane) + stride(plane) * row),
+          row_bytes(plane)));
+    }
+  }
 }
 
 }  // namespace media

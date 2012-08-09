@@ -32,7 +32,6 @@
 #include "V8DOMWindowShell.h"
 
 #include "PlatformSupport.h"
-#include "CSSMutableStyleDeclaration.h"
 #include "DateExtension.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
@@ -45,6 +44,7 @@
 #include "ScriptProfiler.h"
 #include "SecurityOrigin.h"
 #include "StorageNamespace.h"
+#include "StylePropertySet.h"
 #include "V8Binding.h"
 #include "V8BindingState.h"
 #include "V8Collection.h"
@@ -180,7 +180,8 @@ void V8DOMWindowShell::disposeContextHandles()
         // It's likely that disposing the context has created a lot of
         // garbage. Notify V8 about this so it'll have a chance of cleaning
         // it up when idle.
-        V8GCForContextDispose::instance().notifyContextDisposed();
+        bool isMainFrame = m_frame->page() && (m_frame->page()->mainFrame() == m_frame); 
+        V8GCForContextDispose::instance().notifyContextDisposed(isMainFrame);
     }
 
     WrapperBoilerplateMap::iterator it = m_wrapperBoilerplates.begin();
@@ -339,7 +340,7 @@ bool V8DOMWindowShell::initContextIfNeeded()
 
     setSecurityToken();
 
-    m_frame->loader()->client()->didCreateScriptContext(m_context, 0);
+    m_frame->loader()->client()->didCreateScriptContext(m_context, 0, 0);
 
     // FIXME: This is wrong. We should actually do this for the proper world once
     // we do isolated worlds the WebCore way.

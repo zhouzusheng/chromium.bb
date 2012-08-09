@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "sql/statement.h"
 
 #include "base/logging.h"
+#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -160,6 +161,22 @@ ColType Statement::ColumnType(int col) const {
   return static_cast<ColType>(sqlite3_column_type(ref_->stmt(), col));
 }
 
+ColType Statement::DeclaredColumnType(int col) const {
+  std::string column_type(sqlite3_column_decltype(ref_->stmt(), col));
+  StringToLowerASCII(&column_type);
+
+  if (column_type == "integer")
+    return COLUMN_TYPE_INTEGER;
+  else if (column_type == "float")
+    return COLUMN_TYPE_FLOAT;
+  else if (column_type == "text")
+    return COLUMN_TYPE_TEXT;
+  else if (column_type == "blob")
+    return COLUMN_TYPE_BLOB;
+
+  return COLUMN_TYPE_NULL;
+}
+
 bool Statement::ColumnBool(int col) const {
   return !!ColumnInt(col);
 }
@@ -232,6 +249,19 @@ bool Statement::ColumnBlobAsString(int col, std::string* blob) {
     return false;
   }
   blob->assign(reinterpret_cast<const char*>(p), len);
+  return true;
+}
+
+bool Statement::ColumnBlobAsString16(int col, string16* val) const {
+  if (!CheckValid())
+    return false;
+
+  const void* data = ColumnBlob(col);
+  size_t len = ColumnByteLength(col) / sizeof(char16);
+  val->resize(len);
+  if (val->size() != len)
+    return false;
+  val->assign(reinterpret_cast<const char16*>(data), len);
   return true;
 }
 

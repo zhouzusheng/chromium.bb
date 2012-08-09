@@ -43,20 +43,21 @@ public:
     static PassOwnPtr<CCDamageTracker> create();
     ~CCDamageTracker();
 
-    void updateDamageRectForNextFrame(const Vector<RefPtr<CCLayerImpl> >& layerList, int targetSurfaceLayerID, CCLayerImpl* targetSurfaceMaskLayer);
+    void forceFullDamageNextUpdate() { m_forceFullDamageNextUpdate = true; }
+    void updateDamageTrackingState(const Vector<CCLayerImpl*>& layerList, int targetSurfaceLayerID, bool targetSurfacePropertyChangedOnlyFromDescendant, const IntRect& targetSurfaceContentRect, CCLayerImpl* targetSurfaceMaskLayer);
     const FloatRect& currentDamageRect() { return m_currentDamageRect; }
 
 private:
     CCDamageTracker();
 
-    FloatRect computeDamageFromActiveLayers(const Vector<RefPtr<CCLayerImpl> >& layerList, int targetSurfaceLayerID);
-    FloatRect computeDamageFromSurfaceMask(CCLayerImpl* targetSurfaceMaskLayer);
-    FloatRect computeDamageFromLeftoverRects();
+    FloatRect trackDamageFromActiveLayers(const Vector<CCLayerImpl*>& layerList, int targetSurfaceLayerID);
+    FloatRect trackDamageFromSurfaceMask(CCLayerImpl* targetSurfaceMaskLayer);
+    FloatRect trackDamageFromLeftoverRects();
 
-    FloatRect removeRectFromCurrentFrame(int layerID);
+    FloatRect removeRectFromCurrentFrame(int layerID, bool& layerIsNew);
     void saveRectForNextFrame(int layerID, const FloatRect& targetSpaceRect);
 
-    // These helper functions are used only in computeDamageFromActiveLayers().
+    // These helper functions are used only in trackDamageFromActiveLayers().
     void extendDamageForLayer(CCLayerImpl*, FloatRect& targetDamageRect);
     void extendDamageForRenderSurface(CCLayerImpl*, FloatRect& targetDamageRect);
 
@@ -68,6 +69,7 @@ private:
     OwnPtr<RectMap> m_nextRectHistory;
 
     FloatRect m_currentDamageRect;
+    bool m_forceFullDamageNextUpdate;
 };
 
 } // namespace WebCore

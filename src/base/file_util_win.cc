@@ -101,6 +101,8 @@ bool Delete(const FilePath& path, bool recursive) {
   // into the rest of the buffer.
   wchar_t double_terminated_path[MAX_PATH + 1] = {0};
 #pragma warning(suppress:4996)  // don't complain about wcscpy deprecation
+  if (g_bug108724_debug)
+    LOG(WARNING) << "copying ";
   wcscpy(double_terminated_path, path.value().c_str());
 
   SHFILEOPSTRUCT file_operation = {0};
@@ -109,7 +111,11 @@ bool Delete(const FilePath& path, bool recursive) {
   file_operation.fFlags = FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION;
   if (!recursive)
     file_operation.fFlags |= FOF_NORECURSION | FOF_FILESONLY;
+  if (g_bug108724_debug)
+    LOG(WARNING) << "Performing shell operation";
   int err = SHFileOperation(&file_operation);
+  if (g_bug108724_debug)
+    LOG(WARNING) << "Done: " << err;
 
   // Since we're passing flags to the operation telling it to be silent,
   // it's possible for the operation to be aborted/cancelled without err
@@ -171,23 +177,19 @@ bool Move(const FilePath& from_path, const FilePath& to_path) {
 
 bool ReplaceFile(const FilePath& from_path, const FilePath& to_path) {
   base::ThreadRestrictions::AssertIOAllowed();
-
-  // Make sure that the target file exists.
-  HANDLE target_file = ::CreateFile(
-      to_path.value().c_str(),
-      0,
-      FILE_SHARE_READ | FILE_SHARE_WRITE,
-      NULL,
-      CREATE_NEW,
-      FILE_ATTRIBUTE_NORMAL,
-      NULL);
-  if (target_file != INVALID_HANDLE_VALUE)
-    ::CloseHandle(target_file);
-  // When writing to a network share, we may not be able to change the ACLs.
-  // Ignore ACL errors then (REPLACEFILE_IGNORE_MERGE_ERRORS).
-  return ::ReplaceFile(to_path.value().c_str(),
-      from_path.value().c_str(), NULL,
-      REPLACEFILE_IGNORE_MERGE_ERRORS, NULL, NULL) ? true : false;
+  // Try a simple move first.  It will only succeed when |to_path| doesn't
+  // already exist.
+  if (::MoveFile(from_path.value().c_str(), to_path.value().c_str()))
+    return true;
+  // Try the full-blown replace if the move fails, as ReplaceFile will only
+  // succeed when |to_path| does exist. When writing to a network share, we may
+  // not be able to change the ACLs. Ignore ACL errors then
+  // (REPLACEFILE_IGNORE_MERGE_ERRORS).
+  if (::ReplaceFile(to_path.value().c_str(), from_path.value().c_str(), NULL,
+                    REPLACEFILE_IGNORE_MERGE_ERRORS, NULL, NULL)) {
+    return true;
+  }
+  return false;
 }
 
 bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
@@ -369,8 +371,7 @@ bool CreateShortcutLink(const wchar_t *source, const wchar_t *destination,
                         int icon_index, const wchar_t* app_id) {
   base::ThreadRestrictions::AssertIOAllowed();
 
-  // Length of arguments and description must be less than MAX_PATH.
-  DCHECK(lstrlen(arguments) < MAX_PATH);
+  // Length of description must be less than MAX_PATH.
   DCHECK(lstrlen(description) < MAX_PATH);
 
   base::win::ScopedComPtr<IShellLink> i_shell_link;
@@ -822,8 +823,14 @@ void FileEnumerator::GetFindInfo(FindInfo* info) {
   memcpy(info, &find_data_, sizeof(*info));
 }
 
+// static
 bool FileEnumerator::IsDirectory(const FindInfo& info) {
   return (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+// static
+bool FileEnumerator::IsLink(const FindInfo& info) {
+  return false;
 }
 
 // static
@@ -1103,72 +1110,6 @@ bool NormalizeToNativeFilePath(const FilePath& path, FilePath* nt_path) {
   }
   ::UnmapViewOfFile(file_view);
   return success;
-}
-
-bool PreReadImage(const wchar_t* file_path, size_t size_to_read,
-                  size_t step_size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  if (base::win::GetVersion() > base::win::VERSION_XP) {
-    // Vista+ branch. On these OSes, the forced reads through the DLL actually
-    // slows warm starts. The solution is to sequentially read file contents
-    // with an optional cap on total amount to read.
-    base::win::ScopedHandle file(
-        CreateFile(file_path,
-                   GENERIC_READ,
-                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                   NULL,
-                   OPEN_EXISTING,
-                   FILE_FLAG_SEQUENTIAL_SCAN,
-                   NULL));
-
-    if (!file.IsValid())
-      return false;
-
-    // Default to 1MB sequential reads.
-    const DWORD actual_step_size = std::max(static_cast<DWORD>(step_size),
-                                            static_cast<DWORD>(1024*1024));
-    LPVOID buffer = ::VirtualAlloc(NULL,
-                                   actual_step_size,
-                                   MEM_COMMIT,
-                                   PAGE_READWRITE);
-
-    if (buffer == NULL)
-      return false;
-
-    DWORD len;
-    size_t total_read = 0;
-    while (::ReadFile(file, buffer, actual_step_size, &len, NULL) &&
-           len > 0 &&
-           (size_to_read ? total_read < size_to_read : true)) {
-      total_read += static_cast<size_t>(len);
-    }
-    ::VirtualFree(buffer, 0, MEM_RELEASE);
-  } else {
-    // WinXP branch. Here, reading the DLL from disk doesn't do
-    // what we want so instead we pull the pages into memory by loading
-    // the DLL and touching pages at a stride.
-    HMODULE dll_module = ::LoadLibraryExW(
-        file_path,
-        NULL,
-        LOAD_WITH_ALTERED_SEARCH_PATH | DONT_RESOLVE_DLL_REFERENCES);
-
-    if (!dll_module)
-      return false;
-
-    base::win::PEImage pe_image(dll_module);
-    PIMAGE_NT_HEADERS nt_headers = pe_image.GetNTHeaders();
-    size_t actual_size_to_read = size_to_read ? size_to_read :
-                                 nt_headers->OptionalHeader.SizeOfImage;
-    volatile uint8* touch = reinterpret_cast<uint8*>(dll_module);
-    size_t offset = 0;
-    while (offset < actual_size_to_read) {
-      uint8 unused = *(touch + offset);
-      offset += step_size;
-    }
-    FreeLibrary(dll_module);
-  }
-
-  return true;
 }
 
 }  // namespace file_util

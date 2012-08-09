@@ -11,6 +11,7 @@
 #include "GrColor.h"
 #include "GrMatrix.h"
 #include "GrNoncopyable.h"
+#include "GrRefCnt.h"
 #include "GrSamplerState.h"
 #include "GrStencil.h"
 
@@ -19,8 +20,9 @@
 class GrRenderTarget;
 class GrTexture;
 
-struct GrDrawState {
+class GrDrawState : public GrRefCnt {
 
+public:
     /**
      * Number of texture stages. Each stage takes as input a color and
      * 2D texture coordinates. The color input to the first enabled stage is the
@@ -62,10 +64,8 @@ struct GrDrawState {
         // all GrDrawState members should default to something valid by the
         // the memset except those initialized individually below. There should
         // be no padding between the individually initialized members.
-        static const size_t kMemsetSize =
-            reinterpret_cast<intptr_t>(&fColor) -
-            reinterpret_cast<intptr_t>(this);
-        memset(this, 0, kMemsetSize);
+        memset(this->podStart(), 0, this->memsetSize());
+
         // pedantic assertion that our ptrs will
         // be NULL (0 ptr is mem addr 0)
         GrAssert((intptr_t)(void*)NULL == 0LL);
@@ -83,11 +83,10 @@ struct GrDrawState {
 
         // ensure values that will be memcmp'ed in == but not memset in reset()
         // are tightly packed
-        GrAssert(kMemsetSize +  sizeof(fColor) + sizeof(fCoverage) +
+        GrAssert(this->memsetSize() +  sizeof(fColor) + sizeof(fCoverage) +
                  sizeof(fFirstCoverageStage) + sizeof(fColorFilterMode) +
-                 sizeof(fSrcBlend) + sizeof(fDstBlend) + sizeof(GrMatrix) ==
-                 reinterpret_cast<intptr_t>(&fEdgeAANumEdges) -
-                 reinterpret_cast<intptr_t>(this));
+                 sizeof(fSrcBlend) + sizeof(fDstBlend) ==
+                 this->podSize());
 
         fEdgeAANumEdges = 0;
     }
@@ -740,12 +739,25 @@ struct GrDrawState {
     // Most stages are usually not used, so conditionals here
     // reduce the expected number of bytes touched by 50%.
     bool operator ==(const GrDrawState& s) const {
-        if (memcmp(this, &s, this->leadingBytes())) return false;
+        if (memcmp(this->podStart(), s.podStart(), this->podSize())) {
+            return false;
+        }
+
+        if (!s.fViewMatrix.cheapEqualTo(fViewMatrix)) {
+            return false;
+        }
 
         for (int i = 0; i < kNumStages; i++) {
             if (fTextures[i] &&
                 memcmp(&this->fSamplerStates[i], &s.fSamplerStates[i],
                        sizeof(GrSamplerState))) {
+                return false;
+            }
+        }
+        if (kColorMatrix_StateBit & s.fFlagBits) {
+            if (memcmp(fColorMatrix,
+                        s.fColorMatrix,
+                        sizeof(fColorMatrix))) {
                 return false;
             }
         }
@@ -757,41 +769,81 @@ struct GrDrawState {
     // Most stages are usually not used, so conditionals here 
     // reduce the expected number of bytes touched by 50%.
     GrDrawState& operator =(const GrDrawState& s) {
-        memcpy(this, &s, this->leadingBytes());
+        memcpy(this->podStart(), s.podStart(), this->podSize());
 
+        fViewMatrix = s.fViewMatrix;
+
+        GrAssert(0 == s.fEdgeAANumEdges);
+        fEdgeAANumEdges = 0;
+    
         for (int i = 0; i < kNumStages; i++) {
             if (s.fTextures[i]) {
                 memcpy(&this->fSamplerStates[i], &s.fSamplerStates[i],
                        sizeof(GrSamplerState));
             }
         }
+        if (kColorMatrix_StateBit & s.fFlagBits) {
+            memcpy(this->fColorMatrix, s.fColorMatrix, sizeof(fColorMatrix));
+        }
 
         return *this;
     }
 
 private:
+
+    const void* podStart() const {
+        return reinterpret_cast<const void*>(&fPodStartMarker);
+    }
+    void* podStart() {
+        return reinterpret_cast<void*>(&fPodStartMarker);
+    }
+    size_t memsetSize() const {
+        return reinterpret_cast<size_t>(&fMemsetEndMarker) -
+               reinterpret_cast<size_t>(&fPodStartMarker) +
+               sizeof(fMemsetEndMarker);
+    }
+    size_t podSize() const {
+        // Can't use offsetof() with non-POD types, so stuck with pointer math.
+        // TODO: ignores GrTesselatedPathRenderer data structures. We don't
+        // have a compile-time flag that lets us know if it's being used, and
+        // checking at runtime seems to cost 5% performance.
+        return reinterpret_cast<size_t>(&fPodEndMarker) -
+               reinterpret_cast<size_t>(&fPodStartMarker) +
+               sizeof(fPodEndMarker);
+    }
+
     static const StageMask kIllegalStageMaskBits = ~((1 << kNumStages)-1);
     // @{ these fields can be initialized with memset to 0
-    GrColor             fBlendConstant;
+    union {
+        GrColor             fBlendConstant;
+        GrColor             fPodStartMarker;
+    };
     GrTexture*          fTextures[kNumStages];
     GrColor             fColorFilterColor;
     uint32_t            fFlagBits;
     DrawFace            fDrawFace; 
     VertexEdgeType      fVertexEdgeType;
     GrStencilSettings   fStencilSettings;
-    float               fColorMatrix[20];       // 5 x 4 matrix
-    GrRenderTarget*     fRenderTarget;
+    union {
+        GrRenderTarget* fRenderTarget;
+        GrRenderTarget* fMemsetEndMarker;
+    };
     // @}
 
-    // @{ Initialized to values other than zero
+    // @{ Initialized to values other than zero, but memcmp'ed in operator==
+    // and memcpy'ed in operator=.
     GrColor             fColor;
     GrColor             fCoverage;
     int                 fFirstCoverageStage;
     SkXfermode::Mode    fColorFilterMode;
     GrBlendCoeff        fSrcBlend;
-    GrBlendCoeff        fDstBlend;
-    GrMatrix            fViewMatrix;
+    union {
+        GrBlendCoeff    fDstBlend;
+        GrBlendCoeff    fPodEndMarker;
+    };
     // @}
+
+    GrMatrix            fViewMatrix;
 
     // @{ Data for GrTesselatedPathRenderer
     // TODO: currently ignored in copying & comparison for performance.
@@ -803,15 +855,8 @@ private:
     // This field must be last; it will not be copied or compared
     // if the corresponding fTexture[] is NULL.
     GrSamplerState      fSamplerStates[kNumStages];
-
-    size_t leadingBytes() const {
-        // Can't use offsetof() with non-POD types, so stuck with pointer math.
-        // TODO: ignores GrTesselatedPathRenderer data structures. We don't
-        // have a compile-time flag that lets us know if it's being used, and
-        // checking at runtime seems to cost 5% performance.
-        return (size_t) ((unsigned char*)&fEdgeAANumEdges -
-                         (unsigned char*)&fBlendConstant);
-    }
+    // only compared if the color matrix enable flag is set
+    float               fColorMatrix[20];       // 5 x 4 matrix
 
 };
 

@@ -38,12 +38,12 @@
 #include "FileSystem.h"
 #include "ImageSource.h"
 #include "LinkHash.h"
-#include "PassRefPtr.h"
 #include "PasteboardPrivate.h"
 #include "PluginData.h"
 
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
+#include <wtf/PassRefPtr.h>
 #include <wtf/Vector.h>
 
 typedef struct NPObject NPObject;
@@ -71,7 +71,6 @@ class Color;
 class Cursor;
 class Document;
 class Frame;
-class FrameView;
 class GamepadList;
 class GeolocationServiceBridge;
 class GeolocationServiceChromium;
@@ -246,8 +245,8 @@ public:
     static int screenDepth(Widget*);
     static int screenDepthPerComponent(Widget*);
     static bool screenIsMonochrome(Widget*);
-    static IntRect screenRect(FrameView*);
-    static IntRect screenAvailableRect(FrameView*);
+    static IntRect screenRect(Widget*);
+    static IntRect screenAvailableRect(Widget*);
 
     // SharedTimers -------------------------------------------------------
     static void setSharedTimerFiredFunction(void (*func)());
@@ -416,9 +415,18 @@ public:
 #endif
 
     // Trace Event --------------------------------------------------------
-    static bool isTraceEventEnabled();
-    static void traceEventBegin(const char* name, void*, const char* extra);
-    static void traceEventEnd(const char* name, void*, const char* extra);
+    static const unsigned char* getTraceCategoryEnabledFlag(const char* categoryName);
+    static int addTraceEvent(char phase,
+                             const unsigned char* categoryEnabledFlag,
+                             const char* name,
+                             unsigned long long id,
+                             int numArgs,
+                             const char** argNames,
+                             const unsigned char* argTypes,
+                             const unsigned long long* argValues,
+                             int thresholdBeginId,
+                             long long threshold,
+                             unsigned char flags);
 
     // Visited links ------------------------------------------------------
     static LinkHash visitedLinkHash(const UChar* url, unsigned length);
@@ -427,6 +435,8 @@ public:
 
     static void didStartWorkerRunLoop(WorkerRunLoop*);
     static void didStopWorkerRunLoop(WorkerRunLoop*);
+
+    static bool canAccelerate2dCanvas();
 };
 
 } // namespace WebCore

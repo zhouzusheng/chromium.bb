@@ -42,7 +42,8 @@ WebInspector.Script = function(scriptId, sourceURL, startLine, startColumn, endL
     this.columnOffset = startColumn;
     this.endLine = endLine;
     this.endColumn = endColumn;
-    this.isContentScript = isContentScript;
+    // M19 band-aid that treats whitelist of short file names as content scripts. These are not valid URLs, so it is safe to assume these are likely to be content scripts.
+    this.isContentScript = isContentScript || sourceURL === "apitest" || sourceURL === "event_bindings" || sourceURL === "extension" || sourceURL === "i18n" || sourceURL === "json_schema" || sourceURL === "miscellaneous_bindings" || sourceURL === "schema_generated_bindings" || sourceURL === "sendRequest";
     this.sourceMapURL = sourceMapURL;
 }
 

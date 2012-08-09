@@ -75,6 +75,7 @@ public:
     virtual void layout() OVERRIDE;
     virtual void paint(WebCanvas*, const WebRect&) OVERRIDE;
     virtual void themeChanged() OVERRIDE;
+    virtual void setCompositorSurfaceReady() OVERRIDE;
     virtual void composite(bool finish) OVERRIDE;
     virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE;
     virtual void mouseCaptureLost() OVERRIDE;
@@ -139,10 +140,6 @@ public:
     // This is a non-owning ref. The popup will notify us via popupClosed()
     // before it is destroyed.
     WebCore::FramelessScrollView* m_widget;
-
-#if ENABLE(GESTURE_RECOGNIZER)
-    OwnPtr<WebCore::PlatformGestureRecognizer> m_gestureRecognizer;
-#endif
 };
 
 } // namespace WebKit

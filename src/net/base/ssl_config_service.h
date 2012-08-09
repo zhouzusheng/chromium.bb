@@ -36,13 +36,16 @@ struct NET_EXPORT SSLConfig {
   bool IsAllowedBadCert(const base::StringPiece& der_cert,
                         CertStatus* cert_status) const;
 
-  bool rev_checking_enabled;  // True if server certificate revocation
-                              // checking is enabled.
+  // rev_checking_enabled is true if online certificate revocation checking is
+  // enabled (i.e. OCSP and CRL fetching).
+  //
+  // Regardless of this flag, CRLSet checking is always enabled and locally
+  // cached revocation information will be considered.
+  bool rev_checking_enabled;
+
   // SSL 2.0 is not supported.
   bool ssl3_enabled;  // True if SSL 3.0 is enabled.
   bool tls1_enabled;  // True if TLS 1.0 is enabled.
-  // True if we'll do async checks for certificate provenance using DNS.
-  bool dns_cert_provenance_checking_enabled;
 
   // Presorted list of cipher suites which should be explicitly prevented from
   // being used in addition to those disabled by the net built-in policy.
@@ -67,7 +70,7 @@ struct NET_EXPORT SSLConfig {
   std::vector<uint16> disabled_cipher_suites;
 
   bool cached_info_enabled;  // True if TLS cached info extension is enabled.
-  bool origin_bound_certs_enabled;  // True if TLS origin bound cert extension
+  bool domain_bound_certs_enabled;  // True if TLS origin bound cert extension
                                     // is enabled.
   bool false_start_enabled;  // True if we'll use TLS False Start.
 
@@ -95,6 +98,13 @@ struct NET_EXPORT SSLConfig {
 
   bool ssl3_fallback;  // True if we are falling back to SSL 3.0 (one still
                        // needs to clear tls1_enabled).
+
+  // If cert_io_enabled is false, then certificate verification will not
+  // result in additional HTTP requests. (For example: to fetch missing
+  // intermediates or to perform OCSP/CRL fetches.) It also implies that online
+  // revocation checking is disabled.
+  // NOTE: currently only effective on Linux
+  bool cert_io_enabled;
 
   // The list of application level protocols supported. If set, this will
   // enable Next Protocol Negotiation (if supported). The order of the
@@ -138,10 +148,6 @@ class NET_EXPORT SSLConfigService
   // Returns true if the given hostname is known to be incompatible with TLS
   // False Start.
   static bool IsKnownFalseStartIncompatibleServer(const std::string& hostname);
-
-  // Enables DNS side checks for certificates.
-  static void EnableDNSCertProvenanceChecking();
-  static bool dns_cert_provenance_checking_enabled();
 
   // Sets and gets the current, global CRL set.
   static void SetCRLSet(scoped_refptr<CRLSet> crl_set);

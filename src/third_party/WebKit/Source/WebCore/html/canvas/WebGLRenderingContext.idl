@@ -27,10 +27,8 @@ module html {
 
     interface [
         Conditional=WEBGL,
-        InterfaceUUID=98fb48ae-7216-489c-862b-8e1217fc4443,
-        ImplementationUUID=ab4f0781-152f-450e-9546-5b3987491a54,
-        CustomMarkFunction,
-        DontCheckEnums
+        JSCustomMarkFunction,
+        DoNotCheckConstants
     ] WebGLRenderingContext : CanvasRenderingContext {
 
         /* ClearBufferMask */
@@ -208,7 +206,6 @@ module html {
         /*      TEXTURE_WRAP_S */
         /*      TEXTURE_WRAP_T */
 
-        const unsigned int NUM_COMPRESSED_TEXTURE_FORMATS = 0x86A2;
         const unsigned int COMPRESSED_TEXTURE_FORMATS     = 0x86A3;
 
         /* HintMode */
@@ -545,18 +542,18 @@ module html {
         [StrictTypeChecking, Custom] void getParameter();
         // any getProgramParameter(in WebGLProgram program, in unsigned long pname) raises(DOMException);
         [StrictTypeChecking, Custom] void getProgramParameter();
-        [StrictTypeChecking, ConvertNullStringTo=Null] DOMString getProgramInfoLog(in WebGLProgram program) raises(DOMException);
+        [StrictTypeChecking, TreatReturnedNullStringAs=Null] DOMString getProgramInfoLog(in WebGLProgram program) raises(DOMException);
         // any getRenderbufferParameter(in unsigned long target, in unsigned long pname) raises(DOMException);
         [StrictTypeChecking, Custom] void getRenderbufferParameter();
         // any getShaderParameter(in WebGLShader shader, in unsigned long pname) raises(DOMException);
         [StrictTypeChecking, Custom] void getShaderParameter() raises(DOMException);
 
-        [StrictTypeChecking, ConvertNullStringTo=Null] DOMString    getShaderInfoLog(in WebGLShader shader) raises(DOMException);
+        [StrictTypeChecking, TreatReturnedNullStringAs=Null] DOMString    getShaderInfoLog(in WebGLShader shader) raises(DOMException);
 
         // TBD
         // void glGetShaderPrecisionFormat (GLenum shadertype, GLenum precisiontype, GLint* range, GLint* precision);
 
-        [StrictTypeChecking, ConvertNullStringTo=Null] DOMString    getShaderSource(in WebGLShader shader) raises(DOMException);
+        [StrictTypeChecking, TreatReturnedNullStringAs=Null] DOMString    getShaderSource(in WebGLShader shader) raises(DOMException);
 
         // DOMString[] getSupportedExtensions()
         [StrictTypeChecking, Custom] void getSupportedExtensions();

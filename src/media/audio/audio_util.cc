@@ -17,6 +17,7 @@
 #include "base/time.h"
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
+#include "media/audio/audio_manager_base.h"
 #endif
 #include "media/audio/audio_parameters.h"
 #include "media/audio/audio_util.h"
@@ -51,36 +52,12 @@ static void AdjustVolume(Format* buf_out,
   }
 }
 
-// Type is the datatype of a data point in the waveform (i.e. uint8, int16,
-// int32, etc).
-template <class Type>
-static void DoCrossfade(int bytes_to_crossfade, int number_of_channels,
-                        int bytes_per_channel, const Type* src, Type* dest) {
-  DCHECK_EQ(sizeof(Type), static_cast<size_t>(bytes_per_channel));
-  int number_of_samples =
-      bytes_to_crossfade / (bytes_per_channel * number_of_channels);
-
-  const Type* dest_end = dest + number_of_samples * number_of_channels;
-  const Type* src_end = src + number_of_samples * number_of_channels;
-
-  for (int i = 0; i < number_of_samples; ++i) {
-    double crossfade_ratio = static_cast<double>(i) / number_of_samples;
-    for (int j = 0; j < number_of_channels; ++j) {
-      DCHECK_LT(dest, dest_end);
-      DCHECK_LT(src, src_end);
-      *dest = (*dest) * (1.0 - crossfade_ratio) + (*src) * crossfade_ratio;
-      ++src;
-      ++dest;
-    }
-  }
-}
-
 static const int kChannel_L = 0;
 static const int kChannel_R = 1;
 static const int kChannel_C = 2;
 
 template<class Fixed, int min_value, int max_value>
-static int AddChannel(int val, int adder) {
+static int AddSaturated(int val, int adder) {
   Fixed sum = static_cast<Fixed>(val) + static_cast<Fixed>(adder);
   if (sum > max_value)
     return max_value;
@@ -116,9 +93,9 @@ static void FoldChannels(Format* buf_out,
     right = ScaleChannel<Fixed>(right, fixed_volume);
 
     buf_out[0] = static_cast<Format>(
-        AddChannel<Fixed, min_value, max_value>(left, center) + bias);
+        AddSaturated<Fixed, min_value, max_value>(left, center) + bias);
     buf_out[1] = static_cast<Format>(
-        AddChannel<Fixed, min_value, max_value>(right, center) + bias);
+        AddSaturated<Fixed, min_value, max_value>(right, center) + bias);
 
     buf_out += 2;
     buf_in += channels;
@@ -264,7 +241,69 @@ void InterleaveFloatToInt16(const std::vector<float*>& source,
   }
 }
 
-double GetAudioHardwareSampleRate() {
+// TODO(enal): use template specialization and size-specific intrinsics.
+//             Call is on the time-critical path, and by using SSE/AVX
+//             instructions we can speed things up by ~4-8x, more for the case
+//             when we have to adjust volume as well.
+template<class Format, class Fixed, int min_value, int max_value, int bias>
+static void MixStreams(Format* dst, Format* src, int count, float volume) {
+  if (volume == 1.0f) {
+    // Most common case -- no need to adjust volume.
+    for (int i = 0; i < count; ++i) {
+      Fixed value = AddSaturated<Fixed, min_value, max_value>(dst[i] - bias,
+                                                              src[i] - bias);
+      dst[i] = static_cast<Format>(value + bias);
+    }
+  } else {
+    // General case -- have to adjust volume before mixing.
+    const int fixed_volume = static_cast<int>(volume * 65536);
+    for (int i = 0; i < count; ++i) {
+      Fixed adjusted_src = ScaleChannel<Fixed>(src[i] - bias, fixed_volume);
+      Fixed value = AddSaturated<Fixed, min_value, max_value>(dst[i] - bias,
+                                                              adjusted_src);
+      dst[i] = static_cast<Format>(value + bias);
+    }
+  }
+}
+
+void MixStreams(void* dst,
+                void* src,
+                size_t buflen,
+                int bytes_per_sample,
+                float volume) {
+  DCHECK(dst);
+  DCHECK(src);
+  DCHECK_GE(volume, 0.0f);
+  DCHECK_LE(volume, 1.0f);
+  switch (bytes_per_sample) {
+    case 1:
+      MixStreams<uint8, int32, -128, 127, 128>(static_cast<uint8*>(dst),
+                                               static_cast<uint8*>(src),
+                                               buflen,
+                                               volume);
+      break;
+    case 2:
+      DCHECK_EQ(0u, buflen % 2);
+      MixStreams<int16, int32, -32768, 32767, 0>(static_cast<int16*>(dst),
+                                                 static_cast<int16*>(src),
+                                                 buflen / 2,
+                                                 volume);
+      break;
+    case 4:
+      DCHECK_EQ(0u, buflen % 4);
+      MixStreams<int32, int64, 0x80000000, 0x7fffffff, 0>(
+          static_cast<int32*>(dst),
+          static_cast<int32*>(src),
+          buflen / 4,
+          volume);
+      break;
+    default:
+      NOTREACHED() << "Illegal bytes per sample";
+      break;
+  }
+}
+
+int GetAudioHardwareSampleRate() {
 #if defined(OS_MACOSX)
     // Hardware sample-rate on the Mac can be configured, so we must query.
     return AUAudioOutputStream::HardwareSampleRate();
@@ -272,7 +311,7 @@ double GetAudioHardwareSampleRate() {
   if (!IsWASAPISupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower
     // and use 48kHz as default input sample rate.
-    return 48000.0;
+    return 48000;
   }
 
   // Hardware sample-rate on Windows can be configured, so we must query.
@@ -282,29 +321,22 @@ double GetAudioHardwareSampleRate() {
 #else
     // Hardware for Linux is nearly always 48KHz.
     // TODO(crogers) : return correct value in rare non-48KHz cases.
-    return 48000.0;
+    return 48000;
 #endif
 }
 
-double GetAudioInputHardwareSampleRate() {
+int GetAudioInputHardwareSampleRate(const std::string& device_id) {
+  // TODO(henrika): add support for device selection on all platforms.
+  // Only exists on Windows today.
 #if defined(OS_MACOSX)
-  // Hardware sample-rate on the Mac can be configured, so we must query.
   return AUAudioInputStream::HardwareSampleRate();
 #elif defined(OS_WIN)
   if (!IsWASAPISupported()) {
-    // Fall back to Windows Wave implementation on Windows XP or lower
-    // and use 48kHz as default input sample rate.
-    return 48000.0;
+    return 48000;
   }
-
-  // Hardware sample-rate on Windows can be configured, so we must query.
-  // TODO(henrika): improve possibility to specify audio endpoint.
-  // Use the default device (same as for Wave) for now to be compatible.
-  return WASAPIAudioInputStream::HardwareSampleRate(eConsole);
+  return WASAPIAudioInputStream::HardwareSampleRate(device_id);
 #else
-  // Hardware for Linux is nearly always 48KHz.
-  // TODO(henrika): return correct value in rare non-48KHz cases.
-  return 48000.0;
+  return 48000;
 #endif
 }
 
@@ -327,7 +359,7 @@ size_t GetAudioHardwareBufferSize() {
   // This call must be done on a COM thread configured as MTA.
   // TODO(tommi): http://code.google.com/p/chromium/issues/detail?id=103835.
   int mixing_sample_rate =
-      static_cast<int>(WASAPIAudioOutputStream::HardwareSampleRate(eConsole));
+      WASAPIAudioOutputStream::HardwareSampleRate(eConsole);
   if (mixing_sample_rate == 48000)
     return 480;
   else if (mixing_sample_rate == 44100)
@@ -339,19 +371,21 @@ size_t GetAudioHardwareBufferSize() {
 #endif
 }
 
-uint32 GetAudioInputHardwareChannelCount() {
-  enum channel_layout { MONO = 1, STEREO = 2 };
+ChannelLayout GetAudioInputHardwareChannelLayout(const std::string& device_id) {
+  // TODO(henrika): add support for device selection on all platforms.
+  // Only exists on Windows today.
 #if defined(OS_MACOSX)
-  return MONO;
+  return CHANNEL_LAYOUT_MONO;
 #elif defined(OS_WIN)
   if (!IsWASAPISupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower and
     // use stereo by default.
-    return STEREO;
+    return CHANNEL_LAYOUT_STEREO;
   }
-  return WASAPIAudioInputStream::HardwareChannelCount(eConsole);
+  return WASAPIAudioInputStream::HardwareChannelCount(device_id) == 1 ?
+      CHANNEL_LAYOUT_MONO : CHANNEL_LAYOUT_STEREO;
 #else
-  return STEREO;
+  return CHANNEL_LAYOUT_STEREO;
 #endif
 }
 
@@ -414,53 +448,5 @@ bool IsWASAPISupported() {
 }
 
 #endif
-
-void Crossfade(int bytes_to_crossfade, int number_of_channels,
-               int bytes_per_channel, const uint8* src, uint8* dest) {
-  // TODO(vrk): The type punning below is no good!
-  switch (bytes_per_channel) {
-    case 4:
-      DoCrossfade(bytes_to_crossfade, number_of_channels, bytes_per_channel,
-                  reinterpret_cast<const int32*>(src),
-                  reinterpret_cast<int32*>(dest));
-      break;
-    case 2:
-      DoCrossfade(bytes_to_crossfade, number_of_channels, bytes_per_channel,
-                  reinterpret_cast<const int16*>(src),
-                  reinterpret_cast<int16*>(dest));
-      break;
-    case 1:
-      DoCrossfade(bytes_to_crossfade, number_of_channels, bytes_per_channel,
-                  src, dest);
-      break;
-    default:
-      NOTREACHED() << "Unsupported audio bit depth in crossfade.";
-  }
-}
-
-// The minimum number of samples in a hardware packet.
-// This value is selected so that we can handle down to 5khz sample rate.
-static const int kMinSamplesPerHardwarePacket = 1024;
-
-// The maximum number of samples in a hardware packet.
-// This value is selected so that we can handle up to 192khz sample rate.
-static const int kMaxSamplesPerHardwarePacket = 64 * 1024;
-
-// This constant governs the hardware audio buffer size, this value should be
-// chosen carefully.
-// This value is selected so that we have 8192 samples for 48khz streams.
-static const int kMillisecondsPerHardwarePacket = 170;
-
-uint32 SelectSamplesPerPacket(int sample_rate) {
-  // Select the number of samples that can provide at least
-  // |kMillisecondsPerHardwarePacket| worth of audio data.
-  int samples = kMinSamplesPerHardwarePacket;
-  while (samples <= kMaxSamplesPerHardwarePacket &&
-         samples * base::Time::kMillisecondsPerSecond <
-         sample_rate * kMillisecondsPerHardwarePacket) {
-    samples *= 2;
-  }
-  return samples;
-}
 
 }  // namespace media

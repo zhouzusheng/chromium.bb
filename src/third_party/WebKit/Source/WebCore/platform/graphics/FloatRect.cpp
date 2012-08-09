@@ -28,6 +28,7 @@
 #include "FloatRect.h"
 
 #include "FloatConversion.h"
+#include "FractionalLayoutRect.h"
 #include "IntRect.h"
 #include <algorithm>
 #include <math.h>
@@ -39,6 +40,10 @@ using std::min;
 namespace WebCore {
 
 FloatRect::FloatRect(const IntRect& r) : m_location(r.location()), m_size(r.size())
+{
+}
+
+FloatRect::FloatRect(const FractionalLayoutRect& r) : m_location(r.location()), m_size(r.size())
 {
 }
 
@@ -216,6 +221,19 @@ IntRect enclosingIntRect(const FloatRect& rect)
     
     return IntRect(clampToInteger(left), clampToInteger(top), 
                    clampToInteger(width), clampToInteger(height));
+}
+
+IntRect enclosedIntRect(const FloatRect& rect)
+{
+    int x = clampToInteger(ceilf(rect.x()));
+    int y = clampToInteger(ceilf(rect.y()));
+    float maxX = clampToInteger(floorf(rect.maxX()));
+    float maxY = clampToInteger(floorf(rect.maxY()));
+    // A rect of width 0 should not become a rect of width -1 due to ceil/floor.
+    int width = max(clampToInteger(maxX - x), 0);
+    int height = max(clampToInteger(maxY - y), 0);
+
+    return IntRect(x, y, width, height);
 }
 
 FloatRect mapRect(const FloatRect& r, const FloatRect& srcRect, const FloatRect& destRect)

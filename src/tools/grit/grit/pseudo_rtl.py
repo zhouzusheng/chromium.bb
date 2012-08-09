@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +11,7 @@ More info at https://sites.google.com/a/chromium.org/dev/Home/fake-bidi
 import re
 import types
 
+from grit import lazy_re
 from grit import tclib
 
 ACCENTED_STRINGS = {
@@ -32,17 +33,18 @@ ACCENTED_STRINGS = {
 # To be safe, we assume every character following a backslash is an escaped
 # character. We also need to consider the case like "\\n", which means
 # a blackslash and a character "n", we will accent the character "n".
-TO_ACCENT = re.compile(r'[%s]|\\[a-z\\]' % ''.join(ACCENTED_STRINGS.keys()))
+TO_ACCENT = lazy_re.compile(
+    r'[%s]|\\[a-z\\]' % ''.join(ACCENTED_STRINGS.keys()))
 
 # Lex text so that we don't interfere with html tokens and entities.
 # This lexing scheme will handle all well formed tags and entities, html or
 # xhtml.  It will not handle comments, CDATA sections, or the unescaping tags:
 # script, style, xmp or listing.  If any of those appear in messages,
 # something is wrong.
-TOKENS = [ re.compile(
-                      '^%s' % pattern,  # match at the beginning of input
-                      re.I | re.S  # html tokens are case-insensitive
-                      )
+TOKENS = [ lazy_re.compile(
+                           '^%s' % pattern,  # match at the beginning of input
+                           re.I | re.S  # html tokens are case-insensitive
+                         )
            for pattern in
            (
             # a run of non html special characters
@@ -58,7 +60,7 @@ TOKENS = [ re.compile(
             r'.'
            ) ]
 
-ALPHABETIC_RUN = re.compile(r'([^\W0-9_]+)')
+ALPHABETIC_RUN = lazy_re.compile(r'([^\W0-9_]+)')
 
 RLO = u'\u202e'
 PDF = u'\u202c'

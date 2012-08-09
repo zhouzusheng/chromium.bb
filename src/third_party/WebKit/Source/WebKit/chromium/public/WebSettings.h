@@ -62,6 +62,7 @@ public:
     virtual void setDefaultFixedFontSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
+    virtual void setDefaultDeviceScaleFactor(int) = 0;
     virtual void setDefaultTextEncodingName(const WebString&) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;
     virtual void setWebSecurityEnabled(bool) = 0;
@@ -96,8 +97,11 @@ public:
     virtual void setOfflineWebApplicationCacheEnabled(bool) = 0;
     virtual void setWebAudioEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
+    virtual void setExperimentalCSSRegionsEnabled(bool) = 0;
+    virtual void setExperimentalCSSCustomFilterEnabled(bool) = 0;
     virtual void setOpenGLMultisamplingEnabled(bool) = 0;
     virtual void setPrivilegedWebGLExtensionsEnabled(bool) = 0;
+    virtual void setWebGLErrorsToConsoleEnabled(bool) = 0;
     virtual void setShowDebugBorders(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual bool showFPSCounter() const = 0;
@@ -115,11 +119,13 @@ public:
     virtual void setAcceleratedCompositingForPluginsEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForAnimationEnabled(bool) = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
+    virtual void setDeferred2dCanvasEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool)  = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setAcceleratedFiltersEnabled(bool) = 0;
     virtual void setMemoryInfoEnabled(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
+    virtual void setLayoutFallbackWidth(int) = 0;
     virtual void setAsynchronousSpellCheckingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
@@ -129,13 +135,19 @@ public:
     virtual void setFullScreenEnabled(bool) = 0;
     virtual void setAllowDisplayOfInsecureContent(bool) = 0;
     virtual void setAllowRunningOfInsecureContent(bool) = 0;
+    virtual void setPasswordEchoEnabled(bool) = 0;
+    virtual void setPasswordEchoDurationInSeconds(double) = 0;
     virtual void setShouldPrintBackgrounds(bool) = 0;
     virtual void setEnableScrollAnimator(bool) = 0;
+    virtual bool scrollAnimatorEnabled() const = 0;
     virtual void setHixie76WebSocketProtocolEnabled(bool) = 0;
     virtual void setVisualWordMovementEnabled(bool) = 0;
     virtual void setAcceleratedPaintingEnabled(bool) = 0;
     virtual void setPerTilePaintingEnabled(bool) = 0;
     virtual void setPartialSwapEnabled(bool) = 0;
+    virtual void setThreadedAnimationEnabled(bool) = 0;
+    virtual void setViewportEnabled(bool) = 0;
+    virtual bool viewportEnabled() const = 0;
 
 protected:
     ~WebSettings() { }

@@ -40,14 +40,15 @@
 #include "VideoLayerChromium.h"
 #include "WebAudioSourceProviderClient.h"
 #include "WebMediaPlayerClient.h"
+#include "WebStreamTextureClient.h"
 #include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 
 namespace WebCore { class AudioSourceProviderClient; }
 
 namespace WebKit {
 
 class WebAudioSourceProvider;
-class WebMediaElement;
 class WebMediaPlayer;
 
 // This class serves as a bridge between WebCore::MediaPlayer and
@@ -56,14 +57,13 @@ class WebMediaPlayerClientImpl : public WebCore::MediaPlayerPrivateInterface
 #if USE(ACCELERATED_COMPOSITING)
                                , public WebCore::VideoFrameProvider
 #endif
-                               , public WebMediaPlayerClient {
+                               , public WebMediaPlayerClient
+                               , public WebStreamTextureClient {
 
 public:
     static bool isEnabled();
     static void setIsEnabled(bool);
     static void registerSelf(WebCore::MediaEngineRegistrar);
-
-    static WebMediaPlayerClientImpl* fromMediaElement(const WebMediaElement* element);
 
     // Returns the encapsulated WebKit::WebMediaPlayer.
     WebMediaPlayer* mediaPlayer() const;
@@ -149,6 +149,10 @@ public:
     virtual bool sourceAppend(const unsigned char* data, unsigned length);
     virtual void sourceEndOfStream(WebCore::MediaPlayer::EndOfStreamStatus);
 #endif
+
+    // WebStreamTextureClient methods:
+    virtual void didReceiveFrame();
+    virtual void didUpdateMatrix(const float*);
 
 private:
     WebMediaPlayerClientImpl();

@@ -33,6 +33,8 @@
 #include "Attr.h"
 #include "Attribute.h"
 #include "CDATASection.h"
+#include "CSSParser.h"
+#include "CSSStyleDeclaration.h"
 #include "CSSStyleSelector.h"
 #include "CSSStyleSheet.h"
 #include "CSSValueKeywords.h"
@@ -78,6 +80,7 @@
 #include "GeolocationController.h"
 #include "HashChangeEvent.h"
 #include "HistogramSupport.h"
+#include "History.h"
 #include "HTMLAllCollection.h"
 #include "HTMLAnchorElement.h"
 #include "HTMLBodyElement.h"
@@ -100,6 +103,7 @@
 #include "HitTestRequest.h"
 #include "HitTestResult.h"
 #include "ImageLoader.h"
+#include "InspectorCounters.h"
 #include "InspectorInstrumentation.h"
 #include "Logging.h"
 #include "MediaQueryList.h"
@@ -132,11 +136,13 @@
 #include "ScriptElement.h"
 #include "ScriptEventListener.h"
 #include "ScriptRunner.h"
+#include "ScrollingCoordinator.h"
 #include "SecurityOrigin.h"
 #include "SecurityPolicy.h"
 #include "SegmentedString.h"
 #include "Settings.h"
 #include "ShadowRoot.h"
+#include "ShadowTree.h"
 #include "StaticHashSetNodeList.h"
 #include "StyleSheetList.h"
 #include "TextResourceDecoder.h"
@@ -173,6 +179,7 @@
 #include "SVGDocumentExtensions.h"
 #include "SVGElementFactory.h"
 #include "SVGNames.h"
+#include "SVGSVGElement.h"
 #include "SVGStyleElement.h"
 #endif
 
@@ -401,7 +408,8 @@ private:
 uint64_t Document::s_globalTreeVersion = 0;
 
 Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
-    : TreeScope(0)
+    : ContainerNode(0, CreateDocument)
+    , TreeScope(this)
     , m_guardRefCount(0)
     , m_compatibilityMode(NoQuirksMode)
     , m_compatibilityModeLocked(false)
@@ -440,7 +448,6 @@ Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
     , m_isHTML(isHTML)
     , m_isViewSource(false)
     , m_sawElementsInKnownNamespaces(false)
-    , m_usingGeolocation(false)
     , m_eventQueue(DocumentEventQueue::create(this))
     , m_weakReference(DocumentWeakReference::create(this))
     , m_idAttributeName(idAttr)
@@ -458,6 +465,7 @@ Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
     , m_writeRecursionIsTooDeep(false)
     , m_writeRecursionDepth(0)
     , m_wheelEventHandlerCount(0)
+    , m_touchEventHandlerCount(0)
     , m_pendingTasksTimer(this, &Document::pendingTasksTimerFired)
 {
     m_document = this;
@@ -491,7 +499,6 @@ Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
 
     m_textColor = Color::black;
     m_listenerTypes = 0;
-    setInDocument();
     m_inStyleRecalc = false;
     m_closeAfterStyleRecalc = false;
 
@@ -527,9 +534,7 @@ Document::Document(Frame* frame, const KURL& url, bool isXHTML, bool isHTML)
     static int docID = 0;
     m_docID = docID++;
     
-#ifndef NDEBUG
-    m_updatingStyleSelector = false;
-#endif
+    InspectorCounters::incrementCounter(InspectorCounters::DocumentCounter);
 }
 
 static void histogramMutationEventUsage(const unsigned short& listenerTypes)
@@ -567,7 +572,6 @@ Document::~Document()
     ASSERT(!m_parser || m_parser->refCount() == 1);
     detachParser();
     m_document = 0;
-    m_cachedResourceLoader.clear();
 
     m_renderArena.clear();
 
@@ -580,8 +584,6 @@ Document::~Document()
 
     if (m_elemSheet)
         m_elemSheet->clearOwnerNode();
-    if (m_mappedElementSheet)
-        m_mappedElementSheet->clearOwnerNode();
     if (m_pageUserSheet)
         m_pageUserSheet->clearOwnerNode();
     if (m_pageGroupUserSheets) {
@@ -599,6 +601,16 @@ Document::~Document()
 
     if (m_mediaQueryMatcher)
         m_mediaQueryMatcher->documentDestroyed();
+
+    clearStyleSelector(); // We need to destory CSSFontSelector before destroying m_cachedResourceLoader.
+    m_cachedResourceLoader.clear();
+
+    // We must call clearRareData() here since a Document class inherits TreeScope
+    // as well as Node. See a comment on TreeScope.h for the reason.
+    if (hasRareData())
+        clearRareData();
+
+    InspectorCounters::decrementCounter(InspectorCounters::DocumentCounter);
 }
 
 void Document::removedLastRef()
@@ -670,16 +682,22 @@ Element* Document::getElementByAccessKey(const String& key)
     return m_elementsByAccessKey.get(key.impl());
 }
 
-void Document::buildAccessKeyMap(TreeScope* root)
+void Document::buildAccessKeyMap(TreeScope* scope)
 {
-     for (Node* n = root; n; n = n->traverseNextNode(root)) {
-        if (!n->isElementNode())
+    ASSERT(scope);
+    Node* rootNode = scope->rootNode();
+    for (Node* node = rootNode; node; node = node->traverseNextNode(rootNode)) {
+        if (!node->isElementNode())
             continue;
-        Element* element = static_cast<Element*>(n);
+        Element* element = static_cast<Element*>(node);
         const AtomicString& accessKey = element->getAttribute(accesskeyAttr);
         if (!accessKey.isEmpty())
             m_elementsByAccessKey.set(accessKey.impl(), element);
-        buildAccessKeyMap(element->shadowRoot());
+
+        if (element->hasShadowRoot()) {
+            for (ShadowRoot* root = element->shadowTree()->youngestShadowRoot(); root; root = root->olderShadowRoot())
+                buildAccessKeyMap(root);
+        }
     }
 }
 
@@ -750,7 +768,7 @@ DOMImplementation* Document::implementation()
 
 void Document::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
-    TreeScope::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     
     Element* newDocumentElement = firstElementChild(this);
     if (newDocumentElement == m_documentElement)
@@ -830,18 +848,14 @@ PassRefPtr<EditingText> Document::createEditingTextNode(const String& text)
 
 PassRefPtr<CSSStyleDeclaration> Document::createCSSStyleDeclaration()
 {
-    return CSSMutableStyleDeclaration::create();
+    return StylePropertySet::create()->ensureCSSStyleDeclaration();
 }
 
 PassRefPtr<Node> Document::importNode(Node* importedNode, bool deep, ExceptionCode& ec)
 {
     ec = 0;
     
-    if (!importedNode
-#if ENABLE(SVG) && ENABLE(DASHBOARD_SUPPORT)
-        || (importedNode->isSVGElement() && page() && page()->settings()->usesDashboardBackwardCompatibilityMode())
-#endif
-        ) {
+    if (!importedNode) {
         ec = NOT_SUPPORTED_ERR;
         return 0;
     }
@@ -869,15 +883,7 @@ PassRefPtr<Node> Document::importNode(Node* importedNode, bool deep, ExceptionCo
         if (ec)
             return 0;
 
-        NamedNodeMap* attrs = oldElement->attributes(true);
-        if (attrs) {
-            unsigned length = attrs->length();
-            for (unsigned i = 0; i < length; i++) {
-                Attribute* attr = attrs->attributeItem(i);
-                newElement->setAttribute(attr->name(), attr->value().impl());
-            }
-        }
-
+        newElement->setAttributesFromElement(*oldElement);
         newElement->copyNonAttributeProperties(oldElement);
 
         if (deep) {
@@ -896,6 +902,11 @@ PassRefPtr<Node> Document::importNode(Node* importedNode, bool deep, ExceptionCo
     case ATTRIBUTE_NODE:
         return Attr::create(0, this, static_cast<Attr*>(importedNode)->attr()->clone());
     case DOCUMENT_FRAGMENT_NODE: {
+        if (importedNode->isShadowRoot()) {
+            // ShadowRoot nodes should not be explicitly importable.
+            // Either they are imported along with their host node, or created implicitly.
+            break;
+        }
         DocumentFragment* oldFragment = static_cast<DocumentFragment*>(importedNode);
         RefPtr<DocumentFragment> newFragment = createDocumentFragment();
         if (deep) {
@@ -918,9 +929,6 @@ PassRefPtr<Node> Document::importNode(Node* importedNode, bool deep, ExceptionCo
     case DOCUMENT_NODE:
     case DOCUMENT_TYPE_NODE:
     case XPATH_NAMESPACE_NODE:
-    case SHADOW_ROOT_NODE:
-        // ShadowRoot nodes should not be explicitly importable.
-        // Either they are imported along with their host node, or created implicitly.
         break;
     }
     ec = NOT_SUPPORTED_ERR;
@@ -958,15 +966,14 @@ PassRefPtr<Node> Document::adoptNode(PassRefPtr<Node> source, ExceptionCode& ec)
         break;
     }       
     default:
+        // FIXME: What about <frame> and <object>?
         if (source->hasTagName(iframeTag)) {
             HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(source.get());
             if (frame() && frame()->tree()->isDescendantOf(iframe->contentFrame())) {
                 ec = HIERARCHY_REQUEST_ERR;
                 return 0;
             }
-            iframe->setRemainsAliveOnRemovalFromTree(attached() && source->attached() && iframe->canRemainAliveOnRemovalFromTree());
         }
-
         if (source->parentNode())
             source->parentNode()->removeChild(source.get(), ec);
     }
@@ -1033,10 +1040,37 @@ PassRefPtr<Element> Document::createElement(const QualifiedName& qName, bool cre
     return e.release();
 }
 
+bool Document::regionBasedColumnsEnabled() const
+{
+    return settings() && settings()->regionBasedColumnsEnabled(); 
+}
+
+bool Document::cssRegionsEnabled() const
+{
+    return settings() && settings()->cssRegionsEnabled(); 
+}
+
+static bool validFlowName(const String& flowName)
+{
+    if (equalIgnoringCase(flowName, "auto")
+        || equalIgnoringCase(flowName, "default")
+        || equalIgnoringCase(flowName, "inherit")
+        || equalIgnoringCase(flowName, "initial")
+        || equalIgnoringCase(flowName, "none"))
+        return false;
+    return true;
+}
+
 PassRefPtr<WebKitNamedFlow> Document::webkitGetFlowByName(const String& flowName)
 {
-    if (!renderer())
+    if (!cssRegionsEnabled() || flowName.isEmpty() || !validFlowName(flowName) || !renderer())
         return 0;
+
+    // Make a slower check for invalid flow name
+    CSSParser p(true);
+    if (!p.parseFlowThread(flowName, this))
+        return 0;
+
     if (RenderView* view = renderer()->view())
         return view->ensureRenderFlowThreadWithName(flowName)->ensureNamedFlow();
     return 0;
@@ -1119,6 +1153,16 @@ void Document::setCharset(const String& charset)
     if (!decoder())
         return;
     decoder()->setEncoding(charset, TextResourceDecoder::UserChosenEncoding);
+}
+
+void Document::setContentLanguage(const String& language)
+{
+    if (m_contentLanguage == language)
+        return;
+    m_contentLanguage = language;
+
+    // Recalculate style so language is used when selecting the initial font.
+    styleSelectorChanged(DeferRecalcStyle);
 }
 
 void Document::setXMLVersion(const String& version, ExceptionCode& ec)
@@ -1595,7 +1639,7 @@ void Document::recalcStyle(StyleChange change)
         m_hasNodesWithPlaceholderStyle = false;
         
         RefPtr<RenderStyle> documentStyle = CSSStyleSelector::styleForDocument(this, m_styleSelector ? m_styleSelector->fontSelector() : 0);
-        StyleChange ch = diff(documentStyle.get(), renderer()->style());
+        StyleChange ch = Node::diff(documentStyle.get(), renderer()->style(), this);
         if (ch != NoChange)
             renderer()->setStyle(documentStyle.release());
     }
@@ -1764,6 +1808,7 @@ bool Document::isPageBoxVisible(int pageIndex)
 void Document::pageSizeAndMarginsInPixels(int pageIndex, IntSize& pageSize, int& marginTop, int& marginRight, int& marginBottom, int& marginLeft)
 {
     RefPtr<RenderStyle> style = styleForPage(pageIndex);
+    RenderView* view = renderView();
 
     int width = pageSize.width();
     int height = pageSize.height();
@@ -1782,8 +1827,8 @@ void Document::pageSizeAndMarginsInPixels(int pageIndex, IntSize& pageSize, int&
         LengthSize size = style->pageSize();
         ASSERT(size.width().isFixed());
         ASSERT(size.height().isFixed());
-        width = size.width().calcValue(0);
-        height = size.height().calcValue(0);
+        width = valueForLength(size.width(), 0, view);
+        height = valueForLength(size.height(), 0, view);
         break;
     }
     default:
@@ -1793,10 +1838,10 @@ void Document::pageSizeAndMarginsInPixels(int pageIndex, IntSize& pageSize, int&
 
     // The percentage is calculated with respect to the width even for margin top and bottom.
     // http://www.w3.org/TR/CSS2/box.html#margin-properties
-    marginTop = style->marginTop().isAuto() ? marginTop : style->marginTop().calcValue(width);
-    marginRight = style->marginRight().isAuto() ? marginRight : style->marginRight().calcValue(width);
-    marginBottom = style->marginBottom().isAuto() ? marginBottom : style->marginBottom().calcValue(width);
-    marginLeft = style->marginLeft().isAuto() ? marginLeft : style->marginLeft().calcValue(width);
+    marginTop = style->marginTop().isAuto() ? marginTop : valueForLength(style->marginTop(), width, view);
+    marginRight = style->marginRight().isAuto() ? marginRight : valueForLength(style->marginRight(), width, view);
+    marginBottom = style->marginBottom().isAuto() ? marginBottom : valueForLength(style->marginBottom(), width, view);
+    marginLeft = style->marginLeft().isAuto() ? marginLeft : valueForLength(style->marginLeft(), width, view);
 }
 
 PassRefPtr<CSSValuePool> Document::cssValuePool() const
@@ -1837,14 +1882,12 @@ void Document::createStyleSelector()
     bool matchAuthorAndUserStyles = true;
     if (Settings* docSettings = settings())
         matchAuthorAndUserStyles = docSettings->authorAndUserStylesEnabled();
-    m_styleSelector = adoptPtr(new CSSStyleSelector(this, m_styleSheets.get(), m_mappedElementSheet.get(), pageUserSheet(), pageGroupUserSheets(), m_userSheets.get(),
-                                                    !inQuirksMode(), matchAuthorAndUserStyles));
+    m_styleSelector = adoptPtr(new CSSStyleSelector(this, matchAuthorAndUserStyles));
     combineCSSFeatureFlags();
 }
-    
+
 inline void Document::clearStyleSelector()
 {
-    ASSERT(!m_updatingStyleSelector);
     m_styleSelector.clear();
 }
 
@@ -1868,7 +1911,7 @@ void Document::attach()
     RenderObject* render = renderer();
     setRenderer(0);
 
-    TreeScope::attach();
+    ContainerNode::attach();
 
     setRenderer(render);
 }
@@ -1922,7 +1965,7 @@ void Document::detach()
     m_focusedNode = 0;
     m_activeNode = 0;
 
-    TreeScope::detach();
+    ContainerNode::detach();
 
     unscheduleStyleRecalc();
 
@@ -1956,10 +1999,11 @@ void Document::suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension why)
     if (!page())
         return;
 
-    if (page()->deviceMotionController())
-        page()->deviceMotionController()->suspendEventsForAllListeners(domWindow());
-    if (page()->deviceOrientationController())
-        page()->deviceOrientationController()->suspendEventsForAllListeners(domWindow());
+    if (DeviceMotionController* controller = DeviceMotionController::from(page()))
+        controller->suspendEventsForAllListeners(domWindow());
+    if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
+        controller->suspendEventsForAllListeners(domWindow());
+
 #endif
 }
 
@@ -1971,10 +2015,10 @@ void Document::resumeActiveDOMObjects()
     if (!page())
         return;
 
-    if (page()->deviceMotionController())
-        page()->deviceMotionController()->resumeEventsForAllListeners(domWindow());
-    if (page()->deviceOrientationController())
-        page()->deviceOrientationController()->resumeEventsForAllListeners(domWindow());
+    if (DeviceMotionController* controller = DeviceMotionController::from(page()))
+        controller->resumeEventsForAllListeners(domWindow());
+    if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
+        controller->resumeEventsForAllListeners(domWindow());
 #endif
 }
 
@@ -2270,6 +2314,19 @@ void Document::implicitClose()
 
     ImageLoader::dispatchPendingBeforeLoadEvents();
     ImageLoader::dispatchPendingLoadEvents();
+    ImageLoader::dispatchPendingErrorEvents();
+
+    HTMLLinkElement::dispatchPendingLoadEvents();
+    HTMLStyleElement::dispatchPendingLoadEvents();
+
+#if ENABLE(SVG)
+    // To align the HTML load event and the SVGLoad event for the outermost <svg> element, fire it from
+    // here, instead of doing it from SVGElement::finishedParsingChildren (if externalResourcesRequired="false",
+    // which is the default, for ='true' its fired at a later time, once all external resources finished loading).
+    if (svgExtensions())
+        accessSVGExtensions()->dispatchSVGLoadEventToOutermostSVGElements();
+#endif
+
     dispatchWindowLoadEvent();
     enqueuePageshowEvent(PageshowEventNotPersisted);
     enqueuePopstateEvent(m_pendingStateObject ? m_pendingStateObject.release() : SerializedScriptValue::nullValue());
@@ -2281,11 +2338,11 @@ void Document::implicitClose()
         printf("onload fired at %d\n", elapsedTime());
 #endif
 
-    m_processingLoadEvent = false;
-
     // An event handler may have removed the frame
-    if (!frame())
+    if (!frame()) {
+        m_processingLoadEvent = false;
         return;
+    }
 
     // Make sure both the initial layout and reflow happen after the onload
     // fires. This will improve onload scores, and other browsers do it.
@@ -2294,6 +2351,7 @@ void Document::implicitClose()
     if (frame()->navigationScheduler()->locationChangePending() && elapsedTime() < cLayoutScheduleThreshold) {
         // Just bail out. Before or during the onload we were shifted to another page.
         // The old i-Bench suite does this. When this happens don't bother painting or laying out.        
+        m_processingLoadEvent = false;
         view()->unscheduleRelayout();
         return;
     }
@@ -2313,8 +2371,10 @@ void Document::implicitClose()
             view()->layout();
     }
 
+    m_processingLoadEvent = false;
+
     // If painting and compositing layer updates were suppressed pending the load event, do these actions now.
-    if (renderer() && settings() && settings()->suppressIncrementalRendering()) {
+    if (renderer() && settings() && settings()->suppressesIncrementalRendering()) {
 #if USE(ACCELERATED_COMPOSITING)
         view()->updateCompositingLayers();
 #endif
@@ -2339,9 +2399,6 @@ void Document::implicitClose()
 #endif
 
 #if ENABLE(SVG)
-    // FIXME: Officially, time 0 is when the outermost <svg> receives its
-    // SVGLoad event, but we don't implement those yet.  This is close enough
-    // for now.  In some cases we should have fired earlier.
     if (svgExtensions())
         accessSVGExtensions()->startAnimations();
 #endif
@@ -2495,8 +2552,6 @@ void Document::updateBaseURL()
 
     if (m_elemSheet)
         m_elemSheet->setFinalURL(m_baseURL);
-    if (m_mappedElementSheet)
-        m_mappedElementSheet->setFinalURL(m_baseURL);
     
     if (!equalIgnoringFragmentIdentifier(oldBaseURL, m_baseURL)) {
         // Base URL change changes any relative visited links.
@@ -2720,13 +2775,6 @@ CSSStyleSheet* Document::elementSheet()
     return m_elemSheet.get();
 }
 
-CSSStyleSheet* Document::mappedElementSheet()
-{
-    if (!m_mappedElementSheet)
-        m_mappedElementSheet = CSSStyleSheet::createInline(this, m_baseURL);
-    return m_mappedElementSheet.get();
-}
-
 int Document::nodeAbsIndex(Node *node)
 {
     ASSERT(node->document() == this);
@@ -2862,11 +2910,13 @@ void Document::processViewport(const String& features)
     m_viewportArguments = ViewportArguments(ViewportArguments::ViewportMeta);
     processArguments(features, (void*)&m_viewportArguments, &setViewportFeature);
 
-    Frame* frame = this->frame();
-    if (!frame || !frame->page())
-        return;
+    updateViewportArguments();
+}
 
-    frame->page()->updateViewportArguments();
+void Document::updateViewportArguments()
+{
+    if (page() && page()->mainFrame() == frame())
+        page()->chrome()->dispatchViewportPropertiesDidChange(m_viewportArguments);
 }
 
 void Document::processReferrerPolicy(const String& policy)
@@ -2912,7 +2962,6 @@ bool Document::childTypeAllowed(NodeType type) const
     case NOTATION_NODE:
     case TEXT_NODE:
     case XPATH_NAMESPACE_NODE:
-    case SHADOW_ROOT_NODE:
         return false;
     case COMMENT_NODE:
     case PROCESSING_INSTRUCTION_NODE:
@@ -2982,9 +3031,6 @@ bool Document::canReplaceChild(Node* newChild, Node* oldChild)
             case ELEMENT_NODE:
                 numElements++;
                 break;
-            case SHADOW_ROOT_NODE:
-                ASSERT_NOT_REACHED();
-                return false;
             }
         }
     } else {
@@ -2998,7 +3044,6 @@ bool Document::canReplaceChild(Node* newChild, Node* oldChild)
         case NOTATION_NODE:
         case TEXT_NODE:
         case XPATH_NAMESPACE_NODE:
-        case SHADOW_ROOT_NODE:
             return false;
         case COMMENT_NODE:
         case PROCESSING_INSTRUCTION_NODE:
@@ -3232,6 +3277,7 @@ void Document::collectActiveStylesheets(Vector<RefPtr<StyleSheet> >& sheets)
             // Check to see if this sheet belongs to a styleset
             // (thus making it PREFERRED or ALTERNATE rather than
             // PERSISTENT).
+            AtomicString rel = e->getAttribute(relAttr);
             if (!enabledViaScript && !title.isEmpty()) {
                 // Yes, we have a title.
                 if (m_preferredStylesheetSet.isEmpty()) {
@@ -3239,13 +3285,15 @@ void Document::collectActiveStylesheets(Vector<RefPtr<StyleSheet> >& sheets)
                     // we are NOT an alternate sheet, then establish
                     // us as the preferred set.  Otherwise, just ignore
                     // this sheet.
-                    AtomicString rel = e->getAttribute(relAttr);
                     if (e->hasLocalName(styleTag) || !rel.contains("alternate"))
                         m_preferredStylesheetSet = m_selectedStylesheetSet = title;
                 }
                 if (title != m_preferredStylesheetSet)
                     sheet = 0;
             }
+
+            if (rel.contains("alternate") && title.isEmpty())
+                sheet = 0;
         }
         if (sheet)
             sheets.append(sheet);
@@ -3335,8 +3383,6 @@ void Document::analyzeStylesheetChange(StyleSelectorUpdateFlag updateFlag, const
 
 bool Document::updateActiveStylesheets(StyleSelectorUpdateFlag updateFlag)
 {
-    ASSERT(!m_updatingStyleSelector);
-
     if (m_inStyleRecalc) {
         // SVG <use> element may manage to invalidate style selector in the middle of a style recalc.
         // https://bugs.webkit.org/show_bug.cgi?id=54344
@@ -3358,16 +3404,7 @@ bool Document::updateActiveStylesheets(StyleSelectorUpdateFlag updateFlag)
     if (requiresStyleSelectorReset)
         clearStyleSelector();
     else {
-#ifndef NDEBUG
-        m_updatingStyleSelector = true;
-#endif
-        // Detach the style selector temporarily so it can't get deleted during appendAuthorStylesheets
-        OwnPtr<CSSStyleSelector> detachedStyleSelector = m_styleSelector.release();
-        detachedStyleSelector->appendAuthorStylesheets(m_styleSheets->length(), newStylesheets);
-        m_styleSelector = detachedStyleSelector.release();
-#ifndef NDEBUG
-        m_updatingStyleSelector = false;
-#endif
+        m_styleSelector->appendAuthorStylesheets(m_styleSheets->length(), newStylesheets);
         resetCSSFeatureFlags();
     }
     m_styleSheets->swap(newStylesheets);
@@ -3842,6 +3879,8 @@ void Document::addListenerTypeIfNeeded(const AtomicString& eventType)
 #endif
     else if (eventType == eventNames().scrollEvent)
         addListenerType(SCROLL_LISTENER);
+    else if (eventType == eventNames().webkitRegionLayoutUpdateEvent)
+        addListenerType(REGIONLAYOUTUPDATE_LISTENER);
 }
 
 CSSStyleDeclaration* Document::getOverrideStyle(Element*, const String&)
@@ -4102,17 +4141,22 @@ void Document::setDecoder(PassRefPtr<TextResourceDecoder> decoder)
     m_decoder = decoder;
 }
 
-KURL Document::completeURL(const String& url) const
+KURL Document::completeURL(const String& url, const KURL& baseURLOverride) const
 {
     // Always return a null URL when passed a null string.
     // FIXME: Should we change the KURL constructor to have this behavior?
     // See also [CSS]StyleSheet::completeURL(const String&)
     if (url.isNull())
         return KURL();
-    const KURL& baseURL = ((m_baseURL.isEmpty() || m_baseURL == blankURL()) && parentDocument()) ? parentDocument()->baseURL() : m_baseURL;
+    const KURL& baseURL = ((baseURLOverride.isEmpty() || baseURLOverride == blankURL()) && parentDocument()) ? parentDocument()->baseURL() : baseURLOverride;
     if (!m_decoder)
         return KURL(baseURL, url);
     return KURL(baseURL, url, m_decoder->encoding());
+}
+
+KURL Document::completeURL(const String& url) const
+{
+    return completeURL(url, m_baseURL);
 }
 
 void Document::setInPageCache(bool flag)
@@ -4139,9 +4183,6 @@ void Document::setInPageCache(bool flag)
         ASSERT(m_renderArena);
         setRenderer(m_savedRenderer);
         m_savedRenderer = 0;
-
-        if (frame() && frame()->page())
-            frame()->page()->updateViewportArguments();
 
         if (childNeedsStyleRecalc())
             scheduleStyleRecalc();
@@ -4183,6 +4224,8 @@ void Document::documentDidResumeFromPageCache()
 
     ASSERT(m_frame);
     m_frame->loader()->client()->dispatchDidBecomeFrameset(isFrameSet());
+
+    updateViewportArguments();
 }
 
 void Document::registerForPageCacheSuspensionCallbacks(Element* e)
@@ -4395,9 +4438,7 @@ PassRefPtr<Attr> Document::createAttributeNS(const String& namespaceURI, const S
         return 0;
     }
 
-    // FIXME: Assume this is a mapped attribute, since createAttribute isn't namespace-aware.  There's no harm to XML
-    // documents if we're wrong.
-    return Attr::create(0, this, Attribute::createMapped(qName, StringImpl::empty()));
+    return Attr::create(0, this, Attribute::create(qName, StringImpl::empty()));
 }
 
 #if ENABLE(SVG)
@@ -4751,19 +4792,20 @@ void Document::initSecurityContext()
 
     if (Settings* settings = this->settings()) {
         if (!settings->isWebSecurityEnabled()) {
-          // Web security is turned off.  We should let this document access every
-          // other document.  This is used primary by testing harnesses for web
-          // sites.
-          securityOrigin()->grantUniversalAccess();
-
+            // Web security is turned off. We should let this document access every
+            // other document. This is used primary by testing harnesses for web
+            // sites.
+            securityOrigin()->grantUniversalAccess();
         } else if (settings->allowUniversalAccessFromFileURLs() && securityOrigin()->isLocal()) {
-          // Some clients want file:// URLs to have universal access, but that
-          // setting is dangerous for other clients.
-          securityOrigin()->grantUniversalAccess();
+            // Some clients want file:// URLs to have universal access, but that
+            // setting is dangerous for other clients.
+            securityOrigin()->grantUniversalAccess();
         } else if (!settings->allowFileAccessFromFileURLs() && securityOrigin()->isLocal()) {
-          // Some clients want file:// URLs to have even tighter restrictions by
-          // default, and not be able to access other local files.
-          securityOrigin()->enforceFilePathSeparation();
+            // Some clients want file:// URLs to have even tighter restrictions by
+            // default, and not be able to access other local files.
+            // FIXME 81578: The naming of this is confusing. Files with restricted access to other local files
+            // still can have other privileges that can be remembered, thereby not making them unique origins.
+            securityOrigin()->enforceFilePathSeparation();
         }
     }
 
@@ -4793,24 +4835,6 @@ void Document::setSecurityOrigin(PassRefPtr<SecurityOrigin> origin)
 {
     SecurityContext::setSecurityOrigin(origin);
 }
-
-#if ENABLE(SQL_DATABASE)
-
-bool Document::allowDatabaseAccess() const
-{
-    if (!page() || (page()->settings()->privateBrowsingEnabled() && !SchemeRegistry::allowsDatabaseAccessInPrivateBrowsing(securityOrigin()->protocol())))
-        return false;
-    return true;
-}
-
-void Document::databaseExceededQuota(const String& name)
-{
-    Page* currentPage = page();
-    if (currentPage)
-        currentPage->chrome()->client()->exceededDatabaseQuota(document()->frame(), name);
-}
-
-#endif
 
 bool Document::isContextThread() const
 {
@@ -5071,7 +5095,7 @@ void Document::enqueueHashchangeEvent(const String& oldURL, const String& newURL
 void Document::enqueuePopstateEvent(PassRefPtr<SerializedScriptValue> stateObject)
 {
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=36202 Popstate event needs to fire asynchronously
-    dispatchWindowEvent(PopStateEvent::create(stateObject));
+    dispatchWindowEvent(PopStateEvent::create(stateObject, domWindow() ? domWindow()->history() : 0));
 }
 
 void Document::addMediaCanStartListener(MediaCanStartListener* listener)
@@ -5173,28 +5197,12 @@ void Document::webkitWillEnterFullScreenForElement(Element* element)
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
     
     recalcStyle(Force);
-    
-    if (m_fullScreenRenderer) {
-        setAnimatingFullScreen(true);
-#if USE(ACCELERATED_COMPOSITING)
-        view()->updateCompositingLayers();
-        if (m_fullScreenRenderer->layer() && m_fullScreenRenderer->layer()->isComposited())
-            page()->chrome()->client()->setRootFullScreenLayer(m_fullScreenRenderer->layer()->backing()->graphicsLayer());
-#endif
-    }
 }
     
 void Document::webkitDidEnterFullScreenForElement(Element*)
 {
     m_fullScreenElement->didBecomeFullscreenElement();
 
-    if (m_fullScreenRenderer) {
-        setAnimatingFullScreen(false);
-#if USE(ACCELERATED_COMPOSITING)
-        view()->updateCompositingLayers();
-        page()->chrome()->client()->setRootFullScreenLayer(0);
-#endif
-    }
     m_fullScreenChangeEventTargetQueue.append(m_fullScreenElement);
     m_fullScreenChangeDelayTimer.startOneShot(0);
 }
@@ -5204,29 +5212,16 @@ void Document::webkitWillExitFullScreenForElement(Element*)
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(false);
     
     m_fullScreenElement->willStopBeingFullscreenElement();
-
-    if (m_fullScreenRenderer) {
-        setAnimatingFullScreen(true);
-#if USE(ACCELERATED_COMPOSITING)
-        view()->updateCompositingLayers();
-        if (m_fullScreenRenderer->layer() && m_fullScreenRenderer->layer()->isComposited())
-            page()->chrome()->client()->setRootFullScreenLayer(m_fullScreenRenderer->layer()->backing()->graphicsLayer());
-#endif
-    }
 }
 
 void Document::webkitDidExitFullScreenForElement(Element*)
 {
     m_areKeysEnabledInFullScreen = false;
-    setAnimatingFullScreen(false);
     
     if (m_fullScreenRenderer)
         m_fullScreenRenderer->unwrapRenderer();
 
     m_fullScreenChangeEventTargetQueue.append(m_fullScreenElement.release());
-#if USE(ACCELERATED_COMPOSITING)
-    page()->chrome()->client()->setRootFullScreenLayer(0);
-#endif
     scheduleForcedStyleRecalc();
     
     m_fullScreenChangeDelayTimer.startOneShot(0);
@@ -5353,15 +5348,6 @@ void Document::setAnimatingFullScreen(bool flag)
         m_fullScreenElement->setNeedsStyleRecalc();
         scheduleForcedStyleRecalc();
     }
-
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_fullScreenRenderer && m_fullScreenRenderer->layer()) {
-        m_fullScreenRenderer->layer()->contentChanged(RenderLayer::FullScreenChanged);
-        // Clearing the layer's backing will force the compositor to reparent
-        // the layer the next time layers are synchronized.
-        m_fullScreenRenderer->layer()->clearBacking();
-    }
-#endif
 }
 #endif
 
@@ -5427,12 +5413,31 @@ PassRefPtr<TouchList> Document::createTouchList(ExceptionCode&) const
 }
 #endif
 
+static void wheelEventHandlerCountChanged(Document* document)
+{
+    Page* page = document->page();
+    if (!page)
+        return;
+
+    ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator();
+    if (!scrollingCoordinator)
+        return;
+
+    FrameView* frameView = document->view();
+    if (!frameView)
+        return;
+
+    scrollingCoordinator->frameViewWheelEventHandlerCountChanged(frameView);
+}
+
 void Document::didAddWheelEventHandler()
 {
     ++m_wheelEventHandlerCount;
     Frame* mainFrame = page() ? page()->mainFrame() : 0;
     if (mainFrame)
         mainFrame->notifyChromeClientWheelEventHandlerCountChanged();
+
+    wheelEventHandlerCountChanged(this);
 }
 
 void Document::didRemoveWheelEventHandler()
@@ -5442,12 +5447,31 @@ void Document::didRemoveWheelEventHandler()
     Frame* mainFrame = page() ? page()->mainFrame() : 0;
     if (mainFrame)
         mainFrame->notifyChromeClientWheelEventHandlerCountChanged();
+
+    wheelEventHandlerCountChanged(this);
+}
+
+void Document::didAddTouchEventHandler()
+{
+    ++m_touchEventHandlerCount;
+    Frame* mainFrame = page() ? page()->mainFrame() : 0;
+    if (mainFrame)
+        mainFrame->notifyChromeClientTouchEventHandlerCountChanged();
+}
+
+void Document::didRemoveTouchEventHandler()
+{
+    ASSERT(m_touchEventHandlerCount > 0);
+    --m_touchEventHandlerCount;
+    Frame* mainFrame = page() ? page()->mainFrame() : 0;
+    if (mainFrame)
+        mainFrame->notifyChromeClientTouchEventHandlerCountChanged();
 }
 
 bool Document::visualUpdatesAllowed() const
 {
     return !settings()
-        || !settings()->suppressIncrementalRendering()
+        || !settings()->suppressesIncrementalRendering()
         || loadEventFinished();
 }
 
@@ -5488,7 +5512,6 @@ void Document::removeCachedMicroDataItemList(MicroDataItemList* list, const Stri
 {
     ASSERT(rareData());
     ASSERT(rareData()->nodeLists());
-    ASSERT_UNUSED(list, list->hasOwnCaches());
 
     NodeListsNodeData* data = rareData()->nodeLists();
 
@@ -5497,5 +5520,12 @@ void Document::removeCachedMicroDataItemList(MicroDataItemList* list, const Stri
     data->m_microDataItemListCache.remove(localTypeNames);
 }
 #endif
+
+IntSize Document::viewportSize() const
+{
+    if (!view())
+        return IntSize();
+    return view()->visibleContentRect(/* includeScrollbars */ true).size();
+}
 
 } // namespace WebCore

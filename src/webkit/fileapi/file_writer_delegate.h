@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/url_request/url_request.h"
+#include "webkit/fileapi/file_system_path.h"
 
 namespace fileapi {
 
@@ -25,6 +26,7 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
  public:
   FileWriterDelegate(
       FileSystemOperation* write_operation,
+      const FileSystemPath& path,
       int64 offset,
       scoped_refptr<base::MessageLoopProxy> proxy);
   virtual ~FileWriterDelegate();
@@ -66,6 +68,7 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
 
   FileSystemOperation* file_system_operation_;
   base::PlatformFile file_;
+  FileSystemPath path_;
   int64 size_;
   int64 offset_;
   scoped_refptr<base::MessageLoopProxy> proxy_;
@@ -76,6 +79,7 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
   int64 total_bytes_written_;
   int64 allowed_bytes_to_write_;
   scoped_refptr<net::IOBufferWithSize> io_buffer_;
+  scoped_refptr<net::DrainableIOBuffer> cursor_;
   scoped_ptr<net::FileStream> file_stream_;
   net::URLRequest* request_;
   base::WeakPtrFactory<FileWriterDelegate> weak_factory_;

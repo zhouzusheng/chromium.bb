@@ -32,7 +32,6 @@
 
 #include "PlatformContextSkia.h"
 
-#include "AffineTransform.h"
 #include "Extensions3D.h"
 #include "GraphicsContext.h"
 #include "GraphicsContext3D.h"
@@ -50,11 +49,12 @@
 #include "SkDashPathEffect.h"
 #include "SkShader.h"
 
-#include "GrContext.h"
-#include "SkGpuDevice.h"
-
 #include <wtf/MathExtras.h>
 #include <wtf/Vector.h>
+
+#if PLATFORM(CHROMIUM)
+#include "TraceEvent.h"
+#endif
 
 namespace WebCore {
 
@@ -181,9 +181,9 @@ PlatformContextSkia::PlatformContextSkia(SkCanvas* canvas)
     : m_canvas(canvas)
     , m_trackOpaqueRegion(false)
     , m_printing(false)
+    , m_accelerated(false)
     , m_deferred(false)
     , m_drawingToImageBuffer(false)
-    , m_gpuContext(0)
 {
     m_stateStack.append(State());
     m_state = &m_stateStack.last();
@@ -241,7 +241,7 @@ void PlatformContextSkia::beginLayerClippedToImage(const FloatRect& rect,
 
     canvas()->clipRect(bounds);
 
-    if (imageBuffer->size().isEmpty())
+    if (imageBuffer->internalSize().isEmpty())
         return;
 
     canvas()->saveLayerAlpha(&bounds, 255,
@@ -265,11 +265,6 @@ void PlatformContextSkia::beginLayerClippedToImage(const FloatRect& rect,
 void PlatformContextSkia::clipPathAntiAliased(const SkPath& clipPath)
 {
     canvas()->clipPath(clipPath, SkRegion::kIntersect_Op, true);
-}
-
-const SkBitmap& PlatformContextSkia::clippedToImage() const
-{
-    return m_state->m_imageBufferClip;
 }
 
 void PlatformContextSkia::restore()
@@ -555,6 +550,9 @@ void PlatformContextSkia::paintSkPaint(const SkRect& rect,
 
 const SkBitmap* PlatformContextSkia::bitmap() const
 {
+#if PLATFORM(CHROMIUM)
+    TRACE_EVENT("PlatformContextSkia::bitmap", this, 0);
+#endif
     return &m_canvas->getDevice()->accessBitmap(false);
 }
 
@@ -604,33 +602,28 @@ void PlatformContextSkia::applyClipFromImage(const SkRect& rect, const SkBitmap&
     m_canvas->restore();
 }
 
-void PlatformContextSkia::setGraphicsContext3D(GraphicsContext3D* context)
-{
-    m_gpuContext = context;
-}
-
 void PlatformContextSkia::didDrawRect(const SkRect& rect, const SkPaint& paint, const SkBitmap* bitmap)
 {
     if (m_trackOpaqueRegion)
-        m_opaqueRegion.didDrawRect(this, rect, paint, bitmap);
+        m_opaqueRegion.didDrawRect(this, m_opaqueRegionTransform, rect, paint, bitmap);
 }
 
 void PlatformContextSkia::didDrawPath(const SkPath& path, const SkPaint& paint)
 {
     if (m_trackOpaqueRegion)
-        m_opaqueRegion.didDrawPath(this, path, paint);
+        m_opaqueRegion.didDrawPath(this, m_opaqueRegionTransform, path, paint);
 }
 
 void PlatformContextSkia::didDrawPoints(SkCanvas::PointMode mode, int numPoints, const SkPoint points[], const SkPaint& paint)
 {
     if (m_trackOpaqueRegion)
-        m_opaqueRegion.didDrawPoints(this, mode, numPoints, points, paint);
+        m_opaqueRegion.didDrawPoints(this, m_opaqueRegionTransform, mode, numPoints, points, paint);
 }
 
 void PlatformContextSkia::didDrawBounded(const SkRect& rect, const SkPaint& paint)
 {
     if (m_trackOpaqueRegion)
-        m_opaqueRegion.didDrawBounded(this, rect, paint);
+        m_opaqueRegion.didDrawBounded(this, m_opaqueRegionTransform, rect, paint);
 }
 
 } // namespace WebCore

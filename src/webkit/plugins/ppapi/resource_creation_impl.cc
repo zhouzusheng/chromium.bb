@@ -6,7 +6,7 @@
 
 #include "ppapi/c/pp_size.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
-#include "ppapi/shared_impl/private/ppb_font_shared.h"
+#include "ppapi/shared_impl/private/ppb_browser_font_trusted_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
@@ -21,11 +21,15 @@
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_system_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
+#include "webkit/plugins/ppapi/ppb_flash_message_loop_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_net_connector_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
+#include "webkit/plugins/ppapi/ppb_host_resolver_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
+#include "webkit/plugins/ppapi/ppb_network_monitor_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_scrollbar_impl.h"
+#include "webkit/plugins/ppapi/ppb_tcp_server_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_tcp_socket_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_transport_impl.h"
 #include "webkit/plugins/ppapi/ppb_udp_socket_private_impl.h"
@@ -69,8 +73,8 @@ PP_Resource ResourceCreationImpl::CreateAudioConfig(
     PP_Instance instance,
     PP_AudioSampleRate sample_rate,
     uint32_t sample_frame_count) {
-  return ::ppapi::PPB_AudioConfig_Shared::CreateAsImpl(instance, sample_rate,
-                                                       sample_frame_count);
+  return ::ppapi::PPB_AudioConfig_Shared::Create(
+      ::ppapi::OBJECT_IS_IMPL, instance, sample_rate, sample_frame_count);
 }
 
 PP_Resource ResourceCreationImpl::CreateAudioTrusted(
@@ -78,22 +82,33 @@ PP_Resource ResourceCreationImpl::CreateAudioTrusted(
   return (new PPB_Audio_Impl(instance))->GetReference();
 }
 
-PP_Resource ResourceCreationImpl::CreateAudioInput(
+PP_Resource ResourceCreationImpl::CreateAudioInput0_1(
     PP_Instance instance,
     PP_Resource config_id,
     PPB_AudioInput_Callback audio_input_callback,
     void* user_data) {
-  return PPB_AudioInput_Impl::Create(instance, config_id,
+  return PPB_AudioInput_Impl::Create0_1(instance, config_id,
       audio_input_callback, user_data);
 }
 
-PP_Resource ResourceCreationImpl::CreateAudioInputTrusted(
-    PP_Instance instance) {
+PP_Resource ResourceCreationImpl::CreateAudioInput(PP_Instance instance) {
   return (new PPB_AudioInput_Impl(instance))->GetReference();
 }
 
 PP_Resource ResourceCreationImpl::CreateBroker(PP_Instance instance) {
   return (new PPB_Broker_Impl(instance))->GetReference();
+}
+
+PP_Resource ResourceCreationImpl::CreateBrowserFont(
+    PP_Instance instance,
+    const PP_BrowserFont_Trusted_Description* description) {
+  PluginInstance* plugin_instance =
+      ResourceHelper::PPInstanceToPluginInstance(instance);
+  if (!plugin_instance)
+    return 0;
+  return ::ppapi::PPB_BrowserFont_Trusted_Shared::Create(
+      ::ppapi::OBJECT_IS_IMPL, instance, *description,
+      plugin_instance->delegate()->GetPreferences());
 }
 
 PP_Resource ResourceCreationImpl::CreateBuffer(PP_Instance instance,
@@ -135,20 +150,13 @@ PP_Resource ResourceCreationImpl::CreateFlashMenu(
   return PPB_Flash_Menu_Impl::Create(instance, menu_data);
 }
 
+PP_Resource ResourceCreationImpl::CreateFlashMessageLoop(PP_Instance instance) {
+  return PPB_Flash_MessageLoop_Impl::Create(instance);
+}
+
 PP_Resource ResourceCreationImpl::CreateFlashNetConnector(
     PP_Instance instance) {
   return (new PPB_Flash_NetConnector_Impl(instance))->GetReference();
-}
-
-PP_Resource ResourceCreationImpl::CreateFontObject(
-    PP_Instance instance,
-    const PP_FontDescription_Dev* description) {
-  PluginInstance* plugin_instance =
-      ResourceHelper::PPInstanceToPluginInstance(instance);
-  if (!plugin_instance)
-    return 0;
-  return ::ppapi::PPB_Font_Shared::CreateAsImpl(
-      instance, *description, plugin_instance->delegate()->GetPreferences());
 }
 
 PP_Resource ResourceCreationImpl::CreateGraphics2D(
@@ -170,6 +178,11 @@ PP_Resource ResourceCreationImpl::CreateGraphics3DRaw(
     PP_Resource share_context,
     const int32_t* attrib_list) {
   return PPB_Graphics3D_Impl::CreateRaw(instance, share_context, attrib_list);
+}
+
+PP_Resource ResourceCreationImpl::CreateHostResolverPrivate(
+    PP_Instance instance) {
+  return (new PPB_HostResolver_Private_Impl(instance))->GetReference();
 }
 
 PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
@@ -204,7 +217,7 @@ PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent(
     data.character_text = string_var->value();
   }
 
-  return (new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsImpl(),
+  return (new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL,
                                     instance, data))->GetReference();
 }
 
@@ -233,8 +246,15 @@ PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
   data.mouse_click_count = click_count;
   data.mouse_movement = *mouse_movement;
 
-  return (new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsImpl(),
+  return (new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL,
                                     instance, data))->GetReference();
+}
+
+PP_Resource ResourceCreationImpl::CreateNetworkMonitor(
+    PP_Instance instance,
+    PPB_NetworkMonitor_Callback callback,
+    void* user_data) {
+  return PPB_NetworkMonitor_Private_Impl::Create(instance, callback, user_data);
 }
 
 PP_Resource ResourceCreationImpl::CreateScrollbar(PP_Instance instance,
@@ -242,13 +262,23 @@ PP_Resource ResourceCreationImpl::CreateScrollbar(PP_Instance instance,
   return PPB_Scrollbar_Impl::Create(instance, PP_ToBool(vertical));
 }
 
+PP_Resource ResourceCreationImpl::CreateTalk(PP_Instance /* instance */) {
+  // Not implemented in-process.
+  return 0;
+}
+
 PP_Resource ResourceCreationImpl::CreateResourceArray(
     PP_Instance instance,
     const PP_Resource elements[],
     uint32_t size) {
   PPB_ResourceArray_Shared* object = new PPB_ResourceArray_Shared(
-      PPB_ResourceArray_Shared::InitAsImpl(), instance, elements, size);
+      ::ppapi::OBJECT_IS_IMPL, instance, elements, size);
   return object->GetReference();
+}
+
+PP_Resource ResourceCreationImpl::CreateTCPServerSocketPrivate(
+    PP_Instance instance) {
+  return PPB_TCPServerSocket_Private_Impl::CreateResource(instance);
 }
 
 PP_Resource ResourceCreationImpl::CreateTCPSocketPrivate(PP_Instance instance) {
@@ -318,7 +348,7 @@ PP_Resource ResourceCreationImpl::CreateWheelInputEvent(
   data.wheel_ticks = *wheel_ticks;
   data.wheel_scroll_by_page = PP_ToBool(scroll_by_page);
 
-  return (new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsImpl(),
+  return (new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL,
                                     instance, data))->GetReference();
 }
 

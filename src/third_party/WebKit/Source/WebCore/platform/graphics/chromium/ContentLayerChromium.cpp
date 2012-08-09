@@ -93,9 +93,10 @@ bool ContentLayerChromium::drawsContent() const
     return TiledLayerChromium::drawsContent() && m_delegate;
 }
 
-void ContentLayerChromium::paintContentsIfDirty()
+void ContentLayerChromium::paintContentsIfDirty(const CCOcclusionTracker* occlusion)
 {
     updateTileSizeAndTilingOption();
+    createTextureUpdaterIfNeeded();
 
     IntRect layerRect;
 
@@ -104,35 +105,36 @@ void ContentLayerChromium::paintContentsIfDirty()
     if (drawsContent())
         layerRect = visibleLayerRect();
 
-    prepareToUpdate(layerRect);
+    prepareToUpdate(layerRect, occlusion);
     m_needsDisplay = false;
 }
 
-void ContentLayerChromium::idlePaintContentsIfDirty()
+void ContentLayerChromium::idlePaintContentsIfDirty(const CCOcclusionTracker* occlusion)
 {
     if (!drawsContent())
         return;
 
-    const IntRect& layerRect = visibleLayerRect();
-    if (layerRect.isEmpty())
-        return;
-
-    prepareToUpdateIdle(layerRect);
+    const IntRect layerRect = visibleLayerRect();
+    prepareToUpdateIdle(layerRect, occlusion);
     if (needsIdlePaint(layerRect))
         setNeedsCommit();
 }
 
-void ContentLayerChromium::createTextureUpdater(const CCLayerTreeHost* host)
+void ContentLayerChromium::createTextureUpdaterIfNeeded()
 {
-#if USE(SKIA)
-    if (host->settings().acceleratePainting)
+    if (m_textureUpdater)
+        return;
+    if (layerTreeHost()->settings().acceleratePainting)
         m_textureUpdater = FrameBufferSkPictureCanvasLayerTextureUpdater::create(ContentLayerPainter::create(m_delegate));
-    else if (host->settings().perTilePainting)
-        m_textureUpdater = BitmapSkPictureCanvasLayerTextureUpdater::create(ContentLayerPainter::create(m_delegate), host->layerRendererCapabilities().usingMapSub);
+    else if (layerTreeHost()->settings().perTilePainting)
+        m_textureUpdater = BitmapSkPictureCanvasLayerTextureUpdater::create(ContentLayerPainter::create(m_delegate), layerTreeHost()->layerRendererCapabilities().usingMapSub);
     else
-#endif // USE(SKIA)
-        m_textureUpdater = BitmapCanvasLayerTextureUpdater::create(ContentLayerPainter::create(m_delegate), host->layerRendererCapabilities().usingMapSub);
+        m_textureUpdater = BitmapCanvasLayerTextureUpdater::create(ContentLayerPainter::create(m_delegate), layerTreeHost()->layerRendererCapabilities().usingMapSub);
     m_textureUpdater->setOpaque(opaque());
+
+    GC3Denum textureFormat = layerTreeHost()->layerRendererCapabilities().bestTextureFormat;
+    setTextureFormat(textureFormat);
+    setSampledTexelFormat(textureUpdater()->sampledTexelFormat(textureFormat));
 }
 
 void ContentLayerChromium::setOpaque(bool opaque)

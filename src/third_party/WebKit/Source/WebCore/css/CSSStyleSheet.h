@@ -21,16 +21,19 @@
 #ifndef CSSStyleSheet_h
 #define CSSStyleSheet_h
 
-#include "CSSRuleList.h"
 #include "StyleSheet.h"
 
 namespace WebCore {
 
 struct CSSNamespace;
 class CSSParser;
+class CSSCharsetRule;
 class CSSRule;
+class CSSRuleList;
+class CachedCSSStyleSheet;
 class CachedResourceLoader;
 class Document;
+class MediaQuerySet;
 
 typedef int ExceptionCode;
 
@@ -66,12 +69,12 @@ public:
         return static_cast<CSSStyleSheet*>(parentSheet);
     }
 
-    PassRefPtr<CSSRuleList> cssRules(bool omitCharsetRules = false);
+    PassRefPtr<CSSRuleList> cssRules();
     unsigned insertRule(const String& rule, unsigned index, ExceptionCode&);
     void deleteRule(unsigned index, ExceptionCode&);
 
     // IE Extensions
-    PassRefPtr<CSSRuleList> rules() { return cssRules(true); }
+    PassRefPtr<CSSRuleList> rules();
     int addRule(const String& selector, const String& style, int index, ExceptionCode&);
     int addRule(const String& selector, const String& style, ExceptionCode&);
     void removeRule(unsigned index, ExceptionCode& ec) { deleteRule(index, ec); }
@@ -108,11 +111,23 @@ public:
     void setHasSyntacticallyValidCSSHeader(bool b) { m_hasSyntacticallyValidCSSHeader = b; }
     bool hasSyntacticallyValidCSSHeader() const { return m_hasSyntacticallyValidCSSHeader; }
 
-    void append(PassRefPtr<CSSRule>);
-    void remove(unsigned index);
+    void parserAppendRule(PassRefPtr<CSSRule>);
+    void parserSetEncodingFromCharsetRule(const String& encoding); 
 
-    unsigned length() const { return m_children.size(); }
-    CSSRule* item(unsigned index) { return index < length() ? m_children.at(index).get() : 0; }
+    void clearRules();
+
+    unsigned length() const;
+    CSSRule* item(unsigned index);
+
+    // Does not contain @charset rule.
+    const Vector<RefPtr<CSSRule> >& ruleVector() const { return m_children; }
+
+    virtual MediaList* media() const OVERRIDE;
+
+    MediaQuerySet* mediaQueries() const { return m_mediaQueries.get(); }
+    void setMediaQueries(PassRefPtr<MediaQuerySet>);
+
+    void notifyLoadedSheet(const CachedCSSStyleSheet*);
 
 private:
     CSSStyleSheet(Node* ownerNode, const String& originalURL, const KURL& finalURL, const String& charset);
@@ -120,14 +135,25 @@ private:
 
     virtual bool isCSSStyleSheet() const { return true; }
     virtual String type() const { return "text/css"; }
+    
+    void clearCharsetRule();
+    bool hasCharsetRule() const { return !m_encodingFromCharsetRule.isNull() || m_charsetRuleCSSOMWrapper; }
+    CSSCharsetRule* ensureCharsetRule();
 
+    String m_encodingFromCharsetRule;
+    RefPtr<CSSCharsetRule> m_charsetRuleCSSOMWrapper;
     Vector<RefPtr<CSSRule> > m_children;
     OwnPtr<CSSNamespace> m_namespaces;
     String m_charset;
+    RefPtr<MediaQuerySet> m_mediaQueries;
+
     bool m_loadCompleted : 1;
     bool m_strictParsing : 1;
     bool m_isUserStyleSheet : 1;
     bool m_hasSyntacticallyValidCSSHeader : 1;
+    bool m_didLoadErrorOccur : 1;
+    
+    OwnPtr<CSSRuleList> m_ruleListCSSOMWrapper;
 };
 
 } // namespace

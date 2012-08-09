@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -108,8 +108,22 @@ bool Connection::OpenInMemory() {
 }
 
 void Connection::Close() {
+  // TODO(shess): Calling "PRAGMA journal_mode = DELETE" at this point
+  // will delete the -journal file.  For ChromiumOS or other more
+  // embedded systems, this is probably not appropriate, whereas on
+  // desktop it might make some sense.
+
+  // sqlite3_close() needs all prepared statements to be finalized.
+  // Release all cached statements, then assert that the client has
+  // released all statements.
   statement_cache_.clear();
   DCHECK(open_statements_.empty());
+
+  // Additionally clear the prepared statements, because they contain
+  // weak references to this connection.  This case has come up when
+  // error-handling code is hit in production.
+  ClearCache();
+
   if (db_) {
     // TODO(shess): Some additional code to debug http://crbug.com/95527 .
     // If you are reading this due to link errors or something, it can
@@ -125,6 +139,8 @@ void Connection::Close() {
     // prevent optimization.
     CHECK_LT(nTouched, 1000*1000*1000U);
 #endif
+
+    // TODO(shess): Histogram for failure.
     sqlite3_close(db_);
     db_ = NULL;
   }
@@ -219,10 +235,11 @@ int Connection::ExecuteAndReturnErrorCode(const char* sql) {
 
 bool Connection::Execute(const char* sql) {
   int error = ExecuteAndReturnErrorCode(sql);
-  // TODO(shess,gbillock): DLOG(FATAL) once Execute() clients are
-  // converted.
+  // This needs to be a FATAL log because the error case of arriving here is
+  // that there's a malformed SQL statement. This can arise in development if
+  // a change alters the schema but not all queries adjust.
   if (error == SQLITE_ERROR)
-    DLOG(ERROR) << "SQL Error in " << sql << ", " << GetErrorMessage();
+    DLOG(FATAL) << "SQL Error in " << sql << ", " << GetErrorMessage();
   return error == SQLITE_OK;
 }
 
@@ -299,6 +316,7 @@ bool Connection::DoesTableOrIndexExist(
       "WHERE type=? AND name=?"));
   statement.BindString(0, type);
   statement.BindString(1, name);
+
   return statement.Step();  // Table exists if any row was returned.
 }
 
@@ -367,6 +385,7 @@ bool Connection::OpenInternal(const std::string& file_name) {
   int err = sqlite3_open(file_name.c_str(), &db_);
   if (err != SQLITE_OK) {
     OnSqliteError(err, NULL);
+    Close();
     db_ = NULL;
     return false;
   }
@@ -393,6 +412,17 @@ bool Connection::OpenInternal(const std::string& file_name) {
     if (!Execute("PRAGMA locking_mode=EXCLUSIVE"))
       DLOG(FATAL) << "Could not set locking mode: " << GetErrorMessage();
   }
+
+  // http://www.sqlite.org/pragma.html#pragma_journal_mode
+  // DELETE (default) - delete -journal file to commit.
+  // TRUNCATE - truncate -journal file to commit.
+  // PERSIST - zero out header of -journal file to commit.
+  // journal_size_limit provides size to trim to in PERSIST.
+  // TODO(shess): Figure out if PERSIST and journal_size_limit really
+  // matter.  In theory, it keeps pages pre-allocated, so if
+  // transactions usually fit, it should be faster.
+  ignore_result(Execute("PRAGMA journal_mode = PERSIST"));
+  ignore_result(Execute("PRAGMA journal_size_limit = 16384"));
 
   const base::TimeDelta kBusyTimeout =
     base::TimeDelta::FromSeconds(kBusyTimeoutSeconds);
@@ -426,6 +456,7 @@ bool Connection::OpenInternal(const std::string& file_name) {
 void Connection::DoRollback() {
   Statement rollback(GetCachedStatement(SQL_FROM_HERE, "ROLLBACK"));
   rollback.Run();
+  needs_rollback_ = false;
 }
 
 void Connection::StatementRefCreated(StatementRef* ref) {

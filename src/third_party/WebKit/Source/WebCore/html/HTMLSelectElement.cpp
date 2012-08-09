@@ -42,6 +42,7 @@
 #include "HTMLOptionsCollection.h"
 #include "KeyboardEvent.h"
 #include "MouseEvent.h"
+#include "NodeRenderingContext.h"
 #include "Page.h"
 #include "RenderListBox.h"
 #include "RenderMenuList.h"
@@ -256,7 +257,18 @@ void HTMLSelectElement::setValue(const String &value)
     setSelectedIndex(-1);
 }
 
-void HTMLSelectElement::parseMappedAttribute(Attribute* attr)
+bool HTMLSelectElement::isPresentationAttribute(const QualifiedName& name) const
+{
+    if (name == alignAttr) {
+        // Don't map 'align' attribute. This matches what Firefox, Opera and IE do.
+        // See http://bugs.webkit.org/show_bug.cgi?id=12072
+        return false;
+    }
+
+    return HTMLFormControlElementWithState::isPresentationAttribute(name);
+}
+
+void HTMLSelectElement::parseAttribute(Attribute* attr)
 {
     if (attr->name() == sizeAttr) {
         int oldSize = m_size;
@@ -282,13 +294,10 @@ void HTMLSelectElement::parseMappedAttribute(Attribute* attr)
         parseMultipleAttribute(attr);
     else if (attr->name() == accesskeyAttr) {
         // FIXME: ignore for the moment.
-    } else if (attr->name() == alignAttr) {
-        // Don't map 'align' attribute. This matches what Firefox, Opera and IE do.
-        // See http://bugs.webkit.org/show_bug.cgi?id=12072
     } else if (attr->name() == onchangeAttr)
         setAttributeEventListener(eventNames().changeEvent, createAttributeEventListener(this, attr));
     else
-        HTMLFormControlElementWithState::parseMappedAttribute(attr);
+        HTMLFormControlElementWithState::parseAttribute(attr);
 }
 
 bool HTMLSelectElement::isKeyboardFocusable(KeyboardEvent* event) const
@@ -315,6 +324,18 @@ RenderObject* HTMLSelectElement::createRenderer(RenderArena* arena, RenderStyle*
     if (usesMenuList())
         return new (arena) RenderMenuList(this);
     return new (arena) RenderListBox(this);
+}
+
+bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+{
+    return childContext.isOnUpperEncapsulationBoundary() && HTMLFormControlElementWithState::childShouldCreateRenderer(childContext);
+}
+
+HTMLCollection* HTMLSelectElement::selectedOptions()
+{
+    if (!m_selectedOptionsCollection)
+        m_selectedOptionsCollection = HTMLCollection::create(this, SelectedOptions);
+    return m_selectedOptionsCollection.get();
 }
 
 HTMLOptionsCollection* HTMLSelectElement::options()
@@ -389,7 +410,7 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
     if (index > maxSelectItems - 1)
         index = maxSelectItems - 1;
     int diff = index - length();
-    HTMLElement* before = 0;
+    RefPtr<HTMLElement> before = 0;
     // Out of array bounds? First insert empty dummies.
     if (diff > 0) {
         setLength(index, ec);
@@ -400,7 +421,7 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
     }
     // Finally add the new element.
     if (!ec) {
-        add(option, before, ec);
+        add(option, before.get(), ec);
         if (diff >= 0 && option->selected())
             optionSelectionStateChanged(option, true);
     }
@@ -767,8 +788,10 @@ void HTMLSelectElement::optionSelectionStateChanged(HTMLOptionElement* option, b
     ASSERT(option->ownerSelectElement() == this);
     if (optionIsSelected)
         selectOption(option->index());
+    else if (!usesMenuList())
+        selectOption(-1);
     else
-        selectOption(m_multiple ? -1 : nextSelectableListIndex(-1));
+        selectOption(nextSelectableListIndex(-1));
 }
 
 void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)

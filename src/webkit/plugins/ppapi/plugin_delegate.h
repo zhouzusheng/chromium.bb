@@ -6,6 +6,7 @@
 #define WEBKIT_PLUGINS_PPAPI_PLUGIN_DELEGATE_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/message_loop_proxy.h"
@@ -18,16 +19,20 @@
 #include "media/video/capture/video_capture.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/dev/pp_video_dev.h"
+#include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/glue/clipboard_client.h"
 #include "webkit/plugins/ppapi/dir_contents.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
+struct PP_HostResolver_Private_Hint;
 struct PP_NetAddress_Private;
 class SkBitmap;
 class TransportDIB;
@@ -50,6 +55,9 @@ class CommandBuffer;
 }
 
 namespace ppapi {
+class PPB_HostResolver_Shared;
+struct DeviceRefData;
+struct HostPortPair;
 struct Preferences;
 }
 
@@ -65,7 +73,9 @@ struct WebFileChooserParams;
 }
 
 namespace webkit_glue {
+class ClipboardClient;
 class P2PTransport;
+class NetworkListObserver;
 }  // namespace webkit_glue
 
 namespace webkit {
@@ -165,6 +175,9 @@ class PluginDelegate {
     // compositors namespace. Otherwise return 0. Returns 0 by default.
     virtual unsigned GetBackingTextureId() = 0;
 
+    // Returns true if the backing texture is always opaque.
+    virtual bool IsOpaque() = 0;
+
     // This call will return the address of the command buffer for this context
     // that is constructed in Initialize() and is valid until this context is
     // destroyed.
@@ -179,15 +192,22 @@ class PluginDelegate {
     virtual void SetContextLostCallback(
         const base::Callback<void()>& callback) = 0;
 
+    // Set an optional callback that will be invoked when the GPU process
+    // sends a console message.
+    typedef base::Callback<void(const std::string&, int)>
+        ConsoleMessageCallback;
+    virtual void SetOnConsoleMessageCallback(
+        const ConsoleMessageCallback& callback) = 0;
+
     // Run the callback once the channel has been flushed.
     virtual bool Echo(const base::Callback<void()>& callback) = 0;
   };
 
-  // The (interface for the) client used by |PlatformAudio| and
+  // The base class of clients used by |PlatformAudioOutput| and
   // |PlatformAudioInput|.
-  class PlatformAudioCommonClient {
+  class PlatformAudioClientBase {
    protected:
-    virtual ~PlatformAudioCommonClient() {}
+    virtual ~PlatformAudioClientBase() {}
 
    public:
     // Called when the stream is created.
@@ -196,7 +216,12 @@ class PluginDelegate {
                                base::SyncSocket::Handle socket) = 0;
   };
 
-  class PlatformAudio {
+  class PlatformAudioOutputClient : public PlatformAudioClientBase {
+   protected:
+    virtual ~PlatformAudioOutputClient() {}
+  };
+
+  class PlatformAudioOutput {
    public:
     // Starts the playback. Returns false on error or if called before the
     // stream is created or after the stream is closed.
@@ -211,18 +236,21 @@ class PluginDelegate {
     virtual void ShutDown() = 0;
 
    protected:
-    virtual ~PlatformAudio() {}
+    virtual ~PlatformAudioOutput() {}
+  };
+
+  class PlatformAudioInputClient : public PlatformAudioClientBase {
+   public:
+    virtual void StreamCreationFailed() = 0;
+
+   protected:
+    virtual ~PlatformAudioInputClient() {}
   };
 
   class PlatformAudioInput {
    public:
-    // Starts the playback. Returns false on error or if called before the
-    // stream is created or after the stream is closed.
-    virtual bool StartCapture() = 0;
-
-    // Stops the capture. Returns false on error or if called before the stream
-    // is created or after the stream is closed.
-    virtual bool StopCapture() = 0;
+    virtual void StartCapture() = 0;
+    virtual void StopCapture() = 0;
 
     // Closes the stream. Make sure to call this before the object is
     // destructed.
@@ -239,13 +267,26 @@ class PluginDelegate {
     virtual ~PlatformVideoDecoder() {}
   };
 
-  class PlatformVideoCapture : public media::VideoCapture {
+  class PlatformVideoCaptureEventHandler
+      : public media::VideoCapture::EventHandler {
+   public:
+    virtual ~PlatformVideoCaptureEventHandler() {}
+
+    virtual void OnInitialized(media::VideoCapture* capture,
+                               bool succeeded) = 0;
+  };
+
+  class PlatformVideoCapture : public media::VideoCapture,
+                               public base::RefCounted<PlatformVideoCapture> {
    public:
     virtual ~PlatformVideoCapture() {}
+
+    // Detaches the event handler and stops sending notifications to it.
+    virtual void DetachEventHandler() = 0;
   };
 
   // Provides access to the ppapi broker.
-  class PpapiBroker {
+  class Broker {
    public:
     virtual void Connect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
@@ -256,7 +297,7 @@ class PluginDelegate {
     virtual void Disconnect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
    protected:
-    virtual ~PpapiBroker() {}
+    virtual ~Broker() {}
   };
 
   // Notification that the given plugin is focused or unfocused.
@@ -270,6 +311,9 @@ class PluginDelegate {
       webkit::ppapi::PluginInstance* instance) = 0;
   // Notification that the plugin requested to cancel the current composition.
   virtual void PluginRequestedCancelComposition(
+      webkit::ppapi::PluginInstance* instance) = 0;
+  // Notification that the text selection in the given plugin is changed.
+  virtual void PluginSelectionChanged(
       webkit::ppapi::PluginInstance* instance) = 0;
 
   // Notification that the given plugin has crashed. When a plugin crashes, all
@@ -295,33 +339,47 @@ class PluginDelegate {
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
 
-  // The caller will own the pointer returned from this.
+  // If |device_id| is empty, the default video capture device will be used. The
+  // user can start using the returned object to capture video right away.
+  // Otherwise, the specified device will be used. The user needs to wait till
+  // |handler| gets an OnInitialized() notification to start using the returned
+  // object.
   virtual PlatformVideoCapture* CreateVideoCapture(
-      media::VideoCapture::EventHandler* handler) = 0;
+      const std::string& device_id,
+      PlatformVideoCaptureEventHandler* handler) = 0;
 
   // The caller will own the pointer returned from this.
   virtual PlatformVideoDecoder* CreateVideoDecoder(
       media::VideoDecodeAccelerator::Client* client,
       int32 command_buffer_route_id) = 0;
 
-  // The caller is responsible for calling Shutdown() on the returned pointer
-  // to clean up the corresponding resources allocated during this call.
-  virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
-                                     uint32_t sample_count,
-                                     PlatformAudioCommonClient* client) = 0;
+  // Get audio hardware output sample rate.
+  virtual uint32_t GetAudioHardwareOutputSampleRate() = 0;
+
+  // Get audio hardware output buffer size.
+  virtual uint32_t GetAudioHardwareOutputBufferSize() = 0;
 
   // The caller is responsible for calling Shutdown() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
-  virtual PlatformAudioInput* CreateAudioInput(uint32_t sample_rate,
+  virtual PlatformAudioOutput* CreateAudioOutput(
+      uint32_t sample_rate,
       uint32_t sample_count,
-      PlatformAudioCommonClient* client) = 0;
+      PlatformAudioOutputClient* client) = 0;
+
+  // If |device_id| is empty, the default audio input device will be used.
+  // The caller is responsible for calling Shutdown() on the returned pointer
+  // to clean up the corresponding resources allocated during this call.
+  virtual PlatformAudioInput* CreateAudioInput(
+      const std::string& device_id,
+      uint32_t sample_rate,
+      uint32_t sample_count,
+      PlatformAudioInputClient* client) = 0;
 
   // A pointer is returned immediately, but it is not ready to be used until
   // BrokerConnected has been called.
   // The caller is responsible for calling Release() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
-  virtual PpapiBroker* ConnectToPpapiBroker(
-      webkit::ppapi::PPB_Broker_Impl* client) = 0;
+  virtual Broker* ConnectToBroker(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
   // Notifies that the number of find results has changed.
   virtual void NumberOfFindResultsChanged(int identifier,
@@ -425,6 +483,8 @@ class PluginDelegate {
   virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
   virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
+  virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
+                                 uint32 socket_id) = 0;
 
   // For PPB_UDPSocket_Private.
   virtual uint32 UDPSocketCreate() = 0;
@@ -436,6 +496,31 @@ class PluginDelegate {
                                const std::string& buffer,
                                const PP_NetAddress_Private& addr) = 0;
   virtual void UDPSocketClose(uint32 socket_id) = 0;
+
+  // For PPB_TCPServerSocket_Private.
+  virtual void TCPServerSocketListen(PP_Resource socket_resource,
+                                     const PP_NetAddress_Private& addr,
+                                     int32_t backlog) = 0;
+  virtual void TCPServerSocketAccept(uint32 server_socket_id) = 0;
+  virtual void TCPServerSocketStopListening(
+      PP_Resource socket_resource,
+      uint32 socket_id) = 0;
+
+  // For PPB_HostResolver_Private.
+  virtual void RegisterHostResolver(
+      ::ppapi::PPB_HostResolver_Shared* host_resolver,
+      uint32 host_resolver_id) = 0;
+  virtual void HostResolverResolve(
+      uint32 host_resolver_id,
+      const ::ppapi::HostPortPair& host_port,
+      const PP_HostResolver_Private_Hint* hint) = 0;
+  virtual void UnregisterHostResolver(uint32 host_resolver_id) = 0;
+
+  // Add/remove a network list observer.
+  virtual bool AddNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) = 0;
+  virtual void RemoveNetworkListObserver(
+      webkit_glue::NetworkListObserver* observer) = 0;
 
   // Show the given context menu at the given position (in the plugin's
   // coordinates).
@@ -524,6 +609,20 @@ class PluginDelegate {
 
   // Returns true if the containing page is visible.
   virtual bool IsPageVisible() const = 0;
+
+  typedef base::Callback<
+      void (int /* request_id */,
+            bool /* succeeded */,
+            const std::vector< ::ppapi::DeviceRefData>& /* devices */)>
+      EnumerateDevicesCallback;
+
+  // Enumerates devices of the specified type. The request ID passed into the
+  // callback will be the same as the return value.
+  virtual int EnumerateDevices(PP_DeviceType_Dev type,
+                               const EnumerateDevicesCallback& callback) = 0;
+  // Create a ClipboardClient for writing to the clipboard. The caller will own
+  // the pointer to this.
+  virtual webkit_glue::ClipboardClient* CreateClipboardClient() const = 0;
 };
 
 }  // namespace ppapi

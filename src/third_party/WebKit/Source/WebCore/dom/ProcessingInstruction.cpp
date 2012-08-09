@@ -36,7 +36,7 @@
 namespace WebCore {
 
 inline ProcessingInstruction::ProcessingInstruction(Document* document, const String& target, const String& data)
-    : ContainerNode(document)
+    : Node(document, CreateOther)
     , m_target(target)
     , m_data(data)
     , m_cachedSheet(0)
@@ -103,12 +103,6 @@ PassRefPtr<Node> ProcessingInstruction::cloneNode(bool /*deep*/)
     return create(document(), m_target, m_data);
 }
 
-// DOM Section 1.1.1
-bool ProcessingInstruction::childTypeAllowed(NodeType) const
-{
-    return false;
-}
-
 void ProcessingInstruction::checkStyleSheet()
 {
     if (m_target == "xml-stylesheet" && document()->frame() && parentNode() == document()) {
@@ -139,6 +133,9 @@ void ProcessingInstruction::checkStyleSheet()
         m_alternate = alternate == "yes";
         m_title = attrs.get("title");
         m_media = attrs.get("media");
+
+        if (m_alternate && m_title.isEmpty())
+            return;
 
         if (href.length() > 1 && href[0] == '#') {
             m_localHref = href.substring(1);
@@ -221,7 +218,7 @@ void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& bas
     // type.
     parseStyleSheet(sheet->sheetText(true));
     newSheet->setTitle(m_title);
-    newSheet->setMedia(MediaList::create(newSheet.get(), m_media));
+    newSheet->setMediaQueries(MediaQuerySet::create(m_media));
     newSheet->setDisabled(m_alternate);
 }
 
@@ -280,14 +277,14 @@ void ProcessingInstruction::addSubresourceAttributeURLs(ListHashSet<KURL>& urls)
 
 void ProcessingInstruction::insertedIntoDocument()
 {
-    ContainerNode::insertedIntoDocument();
+    Node::insertedIntoDocument();
     document()->addStyleSheetCandidateNode(this, m_createdByParser);
     checkStyleSheet();
 }
 
 void ProcessingInstruction::removedFromDocument()
 {
-    ContainerNode::removedFromDocument();
+    Node::removedFromDocument();
 
     document()->removeStyleSheetCandidateNode(this);
 
@@ -304,7 +301,7 @@ void ProcessingInstruction::removedFromDocument()
 void ProcessingInstruction::finishParsingChildren()
 {
     m_createdByParser = false;
-    ContainerNode::finishParsingChildren();
+    Node::finishParsingChildren();
 }
 
 } // namespace

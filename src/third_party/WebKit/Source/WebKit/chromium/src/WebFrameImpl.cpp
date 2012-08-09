@@ -123,8 +123,6 @@
 #include "ReplaceSelectionCommand.h"
 #include "ResourceHandle.h"
 #include "ResourceRequest.h"
-#include "SVGDocumentExtensions.h"
-#include "SVGSMILElement.h"
 #include "SchemeRegistry.h"
 #include "ScriptController.h"
 #include "ScriptSourceCode.h"
@@ -1303,7 +1301,7 @@ void WebFrameImpl::requestTextChecking(const WebElement& webElem)
 
     RefPtr<Range> rangeToCheck = rangeOfContents(const_cast<Element*>(webElem.constUnwrap<Element>()));
 
-    frame()->editor()->spellChecker()->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, rangeToCheck, rangeToCheck));
+    frame()->editor()->spellChecker()->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
 }
 
 bool WebFrameImpl::hasSelection() const
@@ -1349,7 +1347,7 @@ WebString WebFrameImpl::selectionAsMarkup() const
     if (!range)
         return WebString();
 
-    return createMarkup(range.get(), 0);
+    return createMarkup(range.get(), 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
 }
 
 void WebFrameImpl::selectWordAroundPosition(Frame* frame, VisiblePosition pos)
@@ -1384,7 +1382,7 @@ void WebFrameImpl::selectRange(const WebPoint& start, const WebPoint& end)
 
 VisiblePosition WebFrameImpl::visiblePositionForWindowPoint(const WebPoint& point)
 {
-    HitTestRequest::HitTestRequestType hitType = HitTestRequest::MouseMove;
+    HitTestRequest::HitTestRequestType hitType = HitTestRequest::Move;
     hitType |= HitTestRequest::ReadOnly;
     hitType |= HitTestRequest::Active;
     HitTestRequest request(hitType);
@@ -1946,26 +1944,6 @@ bool WebFrameImpl::selectionStartHasSpellingMarkerFor(int from, int length) cons
     return m_frame->editor()->selectionStartHasMarkerFor(DocumentMarker::Spelling, from, length);
 }
 
-bool WebFrameImpl::pauseSVGAnimation(const WebString& animationId, double time, const WebString& elementId)
-{
-#if !ENABLE(SVG)
-    return false;
-#else
-    if (!m_frame)
-        return false;
-
-    Document* document = m_frame->document();
-    if (!document || !document->svgExtensions())
-        return false;
-
-    Node* coreNode = document->getElementById(animationId);
-    if (!coreNode || !SVGSMILElement::isSMILElement(coreNode))
-        return false;
-
-    return document->accessSVGExtensions()->sampleAnimationAtTime(elementId, static_cast<SVGSMILElement*>(coreNode), time);
-#endif
-}
-
 WebString WebFrameImpl::layerTreeAsText(bool showDebugInfo) const
 {
     if (!m_frame)
@@ -2105,10 +2083,6 @@ void WebFrameImpl::createFrameView()
     m_frame->createView(webView->size(), Color::white, webView->isTransparent(),  webView->fixedLayoutSize(), isMainFrame ? webView->isFixedLayoutModeEnabled() : 0);
     if (webView->shouldAutoResize() && isMainFrame)
         m_frame->view()->enableAutoSizeMode(true, webView->minAutoSize(), webView->maxAutoSize());
-
-#if ENABLE(GESTURE_RECOGNIZER)
-    webView->resetGestureRecognizer();
-#endif
 }
 
 WebFrameImpl* WebFrameImpl::fromFrame(Frame* frame)

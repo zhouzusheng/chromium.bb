@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2004 Zack Rusin <zack@kde.org>
- * Copyright (C) 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,15 +28,16 @@
 
 namespace WebCore {
 
-class Color;
-class CSSMutableStyleDeclaration;
 class CSSPrimitiveValue;
+class CSSPropertyLonghand;
 class CSSValueList;
 class CSSValuePool;
+class Color;
 class Node;
 class RenderStyle;
-class ShadowData;
 class SVGPaint;
+class ShadowData;
+class StylePropertySet;
 
 #if ENABLE(CSS_SHADERS)
 class CustomFilterNumberParameter;
@@ -47,15 +48,21 @@ enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
 class CSSComputedStyleDeclaration : public CSSStyleDeclaration {
 public:
-    friend PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node>, bool allowVisitedStyle, const String& pseudoElementName);
+    static PassRefPtr<CSSComputedStyleDeclaration> create(PassRefPtr<Node> node, bool allowVisitedStyle = false, const String& pseudoElementName = String())
+    {
+        return adoptRef(new CSSComputedStyleDeclaration(node, allowVisitedStyle, pseudoElementName));
+    }
     virtual ~CSSComputedStyleDeclaration();
+
+    virtual void ref() OVERRIDE;
+    virtual void deref() OVERRIDE;
 
     PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID) const;
     String getPropertyValue(int propertyID) const;
     bool getPropertyPriority(int propertyID) const;
 
-    virtual PassRefPtr<CSSMutableStyleDeclaration> copy() const;
-    virtual PassRefPtr<CSSMutableStyleDeclaration> makeMutable();
+    virtual PassRefPtr<StylePropertySet> copy() const;
+    virtual PassRefPtr<StylePropertySet> makeMutable();
 
     PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID, EUpdateLayout) const;
     PassRefPtr<CSSValue> getFontSizeCSSValuePreferringKeyword() const;
@@ -64,12 +71,13 @@ public:
     PassRefPtr<CSSValue> getSVGPropertyCSSValue(int propertyID, EUpdateLayout) const;
 #endif
 
-    PassRefPtr<CSSMutableStyleDeclaration> copyPropertiesInSet(const int* set, unsigned length) const;
+    PassRefPtr<StylePropertySet> copyPropertiesInSet(const int* set, unsigned length) const;
 
 private:
     CSSComputedStyleDeclaration(PassRefPtr<Node>, bool allowVisitedStyle, const String&);
 
     // CSSOM functions. Don't make these public.
+    virtual CSSRule* parentRule() const;
     virtual unsigned length() const;
     virtual String item(unsigned index) const;
     virtual PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName);
@@ -102,18 +110,14 @@ private:
     PassRefPtr<CSSValue> valueForFilter(RenderStyle*) const;
 #endif
 
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForShorthandProperties(const int* properties, size_t) const;
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForSidesShorthand(const int* properties) const;
+    PassRefPtr<CSSValueList> getCSSPropertyValuesForShorthandProperties(const CSSPropertyLonghand&) const;
+    PassRefPtr<CSSValueList> getCSSPropertyValuesForSidesShorthand(const CSSPropertyLonghand&) const;
 
     RefPtr<Node> m_node;
     PseudoId m_pseudoElementSpecifier;
     bool m_allowVisitedStyle;
+    unsigned m_refCount;
 };
-
-inline PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node> node,  bool allowVisitedStyle = false, const String& pseudoElementName = String())
-{
-    return adoptRef(new CSSComputedStyleDeclaration(node, allowVisitedStyle, pseudoElementName));
-}
 
 } // namespace WebCore
 

@@ -71,9 +71,14 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // on error.
   virtual bool OnMakeCurrent(GLContext* context);
 
-  // This gives a hint as to whether this surface is visible. If it is not
-  // visible, the backing store need not be preserved.
-  virtual void SetVisible(bool visible);
+  // Used for explicit buffer management.  Expect buffers to be destroyed only
+  // when surface is not visible.
+  enum BufferAllocationState {
+    BUFFER_ALLOCATION_FRONT_AND_BACK,
+    BUFFER_ALLOCATION_FRONT_ONLY,
+    BUFFER_ALLOCATION_NONE
+  };
+  virtual void SetBufferAllocation(BufferAllocationState state);
 
   // Get a handle used to share the surface with another process. Returns null
   // if this is not possible.
@@ -92,7 +97,7 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Create a GL surface that renders directly to a view.
   static scoped_refptr<GLSurface> CreateViewGLSurface(
       bool software,
-      gfx::PluginWindowHandle window);
+      gfx::AcceleratedWidget window);
 
   // Create a GL surface used for offscreen rendering.
   static scoped_refptr<GLSurface> CreateOffscreenGLSurface(
@@ -130,7 +135,7 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   virtual void* GetHandle() OVERRIDE;
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
   virtual bool OnMakeCurrent(GLContext* context) OVERRIDE;
-  virtual void SetVisible(bool visible) OVERRIDE;
+  virtual void SetBufferAllocation(BufferAllocationState state) OVERRIDE;
   virtual void* GetShareHandle() OVERRIDE;
   virtual void* GetDisplay() OVERRIDE;
   virtual void* GetConfig() OVERRIDE;

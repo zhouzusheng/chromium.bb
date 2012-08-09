@@ -40,6 +40,7 @@
 #include "platform/WebSize.h"
 
 #define WEBKIT_HAS_NEW_FULLSCREEN_API 1
+#define WEBWIDGET_HAS_SETCOMPOSITORSURFACEREADY 1
 
 namespace WebKit {
 
@@ -79,10 +80,10 @@ public:
     virtual void didExitFullScreen() { }
 
     // Called to update imperative animation state. This should be called before
-    // paint, although the client can rate-limit these calls. When
-    // frameBeginTime is 0.0, the WebWidget will determine the frame begin time
-    // itself.
-    virtual void animate(double frameBeginTime) { }
+    // paint, although the client can rate-limit these calls.
+    //
+    // FIXME: remove this function entirely when inversion patches land.
+    virtual void animate(double ignored) { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
@@ -106,6 +107,24 @@ public:
     // asynchronously and perform layout and animation internally. Do not call
     // animate or layout in this case.
     virtual void composite(bool finish) = 0;
+
+    // Indicates that the compositing surface associated with this WebWidget is
+    // ready to use.
+    virtual void setCompositorSurfaceReady() = 0;
+
+    // Temporary method for the embedder to notify the WebWidget that the widget
+    // has taken damage, e.g. due to a window expose. This method will be
+    // removed when the WebWidget inversion patch lands --- http://crbug.com/112837
+    virtual void setNeedsRedraw() { }
+
+    // Temporary method for the embedder to check for throttled input. When this
+    // is true, the WebWidget is indicating that it would prefer to not receive
+    // additional input events until
+    // WebWidgetClient::didBecomeReadyForAdditionalInput is called.
+    //
+    // This method will be removed when the WebWidget inversion patch lands ---
+    // http://crbug.com/112837
+    virtual bool isInputThrottled() const { return false; }
 
     // Called to inform the WebWidget of a change in theme.
     // Implementors that cache rendered copies of widgets need to re-render
@@ -186,6 +205,13 @@ public:
     // WebWidget's size (WebWidget::resize() automatically checks the resizer
     // rect.)
     virtual void didChangeWindowResizerRect() { }
+
+    // Instrumentation method that marks beginning of frame update that includes
+    // things like animate()/layout()/paint()/composite().
+    virtual void instrumentBeginFrame() { }
+    // Cancels the effect of instrumentBeginFrame() in case there were no events
+    // following the call to instrumentBeginFrame().
+    virtual void instrumentCancelFrame() { }
 
 protected:
     ~WebWidget() { }

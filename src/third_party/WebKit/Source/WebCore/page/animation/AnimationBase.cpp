@@ -418,6 +418,23 @@ public:
     }
 };
 
+class PropertyWrapperColor : public PropertyWrapperGetter<Color> {
+public:
+    PropertyWrapperColor(int prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
+        : PropertyWrapperGetter<Color>(prop, getter)
+        , m_setter(setter)
+    {
+    }
+
+    virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
+    {
+        (dst->*m_setter)(blendFunc(anim, (a->*PropertyWrapperGetter<Color>::m_getter)(), (b->*PropertyWrapperGetter<Color>::m_getter)(), progress));
+    }
+
+protected:
+    void (RenderStyle::*m_setter)(const Color&);
+};
+
 #if USE(ACCELERATED_COMPOSITING)
 class PropertyWrapperAcceleratedOpacity : public PropertyWrapper<float> {
 public:
@@ -451,6 +468,23 @@ public:
         dst->setTransform(blendFunc(anim, a->transform(), b->transform(), progress));
     }
 };
+
+#if ENABLE(CSS_FILTERS)
+class PropertyWrapperAcceleratedFilter : public PropertyWrapper<const FilterOperations&> {
+public:
+    PropertyWrapperAcceleratedFilter()
+        : PropertyWrapper<const FilterOperations&>(CSSPropertyWebkitFilter, &RenderStyle::filter, &RenderStyle::setFilter)
+    {
+    }
+    
+    virtual bool animationIsAccelerated() const { return true; }
+
+    virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
+    {
+        dst->setFilter(blendFunc(anim, a->filter(), b->filter(), progress));
+    }
+};
+#endif
 #endif // USE(ACCELERATED_COMPOSITING)
 
 static inline size_t shadowListLength(const ShadowData* shadow)
@@ -593,7 +627,7 @@ private:
 
 class PropertyWrapperMaybeInvalidColor : public PropertyWrapperBase {
 public:
-    PropertyWrapperMaybeInvalidColor(int prop, const Color& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
+    PropertyWrapperMaybeInvalidColor(int prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
         : PropertyWrapperBase(prop)
         , m_getter(getter)
         , m_setter(setter)
@@ -632,22 +666,22 @@ public:
     }
 
 private:
-    const Color& (RenderStyle::*m_getter)() const;
+    Color (RenderStyle::*m_getter)() const;
     void (RenderStyle::*m_setter)(const Color&);
 };
 
 enum MaybeInvalidColorTag { MaybeInvalidColor };
 class PropertyWrapperVisitedAffectedColor : public PropertyWrapperBase {
 public:
-    PropertyWrapperVisitedAffectedColor(int prop, const Color& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&), 
-                                        const Color& (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
+    PropertyWrapperVisitedAffectedColor(int prop, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&), 
+                                        Color (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
         : PropertyWrapperBase(prop)
-        , m_wrapper(adoptPtr(new PropertyWrapper<const Color&>(prop, getter, setter)))
-        , m_visitedWrapper(adoptPtr(new PropertyWrapper<const Color&>(prop, visitedGetter, visitedSetter)))
+        , m_wrapper(adoptPtr(new PropertyWrapperColor(prop, getter, setter)))
+        , m_visitedWrapper(adoptPtr(new PropertyWrapperColor(prop, visitedGetter, visitedSetter)))
     {
     }
-    PropertyWrapperVisitedAffectedColor(int prop, MaybeInvalidColorTag, const Color& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&), 
-                                        const Color& (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
+    PropertyWrapperVisitedAffectedColor(int prop, MaybeInvalidColorTag, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&), 
+                                        Color (RenderStyle::*visitedGetter)() const, void (RenderStyle::*visitedSetter)(const Color&))
         : PropertyWrapperBase(prop)
         , m_wrapper(adoptPtr(new PropertyWrapperMaybeInvalidColor(prop, getter, setter)))
         , m_visitedWrapper(adoptPtr(new PropertyWrapperMaybeInvalidColor(prop, visitedGetter, visitedSetter)))
@@ -870,7 +904,7 @@ private:
 #if ENABLE(SVG)
 class PropertyWrapperSVGPaint : public PropertyWrapperBase {
 public:
-    PropertyWrapperSVGPaint(int prop, const SVGPaint::SVGPaintType& (RenderStyle::*paintTypeGetter)() const, const Color& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
+    PropertyWrapperSVGPaint(int prop, const SVGPaint::SVGPaintType& (RenderStyle::*paintTypeGetter)() const, Color (RenderStyle::*getter)() const, void (RenderStyle::*setter)(const Color&))
         : PropertyWrapperBase(prop)
         , m_paintTypeGetter(paintTypeGetter)
         , m_getter(getter)
@@ -924,7 +958,7 @@ public:
 
 private:
     const SVGPaint::SVGPaintType& (RenderStyle::*m_paintTypeGetter)() const;
-    const Color& (RenderStyle::*m_getter)() const;
+    Color (RenderStyle::*m_getter)() const;
     void (RenderStyle::*m_setter)(const Color&);
 };
 #endif
@@ -1025,13 +1059,15 @@ void AnimationBase::ensurePropertyMap()
 #if USE(ACCELERATED_COMPOSITING)
         gPropertyWrappers->append(new PropertyWrapperAcceleratedOpacity());
         gPropertyWrappers->append(new PropertyWrapperAcceleratedTransform());
+#if ENABLE(CSS_FILTERS)
+        gPropertyWrappers->append(new PropertyWrapperAcceleratedFilter());
+#endif
 #else
         gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyOpacity, &RenderStyle::opacity, &RenderStyle::setOpacity));
         gPropertyWrappers->append(new PropertyWrapper<const TransformOperations&>(CSSPropertyWebkitTransform, &RenderStyle::transform, &RenderStyle::setTransform));
-#endif
-
 #if ENABLE(CSS_FILTERS)
         gPropertyWrappers->append(new PropertyWrapper<const FilterOperations&>(CSSPropertyWebkitFilter, &RenderStyle::filter, &RenderStyle::setFilter));
+#endif
 #endif
 
         gPropertyWrappers->append(new PropertyWrapperVisitedAffectedColor(CSSPropertyWebkitColumnRuleColor, MaybeInvalidColor, &RenderStyle::columnRuleColor, &RenderStyle::setColumnRuleColor, &RenderStyle::visitedLinkColumnRuleColor, &RenderStyle::setVisitedLinkColumnRuleColor));
@@ -1458,8 +1494,10 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
             }
             break;
         case AnimationStateEnding:
-            ASSERT(input == AnimationStateInputEndTimerFired || input == AnimationStateInputPlayStatePaused);
-
+#if !LOG_DISABLED
+            if (input != AnimationStateInputEndTimerFired && input != AnimationStateInputPlayStatePaused)
+                LOG_ERROR("State is AnimationStateEnding, but input is not AnimationStateInputEndTimerFired or AnimationStateInputPlayStatePaused. It is %d.", input);
+#endif
             if (input == AnimationStateInputEndTimerFired) {
 
                 ASSERT(param >= 0);
@@ -1669,11 +1707,16 @@ double AnimationBase::fractionalTime(double scale, double elapsedTime, double of
         fractionalTime = 0;
 
     int integralTime = static_cast<int>(fractionalTime);
-    if (m_animation->iterationCount() != Animation::IterationCountInfinite)
-        integralTime = min(integralTime, m_animation->iterationCount() - 1);
+    const int integralIterationCount = static_cast<int>(m_animation->iterationCount());
+    const bool iterationCountHasFractional = m_animation->iterationCount() - integralIterationCount;
+    if (m_animation->iterationCount() != Animation::IterationCountInfinite && !iterationCountHasFractional)
+        integralTime = min(integralTime, integralIterationCount - 1);
+
     fractionalTime -= integralTime;
 
-    if ((m_animation->direction() == Animation::AnimationDirectionAlternate) && (integralTime & 1))
+    if (((m_animation->direction() == Animation::AnimationDirectionAlternate) && (integralTime & 1))
+        || ((m_animation->direction() == Animation::AnimationDirectionAlternateReverse) && !(integralTime & 1))
+        || m_animation->direction() == Animation::AnimationDirectionReverse)
         fractionalTime = 1 - fractionalTime;
 
     if (scale != 1 || offset)
@@ -1695,8 +1738,11 @@ double AnimationBase::progress(double scale, double offset, const TimingFunction
 
     if (postActive() || !m_animation->duration())
         return 1.0;
-    if (m_animation->iterationCount() > 0 && elapsedTime >= dur)
-        return (m_animation->iterationCount() % 2) ? 1.0 : 0.0;
+    if (m_animation->iterationCount() > 0 && elapsedTime >= dur) {
+        const int integralIterationCount = static_cast<int>(m_animation->iterationCount());
+        const bool iterationCountHasFractional = m_animation->iterationCount() - integralIterationCount;
+        return (integralIterationCount % 2 || iterationCountHasFractional) ? 1.0 : 0.0;
+    }
 
     const double fractionalTime = this->fractionalTime(scale, elapsedTime, offset);
 

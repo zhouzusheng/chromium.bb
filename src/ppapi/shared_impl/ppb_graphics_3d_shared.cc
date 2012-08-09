@@ -13,11 +13,11 @@
 namespace ppapi {
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(PP_Instance instance)
-    : Resource(instance) {
+    : Resource(OBJECT_IS_IMPL, instance) {
 }
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(const HostResource& host_resource)
-    : Resource(host_resource) {
+    : Resource(OBJECT_IS_PROXY, host_resource) {
 }
 
 PPB_Graphics3D_Shared::~PPB_Graphics3D_Shared() {
@@ -31,12 +31,12 @@ thunk::PPB_Graphics3D_API* PPB_Graphics3D_Shared::AsPPB_Graphics3D_API() {
   return this;
 }
 
-int32_t PPB_Graphics3D_Shared::GetAttribs(int32_t* attrib_list) {
+int32_t PPB_Graphics3D_Shared::GetAttribs(int32_t attrib_list[]) {
   // TODO(alokp): Implement me.
   return PP_ERROR_FAILED;
 }
 
-int32_t PPB_Graphics3D_Shared::SetAttribs(int32_t* attrib_list) {
+int32_t PPB_Graphics3D_Shared::SetAttribs(const int32_t attrib_list[]) {
   // TODO(alokp): Implement me.
   return PP_ERROR_FAILED;
 }

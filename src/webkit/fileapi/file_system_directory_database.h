@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,14 @@
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "third_party/leveldatabase/src/include/leveldb/db.h"
 
 namespace tracked_objects {
 class Location;
 }
 
 namespace leveldb {
+class DB;
+class Status;
 class WriteBatch;
 }
 
@@ -55,7 +56,8 @@ class FileSystemDirectoryDatabase {
     base::Time modification_time;
   };
 
-  explicit FileSystemDirectoryDatabase(const FilePath& path);
+  explicit FileSystemDirectoryDatabase(
+      const FilePath& filesystem_data_directory);
   ~FileSystemDirectoryDatabase();
 
   bool GetChildWithName(
@@ -87,7 +89,13 @@ class FileSystemDirectoryDatabase {
   static bool DestroyDatabase(const FilePath& path);
 
  private:
-  bool Init();
+  enum RecoveryOption {
+    DELETE_ON_CORRUPTION,
+    FAIL_ON_CORRUPTION,
+  };
+
+  bool Init(RecoveryOption recovery_option);
+  void ReportInitStatus(const leveldb::Status& status);
   bool StoreDefaultValues();
   bool GetLastFileId(FileId* file_id);
   bool VerifyIsDirectory(FileId file_id);
@@ -95,10 +103,12 @@ class FileSystemDirectoryDatabase {
       const FileInfo& info, FileId file_id, leveldb::WriteBatch* batch);
   bool RemoveFileInfoHelper(FileId file_id, leveldb::WriteBatch* batch);
   void HandleError(const tracked_objects::Location& from_here,
-                   leveldb::Status status);
+                   const leveldb::Status& status);
 
-  std::string path_;
+  FilePath filesystem_data_directory_;
   scoped_ptr<leveldb::DB> db_;
+  base::Time last_reported_time_;
+  DISALLOW_COPY_AND_ASSIGN(FileSystemDirectoryDatabase);
 };
 
 }  // namespace fileapi

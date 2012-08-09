@@ -84,7 +84,9 @@ WebInspector.HeapSnapshotSortableDataGrid.prototype = {
         children.sort(sortFunction);
         for (var i = 0, l = children.length; i < l; ++i) {
             var child = children[i];
+            var revealed = child.revealed;
             this.appendChild(child);
+            child.revealed = revealed;
             if (child.expanded)
                 child.sort();
         }
@@ -112,12 +114,12 @@ WebInspector.HeapSnapshotSortableDataGrid.prototype = {
 
 WebInspector.HeapSnapshotSortableDataGrid.prototype.__proto__ = WebInspector.DataGrid.prototype;
 
-WebInspector.HeapSnapshotContainmentDataGrid = function()
+WebInspector.HeapSnapshotContainmentDataGrid = function(columns)
 {
-    var columns = {
-        object: { title: WebInspector.UIString("Object"), disclosure: true, sortable: true, sort: "ascending" },
-        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "90px", sortable: true },
-        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "90px", sortable: true }
+    columns = columns || {
+        object: { title: WebInspector.UIString("Object"), disclosure: true, sortable: true },
+        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true },
+        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "120px", sortable: true, sort: "descending" }
     };
     WebInspector.HeapSnapshotSortableDataGrid.call(this, columns);
 }
@@ -183,10 +185,27 @@ WebInspector.HeapSnapshotContainmentDataGrid.prototype.__proto__ = WebInspector.
 WebInspector.HeapSnapshotRetainmentDataGrid = function()
 {
     this.showRetainingEdges = true;
-    WebInspector.HeapSnapshotContainmentDataGrid.call(this);
+    var columns = {
+        object: { title: WebInspector.UIString("Object"), disclosure: true, sortable: true },
+        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true },
+        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "120px", sortable: true },
+        distanceToWindow: { title: WebInspector.UIString("Distance"), width: "80px", sortable: true, sort: "ascending" }
+    };
+    WebInspector.HeapSnapshotContainmentDataGrid.call(this, columns);
 }
 
 WebInspector.HeapSnapshotRetainmentDataGrid.prototype = {
+    _sortFields: function(sortColumn, sortAscending)
+    {
+        return {
+            object: ["_name", sortAscending, "_count", false],
+            count: ["_count", sortAscending, "_name", true],
+            shallowSize: ["_shallowSize", sortAscending, "_name", true],
+            retainedSize: ["_retainedSize", sortAscending, "_name", true],
+            distanceToWindow: ["_distanceToWindow", sortAscending, "_name", true]
+        }[sortColumn];
+    },
+
     reset: function()
     {
         this.removeChildren();
@@ -200,9 +219,10 @@ WebInspector.HeapSnapshotConstructorsDataGrid = function()
 {
     var columns = {
         object: { title: WebInspector.UIString("Constructor"), disclosure: true, sortable: true },
-        count: { title: WebInspector.UIString("#"), width: "45px", sortable: true },
-        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "90px", sortable: true },
-        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "90px", sort: "descending", sortable: true }
+        distanceToWindow: { title: WebInspector.UIString("Distance"), width: "90px", sortable: true },
+        count: { title: WebInspector.UIString("Objects Count"), width: "90px", sortable: true },
+        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true },
+        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "120px", sort: "descending", sortable: true }
     };
     WebInspector.HeapSnapshotSortableDataGrid.call(this, columns);
     this._filterProfileIndex = -1;
@@ -215,6 +235,7 @@ WebInspector.HeapSnapshotConstructorsDataGrid.prototype = {
     {
         return {
             object: ["_name", sortAscending, "_count", false],
+            distanceToWindow: ["_distanceToWindow", sortAscending, "_retainedSize", true],
             count: ["_count", sortAscending, "_name", true],
             shallowSize: ["_shallowSize", sortAscending, "_name", true],
             retainedSize: ["_retainedSize", sortAscending, "_name", true]
@@ -238,17 +259,13 @@ WebInspector.HeapSnapshotConstructorsDataGrid.prototype = {
             this.sortingChanged();
         }
 
-        if (this._filterProfileIndex === -1) {
-            this.snapshot.aggregates(false, "allObjects", null, aggregatesReceived.bind(this, "allObjects"));
-            return;
-        }
-
         this.dispose();
         this.removeChildren();
         this.resetSortingCache();
 
-        var key = this._minNodeId + ".." + this._maxNodeId;
-        var filter = "function(node) { var id = node.id; return id > " + this._minNodeId + " && id <= " + this._maxNodeId + "; }";
+        var key = this._filterProfileIndex === -1 ? "allObjects" : this._minNodeId + ".." + this._maxNodeId;
+        var filter = this._filterProfileIndex === -1 ? null : "function(node) { var id = node.id; return id > " + this._minNodeId + " && id <= " + this._maxNodeId + "; }";
+
         this.snapshot.aggregates(false, key, filter, aggregatesReceived.bind(this, key));
     },
 
@@ -283,6 +300,7 @@ WebInspector.HeapSnapshotConstructorsDataGrid.prototype = {
 
         loader(profileIndex, firstSnapshotLoaded.bind(this));
     },
+
 };
 
 WebInspector.HeapSnapshotConstructorsDataGrid.prototype.__proto__ = WebInspector.HeapSnapshotSortableDataGrid.prototype;
@@ -291,13 +309,12 @@ WebInspector.HeapSnapshotDiffDataGrid = function()
 {
     var columns = {
         object: { title: WebInspector.UIString("Constructor"), disclosure: true, sortable: true },
-        addedCount: { title: WebInspector.UIString("# New"), width: "72px", sortable: true, sort: "descending" },
+        addedCount: { title: WebInspector.UIString("# New"), width: "72px", sortable: true },
         removedCount: { title: WebInspector.UIString("# Deleted"), width: "72px", sortable: true },
-        // \u0394 is a Greek delta letter.
-        countDelta: { title: "\u0394", width: "40px", sortable: true },
-        addedSize: { title: WebInspector.UIString("Alloc. Size"), width: "72px", sortable: true },
+        countDelta: { title: "# Delta", width: "64px", sortable: true },
+        addedSize: { title: WebInspector.UIString("Alloc. Size"), width: "72px", sortable: true, sort: "descending" },
         removedSize: { title: WebInspector.UIString("Freed Size"), width: "72px", sortable: true },
-        sizeDelta: { title: "\u0394", width: "72px", sortable: true }
+        sizeDelta: { title: "Size Delta", width: "72px", sortable: true }
     };
     WebInspector.HeapSnapshotSortableDataGrid.call(this, columns);
 }
@@ -381,8 +398,8 @@ WebInspector.HeapSnapshotDominatorsDataGrid = function()
 {
     var columns = {
         object: { title: WebInspector.UIString("Object"), disclosure: true, sortable: true },
-        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "90px", sortable: true },
-        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "90px", sort: "descending", sortable: true }
+        shallowSize: { title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true },
+        retainedSize: { title: WebInspector.UIString("Retained Size"), width: "120px", sort: "descending", sortable: true }
     };
     WebInspector.HeapSnapshotSortableDataGrid.call(this, columns);
 }
@@ -418,10 +435,6 @@ WebInspector.DetailedHeapshotView = function(parent, profile)
     this.parent.addEventListener("profile added", this._updateBaseOptions, this);
     this.parent.addEventListener("profile added", this._updateFilterOptions, this);
 
-    this.showCountAsPercent = false;
-    this.showShallowSizeAsPercent = false;
-    this.showRetainedSizeAsPercent = false;
-
     this.viewsContainer = document.createElement("div");
     this.viewsContainer.addStyleClass("views-container");
     this.element.appendChild(this.viewsContainer);
@@ -435,14 +448,20 @@ WebInspector.DetailedHeapshotView = function(parent, profile)
 
     this.constructorsView = new WebInspector.View();
     this.constructorsView.element.addStyleClass("view");
+    this.constructorsView.element.appendChild(this._createToolbarWithClassNameFilter());
+
     this.constructorsDataGrid = new WebInspector.HeapSnapshotConstructorsDataGrid();
+    this.constructorsDataGrid.element.addStyleClass("class-view-grid");
     this.constructorsDataGrid.element.addEventListener("mousedown", this._mouseDownInContentsGrid.bind(this), true);
     this.constructorsDataGrid.show(this.constructorsView.element);
     this.constructorsDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
     this.diffView = new WebInspector.View();
     this.diffView.element.addStyleClass("view");
+    this.diffView.element.appendChild(this._createToolbarWithClassNameFilter());
+
     this.diffDataGrid = new WebInspector.HeapSnapshotDiffDataGrid();
+    this.diffDataGrid.element.addStyleClass("class-view-grid");
     this.diffDataGrid.show(this.diffView.element);
     this.diffDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
@@ -470,6 +489,7 @@ WebInspector.DetailedHeapshotView = function(parent, profile)
     this.retainmentDataGrid = new WebInspector.HeapSnapshotRetainmentDataGrid();
     this.retainmentDataGrid.element.addEventListener("click", this._mouseClickInRetainmentGrid.bind(this), true);
     this.retainmentDataGrid.show(this.retainmentView.element);
+    this.retainmentDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._inspectedObjectChanged, this);
     this.retainmentView.show(this.element);
     this.retainmentDataGrid.reset();
 
@@ -504,12 +524,10 @@ WebInspector.DetailedHeapshotView = function(parent, profile)
     this.filterSelectElement.addEventListener("change", this._changeFilter.bind(this), false);
     this._updateFilterOptions();
 
-    this.percentButton = new WebInspector.StatusBarButton("", "percent-time-status-bar-item status-bar-item");
-    this.percentButton.addEventListener("click", this._percentClicked.bind(this), false);
     this.helpButton = new WebInspector.StatusBarButton("", "heapshot-help-status-bar-item status-bar-item");
     this.helpButton.addEventListener("click", this._helpClicked.bind(this), false);
 
-    this._popoverHelper = new WebInspector.ObjectPopoverHelper(this.element, this._getHoverAnchor.bind(this), this._showObjectPopover.bind(this), null, true);
+    this._popoverHelper = new WebInspector.ObjectPopoverHelper(this.element, this._getHoverAnchor.bind(this), this._resolveObjectForPopover.bind(this), undefined, true);
 
     this._loadProfile(this._profileUid, profileCallback.bind(this));
 
@@ -529,7 +547,6 @@ WebInspector.DetailedHeapshotView = function(parent, profile)
         else
             this.baseSelectElement.selectedIndex = profileIndex;
         this.dataGrid.setDataSource(this, this.profileWrapper);
-        this._updatePercentButton();
     }
 }
 
@@ -548,7 +565,7 @@ WebInspector.DetailedHeapshotView.prototype = {
 
     get statusBarItems()
     {
-        return [this.viewSelectElement, this.baseSelectElement, this.filterSelectElement, this.percentButton.element, this.helpButton.element];
+        return [this.viewSelectElement, this.baseSelectElement, this.filterSelectElement, this.helpButton.element];
     },
 
     get profile()
@@ -593,18 +610,15 @@ WebInspector.DetailedHeapshotView.prototype = {
     willHide: function()
     {
         this._currentSearchResultIndex = -1;
+        this._popoverHelper.hidePopover();
+        if (this.helpPopover && this.helpPopover.visible)
+            this.helpPopover.hide();
     },
 
     onResize: function()
     {
         var height = this.retainmentView.element.clientHeight;
         this._updateRetainmentViewHeight(height);
-    },
-
-    refreshShowAsPercents: function()
-    {
-        this._updatePercentButton();
-        this.refreshVisibleData();
     },
 
     searchCanceled: function()
@@ -776,6 +790,29 @@ WebInspector.DetailedHeapshotView.prototype = {
         this.performSearch(this.currentQuery, this._searchFinishedCallback);
     },
 
+    _createToolbarWithClassNameFilter: function()
+    {
+        var toolbar = document.createElement("div");
+        toolbar.addStyleClass("class-view-toolbar");
+        var classNameFilter = document.createElement("input");
+        classNameFilter.addStyleClass("class-name-filter");
+        classNameFilter.setAttribute("placeholder", WebInspector.UIString("Class filter"));
+        classNameFilter.addEventListener("keyup", this._changeNameFilter.bind(this, classNameFilter), false);
+        toolbar.appendChild(classNameFilter);
+        return toolbar;
+    },
+
+    _changeNameFilter: function(classNameInputElement)
+    {
+        var filter = classNameInputElement.value.toLowerCase();
+        var children = this.dataGrid.children;
+        for (var i = 0, l = children.length; i < l; ++i) {
+            var node = children[i];
+            if (node.depth === 0)
+                node.revealed = node._name.toLowerCase().indexOf(filter) !== -1;
+        }
+    },
+
     _profiles: function()
     {
         return WebInspector.panels.profiles.getProfiles(WebInspector.DetailedHeapshotProfileType.TypeId);
@@ -813,6 +850,14 @@ WebInspector.DetailedHeapshotView.prototype = {
     {
         var selectedNode = event.target.selectedNode;
         this._setRetainmentDataGridSource(selectedNode);
+        this._inspectedObjectChanged(event);
+    },
+
+    _inspectedObjectChanged: function(event)
+    {
+        var selectedNode = event.target.selectedNode;
+        if (selectedNode instanceof WebInspector.HeapSnapshotGenericObjectNode)
+            ConsoleAgent.addInspectedHeapObject(selectedNode.snapshotNodeId);
     },
 
     _setRetainmentDataGridSource: function(nodeItem)
@@ -832,16 +877,7 @@ WebInspector.DetailedHeapshotView.prototype = {
         if (!cell || (!cell.hasStyleClass("count-column") && !cell.hasStyleClass("shallowSize-column") && !cell.hasStyleClass("retainedSize-column")))
             return;
 
-        if (cell.hasStyleClass("count-column"))
-            this.showCountAsPercent = !this.showCountAsPercent;
-        else if (cell.hasStyleClass("shallowSize-column"))
-            this.showShallowSizeAsPercent = !this.showShallowSizeAsPercent;
-        else if (cell.hasStyleClass("retainedSize-column"))
-            this.showRetainedSizeAsPercent = !this.showRetainedSizeAsPercent;
-        this.refreshShowAsPercents();
-
-        event.preventDefault();
-        event.stopPropagation();
+        event.consume(true);
     },
 
     _mouseClickInRetainmentGrid: function(event)
@@ -941,28 +977,9 @@ WebInspector.DetailedHeapshotView.prototype = {
         return span;
     },
 
-    get _isShowingAsPercent()
+    _resolveObjectForPopover: function(element, showCallback, objectGroupName)
     {
-        return this.showCountAsPercent && this.showShallowSizeAsPercent && this.showRetainedSizeAsPercent;
-    },
-
-    _percentClicked: function(event)
-    {
-        var currentState = this._isShowingAsPercent;
-        this.showCountAsPercent = !currentState;
-        this.showShallowSizeAsPercent = !currentState;
-        this.showRetainedSizeAsPercent = !currentState;
-        this.refreshShowAsPercents();
-    },
-
-    _showObjectPopover: function(element, showCallback)
-    {
-        element.node.queryObjectContent(showCallback);
-    },
-
-    willHide: function()
-    {
-        this._popoverHelper.hidePopover();
+        element.node.queryObjectContent(showCallback, objectGroupName);
     },
 
     _helpClicked: function(event)
@@ -1033,7 +1050,7 @@ WebInspector.DetailedHeapshotView.prototype = {
 
         WebInspector.elementDragStart(this.retainmentViewHeader, this._retainersHeaderDragging.bind(this), this._endRetainersHeaderDragging.bind(this), event, "row-resize");
         this._previousDragPosition = event.pageY;
-        event.stopPropagation();
+        event.consume();
     },
 
     _retainersHeaderDragging: function(event)
@@ -1042,15 +1059,14 @@ WebInspector.DetailedHeapshotView.prototype = {
         height += this._previousDragPosition - event.pageY;
         this._previousDragPosition = event.pageY;
         this._updateRetainmentViewHeight(height);
-        event.preventDefault();
-        event.stopPropagation();
+        event.consume(true);
     },
 
     _endRetainersHeaderDragging: function(event)
     {
         WebInspector.elementDragEnd(event);
         delete this._previousDragPosition;
-        event.stopPropagation();
+        event.consume();
     },
 
     _updateRetainmentViewHeight: function(height)
@@ -1102,17 +1118,6 @@ WebInspector.DetailedHeapshotView.prototype = {
             }
             filterOption.label = title;
             this.filterSelectElement.appendChild(filterOption);
-        }
-    },
-
-    _updatePercentButton: function()
-    {
-        if (this._isShowingAsPercent) {
-            this.percentButton.title = WebInspector.UIString("Show absolute counts and sizes.");
-            this.percentButton.toggled = true;
-        } else {
-            this.percentButton.title = WebInspector.UIString("Show counts and sizes as percentages.");
-            this.percentButton.toggled = false;
         }
     }
 };

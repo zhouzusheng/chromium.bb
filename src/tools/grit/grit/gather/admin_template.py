@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import types
 
 from grit.gather import regexp
 from grit import exception
+from grit import lazy_re
 from grit import tclib
 from grit import util
 
@@ -31,12 +32,14 @@ class AdmGatherer(regexp.RegexpGatherer):
   '''
 
   # Finds the strings section as the group named 'strings'
-  _STRINGS_SECTION = re.compile('(?P<first_part>.+^\[strings\])(?P<strings>.+)\Z',
-                                re.MULTILINE | re.DOTALL)
+  _STRINGS_SECTION = lazy_re.compile(
+      '(?P<first_part>.+^\[strings\])(?P<strings>.+)\Z',
+      re.MULTILINE | re.DOTALL)
 
   # Finds the translateable sections from within the [strings] section.
-  _TRANSLATEABLES = re.compile('^\s*[A-Za-z0-9_]+\s*=\s*"(?P<text>.+)"\s*$',
-                               re.MULTILINE)
+  _TRANSLATEABLES = lazy_re.compile(
+      '^\s*[A-Za-z0-9_]+\s*=\s*"(?P<text>.+)"\s*$',
+      re.MULTILINE)
 
   def __init__(self, text):
     regexp.RegexpGatherer.__init__(self, text)

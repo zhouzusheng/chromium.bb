@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@ namespace net {
 // serialized HttpResponseInfo.
 enum {
   // The version of the response info used when persisting response info.
-  RESPONSE_INFO_VERSION = 2,
+  RESPONSE_INFO_VERSION = 3,
 
   // The minimum version supported for deserializing response info.
   RESPONSE_INFO_MINIMUM_VERSION = 1,
@@ -116,7 +116,7 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
 
 bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
                                       bool* response_truncated) {
-  void* iter = NULL;
+  PickleIterator iter(pickle);
 
   // read flags and verify version
   int flags;
@@ -150,7 +150,8 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
   if (flags & RESPONSE_INFO_HAS_CERT) {
     X509Certificate::PickleType type = (version == 1) ?
         X509Certificate::PICKLETYPE_SINGLE_CERTIFICATE :
-        X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN;
+        (version == 2) ? X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN_OLD :
+                         X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN;
     ssl_info.cert = X509Certificate::CreateFromPickle(pickle, &iter, type);
     if (!ssl_info.cert)
       return false;
@@ -250,7 +251,8 @@ void HttpResponseInfo::Persist(Pickle* pickle,
         net::HttpResponseHeaders::PERSIST_SANS_CHALLENGES |
         net::HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP |
         net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE |
-        net::HttpResponseHeaders::PERSIST_SANS_RANGES;
+        net::HttpResponseHeaders::PERSIST_SANS_RANGES |
+        net::HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE;
   }
 
   headers->Persist(pickle, persist_options);

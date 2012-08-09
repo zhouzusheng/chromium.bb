@@ -66,18 +66,23 @@ static const VersionRangeDefinition kAllVersionsNoInfobarVersionRange[] = {
 };
 
 // This is up to date with
-// http://www.adobe.com/support/security/bulletins/apsb11-26.html
+// http://www.adobe.com/support/security/bulletins/apsb12-03.html
+// NOTE: We would like to go to the 4th component value but we cannot because
+// on some platforms, such as Linux, it is not available.
 static const VersionRangeDefinition kFlashVersionRange[] = {
-    { "", "", "10.3.183", false }
+    { "", "", "11.1.102", false }
 };
 // This is up to date with
-// http://www.adobe.com/support/security/bulletins/apsb11-19.html
+// http://www.adobe.com/support/security/bulletins/apsb12-02.html
 static const VersionRangeDefinition kShockwaveVersionRange[] = {
-    { "",  "", "11.6.1.629", true }
+    { "",  "", "11.6.4.634", true }
 };
+// This is up to date with
+// http://support.microsoft.com/kb/2668562
+// http://technet.microsoft.com/en-us/security/Bulletin/MS12-016
 static const VersionRangeDefinition kSilverlightVersionRange[] = {
-    { "0", "4", "3.0.50611.0", false },
-    { "4", "5", "", false }
+    { "0", "5", "4.1.10111.0", false },
+    { "5", "6", "", false },
 };
 
 // Similarly, try and share the group definition for plug-ins that are
@@ -102,7 +107,7 @@ static const VersionRangeDefinition kSilverlightVersionRange[] = {
     arraysize(kAllVersionsNoInfobarVersionRange), "" }
 
 #define kGoogleTalkDefinition { \
-    "google-talk", "Google Talk NPAPI Plugin", "Google Talk NPAPI Plugin", \
+    "google-talk", "Google Talk", "Google Talk", \
     kAllVersionsNoInfobarVersionRange, \
     arraysize(kAllVersionsNoInfobarVersionRange), ""}
 
@@ -121,6 +126,9 @@ static const VersionRangeDefinition kJavaVersionRange[] = {
 static const VersionRangeDefinition kFlip4MacVersionRange[] = {
     { "", "", "2.2.1", true }
 };
+static const VersionRangeDefinition kDivXVersionRange[] = {
+    { "", "", "", true }
+};
 // Note: The Adobe Reader browser plug-in is not supported in Chrome.
 // Note: The Real Player plugin for mac doesn't expose a version at all.
 static const PluginGroupDefinition kGroupDefinitions[] = {
@@ -135,6 +143,9 @@ static const PluginGroupDefinition kGroupDefinitions[] = {
   { "flip4mac", "Flip4Mac", "Flip4Mac", kFlip4MacVersionRange,
     arraysize(kFlip4MacVersionRange),
     "http://www.telestream.net/flip4mac-wmv/overview.htm" },
+  { "divx-player", "DivX Plus Web Player", "DivX Plus Web Player",
+    kDivXVersionRange, arraysize(kDivXVersionRange),
+    "http://www.divx.com/en/software/divx-plus/web-player" },
   kShockwaveDefinition,
   kChromePdfDefinition,
   kGoogleTalkDefinition,
@@ -151,17 +162,18 @@ static const VersionRangeDefinition kJavaVersionRange[] = {
     { "7", "", "10.3", true }  // JDK7u3 identifies itself as 10.3
 };
 // This is up to date with
-// http://www.adobe.com/support/security/bulletins/apsb11-24.html
+// http://www.adobe.com/support/security/bulletins/apsb12-01.html
 static const VersionRangeDefinition kAdobeReaderVersionRange[] = {
-    { "10", "11", "10.1.1", false },
-    { "9", "10", "9.4.6", false },
-    { "0", "9", "8.3.1", false }
+    { "10", "11", "10.1.2", false },
+    { "0", "10", "9.5", false }
 };
 static const VersionRangeDefinition kDivXVersionRange[] = {
-    { "", "", "1.4.3.4", false }
+    { "", "", "1.4.3.4", true }
 };
+// This is up to date with
+// http://service.real.com/realplayer/security/02062012_player/en/
 static const VersionRangeDefinition kRealPlayerVersionRange[] = {
-    { "", "", "12.0.1.666", true }
+    { "", "", "15.0.2.71", true }
 };
 static const PluginGroupDefinition kGroupDefinitions[] = {
   kFlashDefinition,
@@ -205,14 +217,18 @@ static const PluginGroupDefinition kGroupDefinitions[] = {
 
 #else  // Most importantly, covers desktop Linux.
 static const VersionRangeDefinition kJavaVersionRange[] = {
-    { "0", "1.7", "1.6.0.29", true },
-    { "1.7", "", "1.7.0.1", true }
+    { "0", "1.7", "1.6.0.31", true },
+    { "1.7", "", "1.7.0.3", true }
 };
 
+// Up to date with:
+// http://blog.fuseyism.com/index.php/2012/02/15/
+// security-icedtea6-1-8-13-1-9-13-1-10-6-and-icedtea-2-0-1-released/
 static const VersionRangeDefinition kRedhatIcedTeaVersionRange[] = {
-    { "0", "1.9", "1.8.10", true },
-    { "1.9", "1.10", "1.9.10", true },
-    { "1.10", "", "1.10.4", true }
+    { "0", "1.9", "1.8.13", true },
+    { "1.9", "1.10", "1.9.13", true },
+    { "1.10", "2", "1.10.6", true },
+    { "2", "", "2.0.1", true }
 };
 
 static const PluginGroupDefinition kGroupDefinitions[] = {

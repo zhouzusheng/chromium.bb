@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -58,7 +58,7 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
       next_state_(STATE_NONE),
       host_resolver_(NULL),
       cert_verifier_(NULL),
-      origin_bound_cert_service_(NULL),
+      server_bound_cert_service_(NULL),
       http_auth_handler_factory_(NULL),
       factory_(ClientSocketFactory::GetDefaultFactory()),
       proxy_mode_(kDirectConnection),
@@ -126,7 +126,7 @@ void SocketStream::set_context(URLRequestContext* context) {
   if (context_) {
     host_resolver_ = context_->host_resolver();
     cert_verifier_ = context_->cert_verifier();
-    origin_bound_cert_service_ = context_->origin_bound_cert_service();
+    server_bound_cert_service_ = context_->server_bound_cert_service();
     http_auth_handler_factory_ = context_->http_auth_handler_factory();
   }
 }
@@ -253,6 +253,22 @@ void SocketStream::SetClientSocketFactory(
     ClientSocketFactory* factory) {
   DCHECK(factory);
   factory_ = factory;
+}
+
+void SocketStream::CancelWithError(int error) {
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&SocketStream::DoLoop, this, error));
+}
+
+void SocketStream::CancelWithSSLError(const SSLInfo& ssl_info) {
+  CancelWithError(MapCertStatusToNetError(ssl_info.cert_status));
+}
+
+void SocketStream::ContinueDespiteError() {
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&SocketStream::DoLoop, this, OK));
 }
 
 SocketStream::~SocketStream() {
@@ -910,7 +926,7 @@ int SocketStream::DoSecureProxyConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = cert_verifier_;
-  ssl_context.origin_bound_cert_service = origin_bound_cert_service_;
+  ssl_context.server_bound_cert_service = server_bound_cert_service_;
   // TODO(agl): look into plumbing SSLHostInfo here.
   socket_.reset(factory_->CreateSSLClientSocket(
       socket_.release(),
@@ -926,6 +942,8 @@ int SocketStream::DoSecureProxyConnect() {
 int SocketStream::DoSecureProxyConnectComplete(int result) {
   DCHECK_EQ(STATE_NONE, next_state_);
   result = DidEstablishSSL(result, &proxy_ssl_config_);
+  if (result == ERR_IO_PENDING)
+    next_state_ = STATE_SECURE_PROXY_CONNECT_COMPLETE;
   if (next_state_ != STATE_NONE)
     return result;
   if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED)
@@ -941,7 +959,7 @@ int SocketStream::DoSSLConnect() {
   DCHECK(factory_);
   SSLClientSocketContext ssl_context;
   ssl_context.cert_verifier = cert_verifier_;
-  ssl_context.origin_bound_cert_service = origin_bound_cert_service_;
+  ssl_context.server_bound_cert_service = server_bound_cert_service_;
   // TODO(agl): look into plumbing SSLHostInfo here.
   socket_.reset(factory_->CreateSSLClientSocket(socket_.release(),
                                                 HostPortPair::FromURL(url_),
@@ -956,6 +974,8 @@ int SocketStream::DoSSLConnect() {
 int SocketStream::DoSSLConnectComplete(int result) {
   DCHECK_EQ(STATE_NONE, next_state_);
   result = DidEstablishSSL(result, &server_ssl_config_);
+  if (result == ERR_IO_PENDING)
+    next_state_ = STATE_SSL_CONNECT_COMPLETE;
   if (next_state_ != STATE_NONE)
     return result;
   // TODO(toyoshim): Upgrade to SPDY through TLS NPN extension if possible.
@@ -1170,17 +1190,26 @@ void SocketStream::DoRestartWithAuth() {
 }
 
 int SocketStream::HandleCertificateError(int result) {
-  // TODO(ukai): handle cert error properly.
-  switch (result) {
-    case ERR_CERT_COMMON_NAME_INVALID:
-    case ERR_CERT_DATE_INVALID:
-    case ERR_CERT_AUTHORITY_INVALID:
-      result = OK;
-      break;
-    default:
-      break;
-  }
-  return result;
+  DCHECK(IsCertificateError(result));
+
+  if (!delegate_)
+    return result;
+
+  SSLClientSocket* ssl_socket = static_cast<SSLClientSocket*>(socket_.get());
+  DCHECK(ssl_socket);
+  SSLInfo ssl_info;
+  ssl_socket->GetSSLInfo(&ssl_info);
+
+  TransportSecurityState::DomainState domain_state;
+  DCHECK(context_);
+  const bool fatal =
+      context_->transport_security_state() &&
+      context_->transport_security_state()->GetDomainState(
+          &domain_state, url_.host(),
+          SSLConfigService::IsSNIAvailable(context_->ssl_config_service()));
+
+  delegate_->OnSSLCertificateError(this, ssl_info, fatal);
+  return ERR_IO_PENDING;
 }
 
 SSLConfigService* SocketStream::ssl_config_service() const {

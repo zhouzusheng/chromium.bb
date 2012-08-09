@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -91,6 +91,10 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
           NetLog::TYPE_SPDY_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL,
           make_scoped_refptr(new NetLogSourceParameter(
           "session", spdy_session->net_log().source())));
+      // Add this session to the map so that we can find it next time.
+      list = AddSessionList(host_port_proxy_pair);
+      list->push_back(spdy_session);
+      spdy_session->AddPooledAlias(host_port_proxy_pair);
       return spdy_session;
     } else if (only_use_existing_sessions) {
       return NULL;
@@ -183,17 +187,31 @@ bool SpdySessionPool::HasSession(
 }
 
 void SpdySessionPool::Remove(const scoped_refptr<SpdySession>& session) {
-  SpdySessionList* list = GetSessionList(session->host_port_proxy_pair());
-  DCHECK(list);  // We really shouldn't remove if we've already been removed.
-  if (!list)
-    return;
-  list->remove(session);
+  bool ok = RemoveFromSessionList(session, session->host_port_proxy_pair());
+  DCHECK(ok);
   session->net_log().AddEvent(
       NetLog::TYPE_SPDY_SESSION_POOL_REMOVE_SESSION,
       make_scoped_refptr(new NetLogSourceParameter(
           "session", session->net_log().source())));
+
+  const std::set<HostPortProxyPair>& aliases = session->pooled_aliases();
+  for (std::set<HostPortProxyPair>::const_iterator it = aliases.begin();
+       it != aliases.end(); ++it) {
+    ok = RemoveFromSessionList(session, *it);
+    DCHECK(ok);
+  }
+}
+
+bool SpdySessionPool::RemoveFromSessionList(
+    const scoped_refptr<SpdySession>& session,
+    const HostPortProxyPair& pair) {
+  SpdySessionList* list = GetSessionList(pair);
+  if (!list)
+    return false;
+  list->remove(session);
   if (list->empty())
-    RemoveSessionList(session->host_port_proxy_pair());
+    RemoveSessionList(pair);
+  return true;
 }
 
 Value* SpdySessionPool::SpdySessionPoolInfoToValue() const {
@@ -204,7 +222,12 @@ Value* SpdySessionPool::SpdySessionPoolInfoToValue() const {
     SpdySessionList* sessions = it->second;
     for (SpdySessionList::const_iterator session = sessions->begin();
          session != sessions->end(); ++session) {
-      list->Append(session->get()->GetInfoAsValue());
+      // Only add the session if the key in the map matches the main
+      // host_port_proxy_pair (not an alias).
+      const HostPortProxyPair& key = it->first;
+      const HostPortProxyPair& pair = session->get()->host_port_proxy_pair();
+      if (key.first.Equals(pair.first) && key.second == pair.second)
+        list->Append(session->get()->GetInfoAsValue());
     }
   }
   return list;
@@ -244,7 +267,7 @@ scoped_refptr<SpdySession> SpdySessionPool::GetFromAlias(
     return NULL;
 
   AddressList addresses;
-  if (!LookupAddresses(host_port_proxy_pair, &addresses))
+  if (!LookupAddresses(host_port_proxy_pair, net_log, &addresses))
     return NULL;
   const addrinfo* address = addresses.head();
   while (address) {
@@ -345,11 +368,10 @@ void SpdySessionPool::RemoveSessionList(
 }
 
 bool SpdySessionPool::LookupAddresses(const HostPortProxyPair& pair,
+                                      const BoundNetLog& net_log,
                                       AddressList* addresses) const {
   net::HostResolver::RequestInfo resolve_info(pair.first);
-  int rv = resolver_->ResolveFromCache(resolve_info,
-                                       addresses,
-                                       net::BoundNetLog());
+  int rv = resolver_->ResolveFromCache(resolve_info, addresses, net_log);
   DCHECK_NE(ERR_IO_PENDING, rv);
   return rv == OK;
 }
@@ -385,7 +407,8 @@ void SpdySessionPool::CloseAllSessions() {
     CHECK(session);
     // This call takes care of removing the session from the pool, as well as
     // removing the session list if the list is empty.
-    session->CloseSessionOnError(net::ERR_ABORTED, true);
+    session->CloseSessionOnError(
+        net::ERR_ABORTED, true, "Closing all sessions.");
   }
 }
 
@@ -406,7 +429,8 @@ void SpdySessionPool::CloseCurrentSessions() {
     CHECK(list);
     const scoped_refptr<SpdySession>& session = list->front();
     CHECK(session);
-    session->CloseSessionOnError(net::ERR_ABORTED, false);
+    session->CloseSessionOnError(
+        net::ERR_ABORTED, false, "Closing current sessions.");
     list->pop_front();
     if (list->empty()) {
       delete list;
@@ -429,8 +453,10 @@ void SpdySessionPool::CloseIdleSessions() {
     SpdySessionList::iterator session_it = list->begin();
     const scoped_refptr<SpdySession>& session = *session_it;
     CHECK(session);
-    if (!session->is_active())
-      session->CloseSessionOnError(net::ERR_ABORTED, true);
+    if (!session->is_active()) {
+      session->CloseSessionOnError(
+          net::ERR_ABORTED, true, "Closing idle sessions.");
+    }
   }
 }
 

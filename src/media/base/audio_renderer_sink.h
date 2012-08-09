@@ -33,7 +33,7 @@ class AudioRendererSink
                           size_t audio_delay_milliseconds) = 0;
 
     // Signals an error has occurred.
-    virtual void OnError() = 0;
+    virtual void OnRenderError() = 0;
 
    protected:
     virtual ~RenderCallback() {}
@@ -43,10 +43,7 @@ class AudioRendererSink
 
   // Sets important information about the audio stream format.
   // It must be called before any of the other methods.
-  virtual void Initialize(size_t buffer_size,
-                          int channels,
-                          double sample_rate,
-                          AudioParameters::Format latency_format,
+  virtual void Initialize(const AudioParameters& params,
                           RenderCallback* callback) = 0;
 
   // Starts audio playback.

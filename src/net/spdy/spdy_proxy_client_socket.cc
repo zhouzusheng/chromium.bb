@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,6 @@
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_net_log_params.h"
-#include "net/http/http_proxy_utils.h"
 #include "net/http/http_response_headers.h"
 #include "net/spdy/spdy_http_utils.h"
 
@@ -59,6 +58,33 @@ SpdyProxyClientSocket::~SpdyProxyClientSocket() {
 
 const HttpResponseInfo* SpdyProxyClientSocket::GetConnectResponseInfo() const {
   return response_.headers ? &response_ : NULL;
+}
+
+const scoped_refptr<HttpAuthController>&
+SpdyProxyClientSocket::GetAuthController() const {
+  return auth_;
+}
+
+int SpdyProxyClientSocket::RestartWithAuth(const CompletionCallback& callback) {
+  // A SPDY Stream can only handle a single request, so the underlying
+  // stream may not be reused and a new SpdyProxyClientSocket must be
+  // created (possibly on top of the same SPDY Session).
+  next_state_ = STATE_DISCONNECTED;
+  return OK;
+}
+
+bool SpdyProxyClientSocket::IsUsingSpdy() const {
+  return true;
+}
+
+NextProto SpdyProxyClientSocket::GetProtocolNegotiated() const {
+  // Save the negotiated protocol
+  SSLInfo ssl_info;
+  bool was_npn_negotiated;
+  NextProto protocol_negotiated;
+  spdy_stream_->GetSSLInfo(&ssl_info, &was_npn_negotiated,
+                           &protocol_negotiated);
+  return protocol_negotiated;
 }
 
 HttpStream* SpdyProxyClientSocket::CreateConnectResponseStream() {
@@ -143,6 +169,10 @@ base::TimeDelta SpdyProxyClientSocket::GetConnectTimeMicros() const {
   return base::TimeDelta::FromMicroseconds(-1);
 }
 
+NextProto SpdyProxyClientSocket::GetNegotiatedProtocol() const {
+  return kProtoUnknown;
+}
+
 int SpdyProxyClientSocket::Read(IOBuffer* buf, int buf_len,
                                 const CompletionCallback& callback) {
   DCHECK(read_callback_.is_null());
@@ -172,12 +202,14 @@ int SpdyProxyClientSocket::PopulateUserReadBuffer() {
   if (!user_buffer_)
     return ERR_IO_PENDING;
 
+  int bytes_read = 0;
   while (!read_buffer_.empty() && user_buffer_->BytesRemaining() > 0) {
     scoped_refptr<DrainableIOBuffer> data = read_buffer_.front();
     const int bytes_to_copy = std::min(user_buffer_->BytesRemaining(),
                                        data->BytesRemaining());
     memcpy(user_buffer_->data(), data->data(), bytes_to_copy);
     user_buffer_->DidConsume(bytes_to_copy);
+    bytes_read += bytes_to_copy;
     if (data->BytesRemaining() == bytes_to_copy) {
       // Consumed all data from this buffer
       read_buffer_.pop_front();
@@ -185,6 +217,9 @@ int SpdyProxyClientSocket::PopulateUserReadBuffer() {
       data->DidConsume(bytes_to_copy);
     }
   }
+
+  if (bytes_read > 0 && spdy_stream_)
+    spdy_stream_->IncreaseRecvWindowSize(bytes_read);
 
   return user_buffer_->BytesConsumed();
 }
@@ -198,7 +233,7 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
   DCHECK(spdy_stream_);
   write_bytes_outstanding_= buf_len;
   if (buf_len <= kMaxSpdyFrameChunkSize) {
-    int rv = spdy_stream_->WriteStreamData(buf, buf_len, spdy::DATA_FLAG_NONE);
+    int rv = spdy_stream_->WriteStreamData(buf, buf_len, DATA_FLAG_NONE);
     if (rv == ERR_IO_PENDING) {
       write_callback_ = callback;
       write_buffer_len_ = buf_len;
@@ -212,7 +247,7 @@ int SpdyProxyClientSocket::Write(IOBuffer* buf, int buf_len,
     int len = std::min(kMaxSpdyFrameChunkSize, buf_len - i);
     scoped_refptr<DrainableIOBuffer> iobuf(new DrainableIOBuffer(buf, i + len));
     iobuf->SetOffset(i);
-    int rv = spdy_stream_->WriteStreamData(iobuf, len, spdy::DATA_FLAG_NONE);
+    int rv = spdy_stream_->WriteStreamData(iobuf, len, DATA_FLAG_NONE);
     if (rv > 0) {
       write_bytes_outstanding_ -= rv;
     } else if (rv != ERR_IO_PENDING) {
@@ -338,12 +373,17 @@ int SpdyProxyClientSocket::DoSendRequest() {
   }
 
   request_.extra_headers.MergeFrom(request_headers);
-  linked_ptr<spdy::SpdyHeaderBlock> headers(new spdy::SpdyHeaderBlock());
+  linked_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
   CreateSpdyHeadersFromHttpRequest(request_, request_headers, headers.get(),
-                                   true);
+                                   spdy_stream_->GetProtocolVersion(), true);
   // Reset the URL to be the endpoint of the connection
-  (*headers)["url"] = endpoint_.ToString();
-  headers->erase("scheme");
+  if (spdy_stream_->GetProtocolVersion() > 2) {
+    (*headers)[":path"] = endpoint_.ToString();
+    headers->erase(":scheme");
+  } else {
+    (*headers)["url"] = endpoint_.ToString();
+    headers->erase("scheme");
+  }
   spdy_stream_->set_spdy_headers(headers);
 
   return spdy_stream_->SendRequest(true);
@@ -379,7 +419,7 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
   if (response_.headers->response_code() == 200) {
     return OK;
   } else if (response_.headers->response_code() == 407) {
-    return ERR_TUNNEL_CONNECTION_FAILED;
+    return HandleProxyAuthChallenge(auth_, &response_, net_log_);
   } else {
     // Immediately hand off our SpdyStream to a newly created SpdyHttpStream
     // so that any subsequent SpdyFrames are processed in the context of
@@ -422,7 +462,7 @@ int SpdyProxyClientSocket::OnSendBodyComplete(int /*status*/, bool* /*eof*/) {
 }
 
 int SpdyProxyClientSocket::OnResponseReceived(
-    const spdy::SpdyHeaderBlock& response,
+    const SpdyHeaderBlock& response,
     base::Time response_time,
     int status) {
   // If we've already received the reply, existing headers are too late.
@@ -432,9 +472,9 @@ int SpdyProxyClientSocket::OnResponseReceived(
     return OK;
 
   // Save the response
-  int rv = SpdyHeadersToHttpResponse(response, &response_);
-  if (rv == ERR_INCOMPLETE_SPDY_HEADERS)
-    return rv;  // More headers are coming.
+  if (!SpdyHeadersToHttpResponse(
+          response, spdy_stream_->GetProtocolVersion(), &response_))
+      return ERR_INCOMPLETE_SPDY_HEADERS;
 
   OnIOComplete(status);
   return OK;

@@ -28,7 +28,6 @@
 #define SkPictureCanvasLayerTextureUpdater_h
 
 #if USE(ACCELERATED_COMPOSITING)
-#if USE(SKIA)
 
 #include "CanvasLayerTextureUpdater.h"
 #include "SkPicture.h"
@@ -48,13 +47,15 @@ class SkPictureCanvasLayerTextureUpdater : public CanvasLayerTextureUpdater {
 public:
     virtual ~SkPictureCanvasLayerTextureUpdater();
 
+    virtual void setOpaque(bool);
+
 protected:
     explicit SkPictureCanvasLayerTextureUpdater(PassOwnPtr<LayerPainterChromium>);
 
     virtual void prepareToUpdate(const IntRect& contentRect, const IntSize& tileSize, int borderTexels, float contentsScale, IntRect* resultingOpaqueRect);
     void drawPicture(SkCanvas*);
 
-    virtual void setOpaque(bool);
+    bool layerIsOpaque() const { return m_layerIsOpaque; }
 
 private:
     // Recording canvas.
@@ -64,6 +65,5 @@ private:
 };
 
 } // namespace WebCore
-#endif // USE(SKIA)
 #endif // USE(ACCELERATED_COMPOSITING)
 #endif // SkPictureCanvasLayerTextureUpdater_h

@@ -31,6 +31,7 @@
 #include "FocusDirection.h"
 #include "HitTestRequest.h"
 #include "PlatformMouseEvent.h"
+#include "PlatformWheelEvent.h"
 #include "ScrollTypes.h"
 #include "TextEventInputType.h"
 #include "TextGranularity.h"
@@ -162,6 +163,12 @@ public:
 
 #if ENABLE(GESTURE_EVENTS)
     bool handleGestureEvent(const PlatformGestureEvent&);
+    bool handleGestureTap(const PlatformGestureEvent&);
+    bool handleGestureScrollUpdate(const PlatformGestureEvent&);
+#endif
+
+#if ENABLE(TOUCH_ADJUSTMENT)
+    void bestClickableNodeForTouchPoint(const IntPoint& touchCenter, const IntSize& touchRadius, IntPoint& targetPoint, Node*& targetNode);
 #endif
 
 #if ENABLE(CONTEXT_MENUS)
@@ -264,6 +271,10 @@ private:
     void fakeMouseMoveEventTimerFired(Timer<EventHandler>*);
     void cancelFakeMouseMoveEvent();
 
+#if ENABLE(TOUCH_EVENTS)
+    bool dispatchSyntheticTouchEventIfEnabled(const PlatformMouseEvent&);
+#endif
+
     void invalidateClick();
 
     Node* nodeUnderMouse() const;
@@ -339,6 +350,11 @@ private:
 
 #if ENABLE(FULLSCREEN_API)
     bool isKeyEventAllowedInFullScreen(const PlatformKeyboardEvent&) const;
+#endif
+
+#if ENABLE(GESTURE_EVENTS)
+    bool handleGestureScrollCore(const PlatformGestureEvent&, PlatformWheelEventGranularity, bool latchedWheel);
+    bool handleGestureTapDown();
 #endif
 
     Frame* m_frame;
@@ -425,6 +441,8 @@ private:
     TouchTargetMap m_originatingTouchPointTargets;
     bool m_touchPressed;
 #endif
+    double m_maxMouseMovedDuration;
+    PlatformEvent::Type m_baseEventType;
 };
 
 } // namespace WebCore

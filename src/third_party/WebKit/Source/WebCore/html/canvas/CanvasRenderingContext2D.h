@@ -67,7 +67,6 @@ public:
 
     virtual bool is2d() const { return true; }
     virtual bool isAccelerated() const;
-    virtual bool paintsIntoCanvasBuffer() const;
 
     CanvasStyle* strokeStyle() const;
     void setStrokeStyle(PassRefPtr<CanvasStyle>);
@@ -278,6 +277,7 @@ private:
     const State& state() const { return m_stateStack.last(); }
 
     void applyShadow();
+    bool shouldDrawShadows() const;
 
     void didDraw(const FloatRect&, unsigned options = CanvasDidDrawApplyAll);
     void didDrawEntireCanvas();

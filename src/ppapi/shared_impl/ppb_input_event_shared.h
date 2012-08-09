@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,6 +40,7 @@ struct PPAPI_SHARED_EXPORT InputEventData {
   bool wheel_scroll_by_page;
 
   uint32_t key_code;
+  uint32_t usb_key_code;
 
   std::string character_text;
 
@@ -55,15 +56,7 @@ class PPAPI_SHARED_EXPORT PPB_InputEvent_Shared
     : public Resource,
       public thunk::PPB_InputEvent_API {
  public:
-  struct InitAsImpl {};
-  struct InitAsProxy {};
-
-  // The dummy arguments control which version of Resource's constructor is
-  // called for this base class.
-  PPB_InputEvent_Shared(const InitAsImpl&,
-                        PP_Instance instance,
-                        const InputEventData& data);
-  PPB_InputEvent_Shared(const InitAsProxy&,
+  PPB_InputEvent_Shared(ResourceObjectType type,
                         PP_Instance instance,
                         const InputEventData& data);
 
@@ -84,6 +77,8 @@ class PPAPI_SHARED_EXPORT PPB_InputEvent_Shared
   virtual PP_Bool GetWheelScrollByPage() OVERRIDE;
   virtual uint32_t GetKeyCode() OVERRIDE;
   virtual PP_Var GetCharacterText() OVERRIDE;
+  virtual PP_Bool SetUsbKeyCode(uint32_t usb_key_code) OVERRIDE;
+  virtual uint32_t GetUsbKeyCode() OVERRIDE;
   virtual uint32_t GetIMESegmentNumber() OVERRIDE;
   virtual uint32_t GetIMESegmentOffset(uint32_t index) OVERRIDE;
   virtual int32_t GetIMETargetSegment() OVERRIDE;

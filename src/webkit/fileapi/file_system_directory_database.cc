@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,15 @@
 
 #include <math.h>
 
+#include "base/file_util.h"
 #include "base/location.h"
+#include "base/metrics/histogram.h"
 #include "base/pickle.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "third_party/leveldatabase/src/include/leveldb/iterator.h"
+#include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
+#include "webkit/fileapi/file_system_util.h"
 
 namespace {
 
@@ -26,13 +28,9 @@ bool PickleFromFileInfo(
       base::Time::FromDoubleT(floor(info.modification_time.ToDoubleT()));
   std::string name;
 
-#if defined(OS_POSIX)
-  data_path = info.data_path.value();
-  name = info.name;
-#elif defined(OS_WIN)
-  data_path = base::SysWideToUTF8(info.data_path.value());
-  name = base::SysWideToUTF8(info.name);
-#endif
+  data_path = fileapi::FilePathToString(info.data_path);
+  name = fileapi::FilePathToString(FilePath(info.name));
+
   if (pickle->WriteInt64(info.parent_id) &&
       pickle->WriteString(data_path) &&
       pickle->WriteString(name) &&
@@ -46,7 +44,7 @@ bool PickleFromFileInfo(
 bool FileInfoFromPickle(
     const Pickle& pickle,
     fileapi::FileSystemDirectoryDatabase::FileInfo* info) {
-  void* iter = NULL;
+  PickleIterator iter(pickle);
   std::string data_path;
   std::string name;
   int64 internal_time;
@@ -55,13 +53,9 @@ bool FileInfoFromPickle(
       pickle.ReadString(&iter, &data_path) &&
       pickle.ReadString(&iter, &name) &&
       pickle.ReadInt64(&iter, &internal_time)) {
-#if defined(OS_POSIX)
-    info->data_path = FilePath(data_path);
-    info->name = name;
-#elif defined(OS_WIN)
-    info->data_path = FilePath(base::SysUTF8ToWide(data_path));
-    info->name = base::SysUTF8ToWide(name);
-#endif
+
+    info->data_path = fileapi::StringToFilePath(data_path);
+    info->name = fileapi::StringToFilePath(name).value();
     info->modification_time = base::Time::FromInternalValue(internal_time);
     return true;
   }
@@ -69,20 +63,25 @@ bool FileInfoFromPickle(
   return false;
 }
 
+const FilePath::CharType kDirectoryDatabaseName[] = FILE_PATH_LITERAL("Paths");
 const char kChildLookupPrefix[] = "CHILD_OF:";
 const char kChildLookupSeparator[] = ":";
 const char kLastFileIdKey[] = "LAST_FILE_ID";
 const char kLastIntegerKey[] = "LAST_INTEGER";
+const int64 kMinimumReportIntervalHours = 1;
+const char kInitStatusHistogramLabel[] = "FileSystem.DirectoryDatabaseInit";
+
+enum InitStatus {
+  INIT_STATUS_OK = 0,
+  INIT_STATUS_CORRUPTION,
+  INIT_STATUS_MAX
+};
 
 std::string GetChildLookupKey(
     fileapi::FileSystemDirectoryDatabase::FileId parent_id,
     const FilePath::StringType& child_name) {
   std::string name;
-#if defined(OS_POSIX)
-  name = child_name;
-#elif defined(OS_WIN)
-  name = base::SysWideToUTF8(child_name);
-#endif
+  name = fileapi::FilePathToString(FilePath(child_name));
   return std::string(kChildLookupPrefix) + base::Int64ToString(parent_id) +
       std::string(kChildLookupSeparator) + name;
 }
@@ -116,12 +115,9 @@ FileSystemDirectoryDatabase::FileInfo::FileInfo() : parent_id(0) {
 FileSystemDirectoryDatabase::FileInfo::~FileInfo() {
 }
 
-FileSystemDirectoryDatabase::FileSystemDirectoryDatabase(const FilePath& path) {
-#if defined(OS_POSIX)
-  path_ = path.value();
-#elif defined(OS_WIN)
-  path_ = base::SysWideToUTF8(path.value());
-#endif
+FileSystemDirectoryDatabase::FileSystemDirectoryDatabase(
+    const FilePath& filesystem_data_directory)
+    : filesystem_data_directory_(filesystem_data_directory) {
 }
 
 FileSystemDirectoryDatabase::~FileSystemDirectoryDatabase() {
@@ -129,7 +125,7 @@ FileSystemDirectoryDatabase::~FileSystemDirectoryDatabase() {
 
 bool FileSystemDirectoryDatabase::GetChildWithName(
     FileId parent_id, const FilePath::StringType& name, FileId* child_id) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(child_id);
   std::string child_key = GetChildLookupKey(parent_id, name);
@@ -152,7 +148,7 @@ bool FileSystemDirectoryDatabase::GetChildWithName(
 bool FileSystemDirectoryDatabase::GetFileWithPath(
     const FilePath& path, FileId* file_id) {
   std::vector<FilePath::StringType> components;
-  path.GetComponents(&components);
+  VirtualPath::GetComponents(path, &components);
   FileId local_id = 0;
   std::vector<FilePath::StringType>::iterator iter;
   for (iter = components.begin(); iter != components.end(); ++iter) {
@@ -170,7 +166,7 @@ bool FileSystemDirectoryDatabase::GetFileWithPath(
 bool FileSystemDirectoryDatabase::ListChildren(
     FileId parent_id, std::vector<FileId>* children) {
   // Check to add later: fail if parent is a file, at least in debug builds.
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(children);
   std::string child_key_prefix = GetChildListingKeyPrefix(parent_id);
@@ -193,7 +189,7 @@ bool FileSystemDirectoryDatabase::ListChildren(
 }
 
 bool FileSystemDirectoryDatabase::GetFileInfo(FileId file_id, FileInfo* info) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(info);
   std::string file_key = GetFileLookupKey(file_id);
@@ -220,7 +216,7 @@ bool FileSystemDirectoryDatabase::GetFileInfo(FileId file_id, FileInfo* info) {
 
 bool FileSystemDirectoryDatabase::AddFileInfo(
     const FileInfo& info, FileId* file_id) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(file_id);
   std::string child_key = GetChildLookupKey(info.parent_id, info.name);
@@ -262,7 +258,7 @@ bool FileSystemDirectoryDatabase::AddFileInfo(
 }
 
 bool FileSystemDirectoryDatabase::RemoveFileInfo(FileId file_id) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   leveldb::WriteBatch batch;
   if (!RemoveFileInfoHelper(file_id, &batch))
@@ -279,7 +275,7 @@ bool FileSystemDirectoryDatabase::UpdateFileInfo(
     FileId file_id, const FileInfo& new_info) {
   // TODO: We should also check to see that this doesn't create a loop, but
   // perhaps only in a debug build.
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(file_id);  // You can't remove the root, ever.  Just delete the DB.
   FileInfo old_info;
@@ -363,7 +359,7 @@ bool FileSystemDirectoryDatabase::OverwritingMoveFile(
 }
 
 bool FileSystemDirectoryDatabase::GetNextInteger(int64* next) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(next);
   std::string int_string;
@@ -398,12 +394,7 @@ bool FileSystemDirectoryDatabase::GetNextInteger(int64* next) {
 
 // static
 bool FileSystemDirectoryDatabase::DestroyDatabase(const FilePath& path) {
-  std::string name;
-#if defined(OS_POSIX)
-  name = path.value();
-#elif defined(OS_WIN)
-  name = base::SysWideToUTF8(path.value());
-#endif
+  std::string name  = FilePathToString(path.Append(kDirectoryDatabaseName));
   leveldb::Status status = leveldb::DestroyDB(name, leveldb::Options());
   if (status.ok())
     return true;
@@ -412,20 +403,51 @@ bool FileSystemDirectoryDatabase::DestroyDatabase(const FilePath& path) {
   return false;
 }
 
-bool FileSystemDirectoryDatabase::Init() {
- if (db_.get())
-   return true;
+bool FileSystemDirectoryDatabase::Init(RecoveryOption recovery_option) {
+  if (db_.get())
+    return true;
 
- leveldb::Options options;
- options.create_if_missing = true;
- leveldb::DB* db;
- leveldb::Status status = leveldb::DB::Open(options, path_, &db);
- if (status.ok()) {
-   db_.reset(db);
-   return true;
- }
- HandleError(FROM_HERE, status);
- return false;
+  std::string path =
+      FilePathToString(filesystem_data_directory_.Append(
+          kDirectoryDatabaseName));
+  leveldb::Options options;
+  options.create_if_missing = true;
+  leveldb::DB* db;
+  leveldb::Status status = leveldb::DB::Open(options, path, &db);
+  ReportInitStatus(status);
+  if (status.ok()) {
+    db_.reset(db);
+    return true;
+  }
+  HandleError(FROM_HERE, status);
+
+  if (recovery_option == FAIL_ON_CORRUPTION)
+    return false;
+
+  DCHECK_EQ(DELETE_ON_CORRUPTION, recovery_option);
+  if (!file_util::Delete(filesystem_data_directory_, true))
+    return false;
+  if (!file_util::CreateDirectory(filesystem_data_directory_))
+    return false;
+  return Init(FAIL_ON_CORRUPTION);
+}
+
+void FileSystemDirectoryDatabase::ReportInitStatus(
+    const leveldb::Status& status) {
+  base::Time now = base::Time::Now();
+  const base::TimeDelta minimum_interval =
+      base::TimeDelta::FromHours(kMinimumReportIntervalHours);
+  if (last_reported_time_ + minimum_interval >= now)
+    return;
+  last_reported_time_ = now;
+
+  if (status.ok()) {
+    UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
+                              INIT_STATUS_OK, INIT_STATUS_MAX);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION(kInitStatusHistogramLabel,
+                              INIT_STATUS_CORRUPTION, INIT_STATUS_MAX);
+  }
 }
 
 bool FileSystemDirectoryDatabase::StoreDefaultValues() {
@@ -455,7 +477,7 @@ bool FileSystemDirectoryDatabase::StoreDefaultValues() {
 }
 
 bool FileSystemDirectoryDatabase::GetLastFileId(FileId* file_id) {
-  if (!Init())
+  if (!Init(FAIL_ON_CORRUPTION))
     return false;
   DCHECK(file_id);
   std::string id_string;
@@ -538,7 +560,7 @@ bool FileSystemDirectoryDatabase::RemoveFileInfoHelper(
 
 void FileSystemDirectoryDatabase::HandleError(
     const tracked_objects::Location& from_here,
-    leveldb::Status status) {
+    const leveldb::Status& status) {
   LOG(ERROR) << "FileSystemDirectoryDatabase failed at: "
              << from_here.ToString() << " with error: " << status.ToString();
   db_.reset();

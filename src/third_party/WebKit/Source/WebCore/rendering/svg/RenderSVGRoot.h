@@ -54,6 +54,10 @@ public:
     void setContainerSize(const IntSize& containerSize) { m_containerSize = containerSize; }
 
     virtual bool hasRelativeDimensions() const;
+    virtual bool hasRelativeLogicalHeight() const;
+
+    // localToBorderBoxTransform maps local SVG viewport coordinates to local CSS box coordinates.  
+    const AffineTransform& localToBorderBoxTransform() const { return m_localToBorderBoxTransform; }
 
     // The flag is cleared at the beginning of each layout() pass. Elements then call this
     // method during layout when they are invalidated by a filter.
@@ -62,7 +66,6 @@ public:
 private:
     virtual RenderObjectChildList* virtualChildren() { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const { return children(); }
-    virtual bool canHaveChildren() const { return true; }
 
     virtual bool isSVGRoot() const { return true; }
     virtual const char* renderName() const { return "RenderSVGRoot"; }
@@ -93,6 +96,7 @@ private:
 
     virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&, bool* wasFixed = 0) const;
     virtual bool canBeSelectionLeaf() const { return false; }
+    virtual bool canHaveChildren() const { return true; }
 
     void updateCachedBoundaries();
     void buildLocalToBorderBoxTransform();
@@ -100,6 +104,7 @@ private:
     RenderObjectChildList m_children;
     IntSize m_containerSize;
     FloatRect m_objectBoundingBox;
+    bool m_objectBoundingBoxValid;
     FloatRect m_strokeBoundingBox;
     FloatRect m_repaintBoundingBox;
     mutable AffineTransform m_localToParentTransform;

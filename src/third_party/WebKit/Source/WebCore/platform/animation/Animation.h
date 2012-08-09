@@ -42,7 +42,7 @@ public:
 
     static PassRefPtr<Animation> create() { return adoptRef(new Animation); }
     static PassRefPtr<Animation> create(const Animation* o) { return adoptRef(new Animation(*o)); }
-    
+
     bool isDelaySet() const { return m_delaySet; }
     bool isDirectionSet() const { return m_directionSet; }
     bool isDurationSet() const { return m_durationSet; }
@@ -96,7 +96,12 @@ public:
 
     double delay() const { return m_delay; }
 
-    enum AnimationDirection { AnimationDirectionNormal, AnimationDirectionAlternate };
+    enum AnimationDirection {
+        AnimationDirectionNormal,
+        AnimationDirectionAlternate,
+        AnimationDirectionReverse,
+        AnimationDirectionAlternateReverse
+    };
     AnimationDirection direction() const { return static_cast<AnimationDirection>(m_direction); }
 
     unsigned fillMode() const { return m_fillMode; }
@@ -104,7 +109,7 @@ public:
     double duration() const { return m_duration; }
 
     enum { IterationCountInfinite = -1 };
-    int iterationCount() const { return m_iterationCount; }
+    double iterationCount() const { return m_iterationCount; }
     const String& name() const { return m_name; }
     EAnimPlayState playState() const { return static_cast<EAnimPlayState>(m_playState); }
     int property() const { return m_property; }
@@ -114,7 +119,7 @@ public:
     void setDirection(AnimationDirection d) { m_direction = d; m_directionSet = true; }
     void setDuration(double d) { ASSERT(d >= 0); m_duration = d; m_durationSet = true; }
     void setFillMode(unsigned f) { m_fillMode = f; m_fillModeSet = true; }
-    void setIterationCount(int c) { m_iterationCount = c; m_iterationCountSet = true; }
+    void setIterationCount(double c) { m_iterationCount = c; m_iterationCountSet = true; }
     void setName(const String& n) { m_name = n; m_nameSet = true; }
     void setPlayState(EAnimPlayState d) { m_playState = d; m_playStateSet = true; }
     void setProperty(int t) { m_property = t; m_propertySet = true; }
@@ -140,11 +145,11 @@ private:
     
     String m_name;
     int m_property;
-    int m_iterationCount;
+    double m_iterationCount;
     double m_delay;
     double m_duration;
     RefPtr<TimingFunction> m_timingFunction;
-    unsigned m_direction : 1; // AnimationDirection
+    unsigned m_direction : 2; // AnimationDirection
     unsigned m_fillMode : 2;
 
     unsigned m_playState     : 2;
@@ -166,7 +171,7 @@ public:
     static AnimationDirection initialAnimationDirection() { return AnimationDirectionNormal; }
     static double initialAnimationDuration() { return 0; }
     static unsigned initialAnimationFillMode() { return AnimationFillModeNone; }
-    static int initialAnimationIterationCount() { return 1; }
+    static double initialAnimationIterationCount() { return 1.0; }
     static const String& initialAnimationName();
     static EAnimPlayState initialAnimationPlayState() { return AnimPlayStatePlaying; }
     static int initialAnimationProperty() { return cAnimateAll; }

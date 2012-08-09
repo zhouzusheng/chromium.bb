@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -202,7 +202,6 @@ NET_ERROR(MANDATORY_PROXY_CONFIGURATION_FAILED, -131)
 // We detected an ESET product intercepting our HTTPS connections. Since these
 // products are False Start intolerant, we return this error so that we can
 // give the user a helpful error message rather than have the connection hang.
-// See also: KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION
 NET_ERROR(ESET_ANTI_VIRUS_SSL_INTERCEPTION, -132)
 
 // We've hit the max socket limit for the socket pool while preconnecting.  We
@@ -247,12 +246,7 @@ NET_ERROR(SSL_CLIENT_AUTH_SIGNATURE_FAILED, -141)
 // which exceeds size threshold).
 NET_ERROR(MSG_TOO_BIG, -142)
 
-// We detected a Kaspersky product intercepting our HTTPS connections. This
-// interacts badly with our SSL stack for unknown reasons (disabling False
-// Start doesn't help). We return this error so that we can give the user a
-// helpful error message rather than have the connection hang.
-// See also: ESET_ANTI_VIRUS_SSL_INTERCEPTION
-NET_ERROR(KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION, -143)
+// Error cdoe -143 available.
 
 // Violation of limits (e.g. imposed to prevent DoS).
 NET_ERROR(LIMIT_VIOLATION, -144)
@@ -522,6 +516,9 @@ NET_ERROR(SPDY_SERVER_REFUSED_STREAM, -351)
 // SPDY server didn't respond to the PING message.
 NET_ERROR(SPDY_PING_FAILED, -352)
 
+// The request couldn't be completed on an HTTP pipeline. Client should retry.
+NET_ERROR(PIPELINE_EVICTION, -353)
+
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)
 
@@ -621,7 +618,7 @@ NET_ERROR(PKCS12_IMPORT_UNSUPPORTED, -709)
 // Key generation failed.
 NET_ERROR(KEY_GENERATION_FAILED, -710)
 
-// Origin-bound certificate generation failed.
+// Server-bound certificate generation failed.
 NET_ERROR(ORIGIN_BOUND_CERT_GENERATION_FAILED, -711)
 
 // Failure to export private key.
@@ -651,6 +648,3 @@ NET_ERROR(DNS_TIMED_OUT, -803)
 
 // The entry was not found in cache, for cache-only lookups.
 NET_ERROR(DNS_CACHE_MISS, -804)
-
-// FIXME: Take the next number.
-NET_ERROR(PIPELINE_EVICTION, -900)

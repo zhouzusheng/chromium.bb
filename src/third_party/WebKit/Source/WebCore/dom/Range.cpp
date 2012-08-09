@@ -677,7 +677,6 @@ static inline unsigned lengthOfContentsInNode(Node* node)
     case Node::DOCUMENT_FRAGMENT_NODE:
     case Node::NOTATION_NODE:
     case Node::XPATH_NAMESPACE_NODE:
-    case Node::SHADOW_ROOT_NODE:
         return node->childNodeCount();
     }
     ASSERT_NOT_REACHED();
@@ -840,7 +839,6 @@ PassRefPtr<Node> Range::processContentsBetweenOffsets(ActionType action, PassRef
     case Node::DOCUMENT_FRAGMENT_NODE:
     case Node::NOTATION_NODE:
     case Node::XPATH_NAMESPACE_NODE:
-    case Node::SHADOW_ROOT_NODE:
         // FIXME: Should we assert that some nodes never appear here?
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             if (fragment)
@@ -997,7 +995,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
 
     Node::NodeType newNodeType = newNode->nodeType();
     int numNewChildren;
-    if (newNodeType == Node::DOCUMENT_FRAGMENT_NODE) {
+    if (newNodeType == Node::DOCUMENT_FRAGMENT_NODE && !newNode->isShadowRoot()) {
         // check each child node, not the DocumentFragment itself
         numNewChildren = 0;
         for (Node* c = newNode->firstChild(); c; c = c->nextSibling()) {
@@ -1028,10 +1026,13 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
     case Node::ENTITY_NODE:
     case Node::NOTATION_NODE:
     case Node::DOCUMENT_NODE:
-    case Node::SHADOW_ROOT_NODE:
         ec = RangeException::INVALID_NODE_TYPE_ERR;
         return;
     default:
+        if (newNode->isShadowRoot()) {
+            ec = RangeException::INVALID_NODE_TYPE_ERR;
+            return;
+        }
         break;
     }
 
@@ -1039,7 +1040,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
     RefPtr<Node> container;
     if (startIsText) {
         container = m_start.container();
-        RefPtr<Text> newText = static_cast<Text*>(container.get())->splitText(m_start.offset(), ec);
+        RefPtr<Text> newText = toText(container.get())->splitText(m_start.offset(), ec);
         if (ec)
             return;
         
@@ -1222,8 +1223,7 @@ Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionCode& ec) const
         case Node::DOCUMENT_NODE:
         case Node::ELEMENT_NODE:
         case Node::ENTITY_REFERENCE_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
-        case Node::SHADOW_ROOT_NODE: {
+        case Node::XPATH_NAMESPACE_NODE: {
             if (!offset)
                 return 0;
             Node* childBefore = n->childNode(offset - 1);
@@ -1248,7 +1248,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::DOCUMENT_NODE:
         case Node::ENTITY_NODE:
         case Node::NOTATION_NODE:
-        case Node::SHADOW_ROOT_NODE:
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
         case Node::CDATA_SECTION_NODE:
@@ -1270,7 +1269,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::ATTRIBUTE_NODE:
         case Node::DOCUMENT_NODE:
         case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::SHADOW_ROOT_NODE:
             break;
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
@@ -1282,8 +1280,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
-            if (root->isSVGShadowRoot())
-                break;
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
     }
@@ -1402,7 +1398,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
-            case Node::SHADOW_ROOT_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
             case Node::ENTITY_NODE:
@@ -1427,7 +1422,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
         case Node::DOCUMENT_NODE:
         case Node::ENTITY_NODE:
         case Node::NOTATION_NODE:
-        case Node::SHADOW_ROOT_NODE:
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
     }
@@ -1468,7 +1462,6 @@ void Range::selectNodeContents(Node* refNode, ExceptionCode& ec)
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
-            case Node::SHADOW_ROOT_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
             case Node::ENTITY_NODE:
@@ -1517,7 +1510,6 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionCode& ec)
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
-        case Node::SHADOW_ROOT_NODE:
             break;
     }
 
@@ -2045,7 +2037,7 @@ void Range::getBorderAndTextQuads(Vector<FloatQuad>& quads) const
                 }
             }
         } else if (node->isTextNode()) {
-            if (RenderObject* renderer = static_cast<Text*>(node)->renderer()) {
+            if (RenderObject* renderer = toText(node)->renderer()) {
                 RenderText* renderText = toRenderText(renderer);
                 int startOffset = (node == startContainer) ? m_start.offset() : 0;
                 int endOffset = (node == endContainer) ? m_end.offset() : INT_MAX;

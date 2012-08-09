@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,7 @@ class CookieOptions;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class SSLConfigService;
+class SSLInfo;
 class SingleRequestHostResolver;
 class SocketStreamMetrics;
 
@@ -90,6 +91,15 @@ class NET_EXPORT SocketStream
                                 AuthChallengeInfo* auth_info) {
       // By default, no credential is available and close the connection.
       socket->Close();
+    }
+
+    // Called when using SSL and the server responds with a certificate with an
+    // error. The delegate should call CancelBecauseOfCertError() or
+    // ContinueDespiteCertError() to resume connection handling.
+    virtual void OnSSLCertificateError(SocketStream* socket,
+                                       const SSLInfo& ssl_info,
+                                       bool fatal) {
+      socket->CancelWithSSLError(ssl_info);
     }
 
     // Called when an error occured.
@@ -164,6 +174,18 @@ class NET_EXPORT SocketStream
   // Sets an alternative ClientSocketFactory.  Doesn't take ownership of
   // |factory|.  For testing purposes only.
   void SetClientSocketFactory(ClientSocketFactory* factory);
+
+  // Cancels the connection because of an error.
+  // |error| is net::Error which represents the error.
+  void CancelWithError(int error);
+
+  // Cancels the connection because of receiving a certificate with an error.
+  void CancelWithSSLError(const SSLInfo& ssl_info);
+
+  // Continues to establish the connection in spite of an error. Usually this
+  // case happens because users allow certificate with an error by manual
+  // actions on alert dialog or browser cached such kinds of user actions.
+  void ContinueDespiteError();
 
  protected:
   friend class base::RefCountedThreadSafe<SocketStream>;
@@ -307,7 +329,7 @@ class NET_EXPORT SocketStream
   State next_state_;
   HostResolver* host_resolver_;
   CertVerifier* cert_verifier_;
-  OriginBoundCertService* origin_bound_cert_service_;
+  ServerBoundCertService* server_bound_cert_service_;
   HttpAuthHandlerFactory* http_auth_handler_factory_;
   ClientSocketFactory* factory_;
 

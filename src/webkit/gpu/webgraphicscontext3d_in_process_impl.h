@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,6 @@ using WebKit::WGC3Dsizeiptr;
 using WebKit::WebGLId;
 
 using WebKit::WebString;
-using WebKit::WebView;
 
 using WebKit::WebGraphicsContext3D;
 
@@ -57,14 +56,20 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   // is gfx::kNullPluginWindow, then it creates an offscreen context.
   // share_group is the group this context shares namespaces with. It's only
   // used for window-bound countexts.
-  WebGraphicsContext3DInProcessImpl(gfx::PluginWindowHandle window,
-                                    gfx::GLShareGroup* share_group);
+  WebGraphicsContext3DInProcessImpl(gfx::GLSurface* surface,
+                                    gfx::GLContext* context,
+                                    bool render_directly_to_webview);
   virtual ~WebGraphicsContext3DInProcessImpl();
+  static WebGraphicsContext3DInProcessImpl* CreateForWebView(
+      WebGraphicsContext3D::Attributes attributes,
+      bool render_directly_to_webview);
+  static WebGraphicsContext3DInProcessImpl* CreateForWindow(
+      WebGraphicsContext3D::Attributes attributes,
+      gfx::AcceleratedWidget window,
+      gfx::GLShareGroup* share_group);
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
-  virtual bool initialize(
-      WebGraphicsContext3D::Attributes attributes, WebView*, bool);
   virtual bool makeContextCurrent();
 
   virtual int width();
@@ -101,6 +106,14 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   virtual void unmapTexSubImage2DCHROMIUM(const void*);
 
   virtual void setVisibilityCHROMIUM(bool visible);
+
+  virtual void setMemoryAllocationChangedCallbackCHROMIUM(
+      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
+
+  virtual void discardFramebufferEXT(WGC3Denum target,
+                                     WGC3Dsizei numAttachments,
+                                     const WGC3Denum* attachments);
+  virtual void ensureFramebufferCHROMIUM();
 
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
@@ -450,12 +463,24 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
       WGC3Denum target, WGC3Dint levels, WGC3Duint internalformat,
       WGC3Dint width, WGC3Dint height);
 
+  virtual WebGLId createQueryEXT();
+  virtual void deleteQueryEXT(WebGLId query);
+  virtual WGC3Dboolean isQueryEXT(WebGLId query);
+  virtual void beginQueryEXT(WGC3Denum target, WebGLId query);
+  virtual void endQueryEXT(WGC3Denum target);
+  virtual void getQueryivEXT(
+      WGC3Denum target, WGC3Denum pname, WGC3Dint* params);
+  virtual void getQueryObjectuivEXT(
+      WebGLId query, WGC3Denum pname, WGC3Duint* params);
+
  protected:
 #if WEBKIT_USING_SKIA
   virtual GrGLInterface* onCreateGrGLInterface();
 #endif
 
  private:
+  bool Initialize(Attributes attributes);
+
   // ANGLE related.
   struct ShaderSourceEntry;
 
@@ -522,8 +547,6 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 
   ShHandle fragment_compiler_;
   ShHandle vertex_compiler_;
-  gfx::PluginWindowHandle window_;
-  scoped_refptr<gfx::GLShareGroup> share_group_;
 };
 
 }  // namespace gpu

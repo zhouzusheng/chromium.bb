@@ -49,10 +49,12 @@ PROXIED_API(PPB_URLResponseInfo)
 PROXIED_IFACE(PPB_Audio, PPB_AUDIO_INTERFACE_1_0, PPB_Audio_1_0)
 // This has no corresponding _Proxy object since it does no IPC.
 PROXIED_IFACE(NoAPIName, PPB_AUDIO_CONFIG_INTERFACE_1_0, PPB_AudioConfig_1_0)
+PROXIED_IFACE(NoAPIName, PPB_AUDIO_CONFIG_INTERFACE_1_1, PPB_AudioConfig_1_1)
 // Note: Core is special and is registered manually.
 PROXIED_IFACE(PPB_FileIO, PPB_FILEIO_INTERFACE_1_0, PPB_FileIO_1_0)
 PROXIED_IFACE(PPB_FileRef, PPB_FILEREF_INTERFACE_1_0, PPB_FileRef_1_0)
 PROXIED_IFACE(PPB_FileSystem, PPB_FILESYSTEM_INTERFACE_1_0, PPB_FileSystem_1_0)
+PROXIED_IFACE(PPB_Instance, PPB_GAMEPAD_INTERFACE_1_0, PPB_Gamepad_1_0)
 PROXIED_IFACE(PPB_Graphics2D, PPB_GRAPHICS_2D_INTERFACE_1_0, PPB_Graphics2D_1_0)
 PROXIED_IFACE(PPB_Graphics3D, PPB_GRAPHICS_3D_INTERFACE_1_0, PPB_Graphics3D_1_0)
 PROXIED_IFACE(PPB_ImageData, PPB_IMAGEDATA_INTERFACE_1_0, PPB_ImageData_1_0)
@@ -74,7 +76,8 @@ PROXIED_IFACE(NoAPIName, PPB_URLREQUESTINFO_INTERFACE_1_0,
               PPB_URLRequestInfo_1_0)
 PROXIED_IFACE(PPB_URLResponseInfo, PPB_URLRESPONSEINFO_INTERFACE_1_0,
               PPB_URLResponseInfo_1_0)
-// Note: PPB_Var is special and registered manually.
+
+// Note: PPB_Var and PPB_VarArrayBuffer are special and registered manually.
 PROXIED_IFACE(NoAPIName, PPB_VIEW_INTERFACE_1_0, PPB_View_1_0)
 
 #include "ppapi/thunk/interfaces_postamble.h"

@@ -42,6 +42,12 @@ public:
     void updateBeforeAndAfterContent();
     void paintOutlineForRowIfNeeded(PaintInfo&, const LayoutPoint&);
 
+    static RenderTableRow* createAnonymousWithParentRenderer(const RenderObject*);
+    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const RenderObject* parent) const OVERRIDE
+    {
+        return createAnonymousWithParentRenderer(parent);
+    }
+
 private:
     virtual RenderObjectChildList* virtualChildren() { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const { return children(); }
@@ -57,7 +63,8 @@ private:
     virtual LayoutRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
-    virtual bool requiresLayer() const { return isTransparent() || hasOverflowClip() || hasTransform() || hasMask() || hasFilter(); }
+    // We need to allocate a layer whenever we have an overflow clip as RenderTableSection::paintObject does not push rows' clips.
+    virtual bool requiresLayer() const OVERRIDE { return isTransparent() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasMask() || hasFilter(); }
 
     virtual void paint(PaintInfo&, const LayoutPoint&);
 

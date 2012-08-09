@@ -13,19 +13,23 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
 #include "ppapi/c/dev/pp_cursor_type_dev.h"
-#include "ppapi/c/dev/ppb_gamepad_dev.h"
 #include "ppapi/c/dev/ppp_printing_dev.h"
 #include "ppapi/c/dev/ppp_find_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
+#include "ppapi/c/dev/ppp_text_input_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/c/pp_time.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_input_event.h"
+#include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/c/ppp_messaging.h"
@@ -63,6 +67,10 @@ struct PPP_Instance_Combined;
 class Resource;
 }
 
+namespace ui {
+class Range;
+}
+
 namespace webkit {
 namespace ppapi {
 
@@ -83,6 +91,7 @@ class PPB_URLRequestInfo_Impl;
 // ResourceTracker.
 class WEBKIT_PLUGINS_EXPORT PluginInstance :
     public base::RefCounted<PluginInstance>,
+    public base::SupportsWeakPtr<PluginInstance>,
     public ::ppapi::FunctionGroupBase,
     public ::ppapi::PPB_Instance_Shared {
  public:
@@ -179,11 +188,15 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   void UpdateCaretPosition(const gfx::Rect& caret,
                            const gfx::Rect& bounding_box);
   void SetTextInputType(ui::TextInputType type);
+  void SelectionChanged();
+  void UpdateSurroundingText(const std::string& text,
+                             size_t caret, size_t anchor);
 
   // Gets the current text input status.
   ui::TextInputType text_input_type() const { return text_input_type_; }
   gfx::Rect GetCaretBounds() const;
   bool IsPluginAcceptingCompositionEvents() const;
+  void GetSurroundingText(string16* text, ui::Range* range) const;
 
   // Notifications about focus changes, see has_webkit_focus_ below.
   void SetWebKitFocus(bool has_focus);
@@ -215,6 +228,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   string16 GetSelectedText(bool html);
   string16 GetLinkAtPosition(const gfx::Point& point);
+  void RequestSurroundingText(size_t desired_number_of_characters);
   void Zoom(double factor, bool text_only);
   bool StartFind(const string16& search_text,
                  bool case_sensitive,
@@ -271,13 +285,13 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
 
   // Because going to/from fullscreen is asynchronous, there are 4 states:
   // - normal            : desired_fullscreen_state_ == false
-  //                       fullscreen_ == false
+  //                       view_data_.is_fullscreen == false
   // - fullscreen pending: desired_fullscreen_state_ == true
-  //                       fullscreen_ == false
+  //                       view_data_.is_fullscreen == false
   // - fullscreen        : desired_fullscreen_state_ == true
-  //                       fullscreen_ == true
+  //                       view_data_.is_fullscreen == true
   // - normal pending    : desired_fullscreen_state_ = false
-  //                       fullscreen_ = true
+  //                       view_data_.is_fullscreen = true
   bool IsFullscreenOrPending();
 
   // Switches between fullscreen and normal mode. The transition is
@@ -291,9 +305,10 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   int32_t Navigate(PPB_URLRequestInfo_Impl* request,
                    const char* target,
                    bool from_user_action);
+  bool IsRectTopmost(const gfx::Rect& rect);
 
   // Implementation of PPB_Gamepad.
-  void SampleGamepads(PP_Instance instance, PP_GamepadsData_Dev* data)
+  void SampleGamepads(PP_Instance instance, PP_GamepadsSampleData* data)
       OVERRIDE;
 
   // Implementation of PPP_Messaging.
@@ -304,6 +319,9 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Returns true iff the plugin is a full-page plugin (i.e. not in an iframe
   // or embedded in a page).
   bool IsFullPagePlugin() const;
+
+  // Returns true if the plugin is processing a user gesture.
+  bool IsProcessingUserGesture();
 
   // A mouse lock request was pending and this reports success or failure.
   void OnLockMouseACK(bool succeeded);
@@ -330,7 +348,12 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   virtual PP_Var ExecuteScript(PP_Instance instance,
                                PP_Var script,
                                PP_Var* exception) OVERRIDE;
+  virtual uint32_t GetAudioHardwareOutputSampleRate(PP_Instance instance)
+      OVERRIDE;
+  virtual uint32_t GetAudioHardwareOutputBufferSize(PP_Instance instance)
+      OVERRIDE;
   virtual PP_Var GetDefaultCharSet(PP_Instance instance) OVERRIDE;
+  virtual PP_Var GetFontFamilies(PP_Instance instance) OVERRIDE;
   virtual void NumberOfFindResultsChanged(PP_Instance instance,
                                           int32_t total,
                                           PP_Bool final_result) OVERRIDE;
@@ -351,6 +374,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                               uint32_t event_classes) OVERRIDE;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) OVERRIDE;
+  virtual void ClosePendingUserGesture(PP_Instance instance,
+                                       PP_TimeTicks timestamp);
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
@@ -389,6 +414,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   bool LoadPrintInterface();
   bool LoadPrivateInterface();
   bool LoadSelectionInterface();
+  bool LoadTextInputInterface();
   bool LoadZoomInterface();
 
   // Determines if we think the plugin has focus, both content area and webkit
@@ -431,7 +457,8 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Sets the id of the texture that the plugin draws to. The id is in the
   // compositor space so it can use it to composite with rest of the page.
   // A value of zero indicates the plugin is not backed by a texture.
-  void setBackingTextureId(unsigned int id);
+  // is_opaque is true if the plugin contents are always opaque.
+  void setBackingTextureId(unsigned int id, bool is_opaque);
 
   // Internal helper function for PrintPage().
   bool PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
@@ -516,6 +543,7 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   const PPP_Instance_Private* plugin_private_interface_;
   const PPP_Pdf* plugin_pdf_interface_;
   const PPP_Selection_Dev* plugin_selection_interface_;
+  const PPP_TextInput_Dev* plugin_textinput_interface_;
   const PPP_Zoom_Dev* plugin_zoom_interface_;
 
   // Flags indicating whether we have asked this plugin instance for the
@@ -610,7 +638,16 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   gfx::Rect text_input_caret_bounds_;
   bool text_input_caret_set_;
 
+  // Text selection status.
+  std::string surrounding_text_;
+  size_t selection_caret_;
+  size_t selection_anchor_;
+
   PP_CompletionCallback lock_mouse_callback_;
+
+  // Track pending user gestures so out-of-process plugins can respond to
+  // a user gesture after it has been processed.
+  PP_TimeTicks pending_user_gesture_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginInstance);
 };

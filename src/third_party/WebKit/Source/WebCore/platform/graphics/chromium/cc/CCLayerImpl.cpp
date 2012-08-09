@@ -34,6 +34,7 @@
 #include "LayerRendererChromium.h"
 #include "cc/CCDebugBorderDrawQuad.h"
 #include "cc/CCLayerSorter.h"
+#include "cc/CCQuadCuller.h"
 #include "cc/CCSolidColorDrawQuad.h"
 #include <wtf/text/WTFString.h>
 
@@ -41,11 +42,14 @@ namespace WebCore {
 
 CCLayerImpl::CCLayerImpl(int id)
     : m_parent(0)
+    , m_maskLayerId(-1)
+    , m_replicaLayerId(-1)
     , m_layerId(id)
     , m_anchorPoint(0.5, 0.5)
     , m_anchorPointZ(0)
     , m_scrollable(false)
-    , m_backgroundCoversViewport(false)
+    , m_shouldScrollOnMainThread(false)
+    , m_haveWheelEventHandlers(false)
     , m_doubleSided(true)
     , m_layerPropertyChanged(false)
     , m_masksToBounds(false)
@@ -59,8 +63,15 @@ CCLayerImpl::CCLayerImpl(int id)
     , m_targetRenderSurface(0)
     , m_drawDepth(0)
     , m_drawOpacity(0)
+    , m_drawOpacityIsAnimating(false)
     , m_debugBorderColor(0, 0, 0, 0)
     , m_debugBorderWidth(0)
+    , m_drawTransformIsAnimating(false)
+    , m_screenSpaceTransformIsAnimating(false)
+#ifndef NDEBUG
+    , m_betweenWillDrawAndDidDraw(false)
+#endif
+    , m_layerAnimationController(CCLayerAnimationController::create(this))
 {
     ASSERT(CCProxy::isImplThread());
 }
@@ -68,9 +79,12 @@ CCLayerImpl::CCLayerImpl(int id)
 CCLayerImpl::~CCLayerImpl()
 {
     ASSERT(CCProxy::isImplThread());
+#ifndef NDEBUG
+    ASSERT(!m_betweenWillDrawAndDidDraw);
+#endif
 }
 
-void CCLayerImpl::addChild(PassRefPtr<CCLayerImpl> child)
+void CCLayerImpl::addChild(PassOwnPtr<CCLayerImpl> child)
 {
     child->setParent(this);
     m_children.append(child);
@@ -80,13 +94,16 @@ void CCLayerImpl::removeFromParent()
 {
     if (!m_parent)
         return;
-    for (size_t i = 0; i < m_parent->m_children.size(); ++i) {
-        if (m_parent->m_children[i].get() == this) {
-            m_parent->m_children.remove(i);
-            break;
+
+    CCLayerImpl* parent = m_parent;
+    m_parent = 0;
+
+    for (size_t i = 0; i < parent->m_children.size(); ++i) {
+        if (parent->m_children[i].get() == this) {
+            parent->m_children.remove(i);
+            return;
         }
     }
-    m_parent = 0;
 }
 
 void CCLayerImpl::removeAllChildren()
@@ -104,6 +121,7 @@ void CCLayerImpl::createRenderSurface()
 {
     ASSERT(!m_renderSurface);
     m_renderSurface = adoptPtr(new CCRenderSurface(this));
+    setTargetRenderSurface(m_renderSurface.get());
 }
 
 bool CCLayerImpl::descendantDrawsContent()
@@ -115,11 +133,6 @@ bool CCLayerImpl::descendantDrawsContent()
     return false;
 }
 
-void CCLayerImpl::draw(LayerRendererChromium*)
-{
-    ASSERT_NOT_REACHED();
-}
-
 PassOwnPtr<CCSharedQuadState> CCLayerImpl::createSharedQuadState() const
 {
     IntRect layerClipRect;
@@ -128,49 +141,29 @@ PassOwnPtr<CCSharedQuadState> CCLayerImpl::createSharedQuadState() const
     return CCSharedQuadState::create(quadTransform(), drawTransform(), visibleLayerRect(), layerClipRect, drawOpacity(), opaque());
 }
 
-void CCLayerImpl::appendQuads(CCQuadList& quadList, const CCSharedQuadState* sharedQuadState)
+void CCLayerImpl::willDraw(LayerRendererChromium*)
 {
-    appendGutterQuads(quadList, sharedQuadState);
+#ifndef NDEBUG
+    // willDraw/didDraw must be matched.
+    ASSERT(!m_betweenWillDrawAndDidDraw);
+    m_betweenWillDrawAndDidDraw = true;
+#endif
 }
 
-void CCLayerImpl::appendGutterQuads(CCQuadList& quadList, const CCSharedQuadState* sharedQuadState)
+void CCLayerImpl::didDraw()
 {
-    if (!backgroundCoversViewport() || !backgroundColor().isValid())
-        return;
-
-    const IntRect& layerRect = visibleLayerRect();
-    IntRect clip = screenSpaceTransform().inverse().mapRect(clipRect());
-
-    if (layerRect.isEmpty()) {
-        quadList.append(CCSolidColorDrawQuad::create(sharedQuadState, clip, backgroundColor()));
-        return;
-    }
-
-    IntRect gutterRects[4];
-    for (int i = 0; i < 4; i++)
-        gutterRects[i] = clip;
-    gutterRects[0].shiftMaxYEdgeTo(layerRect.y());
-    gutterRects[1].shiftYEdgeTo(layerRect.maxY());
-    gutterRects[2].shiftMaxXEdgeTo(layerRect.x());
-    gutterRects[3].shiftXEdgeTo(layerRect.maxX());
-
-    gutterRects[2].shiftYEdgeTo(layerRect.y());
-    gutterRects[3].shiftYEdgeTo(layerRect.y());
-    gutterRects[2].shiftMaxYEdgeTo(layerRect.maxY());
-    gutterRects[3].shiftMaxYEdgeTo(layerRect.maxY());
-
-    for (int i = 0; i < 4; i++) {
-        if (!gutterRects[i].isEmpty())
-            quadList.append(CCSolidColorDrawQuad::create(sharedQuadState, gutterRects[i], backgroundColor()));
-    }
+#ifndef NDEBUG
+    ASSERT(m_betweenWillDrawAndDidDraw);
+    m_betweenWillDrawAndDidDraw = false;
+#endif
 }
 
-void CCLayerImpl::appendDebugBorderQuad(CCQuadList& quadList, const CCSharedQuadState* sharedQuadState) const
+void CCLayerImpl::appendDebugBorderQuad(CCQuadCuller& quadList, const CCSharedQuadState* sharedQuadState) const
 {
     if (!hasDebugBorders())
         return;
 
-    IntRect layerRect(IntPoint(), bounds());
+    IntRect layerRect(IntPoint(), contentBounds());
     quadList.append(CCDebugBorderDrawQuad::create(sharedQuadState, layerRect, debugBorderColor(), debugBorderWidth()));
 }
 
@@ -179,20 +172,14 @@ void CCLayerImpl::bindContentsTexture(LayerRendererChromium*)
     ASSERT_NOT_REACHED();
 }
 
-void CCLayerImpl::scrollBy(const IntSize& scroll)
+void CCLayerImpl::scrollBy(const FloatSize& scroll)
 {
-    IntSize newDelta = m_scrollDelta + scroll;
+    FloatSize newDelta = m_scrollDelta + scroll;
     IntSize minDelta = -toSize(m_scrollPosition);
     IntSize maxDelta = m_maxScrollPosition - toSize(m_scrollPosition);
     // Clamp newDelta so that position + delta stays within scroll bounds.
     m_scrollDelta = newDelta.expandedTo(minDelta).shrunkTo(maxDelta);
     noteLayerPropertyChangedForSubtree();
-}
-
-void CCLayerImpl::cleanupResources()
-{
-    if (renderSurface())
-        renderSurface()->cleanupResources();
 }
 
 const IntRect CCLayerImpl::getDrawRect() const
@@ -245,7 +232,7 @@ void CCLayerImpl::dumpLayerProperties(TextStream& ts, int indent) const
     ts << "drawsContent: " << (m_drawsContent ? "yes" : "no") << "\n";
 }
 
-void sortLayers(Vector<RefPtr<CCLayerImpl> >::iterator first, Vector<RefPtr<CCLayerImpl> >::iterator end, CCLayerSorter* layerSorter)
+void sortLayers(Vector<CCLayerImpl*>::iterator first, Vector<CCLayerImpl*>::iterator end, CCLayerSorter* layerSorter)
 {
     TRACE_EVENT("LayerRendererChromium::sortLayers", 0, 0);
     layerSorter->sort(first, end);
@@ -261,7 +248,7 @@ String CCLayerImpl::layerTreeAsText() const
 void CCLayerImpl::dumpLayer(TextStream& ts, int indent) const
 {
     writeIndent(ts, indent);
-    ts << layerTypeAsString() << "(" << m_name << ")\n";
+    ts << layerTypeAsString() << "(" << m_debugName << ")\n";
     dumpLayerProperties(ts, indent+2);
     if (m_replicaLayer) {
         writeIndent(ts, indent+2);
@@ -307,6 +294,16 @@ void CCLayerImpl::resetAllChangeTrackingForSubtree()
         m_children[i]->resetAllChangeTrackingForSubtree();
 }
 
+void CCLayerImpl::setOpacityFromAnimation(float opacity)
+{
+    setOpacity(opacity);
+}
+
+void CCLayerImpl::setTransformFromAnimation(const TransformationMatrix& transform)
+{
+    setTransform(transform);
+}
+
 void CCLayerImpl::setBounds(const IntSize& bounds)
 {
     if (m_bounds == bounds)
@@ -320,21 +317,27 @@ void CCLayerImpl::setBounds(const IntSize& bounds)
         m_layerPropertyChanged = true;
 }
 
-void CCLayerImpl::setMaskLayer(PassRefPtr<CCLayerImpl> maskLayer)
+void CCLayerImpl::setMaskLayer(PassOwnPtr<CCLayerImpl> maskLayer)
 {
-    if (m_maskLayer == maskLayer)
+    m_maskLayer = maskLayer;
+
+    int newLayerId = m_maskLayer ? m_maskLayer->id() : -1;
+    if (newLayerId == m_maskLayerId)
         return;
 
-    m_maskLayer = maskLayer;
+    m_maskLayerId = newLayerId;
     noteLayerPropertyChangedForSubtree();
 }
 
-void CCLayerImpl::setReplicaLayer(PassRefPtr<CCLayerImpl> replicaLayer)
+void CCLayerImpl::setReplicaLayer(PassOwnPtr<CCLayerImpl> replicaLayer)
 {
-    if (m_replicaLayer == replicaLayer)
+    m_replicaLayer = replicaLayer;
+
+    int newLayerId = m_replicaLayer ? m_replicaLayer->id() : -1;
+    if (newLayerId == m_replicaLayerId)
         return;
 
-    m_replicaLayer = replicaLayer;
+    m_replicaLayerId = newLayerId;
     noteLayerPropertyChangedForSubtree();
 }
 
@@ -374,13 +377,13 @@ void CCLayerImpl::setBackgroundColor(const Color& backgroundColor)
     m_layerPropertyChanged = true;
 }
 
-void CCLayerImpl::setBackgroundCoversViewport(bool backgroundCoversViewport)
+void CCLayerImpl::setFilters(const FilterOperations& filters)
 {
-    if (m_backgroundCoversViewport == backgroundCoversViewport)
+    if (m_filters == filters)
         return;
 
-    m_backgroundCoversViewport = backgroundCoversViewport;
-    m_layerPropertyChanged = true;
+    m_filters = filters;
+    noteLayerPropertyChangedForSubtree();
 }
 
 void CCLayerImpl::setMasksToBounds(bool masksToBounds)
@@ -408,6 +411,11 @@ void CCLayerImpl::setOpacity(float opacity)
 
     m_opacity = opacity;
     noteLayerPropertyChangedForSubtree();
+}
+
+bool CCLayerImpl::opacityIsAnimating() const
+{
+    return m_layerAnimationController->isAnimatingProperty(CCActiveAnimation::Opacity);
 }
 
 void CCLayerImpl::setPosition(const FloatPoint& position)
@@ -445,6 +453,11 @@ void CCLayerImpl::setTransform(const TransformationMatrix& transform)
 
     m_transform = transform;
     noteLayerPropertyChangedForSubtree();
+}
+
+bool CCLayerImpl::transformIsAnimating() const
+{
+    return m_layerAnimationController->isAnimatingProperty(CCActiveAnimation::Transform);
 }
 
 void CCLayerImpl::setDebugBorderColor(Color debugBorderColor)
@@ -488,7 +501,7 @@ void CCLayerImpl::setScrollPosition(const IntPoint& scrollPosition)
     noteLayerPropertyChangedForSubtree();
 }
 
-void CCLayerImpl::setScrollDelta(const IntSize& scrollDelta)
+void CCLayerImpl::setScrollDelta(const FloatSize& scrollDelta)
 {
     if (m_scrollDelta == scrollDelta)
         return;
@@ -513,6 +526,17 @@ void CCLayerImpl::setDoubleSided(bool doubleSided)
 
     m_doubleSided = doubleSided;
     noteLayerPropertyChangedForSubtree();
+}
+
+Region CCLayerImpl::visibleContentOpaqueRegion() const
+{
+    if (opaque())
+        return visibleLayerRect();
+    return Region();
+}
+
+void CCLayerImpl::didLoseContext()
+{
 }
 
 }

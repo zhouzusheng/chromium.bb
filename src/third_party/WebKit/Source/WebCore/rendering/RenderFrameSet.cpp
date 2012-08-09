@@ -142,7 +142,7 @@ void RenderFrameSet::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
             child->paint(paintInfo, adjustedPaintOffset);
             xPos += m_cols.m_sizes[c];
             if (borderThickness && m_cols.m_allowBorder[c + 1]) {
-                paintColumnBorder(paintInfo, LayoutRect(adjustedPaintOffset.x() + xPos, adjustedPaintOffset.y() + yPos, borderThickness, height()));
+                paintColumnBorder(paintInfo, pixelSnappedIntRect(LayoutRect(adjustedPaintOffset.x() + xPos, adjustedPaintOffset.y() + yPos, borderThickness, height())));
                 xPos += borderThickness;
             }
             child = child->nextSibling();
@@ -151,7 +151,7 @@ void RenderFrameSet::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         }
         yPos += m_rows.m_sizes[r];
         if (borderThickness && m_rows.m_allowBorder[r + 1]) {
-            paintRowBorder(paintInfo, LayoutRect(adjustedPaintOffset.x(), adjustedPaintOffset.y() + yPos, width(), borderThickness));
+            paintRowBorder(paintInfo, pixelSnappedIntRect(LayoutRect(adjustedPaintOffset.x(), adjustedPaintOffset.y() + yPos, width(), borderThickness)));
             yPos += borderThickness;
         }
     }
@@ -167,7 +167,7 @@ bool RenderFrameSet::nodeAtPoint(const HitTestRequest& request, HitTestResult& r
         || m_isResizing;
 
     if (inside && frameSet()->noResize()
-            && !request.readOnly() && !result.innerNode()) {
+            && !request.readOnly() && !result.innerNode() && !request.touchMove()) {
         result.setInnerNode(node());
         result.setInnerNonSharedNode(node());
     }
@@ -223,7 +223,7 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
         // Count the total percentage of all of the percentage columns/rows -> totalPercent
         // Count the number of columns/rows which are percentages -> countPercent
         if (grid[i].isPercent()) {
-            gridLayout[i] = max(grid[i].calcValue(availableLen), 0);
+            gridLayout[i] = max(valueForLength(grid[i], availableLen), 0);
             totalPercent += gridLayout[i];
             countPercent++;
         }
@@ -571,7 +571,7 @@ void RenderFrameSet::positionFramesWithFlattening()
         int height = m_rows.m_sizes[r];
 
         for (int c = 0; c < cols; c++) {
-            IntRect oldFrameRect = child->frameRect();
+            IntRect oldFrameRect = pixelSnappedIntRect(child->frameRect());
 
             int width = m_cols.m_sizes[c];
 
@@ -619,7 +619,7 @@ void RenderFrameSet::positionFramesWithFlattening()
         xPos = 0;
         for (int c = 0; c < cols; c++) {
             // ensure the rows and columns are filled
-            IntRect oldRect = child->frameRect();
+            IntRect oldRect = pixelSnappedIntRect(child->frameRect());
 
             child->setLocation(IntPoint(xPos, yPos));
             child->setHeight(m_rows.m_sizes[r]);
@@ -802,11 +802,12 @@ bool RenderFrameSet::isChildAllowed(RenderObject* child, RenderStyle*) const
 
 CursorDirective RenderFrameSet::getCursor(const LayoutPoint& point, Cursor& cursor) const
 {
-    if (canResizeRow(point)) {
+    IntPoint roundedPoint = roundedIntPoint(point);
+    if (canResizeRow(roundedPoint)) {
         cursor = rowResizeCursor();
         return SetCursor;
     }
-    if (canResizeColumn(point)) {
+    if (canResizeColumn(roundedPoint)) {
         cursor = columnResizeCursor();
         return SetCursor;
     }

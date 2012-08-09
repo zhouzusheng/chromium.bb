@@ -452,7 +452,7 @@ void HTMLTreeBuilder::constructTreeFromToken(HTMLToken& rawToken)
     //
     // FIXME: Stop clearing the rawToken once we start running the parser off
     // the main thread or once we stop allowing synchronous JavaScript
-    // execution from parseMappedAttribute.
+    // execution from parseAttribute.
     if (rawToken.type() != HTMLTokenTypes::Character)
         rawToken.clear();
 
@@ -531,7 +531,7 @@ void HTMLTreeBuilder::processDoctypeToken(AtomicHTMLToken& token)
     parseError(token);
 }
 
-void HTMLTreeBuilder::processFakeStartTag(const QualifiedName& tagName, PassOwnPtr<NamedNodeMap> attributes)
+void HTMLTreeBuilder::processFakeStartTag(const QualifiedName& tagName, PassOwnPtr<AttributeVector> attributes)
 {
     // FIXME: We'll need a fancier conversion than just "localName" for SVG/MathML tags.
     AtomicHTMLToken fakeToken(HTMLTokenTypes::StartTag, tagName.localName(), attributes);
@@ -560,19 +560,19 @@ void HTMLTreeBuilder::processFakePEndTagIfPInButtonScope()
     processEndTag(endP);
 }
 
-PassOwnPtr<NamedNodeMap> HTMLTreeBuilder::attributesForIsindexInput(AtomicHTMLToken& token)
+PassOwnPtr<AttributeVector> HTMLTreeBuilder::attributesForIsindexInput(AtomicHTMLToken& token)
 {
-    OwnPtr<NamedNodeMap> attributes = token.takeAttributes();
+    OwnPtr<AttributeVector> attributes = token.takeAttributes();
     if (!attributes)
-        attributes = NamedNodeMap::create();
+        attributes = AttributeVector::create();
     else {
         attributes->removeAttribute(nameAttr);
         attributes->removeAttribute(actionAttr);
         attributes->removeAttribute(promptAttr);
     }
 
-    RefPtr<Attribute> mappedAttribute = Attribute::createMapped(nameAttr, isindexTag.localName());
-    attributes->insertAttribute(mappedAttribute.release(), false);
+    RefPtr<Attribute> mappedAttribute = Attribute::create(nameAttr, isindexTag.localName());
+    attributes->insertAttribute(mappedAttribute.release());
     return attributes.release();
 }
 
@@ -679,11 +679,11 @@ void adjustAttributes(AtomicHTMLToken& token)
         mapLoweredLocalNameToName(caseMap, attrs, length);
     }
 
-    NamedNodeMap* attributes = token.attributes();
+    AttributeVector* attributes = token.attributes();
     if (!attributes)
         return;
 
-    for (unsigned x = 0; x < attributes->length(); ++x) {
+    for (unsigned x = 0; x < attributes->size(); ++x) {
         Attribute* attribute = attributes->attributeItem(x);
         const QualifiedName& casedName = caseMap->get(attribute->localName());
         if (!casedName.localName().isNull())
@@ -728,11 +728,11 @@ void adjustForeignAttributes(AtomicHTMLToken& token)
         map->add("xmlns:xlink", QualifiedName("xmlns", "xlink", XMLNSNames::xmlnsNamespaceURI));
     }
 
-    NamedNodeMap* attributes = token.attributes();
+    AttributeVector* attributes = token.attributes();
     if (!attributes)
         return;
 
-    for (unsigned x = 0; x < attributes->length(); ++x) {
+    for (unsigned x = 0; x < attributes->size(); ++x) {
         Attribute* attribute = attributes->attributeItem(x);
         const QualifiedName& name = map->get(attribute->localName());
         if (!name.localName().isNull())
@@ -2204,7 +2204,7 @@ void HTMLTreeBuilder::processEndTag(AtomicHTMLToken& token)
     case InSelectMode:
         ASSERT(insertionMode() == InSelectMode || insertionMode() == InSelectInTableMode);
         if (token.name() == optgroupTag) {
-            if (m_tree.currentNode()->hasTagName(optionTag) && m_tree.oneBelowTop()->hasTagName(optgroupTag))
+            if (m_tree.currentNode()->hasTagName(optionTag) && m_tree.oneBelowTop() && m_tree.oneBelowTop()->hasTagName(optgroupTag))
                 processFakeEndTag(optionTag);
             if (m_tree.currentNode()->hasTagName(optgroupTag)) {
                 m_tree.openElements()->pop();

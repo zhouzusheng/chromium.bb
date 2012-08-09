@@ -52,33 +52,33 @@ public:
     
     bool collapseBorders() const { return style()->borderCollapse(); }
 
-    LayoutUnit borderStart() const { return m_borderStart; }
-    LayoutUnit borderEnd() const { return m_borderEnd; }
-    LayoutUnit borderBefore() const;
-    LayoutUnit borderAfter() const;
+    int borderStart() const { return m_borderStart; }
+    int borderEnd() const { return m_borderEnd; }
+    int borderBefore() const;
+    int borderAfter() const;
 
-    LayoutUnit borderLeft() const
+    int borderLeft() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? borderStart() : borderEnd();
         return style()->isFlippedBlocksWritingMode() ? borderAfter() : borderBefore();
     }
 
-    LayoutUnit borderRight() const
+    int borderRight() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? borderEnd() : borderStart();
         return style()->isFlippedBlocksWritingMode() ? borderBefore() : borderAfter();
     }
 
-    LayoutUnit borderTop() const
+    int borderTop() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? borderAfter() : borderBefore();
         return style()->isLeftToRightDirection() ? borderStart() : borderEnd();
     }
 
-    LayoutUnit borderBottom() const
+    int borderBottom() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? borderBefore() : borderAfter();
@@ -87,41 +87,41 @@ public:
 
     Color bgColor() const { return style()->visitedDependentColor(CSSPropertyBackgroundColor); }
 
-    LayoutUnit outerBorderBefore() const;
-    LayoutUnit outerBorderAfter() const;
-    LayoutUnit outerBorderStart() const;
-    LayoutUnit outerBorderEnd() const;
+    int outerBorderBefore() const;
+    int outerBorderAfter() const;
+    int outerBorderStart() const;
+    int outerBorderEnd() const;
 
-    LayoutUnit outerBorderLeft() const
+    int outerBorderLeft() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? outerBorderStart() : outerBorderEnd();
         return style()->isFlippedBlocksWritingMode() ? outerBorderAfter() : outerBorderBefore();
     }
 
-    LayoutUnit outerBorderRight() const
+    int outerBorderRight() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? outerBorderEnd() : outerBorderStart();
         return style()->isFlippedBlocksWritingMode() ? outerBorderBefore() : outerBorderAfter();
     }
 
-    LayoutUnit outerBorderTop() const
+    int outerBorderTop() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? outerBorderAfter() : outerBorderBefore();
         return style()->isLeftToRightDirection() ? outerBorderStart() : outerBorderEnd();
     }
 
-    LayoutUnit outerBorderBottom() const
+    int outerBorderBottom() const
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? outerBorderBefore() : outerBorderAfter();
         return style()->isLeftToRightDirection() ? outerBorderEnd() : outerBorderStart();
     }
 
-    LayoutUnit calcBorderStart() const;
-    LayoutUnit calcBorderEnd() const;
+    int calcBorderStart() const;
+    int calcBorderEnd() const;
     void recalcBordersInRowDirection();
 
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
@@ -172,7 +172,7 @@ public:
     LayoutUnit bordersPaddingAndSpacingInRowDirection() const
     {
         return borderStart() + borderEnd() +
-               (collapseBorders() ? 0 : (paddingStart() + paddingEnd() + (numEffCols() + 1) * hBorderSpacing()));
+               (collapseBorders() ? zeroLayoutUnit : (paddingStart() + paddingEnd() + (numEffCols() + 1) * hBorderSpacing()));
     }
 
     RenderTableCol* colElement(unsigned col, bool* startEdge = 0, bool* endEdge = 0) const;
@@ -211,6 +211,12 @@ public:
             recalcSections();
     }
 
+    static RenderTable* createAnonymousWithParentRenderer(const RenderObject*);
+    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const RenderObject* parent) const OVERRIDE
+    {
+        return createAnonymousWithParentRenderer(parent);
+    }
+
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -240,6 +246,8 @@ private:
 
     virtual void computeLogicalWidth();
 
+    LayoutUnit convertStyleLogicalWidthToComputedWidth(const Length& styleLogicalWidth, LayoutUnit availableWidth);
+
     virtual LayoutRect overflowClipRect(const LayoutPoint& location, RenderRegion*, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize);
 
     virtual void addOverflowFromChildren();
@@ -249,6 +257,8 @@ private:
     void recalcCollapsedBorders();
     void recalcSections() const;
     void layoutCaption(RenderTableCaption*);
+
+    void distributeExtraLogicalHeight(int extraLogicalHeight);
 
     mutable Vector<LayoutUnit> m_columnPos;
     mutable Vector<ColumnStruct> m_columns;
@@ -269,8 +279,8 @@ private:
     
     short m_hSpacing;
     short m_vSpacing;
-    LayoutUnit m_borderStart;
-    LayoutUnit m_borderEnd;
+    int m_borderStart;
+    int m_borderEnd;
 };
 
 inline RenderTableSection* RenderTable::topSection() const

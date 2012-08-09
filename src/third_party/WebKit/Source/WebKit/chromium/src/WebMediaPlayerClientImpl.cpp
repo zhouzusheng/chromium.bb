@@ -25,9 +25,9 @@
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebKit.h"
-#include "WebMediaElement.h"
 #include "WebMediaPlayer.h"
 #include "WebViewImpl.h"
+#include "cc/CCProxy.h"
 #include "platform/WebCString.h"
 #include "platform/WebCanvas.h"
 #include "platform/WebKitPlatformSupport.h"
@@ -86,12 +86,6 @@ void WebMediaPlayerClientImpl::registerSelf(MediaEngineRegistrar registrar)
     }
 }
 
-WebMediaPlayerClientImpl* WebMediaPlayerClientImpl::fromMediaElement(const WebMediaElement* element)
-{
-    PlatformMedia pm = element->constUnwrap<HTMLMediaElement>()->platformMedia();
-    return static_cast<WebMediaPlayerClientImpl*>(pm.media.chromiumMediaPlayer);
-}
-
 WebMediaPlayer* WebMediaPlayerClientImpl::mediaPlayer() const
 {
     return m_webMediaPlayer.get();
@@ -105,6 +99,8 @@ WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
     MutexLocker locker(m_compositingMutex);
     if (m_videoFrameProviderClient)
         m_videoFrameProviderClient->stopUsingProvider();
+    if (m_webMediaPlayer)
+        m_webMediaPlayer->setStreamTextureClient(0);
 #endif
 }
 
@@ -237,6 +233,7 @@ void WebMediaPlayerClientImpl::load(const String& url)
     m_url = url;
 
     if (m_preload == MediaPlayer::None) {
+        MutexLocker locker(m_compositingMutex);
 #if ENABLE(WEB_AUDIO)
         m_audioSourceProvider.wrap(0); // Clear weak reference to m_webMediaPlayer's WebAudioSourceProvider.
 #endif
@@ -248,6 +245,7 @@ void WebMediaPlayerClientImpl::load(const String& url)
 
 void WebMediaPlayerClientImpl::loadInternal()
 {
+    MutexLocker locker(m_compositingMutex);
 #if ENABLE(WEB_AUDIO)
     m_audioSourceProvider.wrap(0); // Clear weak reference to m_webMediaPlayer's WebAudioSourceProvider.
 #endif
@@ -597,6 +595,8 @@ void WebMediaPlayerClientImpl::setVideoFrameProviderClient(VideoFrameProvider::C
 {
     MutexLocker locker(m_compositingMutex);
     m_videoFrameProviderClient = client;
+    if (m_webMediaPlayer)
+        m_webMediaPlayer->setStreamTextureClient(client ? this : 0);
 }
 
 VideoFrameChromium* WebMediaPlayerClientImpl::getCurrentFrame()
@@ -677,6 +677,20 @@ void WebMediaPlayerClientImpl::startDelayedLoad()
     m_delayingLoad = false;
 
     loadInternal();
+}
+
+void WebMediaPlayerClientImpl::didReceiveFrame()
+{
+    // No lock since this gets called on the client's thread.
+    ASSERT(CCProxy::isImplThread());
+    m_videoFrameProviderClient->didReceiveFrame();
+}
+
+void WebMediaPlayerClientImpl::didUpdateMatrix(const float* matrix)
+{
+    // No lock since this gets called on the client's thread.
+    ASSERT(CCProxy::isImplThread());
+    m_videoFrameProviderClient->didUpdateMatrix(matrix);
 }
 
 WebMediaPlayerClientImpl::WebMediaPlayerClientImpl()

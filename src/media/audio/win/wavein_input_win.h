@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,6 +32,10 @@ class PCMWaveInAudioInputStream : public AudioInputStream {
   virtual void Start(AudioInputCallback* callback) OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void Close() OVERRIDE;
+  // TODO(henrika): Add volume support using the Audio Mixer API.
+  virtual double GetMaxVolume() OVERRIDE;
+  virtual void SetVolume(double volume) OVERRIDE;
+  virtual double GetVolume() OVERRIDE;
 
  private:
   enum State {
@@ -42,6 +46,9 @@ class PCMWaveInAudioInputStream : public AudioInputStream {
     kStateStopped,    // Stopped. Device was reset.
     kStateClosed      // Device has been released.
   };
+
+  // Allow unit tests to query the device ID.
+  friend class AudioInputDeviceTest;
 
   // Windows calls us back with the recorded audio data here. See msdn
   // documentation for 'waveInProc' for details about the parameters.

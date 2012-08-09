@@ -25,7 +25,7 @@
 #define HTMLFormControlElement_h
 
 #include "FormAssociatedElement.h"
-#include "HTMLElement.h"
+#include "LabelableElement.h"
 
 namespace WebCore {
 
@@ -37,7 +37,7 @@ class ValidityState;
 // HTMLFormControlElement is the default implementation of FormAssociatedElement,
 // and form-associated element implementations should use HTMLFormControlElement
 // unless there is a special reason.
-class HTMLFormControlElement : public HTMLElement, public FormAssociatedElement {
+class HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
 public:
     virtual ~HTMLFormControlElement();
 
@@ -80,7 +80,6 @@ public:
     virtual bool isEnabledFormControl() const { return !disabled(); }
     virtual bool isReadOnlyFormControl() const { return readOnly(); }
 
-    virtual bool isRadioButton() const { return false; }
     virtual bool canTriggerImplicitSubmission() const { return false; }
 
     // Override in derived classes to get the encoded name=value pair for submitting.
@@ -100,9 +99,6 @@ public:
     void setNeedsValidityCheck();
     void setCustomValidity(const String&);
 
-    bool isLabelable() const;
-    PassRefPtr<NodeList> labels();
-
     bool readOnly() const { return m_readOnly; }
 
     bool hasAutofocused() { return m_hasAutofocused; }
@@ -114,7 +110,8 @@ public:
 protected:
     HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*);
 
-    virtual void parseMappedAttribute(Attribute*);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void requiredAttributeChanged();
     virtual void attach();
     virtual void insertedIntoTree(bool deep);
     virtual void removedFromTree(bool deep);

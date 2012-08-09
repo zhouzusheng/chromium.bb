@@ -61,8 +61,6 @@ class TestWebViewDelegate;
 namespace WebKit {
 class WebDeviceOrientationClientMock;
 class WebGeolocationClientMock;
-class WebSpeechInputControllerMock;
-class WebSpeechInputListener;
 }
 
 class TestShell : public base::SupportsWeakPtr<TestShell>  {
@@ -236,7 +234,7 @@ public:
     static void SetAccelerated2dCanvasEnabled(bool enabled);
     static void SetAcceleratedCompositingEnabled(bool enabled);
 
-    WebPreferences* GetWebPreferences() { return web_prefs_; }
+    static WebPreferences* GetWebPreferences();
 
     // Some layout tests hardcode a file:///tmp/LayoutTests URL.  We get around
     // this by substituting "tmp" with the path to the LayoutTests parent dir.
@@ -312,10 +310,6 @@ public:
     }
 
     WebKit::WebDeviceOrientationClientMock* device_orientation_client_mock();
-
-    WebKit::WebSpeechInputControllerMock* CreateSpeechInputControllerMock(
-        WebKit::WebSpeechInputListener* listener);
-    WebKit::WebSpeechInputControllerMock* speech_input_controller_mock();
 
     WebKit::WebGeolocationClientMock* geolocation_client_mock();
 
@@ -396,8 +390,6 @@ private:
     scoped_ptr<TestShellDevToolsClient> dev_tools_client_;
     scoped_ptr<WebKit::WebDeviceOrientationClientMock>
         device_orientation_client_mock_;
-    scoped_ptr<WebKit::WebSpeechInputControllerMock>
-        speech_input_controller_mock_;
     scoped_ptr<WebKit::WebGeolocationClientMock> geolocation_client_mock_;
 
     const TestParams* test_params_;

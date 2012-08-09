@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,6 +14,8 @@ import re
 import time
 from xml.sax import saxutils
 
+from grit import lazy_re
+
 _root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -21,7 +23,7 @@ _root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 # The '\b' before and after each word makes sure these match only whole words and
 # not the beginning of any word.. eg. ID_FILE_NEW will not match ID_FILE_NEW_PROJECT
 # see http://www.amk.ca/python/howto/regex/ (search for "\bclass\b" inside the html page)
-SYSTEM_IDENTIFIERS = re.compile(
+SYSTEM_IDENTIFIERS = lazy_re.compile(
   r'''\bIDOK\b | \bIDCANCEL\b | \bIDC_STATIC\b | \bIDYES\b | \bIDNO\b |
       \bID_FILE_NEW\b | \bID_FILE_OPEN\b | \bID_FILE_CLOSE\b | \bID_FILE_SAVE\b |
       \bID_FILE_SAVE_AS\b | \bID_FILE_PAGE_SETUP\b | \bID_FILE_PRINT_SETUP\b |
@@ -36,14 +38,15 @@ SYSTEM_IDENTIFIERS = re.compile(
 
 
 # Matches character entities, whether specified by name, decimal or hex.
-_HTML_ENTITY = re.compile(
+_HTML_ENTITY = lazy_re.compile(
   '&(#(?P<decimal>[0-9]+)|#x(?P<hex>[a-fA-F0-9]+)|(?P<named>[a-z0-9]+));',
   re.IGNORECASE)
 
 # Matches characters that should be HTML-escaped.  This is <, > and &, but only
 # if the & is not the start of an HTML character entity.
-_HTML_CHARS_TO_ESCAPE = re.compile('"|<|>|&(?!#[0-9]+|#x[0-9a-z]+|[a-z]+;)',
-                                   re.IGNORECASE | re.MULTILINE)
+_HTML_CHARS_TO_ESCAPE = lazy_re.compile(
+    '"|<|>|&(?!#[0-9]+|#x[0-9a-z]+|[a-z]+;)',
+    re.IGNORECASE | re.MULTILINE)
 
 
 def WrapInputStream(stream, encoding = 'utf-8'):
@@ -194,7 +197,7 @@ def normpath(path):
   return os.path.normpath(path)
 
 
-_LANGUAGE_SPLIT_RE = re.compile('-|_|/')
+_LANGUAGE_SPLIT_RE = lazy_re.compile('-|_|/')
 
 
 def CanonicalLanguage(code):

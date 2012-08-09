@@ -65,6 +65,14 @@ WebInspector.TabbedEditorContainer.prototype = {
     },
 
     /**
+     * @type {Element}
+     */
+    get element()
+    {
+        return this._tabbedPane.element;
+    },
+
+    /**
      * @param {Element} parentElement
      */
     show: function(parentElement)
@@ -206,6 +214,7 @@ WebInspector.TabbedEditorContainer.prototype = {
         var uiSourceCode = this._files[tabId];
         this._tabIds.remove(uiSourceCode);
         delete this._files[tabId];
+        delete this._currentFile;
 
         this.dispatchEventToListeners(WebInspector.EditorContainer.Events.EditorClosed, uiSourceCode);
 

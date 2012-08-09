@@ -1,6 +1,6 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,60 +21,15 @@
 #include "config.h"
 #include "CSSStyleDeclaration.h"
 
-#include "CSSMutableStyleDeclaration.h"
-#include "CSSParser.h"
-#include "CSSProperty.h"
-#include "CSSPropertyNames.h"
-#include "CSSRule.h"
-#include "Node.h"
-#include "SVGElement.h"
-#include "StyledElement.h"
+#ifndef NDEBUG
 #include <wtf/ASCIICType.h>
 #include <wtf/text/CString.h>
-#ifndef NDEBUG
 #include <stdio.h>
 #endif
 
 using namespace WTF;
 
 namespace WebCore {
-
-CSSStyleDeclaration::CSSStyleDeclaration(CSSRule* parentRule)
-    : m_strictParsing(!parentRule || parentRule->useStrictParsing())
-    , m_isElementStyleDeclaration(false)
-    , m_isInlineStyleDeclaration(false)
-    , m_parent(parentRule)
-{
-}
-    
-CSSStyleDeclaration::CSSStyleDeclaration(StyledElement* parentElement, bool isInline)
-    : m_strictParsing(false)
-    , m_isElementStyleDeclaration(true)
-    , m_isInlineStyleDeclaration(isInline)
-    , m_parent(parentElement)
-{
-}
-
-CSSStyleSheet* CSSStyleDeclaration::parentStyleSheet() const
-{
-    if (m_isElementStyleDeclaration) {
-        if (!m_parent.element)
-            return 0;
-        Document* document = m_parent.element->document();
-        if (!document)
-            return 0;
-        // If this is not an inline declaration then it is an SVG font face declaration.
-        return m_isInlineStyleDeclaration ? document->elementSheet() : document->mappedElementSheet();
-    }
-    if (!m_parent.rule)
-        return 0;
-    return m_parent.rule->parentStyleSheet();
-}
-
-bool CSSStyleDeclaration::isPropertyName(const String& propertyName)
-{
-    return cssPropertyID(propertyName);
-}
 
 #ifndef NDEBUG
 void CSSStyleDeclaration::showStyle()

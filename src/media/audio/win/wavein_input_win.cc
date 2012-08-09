@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,15 +36,15 @@ PCMWaveInAudioInputStream::PCMWaveInAudioInputStream(
       callback_(NULL),
       num_buffers_(num_buffers),
       buffer_(NULL),
-      channels_(params.channels) {
+      channels_(params.channels()) {
   format_.wFormatTag = WAVE_FORMAT_PCM;
-  format_.nChannels = params.channels > 2 ? 2 : params.channels;
-  format_.nSamplesPerSec = params.sample_rate;
-  format_.wBitsPerSample = params.bits_per_sample;
+  format_.nChannels = params.channels() > 2 ? 2 : params.channels();
+  format_.nSamplesPerSec = params.sample_rate();
+  format_.wBitsPerSample = params.bits_per_sample();
   format_.cbSize = 0;
   format_.nBlockAlign = (format_.nChannels * format_.wBitsPerSample) / 8;
   format_.nAvgBytesPerSec = format_.nBlockAlign * format_.nSamplesPerSec;
-  buffer_size_ = params.samples_per_packet * format_.nBlockAlign;
+  buffer_size_ = params.frames_per_buffer() * format_.nBlockAlign;
   // If we don't have a packet size we use 100ms.
   if (!buffer_size_)
     buffer_size_ = format_.nAvgBytesPerSec / 10;
@@ -187,6 +187,20 @@ void PCMWaveInAudioInputStream::Close() {
   manager_->ReleaseInputStream(this);
 }
 
+double PCMWaveInAudioInputStream::GetMaxVolume() {
+  // TODO(henrika): Add volume support using the Audio Mixer API.
+  return 0.0;
+}
+
+void PCMWaveInAudioInputStream::SetVolume(double volume) {
+  // TODO(henrika): Add volume support using the Audio Mixer API.
+}
+
+double PCMWaveInAudioInputStream::GetVolume() {
+  // TODO(henrika): Add volume support using the Audio Mixer API.
+  return 0.0;
+}
+
 void PCMWaveInAudioInputStream::HandleError(MMRESULT error) {
   DLOG(WARNING) << "PCMWaveInAudio error " << error;
   callback_->OnError(this, error);
@@ -208,7 +222,7 @@ bool PCMWaveInAudioInputStream::GetDeviceId(UINT* device_index) {
 
   // Get list of all available and active devices.
   AudioDeviceNames device_names;
-  if (!GetInputDeviceNamesWinXP(&device_names))
+  if (!media::GetInputDeviceNamesWinXP(&device_names))
     return false;
 
   if (device_names.empty())

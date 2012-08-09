@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,6 +86,7 @@ URLRequestFileJob::URLRequestFileJob(URLRequest* request,
                                      const FilePath& file_path)
     : URLRequestJob(request),
       file_path_(file_path),
+      stream_(NULL),
       is_directory_(false),
       remaining_bytes_(0) {
 }
@@ -122,6 +123,7 @@ URLRequestJob* URLRequestFileJob::Factory(URLRequest* request,
 #if defined(OS_CHROMEOS)
 static const char* const kLocalAccessWhiteList[] = {
   "/home/chronos/user/Downloads",
+  "/home/chronos/user/log",
   "/media",
   "/opt/oem",
   "/usr/share/chromeos-assets",
@@ -157,7 +159,10 @@ void URLRequestFileJob::Start() {
 }
 
 void URLRequestFileJob::Kill() {
-  stream_.Close();
+  // URL requests should not block on the disk!
+  //   http://code.google.com/p/chromium/issues/detail?id=59849
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  stream_.CloseSync();
 
   if (async_resolver_) {
     async_resolver_->Cancel();
@@ -183,7 +188,7 @@ bool URLRequestFileJob::ReadRawData(IOBuffer* dest, int dest_size,
     return true;
   }
 
-  int rv = stream_.Read(dest->data(), dest_size,
+  int rv = stream_.Read(dest, dest_size,
                         base::Bind(&URLRequestFileJob::DidRead,
                                    base::Unretained(this)));
   if (rv >= 0) {
@@ -309,7 +314,7 @@ void URLRequestFileJob::DidResolve(
     int flags = base::PLATFORM_FILE_OPEN |
                 base::PLATFORM_FILE_READ |
                 base::PLATFORM_FILE_ASYNC;
-    rv = stream_.Open(file_path_, flags);
+    rv = stream_.OpenSync(file_path_, flags);
   }
 
   if (rv != OK) {

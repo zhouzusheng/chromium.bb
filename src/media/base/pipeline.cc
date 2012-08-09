@@ -8,15 +8,18 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/synchronization/condition_variable.h"
+#include "media/base/audio_decoder.h"
 #include "media/base/clock.h"
 #include "media/base/composite_filter.h"
 #include "media/base/filter_collection.h"
+#include "media/base/filters.h"
 #include "media/base/media_log.h"
 
 namespace media {
@@ -54,15 +57,14 @@ media::PipelineStatus PipelineStatusNotification::status() {
   return status_;
 }
 
-class Pipeline::PipelineInitState {
- public:
-  scoped_refptr<AudioDecoder> audio_decoder_;
-  scoped_refptr<VideoDecoder> video_decoder_;
-  scoped_refptr<CompositeFilter> composite_;
+struct Pipeline::PipelineInitState {
+  scoped_refptr<AudioDecoder> audio_decoder;
+  scoped_refptr<VideoDecoder> video_decoder;
+  scoped_refptr<CompositeFilter> composite;
 };
 
 Pipeline::Pipeline(MessageLoop* message_loop, MediaLog* media_log)
-    : message_loop_(message_loop),
+    : message_loop_(message_loop->message_loop_proxy()),
       media_log_(media_log),
       clock_(new Clock(&base::Time::Now)),
       waiting_for_clock_update_(false),
@@ -88,42 +90,37 @@ Pipeline::~Pipeline() {
 
 void Pipeline::Start(scoped_ptr<FilterCollection> collection,
                      const std::string& url,
-                     const PipelineStatusCB& ended_callback,
-                     const PipelineStatusCB& error_callback,
-                     const NetworkEventCB& network_callback,
-                     const PipelineStatusCB& start_callback) {
+                     const PipelineStatusCB& ended_cb,
+                     const PipelineStatusCB& error_cb,
+                     const NetworkEventCB& network_cb,
+                     const PipelineStatusCB& start_cb) {
   base::AutoLock auto_lock(lock_);
   CHECK(!running_) << "Media pipeline is already running";
 
   running_ = true;
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &Pipeline::StartTask, this, base::Passed(&collection),
-      url, ended_callback, error_callback, network_callback, start_callback));
+      url, ended_cb, error_cb, network_cb, start_cb));
 }
 
-void Pipeline::Stop(const PipelineStatusCB& stop_callback) {
+void Pipeline::Stop(const base::Closure& stop_cb) {
   base::AutoLock auto_lock(lock_);
   CHECK(running_) << "Media pipeline isn't running";
 
-  if (video_decoder_) {
-    video_decoder_->PrepareForShutdownHack();
-    video_decoder_ = NULL;
-  }
-
   // Stop the pipeline, which will set |running_| to false on our behalf.
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::StopTask, this, stop_callback));
+      &Pipeline::StopTask, this, stop_cb));
 }
 
 void Pipeline::Seek(base::TimeDelta time,
-                    const PipelineStatusCB& seek_callback) {
+                    const PipelineStatusCB& seek_cb) {
   base::AutoLock auto_lock(lock_);
   CHECK(running_) << "Media pipeline isn't running";
 
   download_rate_monitor_.Stop();
 
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Pipeline::SeekTask, this, time, seek_callback));
+      &Pipeline::SeekTask, this, time, seek_cb));
 }
 
 bool Pipeline::IsRunning() const {
@@ -214,11 +211,7 @@ base::TimeDelta Pipeline::GetCurrentTime() const {
 
 base::TimeDelta Pipeline::GetCurrentTime_Locked() const {
   lock_.AssertAcquired();
-  base::TimeDelta elapsed = clock_->Elapsed();
-  if (elapsed > duration_)
-    return duration_;
-
-  return elapsed;
+  return clock_->Elapsed();
 }
 
 base::TimeDelta Pipeline::GetBufferedTime() {
@@ -226,8 +219,8 @@ base::TimeDelta Pipeline::GetBufferedTime() {
 
   // If media is fully loaded, then return duration.
   if (local_source_ || total_bytes_ == buffered_bytes_) {
-    max_buffered_time_ = duration_;
-    return duration_;
+    max_buffered_time_ = clock_->Duration();
+    return max_buffered_time_;
   }
 
   base::TimeDelta current_time = GetCurrentTime_Locked();
@@ -241,7 +234,8 @@ base::TimeDelta Pipeline::GetBufferedTime() {
 
   // If buffered time was not set, we use current time, current bytes, and
   // buffered bytes to estimate the buffered time.
-  double estimated_rate = duration_.InMillisecondsF() / total_bytes_;
+  double estimated_rate =
+      clock_->Duration().InMillisecondsF() / total_bytes_;
   double estimated_current_time = estimated_rate * current_bytes_;
   DCHECK_GE(buffered_bytes_, current_bytes_);
   base::TimeDelta buffered_time = base::TimeDelta::FromMilliseconds(
@@ -249,7 +243,7 @@ base::TimeDelta Pipeline::GetBufferedTime() {
                          estimated_current_time));
 
   // Cap approximated buffered time at the length of the video.
-  buffered_time = std::min(buffered_time, duration_);
+  buffered_time = std::min(buffered_time, clock_->Duration());
 
   // Make sure buffered_time is at least the current time
   buffered_time = std::max(buffered_time, current_time);
@@ -262,7 +256,7 @@ base::TimeDelta Pipeline::GetBufferedTime() {
 
 base::TimeDelta Pipeline::GetMediaDuration() const {
   base::AutoLock auto_lock(lock_);
-  return duration_;
+  return clock_->Duration();
 }
 
 int64 Pipeline::GetBufferedBytes() const {
@@ -323,7 +317,6 @@ void Pipeline::ResetState() {
   tearing_down_     = false;
   error_caused_teardown_ = false;
   playback_rate_change_pending_ = false;
-  duration_         = kZero;
   buffered_time_    = kZero;
   buffered_bytes_   = 0;
   streaming_        = false;
@@ -339,7 +332,7 @@ void Pipeline::ResetState() {
   has_video_        = false;
   waiting_for_clock_update_ = false;
   audio_disabled_   = false;
-  clock_->SetTime(kZero);
+  clock_->Reset();
   download_rate_monitor_.Reset();
 }
 
@@ -360,22 +353,22 @@ bool Pipeline::IsPipelineOk() {
 }
 
 bool Pipeline::IsPipelineStopped() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   return state_ == kStopped || state_ == kError;
 }
 
 bool Pipeline::IsPipelineTearingDown() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   return tearing_down_;
 }
 
 bool Pipeline::IsPipelineStopPending() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   return stop_pending_;
 }
 
 bool Pipeline::IsPipelineSeeking() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   if (!seek_pending_)
     return false;
   DCHECK(kSeeking == state_ || kPausing == state_ ||
@@ -384,14 +377,21 @@ bool Pipeline::IsPipelineSeeking() {
   return true;
 }
 
+void Pipeline::ReportStatus(const PipelineStatusCB& cb, PipelineStatus status) {
+  if (cb.is_null())
+    return;
+  cb.Run(status);
+  // Prevent double-reporting of errors to clients.
+  if (status != PIPELINE_OK)
+    error_cb_.Reset();
+}
+
 void Pipeline::FinishInitialization() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   // Execute the seek callback, if present.  Note that this might be the
   // initial callback passed into Start().
-  if (!seek_callback_.is_null()) {
-    seek_callback_.Run(status_);
-    seek_callback_.Reset();
-  }
+  ReportStatus(seek_cb_, status_);
+  seek_cb_.Reset();
 }
 
 // static
@@ -451,20 +451,30 @@ base::TimeDelta Pipeline::GetDuration() const {
   return GetMediaDuration();
 }
 
-void Pipeline::SetTime(base::TimeDelta time) {
+void Pipeline::OnAudioTimeUpdate(base::TimeDelta time,
+                                     base::TimeDelta max_time) {
+  DCHECK(time <= max_time);
   DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
 
-  // If we were waiting for a valid timestamp and such timestamp arrives, we
-  // need to clear the flag for waiting and start the clock.
-  if (waiting_for_clock_update_) {
-    if (time < clock_->Elapsed())
-      return;
-    clock_->SetTime(time);
-    StartClockIfWaitingForTimeUpdate_Locked();
+  if (!has_audio_)
     return;
-  }
-  clock_->SetTime(time);
+  if (waiting_for_clock_update_ && time < clock_->Elapsed())
+    return;
+
+  clock_->SetTime(time, max_time);
+  StartClockIfWaitingForTimeUpdate_Locked();
+}
+
+void Pipeline::OnVideoTimeUpdate(base::TimeDelta max_time) {
+  DCHECK(IsRunning());
+  base::AutoLock auto_lock(lock_);
+
+  if (has_audio_)
+    return;
+
+  DCHECK(!waiting_for_clock_update_);
+  clock_->SetMaxTime(max_time);
 }
 
 void Pipeline::SetDuration(base::TimeDelta duration) {
@@ -475,7 +485,7 @@ void Pipeline::SetDuration(base::TimeDelta duration) {
   UMA_HISTOGRAM_LONG_TIMES("Media.Duration", duration);
 
   base::AutoLock auto_lock(lock_);
-  duration_ = duration;
+  clock_->SetDuration(duration);
 }
 
 void Pipeline::SetBufferedTime(base::TimeDelta buffered_time) {
@@ -570,12 +580,12 @@ void Pipeline::OnFilterStateTransition() {
 }
 
 // Called from any thread.
-// This method makes the FilterStatusCB behave like a Closure. It
+// This method makes the PipelineStatusCB behave like a Closure. It
 // makes it look like a host()->SetError() call followed by a call to
 // OnFilterStateTransition() when errors occur.
 //
 // TODO: Revisit this code when SetError() is removed from FilterHost and
-//       all the Closures are converted to FilterStatusCB.
+//       all the Closures are converted to PipelineStatusCB.
 void Pipeline::OnFilterStateTransitionWithStatus(PipelineStatus status) {
   if (status != PIPELINE_OK)
     SetError(status);
@@ -599,23 +609,23 @@ void Pipeline::OnUpdateStatistics(const PipelineStatistics& stats) {
 
 void Pipeline::StartTask(scoped_ptr<FilterCollection> filter_collection,
                          const std::string& url,
-                         const PipelineStatusCB& ended_callback,
-                         const PipelineStatusCB& error_callback,
-                         const NetworkEventCB& network_callback,
-                         const PipelineStatusCB& start_callback) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+                         const PipelineStatusCB& ended_cb,
+                         const PipelineStatusCB& error_cb,
+                         const NetworkEventCB& network_cb,
+                         const PipelineStatusCB& start_cb) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(kCreated, state_);
   filter_collection_ = filter_collection.Pass();
   url_ = url;
-  ended_callback_ = ended_callback;
-  error_callback_ = error_callback;
-  network_callback_ = network_callback;
-  seek_callback_ = start_callback;
+  ended_cb_ = ended_cb;
+  error_cb_ = error_cb;
+  network_cb_ = network_cb;
+  seek_cb_ = start_cb;
 
   // Kick off initialization.
   pipeline_init_state_.reset(new PipelineInitState());
-  pipeline_init_state_->composite_ = new CompositeFilter(message_loop_);
-  pipeline_init_state_->composite_->set_host(this);
+  pipeline_init_state_->composite = new CompositeFilter(message_loop_);
+  pipeline_init_state_->composite->set_host(this);
 
   SetState(kInitDemuxer);
   InitializeDemuxer();
@@ -633,20 +643,18 @@ void Pipeline::StartTask(scoped_ptr<FilterCollection> filter_collection,
 //
 // When all required filters have been created and have called their
 // FilterHost's InitializationComplete() method, the pipeline will update its
-// state to kStarted and |init_callback_|, will be executed.
+// state to kStarted and |init_cb_|, will be executed.
 //
 // TODO(hclam): InitializeTask() is now starting the pipeline asynchronously. It
 // works like a big state change table. If we no longer need to start filters
 // in order, we need to get rid of all the state change.
 void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (last_stage_status != PIPELINE_OK) {
     // Currently only VideoDecoders have a recoverable error code.
     if (state_ == kInitVideoDecoder &&
         last_stage_status == DECODER_ERROR_NOT_SUPPORTED) {
-      pipeline_init_state_->composite_->RemoveFilter(
-          pipeline_init_state_->video_decoder_.get());
       state_ = kInitAudioRenderer;
     } else {
       SetError(last_stage_status);
@@ -676,7 +684,7 @@ void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
     SetState(kInitAudioRenderer);
 
     // Returns false if there's no audio stream.
-    if (InitializeAudioRenderer(pipeline_init_state_->audio_decoder_)) {
+    if (InitializeAudioRenderer(pipeline_init_state_->audio_decoder)) {
       base::AutoLock auto_lock(lock_);
       has_audio_ = true;
       return;
@@ -694,7 +702,7 @@ void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
   // Assuming video decoder was created, create video renderer.
   if (state_ == kInitVideoDecoder) {
     SetState(kInitVideoRenderer);
-    if (InitializeVideoRenderer(pipeline_init_state_->video_decoder_)) {
+    if (InitializeVideoRenderer(pipeline_init_state_->video_decoder)) {
       base::AutoLock auto_lock(lock_);
       has_video_ = true;
       return;
@@ -710,7 +718,7 @@ void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
     // Clear the collection of filters.
     filter_collection_->Clear();
 
-    pipeline_filter_ = pipeline_init_state_->composite_;
+    pipeline_filter_ = pipeline_init_state_->composite;
 
     // Clear init state since we're done initializing.
     pipeline_init_state_.reset();
@@ -743,20 +751,19 @@ void Pipeline::InitializeTask(PipelineStatus last_stage_status) {
 // TODO(scherkus): beware!  this can get posted multiple times since we post
 // Stop() tasks even if we've already stopped.  Perhaps this should no-op for
 // additional calls, however most of this logic will be changing.
-void Pipeline::StopTask(const PipelineStatusCB& stop_callback) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+void Pipeline::StopTask(const base::Closure& stop_cb) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(!IsPipelineStopPending());
   DCHECK_NE(state_, kStopped);
 
-  if (state_ == kStopped) {
-    // Already stopped so just run callback.
-    stop_callback.Run(status_);
-    return;
+  if (video_decoder_) {
+    video_decoder_->PrepareForShutdownHack();
+    video_decoder_ = NULL;
   }
 
   if (IsPipelineTearingDown() && error_caused_teardown_) {
     // If we are stopping due to SetError(), stop normally instead of
-    // going to error state and calling |error_callback_|. This converts
+    // going to error state and calling |error_cb_|. This converts
     // the teardown in progress from an error teardown into one that acts
     // like the error never occurred.
     base::AutoLock auto_lock(lock_);
@@ -764,7 +771,7 @@ void Pipeline::StopTask(const PipelineStatusCB& stop_callback) {
     error_caused_teardown_ = false;
   }
 
-  stop_callback_ = stop_callback;
+  stop_cb_ = stop_cb;
 
   stop_pending_ = true;
   if (!IsPipelineSeeking() && !IsPipelineTearingDown()) {
@@ -776,7 +783,7 @@ void Pipeline::StopTask(const PipelineStatusCB& stop_callback) {
 }
 
 void Pipeline::ErrorChangedTask(PipelineStatus error) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_NE(PIPELINE_OK, error) << "PIPELINE_OK isn't an error!";
 
   // Suppress executing additional error logic. Note that if we are currently
@@ -801,7 +808,7 @@ void Pipeline::ErrorChangedTask(PipelineStatus error) {
 }
 
 void Pipeline::PlaybackRateChangedTask(float playback_rate) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (!running_ || tearing_down_)
     return;
@@ -829,7 +836,7 @@ void Pipeline::PlaybackRateChangedTask(float playback_rate) {
 }
 
 void Pipeline::VolumeChangedTask(float volume) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   if (!running_ || tearing_down_)
     return;
 
@@ -838,7 +845,7 @@ void Pipeline::VolumeChangedTask(float volume) {
 }
 
 void Pipeline::PreloadChangedTask(Preload preload) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   if (!running_ || tearing_down_)
     return;
 
@@ -847,16 +854,16 @@ void Pipeline::PreloadChangedTask(Preload preload) {
 }
 
 void Pipeline::SeekTask(base::TimeDelta time,
-                        const PipelineStatusCB& seek_callback) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+                        const PipelineStatusCB& seek_cb) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(!IsPipelineStopPending());
 
   // Suppress seeking if we're not fully started.
   if (state_ != kStarted && state_ != kEnded) {
     // TODO(scherkus): should we run the callback?  I'm tempted to say the API
     // will only execute the first Seek() request.
-    VLOG(1) << "Media pipeline has not started, ignoring seek to "
-            << time.InMicroseconds();
+    DVLOG(1) << "Media pipeline has not started, ignoring seek to "
+             << time.InMicroseconds() << " (current state: " << state_ << ")";
     return;
   }
 
@@ -872,7 +879,7 @@ void Pipeline::SeekTask(base::TimeDelta time,
   //   kStarted
   SetState(kPausing);
   seek_timestamp_ = time;
-  seek_callback_ = seek_callback;
+  seek_cb_ = seek_cb;
 
   // Kick off seeking!
   {
@@ -885,7 +892,7 @@ void Pipeline::SeekTask(base::TimeDelta time,
 }
 
 void Pipeline::NotifyEndedTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // We can only end if we were actually playing.
   if (state_ != kStarted) {
@@ -903,6 +910,7 @@ void Pipeline::NotifyEndedTask() {
     // Start clock since there is no more audio to
     // trigger clock updates.
     base::AutoLock auto_lock(lock_);
+    clock_->SetMaxTime(clock_->Duration());
     StartClockIfWaitingForTimeUpdate_Locked();
   }
 
@@ -914,23 +922,20 @@ void Pipeline::NotifyEndedTask() {
   SetState(kEnded);
   {
     base::AutoLock auto_lock(lock_);
-    clock_->Pause();
-    clock_->SetTime(duration_);
+    clock_->EndOfStream();
   }
 
-  if (!ended_callback_.is_null()) {
-    ended_callback_.Run(status_);
-  }
+  ReportStatus(ended_cb_, status_);
 }
 
 void Pipeline::NotifyNetworkEventTask(NetworkEvent type) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
-  if (!network_callback_.is_null())
-    network_callback_.Run(type);
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  if (!network_cb_.is_null())
+    network_cb_.Run(type);
 }
 
 void Pipeline::DisableAudioRendererTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   base::AutoLock auto_lock(lock_);
   has_audio_ = false;
@@ -947,11 +952,12 @@ void Pipeline::DisableAudioRendererTask() {
 
   // Start clock since there is no more audio to
   // trigger clock updates.
+  clock_->SetMaxTime(clock_->Duration());
   StartClockIfWaitingForTimeUpdate_Locked();
 }
 
 void Pipeline::FilterStateTransitionTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // No reason transitioning if we've errored or have stopped.
   if (IsPipelineStopped()) {
@@ -975,7 +981,7 @@ void Pipeline::FilterStateTransitionTask() {
   SetState(FindNextState(state_));
   if (state_ == kSeeking) {
     base::AutoLock auto_lock(lock_);
-    clock_->SetTime(seek_timestamp_);
+    clock_->SetTime(seek_timestamp_, seek_timestamp_);
   }
 
   // Carry out the action for the current state.
@@ -1014,12 +1020,14 @@ void Pipeline::FilterStateTransitionTask() {
     // We use audio stream to update the clock. So if there is such a stream,
     // we pause the clock until we receive a valid timestamp.
     waiting_for_clock_update_ = true;
-    if (!has_audio_)
+    if (!has_audio_) {
+      clock_->SetMaxTime(clock_->Duration());
       StartClockIfWaitingForTimeUpdate_Locked();
+    }
 
     // Start monitoring rate of downloading.
     int bitrate = 0;
-    if (demuxer_.get()) {
+    if (demuxer_) {
       bitrate = demuxer_->GetBitrate();
       local_source_ = demuxer_->IsLocalSource();
       streaming_ = !demuxer_->IsSeekable();
@@ -1077,7 +1085,7 @@ void Pipeline::TeardownStateTransitionTask() {
 }
 
 void Pipeline::FinishDestroyingFiltersTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineStopped());
 
   // Clear filter references.
@@ -1087,33 +1095,22 @@ void Pipeline::FinishDestroyingFiltersTask() {
 
   pipeline_filter_ = NULL;
 
-  if (error_caused_teardown_ && !IsPipelineOk() && !error_callback_.is_null())
-    error_callback_.Run(status_);
+  if (error_caused_teardown_ && !IsPipelineOk() && !error_cb_.is_null())
+    error_cb_.Run(status_);
 
   if (stop_pending_) {
     stop_pending_ = false;
     ResetState();
-    PipelineStatusCB stop_cb;
-    std::swap(stop_cb, stop_callback_);
     // Notify the client that stopping has finished.
-    if (!stop_cb.is_null()) {
-      stop_cb.Run(status_);
-    }
+    base::ResetAndReturn(&stop_cb_).Run();
   }
 
   tearing_down_ = false;
   error_caused_teardown_ = false;
 }
 
-bool Pipeline::PrepareFilter(scoped_refptr<Filter> filter) {
-  bool ret = pipeline_init_state_->composite_->AddFilter(filter.get());
-  if (!ret)
-    SetError(PIPELINE_ERROR_INITIALIZATION_FAILED);
-  return ret;
-}
-
 void Pipeline::InitializeDemuxer() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineOk());
 
   filter_collection_->GetDemuxerFactory()->Build(
@@ -1121,30 +1118,26 @@ void Pipeline::InitializeDemuxer() {
 }
 
 void Pipeline::OnDemuxerBuilt(PipelineStatus status, Demuxer* demuxer) {
-  if (MessageLoop::current() != message_loop_) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
         &Pipeline::OnDemuxerBuilt, this, status, make_scoped_refptr(demuxer)));
     return;
   }
 
+  demuxer_ = demuxer;
   if (status != PIPELINE_OK) {
     SetError(status);
     return;
   }
 
-  if (!demuxer) {
-    SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
-    return;
-  }
-
-  demuxer_ = demuxer;
+  CHECK(demuxer_) << "Null demuxer encountered despite PIPELINE_OK.";
   demuxer_->set_host(this);
 
   {
     base::AutoLock auto_lock(lock_);
     // We do not want to start the clock running. We only want to set the base
     // media time so our timestamp calculations will be correct.
-    clock_->SetTime(demuxer_->GetStartTime());
+    clock_->SetTime(demuxer_->GetStartTime(), demuxer_->GetStartTime());
   }
 
   OnFilterInitialize(PIPELINE_OK);
@@ -1152,8 +1145,9 @@ void Pipeline::OnDemuxerBuilt(PipelineStatus status, Demuxer* demuxer) {
 
 bool Pipeline::InitializeAudioDecoder(
     const scoped_refptr<Demuxer>& demuxer) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineOk());
+  DCHECK(demuxer);
 
   scoped_refptr<DemuxerStream> stream =
       demuxer->GetStream(DemuxerStream::AUDIO);
@@ -1161,60 +1155,51 @@ bool Pipeline::InitializeAudioDecoder(
   if (!stream)
     return false;
 
-  scoped_refptr<AudioDecoder> audio_decoder;
-  filter_collection_->SelectAudioDecoder(&audio_decoder);
+  filter_collection_->SelectAudioDecoder(&pipeline_init_state_->audio_decoder);
 
-  if (!audio_decoder) {
+  if (!pipeline_init_state_->audio_decoder) {
     SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
     return false;
   }
 
-  if (!PrepareFilter(audio_decoder))
-    return false;
-
-  pipeline_init_state_->audio_decoder_ = audio_decoder;
-  audio_decoder->Initialize(
-      stream,
-      base::Bind(&Pipeline::OnFilterInitialize, this, PIPELINE_OK),
-      base::Bind(&Pipeline::OnUpdateStatistics, this));
-  return true;
-}
-
-bool Pipeline::InitializeVideoDecoder(
-    const scoped_refptr<Demuxer>& demuxer) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(IsPipelineOk());
-
-  scoped_refptr<DemuxerStream> stream;
-
-  if (demuxer) {
-    stream = demuxer->GetStream(DemuxerStream::VIDEO);
-
-    if (!stream)
-      return false;
-  }
-
-  filter_collection_->SelectVideoDecoder(&video_decoder_);
-
-  if (!video_decoder_) {
-    SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
-    return false;
-  }
-
-  if (!PrepareFilter(video_decoder_))
-    return false;
-
-  pipeline_init_state_->video_decoder_ = video_decoder_;
-  video_decoder_->Initialize(
+  pipeline_init_state_->audio_decoder->Initialize(
       stream,
       base::Bind(&Pipeline::OnFilterInitialize, this),
       base::Bind(&Pipeline::OnUpdateStatistics, this));
   return true;
 }
 
+bool Pipeline::InitializeVideoDecoder(
+    const scoped_refptr<Demuxer>& demuxer) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(IsPipelineOk());
+  DCHECK(demuxer);
+
+  scoped_refptr<DemuxerStream> stream =
+      demuxer->GetStream(DemuxerStream::VIDEO);
+
+  if (!stream)
+    return false;
+
+  filter_collection_->SelectVideoDecoder(&pipeline_init_state_->video_decoder);
+
+  if (!pipeline_init_state_->video_decoder) {
+    SetError(PIPELINE_ERROR_REQUIRED_FILTER_MISSING);
+    return false;
+  }
+
+  pipeline_init_state_->video_decoder->Initialize(
+      stream,
+      base::Bind(&Pipeline::OnFilterInitialize, this),
+      base::Bind(&Pipeline::OnUpdateStatistics, this));
+
+  video_decoder_ = pipeline_init_state_->video_decoder;
+  return true;
+}
+
 bool Pipeline::InitializeAudioRenderer(
     const scoped_refptr<AudioDecoder>& decoder) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineOk());
 
   if (!decoder)
@@ -1226,19 +1211,20 @@ bool Pipeline::InitializeAudioRenderer(
     return false;
   }
 
-  if (!PrepareFilter(audio_renderer_))
-    return false;
+  pipeline_init_state_->composite->AddFilter(audio_renderer_);
 
   audio_renderer_->Initialize(
       decoder,
-      base::Bind(&Pipeline::OnFilterInitialize, this, PIPELINE_OK),
-      base::Bind(&Pipeline::OnAudioUnderflow, this));
+      base::Bind(&Pipeline::OnFilterInitialize, this),
+      base::Bind(&Pipeline::OnAudioUnderflow, this),
+      base::Bind(&Pipeline::OnAudioTimeUpdate, this));
+
   return true;
 }
 
 bool Pipeline::InitializeVideoRenderer(
     const scoped_refptr<VideoDecoder>& decoder) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(IsPipelineOk());
 
   if (!decoder)
@@ -1250,18 +1236,18 @@ bool Pipeline::InitializeVideoRenderer(
     return false;
   }
 
-  if (!PrepareFilter(video_renderer_))
-    return false;
+  pipeline_init_state_->composite->AddFilter(video_renderer_);
 
   video_renderer_->Initialize(
       decoder,
-      base::Bind(&Pipeline::OnFilterInitialize, this, PIPELINE_OK),
-      base::Bind(&Pipeline::OnUpdateStatistics, this));
+      base::Bind(&Pipeline::OnFilterInitialize, this),
+      base::Bind(&Pipeline::OnUpdateStatistics, this),
+      base::Bind(&Pipeline::OnVideoTimeUpdate, this));
   return true;
 }
 
 void Pipeline::TearDownPipeline() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_NE(kStopped, state_);
 
   DCHECK(!tearing_down_ ||  // Teardown on Stop().
@@ -1287,7 +1273,7 @@ void Pipeline::TearDownPipeline() {
     case kInitVideoDecoder:
     case kInitVideoRenderer:
       // Make it look like initialization was successful.
-      pipeline_filter_ = pipeline_init_state_->composite_;
+      pipeline_filter_ = pipeline_init_state_->composite;
       pipeline_init_state_.reset();
       filter_collection_.reset();
 
@@ -1338,7 +1324,7 @@ void Pipeline::DoStop(const base::Closure& callback) {
 }
 
 void Pipeline::OnDemuxerStopDone(const base::Closure& callback) {
-  if (MessageLoop::current() != message_loop_) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
         &Pipeline::OnDemuxerStopDone, this, callback));
     return;
@@ -1350,7 +1336,6 @@ void Pipeline::OnDemuxerStopDone(const base::Closure& callback) {
   }
 
   callback.Run();
-
 }
 
 void Pipeline::DoSeek(base::TimeDelta seek_timestamp) {
@@ -1368,7 +1353,7 @@ void Pipeline::DoSeek(base::TimeDelta seek_timestamp) {
 
 void Pipeline::OnDemuxerSeekDone(base::TimeDelta seek_timestamp,
                                  PipelineStatus status) {
-  if (MessageLoop::current() != message_loop_) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
         &Pipeline::OnDemuxerSeekDone, this, seek_timestamp, status));
     return;
@@ -1382,11 +1367,11 @@ void Pipeline::OnDemuxerSeekDone(base::TimeDelta seek_timestamp,
     return;
   }
 
-  done_cb.Run(status);
+  ReportStatus(done_cb, status);
 }
 
 void Pipeline::OnAudioUnderflow() {
-  if (MessageLoop::current() != message_loop_) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(FROM_HERE, base::Bind(
         &Pipeline::OnAudioUnderflow, this));
     return;
@@ -1405,7 +1390,7 @@ void Pipeline::OnCanPlayThrough() {
 }
 
 void Pipeline::NotifyCanPlayThrough() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   NotifyNetworkEventTask(CAN_PLAY_THROUGH);
 }
 

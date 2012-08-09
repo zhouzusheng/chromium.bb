@@ -74,23 +74,21 @@ const CCLayerTilingData& CCLayerTilingData::operator=(const CCLayerTilingData& t
     return *this;
 }
 
-void CCLayerTilingData::addTile(PassRefPtr<Tile> tile, int i, int j)
+void CCLayerTilingData::addTile(PassOwnPtr<Tile> tile, int i, int j)
 {
     ASSERT(!tileAt(i, j));
     tile->moveTo(i, j);
     m_tiles.add(make_pair(i, j), tile);
 }
 
-PassRefPtr<CCLayerTilingData::Tile> CCLayerTilingData::takeTile(int i, int j)
+PassOwnPtr<CCLayerTilingData::Tile> CCLayerTilingData::takeTile(int i, int j)
 {
     return m_tiles.take(make_pair(i, j));
 }
 
 CCLayerTilingData::Tile* CCLayerTilingData::tileAt(int i, int j) const
 {
-    Tile* tile = m_tiles.get(make_pair(i, j)).get();
-    ASSERT(!tile || tile->refCount() == 1);
-    return tile;
+    return m_tiles.get(make_pair(i, j));
 }
 
 void CCLayerTilingData::reset()
@@ -114,9 +112,38 @@ IntRect CCLayerTilingData::tileRect(const Tile* tile) const
     return tileRect;
 }
 
+Region CCLayerTilingData::opaqueRegionInLayerRect(const IntRect& layerRect) const
+{
+    Region opaqueRegion;
+    int left, top, right, bottom;
+    layerRectToTileIndices(layerRect, left, top, right, bottom);
+    for (int j = top; j <= bottom; ++j) {
+        for (int i = left; i <= right; ++i) {
+            Tile* tile = tileAt(i, j);
+            if (!tile)
+                continue;
+
+            IntRect tileOpaqueRect = intersection(layerRect, tile->opaqueRect());
+            opaqueRegion.unite(tileOpaqueRect);
+        }
+    }
+    return opaqueRegion;
+}
+
 void CCLayerTilingData::setBounds(const IntSize& size)
 {
     m_tilingData.setTotalSize(size.width(), size.height());
+
+    // Any tiles completely outside our new bounds are invalid and should be dropped.
+    int left, top, right, bottom;
+    layerRectToTileIndices(IntRect(IntPoint(), size), left, top, right, bottom);
+    Vector<TileMapKey> invalidTileKeys;
+    for (TileMap::const_iterator it = m_tiles.begin(); it != m_tiles.end(); ++it) {
+        if (it->first.first > right || it->first.second > bottom)
+            invalidTileKeys.append(it->first);
+    }
+    for (size_t i = 0; i < invalidTileKeys.size(); ++i)
+        m_tiles.remove(invalidTileKeys[i]);
 }
 
 IntSize CCLayerTilingData::bounds() const

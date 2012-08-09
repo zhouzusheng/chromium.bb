@@ -39,7 +39,6 @@ class GURL;
 
 namespace fileapi {
 
-class FileSystemCallbackDispatcher;
 class FileSystemContext;
 class FileWriterDelegate;
 class FileSystemOperationTest;
@@ -50,41 +49,73 @@ class FileSystemOperation : public FileSystemOperationInterface {
   virtual ~FileSystemOperation();
 
   // FileSystemOperation overrides.
-  virtual void CreateFile(const GURL& path,
-                          bool exclusive) OVERRIDE;
-  virtual void CreateDirectory(const GURL& path,
+  virtual void CreateFile(const GURL& path_url,
+                          bool exclusive,
+                          const StatusCallback& callback) OVERRIDE;
+  virtual void CreateDirectory(const GURL& path_url,
                                bool exclusive,
-                               bool recursive) OVERRIDE;
-  virtual void Copy(const GURL& src_path,
-                    const GURL& dest_path) OVERRIDE;
-  virtual void Move(const GURL& src_path,
-                    const GURL& dest_path) OVERRIDE;
-  virtual void DirectoryExists(const GURL& path) OVERRIDE;
-  virtual void FileExists(const GURL& path) OVERRIDE;
-  virtual void GetMetadata(const GURL& path) OVERRIDE;
-  virtual void ReadDirectory(const GURL& path) OVERRIDE;
-  virtual void Remove(const GURL& path, bool recursive) OVERRIDE;
+                               bool recursive,
+                               const StatusCallback& callback) OVERRIDE;
+  virtual void Copy(const GURL& src_path_url,
+                    const GURL& dest_path_url,
+                    const StatusCallback& callback) OVERRIDE;
+  virtual void Move(const GURL& src_path_url,
+                    const GURL& dest_path_url,
+                    const StatusCallback& callback) OVERRIDE;
+  virtual void DirectoryExists(const GURL& path_url,
+                               const StatusCallback& callback) OVERRIDE;
+  virtual void FileExists(const GURL& path_url,
+                          const StatusCallback& callback) OVERRIDE;
+  virtual void GetMetadata(const GURL& path_url,
+                           const GetMetadataCallback& callback) OVERRIDE;
+  virtual void ReadDirectory(const GURL& path_url,
+                             const ReadDirectoryCallback& callback) OVERRIDE;
+  virtual void Remove(const GURL& path_url, bool recursive,
+                      const StatusCallback& callback) OVERRIDE;
   virtual void Write(const net::URLRequestContext* url_request_context,
-                     const GURL& path,
+                     const GURL& path_url,
                      const GURL& blob_url,
-                     int64 offset) OVERRIDE;
-  virtual void Truncate(const GURL& path, int64 length) OVERRIDE;
-  virtual void TouchFile(const GURL& path,
+                     int64 offset,
+                     const WriteCallback& callback) OVERRIDE;
+  virtual void Truncate(const GURL& path_url, int64 length,
+                        const StatusCallback& callback) OVERRIDE;
+  virtual void TouchFile(const GURL& path_url,
                          const base::Time& last_access_time,
-                         const base::Time& last_modified_time) OVERRIDE;
-  virtual void OpenFile(
-      const GURL& path,
-      int file_flags,
-      base::ProcessHandle peer_handle) OVERRIDE;
-  virtual void Cancel(
-      scoped_ptr<FileSystemCallbackDispatcher> cancel_dispatcher) OVERRIDE;
+                         const base::Time& last_modified_time,
+                         const StatusCallback& callback) OVERRIDE;
+  virtual void OpenFile(const GURL& path_url,
+                        int file_flags,
+                        base::ProcessHandle peer_handle,
+                        const OpenFileCallback& callback) OVERRIDE;
+  virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
   virtual FileSystemOperation* AsFileSystemOperation() OVERRIDE;
+  virtual void CreateSnapshotFile(
+      const GURL& path,
+      const SnapshotFileCallback& callback) OVERRIDE;
 
-  // Synchronously gets the platform path for the given |path|.
-  void SyncGetPlatformPath(const GURL& path, FilePath* platform_path);
+  // Synchronously gets the platform path for the given |path_url|.
+  void SyncGetPlatformPath(const GURL& path_url, FilePath* platform_path);
 
  private:
-  class ScopedQuotaUtilHelper;
+  class ScopedQuotaNotifier;
+
+  // Modes for SetUpFileSystemPath.
+  enum SetUpPathMode {
+    PATH_FOR_READ,
+    PATH_FOR_WRITE,
+    PATH_FOR_CREATE,
+  };
+
+  // A struct to pass arguments to DidGetUsageAndQuotaAndRunTask
+  // purely for compilation (as Bind doesn't recognize too many arguments).
+  struct TaskParamsForDidGetQuota {
+    TaskParamsForDidGetQuota();
+    ~TaskParamsForDidGetQuota();
+    GURL origin;
+    FileSystemType type;
+    base::Closure task;
+    base::Closure error_callback;
+  };
 
   // Only MountPointProviders or testing class can create a
   // new operation directly.
@@ -92,8 +123,13 @@ class FileSystemOperation : public FileSystemOperationInterface {
   friend class FileSystemTestHelper;
   friend class chromeos::CrosMountPointProvider;
 
-  FileSystemOperation(scoped_ptr<FileSystemCallbackDispatcher> dispatcher,
-                      scoped_refptr<base::MessageLoopProxy> proxy,
+  friend class FileSystemOperationTest;
+  friend class FileSystemOperationWriteTest;
+  friend class FileWriterDelegateTest;
+  friend class FileSystemTestOriginHelper;
+  friend class FileSystemQuotaTest;
+
+  FileSystemOperation(scoped_refptr<base::MessageLoopProxy> proxy,
                       FileSystemContext* file_system_context);
 
   FileSystemContext* file_system_context() const {
@@ -104,182 +140,137 @@ class FileSystemOperation : public FileSystemOperationInterface {
     return &operation_context_;
   }
 
-  friend class FileSystemOperationTest;
-  friend class FileSystemOperationWriteTest;
-  friend class FileWriterDelegateTest;
-  friend class FileSystemTestOriginHelper;
-  friend class FileSystemQuotaTest;
-
   // The unit tests that need to specify and control the lifetime of the
   // file_util on their own should call this before performing the actual
   // operation. If it is given it will not be overwritten by the class.
   void set_override_file_util(FileSystemFileUtil* file_util) {
-    operation_context_.set_src_file_util(file_util);
-    operation_context_.set_dest_file_util(file_util);
+    src_util_ = file_util;
+    dest_util_ = file_util;
   }
 
-  void GetUsageAndQuotaThenCallback(
-      const GURL& origin_url,
-      const quota::QuotaManager::GetUsageAndQuotaCallback& callback);
+  // Queries the quota and usage and then runs the given |task|.
+  // If an error occurs during the quota query it runs |error_callback| instead.
+  void GetUsageAndQuotaThenRunTask(
+      const GURL& origin,
+      FileSystemType type,
+      const base::Closure& task,
+      const base::Closure& error_callback);
 
-  void DelayedCreateFileForQuota(bool exclusive,
-                                 quota::QuotaStatusCode status,
-                                 int64 usage, int64 quota);
-  void DelayedCreateDirectoryForQuota(bool exclusive, bool recursive,
-                                      quota::QuotaStatusCode status,
-                                      int64 usage, int64 quota);
-  void DelayedCopyForQuota(quota::QuotaStatusCode status,
-                           int64 usage, int64 quota);
-  void DelayedMoveForQuota(quota::QuotaStatusCode status,
-                           int64 usage, int64 quota);
-  void DelayedWriteForQuota(quota::QuotaStatusCode status,
-                            int64 usage, int64 quota);
-  void DelayedTruncateForQuota(int64 length,
-                               quota::QuotaStatusCode status,
-                               int64 usage, int64 quota);
-  void DelayedOpenFileForQuota(int file_flags,
-                               quota::QuotaStatusCode status,
-                               int64 usage, int64 quota);
+  // Called after the quota info is obtained from the quota manager
+  // (which is triggered by GetUsageAndQuotaThenRunTask).
+  // Sets the quota info in the operation_context_ and then runs the given
+  // |task| if the returned quota status is successful, otherwise runs
+  // |error_callback|.
+  void DidGetUsageAndQuotaAndRunTask(
+      const TaskParamsForDidGetQuota& params,
+      quota::QuotaStatusCode status,
+      int64 usage, int64 quota);
+
+  // The 'body' methods that perform the actual work (i.e. posting the
+  // file task on proxy_) after the quota check.
+  void DoCreateFile(const StatusCallback& callback, bool exclusive);
+  void DoCreateDirectory(const StatusCallback& callback,
+                         bool exclusive,
+                         bool recursive);
+  void DoCopy(const StatusCallback& callback);
+  void DoMove(const StatusCallback& callback);
+  void DoWrite();
+  void DoTruncate(const StatusCallback& callback, int64 length);
+  void DoOpenFile(const OpenFileCallback& callback, int file_flags);
 
   // Callback for CreateFile for |exclusive|=true cases.
-  void DidEnsureFileExistsExclusive(base::PlatformFileError rv,
+  void DidEnsureFileExistsExclusive(const StatusCallback& callback,
+                                    base::PlatformFileError rv,
                                     bool created);
 
   // Callback for CreateFile for |exclusive|=false cases.
-  void DidEnsureFileExistsNonExclusive(base::PlatformFileError rv,
+  void DidEnsureFileExistsNonExclusive(const StatusCallback& callback,
+                                       base::PlatformFileError rv,
                                        bool created);
 
   // Generic callback that translates platform errors to WebKit error codes.
-  void DidFinishFileOperation(base::PlatformFileError rv);
+  void DidFinishFileOperation(const StatusCallback& callback,
+                              base::PlatformFileError rv);
 
-  void DidDirectoryExists(base::PlatformFileError rv,
+  void DidDirectoryExists(const StatusCallback& callback,
+                          base::PlatformFileError rv,
                           const base::PlatformFileInfo& file_info,
                           const FilePath& unused);
-  void DidFileExists(base::PlatformFileError rv,
+  void DidFileExists(const StatusCallback& callback,
+                     base::PlatformFileError rv,
                      const base::PlatformFileInfo& file_info,
                      const FilePath& unused);
-  void DidGetMetadata(base::PlatformFileError rv,
+  void DidGetMetadata(const GetMetadataCallback& callback,
+                      base::PlatformFileError rv,
                       const base::PlatformFileInfo& file_info,
                       const FilePath& platform_path);
-  void DidReadDirectory(
-      base::PlatformFileError rv,
-      const std::vector<base::FileUtilProxy::Entry>& entries);
-  void DidWrite(
-      base::PlatformFileError rv,
-      int64 bytes,
-      bool complete);
-  void DidTouchFile(base::PlatformFileError rv);
-  void DidOpenFile(
-      base::PlatformFileError rv,
-      base::PassPlatformFile file,
-      bool created);
+  void DidReadDirectory(const ReadDirectoryCallback& callback,
+                        base::PlatformFileError rv,
+                        const std::vector<base::FileUtilProxy::Entry>& entries,
+                        bool has_more);
+  void DidWrite(base::PlatformFileError rv,
+                int64 bytes,
+                bool complete);
+  void DidTouchFile(const StatusCallback& callback,
+                    base::PlatformFileError rv);
+  void DidOpenFile(const OpenFileCallback& callback,
+                   base::PlatformFileError rv,
+                   base::PassPlatformFile file,
+                   bool created);
 
   // Helper for Write().
-  void OnFileOpenedForWrite(
-      base::PlatformFileError rv,
-      base::PassPlatformFile file,
-      bool created);
+  void OnFileOpenedForWrite(base::PlatformFileError rv,
+                            base::PassPlatformFile file,
+                            bool created);
 
-  // Checks the validity of a given |path| for reading, cracks the path into
-  // root URL and virtual path components, and returns the correct
-  // FileSystemFileUtil subclass for this type.
-  // Returns true if the given |path| is a valid FileSystem path.
-  // Otherwise it calls dispatcher's DidFail method with
-  // PLATFORM_FILE_ERROR_SECURITY and returns false.
-  // (Note: this doesn't delete this when it calls DidFail and returns false;
-  // it's the caller's responsibility.)
-  bool VerifyFileSystemPathForRead(const GURL& path,
-                                   GURL* root_url,
-                                   FileSystemType* type,
-                                   FilePath* virtual_path,
-                                   FileSystemFileUtil** file_util);
+  // Checks the validity of a given |path_url| and and populates
+  // |path| and |file_util| for |mode|.
+  base::PlatformFileError SetUpFileSystemPath(
+      const GURL& path_url,
+      FileSystemPath* file_system_path,
+      FileSystemFileUtil** file_util,
+      SetUpPathMode mode);
 
-  // Checks the validity of a given |path| for writing, cracks the path into
-  // root URL and virtual path components, and returns the correct
-  // FileSystemFileUtil subclass for this type.
-  // Returns true if the given |path| is a valid FileSystem path, and
-  // its origin embedded in the path has the right to write.
-  // Otherwise it fires dispatcher's DidFail method with
-  // PLATFORM_FILE_ERROR_SECURITY if the path is not valid for writing,
-  // or with PLATFORM_FILE_ERROR_NO_SPACE if the origin is not allowed to
-  // write to the storage.
-  // In either case it returns false after firing DidFail.
-  // If |create| flag is true this also checks if the |path| contains
-  // any restricted names and chars. If it does, the call fires dispatcher's
-  // DidFail with PLATFORM_FILE_ERROR_SECURITY and returns false.
-  // (Note: this doesn't delete this when it calls DidFail and returns false;
-  // it's the caller's responsibility.)
-  bool VerifyFileSystemPathForWrite(const GURL& path,
-                                    bool create,
-                                    GURL* root_url,
-                                    FileSystemType* type,
-                                    FilePath* virtual_path,
-                                    FileSystemFileUtil** file_util);
-
-  // Common internal routine for VerifyFileSystemPathFor{Read,Write}.
-  bool VerifyFileSystemPath(const GURL& path,
-                            GURL* root_url,
-                            FileSystemType* type,
-                            FilePath* virtual_path,
-                            FileSystemFileUtil** file_util);
-
-  // Setup*Context*() functions will call the appropriate VerifyFileSystem
-  // function and store the results to operation_context_ and
-  // *_virtual_path_.
-  // Return the result of VerifyFileSystem*().
-  bool SetupSrcContextForRead(const GURL& path);
-  bool SetupSrcContextForWrite(const GURL& path, bool create);
-  bool SetupDestContextForWrite(const GURL& path, bool create);
-
-#ifndef NDEBUG
-  enum OperationType {
-    kOperationNone,
-    kOperationCreateFile,
-    kOperationCreateDirectory,
-    kOperationCopy,
-    kOperationMove,
-    kOperationDirectoryExists,
-    kOperationFileExists,
-    kOperationGetMetadata,
-    kOperationReadDirectory,
-    kOperationRemove,
-    kOperationWrite,
-    kOperationTruncate,
-    kOperationTouchFile,
-    kOperationOpenFile,
-    kOperationGetLocalPath,
-    kOperationCancel,
-  };
-
-  // A flag to make sure we call operation only once per instance.
-  OperationType pending_operation_;
-#endif
+  // Used only for internal assertions.
+  // Returns false if there's another inflight pending operation.
+  bool SetPendingOperationType(OperationType type);
 
   // Proxy for calling file_util_proxy methods.
   scoped_refptr<base::MessageLoopProxy> proxy_;
 
-  // This can be NULL if the operation is cancelled on the way.
-  scoped_ptr<FileSystemCallbackDispatcher> dispatcher_;
-
   FileSystemOperationContext operation_context_;
+  FileSystemPath src_path_;
+  FileSystemPath dest_path_;
+  FileSystemFileUtil* src_util_;  // Not owned.
+  FileSystemFileUtil* dest_util_;  // Not owned.
 
-  scoped_ptr<ScopedQuotaUtilHelper> quota_util_helper_;
+  // This is set before any write operations.  The destructor of
+  // ScopedQuotaNotifier sends notification to the QuotaManager
+  // to tell the update is done; so that we can make sure notify
+  // the manager after any write operations are done.
+  scoped_ptr<ScopedQuotaNotifier> scoped_quota_notifier_;
 
   // These are all used only by Write().
   friend class FileWriterDelegate;
   scoped_ptr<FileWriterDelegate> file_writer_delegate_;
   scoped_ptr<net::URLRequest> blob_request_;
-  scoped_ptr<FileSystemCallbackDispatcher> cancel_dispatcher_;
+
+  // write_callback is kept in this class for so that we can dispatch it when
+  // the operation is cancelled. calcel_callback is kept for canceling a
+  // Truncate() operation. We can't actually stop Truncate in another thread;
+  // after it resumed from the working thread, cancellation takes place.
+  WriteCallback write_callback_;
+  StatusCallback cancel_callback_;
+  void set_write_callback(const WriteCallback& write_callback) {
+    write_callback_ = write_callback;
+  }
 
   // Used only by OpenFile, in order to clone the file handle back to the
   // requesting process.
   base::ProcessHandle peer_handle_;
 
-  // Used to keep a virtual path around while we check for quota.
-  // If an operation needs only one path, use src_virtual_path_, even if it's a
-  // write.
-  FilePath src_virtual_path_;
-  FilePath dest_virtual_path_;
+  // A flag to make sure we call operation only once per instance.
+  OperationType pending_operation_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperation);
 };

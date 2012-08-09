@@ -163,7 +163,10 @@ bool AccessibilityObject::isAccessibilityObjectSearchMatch(AccessibilityObject* 
         
     case HeadingSearchKey:
         return axObject->isHeading();
-        
+    
+    case HighlightedSearchKey:
+        return axObject->hasHighlighting();
+            
     case ItalicFontSearchKey:
         return axObject->hasItalicFont();
         
@@ -486,25 +489,25 @@ bool AccessibilityObject::isARIAControl(AccessibilityRole ariaRole)
     || ariaRole == ComboBoxRole || ariaRole == SliderRole; 
 }
 
-LayoutPoint AccessibilityObject::clickPoint()
+IntPoint AccessibilityObject::clickPoint()
 {
     LayoutRect rect = elementRect();
-    return LayoutPoint(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2);
+    return roundedIntPoint(LayoutPoint(rect.x() + rect.width() / 2, rect.y() + rect.height() / 2));
 }
 
-LayoutRect AccessibilityObject::boundingBoxForQuads(RenderObject* obj, const Vector<FloatQuad>& quads)
+IntRect AccessibilityObject::boundingBoxForQuads(RenderObject* obj, const Vector<FloatQuad>& quads)
 {
     ASSERT(obj);
     if (!obj)
-        return LayoutRect();
+        return IntRect();
     
     size_t count = quads.size();
     if (!count)
-        return LayoutRect();
+        return IntRect();
     
-    LayoutRect result;
+    IntRect result;
     for (size_t i = 0; i < count; ++i) {
-        LayoutRect r = quads[i].enclosingBoundingBox();
+        IntRect r = quads[i].enclosingBoundingBox();
         if (!r.isEmpty()) {
             if (obj->style()->hasAppearance())
                 obj->theme()->adjustRepaintRect(obj, r);
@@ -1138,6 +1141,12 @@ void AccessibilityObject::updateChildrenIfNecessary()
         addChildren();    
 }
 
+void AccessibilityObject::detachFromParent()
+{
+    if (isAttachment())
+        overrideAttachmentParent(0);
+}
+    
 void AccessibilityObject::clearChildren()
 {
     // Some objects have weak pointers to their parents and those associations need to be detached.
@@ -1414,6 +1423,16 @@ AccessibilityRole AccessibilityObject::ariaRoleToWebCoreRole(const String& value
     return role;
 }
 
+bool AccessibilityObject::hasHighlighting() const
+{
+    for (Node* node = this->node(); node; node = node->parentNode()) {
+        if (node->hasTagName(markTag))
+            return true;
+    }
+    
+    return false;
+}
+
 const AtomicString& AccessibilityObject::placeholderValue() const
 {
     const AtomicString& placeholder = getAttribute(placeholderAttr);
@@ -1447,7 +1466,7 @@ bool AccessibilityObject::supportsARIALiveRegion() const
     return equalIgnoringCase(liveRegion, "polite") || equalIgnoringCase(liveRegion, "assertive");
 }
 
-AccessibilityObject* AccessibilityObject::elementAccessibilityHitTest(const LayoutPoint& point) const
+AccessibilityObject* AccessibilityObject::elementAccessibilityHitTest(const IntPoint& point) const
 { 
     // Send the hit test back into the sub-frame if necessary.
     if (isAttachment()) {
@@ -1600,8 +1619,8 @@ static int computeBestScrollOffset(int currentScrollOffset,
 
 void AccessibilityObject::scrollToMakeVisible() const
 {
-    IntRect objectRect = boundingBoxRect();
-    objectRect.move(-objectRect.x(), -objectRect.y());
+    IntRect objectRect = pixelSnappedIntRect(boundingBoxRect());
+    objectRect.setLocation(IntPoint());
     scrollToMakeVisibleWithSubFocus(objectRect);
 }
 

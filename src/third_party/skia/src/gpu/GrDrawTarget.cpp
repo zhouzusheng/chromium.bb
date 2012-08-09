@@ -474,6 +474,9 @@ GrDrawTarget::GrDrawTarget() {
 #if GR_DEBUG
     VertexLayoutUnitTest();
 #endif
+    fDrawState = &fDefaultDrawState;
+    // We assume that fDrawState always owns a ref to the object it points at.
+    fDefaultDrawState.ref();
     GeometrySrcState& geoSrc = fGeoSrcStateStack.push_back();
 #if GR_DEBUG
     geoSrc.fVertexCount = DEBUG_INVAL_START_IDX;
@@ -490,6 +493,7 @@ GrDrawTarget::~GrDrawTarget() {
     GeometrySrcState& geoSrc = fGeoSrcStateStack.back();
     GrAssert(kNone_GeometrySrcType == geoSrc.fIndexSrc);
     GrAssert(kNone_GeometrySrcType == geoSrc.fVertexSrc);
+    fDrawState->unref();
 }
 
 void GrDrawTarget::releaseGeometry() {
@@ -511,16 +515,28 @@ const GrClip& GrDrawTarget::getClip() const {
     return fClip;
 }
 
+void GrDrawTarget::setDrawState(GrDrawState*  drawState) {
+    GrAssert(NULL != fDrawState);
+    if (NULL == drawState) {
+        drawState = &fDefaultDrawState;
+    }
+    if (fDrawState != drawState) {
+        fDrawState->unref();
+        drawState->ref();
+        fDrawState = drawState;
+    }
+}
+
 void GrDrawTarget::saveCurrentDrawState(SavedDrawState* state) const {
-    state->fState.set(fCurrDrawState);
+    state->fState.set(this->getDrawState());
 }
 
 void GrDrawTarget::restoreDrawState(const SavedDrawState& state) {
-    fCurrDrawState = *state.fState.get();
+    *fDrawState = *state.fState.get();
 }
 
 void GrDrawTarget::copyDrawState(const GrDrawTarget& srcTarget) {
-    fCurrDrawState = srcTarget.fCurrDrawState;
+    *fDrawState = srcTarget.getDrawState();
 }
 
 bool GrDrawTarget::reserveVertexSpace(GrVertexLayout vertexLayout,
@@ -566,6 +582,31 @@ bool GrDrawTarget::reserveIndexSpace(int indexCount,
     }
     return acquired;
     
+}
+
+bool GrDrawTarget::reserveVertexAndIndexSpace(GrVertexLayout vertexLayout,
+                                              int vertexCount,
+                                              int indexCount,
+                                              void** vertices,
+                                              void** indices) {
+    this->willReserveVertexAndIndexSpace(vertexLayout, vertexCount, indexCount);
+    if (vertexCount) {
+        if (!this->reserveVertexSpace(vertexLayout, vertexCount, vertices)) {
+            if (indexCount) {
+                this->resetIndexSource();
+            }
+            return false;
+        }
+    }
+    if (indexCount) {
+        if (!this->reserveIndexSpace(indexCount, indices)) {
+            if (vertexCount) {
+                this->resetVertexSource();
+            }
+            return false;
+        }
+    }
+    return true;
 }
 
 bool GrDrawTarget::geometryHints(GrVertexLayout vertexLayout,
@@ -830,7 +871,7 @@ bool GrDrawTarget::srcAlphaWillBeOne() const {
     }
     // Check if a color stage could create a partial alpha
     for (int s = 0; s < drawState.getFirstCoverageStage(); ++s) {
-        if (StageWillBeUsed(s, layout, fCurrDrawState)) {
+        if (StageWillBeUsed(s, layout, this->getDrawState())) {
             GrAssert(NULL != drawState.getTexture(s));
             GrPixelConfig config = drawState.getTexture(s)->config();
             if (!GrPixelConfigIsOpaque(config)) {
@@ -907,7 +948,7 @@ GrDrawTarget::getBlendOpts(bool forceCoverage,
     for (int s = drawState.getFirstCoverageStage();
          !hasCoverage && s < GrDrawState::kNumStages;
          ++s) {
-        if (StageWillBeUsed(s, layout, fCurrDrawState)) {
+        if (StageWillBeUsed(s, layout, this->getDrawState())) {
             hasCoverage = true;
         }
     }
@@ -986,6 +1027,34 @@ bool GrDrawTarget::drawWillReadDst() const {
                     this->getBlendOpts());
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+void GrDrawTarget::drawIndexedInstances(GrPrimitiveType type,
+                                        int instanceCount,
+                                        int verticesPerInstance,
+                                        int indicesPerInstance) {
+    if (!verticesPerInstance || !indicesPerInstance) {
+        return;
+    }
+
+    int instancesPerDraw = this->indexCountInCurrentSource() /
+                           indicesPerInstance;
+    if (!instancesPerDraw) {
+        return;
+    }
+
+    instancesPerDraw = GrMin(instanceCount, instancesPerDraw);
+    int startVertex = 0;
+    while (instanceCount) {
+        this->drawIndexed(type,
+                          startVertex,
+                          0,
+                          verticesPerInstance * instancesPerDraw,
+                          indicesPerInstance * instancesPerDraw);
+        startVertex += verticesPerInstance;
+        instanceCount -= instancesPerDraw;
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1127,7 +1196,7 @@ GrDrawTarget::AutoDeviceCoordDraw::AutoDeviceCoordDraw(
             fStageMask = 0;
         }
     }
-    drawState->setViewMatrix(GrMatrix::I());
+    drawState->viewMatrix()->reset();
 }
 
 GrDrawTarget::AutoDeviceCoordDraw::~AutoDeviceCoordDraw() {
@@ -1168,19 +1237,14 @@ bool GrDrawTarget::AutoReleaseGeometry::set(GrDrawTarget*  target,
     bool success = true;
     if (NULL != fTarget) {
         fTarget = target;
-        if (vertexCount > 0) {
-            success = target->reserveVertexSpace(vertexLayout, 
-                                                 vertexCount,
-                                                 &fVertices);
-            if (!success) {
-                this->reset();
-            }
-        }
-        if (success && indexCount > 0) {
-            success = target->reserveIndexSpace(indexCount, &fIndices);
-            if (!success) {
-                this->reset();
-            }
+        success = target->reserveVertexAndIndexSpace(vertexLayout,
+                                                     vertexCount,
+                                                     indexCount,
+                                                     &fVertices,
+                                                     &fIndices);
+        if (!success) {
+            fTarget = NULL;
+            this->reset();
         }
     }
     GrAssert(success == (NULL != fTarget));

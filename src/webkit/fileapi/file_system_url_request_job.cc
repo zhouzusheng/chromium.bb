@@ -22,7 +22,7 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
-#include "webkit/fileapi/file_system_callback_dispatcher.h"
+#include "webkit/blob/shareable_file_reference.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_util.h"
@@ -53,60 +53,6 @@ static net::HttpResponseHeaders* CreateHttpResponseHeaders() {
   return headers;
 }
 
-class FileSystemURLRequestJob::CallbackDispatcher
-    : public FileSystemCallbackDispatcher {
- public:
-  // An instance of this class must be created by Create()
-  // (so that we do not leak ownerships).
-  static scoped_ptr<FileSystemCallbackDispatcher> Create(
-      FileSystemURLRequestJob* job) {
-    return scoped_ptr<FileSystemCallbackDispatcher>(
-        new CallbackDispatcher(job));
-  }
-
-  // fileapi::FileSystemCallbackDispatcher overrides.
-  virtual void DidSucceed() OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidReadMetadata(const base::PlatformFileInfo& file_info,
-                               const FilePath& platform_path) OVERRIDE {
-    job_->DidGetMetadata(file_info, platform_path);
-  }
-
-  virtual void DidReadDirectory(
-      const std::vector<base::FileUtilProxy::Entry>& entries,
-      bool has_more) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidWrite(int64 bytes, bool complete) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidOpenFileSystem(const std::string& name,
-                                 const GURL& root_path) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidFail(base::PlatformFileError error_code) OVERRIDE {
-    int rv = net::ERR_FILE_NOT_FOUND;
-    if (error_code == base::PLATFORM_FILE_ERROR_INVALID_URL)
-      rv = net::ERR_INVALID_URL;
-    job_->NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, rv));
-  }
-
- private:
-  explicit CallbackDispatcher(FileSystemURLRequestJob* job) : job_(job) {
-    DCHECK(job_);
-  }
-
-  // TODO(adamk): Get rid of the need for refcounting here by
-  // allowing FileSystemOperations to be cancelled.
-  scoped_refptr<FileSystemURLRequestJob> job_;
-  DISALLOW_COPY_AND_ASSIGN(CallbackDispatcher);
-};
-
 FileSystemURLRequestJob::FileSystemURLRequestJob(
     URLRequest* request, FileSystemContext* file_system_context,
     scoped_refptr<base::MessageLoopProxy> file_thread_proxy)
@@ -122,8 +68,11 @@ FileSystemURLRequestJob::FileSystemURLRequestJob(
 FileSystemURLRequestJob::~FileSystemURLRequestJob() {
   // Since we use the two-arg constructor of FileStream, we need to call Close()
   // manually: ~FileStream won't call it for us.
-  if (stream_ != NULL)
-    stream_->Close();
+  if (stream_ != NULL) {
+    // Close() performs file IO: crbug.com/113300.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+    stream_->CloseSync();
+  }
 }
 
 void FileSystemURLRequestJob::Start() {
@@ -135,7 +84,9 @@ void FileSystemURLRequestJob::Start() {
 
 void FileSystemURLRequestJob::Kill() {
   if (stream_ != NULL) {
-    stream_->Close();
+    // Close() performs file IO: crbug.com/113300.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+    stream_->CloseSync();
     stream_.reset(NULL);
   }
   URLRequestJob::Kill();
@@ -159,7 +110,7 @@ bool FileSystemURLRequestJob::ReadRawData(net::IOBuffer* dest, int dest_size,
     return true;
   }
 
-  int rv = stream_->Read(dest->data(), dest_size,
+  int rv = stream_->Read(dest, dest_size,
                          base::Bind(&FileSystemURLRequestJob::DidRead,
                                     base::Unretained(this)));
   if (rv >= 0) {
@@ -225,24 +176,36 @@ void FileSystemURLRequestJob::StartAsync() {
   FileSystemOperationInterface* operation =
       file_system_context_->CreateFileSystemOperation(
           request_->url(),
-          CallbackDispatcher::Create(this),
           file_thread_proxy_);
   if (!operation) {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
                                 net::ERR_INVALID_URL));
     return;
   }
-  operation->GetMetadata(request_->url());
+  operation->CreateSnapshotFile(
+      request_->url(),
+      base::Bind(&FileSystemURLRequestJob::DidCreateSnapshot, this));
 }
 
-void FileSystemURLRequestJob::DidGetMetadata(
+void FileSystemURLRequestJob::DidCreateSnapshot(
+    base::PlatformFileError error_code,
     const base::PlatformFileInfo& file_info,
-    const FilePath& platform_path) {
+    const FilePath& platform_path,
+    const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+  if (error_code != base::PLATFORM_FILE_OK) {
+    NotifyFailed(error_code == base::PLATFORM_FILE_ERROR_INVALID_URL ?
+                 net::ERR_INVALID_URL : net::ERR_FILE_NOT_FOUND);
+    return;
+  }
+
   // We may have been orphaned...
   if (!request_)
     return;
 
   is_directory_ = file_info.is_directory;
+
+  // Keep the reference (if it's non-null) so that the file won't go away.
+  snapshot_ref_ = file_ref;
 
   if (!byte_range_.ComputeBounds(file_info.size)) {
     NotifyFailed(net::ERR_REQUEST_RANGE_NOT_SATISFIABLE);
@@ -267,14 +230,14 @@ void FileSystemURLRequestJob::DidOpen(base::PlatformFileError error_code,
     return;
   }
 
-  stream_.reset(new net::FileStream(file.ReleaseValue(), kFileFlags));
+  stream_.reset(new net::FileStream(file.ReleaseValue(), kFileFlags, NULL));
 
   remaining_bytes_ = byte_range_.last_byte_position() -
                      byte_range_.first_byte_position() + 1;
   DCHECK_GE(remaining_bytes_, 0);
 
-  // TODO(adamk): Please remove this ScopedAllowIO once we support async seek on
-  // FileStream.
+  // TODO(adamk): Please remove this ScopedAllowIO once we support async seek
+  // on FileStream. crbug.com/113300
   base::ThreadRestrictions::ScopedAllowIO allow_io;
   // Do the seek at the beginning of the request.
   if (remaining_bytes_ > 0 &&

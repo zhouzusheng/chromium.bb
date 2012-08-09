@@ -81,7 +81,7 @@ SkStrokePathEffect::SkStrokePathEffect(SkScalar width, SkPaint::Style style,
         : fWidth(width), fMiter(miter), fStyle(SkToU8(style)),
           fJoin(SkToU8(join)), fCap(SkToU8(cap)) {
     if (miter < 0) {  // signal they want the default
-        fMiter = SK_DefaultMiterLimit;
+        fMiter = SkIntToScalar(4);
     }
 }
 
@@ -108,14 +108,6 @@ bool SkStrokePathEffect::filterPath(SkPath* dst, const SkPath& src,
     return true;
 }
 
-SkFlattenable::Factory SkStrokePathEffect::getFactory() {
-    return CreateProc;
-}
-
-SkFlattenable* SkStrokePathEffect::CreateProc(SkFlattenableReadBuffer& buffer) {
-    return SkNEW_ARGS(SkStrokePathEffect, (buffer));
-}
-
 void SkStrokePathEffect::flatten(SkFlattenableWriteBuffer& buffer) {
     buffer.writeScalar(fWidth);
     buffer.writeScalar(fMiter);
@@ -134,9 +126,7 @@ SkStrokePathEffect::SkStrokePathEffect(SkFlattenableReadBuffer& buffer) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkPathEffect)
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkComposePathEffect)
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkStrokePathEffect)
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkSumPathEffect)
-SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
+SK_DEFINE_FLATTENABLE_REGISTRAR(SkComposePathEffect)
+SK_DEFINE_FLATTENABLE_REGISTRAR(SkStrokePathEffect)
+SK_DEFINE_FLATTENABLE_REGISTRAR(SkSumPathEffect)
 

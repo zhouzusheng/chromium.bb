@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,7 @@ namespace {
 HttpNetworkSession* CreateNetworkSession(
     HostResolver* host_resolver,
     CertVerifier* cert_verifier,
-    OriginBoundCertService* origin_bound_cert_service,
+    ServerBoundCertService* server_bound_cert_service,
     TransportSecurityState* transport_security_state,
     ProxyService* proxy_service,
     SSLHostInfoFactory* ssl_host_info_factory,
@@ -58,7 +58,7 @@ HttpNetworkSession* CreateNetworkSession(
   HttpNetworkSession::Params params;
   params.host_resolver = host_resolver;
   params.cert_verifier = cert_verifier;
-  params.origin_bound_cert_service = origin_bound_cert_service;
+  params.server_bound_cert_service = server_bound_cert_service;
   params.transport_security_state = transport_security_state;
   params.proxy_service = proxy_service;
   params.ssl_host_info_factory = ssl_host_info_factory;
@@ -298,7 +298,7 @@ class HttpCache::SSLHostInfoFactoryAdaptor : public SSLHostInfoFactory {
 //-----------------------------------------------------------------------------
 HttpCache::HttpCache(HostResolver* host_resolver,
                      CertVerifier* cert_verifier,
-                     OriginBoundCertService* origin_bound_cert_service,
+                     ServerBoundCertService* server_bound_cert_service,
                      TransportSecurityState* transport_security_state,
                      ProxyService* proxy_service,
                      const std::string& ssl_session_cache_shard,
@@ -320,7 +320,7 @@ HttpCache::HttpCache(HostResolver* host_resolver,
               CreateNetworkSession(
                   host_resolver,
                   cert_verifier,
-                  origin_bound_cert_service,
+                  server_bound_cert_service,
                   transport_security_state,
                   proxy_service,
                   ssl_host_info_factory_.get(),
@@ -580,6 +580,17 @@ std::string HttpCache::GenerateCacheKey(const HttpRequestInfo* request) {
   result.append(request->method);
   result.append(url);
   return result;
+}
+
+void HttpCache::DoomActiveEntry(const std::string& key) {
+  ActiveEntriesMap::iterator it = active_entries_.find(key);
+  if (it == active_entries_.end())
+    return;
+
+  // This is not a performance critical operation, this is handling an error
+  // condition so it is OK to look up the entry again.
+  int rv = DoomEntry(key, NULL);
+  DCHECK_EQ(OK, rv);
 }
 
 int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
@@ -845,6 +856,9 @@ void HttpCache::DoneWithEntry(ActiveEntry* entry, Transaction* trans,
       // This is a successful operation in the sense that we want to keep the
       // entry.
       success = trans->AddTruncatedFlag();
+      // The previous operation may have deleted the entry.
+      if (!trans->entry())
+        return;
     }
     DoneWritingToEntry(entry, success);
   } else {

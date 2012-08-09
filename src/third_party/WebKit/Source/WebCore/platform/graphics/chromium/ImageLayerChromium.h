@@ -37,10 +37,6 @@
 #include "ContentLayerChromium.h"
 #include "PlatformImage.h"
 
-#if USE(CG)
-#include <wtf/RetainPtr.h>
-#endif
-
 namespace WebCore {
 
 class Image;
@@ -53,7 +49,7 @@ public:
     virtual ~ImageLayerChromium();
 
     virtual bool drawsContent() const;
-    virtual void paintContentsIfDirty();
+    virtual void paintContentsIfDirty(const CCOcclusionTracker*);
     virtual bool needsContentsScale() const;
 
     void setContents(Image* image);
@@ -61,10 +57,10 @@ public:
 private:
     ImageLayerChromium();
 
-    virtual void createTextureUpdater(const CCLayerTreeHost*);
     void setTilingOption(TilingOption);
 
     virtual LayerTextureUpdater* textureUpdater() const;
+    virtual void createTextureUpdaterIfNeeded();
     virtual IntSize contentBounds() const;
 
     NativeImagePtr m_imageForCurrentFrame;

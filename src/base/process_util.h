@@ -134,11 +134,20 @@ enum TerminationStatus {
   TERMINATION_STATUS_MAX_ENUM
 };
 
+#if defined(USE_LINUX_BREAKPAD)
+BASE_EXPORT extern size_t g_oom_size;
+#endif
+
 // Returns the id of the current process.
 BASE_EXPORT ProcessId GetCurrentProcId();
 
 // Returns the ProcessHandle of the current process.
 BASE_EXPORT ProcessHandle GetCurrentProcessHandle();
+
+#if defined(OS_WIN)
+// Returns the module handle to which an address belongs.
+BASE_EXPORT HMODULE GetModuleFromAddress(void* address);
+#endif
 
 // Converts a PID to a process handle. This handle must be closed by
 // CloseProcessHandle when you are done with it. Returns true on success.
@@ -201,9 +210,8 @@ BASE_EXPORT ProcessId GetParentProcessId(ProcessHandle process);
 BASE_EXPORT void CloseSuperfluousFds(const InjectiveMultimap& saved_map);
 #endif  // defined(OS_POSIX)
 
-// TODO(evan): rename these to use StudlyCaps.
-typedef std::vector<std::pair<std::string, std::string> > environment_vector;
-typedef std::vector<std::pair<int, int> > file_handle_mapping_vector;
+typedef std::vector<std::pair<std::string, std::string> > EnvironmentVector;
+typedef std::vector<std::pair<int, int> > FileHandleMappingVector;
 
 #if defined(OS_MACOSX)
 // Used with LaunchOptions::synchronize and LaunchSynchronize, a
@@ -255,20 +263,22 @@ struct LaunchOptions {
   // If true, use an empty string for the desktop name.
   bool empty_desktop_name;
 
-  // If non-NULL, launches the application in that job object.
+  // If non-NULL, launches the application in that job object. The process will
+  // be terminated immediately and LaunchProcess() will fail if assignment to
+  // the job object fails.
   HANDLE job_handle;
 #else
   // If non-NULL, set/unset environment variables.
   // See documentation of AlterEnvironment().
   // This pointer is owned by the caller and must live through the
   // call to LaunchProcess().
-  const environment_vector* environ;
+  const EnvironmentVector* environ;
 
   // If non-NULL, remap file descriptors according to the mapping of
   // src fd->dest fd to propagate FDs into the child process.
   // This pointer is owned by the caller and must live through the
   // call to LaunchProcess().
-  const file_handle_mapping_vector* fds_to_remap;
+  const FileHandleMappingVector* fds_to_remap;
 
   // Each element is an RLIMIT_* constant that should be raised to its
   // rlim_max.  This pointer is owned by the caller and must live through
@@ -318,7 +328,9 @@ struct LaunchOptions {
 // Launch a process via the command line |cmdline|.
 // See the documentation of LaunchOptions for details on |options|.
 //
-// If |process_handle| is non-NULL, it will be filled in with the
+// Returns true upon success.
+//
+// Upon success, if |process_handle| is non-NULL, it will be filled in with the
 // handle of the launched process.  NOTE: In this case, the caller is
 // responsible for closing the handle so that it doesn't leak!
 // Otherwise, the process handle will be implicitly closed.
@@ -347,7 +359,7 @@ enum IntegrityLevel {
 // if the system does not support integrity levels (pre-Vista) or in the case
 // of an underlying system failure.
 BASE_EXPORT bool GetProcessIntegrityLevel(ProcessHandle process,
-                                          IntegrityLevel *level);
+                                          IntegrityLevel* level);
 
 // Windows-specific LaunchProcess that takes the command line as a
 // string.  Useful for situations where you need to control the
@@ -379,7 +391,7 @@ BASE_EXPORT bool LaunchProcess(const std::vector<std::string>& argv,
 // the second is empty, in which case the key-value is removed.
 //
 // The returned array is allocated using new[] and must be freed by the caller.
-BASE_EXPORT char** AlterEnvironment(const environment_vector& changes,
+BASE_EXPORT char** AlterEnvironment(const EnvironmentVector& changes,
                                     const char* const* const env);
 
 #if defined(OS_MACOSX)
@@ -581,7 +593,7 @@ class BASE_EXPORT ProcessIterator {
   std::vector<kinfo_proc> kinfo_procs_;
   size_t index_of_kinfo_proc_;
 #elif defined(OS_POSIX)
-  DIR *procfs_dir_;
+  DIR* procfs_dir_;
 #endif
   ProcessEntry entry_;
   const ProcessFilter* filter_;
@@ -766,15 +778,17 @@ class BASE_EXPORT ProcessMetrics {
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 // Data from /proc/meminfo about system-wide memory consumption.
 // Values are in KB.
-struct SystemMemoryInfoKB {
-  SystemMemoryInfoKB() : total(0), free(0), buffers(0), cached(0),
-      active_anon(0), inactive_anon(0), shmem(0) {}
+struct BASE_EXPORT SystemMemoryInfoKB {
+  SystemMemoryInfoKB();
+
   int total;
   int free;
   int buffers;
   int cached;
   int active_anon;
   int inactive_anon;
+  int active_file;
+  int inactive_file;
   int shmem;
 };
 // Retrieves data from /proc/meminfo about system-wide memory consumption.

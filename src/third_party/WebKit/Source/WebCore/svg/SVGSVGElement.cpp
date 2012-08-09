@@ -37,6 +37,7 @@
 #include "FrameTree.h"
 #include "FrameView.h"
 #include "HTMLNames.h"
+#include "RenderObject.h"
 #include "RenderPart.h"
 #include "RenderSVGResource.h"
 #include "RenderSVGModelObject.h"
@@ -186,7 +187,7 @@ SVGViewSpec* SVGSVGElement::currentView() const
 
 float SVGSVGElement::currentScale() const
 {
-    if (!inDocument() || !isOutermostSVG())
+    if (!inDocument() || !isOutermostSVGSVGElement())
         return 1;
 
     Frame* frame = document()->frame();
@@ -204,7 +205,7 @@ float SVGSVGElement::currentScale() const
 
 void SVGSVGElement::setCurrentScale(float scale)
 {
-    if (!inDocument() || !isOutermostSVG())
+    if (!inDocument() || !isOutermostSVGSVGElement())
         return;
 
     Frame* frame = document()->frame();
@@ -238,7 +239,7 @@ void SVGSVGElement::updateCurrentTranslate()
         document()->renderer()->repaint();
 }
 
-void SVGSVGElement::parseMappedAttribute(Attribute* attr)
+void SVGSVGElement::parseAttribute(Attribute* attr)
 {
     SVGParsingError parseError = NoError;
 
@@ -273,34 +274,39 @@ void SVGSVGElement::parseMappedAttribute(Attribute* attr)
         setWidthBaseValue(SVGLength::construct(LengthModeWidth, attr->value(), parseError, ForbidNegativeLengths));
     else if (attr->name() == SVGNames::heightAttr)
         setHeightBaseValue(SVGLength::construct(LengthModeHeight, attr->value(), parseError, ForbidNegativeLengths));
-    else if (SVGTests::parseMappedAttribute(attr)
-               || SVGLangSpace::parseMappedAttribute(attr)
-               || SVGExternalResourcesRequired::parseMappedAttribute(attr)
-               || SVGFitToViewBox::parseMappedAttribute(document(), attr)
-               || SVGZoomAndPan::parseMappedAttribute(attr)) {
+    else if (SVGTests::parseAttribute(attr)
+               || SVGLangSpace::parseAttribute(attr)
+               || SVGExternalResourcesRequired::parseAttribute(attr)
+               || SVGFitToViewBox::parseAttribute(document(), attr)
+               || SVGZoomAndPan::parseAttribute(attr)) {
     } else
-        SVGStyledLocatableElement::parseMappedAttribute(attr);
+        SVGStyledLocatableElement::parseAttribute(attr);
 
     reportAttributeParsingError(parseError, attr);
 }
 
 void SVGSVGElement::svgAttributeChanged(const QualifiedName& attrName)
 { 
-    bool updateRelativeLengths = false;
+    bool updateRelativeLengthsOrViewBox = false;
     if (attrName == SVGNames::widthAttr
         || attrName == SVGNames::heightAttr
         || attrName == SVGNames::xAttr
-        || attrName == SVGNames::yAttr
-        || SVGFitToViewBox::isKnownAttribute(attrName)) {
-        updateRelativeLengths = true;
+        || attrName == SVGNames::yAttr) {
+        updateRelativeLengthsOrViewBox = true;
         updateRelativeLengthsInformation();
+    }
+
+    if (SVGFitToViewBox::isKnownAttribute(attrName)) {
+        updateRelativeLengthsOrViewBox = true; 
+        if (RenderObject* object = renderer())
+            object->setNeedsTransformUpdate();
     }
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
     if (SVGTests::handleAttributeChange(this, attrName))
         return;
 
-    if (updateRelativeLengths
+    if (updateRelativeLengthsOrViewBox
         || SVGLangSpace::isKnownAttribute(attrName)
         || SVGExternalResourcesRequired::isKnownAttribute(attrName)
         || SVGZoomAndPan::isKnownAttribute(attrName)) {
@@ -428,18 +434,25 @@ AffineTransform SVGSVGElement::localCoordinateSpaceTransform(SVGLocatable::CTMSc
     }
 
     AffineTransform transform;
-    if (!isOutermostSVG()) {
+    if (!isOutermostSVGSVGElement()) {
         SVGLengthContext lengthContext(this);
         transform.translate(x().value(lengthContext), y().value(lengthContext));
     } else if (mode == SVGLocatable::ScreenScope) {
         if (RenderObject* renderer = this->renderer()) {
+            FloatPoint location;
+            
+            // At the SVG/HTML boundary (aka RenderSVGRoot), we apply the localToBorderBoxTransform 
+            // to map an element from SVG viewport coordinates to CSS box coordinates.
+            // RenderSVGRoot's localToAbsolute method expects CSS box coordinates.
+            if (renderer->isSVGRoot())
+                location = toRenderSVGRoot(renderer)->localToBorderBoxTransform().mapPoint(location);
+            
             // Translate in our CSS parent coordinate space
             // FIXME: This doesn't work correctly with CSS transforms.
-            FloatPoint location = renderer->localToAbsolute(FloatPoint(), false, true);
+            location = renderer->localToAbsolute(location, false, true);
 
-            // Be careful here! localToAbsolute() includes the x/y offset coming from the viewBoxToViewTransform(), because
-            // RenderSVGRoot::localToBorderBoxTransform() (called through mapLocalToContainer(), called from localToAbsolute())
-            // also takes the viewBoxToViewTransform() into account, so we have to subtract it here (original cause of bug #27183)
+            // Be careful here! localToBorderBoxTransform() included the x/y offset coming from the viewBoxToViewTransform(),
+            // so we have to subtract it here (original cause of bug #27183)
             transform.translate(location.x() - viewBoxTransform.e(), location.y() - viewBoxTransform.f());
 
             // Respect scroll offset.
@@ -455,7 +468,7 @@ AffineTransform SVGSVGElement::localCoordinateSpaceTransform(SVGLocatable::CTMSc
 
 RenderObject* SVGSVGElement::createRenderer(RenderArena* arena, RenderStyle*)
 {
-    if (isOutermostSVG())
+    if (isOutermostSVGSVGElement())
         return new (arena) RenderSVGRoot(this);
 
     return new (arena) RenderSVGViewportContainer(this);
@@ -512,20 +525,6 @@ bool SVGSVGElement::selfHasRelativeLengths() const
         || hasAttribute(SVGNames::viewBoxAttr);
 }
 
-bool SVGSVGElement::isOutermostSVG() const
-{
-    // Element may not be in the document, pretend we're outermost for viewport(), getCTM(), etc.
-    if (!parentNode())
-        return true;
-
-    // We act like an outermost SVG element, if we're a direct child of a <foreignObject> element.
-    if (parentNode()->hasTagName(SVGNames::foreignObjectTag))
-        return true;
-
-    // This is true whenever this is the outermost SVG, even if there are HTML elements outside it
-    return !parentNode()->isSVGElement();
-}
-
 FloatRect SVGSVGElement::currentViewBoxRect() const
 {
     if (useCurrentView()) {
@@ -549,7 +548,7 @@ FloatRect SVGSVGElement::currentViewBoxRect() const
 
     // If no viewBox is specified but non-relative width/height values, then we
     // should always synthesize a viewBox if we're embedded through a SVGImage.    
-    return FloatRect(FloatPoint(), FloatSize(intrinsicWidth.calcFloatValue(0), intrinsicHeight.calcFloatValue(0)));
+    return FloatRect(FloatPoint(), FloatSize(floatValueForLength(intrinsicWidth, 0), floatValueForLength(intrinsicHeight, 0)));
 }
 
 FloatSize SVGSVGElement::currentViewportSize() const
@@ -557,18 +556,18 @@ FloatSize SVGSVGElement::currentViewportSize() const
     Length intrinsicWidth = this->intrinsicWidth();
     Length intrinsicHeight = this->intrinsicHeight();
     if (intrinsicWidth.isFixed() && intrinsicHeight.isFixed())
-        return FloatSize(intrinsicWidth.calcFloatValue(0), intrinsicHeight.calcFloatValue(0));
+        return FloatSize(floatValueForLength(intrinsicWidth, 0), floatValueForLength(intrinsicHeight, 0));
 
     if (!renderer())
         return FloatSize();
 
     if (renderer()->isSVGRoot()) {
-        LayoutRect frameRect = toRenderSVGRoot(renderer())->frameRect();
-        return FloatSize(frameRect.width() / renderer()->style()->effectiveZoom(), frameRect.height() / renderer()->style()->effectiveZoom());
+        LayoutRect contentBoxRect = toRenderSVGRoot(renderer())->contentBoxRect();
+        return FloatSize(contentBoxRect.width() / renderer()->style()->effectiveZoom(), contentBoxRect.height() / renderer()->style()->effectiveZoom());
     }
 
-    FloatRect frameRect = toRenderSVGViewportContainer(renderer())->viewport();
-    return FloatSize(frameRect.width() / renderer()->style()->effectiveZoom(), frameRect.height() / renderer()->style()->effectiveZoom());
+    FloatRect viewportRect = toRenderSVGViewportContainer(renderer())->viewport();
+    return FloatSize(viewportRect.width() / renderer()->style()->effectiveZoom(), viewportRect.height() / renderer()->style()->effectiveZoom());
 }
 
 bool SVGSVGElement::widthAttributeEstablishesViewport() const
@@ -739,7 +738,7 @@ Element* SVGSVGElement::getElementById(const AtomicString& id) const
             continue;
 
         Element* element = static_cast<Element*>(node);
-        if (element->hasID() && element->getIdAttribute() == id)
+        if (element->getIdAttribute() == id)
             return element;
     }
     return 0;

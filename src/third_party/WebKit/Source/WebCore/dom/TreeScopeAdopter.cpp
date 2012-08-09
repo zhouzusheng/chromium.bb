@@ -28,12 +28,13 @@
 #include "Document.h"
 #include "NodeRareData.h"
 #include "ShadowRoot.h"
+#include "ShadowTree.h"
 
 namespace WebCore {
 
-static inline ShadowRoot* shadowRootFor(Node* node)
+static inline ShadowTree* shadowTreeFor(Node* node)
 {
-    return node->isElementNode() ? toElement(node)->shadowRoot() : 0;
+    return node->isElementNode() ? toElement(node)->shadowTree() : 0;
 }
 
 void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
@@ -44,8 +45,8 @@ void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
     // that element may contain stale data as changes made to it will have updated the DOMTreeVersion
     // of the document it was moved to. By increasing the DOMTreeVersion of the donating document here
     // we ensure that the collection cache will be invalidated as needed when the element is moved back.
-    Document* oldDocument = m_oldScope ? m_oldScope->document() : 0;
-    Document* newDocument = m_newScope->document();
+    Document* oldDocument = m_oldScope ? m_oldScope->rootNode()->document() : 0;
+    Document* newDocument = m_newScope->rootNode()->document();
     bool willMoveToNewDocument = oldDocument != newDocument;
     if (oldDocument && willMoveToNewDocument)
         oldDocument->incDOMTreeVersion();
@@ -62,10 +63,10 @@ void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
         if (willMoveToNewDocument)
             moveNodeToNewDocument(node, oldDocument, newDocument);
 
-        if (ShadowRoot* shadow = shadowRootFor(node)) {
-            shadow->setParentTreeScope(m_newScope);
+        if (ShadowTree* tree = shadowTreeFor(node)) {
+            tree->setParentTreeScope(m_newScope);
             if (willMoveToNewDocument)
-                moveTreeToNewDocument(shadow, oldDocument, newDocument);
+                moveShadowTreeToNewDocument(tree, oldDocument, newDocument);
         }
     }
 }
@@ -74,9 +75,15 @@ void TreeScopeAdopter::moveTreeToNewDocument(Node* root, Document* oldDocument, 
 {
     for (Node* node = root; node; node = node->traverseNextNode(root)) {
         moveNodeToNewDocument(node, oldDocument, newDocument);
-        if (ShadowRoot* shadow = shadowRootFor(node))
-            moveTreeToNewDocument(shadow, oldDocument, newDocument);
+        if (ShadowTree* tree = shadowTreeFor(node))
+            moveShadowTreeToNewDocument(tree, oldDocument, newDocument);
     }
+}
+
+inline void TreeScopeAdopter::moveShadowTreeToNewDocument(ShadowTree* tree, Document* oldDocument, Document* newDocument) const
+{
+    for (ShadowRoot* root = tree->youngestShadowRoot(); root; root = root->olderShadowRoot())
+        moveTreeToNewDocument(root, oldDocument, newDocument);
 }
 
 #ifndef NDEBUG

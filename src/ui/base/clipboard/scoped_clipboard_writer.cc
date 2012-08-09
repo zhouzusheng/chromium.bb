@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,16 @@
 
 namespace ui {
 
-ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard)
-    : clipboard_(clipboard) {
+ScopedClipboardWriter::ScopedClipboardWriter(Clipboard* clipboard,
+                                             Clipboard::Buffer buffer)
+    : clipboard_(clipboard),
+      buffer_(buffer) {
 }
 
 ScopedClipboardWriter::~ScopedClipboardWriter() {
   if (!objects_.empty() && clipboard_) {
-    clipboard_->WriteObjects(objects_);
-    if (url_text_.length())
+    clipboard_->WriteObjects(buffer_, objects_);
+    if (buffer_ == Clipboard::BUFFER_STANDARD && url_text_.length())
       clipboard_->DidWriteURL(url_text_);
   }
 }
@@ -119,6 +121,11 @@ void ScopedClipboardWriter::WritePickledData(
   parameters.push_back(format_parameter);
   parameters.push_back(data_parameter);
   objects_[Clipboard::CBF_DATA] = parameters;
+}
+
+void ScopedClipboardWriter::Reset() {
+  url_text_.clear();
+  objects_.clear();
 }
 
 void ScopedClipboardWriter::WriteTextOrURL(const string16& text, bool is_url) {

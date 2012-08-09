@@ -113,19 +113,14 @@ void RenderTableRow::addChild(RenderObject* child, RenderObject* beforeChild)
             return;
         }
 
-        RenderTableCell* cell = new (renderArena()) RenderTableCell(document() /* anonymous object */);
-        RefPtr<RenderStyle> newStyle = RenderStyle::create();
-        newStyle->inheritFrom(style());
-        newStyle->setDisplay(TABLE_CELL);
-        cell->setStyle(newStyle.release());
+        RenderTableCell* cell = RenderTableCell::createAnonymousWithParentRenderer(this);
         addChild(cell, beforeChild);
         cell->addChild(child);
         return;
     } 
-    
-    // If the next renderer is actually wrapped in an anonymous table cell, we need to go up and find that.
-    while (beforeChild && beforeChild->parent() != this)
-        beforeChild = beforeChild->parent();
+
+    if (beforeChild && beforeChild->parent() != this)
+        beforeChild = splitAnonymousBoxesAroundChild(beforeChild);    
 
     RenderTableCell* cell = toRenderTableCell(child);
 
@@ -247,6 +242,14 @@ void RenderTableRow::imageChanged(WrappedImagePtr, const IntRect*)
 {
     // FIXME: Examine cells and repaint only the rect the image paints in.
     repaint();
+}
+
+RenderTableRow* RenderTableRow::createAnonymousWithParentRenderer(const RenderObject* parent)
+{
+    RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW);
+    RenderTableRow* newRow = new (parent->renderArena()) RenderTableRow(parent->document() /* is anonymous */);
+    newRow->setStyle(newStyle.release());
+    return newRow;
 }
 
 } // namespace WebCore

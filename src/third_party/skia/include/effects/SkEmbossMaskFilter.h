@@ -35,13 +35,10 @@ public:
                             SkIPoint* margin);
 
     // overrides from SkFlattenable
-
-    //  This method is not exported to java.
-    virtual Factory getFactory();
     //  This method is not exported to java.
     virtual void flatten(SkFlattenableWriteBuffer&);
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkEmbossMaskFilter)
 
-    SK_DECLARE_FLATTENABLE_REGISTRAR()
 
 protected:
     SkEmbossMaskFilter(SkFlattenableReadBuffer&);
@@ -49,8 +46,6 @@ protected:
 private:
     Light       fLight;
     SkScalar    fBlurRadius;
-
-    static SkFlattenable* CreateProc(SkFlattenableReadBuffer&);
     
     typedef SkMaskFilter INHERITED;
 };

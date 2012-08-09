@@ -5,12 +5,12 @@
 #ifndef MEDIA_AUDIO_AUDIO_UTIL_H_
 #define MEDIA_AUDIO_AUDIO_UTIL_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
-
-struct AudioParameters;
 
 namespace base {
 class SharedMemory;
@@ -38,6 +38,15 @@ MEDIA_EXPORT bool AdjustVolume(void* buf,
                                int channels,
                                int bytes_per_sample,
                                float volume);
+
+// MixStreams() mixes 2 audio streams with same sample rate and number of
+// samples, adjusting volume on one of them.
+// Dst += Src * volume.
+MEDIA_EXPORT void MixStreams(void* dst,
+                             void* src,
+                             size_t buflen,
+                             int bytes_per_sample,
+                             float volume);
 
 // FoldChannels() does a software multichannel folding down to stereo.
 // Channel order is assumed to be 5.1 Dolby standard which is
@@ -82,18 +91,20 @@ MEDIA_EXPORT void InterleaveFloatToInt16(const std::vector<float*>& source,
                                          size_t number_of_frames);
 
 // Returns the default audio output hardware sample-rate.
-MEDIA_EXPORT double GetAudioHardwareSampleRate();
+MEDIA_EXPORT int GetAudioHardwareSampleRate();
 
-// Returns the default audio input hardware sample-rate.
-MEDIA_EXPORT double GetAudioInputHardwareSampleRate();
+// Returns the audio input hardware sample-rate for the specified device.
+MEDIA_EXPORT int GetAudioInputHardwareSampleRate(
+    const std::string& device_id);
 
 // Returns the optimal low-latency buffer size for the audio hardware.
 // This is the smallest buffer size the system can comfortably render
 // at without glitches.  The buffer size is in sample-frames.
 MEDIA_EXPORT size_t GetAudioHardwareBufferSize();
 
-// Returns the default number of channels for the audio input hardware.
-MEDIA_EXPORT uint32 GetAudioInputHardwareChannelCount();
+// Returns the channel layout for the specified audio input device.
+MEDIA_EXPORT ChannelLayout GetAudioInputHardwareChannelLayout(
+    const std::string& device_id);
 
 // Functions that handle data buffer passed between processes in the shared
 // memory. Called on both IPC sides.
@@ -117,16 +128,6 @@ MEDIA_EXPORT bool IsUnknownDataSize(base::SharedMemory* shared_memory,
 MEDIA_EXPORT bool IsWASAPISupported();
 
 #endif  // defined(OS_WIN)
-
-// Crossfades |bytes_to_crossfade| bytes of data in |dest| with the
-// data in |src|. Assumes there is room in |dest| and enough data in |src|.
-MEDIA_EXPORT void Crossfade(int bytes_to_crossfade, int number_of_channels,
-                            int bytes_per_channel, const uint8* src,
-                            uint8* dest);
-
-// Calculates a safe hardware buffer size (in number of samples) given a set
-// of audio parameters.
-MEDIA_EXPORT uint32 SelectSamplesPerPacket(int sample_rate);
 
 }  // namespace media
 

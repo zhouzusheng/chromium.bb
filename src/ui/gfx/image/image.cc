@@ -12,10 +12,10 @@
 #include "ui/gfx/size.h"
 
 #if defined(TOOLKIT_USES_GTK)
-#include <gdk/gdk.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gdk/gdk.h>
 #include <glib-object.h>
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #elif defined(OS_MACOSX)
@@ -36,9 +36,8 @@ bool NSImageToSkBitmaps(NSImage* image, std::vector<const SkBitmap*>* bitmaps);
 #if defined(TOOLKIT_USES_GTK)
 const SkBitmap* GdkPixbufToSkBitmap(GdkPixbuf* pixbuf) {
   CHECK(pixbuf);
-  gfx::CanvasSkia canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf),
-                                   gdk_pixbuf_get_height(pixbuf)),
-                         /*is_opaque=*/false);
+  gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf),
+                               gdk_pixbuf_get_height(pixbuf)), false);
   skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
   cairo_t* cr = scoped_platform_paint.GetPlatformSurface();
   gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
@@ -100,6 +99,7 @@ class ImageRepSkia : public ImageRep {
   explicit ImageRepSkia(const SkBitmap* bitmap)
       : ImageRep(Image::kImageRepSkia) {
     CHECK(bitmap);
+    // TODO(rohitrao): Add a CHECK to ensure that !bitmap->isNull().
     bitmaps_.push_back(bitmap);
   }
 
@@ -107,6 +107,8 @@ class ImageRepSkia : public ImageRep {
       : ImageRep(Image::kImageRepSkia),
         bitmaps_(bitmaps) {
     CHECK(!bitmaps_.empty());
+    // TODO(rohitrao): Add a CHECK to ensure that !bitmap->isNull() for each
+    // vector element.
   }
 
   virtual ~ImageRepSkia() {
@@ -230,9 +232,20 @@ class ImageStorage : public base::RefCounted<ImageStorage> {
 
 }  // namespace internal
 
+Image::Image() {
+  // |storage_| is NULL for empty Images.
+}
+
 Image::Image(const SkBitmap* bitmap)
     : storage_(new internal::ImageStorage(Image::kImageRepSkia)) {
   internal::ImageRepSkia* rep = new internal::ImageRepSkia(bitmap);
+  AddRepresentation(rep);
+}
+
+Image::Image(const SkBitmap& bitmap)
+    : storage_(new internal::ImageStorage(Image::kImageRepSkia)) {
+  internal::ImageRepSkia* rep =
+      new internal::ImageRepSkia(new SkBitmap(bitmap));
   AddRepresentation(rep);
 }
 
@@ -293,7 +306,7 @@ NSImage* Image::ToNSImage() const {
 }
 #endif
 
-const SkBitmap* Image::CopySkBitmap() const {
+SkBitmap* Image::CopySkBitmap() const {
   return new SkBitmap(*ToSkBitmap());
 }
 
@@ -313,20 +326,6 @@ NSImage* Image::CopyNSImage() const {
 }
 #endif
 
-Image::operator const SkBitmap*() const {
-  return ToSkBitmap();
-}
-
-Image::operator const SkBitmap&() const {
-  return *ToSkBitmap();
-}
-
-#if defined(TOOLKIT_USES_GTK)
-Image::operator GdkPixbuf*() const {
-  return ToGdkPixbuf();
-}
-#endif
-
 #if defined(OS_MACOSX)
 Image::operator NSImage*() const {
   return ToNSImage();
@@ -334,11 +333,18 @@ Image::operator NSImage*() const {
 #endif
 
 bool Image::HasRepresentation(RepresentationType type) const {
-  return storage_->representations().count(type) != 0;
+  return storage_.get() && storage_->representations().count(type) != 0;
 }
 
 size_t Image::RepresentationCount() const {
+  if (!storage_.get())
+    return 0;
+
   return storage_->representations().size();
+}
+
+bool Image::IsEmpty() const {
+  return RepresentationCount() == 0;
 }
 
 void Image::SwapRepresentations(gfx::Image* other) {
@@ -346,6 +352,7 @@ void Image::SwapRepresentations(gfx::Image* other) {
 }
 
 internal::ImageRep* Image::DefaultRepresentation() const {
+  CHECK(storage_.get());
   RepresentationMap& representations = storage_->representations();
   RepresentationMap::iterator it =
       representations.find(storage_->default_representation_type());
@@ -355,6 +362,7 @@ internal::ImageRep* Image::DefaultRepresentation() const {
 
 internal::ImageRep* Image::GetRepresentation(
     RepresentationType rep_type) const {
+  CHECK(storage_.get());
   // If the requested rep is the default, return it.
   internal::ImageRep* default_rep = DefaultRepresentation();
   if (rep_type == storage_->default_representation_type())
@@ -435,6 +443,7 @@ internal::ImageRep* Image::GetRepresentation(
 }
 
 void Image::AddRepresentation(internal::ImageRep* rep) const {
+  CHECK(storage_.get());
   storage_->representations().insert(std::make_pair(rep->type(), rep));
 }
 

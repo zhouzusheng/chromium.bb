@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,10 @@
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/plugins/ppapi/common.h"
+#include "webkit/plugins/ppapi/usb_key_code_conversion.h"
 
 using ppapi::EventTimeToPPTimeTicks;
 using ppapi::InputEventData;
@@ -71,6 +73,7 @@ InputEventData GetEventWithCommonFieldsAndType(const WebInputEvent& web_event) {
   InputEventData result;
   result.event_type = ConvertEventTypes(web_event.type);
   result.event_time_stamp = EventTimeToPPTimeTicks(web_event.timeStampSeconds);
+  result.usb_key_code = 0;
   return result;
 }
 
@@ -81,6 +84,7 @@ void AppendKeyEvent(const WebInputEvent& event,
   InputEventData result = GetEventWithCommonFieldsAndType(event);
   result.event_modifiers = key_event.modifiers;
   result.key_code = key_event.windowsKeyCode;
+  result.usb_key_code = UsbKeyCodeForKeyboardEvent(key_event);
   result_events->push_back(result);
 }
 
@@ -517,6 +521,32 @@ PP_InputEvent_Class ClassifyInputEvent(WebInputEvent::Type type) {
     default:
       NOTREACHED();
       return PP_InputEvent_Class(0);
+  }
+}
+
+void ConvertWebKitGamepadData(WebKit::WebGamepads& webkit_data,
+                              PP_GamepadsSampleData* output_data) {
+  output_data->length = webkit_data.length;
+  for (unsigned i = 0; i < webkit_data.length; ++i) {
+    PP_GamepadSampleData& output_pad = output_data->items[i];
+    const WebKit::WebGamepad& webkit_pad = webkit_data.items[i];
+    output_pad.connected = webkit_pad.connected ? PP_TRUE : PP_FALSE;
+    if (webkit_pad.connected) {
+      COMPILE_ASSERT(sizeof(output_pad.id) == sizeof(webkit_pad.id),
+                     id_size_does_not_match);
+      COMPILE_ASSERT(sizeof(output_pad.axes) == sizeof(webkit_pad.axes),
+                     axes_size_does_not_match);
+      COMPILE_ASSERT(sizeof(output_pad.buttons) == sizeof(webkit_pad.buttons),
+                     buttons_size_does_not_match);
+      memcpy(output_pad.id, webkit_pad.id, sizeof(output_pad.id));
+      output_pad.timestamp = webkit_pad.timestamp;
+      output_pad.axes_length = webkit_pad.axesLength;
+      memcpy(output_pad.axes, webkit_pad.axes, sizeof(output_pad.axes));
+      output_pad.buttons_length = webkit_pad.buttonsLength;
+      memcpy(output_pad.buttons,
+             webkit_pad.buttons,
+             sizeof(output_pad.buttons));
+    }
   }
 }
 

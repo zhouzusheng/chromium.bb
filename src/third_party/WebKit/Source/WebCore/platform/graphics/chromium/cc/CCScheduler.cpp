@@ -44,6 +44,12 @@ CCScheduler::~CCScheduler()
     m_frameRateController->setActive(false);
 }
 
+void CCScheduler::setCanBeginFrame(bool can)
+{
+    m_stateMachine.setCanBeginFrame(can);
+    processScheduledActions();
+}
+
 void CCScheduler::setVisible(bool visible)
 {
     m_stateMachine.setVisible(visible);
@@ -53,6 +59,12 @@ void CCScheduler::setVisible(bool visible)
 void CCScheduler::setNeedsCommit()
 {
     m_stateMachine.setNeedsCommit();
+    processScheduledActions();
+}
+
+void CCScheduler::setNeedsForcedCommit()
+{
+    m_stateMachine.setNeedsForcedCommit();
     processScheduledActions();
 }
 
@@ -86,19 +98,28 @@ void CCScheduler::didSwapBuffersComplete()
     m_frameRateController->didFinishFrame();
 }
 
-void CCScheduler::didSwapBuffersAbort()
+void CCScheduler::didLoseContext()
 {
-    TRACE_EVENT("CCScheduler::didSwapBuffersAbort", this, 0);
+    TRACE_EVENT("CCScheduler::didLoseContext", this, 0);
     m_frameRateController->didAbortAllPendingFrames();
+    m_stateMachine.didLoseContext();
+    processScheduledActions();
 }
 
-void CCScheduler::beginFrame()
+void CCScheduler::didRecreateContext()
+{
+    TRACE_EVENT("CCScheduler::didRecreateContext", this, 0);
+    m_stateMachine.didRecreateContext();
+    processScheduledActions();
+}
+
+void CCScheduler::vsyncTick()
 {
     if (m_updateMoreResourcesPending) {
         m_updateMoreResourcesPending = false;
         m_stateMachine.beginUpdateMoreResourcesComplete(m_client->hasMoreResourceUpdates());
     }
-    TRACE_EVENT("CCScheduler::beginFrame", this, 0);
+    TRACE_EVENT("CCScheduler::vsyncTick", this, 0);
 
     m_stateMachine.didEnterVSync();
     processScheduledActions();
@@ -147,9 +168,20 @@ void CCScheduler::processScheduledActions()
         case CCSchedulerStateMachine::ACTION_COMMIT:
             m_client->scheduledActionCommit();
             break;
-        case CCSchedulerStateMachine::ACTION_DRAW:
-            m_client->scheduledActionDrawAndSwap();
-            m_frameRateController->didBeginFrame();
+        case CCSchedulerStateMachine::ACTION_DRAW_IF_POSSIBLE: {
+            CCScheduledActionDrawAndSwapResult result = m_client->scheduledActionDrawAndSwapIfPossible();
+            m_stateMachine.didDrawIfPossibleCompleted(result.didDraw);
+            if (result.didSwap)
+                m_frameRateController->didBeginFrame();
+            break;
+        }
+        case CCSchedulerStateMachine::ACTION_DRAW_FORCED: {
+            CCScheduledActionDrawAndSwapResult result = m_client->scheduledActionDrawAndSwapForced();
+            if (result.didSwap)
+                m_frameRateController->didBeginFrame();
+            break;
+        } case CCSchedulerStateMachine::ACTION_BEGIN_CONTEXT_RECREATION:
+            m_client->scheduledActionBeginContextRecreation();
             break;
         }
     } while (action != CCSchedulerStateMachine::ACTION_NONE);

@@ -49,7 +49,7 @@ const int32_t kDefaultPrefetchBufferLowerThreshold = 50 * 1000 * 1000;
 PPB_URLRequestInfo_Impl::PPB_URLRequestInfo_Impl(
     PP_Instance instance,
     const PPB_URLRequestInfo_Data& data)
-    : PPB_URLRequestInfo_Shared(instance, data) {
+    : PPB_URLRequestInfo_Shared(::ppapi::OBJECT_IS_IMPL, instance, data) {
 }
 
 PPB_URLRequestInfo_Impl::~PPB_URLRequestInfo_Impl() {
@@ -76,7 +76,7 @@ bool PPB_URLRequestInfo_Impl::ToWebURLRequest(WebFrame* frame,
 
   const std::string& headers = data().headers;
   if (!headers.empty()) {
-    net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n");
+    net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n\r");
     while (it.GetNext()) {
       dest->addHTTPHeaderField(
           WebString::fromUTF8(it.name()),

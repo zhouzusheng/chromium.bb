@@ -295,15 +295,16 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   // If we want spdy over npn, make sure it succeeded.
   if (status == SSLClientSocket::kNextProtoNegotiated) {
     ssl_socket_->set_was_npn_negotiated(true);
-    SSLClientSocket::NextProto protocol_negotiated =
+    NextProto protocol_negotiated =
         SSLClientSocket::NextProtoFromString(proto);
     ssl_socket_->set_protocol_negotiated(protocol_negotiated);
     // If we negotiated either version of SPDY, we must have
     // advertised it, so allow it.
     // TODO(mbelshe): verify it was a protocol we advertised?
-    if (protocol_negotiated == SSLClientSocket::kProtoSPDY1 ||
-        protocol_negotiated == SSLClientSocket::kProtoSPDY2 ||
-        protocol_negotiated == SSLClientSocket::kProtoSPDY21) {
+    if (protocol_negotiated == kProtoSPDY1 ||
+        protocol_negotiated == kProtoSPDY2 ||
+        protocol_negotiated == kProtoSPDY21 ||
+        protocol_negotiated == kProtoSPDY3) {
       ssl_socket_->set_was_spdy_negotiated(true);
     }
   }
@@ -447,7 +448,7 @@ SSLClientSocketPool::SSLClientSocketPool(
     ClientSocketPoolHistograms* histograms,
     HostResolver* host_resolver,
     CertVerifier* cert_verifier,
-    OriginBoundCertService* origin_bound_cert_service,
+    ServerBoundCertService* server_bound_cert_service,
     TransportSecurityState* transport_security_state,
     SSLHostInfoFactory* ssl_host_info_factory,
     const std::string& ssl_session_cache_shard,
@@ -470,7 +471,7 @@ SSLClientSocketPool::SSLClientSocketPool(
                                      host_resolver,
                                      SSLClientSocketContext(
                                          cert_verifier,
-                                         origin_bound_cert_service,
+                                         server_bound_cert_service,
                                          transport_security_state,
                                          ssl_host_info_factory,
                                          ssl_session_cache_shard),

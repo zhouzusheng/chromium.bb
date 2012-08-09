@@ -174,19 +174,19 @@ static void adjustCharactersAndLengthForHyphen(BufferForAppendingHyphen& charact
     length += hyphenString.length();
 }
 
-IntRect InlineTextBox::localSelectionRect(int startPos, int endPos)
+LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
 {
     int sPos = max(startPos - m_start, 0);
     int ePos = min(endPos - m_start, (int)m_len);
     
     if (sPos > ePos)
-        return IntRect();
+        return LayoutRect();
 
     FontCachePurgePreventer fontCachePurgePreventer;
 
     RenderText* textObj = textRenderer();
-    int selTop = selectionTop();
-    int selHeight = selectionHeight();
+    LayoutUnit selTop = selectionTop();
+    LayoutUnit selHeight = selectionHeight();
     RenderStyle* styleToUse = textObj->style(m_firstLine);
     const Font& font = styleToUse->font();
 
@@ -196,19 +196,19 @@ IntRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     if (respectHyphen)
         endPos = textRun.length();
 
-    IntRect r = enclosingIntRect(font.selectionRectForText(textRun, FloatPoint(logicalLeft(), selTop), selHeight, sPos, ePos));
+    LayoutRect r = enclosingIntRect(font.selectionRectForText(textRun, FloatPoint(logicalLeft(), selTop), selHeight, sPos, ePos));
 
-    int logicalWidth = r.width();
+    LayoutUnit logicalWidth = r.width();
     if (r.x() > logicalRight())
         logicalWidth  = 0;
     else if (r.maxX() > logicalRight())
         logicalWidth = logicalRight() - r.x();
 
-    IntPoint topPoint = isHorizontal() ? IntPoint(r.x(), selTop) : IntPoint(selTop, r.x());
-    int width = isHorizontal() ? logicalWidth : selHeight;
-    int height = isHorizontal() ? selHeight : logicalWidth;
+    LayoutPoint topPoint = isHorizontal() ? LayoutPoint(r.x(), selTop) : LayoutPoint(selTop, r.x());
+    LayoutUnit width = isHorizontal() ? logicalWidth : selHeight;
+    LayoutUnit height = isHorizontal() ? selHeight : logicalWidth;
 
-    return IntRect(topPoint, IntSize(width, height));
+    return LayoutRect(topPoint, LayoutSize(width, height));
 }
 
 void InlineTextBox::deleteLine(RenderArena* arena)
@@ -483,7 +483,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     LayoutUnit paintEnd = isHorizontal() ? paintInfo.rect.maxX() : paintInfo.rect.maxY();
     LayoutUnit paintStart = isHorizontal() ? paintInfo.rect.x() : paintInfo.rect.y();
     
-    LayoutPoint adjustedPaintOffset = paintOffset;
+    LayoutPoint adjustedPaintOffset = roundedIntPoint(paintOffset);
     
     if (logicalStart >= paintEnd || logicalStart + logicalExtent <= paintStart)
         return;
@@ -560,6 +560,17 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
 
         if (haveSelection && !useCustomUnderlines)
             paintSelection(context, boxOrigin, styleToUse, font);
+    }
+
+    if (Frame* frame = renderer()->frame()) {
+        if (Page* page = frame->page()) {
+            // FIXME: Right now, InlineTextBoxes never call addRelevantUnpaintedObject() even though they might 
+            // legitimately be unpainted if they are waiting on a slow-loading web font. We should fix that, and
+            // when we do, we will have to account for the fact the InlineTextBoxes do not always have unique
+            // renderers and Page currently relies on each unpainted object having a unique renderer.
+            if (paintInfo.phase == PaintPhaseForeground)
+                page->addRelevantRepaintedObject(renderer(), IntRect(boxOrigin.x(), boxOrigin.y(), logicalWidth(), logicalHeight()));
+        }
     }
 
     // 2. Now paint the foreground, including text and decorations like underline/overline (in quirks mode only).

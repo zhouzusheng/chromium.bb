@@ -27,7 +27,7 @@
 
 // This file relies on the fact that the following declarations have been made
 // in runtime.js:
-// const $Array = global.Array;
+// var $Array = global.Array;
 
 // -------------------------------------------------------------------
 
@@ -757,7 +757,7 @@ function ArraySort(comparefn) {
   }
   var receiver = %GetDefaultReceiver(comparefn);
 
-  function InsertionSort(a, from, to) {
+  var InsertionSort = function InsertionSort(a, from, to) {
     for (var i = from + 1; i < to; i++) {
       var element = a[i];
       for (var j = i - 1; j >= from; j--) {
@@ -771,9 +771,9 @@ function ArraySort(comparefn) {
       }
       a[j + 1] = element;
     }
-  }
+  };
 
-  function QuickSort(a, from, to) {
+  var QuickSort = function QuickSort(a, from, to) {
     // Insertion sort is faster for short arrays.
     if (to - from <= 10) {
       InsertionSort(a, from, to);
@@ -823,7 +823,8 @@ function ArraySort(comparefn) {
       var element = a[i];
       var order = %_CallFunction(receiver, element, pivot, comparefn);
       if (order < 0) {
-        %_SwapElements(a, i, low_end);
+        a[i] = a[low_end];
+        a[low_end] = element;
         low_end++;
       } else if (order > 0) {
         do {
@@ -832,21 +833,24 @@ function ArraySort(comparefn) {
           var top_elem = a[high_start];
           order = %_CallFunction(receiver, top_elem, pivot, comparefn);
         } while (order > 0);
-        %_SwapElements(a, i, high_start);
+        a[i] = a[high_start];
+        a[high_start] = element;
         if (order < 0) {
-          %_SwapElements(a, i, low_end);
+          element = a[i];
+          a[i] = a[low_end];
+          a[low_end] = element;
           low_end++;
         }
       }
     }
     QuickSort(a, from, low_end);
     QuickSort(a, high_start, to);
-  }
+  };
 
   // Copy elements in the range 0..length from obj's prototype chain
   // to obj itself, if obj has holes. Return one more than the maximal index
   // of a prototype property.
-  function CopyFromPrototype(obj, length) {
+  var CopyFromPrototype = function CopyFromPrototype(obj, length) {
     var max = 0;
     for (var proto = obj.__proto__; proto; proto = proto.__proto__) {
       var indices = %GetArrayKeys(proto, length);
@@ -873,12 +877,12 @@ function ArraySort(comparefn) {
       }
     }
     return max;
-  }
+  };
 
   // Set a value of "undefined" on all indices in the range from..to
   // where a prototype of obj has an element. I.e., shadow all prototype
   // elements in that range.
-  function ShadowPrototypeElements(obj, from, to) {
+  var ShadowPrototypeElements = function(obj, from, to) {
     for (var proto = obj.__proto__; proto; proto = proto.__proto__) {
       var indices = %GetArrayKeys(proto, to);
       if (indices.length > 0) {
@@ -901,9 +905,9 @@ function ArraySort(comparefn) {
         }
       }
     }
-  }
+  };
 
-  function SafeRemoveArrayHoles(obj) {
+  var SafeRemoveArrayHoles = function SafeRemoveArrayHoles(obj) {
     // Copy defined elements from the end to fill in all holes and undefineds
     // in the beginning of the array.  Write undefineds and holes at the end
     // after loop is finished.
@@ -958,7 +962,7 @@ function ArraySort(comparefn) {
 
     // Return the number of defined elements.
     return first_undefined;
-  }
+  };
 
   var length = TO_UINT32(this.length);
   if (length < 2) return this;
@@ -1024,10 +1028,10 @@ function ArrayFilter(f, receiver) {
   var accumulator = new InternalArray();
   var accumulator_length = 0;
   for (var i = 0; i < length; i++) {
-    var current = array[i];
-    if (!IS_UNDEFINED(current) || i in array) {
-      if (%_CallFunction(receiver, current, i, array, f)) {
-        accumulator[accumulator_length++] = current;
+    if (i in array) {
+      var element = array[i];
+      if (%_CallFunction(receiver, element, i, array, f)) {
+        accumulator[accumulator_length++] = element;
       }
     }
   }
@@ -1057,9 +1061,9 @@ function ArrayForEach(f, receiver) {
   }
 
   for (var i = 0; i < length; i++) {
-    var current = array[i];
-    if (!IS_UNDEFINED(current) || i in array) {
-      %_CallFunction(receiver, current, i, array, f);
+    if (i in array) {
+      var element = array[i];
+      %_CallFunction(receiver, element, i, array, f);
     }
   }
 }
@@ -1088,9 +1092,9 @@ function ArraySome(f, receiver) {
   }
 
   for (var i = 0; i < length; i++) {
-    var current = array[i];
-    if (!IS_UNDEFINED(current) || i in array) {
-      if (%_CallFunction(receiver, current, i, array, f)) return true;
+    if (i in array) {
+      var element = array[i];
+      if (%_CallFunction(receiver, element, i, array, f)) return true;
     }
   }
   return false;
@@ -1118,9 +1122,9 @@ function ArrayEvery(f, receiver) {
   }
 
   for (var i = 0; i < length; i++) {
-    var current = array[i];
-    if (!IS_UNDEFINED(current) || i in array) {
-      if (!%_CallFunction(receiver, current, i, array, f)) return false;
+    if (i in array) {
+      var element = array[i];
+      if (!%_CallFunction(receiver, element, i, array, f)) return false;
     }
   }
   return true;
@@ -1149,9 +1153,9 @@ function ArrayMap(f, receiver) {
   var result = new $Array();
   var accumulator = new InternalArray(length);
   for (var i = 0; i < length; i++) {
-    var current = array[i];
-    if (!IS_UNDEFINED(current) || i in array) {
-      accumulator[i] = %_CallFunction(receiver, current, i, array, f);
+    if (i in array) {
+      var element = array[i];
+      accumulator[i] = %_CallFunction(receiver, element, i, array, f);
     }
   }
   %MoveArrayContents(accumulator, result);
@@ -1308,8 +1312,8 @@ function ArrayReduce(callback, current) {
 
   var receiver = %GetDefaultReceiver(callback);
   for (; i < length; i++) {
-    var element = array[i];
-    if (!IS_UNDEFINED(element) || i in array) {
+    if (i in array) {
+      var element = array[i];
       current = %_CallFunction(receiver, current, element, i, array, callback);
     }
   }
@@ -1345,8 +1349,8 @@ function ArrayReduceRight(callback, current) {
 
   var receiver = %GetDefaultReceiver(callback);
   for (; i >= 0; i--) {
-    var element = array[i];
-    if (!IS_UNDEFINED(element) || i in array) {
+    if (i in array) {
+      var element = array[i];
       current = %_CallFunction(receiver, current, element, i, array, callback);
     }
   }
@@ -1373,7 +1377,7 @@ function SetUpArray() {
 
   var specialFunctions = %SpecialArrayFunctions({});
 
-  function getFunction(name, jsBuiltin, len) {
+  var getFunction = function(name, jsBuiltin, len) {
     var f = jsBuiltin;
     if (specialFunctions.hasOwnProperty(name)) {
       f = specialFunctions[name];
@@ -1382,7 +1386,7 @@ function SetUpArray() {
       %FunctionSetLength(f, len);
     }
     return f;
-  }
+  };
 
   // Set up non-enumerable functions of the Array.prototype object and
   // set their names.

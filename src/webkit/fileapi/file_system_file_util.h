@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/file_path.h"
 #include "base/file_util_proxy.h"
 #include "base/platform_file.h"
+#include "webkit/fileapi/file_system_path.h"
 
 namespace base {
 class Time;
@@ -19,22 +20,11 @@ using base::PlatformFile;
 using base::PlatformFileError;
 class FileSystemOperationContext;
 
-// A large part of this implementation is taken from base::FileUtilProxy.
+// A file utility interface that provides basic file utility methods for
+// FileSystem API.
 //
-// The default implementations of the virtual methods below (*1) assume the
-// given paths are native ones for the host platform.  The subclasses that
-// perform local path translation/obfuscation must override them.
-//  (*1) All virtual methods which receive FilePath as their arguments:
-//  CreateOrOpen, EnsureFileExists, GetLocalFilePath, GetFileInfo,
-//  ReadDirectory, CreateDirectory, CopyOrMoveFile, DeleteFile,
-//  DeleteSingleDirectory, Touch, Truncate, PathExists, DirectoryExists,
-//  IsDirectoryEmpty and CreateFileEnumerator.
-//
-// The methods below (*2) assume the given paths may not be native ones for the
-// host platform.  The subclasses should not override them.  They provide basic
-// meta logic by using other virtual methods.
-//  (*2) All non-virtual methods: Copy, Move, Delete, DeleteDirectoryRecursive,
-//  PerformCommonCheckAndPreparationForMoveAndCopy and CopyOrMoveDirectory.
+// TODO(kinuko): Move all the default implementation out of this class
+// and make this class pure abstract class.
 class FileSystemFileUtil {
  public:
   // It will be implemented by each subclass such as FileSystemFileEnumerator.
@@ -46,84 +36,41 @@ class FileSystemFileUtil {
     virtual FilePath Next() = 0;
 
     virtual int64 Size() = 0;
+    virtual base::Time LastModifiedTime() = 0;
     virtual bool IsDirectory() = 0;
+    virtual bool IsLink() = 0;
   };
 
   class EmptyFileEnumerator : public AbstractFileEnumerator {
     virtual FilePath Next() OVERRIDE { return FilePath(); }
     virtual int64 Size() OVERRIDE { return 0; }
+    virtual base::Time LastModifiedTime() OVERRIDE { return base::Time(); }
     virtual bool IsDirectory() OVERRIDE { return false; }
+    virtual bool IsLink() OVERRIDE { return false; }
   };
 
   virtual ~FileSystemFileUtil();
 
-  // Copies or moves a single file.
-  // Copies a file or a directory from |src_file_path| to |dest_file_path|.
-  //
-  // Error cases:
-  // If destination's parent doesn't exist.
-  // If source dir exists but destination path is an existing file.
-  // If source file exists but destination path is an existing directory.
-  // If source is a parent of destination.
-  // If source doesn't exist.
-  //
-  // This method calls one of the following methods depending on whether the
-  // target is a directory or not.
-  // - (virtual) CopyOrMoveFile or
-  // - (non-virtual) CopyOrMoveDirectory.
-  PlatformFileError Copy(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path);
-
-  // Moves a file or a directory from src_file_path to dest_file_path.
-  //
-  // Error cases are similar to Copy method's error cases.
-  //
-  // This method calls one of the following methods depending on whether the
-  // target is a directory or not.
-  // - (virtual) CopyOrMoveFile or
-  // - (non-virtual) CopyOrMoveDirectory.
-  PlatformFileError Move(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path);
-
-  // Deletes a file or a directory.
-  // It is an error to delete a non-empty directory with recursive=false.
-  //
-  // This method calls one of the following methods depending on whether the
-  // target is a directory or not, and whether the |recursive| flag is given or
-  // not.
-  // - (virtual) DeleteFile,
-  // - (virtual) DeleteSingleDirectory or
-  // - (non-virtual) DeleteDirectoryRecursive which calls two methods above.
-  PlatformFileError Delete(
-      FileSystemOperationContext* context,
-      const FilePath& file_path,
-      bool recursive);
-
-  // Creates or opens a file with the given flags.  It is invalid to pass NULL
-  // for the callback.
+  // Creates or opens a file with the given flags.
   // If PLATFORM_FILE_CREATE is set in |file_flags| it always tries to create
-  // a new file at the given |file_path| and calls back with
-  // PLATFORM_FILE_ERROR_FILE_EXISTS if the |file_path| already exists.
+  // a new file at the given |path| and calls back with
+  // PLATFORM_FILE_ERROR_FILE_EXISTS if the |path| already exists.
   virtual PlatformFileError CreateOrOpen(
       FileSystemOperationContext* context,
-      const FilePath& file_path,
+      const FileSystemPath& path,
       int file_flags,
       PlatformFile* file_handle,
       bool* created);
 
-  // Close the given file handle.
+  // Closes the given file handle.
   virtual PlatformFileError Close(
       FileSystemOperationContext* context,
       PlatformFile);
 
-  // Ensures that the given |file_path| exist.  This creates a empty new file
-  // at |file_path| if the |file_path| does not exist.
-  // If a new file han not existed and is created at the |file_path|,
-  // |created| of the callback argument is set true and |error code|
+  // Ensures that the given |path| exist.  This creates a empty new file
+  // at |path| if the |path| does not exist.
+  // If a new file han not existed and is created at the |path|,
+  // |created| is set true and |error code|
   // is set PLATFORM_FILE_OK.
   // If the file already exists, |created| is set false and |error code|
   // is set PLATFORM_FILE_OK.
@@ -131,29 +78,22 @@ class FileSystemFileUtil {
   // reasons, |created| is set false and |error code| indicates the error.
   virtual PlatformFileError EnsureFileExists(
       FileSystemOperationContext* context,
-      const FilePath& file_path, bool* created);
+      const FileSystemPath& path, bool* created);
 
   // Creates directory at given path. It's an error to create
   // if |exclusive| is true and dir already exists.
   virtual PlatformFileError CreateDirectory(
       FileSystemOperationContext* context,
-      const FilePath& file_path,
+      const FileSystemPath& path,
       bool exclusive,
       bool recursive);
 
-  // Retrieves the information about a file.  It is invalid to pass NULL for the
-  // callback.
+  // Retrieves the information about a file.
   virtual PlatformFileError GetFileInfo(
       FileSystemOperationContext* context,
-      const FilePath& file_,
+      const FileSystemPath& path,
       base::PlatformFileInfo* file_info,
       FilePath* platform_path);
-
-  // Reads the filenames in |file_path|.
-  virtual PlatformFileError ReadDirectory(
-      FileSystemOperationContext* context,
-      const FilePath& file_path,
-      std::vector<base::FileUtilProxy::Entry>* entries);
 
   // Returns a pointer to a new instance of AbstractFileEnumerator which is
   // implemented for each FileSystemFileUtil subclass. The instance needs to be
@@ -164,119 +104,80 @@ class FileSystemFileUtil {
   // instance.
   virtual AbstractFileEnumerator* CreateFileEnumerator(
       FileSystemOperationContext* context,
-      const FilePath& root_path);
+      const FileSystemPath& root_path,
+      bool recursive);
 
-  // Maps |virtual_path| given |context| into |local_path| which represents
-  // physical file location on the host OS. This may not always make sense for
-  // all subclasses.
+  // Maps |virtual_path| given |context| into |local_file_path| which represents
+  // physical file location on the host OS.
+  // This may not always make sense for all subclasses.
   virtual PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
-      const FilePath& virtual_path,
-      FilePath* local_path);
+      const FileSystemPath& file_system_path,
+      FilePath* local_file_path);
 
-  // Touches a file. The callback can be NULL.
-  // If the file doesn't exist, this fails with PLATFORM_FILE_ERROR_NOT_FOUND.
+  // Updates the file metadata information.  Unlike posix's touch, it does
+  // not create a file even if |path| does not exist, but instead fails
+  // with PLATFORM_FILE_ERROR_NOT_FOUND.
   virtual PlatformFileError Touch(
       FileSystemOperationContext* context,
-      const FilePath& file_path,
+      const FileSystemPath& path,
       const base::Time& last_access_time,
       const base::Time& last_modified_time);
 
-  // Truncates a file to the given length. If |length| is greater than the
+  // Truncates a file to the given length.  If |length| is greater than the
   // current length of the file, the file will be extended with zeroes.
-  // The callback can be NULL.
   virtual PlatformFileError Truncate(
       FileSystemOperationContext* context,
-      const FilePath& path,
+      const FileSystemPath& path,
       int64 length);
 
+  // Returns true if a given |path| exists.
   virtual bool PathExists(
       FileSystemOperationContext* context,
-      const FilePath& file_path);
+      const FileSystemPath& path);
 
+  // Returns true if a given |path| exists and is a directory.
   virtual bool DirectoryExists(
       FileSystemOperationContext* context,
-      const FilePath& file_path);
+      const FileSystemPath& path);
 
+  // Returns true if a given |path| is an empty directory.
   virtual bool IsDirectoryEmpty(
       FileSystemOperationContext* context,
-      const FilePath& file_path);
+      const FileSystemPath& path);
 
+  // Copies or moves a single file from |src_path| to |dest_path|.
   virtual PlatformFileError CopyOrMoveFile(
       FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path,
+      const FileSystemPath& src_path,
+      const FileSystemPath& dest_path,
       bool copy);
 
-  // Copies in a single file from a different filesystem.  The src_file_path is
-  // a true local platform path, regardless of which subclass of
-  // FileSystemFileUtil is being invoked.
+  // Copies in a single file from a different filesystem.  The
+  // |underlying_src_path| is a local path which can be handled by the
+  // underlying filesystem.
   virtual PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
-        const FilePath& src_file_path,
-        const FilePath& dest_file_path);
+        const FileSystemPath& underlying_src_path,
+        const FileSystemPath& dest_path);
 
   // Deletes a single file.
   // It assumes the given path points a file.
-  //
-  // This method is called from DeleteDirectoryRecursive and Delete (both are
-  // non-virtual).
   virtual PlatformFileError DeleteFile(
       FileSystemOperationContext* context,
-      const FilePath& file_path);
+      const FileSystemPath& path);
 
   // Deletes a single empty directory.
   // It assumes the given path points an empty directory.
-  //
-  // This method is called from DeleteDirectoryRecursive and Delete (both are
-  // non-virtual).
   virtual PlatformFileError DeleteSingleDirectory(
       FileSystemOperationContext* context,
-      const FilePath& file_path);
+      const FileSystemPath& path);
 
  protected:
   FileSystemFileUtil();
   explicit FileSystemFileUtil(FileSystemFileUtil* underlying_file_util);
 
-  // This also removes the destination directory if it's non-empty and all
-  // other checks are passed (so that the copy/move correctly overwrites the
-  // destination).
-  PlatformFileError PerformCommonCheckAndPreparationForMoveAndCopy(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path);
-
-  // Performs recursive copy or move by calling CopyOrMoveFile for individual
-  // files. Operations for recursive traversal are encapsulated in this method.
-  // It assumes src_file_path and dest_file_path have passed
-  // PerformCommonCheckAndPreparationForMoveAndCopy().
-  PlatformFileError CopyOrMoveDirectory(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path,
-      bool copy);
-
-  // Determines whether a simple same-filesystem move or copy can be done.  If
-  // so, it delegates to CopyOrMoveFile.  Otherwise it looks up the true
-  // platform path of the source file, delegates to CopyInForeignFile, and [for
-  // move] calls DeleteFile on the source file.
-  PlatformFileError CopyOrMoveFileHelper(
-      FileSystemOperationContext* context,
-      const FilePath& src_file_path,
-      const FilePath& dest_file_path,
-      bool copy);
-
-  // Deletes a directory and all entries under the directory.
-  //
-  // This method is called from Delete.  It internally calls two following
-  // virtual methods,
-  // - (virtual) DeleteFile to delete files, and
-  // - (virtual) DeleteSingleDirectory to delete empty directories after all
-  // the files are deleted.
-  PlatformFileError DeleteDirectoryRecursive(
-      FileSystemOperationContext* context,
-      const FilePath& file_path);
-
+  // TODO(kinuko): We should stop FileUtil layering.
   FileSystemFileUtil* underlying_file_util() const {
     return underlying_file_util_.get();
   }

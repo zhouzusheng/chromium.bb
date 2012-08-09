@@ -32,6 +32,7 @@
 #ifndef InputType_h
 #define InputType_h
 
+#include "HTMLTextFormControlElement.h"
 #include <wtf/Forward.h>
 #include <wtf/FastAllocBase.h>
 #include <wtf/Noncopyable.h>
@@ -99,6 +100,7 @@ public:
     virtual bool isFileUpload() const;
     virtual bool isHiddenType() const;
     virtual bool isImageButton() const;
+    virtual bool supportLabels() const;
     virtual bool isNumberField() const;
     virtual bool isPasswordField() const;
     virtual bool isRadioButton() const;
@@ -114,7 +116,7 @@ public:
     // Form value functions
 
     virtual bool saveFormControlState(String&) const;
-    virtual void restoreFormControlState(const String&) const;
+    virtual void restoreFormControlState(const String&);
     virtual bool isFormDataAppendable() const;
     virtual bool appendFormData(FormDataList&, bool multipart) const;
 
@@ -126,7 +128,7 @@ public:
     virtual double valueAsDate() const;
     virtual void setValueAsDate(double, ExceptionCode&) const;
     virtual double valueAsNumber() const;
-    virtual void setValueAsNumber(double, bool sendChangeEvent, ExceptionCode&) const;
+    virtual void setValueAsNumber(double, TextFieldEventBehavior, ExceptionCode&) const;
 
     // Validation functions
 
@@ -225,8 +227,7 @@ public:
     virtual bool shouldSendChangeEventAfterCheckedChanged();
     virtual bool canSetValue(const String&);
     virtual bool storesValueSeparateFromAttribute();
-    virtual void setValue(const String&, bool valueChanged, bool sendChangeEvent);
-    virtual void dispatchChangeEventInResponseToSetValue();
+    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior);
     virtual bool shouldResetOnDocumentActivation();
     virtual bool shouldRespectListAttribute();
     virtual bool shouldRespectSpeechAttribute();
@@ -263,6 +264,8 @@ public:
     // string. This should not be called for types without valueAsNumber.
     virtual String serialize(double) const;
 
+    virtual bool supportsIndeterminateAppearance() const;
+
 protected:
     InputType(HTMLInputElement* element) : m_element(element) { }
     HTMLInputElement* element() const { return m_element; }
@@ -290,7 +293,6 @@ const AtomicString& email();
 const AtomicString& file();
 const AtomicString& hidden();
 const AtomicString& image();
-const AtomicString& isindex();
 const AtomicString& month();
 const AtomicString& number();
 const AtomicString& password();

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,12 @@
 #define MEDIA_BASE_VIDEO_FRAME_H_
 
 #include "base/callback.h"
+#include "base/md5.h"
 #include "media/base/buffers.h"
 
 namespace media {
 
-class MEDIA_EXPORT VideoFrame : public StreamSample {
+class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
  public:
   enum {
     kMaxPlanes = 3,
@@ -51,10 +52,18 @@ class MEDIA_EXPORT VideoFrame : public StreamSample {
       base::TimeDelta timestamp,
       base::TimeDelta duration);
 
+  // Call prior to CreateFrame to ensure validity of frame configuration. Called
+  // automatically by VideoDecoderConfig::IsValidConfig().
+  static bool IsValidConfig(
+      Format format,
+      size_t width,
+      size_t height);
+
   // Wraps a native texture of the given parameters with a VideoFrame.  When the
   // frame is destroyed |no_longer_needed.Run()| will be called.
   static scoped_refptr<VideoFrame> WrapNativeTexture(
       uint32 texture_id,
+      uint32 texture_target,
       size_t width,
       size_t height,
       base::TimeDelta timestamp,
@@ -92,17 +101,38 @@ class MEDIA_EXPORT VideoFrame : public StreamSample {
   // call if this is a NATIVE_TEXTURE frame.
   uint32 texture_id() const;
 
-  // StreamSample interface.
-  virtual bool IsEndOfStream() const OVERRIDE;
+  // Returns the texture target. Only valid for NATIVE_TEXTURE frames.
+  uint32 texture_target() const;
+
+  // Returns true if this VideoFrame represents the end of the stream.
+  bool IsEndOfStream() const;
+
+  base::TimeDelta GetTimestamp() const {
+    return timestamp_;
+  }
+  void SetTimestamp(const base::TimeDelta& timestamp) {
+    timestamp_ = timestamp;
+  }
+
+  base::TimeDelta GetDuration() const {
+    return duration_;
+  }
+  void SetDuration(const base::TimeDelta& duration) {
+    duration_ = duration;
+  }
+
+  // Used to keep a running hash of seen frames.  Expects an initialized MD5
+  // context.  Calls MD5Update with the context and the contents of the frame.
+  void HashFrameForTesting(base::MD5Context* context);
 
  private:
+  friend class base::RefCountedThreadSafe<VideoFrame>;
   // Clients must use the static CreateFrame() method to create a new frame.
   VideoFrame(Format format,
              size_t video_width,
              size_t video_height,
              base::TimeDelta timestamp,
              base::TimeDelta duration);
-
   virtual ~VideoFrame();
 
   // Used internally by CreateFrame().
@@ -129,7 +159,11 @@ class MEDIA_EXPORT VideoFrame : public StreamSample {
 
   // Native texture ID, if this is a NATIVE_TEXTURE frame.
   uint32 texture_id_;
+  uint32 texture_target_;
   base::Closure texture_no_longer_needed_;
+
+  base::TimeDelta timestamp_;
+  base::TimeDelta duration_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoFrame);
 };

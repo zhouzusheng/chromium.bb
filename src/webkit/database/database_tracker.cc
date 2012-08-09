@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,8 @@
 #include "sql/connection.h"
 #include "sql/diagnostic_error_delegate.h"
 #include "sql/meta_table.h"
-#include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/sqlite/sqlite3.h"
 #include "webkit/database/database_quota_client.h"
 #include "webkit/database/database_util.h"
 #include "webkit/database/databases_table.h"
@@ -93,13 +93,12 @@ OriginInfo::OriginInfo(const string16& origin, int64 total_size)
 DatabaseTracker::DatabaseTracker(
     const FilePath& profile_path,
     bool is_incognito,
-    bool clear_local_state_on_exit,
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
     base::MessageLoopProxy* db_tracker_thread)
     : is_initialized_(false),
       is_incognito_(is_incognito),
-      clear_local_state_on_exit_(clear_local_state_on_exit),
+      clear_local_state_on_exit_(false),
       save_session_state_(false),
       shutting_down_(false),
       profile_path_(profile_path),
@@ -178,6 +177,24 @@ void DatabaseTracker::DatabaseClosed(const string16& origin_identifier,
   UpdateOpenDatabaseSizeAndNotify(origin_identifier, database_name);
   if (database_connections_.RemoveConnection(origin_identifier, database_name))
     DeleteDatabaseIfNeeded(origin_identifier, database_name);
+}
+
+void DatabaseTracker::HandleSqliteError(
+    const string16& origin_identifier,
+    const string16& database_name,
+    int error) {
+  // We only handle errors that indicate corruption and we
+  // do so with a heavy hand, we delete it. Any renderers/workers
+  // with this database open will receive a message to close it
+  // immediately, once all have closed, the files will be deleted.
+  // In the interim, all attempts to open a new connection to that
+  // database will fail.
+  // Note: the client-side filters out all but these two errors as
+  // a small optimization, see WebDatabaseObserverImpl::HandleSqliteError.
+  if (error == SQLITE_CORRUPT || error == SQLITE_NOTADB) {
+    DeleteDatabase(origin_identifier, database_name,
+                   net::CompletionCallback());
+  }
 }
 
 void DatabaseTracker::CloseDatabases(const DatabaseConnections& connections) {

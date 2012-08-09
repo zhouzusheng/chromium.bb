@@ -62,12 +62,12 @@ private:
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0);
     virtual void removeChild(RenderObject*);
     virtual bool createsAnonymousWrapper() const { return true; }
-    virtual bool canHaveChildren() const { return false; }
 
     virtual void updateFromElement();
 
-    virtual bool hasControlClip() const { return true; }
     virtual LayoutRect controlClipRect(const LayoutPoint&) const;
+    virtual bool hasControlClip() const { return true; }
+    virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
 
     virtual const char* renderName() const { return "RenderMenuList"; }
 
@@ -91,8 +91,8 @@ private:
     virtual PopupMenuStyle menuStyle() const OVERRIDE;
     virtual int clientInsetLeft() const OVERRIDE;
     virtual int clientInsetRight() const OVERRIDE;
-    virtual int clientPaddingLeft() const OVERRIDE;
-    virtual int clientPaddingRight() const OVERRIDE;
+    virtual LayoutUnit clientPaddingLeft() const OVERRIDE;
+    virtual LayoutUnit clientPaddingRight() const OVERRIDE;
     virtual int listSize() const OVERRIDE;
     virtual int selectedIndex() const OVERRIDE;
     virtual void popupDidHide() OVERRIDE;

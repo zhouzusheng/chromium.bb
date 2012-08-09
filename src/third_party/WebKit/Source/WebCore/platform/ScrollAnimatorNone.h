@@ -33,16 +33,25 @@
 
 #if ENABLE(SMOOTH_SCROLLING)
 
+#if !ENABLE(REQUEST_ANIMATION_FRAME)
+#error "SMOOTH_SCROLLING requires REQUEST_ANIMATION_FRAME to be enabled."
+#endif
+
+#include "FloatPoint.h"
+#include "PlatformGestureCurveTarget.h"
 #include "ScrollAnimator.h"
 #include "Timer.h"
+#include <wtf/OwnPtr.h>
 
 class ScrollAnimatorNoneTest;
 
 namespace WebCore {
 
+class IntPoint;
+class ActivePlatformGestureAnimation;
 struct ScrollAnimatorParameters;
 
-class ScrollAnimatorNone : public ScrollAnimator {
+class ScrollAnimatorNone : public ScrollAnimator, public PlatformGestureCurveTarget {
 public:
     ScrollAnimatorNone(ScrollableArea*);
     virtual ~ScrollAnimatorNone();
@@ -50,10 +59,8 @@ public:
     virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float multiplier);
     virtual void scrollToOffsetWithoutAnimation(const FloatPoint&);
 
-#if ENABLE(GESTURE_EVENTS)
-    virtual void zoom(const PlatformGestureEvent&);
-    virtual void handleGestureEvent(const PlatformGestureEvent&);
-#endif
+    virtual void cancelAnimations();
+    virtual void serviceScrollAnimations();
 
     virtual void willEndLiveResize();
     virtual void didAddVerticalScrollbar(Scrollbar*);
@@ -87,6 +94,9 @@ public:
         Curve m_coastTimeCurve;
         double m_maximumCoastTime;
     };
+
+    // PlatformGestureCurveTarget implementation.
+    virtual void scrollBy(const IntPoint&);
 
 protected:
     friend class ::ScrollAnimatorNoneTest;
@@ -131,38 +141,25 @@ protected:
         int m_visibleLength;
     };
 
-    // While zooming, scale, posX and posY need to stay tightly coupled, so use a separate
-    // data structure.
-    struct ZoomData {
-        ZoomData(ScrollAnimatorNone* parent);
-        bool animateZoom(double currentTime);
+    void startNextTimer();
+    void animationTimerFired();
 
-        ScrollAnimatorNone* m_parent;
-        bool m_isAnimating;
-
-        double m_startTime;
-
-        double m_animationTime;
-        double m_lastAnimationTime;
-
-        double m_startScale;
-        double m_desiredScale;
-        double m_desiredTransX;
-        double m_desiredTransY;
-    };
-
-    friend struct ZoomData;
-
-    void animationTimerFired(Timer<ScrollAnimatorNone>*);
     void stopAnimationTimerIfNeeded();
+    bool animationTimerActive();
     void updateVisibleLengths();
+    virtual void fireUpAnAnimation(FloatPoint);
 
     PerAxisData m_horizontalData;
     PerAxisData m_verticalData;
-    ZoomData m_zoomData;
 
     double m_startTime;
-    Timer<ScrollAnimatorNone> m_animationTimer;
+    bool m_animationActive;
+
+    float m_firstVelocity;
+    bool m_firstVelocitySet;
+    bool m_firstVelocityIsVertical;
+
+    OwnPtr<ActivePlatformGestureAnimation> m_gestureAnimation;
 };
 
 } // namespace WebCore

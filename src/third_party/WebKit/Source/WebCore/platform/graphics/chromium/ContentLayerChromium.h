@@ -58,8 +58,8 @@ public:
     void clearDelegate() { m_delegate = 0; }
 
     virtual bool drawsContent() const;
-    virtual void paintContentsIfDirty();
-    virtual void idlePaintContentsIfDirty();
+    virtual void paintContentsIfDirty(const CCOcclusionTracker*);
+    virtual void idlePaintContentsIfDirty(const CCOcclusionTracker*);
 
     virtual void setOpaque(bool);
 
@@ -68,8 +68,8 @@ protected:
 
 
 private:
-    virtual void createTextureUpdater(const CCLayerTreeHost*);
     virtual LayerTextureUpdater* textureUpdater() const { return m_textureUpdater.get(); }
+    virtual void createTextureUpdaterIfNeeded();
 
     ContentLayerDelegate* m_delegate;
     RefPtr<LayerTextureUpdater> m_textureUpdater;

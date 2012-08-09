@@ -91,7 +91,6 @@ class DatabaseTracker
 
   DatabaseTracker(const FilePath& profile_path,
                   bool is_incognito,
-                  bool clear_local_state_on_exit,
                   quota::SpecialStoragePolicy* special_storage_policy,
                   quota::QuotaManagerProxy* quota_manager_proxy,
                   base::MessageLoopProxy* db_tracker_thread);
@@ -105,6 +104,10 @@ class DatabaseTracker
                         const string16& database_name);
   void DatabaseClosed(const string16& origin_identifier,
                       const string16& database_name);
+  void HandleSqliteError(const string16& origin_identifier,
+                         const string16& database_name,
+                         int error);
+
   void CloseDatabases(const DatabaseConnections& connections);
 
   void AddObserver(Observer* observer);

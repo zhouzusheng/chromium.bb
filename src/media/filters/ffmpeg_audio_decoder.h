@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 
 #include <list>
 
+#include "base/callback.h"
 #include "base/message_loop.h"
-#include "media/base/filters.h"
+#include "media/base/audio_decoder.h"
 
 struct AVCodecContext;
 
@@ -18,27 +19,26 @@ class DataBuffer;
 
 class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
  public:
-  explicit FFmpegAudioDecoder(MessageLoop* message_loop);
+  FFmpegAudioDecoder(const base::Callback<MessageLoop*()>& message_loop_cb);
   virtual ~FFmpegAudioDecoder();
 
-  // Filter implementation.
-  virtual void Flush(const base::Closure& callback) OVERRIDE;
-
   // AudioDecoder implementation.
-  virtual void Initialize(DemuxerStream* stream, const base::Closure& callback,
-                          const StatisticsCallback& stats_callback) OVERRIDE;
-  virtual void Read(const ReadCB& callback) OVERRIDE;
+  virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
+                          const PipelineStatusCB& status_cb,
+                          const StatisticsCB& statistics_cb) OVERRIDE;
+  virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual int bits_per_channel() OVERRIDE;
   virtual ChannelLayout channel_layout() OVERRIDE;
   virtual int samples_per_second() OVERRIDE;
+  virtual void Reset(const base::Closure& closure) OVERRIDE;
 
  private:
   // Methods running on decoder thread.
   void DoInitialize(const scoped_refptr<DemuxerStream>& stream,
-                    const base::Closure& callback,
-                    const StatisticsCallback& stats_callback);
-  void DoFlush(const base::Closure& callback);
-  void DoRead(const ReadCB& callback);
+                    const PipelineStatusCB& status_cb,
+                    const StatisticsCB& statistics_cb);
+  void DoReset(const base::Closure& closure);
+  void DoRead(const ReadCB& read_cb);
   void DoDecodeBuffer(const scoped_refptr<Buffer>& input);
 
   // Reads from the demuxer stream with corresponding callback method.
@@ -56,10 +56,12 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   // Delivers decoded samples to |read_cb_| and resets the callback.
   void DeliverSamples(const scoped_refptr<Buffer>& samples);
 
+  // This is !is_null() iff Initialize() hasn't been called.
+  base::Callback<MessageLoop*()> message_loop_factory_cb_;
   MessageLoop* message_loop_;
 
   scoped_refptr<DemuxerStream> demuxer_stream_;
-  StatisticsCallback stats_callback_;
+  StatisticsCB statistics_cb_;
   AVCodecContext* codec_context_;
 
   // Decoded audio format.

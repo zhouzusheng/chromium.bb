@@ -33,7 +33,6 @@
 #include "cc/CCTiledLayerImpl.h"
 
 namespace WebCore {
-
 class LayerTextureUpdater;
 class UpdatableTile;
 
@@ -57,16 +56,19 @@ public:
 
     virtual void setIsNonCompositedContent(bool);
 
+    virtual void setLayerTreeHost(CCLayerTreeHost*);
+
     // Reserves all existing and valid tile textures to protect them from being
     // recycled by the texture manager.
     void protectTileTextures(const IntRect& layerRect);
 
     virtual void reserveTextures();
 
+    virtual Region visibleContentOpaqueRegion() const;
+
 protected:
     TiledLayerChromium();
 
-    virtual void cleanupResources();
     void updateTileSizeAndTilingOption();
     void updateBounds();
 
@@ -74,9 +76,11 @@ protected:
     void setTileSize(const IntSize&);
     void setTextureFormat(GC3Denum textureFormat) { m_textureFormat = textureFormat; }
     void setBorderTexelOption(CCLayerTilingData::BorderTexelOption);
+    void setSampledTexelFormat(LayerTextureUpdater::SampledTexelFormat sampledTexelFormat) { m_sampledTexelFormat = sampledTexelFormat; }
+    size_t numPaintedTiles() { return m_tiler->tiles().size(); }
 
-    virtual void createTextureUpdater(const CCLayerTreeHost*) = 0;
     virtual LayerTextureUpdater* textureUpdater() const = 0;
+    virtual void createTextureUpdaterIfNeeded() = 0;
 
     // Set invalidations to be potentially repainted during update().
     void invalidateRect(const IntRect& layerRect);
@@ -85,13 +89,15 @@ protected:
     void resetUpdateState();
 
     // Prepare data needed to update textures that intersect with layerRect.
-    void prepareToUpdate(const IntRect& layerRect);
+    void prepareToUpdate(const IntRect& layerRect, const CCOcclusionTracker*);
 
     // Same as above, but this will try to paint additional surrounding content if idle.
-    void prepareToUpdateIdle(const IntRect& layerRect);
+    void prepareToUpdateIdle(const IntRect& layerRect, const CCOcclusionTracker*);
 
     // After preparing an update, returns true if more pre-painting is needed.
     bool needsIdlePaint(const IntRect& layerRect);
+
+    IntRect idlePaintRect(const IntRect& visibleLayerRect);
 
     bool skipsDraw() const { return m_skipsDraw; }
 
@@ -100,15 +106,15 @@ protected:
     virtual TextureManager* textureManager() const;
 
 private:
-    virtual PassRefPtr<CCLayerImpl> createCCLayerImpl();
-
-    virtual void setLayerTreeHost(CCLayerTreeHost*);
+    virtual PassOwnPtr<CCLayerImpl> createCCLayerImpl();
 
     void createTilerIfNeeded();
     void setTilingOption(TilingOption);
 
-    void prepareToUpdateTiles(bool idle, int left, int top, int right, int bottom);
-    IntRect idlePaintRect(const IntRect& visibleLayerRect);
+    bool tileOnlyNeedsPartialUpdate(UpdatableTile*);
+    bool tileNeedsBufferedUpdate(UpdatableTile*);
+
+    void prepareToUpdateTiles(bool idle, int left, int top, int right, int bottom, const CCOcclusionTracker*);
 
     UpdatableTile* tileAt(int, int) const;
     UpdatableTile* createTile(int, int);

@@ -42,6 +42,7 @@
 #include "WebTextDirection.h"
 #include "WebWidgetClient.h"
 #include "platform/WebColor.h"
+#include "platform/WebGraphicsContext3D.h"
 #include "platform/WebString.h"
 
 namespace WebKit {
@@ -92,10 +93,13 @@ public:
     // WebStorage specification.
     // The request parameter is only for the client to check if the request
     // could be fulfilled.  The client should not load the request.
+    // The policy parameter indicates how the new view will be displayed in
+    // WebWidgetClient::show.
     virtual WebView* createView(WebFrame* creator,
                                 const WebURLRequest& request,
                                 const WebWindowFeatures& features,
-                                const WebString& name) {
+                                const WebString& name,
+                                WebNavigationPolicy policy) {
         return 0;
     }
 
@@ -108,6 +112,10 @@ public:
 
     // Create a session storage namespace object associated with this WebView.
     virtual WebStorageNamespace* createSessionStorageNamespace(unsigned quota) { return 0; }
+
+    // Creates a graphics context that renders to the client's WebView.
+    virtual WebGraphicsContext3D* createGraphicsContext3D(const WebGraphicsContext3D::Attributes&) { return 0; }
+
 
     // Misc ----------------------------------------------------------------
 
@@ -256,6 +264,7 @@ public:
     virtual void focusedNodeChanged(const WebNode&) { }
 
     virtual void numberOfWheelEventHandlersChanged(unsigned) { }
+    virtual void numberOfTouchEventHandlersChanged(unsigned) { }
 
     // Indicates two things:
     //   1) This view may have a new layout now.

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "build/build_config.h"
 #if defined(OS_WIN)
 #include "net/base/network_change_notifier_win.h"
-#elif defined(OS_LINUX) || defined(OS_ANDROID)
+#elif defined(OS_LINUX)
 #include "net/base/network_change_notifier_linux.h"
 #elif defined(OS_MACOSX)
 #include "net/base/network_change_notifier_mac.h"
@@ -55,11 +55,11 @@ NetworkChangeNotifier* NetworkChangeNotifier::Create() {
       new NetworkChangeNotifierWin();
   network_change_notifier->WatchForAddressChange();
   return network_change_notifier;
-#elif defined(OS_CHROMEOS)
-  // ChromeOS builds MUST use its own class factory.
+#elif defined(OS_CHROMEOS) || defined(OS_ANDROID)
+  // ChromeOS and Android builds MUST use their own class factory.
   CHECK(false);
   return NULL;
-#elif defined(OS_LINUX) || defined(OS_ANDROID)
+#elif defined(OS_LINUX)
   return NetworkChangeNotifierLinux::Create();
 #elif defined(OS_MACOSX)
   return new NetworkChangeNotifierMac();
@@ -144,10 +144,10 @@ void NetworkChangeNotifier::NotifyObserversOfIPAddressChange() {
   }
 }
 
-void NetworkChangeNotifier::NotifyObserversOfDNSChange() {
+void NetworkChangeNotifier::NotifyObserversOfDNSChange(unsigned detail) {
   if (g_network_change_notifier) {
     g_network_change_notifier->resolver_state_observer_list_->Notify(
-        &DNSObserver::OnDNSChanged);
+        &DNSObserver::OnDNSChanged, detail);
   }
 }
 

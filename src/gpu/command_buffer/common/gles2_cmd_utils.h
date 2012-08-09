@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,9 @@
 #define GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_UTILS_H_
 
 #include <string>
+
 #include "../common/types.h"
+#include "gpu/command_buffer/common/gles2_utils_export.h"
 
 namespace gpu {
 namespace gles2 {
@@ -53,9 +55,22 @@ inline bool SafeAddUint32(uint32 a, uint32 b, uint32* dst) {
 }
 
 // Utilties for GLES2 support.
-class GLES2Util {
+class GLES2_UTILS_EXPORT GLES2Util {
  public:
   static const int kNumFaces = 6;
+
+  // Bits returned by GetChannelsForFormat
+  enum ChannelBits {
+    kRed = 0x1,
+    kGreen = 0x2,
+    kBlue = 0x4,
+    kAlpha = 0x8,
+    kDepth = 0x10000,
+    kStencil = 0x20000,
+
+    kRGB = kRed | kGreen | kBlue,
+    kRGBA = kRGB | kAlpha
+  };
 
   struct EnumToString {
     uint32 value;
@@ -104,12 +119,12 @@ class GLES2Util {
 
   static uint32 IndexToGLFaceTarget(int index);
 
-  // Returns a bitmask for the channels the given format supports where
-  // 0x1 is red
-  // 0x2 is green
-  // 0x4 is blue
-  // 0x8 is alpha
+  // Returns a bitmask for the channels the given format supports.
+  // See ChannelBits.
   static uint32 GetChannelsForFormat(int format);
+
+  // Returns a bitmask for the channels the given attachment type needs.
+  static uint32 GetChannelsNeededForAttachmentType(int type);
 
   static bool IsNPOT(uint32 value) {
     return value > 0 && (value & (value - 1)) != 0;

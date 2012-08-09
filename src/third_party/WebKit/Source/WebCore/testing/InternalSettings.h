@@ -43,7 +43,8 @@ class Settings;
 class InternalSettings : public RefCounted<InternalSettings>,
                          public FrameDestructionObserver {
 public:
-    static PassRefPtr<InternalSettings> create(Frame*, InternalSettings* old);
+    static PassRefPtr<InternalSettings> create(Frame*);
+
     virtual ~InternalSettings();
 
     void setInspectorResourcesDataSizeLimits(int maximumResourcesContentSize, int maximumSingleResourceContentSize, ExceptionCode&);
@@ -52,30 +53,40 @@ public:
     void setEnableCompositingForScrollableFrames(bool enabled, ExceptionCode&);
     void setAcceleratedDrawingEnabled(bool enabled, ExceptionCode&);
     void setAcceleratedFiltersEnabled(bool enabled, ExceptionCode&);
-    void setEnableScrollAnimator(bool enabled, ExceptionCode&);
-    void setZoomAnimatorTransform(float scale, float tx, float ty, ExceptionCode&);
-    void setZoomParameters(float scale, float x, float y, ExceptionCode&);
     void setMockScrollbarsEnabled(bool enabled, ExceptionCode&);
     void setPasswordEchoEnabled(bool enabled, ExceptionCode&);
     void setPasswordEchoDurationInSeconds(double durationInSeconds, ExceptionCode&);
     void setFixedElementsLayoutRelativeToFrame(bool, ExceptionCode&);
     void setUnifiedTextCheckingEnabled(bool, ExceptionCode&);
     bool unifiedTextCheckingEnabled(ExceptionCode&);
-    float pageScaleFactor(ExceptionCode&);
     void setPageScaleFactor(float scaleFactor, int x, int y, ExceptionCode&);
     void setPerTileDrawingEnabled(bool enabled, ExceptionCode&);
+    void setTouchEventEmulationEnabled(bool enabled, ExceptionCode&);
+    void setShadowDOMEnabled(bool enabled, ExceptionCode&);
+    void setStandardFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setSerifFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setSansSerifFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setFixedFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setCursiveFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setFantasyFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setPictographFontFamily(const String& family, const String& script, ExceptionCode&);
+    void setEnableScrollAnimator(bool enabled, ExceptionCode&);
+    bool scrollAnimatorEnabled(ExceptionCode&);
+
+    void restoreTo(Settings*);
 
 private:
-    InternalSettings(Frame*, InternalSettings* old);
+    InternalSettings(Frame*);
 
     Settings* settings() const;
     Document* document() const;
     Page* page() const;
 
-    double m_passwordEchoDurationInSecondsBackup;
-    bool m_passwordEchoEnabledBackup : 1;
-    bool m_passwordEchoDurationInSecondsBackedUp : 1;
-    bool m_passwordEchoEnabledBackedUp : 1;
+    double m_originalPasswordEchoDurationInSeconds;
+    bool m_originalPasswordEchoEnabled;
+#if ENABLE(SHADOW_DOM)
+    bool m_originalShadowDOMEnabled;
+#endif
 };
 
 } // namespace WebCore

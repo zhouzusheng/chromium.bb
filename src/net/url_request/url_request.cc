@@ -37,8 +37,6 @@ namespace net {
 
 namespace {
 
-static bool g_mac_cookies_enabled = false;
-
 // Max number of http redirects to follow.  Same number as gecko.
 const int kMaxRedirects = 20;
 
@@ -121,17 +119,6 @@ void URLRequest::Delegate::OnSSLCertificateError(URLRequest* request,
                                                  const SSLInfo& ssl_info,
                                                  bool is_hsts_ok) {
   request->Cancel();
-}
-
-bool URLRequest::Delegate::CanGetCookies(const URLRequest* request,
-                                         const CookieList& cookie_list) const {
-  return true;
-}
-
-bool URLRequest::Delegate::CanSetCookie(const URLRequest* request,
-                                        const std::string& cookie_line,
-                                        CookieOptions* options) const {
-  return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -358,16 +345,6 @@ bool URLRequest::IsFileAccessAllowed() {
   return URLRequestJobManager::GetInstance()->enable_file_access();
 }
 
-// static
-void URLRequest::EnableMacCookies() {
-  g_mac_cookies_enabled = true;
-}
-
-// static
-bool URLRequest::AreMacCookiesEnabled() {
-  return g_mac_cookies_enabled;
-}
-
 void URLRequest::set_first_party_for_cookies(
     const GURL& first_party_for_cookies) {
   first_party_for_cookies_ = first_party_for_cookies;
@@ -494,11 +471,11 @@ void URLRequest::Cancel() {
   DoCancel(ERR_ABORTED, SSLInfo());
 }
 
-void URLRequest::SimulateError(int error) {
+void URLRequest::CancelWithError(int error) {
   DoCancel(error, SSLInfo());
 }
 
-void URLRequest::SimulateSSLError(int error, const SSLInfo& ssl_info) {
+void URLRequest::CancelWithSSLError(int error, const SSLInfo& ssl_info) {
   // This should only be called on a started request.
   if (!is_pending_ || !job_ || job_->has_response_started()) {
     NOTREACHED();
@@ -534,8 +511,13 @@ void URLRequest::DoCancel(int error, const SSLInfo& ssl_info) {
 bool URLRequest::Read(IOBuffer* dest, int dest_size, int* bytes_read) {
   DCHECK(job_);
   DCHECK(bytes_read);
-  DCHECK(!job_->is_done());
   *bytes_read = 0;
+
+  // This handles a cancel that happens while paused.
+  // TODO(ahendrickson): DCHECK() that it is not done after
+  // http://crbug.com/115705 is fixed.
+  if (job_->is_done())
+    return false;
 
   if (dest_size == 0) {
     // Caller is not too bright.  I guess we've done what they asked.
@@ -762,17 +744,6 @@ int64 URLRequest::GetExpectedContentSize() const {
   return expected_content_size;
 }
 
-URLRequest::UserData* URLRequest::GetUserData(const void* key) const {
-  UserDataMap::const_iterator found = user_data_.find(key);
-  if (found != user_data_.end())
-    return found->second.get();
-  return NULL;
-}
-
-void URLRequest::SetUserData(const void* key, UserData* data) {
-  user_data_[key] = linked_ptr<UserData>(data);
-}
-
 void URLRequest::NotifyAuthRequired(AuthChallengeInfo* auth_info) {
   NetworkDelegate::AuthRequiredResponse rv =
       NetworkDelegate::AUTH_REQUIRED_RESPONSE_NO_ACTION;
@@ -843,15 +814,22 @@ void URLRequest::NotifySSLCertificateError(const SSLInfo& ssl_info,
 }
 
 bool URLRequest::CanGetCookies(const CookieList& cookie_list) const {
-  if (delegate_)
-    return delegate_->CanGetCookies(this, cookie_list);
+  DCHECK(!(load_flags_ & LOAD_DO_NOT_SEND_COOKIES));
+  if (context_ && context_->network_delegate()) {
+    return context_->network_delegate()->NotifyReadingCookies(this,
+                                                              cookie_list);
+  }
   return false;
 }
 
 bool URLRequest::CanSetCookie(const std::string& cookie_line,
                               CookieOptions* options) const {
-  if (delegate_)
-    return delegate_->CanSetCookie(this, cookie_line, options);
+  DCHECK(!(load_flags_ & LOAD_DO_NOT_SAVE_COOKIES));
+  if (context_ && context_->network_delegate()) {
+    return context_->network_delegate()->NotifySettingCookie(this,
+                                                             cookie_line,
+                                                             options);
+  }
   return false;
 }
 

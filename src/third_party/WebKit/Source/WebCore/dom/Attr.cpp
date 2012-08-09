@@ -23,10 +23,10 @@
 #include "config.h"
 #include "Attr.h"
 
-#include "Element.h"
 #include "ExceptionCode.h"
 #include "HTMLNames.h"
 #include "ScopedEventQueue.h"
+#include "StyledElement.h"
 #include "Text.h"
 #include "XMLNSNames.h"
 #include <wtf/text/AtomicString.h>
@@ -167,12 +167,10 @@ bool Attr::childTypeAllowed(NodeType type) const
     }
 }
 
-void Attr::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void Attr::childrenChanged(bool, Node*, Node*, int)
 {
     if (m_ignoreChildrenChanged > 0)
         return;
-
-    Node::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 
     invalidateNodeListsCacheAfterAttributeChanged(m_attribute->name());
 
@@ -181,7 +179,7 @@ void Attr::childrenChanged(bool changedByParser, Node* beforeChange, Node* after
     StringBuilder valueBuilder;
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
         if (n->isTextNode())
-            valueBuilder.append(static_cast<Text*>(n)->data());
+            valueBuilder.append(toText(n)->data());
     }
 
     AtomicString newValue = valueBuilder.toString();
@@ -196,6 +194,16 @@ void Attr::childrenChanged(bool changedByParser, Node* beforeChange, Node* after
 bool Attr::isId() const
 {
     return qualifiedName().matches(document()->idAttributeName());
+}
+
+CSSStyleDeclaration* Attr::style()
+{
+    // This function only exists to support the Obj-C bindings.
+    if (!m_element->isStyledElement())
+        return 0;
+    m_style = StylePropertySet::create();
+    static_cast<StyledElement*>(m_element)->collectStyleForAttribute(m_attribute.get(), m_style.get());
+    return m_style->ensureCSSStyleDeclaration();
 }
 
 }

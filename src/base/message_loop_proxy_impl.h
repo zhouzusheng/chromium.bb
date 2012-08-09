@@ -22,18 +22,21 @@ class BASE_EXPORT MessageLoopProxyImpl
   virtual ~MessageLoopProxyImpl();
 
   // MessageLoopProxy implementation
-  virtual bool PostTask(const tracked_objects::Location& from_here,
-                        const base::Closure& task) OVERRIDE;
   virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
                                const base::Closure& task,
                                int64 delay_ms) OVERRIDE;
-  virtual bool PostNonNestableTask(const tracked_objects::Location& from_here,
-                                   const base::Closure& task) OVERRIDE;
+  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
+                               const base::Closure& task,
+                               base::TimeDelta delay) OVERRIDE;
   virtual bool PostNonNestableDelayedTask(
       const tracked_objects::Location& from_here,
       const base::Closure& task,
       int64 delay_ms) OVERRIDE;
-  virtual bool BelongsToCurrentThread() OVERRIDE;
+  virtual bool PostNonNestableDelayedTask(
+      const tracked_objects::Location& from_here,
+      const base::Closure& task,
+      base::TimeDelta delay) OVERRIDE;
+  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
 
  protected:
   // Override OnDestruct so that we can delete the object on the target message
@@ -49,7 +52,7 @@ class BASE_EXPORT MessageLoopProxyImpl
 
   bool PostTaskHelper(const tracked_objects::Location& from_here,
                       const base::Closure& task,
-                      int64 delay_ms,
+                      base::TimeDelta delay,
                       bool nestable);
 
   // Allow the messageLoop to create a MessageLoopProxyImpl.

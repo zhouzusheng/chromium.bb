@@ -112,7 +112,7 @@ static const MimeInfo secondary_mappings[] = {
   { "application/pdf", "pdf" },
   { "application/postscript", "ps,eps,ai" },
   { "application/x-javascript", "js" },
-  { "application/x-woff", "woff" },
+  { "application/x-font-woff", "woff" },
   { "image/bmp", "bmp" },
   { "image/x-icon", "ico" },
   { "image/jpeg", "jfif,pjpeg,pjp" },
@@ -228,11 +228,11 @@ static const char* const supported_image_types[] = {
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
 // A comprehensive mime type list: http://plugindoc.mozdev.org/winmime.php
 static const char* const supported_media_types[] = {
-#if defined(ENABLE_MEDIA_TYPE_OGG)
   // Ogg.
-  "video/ogg",
   "audio/ogg",
   "application/ogg",
+#if defined(ENABLE_MEDIA_CODEC_THEORA)
+  "video/ogg",
 #endif
 
   // WebM.

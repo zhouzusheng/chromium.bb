@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "net/http/http_version.h"
 
 class Pickle;
+class PickleIterator;
 
 namespace base {
 class Time;
@@ -37,6 +38,7 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_HOP_BY_HOP = 1 << 2;
   static const PersistOptions PERSIST_SANS_NON_CACHEABLE = 1 << 3;
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
+  static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
 
   // Parses the given raw_headers.  raw_headers should be formatted thus:
   // includes the http status response line, each line is \0-terminated, and
@@ -51,7 +53,7 @@ class NET_EXPORT HttpResponseHeaders
   // Initializes from the representation stored in the given pickle.  The data
   // for this object is found relative to the given pickle_iter, which should
   // be passed to the pickle's various Read* methods.
-  HttpResponseHeaders(const Pickle& pickle, void** pickle_iter);
+  HttpResponseHeaders(const Pickle& pickle, PickleIterator* pickle_iter);
 
   // Appends a representation of this object to the given pickle.
   // The options argument can be a combination of PersistOptions.
@@ -334,6 +336,9 @@ class NET_EXPORT HttpResponseHeaders
 
   // Adds the set of content range response headers.
   static void AddHopContentRangeHeaders(HeaderSet* header_names);
+
+  // Adds the set of transport security state headers.
+  static void AddSecurityStateHeaders(HeaderSet* header_names);
 
   // We keep a list of ParsedHeader objects.  These tell us where to locate the
   // header-value pairs within raw_headers_.

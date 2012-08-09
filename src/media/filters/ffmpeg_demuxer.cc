@@ -29,21 +29,19 @@ class AVPacketBuffer : public Buffer {
   AVPacketBuffer(scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> packet,
                  const base::TimeDelta& timestamp,
                  const base::TimeDelta& duration)
-      : packet_(packet.Pass()) {
-    SetTimestamp(timestamp);
-    SetDuration(duration);
+      : Buffer(timestamp, duration),
+        packet_(packet.Pass()) {
   }
 
-  virtual ~AVPacketBuffer() {
-  }
+  virtual ~AVPacketBuffer() {}
 
   // Buffer implementation.
   virtual const uint8* GetData() const {
     return reinterpret_cast<const uint8*>(packet_->data);
   }
 
-  virtual size_t GetDataSize() const {
-    return static_cast<size_t>(packet_->size);
+  virtual int GetDataSize() const {
+    return packet_->size;
   }
 
  private:
@@ -158,8 +156,8 @@ DemuxerStream::Type FFmpegDemuxerStream::type() {
   return type_;
 }
 
-void FFmpegDemuxerStream::Read(const ReadCallback& read_callback) {
-  DCHECK(!read_callback.is_null());
+void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
+  DCHECK(!read_cb.is_null());
 
   base::AutoLock auto_lock(lock_);
   // Don't accept any additional reads if we've been told to stop.
@@ -167,7 +165,7 @@ void FFmpegDemuxerStream::Read(const ReadCallback& read_callback) {
   //
   // TODO(scherkus): it would be cleaner if we replied with an error message.
   if (stopped_) {
-    read_callback.Run(scoped_refptr<Buffer>(new DataBuffer(0)));
+    read_cb.Run(scoped_refptr<Buffer>(new DataBuffer(0)));
     return;
   }
 
@@ -177,18 +175,18 @@ void FFmpegDemuxerStream::Read(const ReadCallback& read_callback) {
     buffer_queue_.pop_front();
 
     // Execute the callback.
-    read_callback.Run(buffer);
+    read_cb.Run(buffer);
 
     if (!read_queue_.empty())
       demuxer_->PostDemuxTask();
 
   } else {
     demuxer_->message_loop()->PostTask(FROM_HERE, base::Bind(
-        &FFmpegDemuxerStream::ReadTask, this, read_callback));
+        &FFmpegDemuxerStream::ReadTask, this, read_cb));
   }
 }
 
-void FFmpegDemuxerStream::ReadTask(const ReadCallback& read_callback) {
+void FFmpegDemuxerStream::ReadTask(const ReadCB& read_cb) {
   DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
 
   base::AutoLock auto_lock(lock_);
@@ -196,12 +194,12 @@ void FFmpegDemuxerStream::ReadTask(const ReadCallback& read_callback) {
   //
   // TODO(scherkus): it would be cleaner if we replied with an error message.
   if (stopped_) {
-    read_callback.Run(scoped_refptr<Buffer>(new DataBuffer(0)));
+    read_cb.Run(scoped_refptr<Buffer>(new DataBuffer(0)));
     return;
   }
 
   // Enqueue the callback and attempt to satisfy it immediately.
-  read_queue_.push_back(read_callback);
+  read_queue_.push_back(read_cb);
   FulfillPendingRead();
 
   // Check if there are still pending reads, demux some more.
@@ -219,12 +217,12 @@ void FFmpegDemuxerStream::FulfillPendingRead() {
 
   // Dequeue a buffer and pending read pair.
   scoped_refptr<Buffer> buffer = buffer_queue_.front();
-  ReadCallback read_callback(read_queue_.front());
+  ReadCB read_cb(read_queue_.front());
   buffer_queue_.pop_front();
   read_queue_.pop_front();
 
   // Execute the callback.
-  read_callback.Run(buffer);
+  read_cb.Run(buffer);
 }
 
 void FFmpegDemuxerStream::EnableBitstreamConverter() {
@@ -354,12 +352,11 @@ void FFmpegDemuxer::set_host(DemuxerHost* demuxer_host) {
 }
 
 void FFmpegDemuxer::Initialize(DataSource* data_source,
-                               const PipelineStatusCB& callback) {
+                               const PipelineStatusCB& status_cb) {
   message_loop_->PostTask(
       FROM_HERE,
       base::Bind(&FFmpegDemuxer::InitializeTask, this,
-                 make_scoped_refptr(data_source),
-                 callback));
+                 make_scoped_refptr(data_source), status_cb));
 }
 
 scoped_refptr<DemuxerStream> FFmpegDemuxer::GetStream(
@@ -392,13 +389,13 @@ size_t FFmpegDemuxer::Read(size_t size, uint8* data) {
     return 0;
 
   // Asynchronous read from data source.
-  data_source_->Read(read_position_, size, data,
-                     base::Bind(&FFmpegDemuxer::OnReadCompleted, this));
+  data_source_->Read(read_position_, size, data, base::Bind(
+      &FFmpegDemuxer::SignalReadCompleted, this));
 
   // TODO(hclam): The method is called on the demuxer thread and this method
   // call will block the thread. We need to implemented an additional thread to
   // let FFmpeg demuxer methods to run on.
-  size_t last_read_bytes = WaitForRead();
+  int last_read_bytes = WaitForRead();
   if (last_read_bytes == DataSource::kReadError) {
     if (host())
       host()->OnDemuxerError(PIPELINE_ERROR_READ);
@@ -452,7 +449,7 @@ MessageLoop* FFmpegDemuxer::message_loop() {
 }
 
 void FFmpegDemuxer::InitializeTask(DataSource* data_source,
-                                   const PipelineStatusCB& callback) {
+                                   const PipelineStatusCB& status_cb) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
 
   data_source_ = data_source;
@@ -465,13 +462,13 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
   // Open FFmpeg AVFormatContext.
   DCHECK(!format_context_);
   AVFormatContext* context = NULL;
-  int result = av_open_input_file(&context, key.c_str(), NULL, 0, NULL);
+  int result = avformat_open_input(&context, key.c_str(), NULL, NULL);
 
   // Remove ourself from protocol list.
   FFmpegGlue::GetInstance()->RemoveProtocol(this);
 
   if (result < 0) {
-    callback.Run(DEMUXER_ERROR_COULD_NOT_OPEN);
+    status_cb.Run(DEMUXER_ERROR_COULD_NOT_OPEN);
     return;
   }
 
@@ -479,9 +476,9 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
   format_context_ = context;
 
   // Fully initialize AVFormatContext by parsing the stream a little.
-  result = av_find_stream_info(format_context_);
+  result = avformat_find_stream_info(format_context_, NULL);
   if (result < 0) {
-    callback.Run(DEMUXER_ERROR_COULD_NOT_PARSE);
+    status_cb.Run(DEMUXER_ERROR_COULD_NOT_PARSE);
     return;
   }
 
@@ -523,7 +520,7 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
   }
 
   if (!found_audio_stream && !found_video_stream) {
-    callback.Run(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
+    status_cb.Run(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
     return;
   }
 
@@ -554,7 +551,7 @@ void FFmpegDemuxer::InitializeTask(DataSource* data_source,
   if (bitrate > 0)
     data_source_->SetBitrate(bitrate);
 
-  callback.Run(PIPELINE_OK);
+  status_cb.Run(PIPELINE_OK);
 }
 
 int FFmpegDemuxer::GetBitrate() {
@@ -736,16 +733,12 @@ void FFmpegDemuxer::StreamHasEnded() {
   }
 }
 
-void FFmpegDemuxer::OnReadCompleted(size_t size) {
-  SignalReadCompleted(size);
-}
-
-size_t FFmpegDemuxer::WaitForRead() {
+int FFmpegDemuxer::WaitForRead() {
   read_event_.Wait();
   return last_read_bytes_;
 }
 
-void FFmpegDemuxer::SignalReadCompleted(size_t size) {
+void FFmpegDemuxer::SignalReadCompleted(int size) {
   last_read_bytes_ = size;
   read_event_.Signal();
 }

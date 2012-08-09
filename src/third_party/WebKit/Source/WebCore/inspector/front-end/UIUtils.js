@@ -183,7 +183,18 @@ WebInspector.animateStyle = function(animations, duration, callback)
 
 WebInspector.isBeingEdited = function(element)
 {
-    return element.__editing;
+    if (element.hasStyleClass("text-prompt") || element.nodeName === "INPUT")
+        return true;
+
+    if (!WebInspector.__editingCount)
+        return false;
+
+    while (element) {
+        if (element.__editing)
+            return true;
+        element = element.parentElement;
+    }
+    return false;
 }
 
 WebInspector.markBeingEdited = function(element, value)
@@ -200,17 +211,6 @@ WebInspector.markBeingEdited = function(element, value)
         --WebInspector.__editingCount;
     }
     return true;
-}
-
-WebInspector.isInEditMode = function(event)
-{
-    if (WebInspector.__editingCount > 0)
-        return true;
-    if (event.target.nodeName === "INPUT")
-        return true;
-    if (event.target.enclosingNodeOrSelfWithClass("text-prompt"))
-        return true;
-    return false;
 }
 
 /**
@@ -268,7 +268,7 @@ WebInspector.EditingConfig.prototype = {
 WebInspector.startEditing = function(element, config)
 {
     if (!WebInspector.markBeingEdited(element, true))
-        return;
+        return null;
 
     config = config || new WebInspector.EditingConfig(function() {}, function() {});
     var committedCallback = config.commitHandler;
@@ -280,8 +280,8 @@ WebInspector.startEditing = function(element, config)
 
     element.addStyleClass("editing");
 
-    var oldTabIndex = element.tabIndex;
-    if (element.tabIndex < 0)
+    var oldTabIndex = element.getAttribute("tabIndex");
+    if (isNaN(oldTabIndex) || oldTabIndex < 0)
         element.tabIndex = 0;
 
     function blurEventListener() {
@@ -301,7 +301,11 @@ WebInspector.startEditing = function(element, config)
         WebInspector.markBeingEdited(element, false);
 
         this.removeStyleClass("editing");
-        this.tabIndex = oldTabIndex;
+        
+        if (isNaN(oldTabIndex))
+            element.removeAttribute("tabIndex");
+        else
+            this.tabIndex = oldTabIndex;
         this.scrollTop = 0;
         this.scrollLeft = 0;
 
@@ -351,12 +355,10 @@ WebInspector.startEditing = function(element, config)
     {
         if (result === "commit") {
             editingCommitted.call(element);
-            event.preventDefault();
-            event.stopPropagation();
+            event.consume(true);
         } else if (result === "cancel") {
             editingCancelled.call(element);
-            event.preventDefault();
-            event.stopPropagation();
+            event.consume(true);
         } else if (result && result.indexOf("move-") === 0) {
             moveDirection = result.substring(5);
             if (event.keyIdentifier !== "U+0009")
@@ -440,6 +442,15 @@ Number.bytesToString = function(bytes, higherResolution)
         return WebInspector.UIString("%.2fMB", megabytes);
     else
         return WebInspector.UIString("%.0fMB", megabytes);
+}
+
+Number.withThousandsSeparator = function(num)
+{
+    var str = num + "";
+    var re = /(\d+)(\d{3})/;
+    while (str.match(re))
+        str = str.replace(re, "$1\u2009$2"); // \u2009 is a thin space.
+    return str;
 }
 
 WebInspector._missingLocalizedStrings = {};

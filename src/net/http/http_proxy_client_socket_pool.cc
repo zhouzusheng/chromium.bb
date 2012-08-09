@@ -49,17 +49,19 @@ HttpProxySocketParams::HttpProxySocketParams(
       tunnel_(tunnel) {
   DCHECK((transport_params == NULL && ssl_params != NULL) ||
          (transport_params != NULL && ssl_params == NULL));
-  if (transport_params_)
+  if (transport_params_) {
     ignore_limits_ = transport_params->ignore_limits();
-  else
+  } else {
     ignore_limits_ = ssl_params->ignore_limits();
+  }
 }
 
 const HostResolver::RequestInfo& HttpProxySocketParams::destination() const {
-  if (transport_params_ == NULL)
+  if (transport_params_ == NULL) {
     return ssl_params_->transport_params()->destination();
-  else
+  } else {
     return transport_params_->destination();
+  }
 }
 
 HttpProxySocketParams::~HttpProxySocketParams() {}
@@ -87,7 +89,7 @@ HttpProxyConnectJob::HttpProxyConnectJob(
           callback_(base::Bind(&HttpProxyConnectJob::OnIOComplete,
                                base::Unretained(this)))),
       using_spdy_(false),
-      protocol_negotiated_(SSLClientSocket::kProtoUnknown) {
+      protocol_negotiated_(kProtoUnknown) {
 }
 
 HttpProxyConnectJob::~HttpProxyConnectJob() {}
@@ -218,13 +220,14 @@ int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
     return result;
   }
   if (IsCertificateError(result)) {
-    if (params_->ssl_params()->load_flags() & LOAD_IGNORE_ALL_CERT_ERRORS)
+    if (params_->ssl_params()->load_flags() & LOAD_IGNORE_ALL_CERT_ERRORS) {
       result = OK;
-    else
+    } else {
       // TODO(rch): allow the user to deal with proxy cert errors in the
       // same way as server cert errors.
       transport_socket_handle_->socket()->Disconnect();
       return ERR_PROXY_CERTIFICATE_INVALID;
+    }
   }
   if (result < 0) {
     if (transport_socket_handle_->socket())
@@ -235,7 +238,7 @@ int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
   SSLClientSocket* ssl =
       static_cast<SSLClientSocket*>(transport_socket_handle_->socket());
   using_spdy_ = ssl->was_spdy_negotiated();
-  protocol_negotiated_ = ssl->protocol_negotiated();
+  protocol_negotiated_ = ssl->GetNegotiatedProtocol();
 
   // Reset the timer to just the length of time allowed for HttpProxy handshake
   // so that a fast SSL connection plus a slow HttpProxy failure doesn't take
@@ -248,10 +251,11 @@ int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
   // need to add a predicate to this if statement so we fall through
   // to the else case. (HttpProxyClientSocket currently acts as
   // a "trusted" SPDY proxy).
-  if (using_spdy_ && params_->tunnel())
+  if (using_spdy_ && params_->tunnel()) {
     next_state_ = STATE_SPDY_PROXY_CREATE_STREAM;
-  else
+  } else {
     next_state_ = STATE_HTTP_PROXY_CONNECT;
+  }
   return result;
 }
 
@@ -333,10 +337,11 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
 }
 
 int HttpProxyConnectJob::ConnectInternal() {
-  if (params_->transport_params())
+  if (params_->transport_params()) {
     next_state_ = STATE_TCP_CONNECT;
-  else
+  } else {
     next_state_ = STATE_SSL_CONNECT;
+  }
   return DoLoop(OK);
 }
 

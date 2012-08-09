@@ -6,12 +6,14 @@
 #define PPAPI_THUNK_INSTANCE_API_H_
 
 #include "ppapi/c/dev/ppb_console_dev.h"
-#include "ppapi/c/dev/ppb_gamepad_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
-#include "ppapi/c/pp_completion_callback.h"
-#include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/pp_bool.h"
+#include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_size.h"
+#include "ppapi/c/pp_time.h"
+#include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_gamepad.h"
+#include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/shared_impl/api_id.h"
 
@@ -43,6 +45,10 @@ class PPB_Instance_FunctionAPI {
                                PP_Var script,
                                PP_Var* exception) = 0;
 
+  // Audio.
+  virtual uint32_t GetAudioHardwareOutputSampleRate(PP_Instance instance) = 0;
+  virtual uint32_t GetAudioHardwareOutputBufferSize(PP_Instance instance) = 0;
+
   // CharSet.
   virtual PP_Var GetDefaultCharSet(PP_Instance instance) = 0;
 
@@ -62,6 +68,9 @@ class PPB_Instance_FunctionAPI {
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) = 0;
 
+  // Font.
+  virtual PP_Var GetFontFamilies(PP_Instance instance) = 0;
+
   // Fullscreen.
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                 PP_Bool fullscreen) = 0;
@@ -75,7 +84,7 @@ class PPB_Instance_FunctionAPI {
 
   // Gamepad.
   virtual void SampleGamepads(PP_Instance instance,
-                              PP_GamepadsData_Dev* data) = 0;
+                              PP_GamepadsSampleData* data) = 0;
 
   // InputEvent.
   virtual int32_t RequestInputEvents(PP_Instance instance,
@@ -84,6 +93,8 @@ class PPB_Instance_FunctionAPI {
                                               uint32_t event_classes) = 0;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) = 0;
+  virtual void ClosePendingUserGesture(PP_Instance instance,
+                                       PP_TimeTicks timestamp) = 0;
 
   // Messaging.
   virtual void PostMessage(PP_Instance instance, PP_Var message) = 0;

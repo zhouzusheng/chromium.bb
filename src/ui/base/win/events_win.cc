@@ -249,6 +249,16 @@ float GetTouchForce(const base::NativeEvent& native_event) {
 bool GetScrollOffsets(const base::NativeEvent& native_event,
                       float* x_offset,
                       float* y_offset) {
+  // Not supported in Windows.
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool GetFlingData(const base::NativeEvent& native_event,
+                  float* vx,
+                  float* vy,
+                  bool* is_cancel) {
+  // Not supported in Windows.
   NOTIMPLEMENTED();
   return false;
 }
@@ -262,13 +272,21 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   return false;
 }
 
+void SetNaturalScroll(bool enabled) {
+  NOTIMPLEMENTED();
+}
+
 void UpdateDeviceList() {
   NOTIMPLEMENTED();
 }
 
+bool IsNoopEvent(const base::NativeEvent& event) {
+  return event.message == WM_USER + 310;
+}
+
 base::NativeEvent CreateNoopEvent() {
   MSG event = { NULL };
-  event.message = WM_USER;
+  event.message = WM_USER + 310;
   return event;
 }
 

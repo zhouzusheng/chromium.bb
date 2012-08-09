@@ -135,8 +135,6 @@ public:
     bool isLoadingMainResource() const { return m_isLoadingMainResource; }
     bool isLoading() const;
     bool frameHasLoaded() const;
-    void transferLoadingResourcesFromPage(Page*);
-    void dispatchTransferLoadingResourceFromPage(ResourceLoader*, const ResourceRequest&, Page*);
 
     int numPendingOrLoadingRequests(bool recurse) const;
     String referrer() const;
@@ -179,7 +177,11 @@ public:
     CachePolicy subresourceCachePolicy() const;
 
     void didFirstLayout();
+
+    // FIXME: didFirstVisuallyNonEmptyLayout() and didNewFirstVisuallyNonEmptyLayout() should be merged.
+    // The only reason for both to exist is to experiment with different heuristics for the time being.
     void didFirstVisuallyNonEmptyLayout();
+    void didNewFirstVisuallyNonEmptyLayout();
 
     void loadedResourceFromMemoryCache(CachedResource*);
     void tellClientAboutPastMemoryCacheLoads();

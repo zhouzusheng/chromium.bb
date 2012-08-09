@@ -5,9 +5,10 @@
 #include "base/tracked_objects.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 #include "base/format_macros.h"
-#include "base/message_loop.h"
+#include "base/profiler/alternate_timer.h"
 #include "base/stringprintf.h"
 #include "base/third_party/valgrind/memcheck.h"
 #include "base/threading/thread_restrictions.h"
@@ -35,6 +36,14 @@ const bool kTrackParentChildLinks = false;
 const ThreadData::Status kInitialStartupState =
     ThreadData::PROFILING_CHILDREN_ACTIVE;
 
+// Control whether an alternate time source (Now() function) is supported by
+// the ThreadData class.  This compile time flag should be set to true if we
+// want other modules (such as a memory allocator, or a thread-specific CPU time
+// clock) to be able to provide a thread-specific Now() function.  Without this
+// compile-time flag, the code will only support the wall-clock time.  This flag
+// can be flipped to efficiently disable this path (if there is a performance
+// problem with its presence).
+static const bool kAllowAlternateTimeSourceHandling = true;
 }  // namespace
 
 //------------------------------------------------------------------------------
@@ -57,10 +66,10 @@ DeathData::DeathData(int count) {
 // We use a macro rather than a template to force this to inline.
 // Related code for calculating max is discussed on the web.
 #define CONDITIONAL_ASSIGN(assign_it, target, source) \
-    ((target) ^= ((target) ^ (source)) & -static_cast<DurationInt>(assign_it))
+    ((target) ^= ((target) ^ (source)) & -static_cast<int32>(assign_it))
 
-void DeathData::RecordDeath(const DurationInt queue_duration,
-                            const DurationInt run_duration,
+void DeathData::RecordDeath(const int32 queue_duration,
+                            const int32 run_duration,
                             int32 random_number) {
   ++count_;
   queue_duration_sum_ += queue_duration;
@@ -84,23 +93,23 @@ void DeathData::RecordDeath(const DurationInt queue_duration,
 
 int DeathData::count() const { return count_; }
 
-DurationInt DeathData::run_duration_sum() const { return run_duration_sum_; }
+int32 DeathData::run_duration_sum() const { return run_duration_sum_; }
 
-DurationInt DeathData::run_duration_max() const { return run_duration_max_; }
+int32 DeathData::run_duration_max() const { return run_duration_max_; }
 
-DurationInt DeathData::run_duration_sample() const {
+int32 DeathData::run_duration_sample() const {
   return run_duration_sample_;
 }
 
-DurationInt DeathData::queue_duration_sum() const {
+int32 DeathData::queue_duration_sum() const {
   return queue_duration_sum_;
 }
 
-DurationInt DeathData::queue_duration_max() const {
+int32 DeathData::queue_duration_max() const {
   return queue_duration_max_;
 }
 
-DurationInt DeathData::queue_duration_sample() const {
+int32 DeathData::queue_duration_sample() const {
   return queue_duration_sample_;
 }
 
@@ -175,6 +184,9 @@ void Births::Clear() { birth_count_ = 0; }
 // TODO(jar): We should pull all these static vars together, into a struct, and
 // optimize layout so that we benefit from locality of reference during accesses
 // to them.
+
+// static
+NowFunction* ThreadData::now_function_ = NULL;
 
 // A TLS slot which points to the ThreadData instance for the current thread. We
 // do a fake initialization here (zeroing out data), and then the real in-place
@@ -362,13 +374,19 @@ Births* ThreadData::TallyABirth(const Location& location) {
 }
 
 void ThreadData::TallyADeath(const Births& birth,
-                             DurationInt queue_duration,
-                             DurationInt run_duration) {
+                             int32 queue_duration,
+                             int32 run_duration) {
   // Stir in some randomness, plus add constant in case durations are zero.
-  const DurationInt kSomePrimeNumber = 2147483647;
+  const int32 kSomePrimeNumber = 2147483647;
   random_number_ += queue_duration + run_duration + kSomePrimeNumber;
   // An address is going to have some randomness to it as well ;-).
   random_number_ ^= static_cast<int32>(&birth - reinterpret_cast<Births*>(0));
+
+  // We don't have queue durations without OS timer. OS timer is automatically
+  // used for task-post-timing, so the use of an alternate timer implies all
+  // queue times are invalid.
+  if (kAllowAlternateTimeSourceHandling && now_function_)
+    queue_duration = 0;
 
   DeathMap::iterator it = death_map_.find(&birth);
   DeathData* death_data;
@@ -393,7 +411,7 @@ Births* ThreadData::TallyABirthIfActive(const Location& location) {
   if (!kTrackAllTaskObjects)
     return NULL;  // Not compiled in.
 
-  if (!tracking_status())
+  if (!TrackingStatus())
     return NULL;
   ThreadData* current_thread_data = Get();
   if (!current_thread_data)
@@ -434,8 +452,8 @@ void ThreadData::TallyRunOnNamedThreadIfTracking(
   // get a time value since we "weren't tracking" and we were trying to be
   // efficient by not calling for a genuine time value. For simplicity, we'll
   // use a default zero duration when we can't calculate a true value.
-  DurationInt queue_duration = 0;
-  DurationInt run_duration = 0;
+  int32 queue_duration = 0;
+  int32 run_duration = 0;
   if (!start_of_run.is_null()) {
     queue_duration = (start_of_run - effective_post_time).InMilliseconds();
     if (!end_of_run.is_null())
@@ -472,8 +490,8 @@ void ThreadData::TallyRunOnWorkerThreadIfTracking(
   if (!current_thread_data)
     return;
 
-  DurationInt queue_duration = 0;
-  DurationInt run_duration = 0;
+  int32 queue_duration = 0;
+  int32 run_duration = 0;
   if (!start_of_run.is_null()) {
     queue_duration = (start_of_run - time_posted).InMilliseconds();
     if (!end_of_run.is_null())
@@ -500,8 +518,8 @@ void ThreadData::TallyRunInAScopedRegionIfTracking(
   if (!current_thread_data)
     return;
 
-  DurationInt queue_duration = 0;
-  DurationInt run_duration = 0;
+  int32 queue_duration = 0;
+  int32 run_duration = 0;
   if (!start_of_run.is_null() && !end_of_run.is_null())
     run_duration = (end_of_run - start_of_run).InMilliseconds();
   current_thread_data->TallyADeath(*birth, queue_duration, run_duration);
@@ -579,6 +597,24 @@ void ThreadData::Reset() {
     it->second->Clear();
 }
 
+static void OptionallyInitializeAlternateTimer() {
+  char* alternate_selector = getenv(kAlternateProfilerTime);
+  if (!alternate_selector)
+    return;
+  switch (*alternate_selector) {
+    case '0':  // This is the default value, and uses the wall clock time.
+      break;
+    case '1':  {
+      // Use the TCMalloc allocations-on-thread as a pseudo-time.
+      ThreadData::SetAlternateTimeSource(GetAlternateTimeSource());
+      break;
+      }
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
 bool ThreadData::Initialize() {
   if (!kTrackAllTaskObjects)
     return false;  // Not compiled in.
@@ -593,6 +629,13 @@ bool ThreadData::Initialize() {
   base::AutoLock lock(*list_lock_.Pointer());
   if (status_ >= DEACTIVATED)
     return true;  // Someone raced in here and beat us.
+
+  // Put an alternate timer in place if the environment calls for it, such as
+  // for tracking TCMalloc allocations.  This insertion is idempotent, so we
+  // don't mind if there is a race, and we'd prefer not to be in a lock while
+  // doing this work.
+  if (kAllowAlternateTimeSourceHandling)
+    OptionallyInitializeAlternateTimer();
 
   // Perform the "real" TLS initialization now, and leave it intact through
   // process termination.
@@ -622,28 +665,31 @@ bool ThreadData::Initialize() {
 }
 
 // static
-bool ThreadData::InitializeAndSetTrackingStatus(bool status) {
+bool ThreadData::InitializeAndSetTrackingStatus(Status status) {
+  DCHECK_GE(status, DEACTIVATED);
+  DCHECK_LE(status, PROFILING_CHILDREN_ACTIVE);
+
   if (!Initialize())  // No-op if already initialized.
     return false;  // Not compiled in.
 
-  if (!status) {
-    status_ = DEACTIVATED;
-  } else {
-    if (kTrackParentChildLinks)
-      status_ = PROFILING_CHILDREN_ACTIVE;
-    else
-      status_ = PROFILING_ACTIVE;
-  }
+  if (!kTrackParentChildLinks && status > DEACTIVATED)
+    status = PROFILING_ACTIVE;
+  status_ = status;
   return true;
 }
 
 // static
-bool ThreadData::tracking_status() {
+ThreadData::Status ThreadData::status() {
+  return status_;
+}
+
+// static
+bool ThreadData::TrackingStatus() {
   return status_ > DEACTIVATED;
 }
 
 // static
-bool ThreadData::tracking_parent_child_status() {
+bool ThreadData::TrackingParentChildStatus() {
   return status_ >= PROFILING_CHILDREN_ACTIVE;
 }
 
@@ -663,8 +709,17 @@ TrackedTime ThreadData::NowForEndOfRun() {
 }
 
 // static
+void ThreadData::SetAlternateTimeSource(NowFunction* now_function) {
+  DCHECK(now_function);
+  if (kAllowAlternateTimeSourceHandling)
+    now_function_ = now_function;
+}
+
+// static
 TrackedTime ThreadData::Now() {
-  if (kTrackAllTaskObjects && tracking_status())
+  if (kAllowAlternateTimeSourceHandling && now_function_)
+    return TrackedTime::FromMilliseconds((*now_function_)());
+  if (kTrackAllTaskObjects && TrackingStatus())
     return TrackedTime::Now();
   return TrackedTime();  // Super fast when disabled, or not compiled.
 }
@@ -686,7 +741,7 @@ void ThreadData::ShutdownSingleThreadedCleanup(bool leak) {
   // This is only called from test code, where we need to cleanup so that
   // additional tests can be run.
   // We must be single threaded... but be careful anyway.
-  if (!InitializeAndSetTrackingStatus(false))
+  if (!InitializeAndSetTrackingStatus(DEACTIVATED))
     return;
   ThreadData* thread_data_list;
   {

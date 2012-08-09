@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,40 @@
 #include <prntvpt.h>
 #include <xpsprint.h>
 
+#include <string>
+
+#include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
+#include "base/win/scoped_handle.h"
 #include "printing/printing_export.h"
 
 // These are helper functions for dealing with Windows Printing.
 namespace printing {
+
+struct PRINTING_EXPORT PrinterBasicInfo;
+
+class PrinterHandleTraits {
+ public:
+  typedef HANDLE Handle;
+
+  static bool CloseHandle(HANDLE handle) {
+    return ::ClosePrinter(handle) != FALSE;
+  }
+
+  static bool IsHandleValid(HANDLE handle) {
+    return handle != NULL;
+  }
+
+  static HANDLE NullHandle() {
+    return NULL;
+  }
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(PrinterHandleTraits);
+};
+
+typedef base::win::GenericScopedHandle<PrinterHandleTraits> ScopedPrinterHandle;
+
 
 // Wrapper class to wrap the XPS APIs (PTxxx APIs). This is needed because these
 // APIs are not available by default on XP. We could delayload prntvpt.dll but
@@ -95,6 +124,11 @@ class PRINTING_EXPORT XPSPrintModule {
   XPSPrintModule() { }
   static bool InitImpl();
 };
+
+PRINTING_EXPORT bool InitBasicPrinterInfo(HANDLE printer,
+                                          PrinterBasicInfo* printer_info);
+
+PRINTING_EXPORT std::string GetDriverInfo(HANDLE printer);
 
 }  // namespace printing
 

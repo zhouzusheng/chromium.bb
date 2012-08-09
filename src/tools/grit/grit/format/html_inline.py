@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,9 +7,7 @@
 
 This is a small script that takes a HTML file, looks for src attributes
 and inlines the specified file, producing one HTML file with no external
-dependencies.
-
-This does not inline anything referenced from an inlined file.
+dependencies. It recursively inlines the included files.
 """
 
 import os
@@ -19,16 +17,18 @@ import base64
 import mimetypes
 
 from grit.node import base
+from grit import lazy_re
 
 DIST_DEFAULT = 'chromium'
 DIST_ENV_VAR = 'CHROMIUM_BUILD'
 DIST_SUBSTR = '%DISTRIBUTION%'
 
 # Matches beginning of an "if" block with trailing spaces.
-_BEGIN_IF_BLOCK = re.compile('<if [^>]*?expr="(?P<expression>[^"]*)"[^>]*?>\s*')
+_BEGIN_IF_BLOCK = lazy_re.compile(
+    '<if [^>]*?expr="(?P<expression>[^"]*)"[^>]*?>\s*')
 
 # Matches ending of an "if" block with preceding spaces.
-_END_IF_BLOCK = re.compile('\s*</if>')
+_END_IF_BLOCK = lazy_re.compile('\s*</if>')
 
 def ReadFile(input_filename):
   """Helper function that returns input_filename as a string.
@@ -179,7 +179,7 @@ def DoInline(
         str = leading + trailing
 
   def InlineFileContents(src_match, pattern, inlined_files=inlined_files):
-    """Helper function to inline external script and css files"""
+    """Helper function to inline external files of various types"""
     filepath = GetFilepath(src_match)
     if filepath is None:
       return src_match.group(0)
@@ -190,15 +190,20 @@ def DoInline(
     if names_only and not filepath.endswith('.html'):
       return ""
 
-    return pattern % ReadFile(filepath)
+    return pattern % InlineToString(filepath, grd_node, allow_external_script)
 
   def InlineIncludeFiles(src_match):
-    """Helper function to inline external script files"""
+    """Helper function to directly inline generic external files (without
+       wrapping them with any kind of tags).
+    """
     return InlineFileContents(src_match, '%s')
 
-  def InlineScript(src_match):
+  def InlineScript(match):
     """Helper function to inline external script files"""
-    return InlineFileContents(src_match, '<script>%s</script>')
+    attrs = (match.group('attrs1') + match.group('attrs2')).strip()
+    if attrs:
+       attrs = ' ' + attrs
+    return InlineFileContents(match, '<script' + attrs + '>%s</script>')
 
   def InlineCSSText(text, css_filepath):
     """Helper function that inlines external resources in CSS text"""
@@ -239,7 +244,8 @@ def DoInline(
   if not allow_external_script:
     # We need to inline css and js before we inline images so that image
     # references gets inlined in the css and js
-    flat_text = re.sub('<script .*?src="(?P<filename>[^"\']*)".*?></script>',
+    flat_text = re.sub('<script (?P<attrs1>.*?)src="(?P<filename>[^"\']*)"' +
+                       '(?P<attrs2>.*?)></script>',
                        InlineScript,
                        flat_text)
 

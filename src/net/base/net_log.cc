@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,15 +56,32 @@ Value* NetLog::Source::ToValue() const {
   return dict;
 }
 
-NetLog::ThreadSafeObserver::ThreadSafeObserver(LogLevel log_level)
-    : log_level_(log_level) {
+NetLog::ThreadSafeObserver::ThreadSafeObserver() : log_level_(LOG_BASIC),
+                                                   net_log_(NULL) {
 }
 
 NetLog::ThreadSafeObserver::~ThreadSafeObserver() {
+  // Make sure we aren't watching a NetLog on destruction.  Because the NetLog
+  // may pass events to each observer on multiple threads, we cannot safely
+  // stop watching a NetLog automatically from a parent class.
+  DCHECK(!net_log_);
 }
 
 NetLog::LogLevel NetLog::ThreadSafeObserver::log_level() const {
+  DCHECK(net_log_);
   return log_level_;
+}
+
+NetLog* NetLog::ThreadSafeObserver::net_log() const {
+  return net_log_;
+}
+
+void NetLog::AddGlobalEntry(EventType type,
+                            const scoped_refptr<EventParameters>& params) {
+  AddEntry(type,
+           Source(net::NetLog::SOURCE_NONE, this->NextID()),
+           net::NetLog::PHASE_NONE,
+           params);
 }
 
 // static
@@ -79,28 +96,40 @@ const char* NetLog::EventTypeToString(EventType event) {
 #define EVENT_TYPE(label) case TYPE_ ## label: return #label;
 #include "net/base/net_log_event_type_list.h"
 #undef EVENT_TYPE
+    default:
+      NOTREACHED();
+      return NULL;
   }
-  return NULL;
 }
 
 // static
-std::vector<NetLog::EventType> NetLog::GetAllEventTypes() {
-  std::vector<NetLog::EventType> types;
-#define EVENT_TYPE(label) types.push_back(TYPE_ ## label);
-#include "net/base/net_log_event_type_list.h"
-#undef EVENT_TYPE
-  return types;
+base::Value* NetLog::GetEventTypesAsValue() {
+  DictionaryValue* dict = new DictionaryValue();
+  for (int i = 0; i < EVENT_COUNT; ++i) {
+    dict->SetInteger(EventTypeToString(static_cast<EventType>(i)), i);
+  }
+  return dict;
 }
 
 // static
 const char* NetLog::SourceTypeToString(SourceType source) {
   switch (source) {
-#define SOURCE_TYPE(label, id) case id: return #label;
+#define SOURCE_TYPE(label) case SOURCE_ ## label: return #label;
 #include "net/base/net_log_source_type_list.h"
 #undef SOURCE_TYPE
+    default:
+      NOTREACHED();
+      return NULL;
   }
-  NOTREACHED();
-  return NULL;
+}
+
+// static
+base::Value* NetLog::GetSourceTypesAsValue() {
+  DictionaryValue* dict = new DictionaryValue();
+  for (int i = 0; i < SOURCE_COUNT; ++i) {
+    dict->SetInteger(SourceTypeToString(static_cast<SourceType>(i)), i);
+  }
+  return dict;
 }
 
 // static
@@ -155,23 +184,29 @@ Value* NetLog::EntryToDictionaryValue(NetLog::EventType type,
   return entry_dict;
 }
 
+void NetLog::OnAddObserver(ThreadSafeObserver* observer, LogLevel log_level) {
+  DCHECK(!observer->net_log_);
+  observer->net_log_ = this;
+  observer->log_level_ = log_level;
+}
+
+void NetLog::OnSetObserverLogLevel(ThreadSafeObserver* observer,
+                                   LogLevel log_level) {
+  DCHECK_EQ(this, observer->net_log_);
+  observer->log_level_ = log_level;
+}
+
+void NetLog::OnRemoveObserver(ThreadSafeObserver* observer) {
+  DCHECK_EQ(this, observer->net_log_);
+  observer->net_log_ = NULL;
+}
+
 void BoundNetLog::AddEntry(
     NetLog::EventType type,
     NetLog::EventPhase phase,
     const scoped_refptr<NetLog::EventParameters>& params) const {
-  if (net_log_) {
-    net_log_->AddEntry(type, base::TimeTicks::Now(), source_, phase, params);
-  }
-}
-
-void BoundNetLog::AddEntryWithTime(
-    NetLog::EventType type,
-    const base::TimeTicks& time,
-    NetLog::EventPhase phase,
-    const scoped_refptr<NetLog::EventParameters>& params) const {
-  if (net_log_) {
-    net_log_->AddEntry(type, time, source_, phase, params);
-  }
+  if (net_log_)
+    net_log_->AddEntry(type, source_, phase, params);
 }
 
 void BoundNetLog::AddEvent(

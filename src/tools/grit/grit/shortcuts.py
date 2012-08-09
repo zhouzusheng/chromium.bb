@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 
 import re
 
+from grit import lazy_re
 from grit import util
 
 
@@ -17,7 +18,7 @@ class ShortcutGroup(object):
   '''
 
   # Matches shortcut keys, e.g. &J
-  SHORTCUT_RE = re.compile('([^&]|^)(&[A-Za-z])')
+  SHORTCUT_RE = lazy_re.compile('([^&]|^)(&[A-Za-z])')
 
   def __init__(self, name):
     self.name = name

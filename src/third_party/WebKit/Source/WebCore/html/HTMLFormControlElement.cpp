@@ -26,16 +26,12 @@
 #include "HTMLFormControlElement.h"
 
 #include "Attribute.h"
-#include "Document.h"
-#include "ElementRareData.h"
 #include "Event.h"
 #include "EventHandler.h"
 #include "EventNames.h"
 #include "Frame.h"
 #include "HTMLFormElement.h"
 #include "HTMLInputElement.h"
-#include "HTMLNames.h"
-#include "LabelsNodeList.h"
 #include "RenderBox.h"
 #include "RenderTheme.h"
 #include "ScriptEventListener.h"
@@ -49,7 +45,7 @@ using namespace HTMLNames;
 using namespace std;
 
 HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
-    : HTMLElement(tagName, document)
+    : LabelableElement(tagName, document)
     , m_disabled(false)
     , m_readOnly(false)
     , m_required(false)
@@ -99,7 +95,7 @@ bool HTMLFormControlElement::formNoValidate() const
     return fastHasAttribute(formnovalidateAttr);
 }
 
-void HTMLFormControlElement::parseMappedAttribute(Attribute* attr)
+void HTMLFormControlElement::parseAttribute(Attribute* attr)
 {
     if (attr->name() == formAttr)
         formAttributeChanged();
@@ -122,13 +118,19 @@ void HTMLFormControlElement::parseMappedAttribute(Attribute* attr)
     } else if (attr->name() == requiredAttr) {
         bool oldRequired = m_required;
         m_required = !attr->isNull();
-        if (oldRequired != m_required) {
-            setNeedsValidityCheck();
-            setNeedsStyleRecalc(); // Updates for :required :optional classes.
-        }
+        if (oldRequired != m_required)
+            requiredAttributeChanged();
     } else
-        HTMLElement::parseMappedAttribute(attr);
+        HTMLElement::parseAttribute(attr);
     setNeedsWillValidateCheck();
+}
+
+void HTMLFormControlElement::requiredAttributeChanged()
+{
+    setNeedsValidityCheck();
+    // Style recalculation is needed because style selectors may include
+    // :required and :optional pseudo-classes.
+    setNeedsStyleRecalc();
 }
 
 static bool shouldAutofocus(HTMLFormControlElement* element)
@@ -221,7 +223,7 @@ void HTMLFormControlElement::removedFromDocument()
 
 const AtomicString& HTMLFormControlElement::formControlName() const
 {
-    const AtomicString& name = fastGetAttribute(nameAttr);
+    const AtomicString& name = getNameAttribute();
     return name.isNull() ? emptyAtom : name;
 }
 
@@ -459,35 +461,6 @@ HTMLFormElement* HTMLFormControlElement::virtualForm() const
 bool HTMLFormControlElement::isDefaultButtonForForm() const
 {
     return isSuccessfulSubmitButton() && form() && form()->defaultButton() == this;
-}
-
-bool HTMLFormControlElement::isLabelable() const
-{
-    // FIXME: Add meterTag and outputTag to the list once we support them.
-    return hasTagName(buttonTag) || hasTagName(inputTag) || hasTagName(keygenTag)
-#if ENABLE(METER_TAG)
-        || hasTagName(meterTag)
-#endif
-#if ENABLE(PROGRESS_TAG)
-        || hasTagName(progressTag)
-#endif
-        || hasTagName(selectTag) || hasTagName(textareaTag);
-}
-
-PassRefPtr<NodeList> HTMLFormControlElement::labels()
-{
-    if (!isLabelable())
-        return 0;
-    if (!document())
-        return 0;
-
-    NodeListsNodeData* nodeLists = Node::ensureRareData()->ensureNodeLists(this);
-    if (nodeLists->m_labelsNodeListCache)
-        return nodeLists->m_labelsNodeListCache;
-
-    RefPtr<LabelsNodeList> list = LabelsNodeList::create(this);
-    nodeLists->m_labelsNodeListCache = list.get();
-    return list.release();
 }
 
 } // namespace Webcore

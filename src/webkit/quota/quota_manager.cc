@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -461,12 +461,15 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
   OriginDataDeleter(QuotaManager* manager,
                     const GURL& origin,
                     StorageType type,
+                    int quota_client_mask,
                     const StatusCallback& callback)
       : QuotaTask(manager),
         origin_(origin),
         type_(type),
+        quota_client_mask_(quota_client_mask),
         error_count_(0),
         remaining_clients_(-1),
+        skipped_clients_(0),
         callback_(callback),
         weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
 
@@ -476,16 +479,24 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
     remaining_clients_ = manager()->clients_.size();
     for (QuotaClientList::iterator iter = manager()->clients_.begin();
          iter != manager()->clients_.end(); ++iter) {
-      (*iter)->DeleteOriginData(
-          origin_, type_,
-          base::Bind(&OriginDataDeleter::DidDeleteOriginData,
-                     weak_factory_.GetWeakPtr()));
+      if (quota_client_mask_ & (*iter)->id()) {
+        (*iter)->DeleteOriginData(
+            origin_, type_,
+            base::Bind(&OriginDataDeleter::DidDeleteOriginData,
+                       weak_factory_.GetWeakPtr()));
+      } else {
+        ++skipped_clients_;
+        if (--remaining_clients_ == 0)
+          CallCompleted();
+      }
     }
   }
 
   virtual void Completed() OVERRIDE {
     if (error_count_ == 0) {
-      manager()->DeleteOriginFromDatabase(origin_, type_);
+      // Only remove the entire origin if we didn't skip any client types.
+      if (skipped_clients_ == 0)
+        manager()->DeleteOriginFromDatabase(origin_, type_);
       callback_.Run(kQuotaStatusOk);
     } else {
       callback_.Run(kQuotaErrorInvalidModification);
@@ -514,8 +525,10 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
 
   GURL origin_;
   StorageType type_;
+  int quota_client_mask_;
   int error_count_;
   int remaining_clients_;
+  int skipped_clients_;
   StatusCallback callback_;
 
   base::WeakPtrFactory<OriginDataDeleter> weak_factory_;
@@ -527,10 +540,12 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
   HostDataDeleter(QuotaManager* manager,
                   const std::string& host,
                   StorageType type,
+                  int quota_client_mask,
                   const StatusCallback& callback)
       : QuotaTask(manager),
         host_(host),
         type_(type),
+        quota_client_mask_(quota_client_mask),
         error_count_(0),
         remaining_clients_(-1),
         remaining_deleters_(-1),
@@ -584,7 +599,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
          ++p) {
       OriginDataDeleter* deleter =
           new OriginDataDeleter(
-              manager(), *p, type_,
+              manager(), *p, type_, quota_client_mask_,
               base::Bind(&HostDataDeleter::DidDeleteOriginData,
                          weak_factory_.GetWeakPtr()));
       deleter->Start();
@@ -607,6 +622,7 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
 
   std::string host_;
   StorageType type_;
+  int quota_client_mask_;
   std::set<GURL> origins_;
   int error_count_;
   int remaining_clients_;
@@ -1121,7 +1137,6 @@ QuotaManager::QuotaManager(bool is_incognito,
 }
 
 QuotaManager::~QuotaManager() {
-  DCHECK(io_thread_->BelongsToCurrentThread());
   proxy_->manager_ = NULL;
   std::for_each(clients_.begin(), clients_.end(),
                 std::mem_fun(&QuotaClient::OnQuotaManagerDestroyed));
@@ -1281,7 +1296,6 @@ void QuotaManager::LazyInitialize() {
 }
 
 void QuotaManager::RegisterClient(QuotaClient* client) {
-  DCHECK(io_thread_->BelongsToCurrentThread());
   DCHECK(!database_.get());
   clients_.push_back(client);
 }
@@ -1313,7 +1327,8 @@ void QuotaManager::NotifyOriginNoLongerInUse(const GURL& origin) {
 }
 
 void QuotaManager::DeleteOriginData(
-    const GURL& origin, StorageType type, const StatusCallback& callback) {
+    const GURL& origin, StorageType type, int quota_client_mask,
+    const StatusCallback& callback) {
   LazyInitialize();
 
   if (origin.is_empty() || clients_.empty()) {
@@ -1322,12 +1337,13 @@ void QuotaManager::DeleteOriginData(
   }
 
   OriginDataDeleter* deleter =
-      new OriginDataDeleter(this, origin, type, callback);
+      new OriginDataDeleter(this, origin, type, quota_client_mask, callback);
   deleter->Start();
 }
 
 void QuotaManager::DeleteHostData(const std::string& host,
                                   StorageType type,
+                                  int quota_client_mask,
                                   const StatusCallback& callback) {
 
   LazyInitialize();
@@ -1338,7 +1354,7 @@ void QuotaManager::DeleteHostData(const std::string& host,
   }
 
   HostDataDeleter* deleter =
-      new HostDataDeleter(this, host, type, callback);
+      new HostDataDeleter(this, host, type, quota_client_mask, callback);
   deleter->Start();
 }
 
@@ -1527,7 +1543,7 @@ void QuotaManager::EvictOriginData(
   eviction_context_.evicted_type = type;
   eviction_context_.evict_origin_data_callback = callback;
 
-  DeleteOriginData(origin, type,
+  DeleteOriginData(origin, type, QuotaClient::kAllClientsMask,
       base::Bind(&QuotaManager::DidOriginDataEvicted,
                  weak_factory_.GetWeakPtr()));
 }
@@ -1656,8 +1672,8 @@ void QuotaManager::DidGetDatabaseLRUOrigin(const GURL& origin) {
 }
 
 void QuotaManager::DeleteOnCorrectThread() const {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->DeleteSoon(FROM_HERE, this);
+  if (!io_thread_->BelongsToCurrentThread() && 
+      io_thread_->DeleteSoon(FROM_HERE, this)) {
     return;
   }
   delete this;
@@ -1666,10 +1682,10 @@ void QuotaManager::DeleteOnCorrectThread() const {
 // QuotaManagerProxy ----------------------------------------------------------
 
 void QuotaManagerProxy::RegisterClient(QuotaClient* client) {
-  if (!io_thread_->BelongsToCurrentThread()) {
-    io_thread_->PostTask(
-        FROM_HERE,
-        base::Bind(&QuotaManagerProxy::RegisterClient, this, client));
+  if (!io_thread_->BelongsToCurrentThread() &&
+      io_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&QuotaManagerProxy::RegisterClient, this, client))) {
     return;
   }
 

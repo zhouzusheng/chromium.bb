@@ -13,6 +13,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/win_util.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 
 namespace {
@@ -101,6 +102,11 @@ int PlatformFontWin::GetAverageCharacterWidth() const {
   return font_ref_->ave_char_width();
 }
 
+int PlatformFontWin::GetStringWidth(const string16& text) const {
+  return Canvas::GetStringWidth(text,
+                                Font(const_cast<PlatformFontWin*>(this)));
+}
+
 int PlatformFontWin::GetExpectedTextWidth(int length) const {
   return length * std::min(font_ref_->dlu_base_x(), GetAverageCharacterWidth());
 }
@@ -114,10 +120,7 @@ std::string PlatformFontWin::GetFontName() const {
 }
 
 int PlatformFontWin::GetFontSize() const {
-  LOGFONT font_info;
-  GetObject(font_ref_->hfont(), sizeof(LOGFONT), &font_info);
-  DCHECK_LT(font_info.lfHeight, 0);
-  return -font_info.lfHeight;
+  return font_ref_->font_size();
 }
 
 NativeFont PlatformFontWin::GetNativeFont() const {
@@ -217,6 +220,8 @@ PlatformFontWin::HFontRef::HFontRef(HFONT hfont,
   LOGFONT font_info;
   GetObject(hfont_, sizeof(LOGFONT), &font_info);
   font_name_ = UTF16ToUTF8(string16(font_info.lfFaceName));
+  DCHECK_LT(font_info.lfHeight, 0);
+  font_size_ = -font_info.lfHeight;
 }
 
 PlatformFontWin::HFontRef::~HFontRef() {

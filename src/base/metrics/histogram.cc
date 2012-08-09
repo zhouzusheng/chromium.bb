@@ -237,7 +237,7 @@ std::string Histogram::SerializeHistogramInfo(const Histogram& histogram,
   pickle.WriteString(histogram.histogram_name());
   pickle.WriteInt(histogram.declared_min());
   pickle.WriteInt(histogram.declared_max());
-  pickle.WriteSize(histogram.bucket_count());
+  pickle.WriteUInt64(histogram.bucket_count());
   pickle.WriteUInt32(histogram.range_checksum());
   pickle.WriteInt(histogram.histogram_type());
   pickle.WriteInt(histogram.flags());
@@ -260,21 +260,21 @@ bool Histogram::DeserializeHistogramInfo(const std::string& histogram_info) {
   std::string histogram_name;
   int declared_min;
   int declared_max;
-  size_t bucket_count;
+  uint64 bucket_count;
   uint32 range_checksum;
   int histogram_type;
   int pickle_flags;
   SampleSet sample;
 
-  void* iter = NULL;
-  if (!pickle.ReadString(&iter, &histogram_name) ||
-      !pickle.ReadInt(&iter, &declared_min) ||
-      !pickle.ReadInt(&iter, &declared_max) ||
-      !pickle.ReadSize(&iter, &bucket_count) ||
-      !pickle.ReadUInt32(&iter, &range_checksum) ||
-      !pickle.ReadInt(&iter, &histogram_type) ||
-      !pickle.ReadInt(&iter, &pickle_flags) ||
-      !sample.Histogram::SampleSet::Deserialize(&iter, pickle)) {
+  PickleIterator iter(pickle);
+  if (!iter.ReadString(&histogram_name) ||
+      !iter.ReadInt(&declared_min) ||
+      !iter.ReadInt(&declared_max) ||
+      !iter.ReadUInt64(&bucket_count) ||
+      !iter.ReadUInt32(&range_checksum) ||
+      !iter.ReadInt(&histogram_type) ||
+      !iter.ReadInt(&pickle_flags) ||
+      !sample.Histogram::SampleSet::Deserialize(&iter)) {
     DLOG(ERROR) << "Pickle error decoding Histogram: " << histogram_name;
     return false;
   }
@@ -304,7 +304,7 @@ bool Histogram::DeserializeHistogramInfo(const std::string& histogram_info) {
     render_histogram = BooleanHistogram::FactoryGet(histogram_name, flags);
   } else if (histogram_type == CUSTOM_HISTOGRAM) {
     std::vector<Histogram::Sample> sample_ranges(bucket_count);
-    if (!CustomHistogram::DeserializeRanges(&iter, pickle, &sample_ranges)) {
+    if (!CustomHistogram::DeserializeRanges(&iter, &sample_ranges)) {
       DLOG(ERROR) << "Pickle error decoding ranges: " << histogram_name;
       return false;
     }
@@ -763,7 +763,7 @@ void Histogram::SampleSet::Subtract(const SampleSet& other) {
 bool Histogram::SampleSet::Serialize(Pickle* pickle) const {
   pickle->WriteInt64(sum_);
   pickle->WriteInt64(redundant_count_);
-  pickle->WriteSize(counts_.size());
+  pickle->WriteUInt64(counts_.size());
 
   for (size_t index = 0; index < counts_.size(); ++index) {
     pickle->WriteInt(counts_[index]);
@@ -772,16 +772,16 @@ bool Histogram::SampleSet::Serialize(Pickle* pickle) const {
   return true;
 }
 
-bool Histogram::SampleSet::Deserialize(void** iter, const Pickle& pickle) {
+bool Histogram::SampleSet::Deserialize(PickleIterator* iter) {
   DCHECK_EQ(counts_.size(), 0u);
   DCHECK_EQ(sum_, 0);
   DCHECK_EQ(redundant_count_, 0);
 
-  size_t counts_size;
+  uint64 counts_size;
 
-  if (!pickle.ReadInt64(iter, &sum_) ||
-      !pickle.ReadInt64(iter, &redundant_count_) ||
-      !pickle.ReadSize(iter, &counts_size)) {
+  if (!iter->ReadInt64(&sum_) ||
+      !iter->ReadInt64(&redundant_count_) ||
+      !iter->ReadUInt64(&counts_size)) {
     return false;
   }
 
@@ -789,9 +789,9 @@ bool Histogram::SampleSet::Deserialize(void** iter, const Pickle& pickle) {
     return false;
 
   int count = 0;
-  for (size_t index = 0; index < counts_size; ++index) {
+  for (uint64 index = 0; index < counts_size; ++index) {
     int i;
-    if (!pickle.ReadInt(iter, &i))
+    if (!iter->ReadInt(&i))
       return false;
     counts_.push_back(i);
     count += i;
@@ -1015,9 +1015,9 @@ bool CustomHistogram::SerializeRanges(Pickle* pickle) const {
 
 // static
 bool CustomHistogram::DeserializeRanges(
-    void** iter, const Pickle& pickle, std::vector<Histogram::Sample>* ranges) {
+    PickleIterator* iter, std::vector<Histogram::Sample>* ranges) {
   for (size_t i = 0; i < ranges->size(); ++i) {
-    if (!pickle.ReadInt(iter, &(*ranges)[i]))
+    if (!iter->ReadInt(&(*ranges)[i]))
       return false;
   }
   return true;

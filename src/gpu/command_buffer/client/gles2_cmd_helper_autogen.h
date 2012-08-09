@@ -1524,6 +1524,56 @@
     }
   }
 
+  void GenQueriesEXT(
+      GLsizei n, uint32 queries_shm_id, uint32 queries_shm_offset) {
+    gles2::GenQueriesEXT* c = GetCmdSpace<gles2::GenQueriesEXT>();
+    if (c) {
+      c->Init(n, queries_shm_id, queries_shm_offset);
+    }
+  }
+
+  void GenQueriesEXTImmediate(GLsizei n, GLuint* queries) {
+    const uint32 size = gles2::GenQueriesEXTImmediate::ComputeSize(n);
+    gles2::GenQueriesEXTImmediate* c =
+        GetImmediateCmdSpaceTotalSize<gles2::GenQueriesEXTImmediate>(size);
+    if (c) {
+      c->Init(n, queries);
+    }
+  }
+
+  void DeleteQueriesEXT(
+      GLsizei n, uint32 queries_shm_id, uint32 queries_shm_offset) {
+    gles2::DeleteQueriesEXT* c = GetCmdSpace<gles2::DeleteQueriesEXT>();
+    if (c) {
+      c->Init(n, queries_shm_id, queries_shm_offset);
+    }
+  }
+
+  void DeleteQueriesEXTImmediate(GLsizei n, const GLuint* queries) {
+    const uint32 size = gles2::DeleteQueriesEXTImmediate::ComputeSize(n);
+    gles2::DeleteQueriesEXTImmediate* c =
+        GetImmediateCmdSpaceTotalSize<gles2::DeleteQueriesEXTImmediate>(size);
+    if (c) {
+      c->Init(n, queries);
+    }
+  }
+
+  void BeginQueryEXT(
+      GLenum target, GLuint id, uint32 sync_data_shm_id,
+      uint32 sync_data_shm_offset) {
+    gles2::BeginQueryEXT* c = GetCmdSpace<gles2::BeginQueryEXT>();
+    if (c) {
+      c->Init(target, id, sync_data_shm_id, sync_data_shm_offset);
+    }
+  }
+
+  void EndQueryEXT(GLenum target, GLuint submit_count) {
+    gles2::EndQueryEXT* c = GetCmdSpace<gles2::EndQueryEXT>();
+    if (c) {
+      c->Init(target, submit_count);
+    }
+  }
+
   void SwapBuffers() {
     gles2::SwapBuffers* c = GetCmdSpace<gles2::SwapBuffers>();
     if (c) {
@@ -1664,6 +1714,33 @@
         GetCmdSpace<gles2::TexImageIOSurface2DCHROMIUM>();
     if (c) {
       c->Init(target, width, height, ioSurfaceId, plane);
+    }
+  }
+
+  void DrawArraysInstancedANGLE(
+      GLenum mode, GLint first, GLsizei count, GLsizei primcount) {
+    gles2::DrawArraysInstancedANGLE* c =
+        GetCmdSpace<gles2::DrawArraysInstancedANGLE>();
+    if (c) {
+      c->Init(mode, first, count, primcount);
+    }
+  }
+
+  void DrawElementsInstancedANGLE(
+      GLenum mode, GLsizei count, GLenum type, GLuint index_offset,
+      GLsizei primcount) {
+    gles2::DrawElementsInstancedANGLE* c =
+        GetCmdSpace<gles2::DrawElementsInstancedANGLE>();
+    if (c) {
+      c->Init(mode, count, type, index_offset, primcount);
+    }
+  }
+
+  void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
+    gles2::VertexAttribDivisorANGLE* c =
+        GetCmdSpace<gles2::VertexAttribDivisorANGLE>();
+    if (c) {
+      c->Init(index, divisor);
     }
   }
 

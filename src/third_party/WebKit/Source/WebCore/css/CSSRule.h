@@ -49,10 +49,12 @@ public:
         MEDIA_RULE,
         FONT_FACE_RULE,
         PAGE_RULE,
-        // 7 used to be VARIABLES_RULE
-        WEBKIT_KEYFRAMES_RULE = 8,
+        // 7 was VARIABLES_RULE; we now match other browsers with 7 as
+        // KEYFRAMES_RULE:
+        // <https://bugs.webkit.org/show_bug.cgi?id=71293>.
+        WEBKIT_KEYFRAMES_RULE,
         WEBKIT_KEYFRAME_RULE,
-        WEBKIT_REGION_RULE
+        WEBKIT_REGION_RULE = 10
     };
 
     Type type() const { return static_cast<Type>(m_type); }
@@ -109,8 +111,7 @@ public:
 
 protected:
     CSSRule(CSSStyleSheet* parent, Type type)
-        : m_sourceLine(0)
-        , m_hasCachedSelectorText(false)
+        : m_hasCachedSelectorText(false)
         , m_parentIsRule(false)
         , m_type(type)
         , m_parentStyleSheet(parent)
@@ -122,14 +123,10 @@ protected:
 
     ~CSSRule() { }
 
-    int sourceLine() const { return m_sourceLine; }
-    void setSourceLine(int sourceLine) { m_sourceLine = sourceLine; }
     bool hasCachedSelectorText() const { return m_hasCachedSelectorText; }
     void setHasCachedSelectorText(bool hasCachedSelectorText) const { m_hasCachedSelectorText = hasCachedSelectorText; }
 
 private:
-    // Only used by CSSStyleRule but kept here to maximize struct packing.
-    signed m_sourceLine : 26;
     mutable unsigned m_hasCachedSelectorText : 1;
     unsigned m_parentIsRule : 1;
     unsigned m_type : 4;

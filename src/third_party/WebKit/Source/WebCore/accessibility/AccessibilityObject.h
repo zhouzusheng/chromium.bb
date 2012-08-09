@@ -121,6 +121,7 @@ enum AccessibilityRole {
     DocumentRegionRole,            
     DrawerRole,
     EditableTextRole,
+    FooterRole,
     FormRole,
     GridRole,
     GroupRole,
@@ -244,6 +245,7 @@ enum AccessibilitySearchKey {
     HeadingLevel6SearchKey,
     HeadingSameLevelSearchKey,
     HeadingSearchKey,
+    HighlightedSearchKey,
     ItalicFontSearchKey,
     LandmarkSearchKey,
     LinkSearchKey,
@@ -409,6 +411,7 @@ public:
     virtual bool hasSameStyle(RenderObject*) const { return false; }
     bool hasStaticText() const { return roleValue() == StaticTextRole; }
     virtual bool hasUnderline() const { return false; }
+    bool hasHighlighting() const;
 
     virtual bool canSetFocusAttribute() const { return false; }
     virtual bool canSetTextRangeAttributes() const { return false; }
@@ -458,9 +461,9 @@ public:
     virtual void determineARIADropEffects(Vector<String>&) { }
     
     // Called on the root AX object to return the deepest available element.
-    virtual AccessibilityObject* accessibilityHitTest(const LayoutPoint&) const { return 0; }
+    virtual AccessibilityObject* accessibilityHitTest(const IntPoint&) const { return 0; }
     // Called on the AX object after the render tree determines which is the right AccessibilityRenderObject.
-    virtual AccessibilityObject* elementAccessibilityHitTest(const LayoutPoint&) const;
+    virtual AccessibilityObject* elementAccessibilityHitTest(const IntPoint&) const;
 
     virtual AccessibilityObject* focusedUIElement() const;
 
@@ -500,10 +503,11 @@ public:
     virtual Element* anchorElement() const { return 0; }
     virtual Element* actionElement() const { return 0; }
     virtual LayoutRect boundingBoxRect() const { return LayoutRect(); }
+    IntRect pixelSnappedBoundingBoxRect() const { return pixelSnappedIntRect(boundingBoxRect()); }
     virtual LayoutRect elementRect() const = 0;
     virtual LayoutSize size() const { return elementRect().size(); }
-    virtual LayoutPoint clickPoint();
-    static LayoutRect boundingBoxForQuads(RenderObject*, const Vector<FloatQuad>&);
+    virtual IntPoint clickPoint();
+    static IntRect boundingBoxForQuads(RenderObject*, const Vector<FloatQuad>&);
     
     virtual PlainTextRange selectedTextRange() const { return PlainTextRange(); }
     unsigned selectionStart() const { return selectedTextRange().start; }
@@ -555,7 +559,7 @@ public:
     virtual void updateChildrenIfNecessary();
     virtual void setNeedsToUpdateChildren() { }
     virtual void clearChildren();
-    virtual void detachFromParent() { }
+    virtual void detachFromParent();
 
     virtual void selectedChildren(AccessibilityChildrenVector&) { }
     virtual void visibleChildren(AccessibilityChildrenVector&) { }
@@ -584,7 +588,7 @@ public:
     VisiblePositionRange visiblePositionRangeForRange(const PlainTextRange&) const;
 
     String stringForVisiblePositionRange(const VisiblePositionRange&) const;
-    virtual LayoutRect boundsForVisiblePositionRange(const VisiblePositionRange&) const { return LayoutRect(); }
+    virtual IntRect boundsForVisiblePositionRange(const VisiblePositionRange&) const { return IntRect(); }
     int lengthForVisiblePositionRange(const VisiblePositionRange&) const;
     virtual void setSelectedVisiblePositionRange(const VisiblePositionRange&) const { }
 
@@ -615,7 +619,7 @@ public:
     PlainTextRange doAXStyleRangeForIndex(unsigned) const;
 
     virtual String doAXStringForRange(const PlainTextRange&) const { return String(); }
-    virtual LayoutRect doAXBoundsForRange(const PlainTextRange&) const { return LayoutRect(); }
+    virtual IntRect doAXBoundsForRange(const PlainTextRange&) const { return IntRect(); }
     String listMarkerTextForNodeAndPosition(Node*, const VisiblePosition&) const;
 
     unsigned doAXLineForIndex(unsigned);
@@ -665,7 +669,13 @@ public:
     }
 #endif
 #endif
-
+    
+#if PLATFORM(MAC)
+    void overrideAttachmentParent(AccessibilityObject* parent);
+#else
+    void overrideAttachmentParent(AccessibilityObject*) { }
+#endif
+    
 #if HAVE(ACCESSIBILITY)
     // a platform-specific method for determining if an attachment is ignored
     bool accessibilityIgnoreAttachment() const;

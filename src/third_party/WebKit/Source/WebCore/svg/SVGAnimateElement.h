@@ -40,6 +40,8 @@ enum AnimatedPropertyValueType {
     InheritValue
 };
 
+class SVGAnimatedProperty;
+
 class SVGAnimateElement : public SVGAnimationElement {
 public:
     static PassRefPtr<SVGAnimateElement> create(const QualifiedName&, Document*);
@@ -65,7 +67,7 @@ protected:
     virtual void applyResultsToTarget();
     virtual float calculateDistance(const String& fromString, const String& toString);
 
-    virtual void targetElementDidChange(SVGElement* targetElement) OVERRIDE;
+    virtual void targetElementWillChange(SVGElement* currentTarget, SVGElement* oldTarget) OVERRIDE;
 
 private:
     SVGAnimatedTypeAnimator* ensureAnimator();
@@ -79,7 +81,8 @@ private:
     OwnPtr<SVGAnimatedType> m_fromType;
     OwnPtr<SVGAnimatedType> m_toType;
     OwnPtr<SVGAnimatedType> m_animatedType;
-    
+
+    Vector<SVGAnimatedProperty*> m_animatedProperties;
     OwnPtr<SVGAnimatedTypeAnimator> m_animator;
 };
 

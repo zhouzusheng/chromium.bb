@@ -90,6 +90,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/base/single_request_cert_verifier.h"
 #include "net/base/ssl_cert_request_info.h"
 #include "net/base/ssl_connection_status_flags.h"
 #include "net/base/ssl_info.h"
@@ -261,12 +262,13 @@ class PeerCertificateChain {
   explicit PeerCertificateChain(PRFileDesc* nss_fd)
       : num_certs_(0),
         certs_(NULL) {
-    SECStatus rv = SSL_PeerCertificateChain(nss_fd, NULL, &num_certs_);
+    SECStatus rv = SSL_PeerCertificateChain(nss_fd, NULL, &num_certs_, 0);
     DCHECK_EQ(rv, SECSuccess);
 
     certs_ = new CERTCertificate*[num_certs_];
     const unsigned expected_num_certs = num_certs_;
-    rv = SSL_PeerCertificateChain(nss_fd, certs_, &num_certs_);
+    rv = SSL_PeerCertificateChain(nss_fd, certs_, &num_certs_,
+                                  expected_num_certs);
     DCHECK_EQ(rv, SECSuccess);
     DCHECK_EQ(num_certs_, expected_num_certs);
   }
@@ -446,15 +448,14 @@ SSLClientSocketNSS::SSLClientSocketNSS(ClientSocketHandle* transport_socket,
       ssl_connection_status_(0),
       client_auth_cert_needed_(false),
       cert_verifier_(context.cert_verifier),
-      ob_cert_xtn_negotiated_(false),
-      origin_bound_cert_service_(context.origin_bound_cert_service),
-      ob_cert_type_(CLIENT_CERT_INVALID_TYPE),
-      ob_cert_request_handle_(NULL),
+      domain_bound_cert_xtn_negotiated_(false),
+      server_bound_cert_service_(context.server_bound_cert_service),
+      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE),
+      domain_bound_cert_request_handle_(NULL),
       handshake_callback_called_(false),
       completed_handshake_(false),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       eset_mitm_detected_(false),
-      kaspersky_mitm_detected_(false),
       predicted_cert_chain_correct_(false),
       next_handshake_state_(STATE_NONE),
       nss_fd_(NULL),
@@ -490,7 +491,7 @@ void SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
     return;
 
   ssl_info->cert_status = server_cert_verify_result_->cert_status;
-  ssl_info->cert = server_cert_;
+  ssl_info->cert = server_cert_verify_result_->verified_cert;
   ssl_info->connection_status = ssl_connection_status_;
   ssl_info->public_key_hashes = server_cert_verify_result_->public_key_hashes;
   for (std::vector<SHA1Fingerprint>::const_iterator
@@ -500,7 +501,7 @@ void SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
   }
   ssl_info->is_issued_by_known_root =
       server_cert_verify_result_->is_issued_by_known_root;
-  ssl_info->client_cert_sent = was_origin_bound_cert_sent() ||
+  ssl_info->client_cert_sent = WasDomainBoundCertSent() ||
       (ssl_config_.send_client_cert && ssl_config_.client_cert);
 
   PRUint16 cipher_suite =
@@ -539,13 +540,14 @@ void SSLClientSocketNSS::GetSSLCertRequestInfo(
 }
 
 int SSLClientSocketNSS::ExportKeyingMaterial(const base::StringPiece& label,
+                                             bool has_context,
                                              const base::StringPiece& context,
-                                             unsigned char *out,
+                                             unsigned char* out,
                                              unsigned int outlen) {
   if (!IsConnected())
     return ERR_SOCKET_NOT_CONNECTED;
   SECStatus result = SSL_ExportKeyingMaterial(
-      nss_fd_, label.data(), label.size(),
+      nss_fd_, label.data(), label.size(), has_context,
       reinterpret_cast<const unsigned char*>(context.data()),
       context.length(), out, outlen);
   if (result != SECSuccess) {
@@ -621,9 +623,10 @@ void SSLClientSocketNSS::Disconnect() {
   verifier_.reset();
   transport_->socket()->Disconnect();
 
-  if (ob_cert_request_handle_ != NULL) {
-    origin_bound_cert_service_->CancelRequest(ob_cert_request_handle_);
-    ob_cert_request_handle_ = NULL;
+  if (domain_bound_cert_request_handle_ != NULL) {
+    server_bound_cert_service_->CancelRequest(
+        domain_bound_cert_request_handle_);
+    domain_bound_cert_request_handle_ = NULL;
   }
 
   // TODO(wtc): Send SSL close_notify alert.
@@ -652,13 +655,12 @@ void SSLClientSocketNSS::Disconnect() {
   ssl_connection_status_ = 0;
   completed_handshake_   = false;
   eset_mitm_detected_    = false;
-  kaspersky_mitm_detected_ = false;
   start_cert_verification_time_ = base::TimeTicks();
   predicted_cert_chain_correct_ = false;
   nss_bufs_              = NULL;
   client_certs_.clear();
   client_auth_cert_needed_ = false;
-  ob_cert_xtn_negotiated_ = false;
+  domain_bound_cert_xtn_negotiated_ = false;
 
   LeaveFunction("");
 }
@@ -821,11 +823,11 @@ int SSLClientSocketNSS::Init() {
   if (!NSS_IsInitialized())
     return ERR_UNEXPECTED;
 #if !defined(OS_MACOSX) && !defined(OS_WIN)
-  if (ssl_config_.rev_checking_enabled) {
-    // We must call EnsureOCSPInit() here, on the IO thread, to get the IO loop
-    // by MessageLoopForIO::current().
+  if (ssl_config_.cert_io_enabled) {
+    // We must call EnsureNSSHttpIOInit() here, on the IO thread, to get the IO
+    // loop by MessageLoopForIO::current().
     // X509Certificate::Verify() runs on a worker thread of CertVerifier.
-    EnsureOCSPInit();
+    EnsureNSSHttpIOInit();
   }
 #endif
 
@@ -915,12 +917,12 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_DEFLATE");
 #endif
 
-#ifdef SSL_ENABLE_FALSE_START
-  rv = SSL_OptionSet(
-      nss_fd_, SSL_ENABLE_FALSE_START,
+  PRBool false_start_enabled =
       ssl_config_.false_start_enabled &&
       !SSLConfigService::IsKnownFalseStartIncompatibleServer(
-          host_and_port_.host()));
+          host_and_port_.host());
+#ifdef SSL_ENABLE_FALSE_START
+  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_FALSE_START, false_start_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_FALSE_START");
 #endif
@@ -939,13 +941,17 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
   }
 #endif  // SSL_ENABLE_RENEGOTIATION
 
-#ifdef SSL_NEXT_PROTO_NEGOTIATED
   if (!ssl_config_.next_protos.empty()) {
     rv = SSL_SetNextProtoCallback(
         nss_fd_, SSLClientSocketNSS::NextProtoCallback, this);
     if (rv != SECSuccess)
       LogFailedNSSFunction(net_log_, "SSL_SetNextProtoCallback", "");
   }
+
+#ifdef SSL_CBC_RANDOM_IV
+  rv = SSL_OptionSet(nss_fd_, SSL_CBC_RANDOM_IV, false_start_enabled);
+  if (rv != SECSuccess)
+    LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_CBC_RANDOM_IV");
 #endif
 
 #ifdef SSL_ENABLE_OCSP_STAPLING
@@ -967,16 +973,16 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
 
 #ifdef SSL_ENABLE_OB_CERTS
   rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_OB_CERTS,
-                     ssl_config_.origin_bound_certs_enabled);
+                     ssl_config_.domain_bound_certs_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_OB_CERTS");
 #endif
 
 #ifdef SSL_ENCRYPT_CLIENT_CERTS
   // For now, enable the encrypted client certificates extension only if
-  // origin-bound certificates are enabled.
+  // server-bound certificates are enabled.
   rv = SSL_OptionSet(nss_fd_, SSL_ENCRYPT_CLIENT_CERTS,
-                     ssl_config_.origin_bound_certs_enabled);
+                     ssl_config_.domain_bound_certs_enabled);
   if (rv != SECSuccess)
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENCRYPT_CLIENT_CERTS");
 #endif
@@ -1073,7 +1079,7 @@ void SSLClientSocketNSS::UpdateServerCert() {
       // case CreateFromDERCertChain() returns NULL.
       server_cert_ = X509Certificate::CreateFromDERCertChain(
           certs.AsStringPieceVector());
-      if (server_cert_ && net_log_.IsLoggingBytes()) {
+      if (server_cert_) {
         net_log_.AddEvent(
             NetLog::TYPE_SSL_CERTIFICATES_RECEIVED,
             make_scoped_refptr(new X509CertificateNetLogParam(server_cert_)));
@@ -1276,8 +1282,8 @@ int SSLClientSocketNSS::DoHandshakeLoop(int last_io_result) {
       case STATE_HANDSHAKE:
         rv = DoHandshake();
         break;
-      case STATE_GET_OB_CERT_COMPLETE:
-        rv = DoGetOBCertComplete(rv);
+      case STATE_GET_DOMAIN_BOUND_CERT_COMPLETE:
+        rv = DoGetDBCertComplete(rv);
         break;
       case STATE_VERIFY_DNSSEC:
         rv = DoVerifyDNSSEC(rv);
@@ -1370,7 +1376,6 @@ bool SSLClientSocketNSS::LoadSSLHostInfo() {
   if (state.certs.empty())
     return true;
 
-  SECStatus rv;
   const std::vector<std::string>& certs_in = state.certs;
   scoped_array<CERTCertificate*> certs(new CERTCertificate*[certs_in.size()]);
 
@@ -1389,11 +1394,16 @@ bool SSLClientSocketNSS::LoadSSLHostInfo() {
     }
   }
 
+  SECStatus rv;
+#ifdef SSL_ENABLE_CACHED_INFO
   rv = SSL_SetPredictedPeerCertificates(nss_fd_, certs.get(), certs_in.size());
-  DestroyCertificates(&certs[0], certs_in.size());
   DCHECK_EQ(SECSuccess, rv);
+#else
+  rv = SECFailure;  // Not implemented.
+#endif
+  DestroyCertificates(&certs[0], certs_in.size());
 
-  return true;
+  return rv == SECSuccess;
 }
 
 int SSLClientSocketNSS::DoLoadSSLHostInfo() {
@@ -1420,14 +1430,14 @@ int SSLClientSocketNSS::DoHandshake() {
   int net_error = net::OK;
   SECStatus rv = SSL_ForceHandshake(nss_fd_);
 
-  // TODO(rkn): Handle the case in which origin-bound cert generation takes
+  // TODO(rkn): Handle the case in which server-bound cert generation takes
   // too long and the server has closed the connection. Report some new error
   // code so that the higher level code will attempt to delete the socket and
   // redo the handshake.
 
   if (client_auth_cert_needed_) {
-    if (ob_cert_xtn_negotiated_) {
-      GotoState(STATE_GET_OB_CERT_COMPLETE);
+    if (domain_bound_cert_xtn_negotiated_) {
+      GotoState(STATE_GET_DOMAIN_BOUND_CERT_COMPLETE);
       net_error = ERR_IO_PENDING;
     } else {
       net_error = ERR_SSL_CLIENT_AUTH_CERT_NEEDED;
@@ -1446,8 +1456,6 @@ int SSLClientSocketNSS::DoHandshake() {
     if (handshake_callback_called_) {
       if (eset_mitm_detected_) {
         net_error = ERR_ESET_ANTI_VIRUS_SSL_INTERCEPTION;
-      } else if (kaspersky_mitm_detected_) {
-        net_error = ERR_KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION;
       } else {
         // We need to see if the predicted certificate chain (in
         // |ssl_host_info_->state().certs) matches the actual certificate chain
@@ -1544,12 +1552,12 @@ int SSLClientSocketNSS::DoHandshake() {
   return net_error;
 }
 
-int SSLClientSocketNSS::ImportOBCertAndKey(CERTCertificate** cert,
+int SSLClientSocketNSS::ImportDBCertAndKey(CERTCertificate** cert,
                                            SECKEYPrivateKey** key) {
   // Set the certificate.
   SECItem cert_item;
-  cert_item.data = (unsigned char*) ob_cert_.data();
-  cert_item.len = ob_cert_.size();
+  cert_item.data = (unsigned char*) domain_bound_cert_.data();
+  cert_item.len = domain_bound_cert_.size();
   *cert = CERT_NewTempCertificate(CERT_GetDefaultCertDB(),
                                   &cert_item,
                                   NULL,
@@ -1559,32 +1567,14 @@ int SSLClientSocketNSS::ImportOBCertAndKey(CERTCertificate** cert,
     return MapNSSError(PORT_GetError());
 
   // Set the private key.
-  switch (ob_cert_type_) {
-    case CLIENT_CERT_RSA_SIGN: {
-      SECItem der_private_key_info;
-      der_private_key_info.data = (unsigned char*)ob_private_key_.data();
-      der_private_key_info.len = ob_private_key_.size();
-      const unsigned int key_usage = KU_DIGITAL_SIGNATURE;
-      crypto::ScopedPK11Slot slot(PK11_GetInternalSlot());
-      SECStatus rv = PK11_ImportDERPrivateKeyInfoAndReturnKey(
-          slot.get(), &der_private_key_info, NULL, NULL, PR_FALSE, PR_FALSE,
-          key_usage, key, NULL);
-
-      if (rv != SECSuccess) {
-        int error = MapNSSError(PORT_GetError());
-        CERT_DestroyCertificate(*cert);
-        *cert = NULL;
-        return error;
-      }
-      break;
-    }
-
+  switch (domain_bound_cert_type_) {
     case CLIENT_CERT_ECDSA_SIGN: {
       SECKEYPublicKey* public_key = NULL;
       if (!crypto::ECPrivateKey::ImportFromEncryptedPrivateKeyInfo(
-          OriginBoundCertService::kEPKIPassword,
-          reinterpret_cast<const unsigned char*>(ob_private_key_.data()),
-          ob_private_key_.size(),
+          ServerBoundCertService::kEPKIPassword,
+          reinterpret_cast<const unsigned char*>(
+              domain_bound_private_key_.data()),
+          domain_bound_private_key_.size(),
           &(*cert)->subjectPublicKeyInfo,
           false,
           false,
@@ -1606,18 +1596,18 @@ int SSLClientSocketNSS::ImportOBCertAndKey(CERTCertificate** cert,
   return OK;
 }
 
-int SSLClientSocketNSS::DoGetOBCertComplete(int result) {
-  net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_GET_ORIGIN_BOUND_CERT,
+int SSLClientSocketNSS::DoGetDBCertComplete(int result) {
+  net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_GET_DOMAIN_BOUND_CERT,
                                     result);
   client_auth_cert_needed_ = false;
-  ob_cert_request_handle_ = NULL;
+  domain_bound_cert_request_handle_ = NULL;
 
   if (result != OK)
     return result;
 
   CERTCertificate* cert;
   SECKEYPrivateKey* key;
-  int error = ImportOBCertAndKey(&cert, &key);
+  int error = ImportDBCertAndKey(&cert, &key);
   if (error != OK)
     return error;
 
@@ -1633,7 +1623,7 @@ int SSLClientSocketNSS::DoGetOBCertComplete(int result) {
     return MapNSSError(PORT_GetError());
 
   GotoState(STATE_HANDSHAKE);
-  set_was_origin_bound_cert_sent(true);
+  set_domain_bound_cert_type(domain_bound_cert_type_);
   return OK;
 }
 
@@ -1715,6 +1705,8 @@ int SSLClientSocketNSS::DoVerifyCert(int result) {
     flags |= X509Certificate::VERIFY_REV_CHECKING_ENABLED;
   if (ssl_config_.verify_ev_cert)
     flags |= X509Certificate::VERIFY_EV_CERT;
+  if (ssl_config_.cert_io_enabled)
+    flags |= X509Certificate::VERIFY_CERT_IO_ENABLED;
   verifier_.reset(new SingleRequestCertVerifier(cert_verifier_));
   server_cert_verify_result_ = &local_server_cert_verify_result_;
   return verifier_->Verify(
@@ -2051,7 +2043,7 @@ void SSLClientSocketNSS::BufferSendComplete(int result) {
 int SSLClientSocketNSS::BufferRecv(void) {
   if (transport_recv_busy_) return ERR_IO_PENDING;
 
-  char *buf;
+  char* buf;
   int nb = memio_GetReadParams(nss_bufs_, &buf);
   EnterFunction(nb);
   int rv;
@@ -2080,7 +2072,7 @@ int SSLClientSocketNSS::BufferRecv(void) {
 void SSLClientSocketNSS::BufferRecvComplete(int result) {
   EnterFunction(result);
   if (result > 0) {
-    char *buf;
+    char* buf;
     memio_GetReadParams(nss_bufs_, &buf);
     memcpy(buf, recv_buffer_->data(), result);
   }
@@ -2148,18 +2140,13 @@ SECStatus SSLClientSocketNSS::OwnAuthCertHandler(void* arg,
   if (cert) {
     char* common_name = CERT_GetCommonName(&cert->issuer);
     if (common_name) {
-      if (false_start && strcmp(common_name, "ESET_RootSslCert") == 0)
+      if (false_start && strcmp(common_name, "ESET_RootSslCert") == 0) {
         // ESET anti-virus is capable of intercepting HTTPS connections on
         // Windows.  However, it is False Start intolerant and causes the
         // connections to hang forever. We detect ESET by the issuer of the
         // leaf certificate and set a flag to return a specific error, giving
         // the user instructions for reconfiguring ESET.
         that->eset_mitm_detected_ = true;
-      if (strcmp(common_name,
-                 "Kaspersky Anti-Virus personal root certificate") == 0) {
-        // Kaspersky has an unknown intolerance to our HTTPS handshakes and so
-        // we detect and give a more helpful error message.
-        that->kaspersky_mitm_detected_ = true;
       }
       if (false_start &&
           strcmp(common_name, "ContentWatch Root Certificate Authority") == 0) {
@@ -2187,7 +2174,7 @@ SECStatus SSLClientSocketNSS::OwnAuthCertHandler(void* arg,
 }
 
 // static
-bool SSLClientSocketNSS::OriginBoundCertNegotiated(PRFileDesc* socket) {
+bool SSLClientSocketNSS::DomainBoundCertNegotiated(PRFileDesc* socket) {
   PRBool xtn_negotiated = PR_FALSE;
   SECStatus rv = SSL_HandshakeNegotiatedExtension(
       socket, ssl_ob_cert_xtn, &xtn_negotiated);
@@ -2196,42 +2183,42 @@ bool SSLClientSocketNSS::OriginBoundCertNegotiated(PRFileDesc* socket) {
   return xtn_negotiated ? true : false;
 }
 
-SECStatus SSLClientSocketNSS::OriginBoundClientAuthHandler(
+SECStatus SSLClientSocketNSS::DomainBoundClientAuthHandler(
     const SECItem* cert_types,
     CERTCertificate** result_certificate,
     SECKEYPrivateKey** result_private_key) {
-  ob_cert_xtn_negotiated_ = true;
+  domain_bound_cert_xtn_negotiated_ = true;
 
-  // We have negotiated the origin-bound certificate extension.
+  // We have negotiated the domain-bound certificate extension.
   std::string origin = "https://" + host_and_port_.ToString();
   std::vector<uint8> requested_cert_types(cert_types->data,
                                           cert_types->data + cert_types->len);
-  net_log_.BeginEvent(NetLog::TYPE_SSL_GET_ORIGIN_BOUND_CERT, NULL);
-  int error = origin_bound_cert_service_->GetOriginBoundCert(
+  net_log_.BeginEvent(NetLog::TYPE_SSL_GET_DOMAIN_BOUND_CERT, NULL);
+  int error = server_bound_cert_service_->GetDomainBoundCert(
       origin,
       requested_cert_types,
-      &ob_cert_type_,
-      &ob_private_key_,
-      &ob_cert_,
+      &domain_bound_cert_type_,
+      &domain_bound_private_key_,
+      &domain_bound_cert_,
       base::Bind(&SSLClientSocketNSS::OnHandshakeIOComplete,
                  base::Unretained(this)),
-      &ob_cert_request_handle_);
+      &domain_bound_cert_request_handle_);
 
   if (error == ERR_IO_PENDING) {
     // Asynchronous case.
     client_auth_cert_needed_ = true;
     return SECWouldBlock;
   }
-  net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_GET_ORIGIN_BOUND_CERT,
+  net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_GET_DOMAIN_BOUND_CERT,
                                     error);
 
   SECStatus rv = SECSuccess;
   if (error == OK) {
     // Synchronous success.
-    int result = ImportOBCertAndKey(result_certificate,
+    int result = ImportDBCertAndKey(result_certificate,
                                     result_private_key);
     if (result == OK) {
-      set_was_origin_bound_cert_sent(true);
+      set_domain_bound_cert_type(domain_bound_cert_type_);
     } else {
       rv = SECFailure;
     }
@@ -2263,9 +2250,9 @@ SECStatus SSLClientSocketNSS::PlatformClientAuthHandler(
 
   const SECItem* cert_types = SSL_GetRequestedClientCertificateTypes(socket);
 
-  // Check if an origin-bound certificate is requested.
-  if (OriginBoundCertNegotiated(socket)) {
-    return that->OriginBoundClientAuthHandler(
+  // Check if a domain-bound certificate is requested.
+  if (DomainBoundCertNegotiated(socket)) {
+    return that->DomainBoundClientAuthHandler(
         cert_types, result_nss_certificate, result_nss_private_key);
   }
 
@@ -2402,11 +2389,10 @@ SECStatus SSLClientSocketNSS::PlatformClientAuthHandler(
     // Get the leaf certificate.
     PCCERT_CONTEXT cert_context =
         chain_context->rgpChain[0]->rgpElement[0]->pCertContext;
-    // Copy it to our own certificate store, so that we can close the "MY"
-    // certificate store before returning from this function.
+    // Create a copy the handle, so that we can close the "MY" certificate store
+    // before returning from this function.
     PCCERT_CONTEXT cert_context2;
-    BOOL ok = CertAddCertificateContextToStore(X509Certificate::cert_store(),
-                                               cert_context,
+    BOOL ok = CertAddCertificateContextToStore(NULL, cert_context,
                                                CERT_STORE_ADD_USE_EXISTING,
                                                &cert_context2);
     if (!ok) {
@@ -2414,15 +2400,15 @@ SECStatus SSLClientSocketNSS::PlatformClientAuthHandler(
       continue;
     }
 
-    // Copy the rest of the chain to our own store as well. Copying the chain
-    // stops gracefully if an error is encountered, with the partial chain
-    // being used as the intermediates, rather than failing to consider the
-    // client certificate.
+    // Copy the rest of the chain. Copying the chain stops gracefully if an
+    // error is encountered, with the partial chain being used as the
+    // intermediates, as opposed to failing to consider the client certificate
+    // at all.
     net::X509Certificate::OSCertHandles intermediates;
     for (DWORD i = 1; i < chain_context->rgpChain[0]->cElement; i++) {
       PCCERT_CONTEXT intermediate_copy;
-      ok = CertAddCertificateContextToStore(X509Certificate::cert_store(),
-          chain_context->rgpChain[0]->rgpElement[i]->pCertContext,
+      ok = CertAddCertificateContextToStore(
+          NULL, chain_context->rgpChain[0]->rgpElement[i]->pCertContext,
           CERT_STORE_ADD_USE_EXISTING, &intermediate_copy);
       if (!ok) {
         NOTREACHED();
@@ -2570,9 +2556,9 @@ SECStatus SSLClientSocketNSS::ClientAuthHandler(
 
   const SECItem* cert_types = SSL_GetRequestedClientCertificateTypes(socket);
 
-  // Check if an origin-bound certificate is requested.
-  if (OriginBoundCertNegotiated(socket)) {
-    return that->OriginBoundClientAuthHandler(
+  // Check if a domain-bound certificate is requested.
+  if (DomainBoundCertNegotiated(socket)) {
+    return that->DomainBoundClientAuthHandler(
         cert_types, result_certificate, result_private_key);
   }
 
@@ -2664,7 +2650,8 @@ SSLClientSocketNSS::NextProtoCallback(void* arg,
                                       const unsigned char* protos,
                                       unsigned int protos_len,
                                       unsigned char* proto_out,
-                                      unsigned int* proto_out_len) {
+                                      unsigned int* proto_out_len,
+                                      unsigned int proto_max_len) {
   SSLClientSocketNSS* that = reinterpret_cast<SSLClientSocketNSS*>(arg);
 
   // For each protocol in server preference, see if we support it.
@@ -2703,6 +2690,10 @@ SSLClientSocketNSS::NextProtoCallback(void* arg,
     that->next_proto_ = that->ssl_config_.next_protos[0];
   }
 
+  if (that->next_proto_.size() > proto_max_len) {
+    PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+    return SECFailure;
+  }
   memcpy(proto_out, that->next_proto_.data(), that->next_proto_.size());
   *proto_out_len = that->next_proto_.size();
   return SECSuccess;
@@ -2719,6 +2710,10 @@ bool SSLClientSocketNSS::CalledOnValidThread() const {
   EnsureThreadIdAssigned();
   base::AutoLock auto_lock(lock_);
   return valid_thread_id_ == base::PlatformThread::CurrentId();
+}
+
+ServerBoundCertService* SSLClientSocketNSS::GetServerBoundCertService() const {
+  return server_bound_cert_service_;
 }
 
 }  // namespace net

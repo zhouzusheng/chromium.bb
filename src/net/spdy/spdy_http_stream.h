@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 
 namespace net {
 
+class DrainableIOBuffer;
 class HttpResponseInfo;
 class IOBuffer;
 class SpdySession;
@@ -35,7 +36,7 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   SpdyHttpStream(SpdySession* spdy_session, bool direct);
   virtual ~SpdyHttpStream();
 
-  // Initializes this SpdyHttpStream by wraping an existing SpdyStream.
+  // Initializes this SpdyHttpStream by wrapping an existing SpdyStream.
   void InitializeWithExistingStream(SpdyStream* spdy_stream);
 
   SpdyStream* stream() { return stream_.get(); }
@@ -76,7 +77,7 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual bool OnSendHeadersComplete(int status) OVERRIDE;
   virtual int OnSendBody() OVERRIDE;
   virtual int OnSendBodyComplete(int status, bool* eof) OVERRIDE;
-  virtual int OnResponseReceived(const spdy::SpdyHeaderBlock& response,
+  virtual int OnResponseReceived(const SpdyHeaderBlock& response,
                                  base::Time response_time,
                                  int status) OVERRIDE;
   virtual void OnDataReceived(const char* buffer, int bytes) OVERRIDE;
@@ -85,7 +86,12 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   virtual void set_chunk_callback(ChunkCallback* callback) OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest, FlowControlStallResume);
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy2Test,
+                           FlowControlStallResume);
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy21Test,
+                           FlowControlStallResume);
+  FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionSpdy3Test,
+                           FlowControlStallResume);
 
   // Call the user callback.
   void DoCallback(int rv);
@@ -124,6 +130,11 @@ class NET_EXPORT_PRIVATE SpdyHttpStream : public SpdyStream::Delegate,
   // User provided buffer for the ReadResponseBody() response.
   scoped_refptr<IOBuffer> user_buffer_;
   int user_buffer_len_;
+
+  // Temporary buffer used to read the request body from UploadDataStream.
+  scoped_refptr<IOBufferWithSize> raw_request_body_buf_;
+  // Wraps raw_request_body_buf_ to read the remaining data progressively.
+  scoped_refptr<DrainableIOBuffer> request_body_buf_;
 
   // Is there a scheduled read callback pending.
   bool buffered_read_callback_pending_;

@@ -139,13 +139,13 @@ bool TransportSecurityState::HasMetadata(DomainState* result,
                                          bool sni_available) {
   DCHECK(CalledOnValidThread());
 
-  *result = DomainState();
+  DomainState state;
   const std::string canonicalized_host = CanonicalizeHost(host);
   if (canonicalized_host.empty())
     return false;
 
-  bool has_preload = IsPreloadedSTS(canonicalized_host, sni_available, result);
-  std::string canonicalized_preload = CanonicalizeHost(result->domain);
+  bool has_preload = IsPreloadedSTS(canonicalized_host, sni_available, &state);
+  std::string canonicalized_preload = CanonicalizeHost(state.domain);
 
   base::Time current_time(base::Time::Now());
 
@@ -153,8 +153,10 @@ bool TransportSecurityState::HasMetadata(DomainState* result,
     std::string host_sub_chunk(&canonicalized_host[i],
                                canonicalized_host.size() - i);
     // Exact match of a preload always wins.
-    if (has_preload && host_sub_chunk == canonicalized_preload)
+    if (has_preload && host_sub_chunk == canonicalized_preload) {
+      *result = state;
       return true;
+    }
 
     std::map<std::string, DomainState>::iterator j =
         enabled_hosts_.find(HashHost(host_sub_chunk));
@@ -168,15 +170,17 @@ bool TransportSecurityState::HasMetadata(DomainState* result,
       continue;
     }
 
-    *result = j->second;
-    result->domain = DNSDomainToString(host_sub_chunk);
+    state = j->second;
+    state.domain = DNSDomainToString(host_sub_chunk);
 
-    // If we matched the domain exactly, it doesn't matter what the value of
-    // include_subdomains is.
-    if (i == 0)
+    // Succeed if we matched the domain exactly or if subdomain matches are
+    // allowed.
+    if (i == 0 || j->second.include_subdomains) {
+      *result = state;
       return true;
+    }
 
-    return j->second.include_subdomains;
+    return false;
   }
 
   return false;
@@ -873,7 +877,9 @@ bool TransportSecurityState::Serialise(std::string* output) {
     toplevel.Set(HashedDomainToExternalString(i->first), state);
   }
 
-  base::JSONWriter::Write(&toplevel, true /* pretty print */, output);
+  base::JSONWriter::WriteWithOptions(&toplevel,
+                                     base::JSONWriter::OPTIONS_PRETTY_PRINT,
+                                     output);
   return true;
 }
 
@@ -1323,8 +1329,16 @@ static const struct HSTSPreload kPreloadedSTS[] = {
       DOMAIN_GOOGLE_COM },
   {16, true, "\012googleplex\003com", true, kGooglePins,
       DOMAIN_GOOGLEPLEX_COM },
-  {19, true, "\006groups\006google\003com", false, kGooglePins,
+  {19, true, "\006groups\006google\003com", true, kGooglePins,
       DOMAIN_GOOGLE_COM },
+  {17, true, "\004apis\006google\003com", true, kGooglePins,
+      DOMAIN_GOOGLE_COM },
+  // chart.apis.google.com is *not* HSTS because the certificate doesn't match
+  // and there are lots of links out there that still use the name. The correct
+  // hostname for this is chart.googleapis.com.
+  {23, true, "\005chart\004apis\006google\003com", false, kGooglePins,
+      DOMAIN_GOOGLE_COM},
+
   // Other Google-related domains that must use an acceptable certificate
   // iff using SSL.
   {11, true, "\005ytimg\003com", false, kGooglePins,
@@ -1418,8 +1432,23 @@ static const struct HSTSPreload kPreloadedSTS[] = {
       DOMAIN_NOT_PINNED },
   {12, true, "\006ubertt\003org", true, kNoPins, DOMAIN_NOT_PINNED },
   {9, true, "\004pixi\002me", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, true, "\010grepular\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false , "\012mydigipass\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {20, false , "\003www\012mydigipass\003com", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {26, false , "\011developer\012mydigipass\003com", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {30, false , "\003www\011developer\012mydigipass\003com", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {24, false , "\007sandbox\012mydigipass\003com", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {28, false , "\003www\007sandbox\012mydigipass\003com", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {12, true, "\006crypto\003cat", true, kNoPins, DOMAIN_NOT_PINNED },
+  {25, true, "\014bigshinylock\006minazo\003net", true, kNoPins,
+      DOMAIN_NOT_PINNED },
+  {10, true, "\005crate\002io", true, kNoPins, DOMAIN_NOT_PINNED },
 
-  // Twitter pins disabled in order to track down pinning failures --agl
   {13, false, "\007twitter\003com", kTwitterHSTS,
       kTwitterComPins, DOMAIN_TWITTER_COM },
   {17, true, "\003www\007twitter\003com", kTwitterHSTS,

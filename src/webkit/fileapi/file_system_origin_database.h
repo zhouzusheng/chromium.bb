@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,12 @@
 
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "base/time.h"
+
+namespace leveldb {
+class DB;
+class Status;
+}
 
 namespace tracked_objects {
 class Location;
@@ -34,7 +39,7 @@ class FileSystemOriginDatabase {
 
   // Only one instance of FileSystemOriginDatabase should exist for a given path
   // at a given time.
-  explicit FileSystemOriginDatabase(const FilePath& path);
+  explicit FileSystemOriginDatabase(const FilePath& file_system_directory);
   ~FileSystemOriginDatabase();
 
   bool HasOriginPath(const std::string& origin);
@@ -52,13 +57,22 @@ class FileSystemOriginDatabase {
   void DropDatabase();
 
  private:
-  bool Init();
+  enum RecoveryOption {
+    REPAIR_ON_CORRUPTION,
+    DELETE_ON_CORRUPTION,
+    FAIL_ON_CORRUPTION,
+  };
+
+  bool Init(RecoveryOption recovery_option);
+  bool RepairDatabase(const std::string& db_path);
   void HandleError(const tracked_objects::Location& from_here,
-                   leveldb::Status status);
+                   const leveldb::Status& status);
+  void ReportInitStatus(const leveldb::Status& status);
   bool GetLastPathNumber(int* number);
 
-  std::string path_;
+  FilePath file_system_directory_;
   scoped_ptr<leveldb::DB> db_;
+  base::Time last_reported_time_;
   DISALLOW_COPY_AND_ASSIGN(FileSystemOriginDatabase);
 };
 

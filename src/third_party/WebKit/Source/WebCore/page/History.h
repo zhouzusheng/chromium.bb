@@ -44,6 +44,7 @@ public:
     static PassRefPtr<History> create(Frame* frame) { return adoptRef(new History(frame)); }
 
     unsigned length() const;
+    SerializedScriptValue* state();
     void back();
     void forward();
     void go(int distance);
@@ -51,6 +52,9 @@ public:
     void back(ScriptExecutionContext*);
     void forward(ScriptExecutionContext*);
     void go(ScriptExecutionContext*, int distance);
+
+    bool stateChanged() const;
+    bool isSameAsCurrentState(SerializedScriptValue*) const;
 
     enum StateObjectType {
         StateObjectPush,
@@ -62,6 +66,10 @@ private:
     explicit History(Frame*);
 
     KURL urlForState(const String& url);
+
+    SerializedScriptValue* stateInternal() const;
+
+    SerializedScriptValue* m_lastStateObjectRequested;
 };
 
 } // namespace WebCore

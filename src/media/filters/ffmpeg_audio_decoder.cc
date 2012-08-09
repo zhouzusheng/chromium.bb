@@ -8,7 +8,6 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/data_buffer.h"
 #include "media/base/demuxer.h"
-#include "media/base/filter_host.h"
 #include "media/base/pipeline.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 
@@ -46,8 +45,10 @@ static bool IsEndOfStream(int result, int decoded_size, Buffer* input) {
 }
 
 
-FFmpegAudioDecoder::FFmpegAudioDecoder(MessageLoop* message_loop)
-    : message_loop_(message_loop),
+FFmpegAudioDecoder::FFmpegAudioDecoder(
+    const base::Callback<MessageLoop*()>& message_loop_cb)
+    : message_loop_factory_cb_(message_loop_cb),
+      message_loop_(NULL),
       codec_context_(NULL),
       bits_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
@@ -59,8 +60,8 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(MessageLoop* message_loop)
 FFmpegAudioDecoder::~FFmpegAudioDecoder() {
   av_free(decoded_audio_);
 
-  // XXX: should we require Stop() to be called? this might end up getting
-  // called on a random thread due to refcounting.
+  // TODO(scherkus): should we require Stop() to be called? this might end up
+  // getting called on a random thread due to refcounting.
   if (codec_context_) {
     av_free(codec_context_->extradata);
     avcodec_close(codec_context_);
@@ -68,30 +69,29 @@ FFmpegAudioDecoder::~FFmpegAudioDecoder() {
   }
 }
 
-void FFmpegAudioDecoder::Flush(const base::Closure& callback) {
-  message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&FFmpegAudioDecoder::DoFlush, this, callback));
-}
-
 void FFmpegAudioDecoder::Initialize(
-    DemuxerStream* stream,
-    const base::Closure& callback,
-    const StatisticsCallback& stats_callback) {
-  // TODO(scherkus): change Initialize() signature to pass |stream| as a
-  // scoped_refptr<>.
-  scoped_refptr<DemuxerStream> ref_stream(stream);
+    const scoped_refptr<DemuxerStream>& stream,
+    const PipelineStatusCB& status_cb,
+    const StatisticsCB& statistics_cb) {
+  if (!message_loop_) {
+    message_loop_ = message_loop_factory_cb_.Run();
+    message_loop_factory_cb_.Reset();
+  } else {
+    // TODO(scherkus): initialization currently happens more than once in
+    // PipelineIntegrationTest.BasicPlayback.
+    LOG(ERROR) << "Initialize has already been called.";
+  }
   message_loop_->PostTask(
       FROM_HERE,
       base::Bind(&FFmpegAudioDecoder::DoInitialize, this,
-                 ref_stream, callback, stats_callback));
+                 stream, status_cb, statistics_cb));
 }
 
-void FFmpegAudioDecoder::Read(const ReadCB& callback) {
+void FFmpegAudioDecoder::Read(const ReadCB& read_cb) {
   // Complete operation asynchronously on different stack of execution as per
   // the API contract of AudioDecoder::Read()
   message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegAudioDecoder::DoRead, this, callback));
+      &FFmpegAudioDecoder::DoRead, this, read_cb));
 }
 
 int FFmpegAudioDecoder::bits_per_channel() {
@@ -106,13 +106,18 @@ int FFmpegAudioDecoder::samples_per_second() {
   return samples_per_second_;
 }
 
+void FFmpegAudioDecoder::Reset(const base::Closure& closure) {
+  message_loop_->PostTask(FROM_HERE, base::Bind(
+      &FFmpegAudioDecoder::DoReset, this, closure));
+}
+
 void FFmpegAudioDecoder::DoInitialize(
     const scoped_refptr<DemuxerStream>& stream,
-    const base::Closure& callback,
-    const StatisticsCallback& stats_callback) {
+    const PipelineStatusCB& status_cb,
+    const StatisticsCB& statistics_cb) {
   demuxer_stream_ = stream;
   const AudioDecoderConfig& config = stream->audio_decoder_config();
-  stats_callback_ = stats_callback;
+  statistics_cb_ = statistics_cb;
 
   // TODO(scherkus): this check should go in Pipeline prior to creating
   // decoder objects.
@@ -123,8 +128,7 @@ void FFmpegAudioDecoder::DoInitialize(
                 << " bits per channel: " << config.bits_per_channel()
                 << " samples per second: " << config.samples_per_second();
 
-    host()->SetError(DECODER_ERROR_NOT_SUPPORTED);
-    callback.Run();
+    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
 
@@ -133,12 +137,11 @@ void FFmpegAudioDecoder::DoInitialize(
   AudioDecoderConfigToAVCodecContext(config, codec_context_);
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
-  if (!codec || avcodec_open(codec_context_, codec) < 0) {
+  if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
     DLOG(ERROR) << "Could not initialize audio decoder: "
                 << codec_context_->codec_id;
 
-    host()->SetError(DECODER_ERROR_NOT_SUPPORTED);
-    callback.Run();
+    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
 
@@ -147,21 +150,21 @@ void FFmpegAudioDecoder::DoInitialize(
   channel_layout_ = config.channel_layout();
   samples_per_second_ = config.samples_per_second();
 
-  callback.Run();
+  status_cb.Run(PIPELINE_OK);
 }
 
-void FFmpegAudioDecoder::DoFlush(const base::Closure& callback) {
+void FFmpegAudioDecoder::DoReset(const base::Closure& closure) {
   avcodec_flush_buffers(codec_context_);
   estimated_next_timestamp_ = kNoTimestamp();
-  callback.Run();
+  closure.Run();
 }
 
-void FFmpegAudioDecoder::DoRead(const ReadCB& callback) {
+void FFmpegAudioDecoder::DoRead(const ReadCB& read_cb) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(!callback.is_null());
+  DCHECK(!read_cb.is_null());
   CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
 
-  read_cb_ = callback;
+  read_cb_ = read_cb;
   ReadFromDemuxerStream();
 }
 
@@ -239,7 +242,7 @@ void FFmpegAudioDecoder::DoDecodeBuffer(const scoped_refptr<Buffer>& input) {
   }
 
   // Decoding finished successfully, update stats and execute callback.
-  stats_callback_.Run(statistics);
+  statistics_cb_.Run(statistics);
   if (output) {
     DeliverSamples(output);
   } else {

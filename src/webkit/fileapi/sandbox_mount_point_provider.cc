@@ -16,7 +16,6 @@
 #include "base/metrics/histogram.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "webkit/fileapi/file_system_callback_dispatcher.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_options.h"
@@ -43,7 +42,7 @@ const size_t kOldFileSystemUniqueLength = 16;
 const size_t kOldFileSystemUniqueDirectoryNameLength =
     kOldFileSystemUniqueLength + arraysize(kOldFileSystemUniqueNamePrefix) - 1;
 
-const char kOpenFileSystem[] = "FileSystem.OpenFileSystem";
+const char kOpenFileSystemLabel[] = "FileSystem.OpenFileSystem";
 enum FileSystemError {
   kOK = 0,
   kIncognito,
@@ -51,6 +50,9 @@ enum FileSystemError {
   kCreateDirectoryError,
   kFileSystemErrorMax,
 };
+
+const char kTemporaryOriginsCountLabel[] = "FileSystem.TemporaryOriginsCount";
+const char kPersistentOriginsCountLabel[] = "FileSystem.PersistentOriginsCount";
 
 // Restricted names.
 // http://dev.w3.org/2009/dap/file-system/file-dir-sys.html#naming-restrictions
@@ -276,13 +278,13 @@ void ValidateRootOnFileThread(ObfuscatedFileUtil* file_util,
   FilePath root_path =
       file_util->GetDirectoryForOriginAndType(origin_url, type, create);
   if (root_path.empty()) {
-    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystem,
+    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
                               kCreateDirectoryError,
                               kFileSystemErrorMax);
     // TODO(kinuko): We should return appropriate error code.
     *error_ptr = base::PLATFORM_FILE_ERROR_FAILED;
   } else {
-    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystem, kOK, kFileSystemErrorMax);
+    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel, kOK, kFileSystemErrorMax);
     *error_ptr = base::PLATFORM_FILE_OK;
   }
   // The reference of file_util will be derefed on the FILE thread
@@ -317,8 +319,11 @@ SandboxMountPointProvider::SandboxMountPointProvider(
 }
 
 SandboxMountPointProvider::~SandboxMountPointProvider() {
-  if (!file_message_loop_->BelongsToCurrentThread())
-    file_message_loop_->ReleaseSoon(FROM_HERE, sandbox_file_util_.release());
+  if (!file_message_loop_->BelongsToCurrentThread()) {
+    ObfuscatedFileUtil* sandbox_file_util = sandbox_file_util_.release();
+    if (!file_message_loop_->ReleaseSoon(FROM_HERE, sandbox_file_util))
+      sandbox_file_util->Release();
+  }
 }
 
 void SandboxMountPointProvider::ValidateFileSystemRoot(
@@ -327,7 +332,7 @@ void SandboxMountPointProvider::ValidateFileSystemRoot(
   if (file_system_options_.is_incognito()) {
     // TODO(kinuko): return an isolated temporary directory.
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
-    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystem,
+    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
                               kIncognito,
                               kFileSystemErrorMax);
     return;
@@ -335,7 +340,7 @@ void SandboxMountPointProvider::ValidateFileSystemRoot(
 
   if (!IsAllowedScheme(origin_url)) {
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
-    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystem,
+    UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
                               kInvalidScheme,
                               kFileSystemErrorMax);
     return;
@@ -411,15 +416,21 @@ FileSystemFileUtil* SandboxMountPointProvider::GetFileUtil() {
   return sandbox_file_util_.get();
 }
 
+FilePath SandboxMountPointProvider::GetPathForPermissionsCheck(
+    const FilePath& virtual_path) const {
+  // We simply return the very top directory of the sandbox
+  // filesystem regardless of the input path.
+  return new_base_path();
+}
+
 FileSystemOperationInterface*
 SandboxMountPointProvider::CreateFileSystemOperation(
     const GURL& origin_url,
     FileSystemType file_system_type,
     const FilePath& virtual_path,
-    scoped_ptr<FileSystemCallbackDispatcher> dispatcher,
     base::MessageLoopProxy* file_proxy,
     FileSystemContext* context) const {
-  return new FileSystemOperation(dispatcher.Pass(), file_proxy, context);
+  return new FileSystemOperation(file_proxy, context);
 }
 
 FilePath SandboxMountPointProvider::old_base_path() const {
@@ -479,6 +490,13 @@ void SandboxMountPointProvider::GetOriginsForTypeOnFileThread(
     if (enumerator->HasFileSystemType(type))
       origins->insert(origin);
   }
+  if (type == kFileSystemTypeTemporary) {
+    UMA_HISTOGRAM_COUNTS(kTemporaryOriginsCountLabel,
+                         origins->size());
+  } else {
+    UMA_HISTOGRAM_COUNTS(kPersistentOriginsCountLabel,
+                         origins->size());
+  }
 }
 
 void SandboxMountPointProvider::GetOriginsForHostOnFileThread(
@@ -519,11 +537,10 @@ int64 SandboxMountPointProvider::GetOriginUsageOnFileThread(
   // Get the directory size now and update the cache.
   FileSystemUsageCache::Delete(usage_file_path);
 
-  FileSystemOperationContext context(NULL, sandbox_file_util_);
-  context.set_src_origin_url(origin_url);
-  context.set_src_type(type);
+  FileSystemOperationContext context(NULL);
+  FileSystemPath path(origin_url, type, FilePath());
   scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> enumerator(
-      sandbox_file_util_->CreateFileEnumerator(&context, FilePath()));
+      sandbox_file_util_->CreateFileEnumerator(&context, path, true));
 
   FilePath file_path_each;
   int64 usage = 0;

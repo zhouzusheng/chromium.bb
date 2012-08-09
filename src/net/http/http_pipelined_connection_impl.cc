@@ -70,7 +70,7 @@ HttpPipelinedConnectionImpl::HttpPipelinedConnectionImpl(
     const ProxyInfo& used_proxy_info,
     const BoundNetLog& net_log,
     bool was_npn_negotiated,
-    SSLClientSocket::NextProto protocol_negotiated)
+    NextProto protocol_negotiated)
     : delegate_(delegate),
       connection_(connection),
       used_ssl_config_(used_ssl_config),
@@ -324,8 +324,10 @@ int HttpPipelinedConnectionImpl::DoEvictPendingSendRequests(int result) {
     scoped_ptr<PendingSendRequest> evicted_send(
         pending_send_request_queue_.front());
     pending_send_request_queue_.pop();
-    if (stream_info_map_[evicted_send->pipeline_id].state != STREAM_CLOSED)
+    if (ContainsKey(stream_info_map_, evicted_send->pipeline_id) &&
+        stream_info_map_[evicted_send->pipeline_id].state != STREAM_CLOSED) {
       evicted_send->callback.Run(ERR_PIPELINE_EVICTION);
+    }
   }
   send_next_state_ = SEND_STATE_NONE;
   return result;
@@ -809,7 +811,7 @@ bool HttpPipelinedConnectionImpl::was_npn_negotiated() const {
   return was_npn_negotiated_;
 }
 
-SSLClientSocket::NextProto HttpPipelinedConnectionImpl::protocol_negotiated()
+NextProto HttpPipelinedConnectionImpl::protocol_negotiated()
     const {
   return protocol_negotiated_;
 }

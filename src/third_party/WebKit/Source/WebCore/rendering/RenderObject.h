@@ -29,6 +29,7 @@
 #include "CachedImage.h"
 #include "Document.h"
 #include "Element.h"
+#include "FractionalLayoutUnit.h"
 #include "FloatQuad.h"
 #include "LayoutTypes.h"
 #include "PaintPhase.h"
@@ -36,6 +37,7 @@
 #include "RenderStyle.h"
 #include "TextAffinity.h"
 #include "TransformationMatrix.h"
+#include <wtf/HashSet.h>
 #include <wtf/UnusedParam.h>
 
 #if USE(CG) || USE(CAIRO) || USE(SKIA) || PLATFORM(QT)
@@ -115,6 +117,8 @@ struct DashboardRegionValue {
     int type;
 };
 #endif
+
+typedef WTF::HashSet<const RenderObject*> RenderObjectAncestorLineboxDirtySet;
 
 #ifndef NDEBUG
 const int showTreeCharacterOffset = 39;
@@ -220,8 +224,6 @@ public:
     // normal flow object.
     void handleDynamicFloatPositionChange();
     
-    RenderTable* createAnonymousTable() const;
-    
     // RenderObject tree manipulation
     //////////////////////////////////////////
     virtual bool canHaveChildren() const { return virtualChildren(); }
@@ -286,8 +288,8 @@ public:
     virtual bool isBoxModelObject() const { return false; }
     virtual bool isCounter() const { return false; }
     virtual bool isQuote() const { return false; }
+
 #if ENABLE(DETAILS)
-    virtual bool isDetails() const { return false; }
     virtual bool isDetailsMarker() const { return false; }
 #endif
     virtual bool isEmbeddedObject() const { return false; }
@@ -325,9 +327,6 @@ public:
 
     virtual bool isSlider() const { return false; }
     virtual bool isSliderThumb() const { return false; }
-#if ENABLE(DETAILS)
-    virtual bool isSummary() const { return false; }
-#endif
     virtual bool isTable() const { return false; }
     virtual bool isTableCell() const { return false; }
     virtual bool isTableCol() const { return false; }
@@ -373,6 +372,23 @@ public:
     bool hasColumns() const { return m_bitfields.hasColumns(); }
     void setHasColumns(bool b = true) { m_bitfields.setHasColumns(b); }
 
+    bool ancestorLineBoxDirty() const { return s_ancestorLineboxDirtySet && s_ancestorLineboxDirtySet->contains(this); }
+    void setAncestorLineBoxDirty(bool b = true)
+    {
+        if (b) {
+            if (!s_ancestorLineboxDirtySet)
+                s_ancestorLineboxDirtySet = new RenderObjectAncestorLineboxDirtySet;
+            s_ancestorLineboxDirtySet->add(this);
+            setNeedsLayout(true);
+        } else if (s_ancestorLineboxDirtySet) {
+            s_ancestorLineboxDirtySet->remove(this);
+            if (s_ancestorLineboxDirtySet->isEmpty()) {
+                delete s_ancestorLineboxDirtySet;
+                s_ancestorLineboxDirtySet = 0;
+            }
+        }
+    }
+
     bool inRenderFlowThread() const { return m_bitfields.inRenderFlowThread(); }
     void setInRenderFlowThread(bool b = true) { m_bitfields.setInRenderFlowThread(b); }
 
@@ -387,7 +403,8 @@ public:
     // to add SVG renderer methods to RenderObject with an ASSERT_NOT_REACHED() default implementation.
     virtual bool isSVGRoot() const { return false; }
     virtual bool isSVGContainer() const { return false; }
-    virtual bool isSVGViewportContainer() const { return false; } 
+    virtual bool isSVGTransformableContainer() const { return false; }
+    virtual bool isSVGViewportContainer() const { return false; }
     virtual bool isSVGGradientStop() const { return false; }
     virtual bool isSVGHiddenContainer() const { return false; }
     virtual bool isSVGPath() const { return false; }
@@ -402,7 +419,6 @@ public:
     virtual bool isSVGResourceContainer() const { return false; }
     virtual bool isSVGResourceFilter() const { return false; }
     virtual bool isSVGResourceFilterPrimitive() const { return false; }
-    virtual bool isSVGShadowTreeRootContainer() const { return false; }
 
     virtual RenderSVGResourceContainer* toRenderSVGResourceContainer();
 
@@ -505,6 +521,7 @@ public:
 
     bool hasTransform() const { return m_bitfields.hasTransform(); }
     bool hasMask() const { return style() && style()->hasMask(); }
+    bool hasHiddenBackface() const { return style() && style()->backfaceVisibility() == BackfaceVisibilityHidden; }
 
 #if ENABLE(CSS_FILTERS)
     bool hasFilter() const { return style() && style()->hasFilter(); }
@@ -654,11 +671,11 @@ public:
     // Return the offset from an object up the container() chain. Asserts that none of the intermediate objects have transforms.
     LayoutSize offsetFromAncestorContainer(RenderObject*) const;
     
-    virtual void absoluteRects(Vector<LayoutRect>&, const LayoutPoint&) const { }
+    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint&) const { }
 
     // FIXME: useTransforms should go away eventually
-    LayoutRect absoluteBoundingBoxRect(bool useTransform = true) const;
-    LayoutRect absoluteBoundingBoxRectIgnoringTransforms() const { return absoluteBoundingBoxRect(false); }
+    IntRect absoluteBoundingBoxRect(bool useTransform = true) const;
+    IntRect absoluteBoundingBoxRectIgnoringTransforms() const { return absoluteBoundingBoxRect(false); }
 
     // Build an array of quads in absolute coords for line boxes
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* /*wasFixed*/ = 0) const { }
@@ -719,6 +736,7 @@ public:
     {
         return clippedOverflowRectForRepaint(0);
     }
+    IntRect pixelSnappedAbsoluteClippedOverflowRect() const;
     virtual LayoutRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const;
     virtual LayoutRect rectWithOutlineForRepaint(RenderBoxModelObject* repaintContainer, LayoutUnit outlineWidth) const;
 
@@ -748,9 +766,6 @@ public:
 
     // Applied as a "slop" to dirty rect checks during the outline painting phase's dirty-rect checks.
     LayoutUnit maximalOutlineSize(PaintPhase) const;
-
-    void setHasMarkupTruncation(bool b = true) { m_bitfields.setHasMarkupTruncation(b); }
-    bool hasMarkupTruncation() const { return m_bitfields.hasMarkupTruncation(); }
 
     enum SelectionState {
         SelectionNone, // The object is not selected.
@@ -800,6 +815,7 @@ public:
     // as a hook to detect the case of document destruction and don't waste time doing unnecessary work.
     bool documentBeingDestroyed() const;
 
+    void destroyAndCleanupAnonymousWrappers();
     virtual void destroy();
 
     // Virtual function helpers for the deprecated Flexible Box Layout (display: -webkit-box).
@@ -844,7 +860,7 @@ public:
     bool shouldUseTransformFromContainer(const RenderObject* container) const;
     void getTransformFromContainer(const RenderObject* container, const LayoutSize& offsetInContainer, TransformationMatrix&) const;
     
-    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint&) { };
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&) { };
 
     LayoutRect absoluteOutlineBounds() const
     {
@@ -855,13 +871,15 @@ public:
     RenderObject* rendererForRootBackground();
 
 protected:
+    inline bool layerCreationAllowedForSubtree() const;
+
     // Overrides should call the superclass at the end
     virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle);
     // Overrides should call the superclass at the start
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
     void propagateStyleToAnonymousChildren(bool blockChildrenOnly = false);
 
-    void drawLineForBoxSide(GraphicsContext*, LayoutUnit x1, LayoutUnit y1, LayoutUnit x2, LayoutUnit y2, BoxSide,
+    void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide,
                             Color, EBorderStyle, int adjbw1, int adjbw2, bool antialias = false);
 
     void paintFocusRing(GraphicsContext*, const LayoutPoint&, RenderStyle*);
@@ -891,6 +909,8 @@ private:
     RenderObject* m_parent;
     RenderObject* m_previous;
     RenderObject* m_next;
+
+    static RenderObjectAncestorLineboxDirtySet* s_ancestorLineboxDirtySet;
 
 #ifndef NDEBUG
     bool m_hasAXObject             : 1;
@@ -934,7 +954,6 @@ private:
             , m_childrenInline(false)
             , m_marginBeforeQuirk(false) 
             , m_marginAfterQuirk(false)
-            , m_hasMarkupTruncation(false)
             , m_hasColumns(false)
             , m_selectionState(SelectionNone)
         {
@@ -978,7 +997,6 @@ private:
         ADD_BOOLEAN_BITFIELD(childrenInline, ChildrenInline);
         ADD_BOOLEAN_BITFIELD(marginBeforeQuirk, MarginBeforeQuirk);
         ADD_BOOLEAN_BITFIELD(marginAfterQuirk, MarginAfterQuirk);
-        ADD_BOOLEAN_BITFIELD(hasMarkupTruncation, HasMarkupTruncation);
         ADD_BOOLEAN_BITFIELD(hasColumns, HasColumns);
 
     private:
@@ -1054,6 +1072,7 @@ inline void RenderObject::setNeedsLayout(bool b, bool markParents)
         setNeedsSimplifiedNormalFlowLayout(false);
         setNormalChildNeedsLayout(false);
         setNeedsPositionedMovementLayout(false);
+        setAncestorLineBoxDirty(false);
     }
 }
 
@@ -1107,6 +1126,20 @@ inline bool RenderObject::preservesNewline() const
     return style()->preserveNewline();
 }
 
+inline bool RenderObject::layerCreationAllowedForSubtree() const
+{
+#if ENABLE(SVG)
+    RenderObject* parentRenderer = parent();
+    while (parentRenderer) {
+        if (parentRenderer->isSVGHiddenContainer())
+            return false;
+        parentRenderer = parentRenderer->parent();
+    }
+#endif
+
+    return true;
+}
+
 inline void RenderObject::setSelectionStateIfNeeded(SelectionState state)
 {
     if (selectionState() == state)
@@ -1129,6 +1162,11 @@ inline void makeMatrixRenderable(TransformationMatrix& matrix, bool has3DRenderi
 inline int adjustForAbsoluteZoom(int value, RenderObject* renderer)
 {
     return adjustForAbsoluteZoom(value, renderer->style());
+}
+
+inline int adjustForAbsoluteZoom(FractionalLayoutUnit value, RenderObject* renderer)
+{
+    return adjustForAbsoluteZoom(value.floor(), renderer->style());
 }
 
 inline void adjustFloatQuadForAbsoluteZoom(FloatQuad& quad, RenderObject* renderer)

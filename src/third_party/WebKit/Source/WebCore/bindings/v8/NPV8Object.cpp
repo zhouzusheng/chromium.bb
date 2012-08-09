@@ -32,7 +32,7 @@
 #include "DOMWindow.h"
 #include "Frame.h"
 #include "NPObjectWrapper.h"
-#include "OwnArrayPtr.h"
+#include <wtf/OwnArrayPtr.h>
 #include "PlatformString.h"
 #include "ScriptSourceCode.h"
 #include "UserGestureIndicator.h"
@@ -336,7 +336,8 @@ bool _NPN_EvaluateHelper(NPP npp, bool popupsAllowed, NPObject* npObject, NPStri
     if (v8result.IsEmpty())
         return false;
 
-    convertV8ObjectToNPVariant(v8result, npObject, result);
+    if (_NPN_IsAlive(npObject))
+        convertV8ObjectToNPVariant(v8result, npObject, result);
     return true;
 }
 

@@ -21,6 +21,7 @@
 class MessageLoop;
 
 namespace base {
+class MessageLoopProxy;
 class TimeDelta;
 }
 
@@ -34,21 +35,6 @@ class FilterCollection;
 class MediaLog;
 class VideoDecoder;
 class VideoRenderer;
-
-// TODO(scherkus): this should be moved alongside host interface defintions.
-struct PipelineStatistics {
-  PipelineStatistics()
-      : audio_bytes_decoded(0),
-        video_bytes_decoded(0),
-        video_frames_decoded(0),
-        video_frames_dropped(0) {
-  }
-
-  uint32 audio_bytes_decoded;  // Should be uint64?
-  uint32 video_bytes_decoded;  // Should be uint64?
-  uint32 video_frames_decoded;
-  uint32 video_frames_dropped;
-};
 
 enum NetworkEvent {
   DOWNLOAD_CONTINUED,
@@ -137,12 +123,14 @@ class MEDIA_EXPORT Pipeline
   //
   // Pipeline initialization is an inherently asynchronous process.  Clients can
   // either poll the IsInitialized() method (discouraged) or optionally pass in
-  // |start_callback|, which will be executed when initialization completes.
+  // |start_cb|, which will be executed when initialization completes.
   //
   // The following permanent callbacks will be executed as follows:
-  //   |ended_callback| will be executed whenever the media reaches the end.
-  //   |error_callback_| will be executed whenever an error occurs.
-  //   |network_callback_| will be executed whenever there's a network activity.
+  //   |start_cb_| will be executed when Start is done (successfully or not).
+  //   |network_cb_| will be executed whenever there's a network activity.
+  //   |ended_cb| will be executed whenever the media reaches the end.
+  //   |error_cb_| will be executed whenever an error occurs but hasn't
+  //               been reported already through another callback.
   //
   // These callbacks are only executed after Start() has been called and until
   // Stop() has completed.
@@ -152,14 +140,14 @@ class MEDIA_EXPORT Pipeline
   // TODO(scherkus): remove IsInitialized() and force clients to use callbacks.
   void Start(scoped_ptr<FilterCollection> filter_collection,
              const std::string& url,
-             const PipelineStatusCB& ended_callback,
-             const PipelineStatusCB& error_callback,
-             const NetworkEventCB& network_callback,
-             const PipelineStatusCB& start_callback);
+             const PipelineStatusCB& ended_cb,
+             const PipelineStatusCB& error_cb,
+             const NetworkEventCB& network_cb,
+             const PipelineStatusCB& start_cb);
 
   // Asynchronously stops the pipeline and resets it to an uninitialized state.
   //
-  // If provided, |stop_callback| will be executed when the pipeline has been
+  // If provided, |stop_cb| will be executed when the pipeline has been
   // completely torn down and reset to an uninitialized state.  It is acceptable
   // to call Start() again once the callback has finished executing.
   //
@@ -170,16 +158,16 @@ class MEDIA_EXPORT Pipeline
   //
   // TODO(scherkus): ideally clients would destroy the pipeline after calling
   // Stop() and create a new pipeline as needed.
-  void Stop(const PipelineStatusCB& stop_callback);
+  void Stop(const base::Closure& stop_cb);
 
-  // Attempt to seek to the position specified by time.  |seek_callback| will be
+  // Attempt to seek to the position specified by time.  |seek_cb| will be
   // executed when the all filters in the pipeline have processed the seek.
   //
   // Clients are expected to call GetCurrentTime() to check whether the seek
   // succeeded.
   //
   // It is an error to call this method if the pipeline has not started.
-  void Seek(base::TimeDelta time, const PipelineStatusCB& seek_callback);
+  void Seek(base::TimeDelta time, const PipelineStatusCB& seek_cb);
 
   // Returns true if the pipeline has been started via Start().  If IsRunning()
   // returns true, it is expected that Stop() will be called before destroying
@@ -338,7 +326,6 @@ class MEDIA_EXPORT Pipeline
   virtual void SetError(PipelineStatus error) OVERRIDE;
   virtual base::TimeDelta GetTime() const OVERRIDE;
   virtual base::TimeDelta GetDuration() const OVERRIDE;
-  virtual void SetTime(base::TimeDelta time) OVERRIDE;
   virtual void SetNaturalVideoSize(const gfx::Size& size) OVERRIDE;
   virtual void NotifyEnded() OVERRIDE;
   virtual void DisableAudioRenderer() OVERRIDE;
@@ -358,15 +345,21 @@ class MEDIA_EXPORT Pipeline
   // Callback executed by filters to update statistics.
   void OnUpdateStatistics(const PipelineStatistics& stats);
 
+  // Callback executed by audio renderer to update clock time.
+  void OnAudioTimeUpdate(base::TimeDelta time, base::TimeDelta max_time);
+
+  // Callback executed by video renderer to update clock time.
+  void OnVideoTimeUpdate(base::TimeDelta max_time);
+
   // The following "task" methods correspond to the public methods, but these
   // methods are run as the result of posting a task to the PipelineInternal's
   // message loop.
   void StartTask(scoped_ptr<FilterCollection> filter_collection,
                  const std::string& url,
-                 const PipelineStatusCB& ended_callback,
-                 const PipelineStatusCB& error_callback,
-                 const NetworkEventCB& network_callback,
-                 const PipelineStatusCB& start_callback);
+                 const PipelineStatusCB& ended_cb,
+                 const PipelineStatusCB& error_cb,
+                 const NetworkEventCB& network_cb,
+                 const PipelineStatusCB& start_cb);
 
   // InitializeTask() performs initialization in multiple passes. It is executed
   // as a result of calling Start() or InitializationComplete() that advances
@@ -376,7 +369,7 @@ class MEDIA_EXPORT Pipeline
   void InitializeTask(PipelineStatus last_stage_status);
 
   // Stops and destroys all filters, placing the pipeline in the kStopped state.
-  void StopTask(const PipelineStatusCB& stop_callback);
+  void StopTask(const base::Closure& stop_cb);
 
   // Carries out stopping and destroying all filters, placing the pipeline in
   // the kError state.
@@ -395,7 +388,7 @@ class MEDIA_EXPORT Pipeline
   void PreloadChangedTask(Preload preload);
 
   // Carries out notifying filters that we are seeking to a new timestamp.
-  void SeekTask(base::TimeDelta time, const PipelineStatusCB& seek_callback);
+  void SeekTask(base::TimeDelta time, const PipelineStatusCB& seek_cb);
 
   // Carries out handling a notification from a filter that it has ended.
   void NotifyEndedTask();
@@ -420,10 +413,6 @@ class MEDIA_EXPORT Pipeline
 
   // Internal methods used in the implementation of the pipeline thread.  All
   // of these methods are only called on the pipeline thread.
-
-  // PrepareFilter() creates the filter's thread and injects a FilterHost and
-  // MessageLoop.
-  bool PrepareFilter(scoped_refptr<Filter> filter);
 
   // The following initialize methods are used to select a specific type of
   // Filter object from FilterCollection and initialize it asynchronously.
@@ -484,8 +473,11 @@ class MEDIA_EXPORT Pipeline
 
   void StartClockIfWaitingForTimeUpdate_Locked();
 
+  // Report pipeline |status| through |cb| avoiding duplicate error reporting.
+  void ReportStatus(const PipelineStatusCB& cb, PipelineStatus status);
+
   // Message loop used to execute pipeline tasks.
-  MessageLoop* message_loop_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
 
   // MediaLog to which to log events.
   scoped_refptr<MediaLog> media_log_;
@@ -510,9 +502,6 @@ class MEDIA_EXPORT Pipeline
 
   // Whether or not a playback rate change should be done once seeking is done.
   bool playback_rate_change_pending_;
-
-  // Duration of the media in microseconds.  Set by filters.
-  base::TimeDelta duration_;
 
   // Amount of available buffered data in microseconds.  Set by filters.
   base::TimeDelta buffered_time_;
@@ -569,6 +558,9 @@ class MEDIA_EXPORT Pipeline
   PipelineStatus status_;
 
   // Whether the media contains rendered audio and video streams.
+  // TODO(fischman,scherkus): replace these with checks for
+  // {audio,video}_decoder_ once extraction of {Audio,Video}Decoder from the
+  // Filter heirarchy is done.
   bool has_audio_;
   bool has_video_;
 
@@ -601,11 +593,11 @@ class MEDIA_EXPORT Pipeline
   std::string url_;
 
   // Callbacks for various pipeline operations.
-  PipelineStatusCB seek_callback_;
-  PipelineStatusCB stop_callback_;
-  PipelineStatusCB ended_callback_;
-  PipelineStatusCB error_callback_;
-  NetworkEventCB network_callback_;
+  PipelineStatusCB seek_cb_;
+  base::Closure stop_cb_;
+  PipelineStatusCB ended_cb_;
+  PipelineStatusCB error_cb_;
+  NetworkEventCB network_cb_;
 
   // Reference to the filter(s) that constitute the pipeline.
   scoped_refptr<Filter> pipeline_filter_;
@@ -613,7 +605,9 @@ class MEDIA_EXPORT Pipeline
   // Decoder reference used for signalling imminent shutdown.
   // This is a HACK necessary because WebMediaPlayerImpl::Destroy() holds the
   // renderer thread loop hostage for until PipelineImpl::Stop() calls its
-  // callback.  http://crbug.com/110228 tracks removing this hack.
+  // callback.
+  // This reference should only be used for this hack and no other purposes.
+  // http://crbug.com/110228 tracks removing this hack.
   scoped_refptr<VideoDecoder> video_decoder_;
 
   // Renderer references used for setting the volume and determining
@@ -626,7 +620,7 @@ class MEDIA_EXPORT Pipeline
 
   // Helper class that stores filter references during pipeline
   // initialization.
-  class PipelineInitState;
+  struct PipelineInitState;
   scoped_ptr<PipelineInitState> pipeline_init_state_;
 
   // Statistics.

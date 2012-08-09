@@ -711,6 +711,8 @@ WebInspector.DataGrid.prototype = {
 
         if (this.expanded)
             child._attach();
+        if (!this.revealed)
+            child.revealed = false;
     },
 
     removeChild: function(child)
@@ -892,10 +894,8 @@ WebInspector.DataGrid.prototype = {
             nextSelectedNode.select();
         }
 
-        if (handled) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
+        if (handled)
+            event.consume(true);
     },
 
     expand: function()

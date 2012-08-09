@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,14 +16,15 @@ import grit.format.rc
 
 from grit import clique
 from grit import exception
+from grit import lazy_re
 from grit import tclib
 from grit import util
 
 BINARY, UTF8, UTF16 = range(3)
 
 # Finds whitespace at the start and end of a string which can be multiline.
-_WHITESPACE = re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
-                         re.DOTALL | re.MULTILINE)
+_WHITESPACE = lazy_re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
+                              re.DOTALL | re.MULTILINE)
 
 
 class MessageNode(base.ContentNode):
@@ -31,7 +32,7 @@ class MessageNode(base.ContentNode):
 
   # For splitting a list of things that can be separated by commas or
   # whitespace
-  _SPLIT_RE = re.compile('\s*,\s*|\s+')
+  _SPLIT_RE = lazy_re.compile('\s*,\s*|\s+')
 
   def __init__(self):
     super(type(self), self).__init__()

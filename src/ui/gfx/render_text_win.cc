@@ -10,10 +10,11 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/string_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
-#include "base/win/scoped_hdc.h"
+#include "base/win/registry.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia.h"
+#include "ui/gfx/font_smoothing_win.h"
 #include "ui/gfx/platform_font.h"
 
 namespace {
@@ -75,16 +76,44 @@ bool ChooseFallbackFont(HDC hdc,
     log_font.lfFaceName[0] = 0;
     EnumEnhMetaFile(0, meta_file, MetaFileEnumProc, &log_font, NULL);
     if (log_font.lfFaceName[0]) {
-      int font_style = font.GetStyle();
       *result = gfx::Font(UTF16ToUTF8(log_font.lfFaceName), font.GetFontSize());
-      if (result->GetStyle() != font_style)
-        *result = result->DeriveFont(0, font_style);
       found_fallback = true;
     }
   }
   DeleteEnhMetaFile(meta_file);
 
   return found_fallback;
+}
+
+// Queries the Registry to get a list of linked fonts for |font|.
+void QueryLinkedFontsFromRegistry(const gfx::Font& font,
+                                  std::vector<gfx::Font>* linked_fonts) {
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  const wchar_t* kSystemLink =
+      L"Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink";
+
+  base::win::RegKey key;
+  if (FAILED(key.Open(HKEY_LOCAL_MACHINE, kSystemLink, KEY_READ)))
+    return;
+
+  const std::wstring font_name = UTF8ToWide(font.GetFontName());
+  std::vector<std::wstring> values;
+  if (FAILED(key.ReadValues(font_name.c_str(), &values))) {
+    key.Close();
+    return;
+  }
+
+  for (size_t i = 0; i < values.size(); i++) {
+    // The font name follows the comma in each entry.
+    const size_t index = values[i].find(',');
+    if ((index != string16::npos) && (index + 1 != values[i].length())) {
+      const std::string linked_name = UTF16ToUTF8(values[i].substr(index + 1));
+      const gfx::Font linked_font(linked_name, font.GetFontSize());
+      linked_fonts->push_back(linked_font);
+    }
+  }
+
+  key.Close();
 }
 
 }  // namespace
@@ -108,26 +137,40 @@ TextRun::~TextRun() {
   ScriptFreeCache(&script_cache);
 }
 
+// Returns the X coordinate of the leading or |trailing| edge of the glyph
+// starting at |index|, relative to the left of the text (not the view).
+int GetGlyphXBoundary(internal::TextRun* run, size_t index, bool trailing) {
+  DCHECK_GE(index, run->range.start());
+  DCHECK_LT(index, run->range.end() + (trailing ? 0 : 1));
+  int x = 0;
+  HRESULT hr = ScriptCPtoX(
+      index - run->range.start(),
+      trailing,
+      run->range.length(),
+      run->glyph_count,
+      run->logical_clusters.get(),
+      run->visible_attributes.get(),
+      run->advance_widths.get(),
+      &run->script_analysis,
+      &x);
+  DCHECK(SUCCEEDED(hr));
+  return run->preceding_run_widths + x;
+}
+
 }  // namespace internal
+
+// static
+HDC RenderTextWin::cached_hdc_ = NULL;
+
+// static
+std::map<std::string, std::vector<Font> > RenderTextWin::cached_linked_fonts_;
 
 RenderTextWin::RenderTextWin()
     : RenderText(),
-      script_control_(),
-      script_state_(),
       string_width_(0),
       needs_layout_(false) {
-  // Omitting default constructors for script_* would leave POD uninitialized.
-  HRESULT hr = 0;
-
-  // TODO(msw): Call ScriptRecordDigitSubstitution on WM_SETTINGCHANGE message.
-  // TODO(msw): Use Chrome/profile locale/language settings?
-  hr = ScriptRecordDigitSubstitution(LOCALE_USER_DEFAULT, &digit_substitute_);
-  DCHECK(SUCCEEDED(hr));
-
-  hr = ScriptApplyDigitSubstitution(&digit_substitute_,
-                                    &script_control_,
-                                    &script_state_);
-  DCHECK(SUCCEEDED(hr));
+  memset(&script_control_, 0, sizeof(script_control_));
+  memset(&script_state_, 0, sizeof(script_state_));
   script_control_.fMergeNeutralItems = true;
 
   MoveCursorTo(EdgeSelectionModel(CURSOR_LEFT));
@@ -145,9 +188,10 @@ base::i18n::TextDirection RenderTextWin::GetTextDirection() {
   return base::i18n::LEFT_TO_RIGHT;
 }
 
-int RenderTextWin::GetStringWidth() {
+Size RenderTextWin::GetStringSize() {
   EnsureLayout();
-  return string_width_;
+  // TODO(msw): Use the largest font instead of the default font?
+  return Size(string_width_, GetFont().GetHeight());
 }
 
 SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
@@ -173,315 +217,11 @@ SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
                            &position,
                            &trailing);
   DCHECK(SUCCEEDED(hr));
+  DCHECK_GE(trailing, 0);
   position += run->range.start();
-
   size_t cursor = position + trailing;
-  DCHECK_GE(cursor, 0U);
   DCHECK_LE(cursor, text().length());
-  return SelectionModel(cursor, position,
-      (trailing > 0) ? SelectionModel::TRAILING : SelectionModel::LEADING);
-}
-
-Rect RenderTextWin::GetCursorBounds(const SelectionModel& selection,
-                                    bool insert_mode) {
-  EnsureLayout();
-
-  // Highlight the logical cursor (selection end) when not in insert mode.
-  size_t pos = insert_mode ? selection.caret_pos() : selection.selection_end();
-  size_t run_index = GetRunContainingPosition(pos);
-  internal::TextRun* run = run_index == runs_.size() ? NULL : runs_[run_index];
-
-  int start_x = 0, end_x = 0;
-  if (run) {
-    HRESULT hr = 0;
-    hr = ScriptCPtoX(pos - run->range.start(),
-                     false,
-                     run->range.length(),
-                     run->glyph_count,
-                     run->logical_clusters.get(),
-                     run->visible_attributes.get(),
-                     run->advance_widths.get(),
-                     &(run->script_analysis),
-                     &start_x);
-    DCHECK(SUCCEEDED(hr));
-    hr = ScriptCPtoX(pos - run->range.start(),
-                     true,
-                     run->range.length(),
-                     run->glyph_count,
-                     run->logical_clusters.get(),
-                     run->visible_attributes.get(),
-                     run->advance_widths.get(),
-                     &(run->script_analysis),
-                     &end_x);
-    DCHECK(SUCCEEDED(hr));
-  }
-  // TODO(msw): Use the last visual run's font instead of the default font?
-  int height = run ? run->font.GetHeight() : GetFont().GetHeight();
-  Rect rect(std::min(start_x, end_x), 0, std::abs(end_x - start_x), height);
-  // Offset to the run start or the right/left end for an out of bounds index.
-  // Also center the rect vertically in the display area.
-  int text_end_offset = base::i18n::IsRTL() ? 0 : GetStringWidth();
-  rect.Offset((run ? run->preceding_run_widths : text_end_offset),
-              (display_rect().height() - rect.height()) / 2);
-  // Adjust for leading/trailing in insert mode.
-  if (insert_mode && run) {
-    bool leading = selection.caret_placement() == SelectionModel::LEADING;
-    // Adjust the x value for right-side placement.
-    if (run->script_analysis.fRTL == leading)
-      rect.set_x(rect.right());
-    rect.set_width(0);
-  }
-  rect.set_origin(ToViewPoint(rect.origin()));
-  return rect;
-}
-
-SelectionModel RenderTextWin::AdjacentCharSelectionModel(
-    const SelectionModel& selection, VisualCursorDirection direction) {
-  DCHECK(!needs_layout_);
-  size_t caret = selection.caret_pos();
-  SelectionModel::CaretPlacement caret_placement = selection.caret_placement();
-  size_t run_index = GetRunContainingPosition(caret);
-  DCHECK(run_index < runs_.size());
-  internal::TextRun* run = runs_[run_index];
-
-  bool forward_motion = run->script_analysis.fRTL == (direction == CURSOR_LEFT);
-  if (forward_motion) {
-    if (caret_placement == SelectionModel::LEADING) {
-      size_t cursor = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      return SelectionModel(cursor, caret, SelectionModel::TRAILING);
-    } else if (selection.selection_end() < run->range.end()) {
-      caret = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      size_t cursor = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-      return SelectionModel(cursor, caret, SelectionModel::TRAILING);
-    }
-  } else {
-    if (caret_placement == SelectionModel::TRAILING)
-      return SelectionModel(caret, caret, SelectionModel::LEADING);
-    else if (caret > run->range.start()) {
-      caret = IndexOfAdjacentGrapheme(caret, CURSOR_BACKWARD);
-      return SelectionModel(caret, caret, SelectionModel::LEADING);
-    }
-  }
-
-  // The character is at the beginning/end of its run; go to the previous/next
-  // visual run.
-  size_t visual_index = logical_to_visual_[run_index];
-  if (visual_index == (direction == CURSOR_LEFT ? 0 : runs_.size() - 1))
-    return EdgeSelectionModel(direction);
-  internal::TextRun* adjacent = runs_[visual_to_logical_[
-      direction == CURSOR_LEFT ? visual_index - 1 : visual_index + 1]];
-  forward_motion = adjacent->script_analysis.fRTL == (direction == CURSOR_LEFT);
-  return forward_motion ? FirstSelectionModelInsideRun(adjacent) :
-                          LastSelectionModelInsideRun(adjacent);
-}
-
-// TODO(msw): Implement word breaking for Windows.
-SelectionModel RenderTextWin::AdjacentWordSelectionModel(
-    const SelectionModel& selection,
-    VisualCursorDirection direction) {
-  base::i18n::BreakIterator iter(text(), base::i18n::BreakIterator::BREAK_WORD);
-  bool success = iter.Init();
-  DCHECK(success);
-  if (!success)
-    return selection;
-
-  size_t pos;
-  if (direction == CURSOR_RIGHT) {
-    pos = std::min(selection.selection_end() + 1, text().length());
-    while (iter.Advance()) {
-      pos = iter.pos();
-      if (iter.IsWord() && pos > selection.selection_end())
-        break;
-    }
-  } else {  // direction == CURSOR_LEFT
-    // Notes: We always iterate words from the beginning.
-    // This is probably fast enough for our usage, but we may
-    // want to modify WordIterator so that it can start from the
-    // middle of string and advance backwards.
-    pos = std::max<int>(selection.selection_end() - 1, 0);
-    while (iter.Advance()) {
-      if (iter.IsWord()) {
-        size_t begin = iter.pos() - iter.GetString().length();
-        if (begin == selection.selection_end()) {
-          // The cursor is at the beginning of a word.
-          // Move to previous word.
-          break;
-        } else if (iter.pos() >= selection.selection_end()) {
-          // The cursor is in the middle or at the end of a word.
-          // Move to the top of current word.
-          pos = begin;
-          break;
-        } else {
-          pos = iter.pos() - iter.GetString().length();
-        }
-      }
-    }
-  }
-  return SelectionModel(pos, pos, SelectionModel::LEADING);
-}
-
-SelectionModel RenderTextWin::EdgeSelectionModel(
-    VisualCursorDirection direction) {
-  if (text().empty())
-    return SelectionModel(0, 0, SelectionModel::LEADING);
-
-  EnsureLayout();
-  size_t cursor = (direction == GetVisualDirectionOfLogicalEnd()) ?
-      text().length() : 0;
-  internal::TextRun* run = runs_[
-      visual_to_logical_[direction == CURSOR_RIGHT ? runs_.size() - 1 : 0]];
-  size_t caret;
-  SelectionModel::CaretPlacement placement;
-  if (run->script_analysis.fRTL == (direction == CURSOR_RIGHT)) {
-    caret = run->range.start();
-    placement = SelectionModel::LEADING;
-  } else {
-    caret = IndexOfAdjacentGrapheme(run->range.end(), CURSOR_BACKWARD);
-    placement = SelectionModel::TRAILING;
-  }
-  return SelectionModel(cursor, caret, placement);
-}
-
-std::vector<Rect> RenderTextWin::GetSubstringBounds(size_t from, size_t to) {
-  DCHECK(!needs_layout_);
-  ui::Range range(from, to);
-  DCHECK(ui::Range(0, text().length()).Contains(range));
-  Point display_offset(GetUpdatedDisplayOffset());
-  HRESULT hr = 0;
-
-  std::vector<Rect> bounds;
-  if (from == to)
-    return bounds;
-
-  // Add a Rect for each run/selection intersection.
-  // TODO(msw): The bounds should probably not always be leading the range ends.
-  for (size_t i = 0; i < runs_.size(); ++i) {
-    internal::TextRun* run = runs_[visual_to_logical_[i]];
-    ui::Range intersection = run->range.Intersect(range);
-    if (intersection.IsValid()) {
-      DCHECK(!intersection.is_reversed());
-      int start_offset = 0;
-      hr = ScriptCPtoX(intersection.start() - run->range.start(),
-                       false,
-                       run->range.length(),
-                       run->glyph_count,
-                       run->logical_clusters.get(),
-                       run->visible_attributes.get(),
-                       run->advance_widths.get(),
-                       &(run->script_analysis),
-                       &start_offset);
-      DCHECK(SUCCEEDED(hr));
-      int end_offset = 0;
-      hr = ScriptCPtoX(intersection.end() - run->range.start(),
-                       false,
-                       run->range.length(),
-                       run->glyph_count,
-                       run->logical_clusters.get(),
-                       run->visible_attributes.get(),
-                       run->advance_widths.get(),
-                       &(run->script_analysis),
-                       &end_offset);
-      DCHECK(SUCCEEDED(hr));
-      if (start_offset > end_offset)
-        std::swap(start_offset, end_offset);
-      Rect rect(run->preceding_run_widths + start_offset, 0,
-                end_offset - start_offset, run->font.GetHeight());
-      // Center the rect vertically in the display area.
-      rect.Offset(0, (display_rect().height() - rect.height()) / 2);
-      rect.set_origin(ToViewPoint(rect.origin()));
-      // Union this with the last rect if they're adjacent.
-      if (!bounds.empty() && rect.SharesEdgeWith(bounds.back())) {
-        rect = rect.Union(bounds.back());
-        bounds.pop_back();
-      }
-      bounds.push_back(rect);
-    }
-  }
-  return bounds;
-}
-
-void RenderTextWin::SetSelectionModel(const SelectionModel& model) {
-  RenderText::SetSelectionModel(model);
-  // TODO(xji): The styles are applied to text inside ItemizeLogicalText(). So,
-  // we need to update layout here in order for the styles, such as selection
-  // foreground, to be picked up. Eventually, we should separate styles from
-  // layout by applying foreground, strike, and underline styles during
-  // DrawVisualText as what RenderTextLinux does.
-  UpdateLayout();
-}
-
-bool RenderTextWin::IsCursorablePosition(size_t position) {
-  if (position == 0 || position == text().length())
-    return true;
-
-  EnsureLayout();
-  size_t run_index = GetRunContainingPosition(position);
-  if (run_index >= runs_.size())
-    return false;
-
-  internal::TextRun* run = runs_[run_index];
-  size_t start = run->range.start();
-  if (position == start)
-    return true;
-  return run->logical_clusters[position - start] !=
-         run->logical_clusters[position - start - 1];
-}
-
-void RenderTextWin::UpdateLayout() {
-  // Layout is performed lazily as needed for drawing/metrics.
-  needs_layout_ = true;
-}
-
-void RenderTextWin::EnsureLayout() {
-  if (!needs_layout_)
-    return;
-  // TODO(msw): Skip complex processing if ScriptIsComplex returns false.
-  ItemizeLogicalText();
-  if (!runs_.empty())
-    LayoutVisualText();
-  needs_layout_ = false;
-}
-
-void RenderTextWin::DrawVisualText(Canvas* canvas) {
-  DCHECK(!needs_layout_);
-
-  Point offset(GetOriginForSkiaDrawing());
-  SkScalar x = SkIntToScalar(offset.x());
-  SkScalar y = SkIntToScalar(offset.y());
-
-  std::vector<SkPoint> pos;
-
-  internal::SkiaTextRenderer renderer(canvas);
-  ApplyFadeEffects(&renderer);
-
-  for (size_t i = 0; i < runs_.size(); ++i) {
-    // Get the run specified by the visual-to-logical map.
-    internal::TextRun* run = runs_[visual_to_logical_[i]];
-
-    // Based on WebCore::skiaDrawText.
-    pos.resize(run->glyph_count);
-    SkScalar glyph_x = x;
-    for (int glyph = 0; glyph < run->glyph_count; glyph++) {
-      pos[glyph].set(glyph_x + run->offsets[glyph].du,
-                     y + run->offsets[glyph].dv);
-      glyph_x += SkIntToScalar(run->advance_widths[glyph]);
-    }
-
-    renderer.SetFont(run->font);
-    renderer.SetForegroundColor(run->foreground);
-    renderer.DrawPosText(&pos[0], run->glyphs.get(), run->glyph_count);
-    // TODO(oshima|msw): Consider refactoring StyleRange into Style
-    // class and StyleRange containing Style, and use Style class in
-    // TextRun class.  This may conflict with msw's comment in
-    // TextRun, so please consult with msw when refactoring.
-    StyleRange style;
-    style.strike = run->strike;
-    style.diagonal_strike = run->diagonal_strike;
-    style.underline = run->underline;
-    renderer.DrawDecorations(x, y, run->width, style);
-
-    x = glyph_x;
-  }
+  return SelectionModel(cursor, trailing ? CURSOR_BACKWARD : CURSOR_FORWARD);
 }
 
 size_t RenderTextWin::IndexOfAdjacentGrapheme(
@@ -504,7 +244,8 @@ size_t RenderTextWin::IndexOfAdjacentGrapheme(
     }
   }
 
-  size_t run_index = GetRunContainingPosition(index);
+  size_t run_index =
+      GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
   DCHECK(run_index < runs_.size());
   internal::TextRun* run = runs_[run_index];
   size_t start = run->range.start();
@@ -532,6 +273,235 @@ size_t RenderTextWin::IndexOfAdjacentGrapheme(
   }
 
   return start + ch;
+}
+
+SelectionModel RenderTextWin::AdjacentCharSelectionModel(
+    const SelectionModel& selection,
+    VisualCursorDirection direction) {
+  DCHECK(!needs_layout_);
+  internal::TextRun* run;
+  size_t run_index = GetRunContainingCaret(selection);
+  if (run_index == runs_.size()) {
+    // The cursor is not in any run: we're at the visual and logical edge.
+    SelectionModel edge = EdgeSelectionModel(direction);
+    if (edge.caret_pos() == selection.caret_pos())
+      return edge;
+    run = direction == CURSOR_RIGHT ? runs_.front() : runs_.back();
+  } else {
+    // If the cursor is moving within the current run, just move it by one
+    // grapheme in the appropriate direction.
+    run = runs_[run_index];
+    size_t caret = selection.caret_pos();
+    bool forward_motion =
+        run->script_analysis.fRTL == (direction == CURSOR_LEFT);
+    if (forward_motion) {
+      if (caret < run->range.end()) {
+        caret = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
+        return SelectionModel(caret, CURSOR_BACKWARD);
+      }
+    } else {
+      if (caret > run->range.start()) {
+        caret = IndexOfAdjacentGrapheme(caret, CURSOR_BACKWARD);
+        return SelectionModel(caret, CURSOR_FORWARD);
+      }
+    }
+    // The cursor is at the edge of a run; move to the visually adjacent run.
+    int visual_index = logical_to_visual_[run_index];
+    visual_index += (direction == CURSOR_LEFT) ? -1 : 1;
+    if (visual_index < 0 || visual_index >= static_cast<int>(runs_.size()))
+      return EdgeSelectionModel(direction);
+    run = runs_[visual_to_logical_[visual_index]];
+  }
+  bool forward_motion = run->script_analysis.fRTL == (direction == CURSOR_LEFT);
+  return forward_motion ? FirstSelectionModelInsideRun(run) :
+                          LastSelectionModelInsideRun(run);
+}
+
+// TODO(msw): Implement word breaking for Windows.
+SelectionModel RenderTextWin::AdjacentWordSelectionModel(
+    const SelectionModel& selection,
+    VisualCursorDirection direction) {
+  base::i18n::BreakIterator iter(text(), base::i18n::BreakIterator::BREAK_WORD);
+  bool success = iter.Init();
+  DCHECK(success);
+  if (!success)
+    return selection;
+
+  size_t pos;
+  if (direction == CURSOR_RIGHT) {
+    pos = std::min(selection.caret_pos() + 1, text().length());
+    while (iter.Advance()) {
+      pos = iter.pos();
+      if (iter.IsWord() && pos > selection.caret_pos())
+        break;
+    }
+  } else {  // direction == CURSOR_LEFT
+    // Notes: We always iterate words from the beginning.
+    // This is probably fast enough for our usage, but we may
+    // want to modify WordIterator so that it can start from the
+    // middle of string and advance backwards.
+    pos = std::max<int>(selection.caret_pos() - 1, 0);
+    while (iter.Advance()) {
+      if (iter.IsWord()) {
+        size_t begin = iter.pos() - iter.GetString().length();
+        if (begin == selection.caret_pos()) {
+          // The cursor is at the beginning of a word.
+          // Move to previous word.
+          break;
+        } else if (iter.pos() >= selection.caret_pos()) {
+          // The cursor is in the middle or at the end of a word.
+          // Move to the top of current word.
+          pos = begin;
+          break;
+        } else {
+          pos = iter.pos() - iter.GetString().length();
+        }
+      }
+    }
+  }
+  return SelectionModel(pos, CURSOR_FORWARD);
+}
+
+void RenderTextWin::SetSelectionModel(const SelectionModel& model) {
+  RenderText::SetSelectionModel(model);
+  // TODO(xji): The styles are applied to text inside ItemizeLogicalText(). So,
+  // we need to update layout here in order for the styles, such as selection
+  // foreground, to be picked up. Eventually, we should separate styles from
+  // layout by applying foreground, strike, and underline styles during
+  // DrawVisualText as what RenderTextLinux does.
+  ResetLayout();
+}
+
+void RenderTextWin::GetGlyphBounds(size_t index,
+                                   ui::Range* xspan,
+                                   int* height) {
+  size_t run_index =
+      GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
+  DCHECK_LT(run_index, runs_.size());
+  internal::TextRun* run = runs_[run_index];
+  xspan->set_start(GetGlyphXBoundary(run, index, false));
+  xspan->set_end(GetGlyphXBoundary(run, index, true));
+  *height = run->font.GetHeight();
+}
+
+std::vector<Rect> RenderTextWin::GetSubstringBounds(ui::Range range) {
+  DCHECK(!needs_layout_);
+  DCHECK(ui::Range(0, text().length()).Contains(range));
+  Point display_offset(GetUpdatedDisplayOffset());
+  HRESULT hr = 0;
+
+  std::vector<Rect> bounds;
+  if (range.is_empty())
+    return bounds;
+
+  // Add a Rect for each run/selection intersection.
+  // TODO(msw): The bounds should probably not always be leading the range ends.
+  for (size_t i = 0; i < runs_.size(); ++i) {
+    internal::TextRun* run = runs_[visual_to_logical_[i]];
+    ui::Range intersection = run->range.Intersect(range);
+    if (intersection.IsValid()) {
+      DCHECK(!intersection.is_reversed());
+      ui::Range range(GetGlyphXBoundary(run, intersection.start(), false),
+                      GetGlyphXBoundary(run, intersection.end(), false));
+      Rect rect(range.GetMin(), 0, range.length(), run->font.GetHeight());
+      // Center the rect vertically in the display area.
+      rect.Offset(0, (display_rect().height() - rect.height()) / 2);
+      rect.set_origin(ToViewPoint(rect.origin()));
+      // Union this with the last rect if they're adjacent.
+      if (!bounds.empty() && rect.SharesEdgeWith(bounds.back())) {
+        rect = rect.Union(bounds.back());
+        bounds.pop_back();
+      }
+      bounds.push_back(rect);
+    }
+  }
+  return bounds;
+}
+
+bool RenderTextWin::IsCursorablePosition(size_t position) {
+  if (position == 0 || position == text().length())
+    return true;
+
+  EnsureLayout();
+  size_t run_index =
+      GetRunContainingCaret(SelectionModel(position, CURSOR_FORWARD));
+  if (run_index >= runs_.size())
+    return false;
+
+  internal::TextRun* run = runs_[run_index];
+  size_t start = run->range.start();
+  if (position == start)
+    return true;
+  return run->logical_clusters[position - start] !=
+         run->logical_clusters[position - start - 1];
+}
+
+void RenderTextWin::ResetLayout() {
+  // Layout is performed lazily as needed for drawing/metrics.
+  needs_layout_ = true;
+}
+
+void RenderTextWin::EnsureLayout() {
+  if (!needs_layout_)
+    return;
+  // TODO(msw): Skip complex processing if ScriptIsComplex returns false.
+  ItemizeLogicalText();
+  if (!runs_.empty())
+    LayoutVisualText();
+  needs_layout_ = false;
+}
+
+void RenderTextWin::DrawVisualText(Canvas* canvas) {
+  DCHECK(!needs_layout_);
+
+  Point offset(GetOriginForSkiaDrawing());
+  SkScalar x = SkIntToScalar(offset.x());
+  SkScalar y = SkIntToScalar(offset.y());
+
+  std::vector<SkPoint> pos;
+
+  internal::SkiaTextRenderer renderer(canvas);
+  ApplyFadeEffects(&renderer);
+
+  bool smoothing_enabled;
+  bool cleartype_enabled;
+  GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
+  // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
+  renderer.SetFontSmoothingSettings(
+      smoothing_enabled, cleartype_enabled && !background_is_transparent());
+
+  for (size_t i = 0; i < runs_.size(); ++i) {
+    // Get the run specified by the visual-to-logical map.
+    internal::TextRun* run = runs_[visual_to_logical_[i]];
+
+    if (run->glyph_count == 0)
+      continue;
+
+    // Based on WebCore::skiaDrawText.
+    pos.resize(run->glyph_count);
+    SkScalar glyph_x = x;
+    for (int glyph = 0; glyph < run->glyph_count; glyph++) {
+      pos[glyph].set(glyph_x + run->offsets[glyph].du,
+                     y + run->offsets[glyph].dv);
+      glyph_x += SkIntToScalar(run->advance_widths[glyph]);
+    }
+
+    renderer.SetTextSize(run->font.GetFontSize());
+    renderer.SetFontFamilyWithStyle(run->font.GetFontName(), run->font_style);
+    renderer.SetForegroundColor(run->foreground);
+    renderer.DrawPosText(&pos[0], run->glyphs.get(), run->glyph_count);
+    // TODO(oshima|msw): Consider refactoring StyleRange into Style
+    // class and StyleRange containing Style, and use Style class in
+    // TextRun class.  This may conflict with msw's comment in
+    // TextRun, so please consult with msw when refactoring.
+    StyleRange style;
+    style.strike = run->strike;
+    style.diagonal_strike = run->diagonal_strike;
+    style.underline = run->underline;
+    renderer.DrawDecorations(x, y, run->width, style);
+
+    x = glyph_x;
+  }
 }
 
 void RenderTextWin::ItemizeLogicalText() {
@@ -574,7 +544,8 @@ void RenderTextWin::ItemizeLogicalText() {
   for (int run_break = 0; run_break < text_length;) {
     internal::TextRun* run = new internal::TextRun();
     run->range.set_start(run_break);
-    run->font = GetFont().DeriveFont(0, style->font_style);
+    run->font = GetFont();
+    run->font_style = style->font_style;
     run->foreground = style->foreground;
     run->strike = style->strike;
     run->diagonal_strike = style->diagonal_strike;
@@ -596,16 +567,24 @@ void RenderTextWin::ItemizeLogicalText() {
 
 void RenderTextWin::LayoutVisualText() {
   HRESULT hr = E_FAIL;
-  base::win::ScopedCreateDC hdc(CreateCompatibleDC(NULL));
+  if (!cached_hdc_)
+    cached_hdc_ = CreateCompatibleDC(NULL);
   std::vector<internal::TextRun*>::const_iterator run_iter;
   for (run_iter = runs_.begin(); run_iter < runs_.end(); ++run_iter) {
     internal::TextRun* run = *run_iter;
     size_t run_length = run->range.length();
     const wchar_t* run_text = &(text()[run->range.start()]);
     bool tried_fallback = false;
+    size_t linked_font_index = 0;
+    const std::vector<gfx::Font>* linked_fonts = NULL;
 
     // Select the font desired for glyph generation.
-    SelectObject(hdc, run->font.GetNativeFont());
+    SelectObject(cached_hdc_, run->font.GetNativeFont());
+
+    SCRIPT_FONTPROPERTIES font_properties;
+    memset(&font_properties, 0, sizeof(font_properties));
+    font_properties.cBytes = sizeof(SCRIPT_FONTPROPERTIES);
+    ScriptGetFontProperties(cached_hdc_, &run->script_cache, &font_properties);
 
     run->logical_clusters.reset(new WORD[run_length]);
     run->glyph_count = 0;
@@ -614,7 +593,7 @@ void RenderTextWin::LayoutVisualText() {
     while (max_glyphs < kMaxGlyphs) {
       run->glyphs.reset(new WORD[max_glyphs]);
       run->visible_attributes.reset(new SCRIPT_VISATTR[max_glyphs]);
-      hr = ScriptShape(hdc,
+      hr = ScriptShape(cached_hdc_,
                        &run->script_cache,
                        run_text,
                        run_length,
@@ -626,29 +605,58 @@ void RenderTextWin::LayoutVisualText() {
                        &(run->glyph_count));
       if (hr == E_OUTOFMEMORY) {
         max_glyphs *= 2;
+      } else if (hr == S_OK) {
+        // If |hr| is S_OK, there could still be missing glyphs in the output,
+        // see: http://msdn.microsoft.com/en-us/library/windows/desktop/dd368564.aspx
+        //
+        // If there are missing glyphs, use font linking to try to find a
+        // matching font.
+        bool glyphs_missing = false;
+        for (int i = 0; i < run->glyph_count; i++) {
+          if (run->glyphs[i] == font_properties.wgDefault) {
+            glyphs_missing = true;
+            break;
+          }
+        }
+        // No glyphs missing - good to go.
+        if (!glyphs_missing)
+          break;
+
+        // First time through, get the linked fonts list.
+        if (linked_fonts == NULL)
+          linked_fonts = GetLinkedFonts(run->font);
+
+        // None of the linked fonts worked - break out of the loop.
+        if (linked_font_index == linked_fonts->size())
+          break;
+
+        // Try the next linked font.
+        run->font = linked_fonts->at(linked_font_index++);
+        ScriptFreeCache(&run->script_cache);
+        SelectObject(cached_hdc_, run->font.GetNativeFont());
       } else if (hr == USP_E_SCRIPT_NOT_IN_FONT) {
-         // Only try font fallback if it hasn't yet been attempted for this run.
-         if (tried_fallback) {
-           // TODO(msw): Don't use SCRIPT_UNDEFINED. Apparently Uniscribe can
-           //            crash on certain surrogate pairs with SCRIPT_UNDEFINED.
-           //            See https://bugzilla.mozilla.org/show_bug.cgi?id=341500
-           //            And http://maxradi.us/documents/uniscribe/
-           run->script_analysis.eScript = SCRIPT_UNDEFINED;
-           // Reset |hr| to 0 to not trigger the DCHECK() below when a font is
-           // not found that can display the text. This is expected behavior
-           // under Windows XP without additional language packs installed and
-           // may also happen on newer versions when trying to display text in
-           // an obscure script that the system doesn't have the right font for.
-           hr = 0;
-           break;
-         }
+        // Only try font fallback if it hasn't yet been attempted for this run.
+        if (tried_fallback) {
+          // TODO(msw): Don't use SCRIPT_UNDEFINED. Apparently Uniscribe can
+          //            crash on certain surrogate pairs with SCRIPT_UNDEFINED.
+          //            See https://bugzilla.mozilla.org/show_bug.cgi?id=341500
+          //            And http://maxradi.us/documents/uniscribe/
+          run->script_analysis.eScript = SCRIPT_UNDEFINED;
+          // Reset |hr| to 0 to not trigger the DCHECK() below when a font is
+          // not found that can display the text. This is expected behavior
+          // under Windows XP without additional language packs installed and
+          // may also happen on newer versions when trying to display text in
+          // an obscure script that the system doesn't have the right font for.
+          hr = 0;
+          break;
+        }
 
         // The run's font doesn't contain the required glyphs, use an alternate.
         // TODO(msw): support RenderText's font_list().
-        if (ChooseFallbackFont(hdc, run->font, run_text, run_length,
+        if (ChooseFallbackFont(cached_hdc_, run->font, run_text, run_length,
                                &run->font)) {
           ScriptFreeCache(&run->script_cache);
-          SelectObject(hdc, run->font.GetNativeFont());
+          SelectObject(cached_hdc_, run->font.GetNativeFont());
         }
 
         tried_fallback = true;
@@ -661,7 +669,7 @@ void RenderTextWin::LayoutVisualText() {
     if (run->glyph_count > 0) {
       run->advance_widths.reset(new int[run->glyph_count]);
       run->offsets.reset(new GOFFSET[run->glyph_count]);
-      hr = ScriptPlace(hdc,
+      hr = ScriptPlace(cached_hdc_,
                        &run->script_cache,
                        run->glyphs.get(),
                        run->glyph_count,
@@ -702,13 +710,26 @@ void RenderTextWin::LayoutVisualText() {
   string_width_ = preceding_run_widths;
 }
 
-size_t RenderTextWin::GetRunContainingPosition(size_t position) const {
+const std::vector<Font>* RenderTextWin::GetLinkedFonts(const Font& font) const {
+  const std::string& font_name = font.GetFontName();
+  std::map<std::string, std::vector<Font> >::const_iterator it =
+      cached_linked_fonts_.find(font_name);
+  if (it != cached_linked_fonts_.end())
+    return &it->second;
+
+  cached_linked_fonts_[font_name] = std::vector<Font>();
+  std::vector<Font>* linked_fonts = &cached_linked_fonts_[font_name];
+  QueryLinkedFontsFromRegistry(font, linked_fonts);
+  return linked_fonts;
+}
+
+size_t RenderTextWin::GetRunContainingCaret(const SelectionModel& caret) const {
   DCHECK(!needs_layout_);
-  // Find the text run containing the argument position.
+  size_t position = caret.caret_pos();
+  LogicalCursorDirection affinity = caret.caret_affinity();
   size_t run = 0;
   for (; run < runs_.size(); ++run)
-    if (runs_[run]->range.start() <= position &&
-        runs_[run]->range.end() > position)
+    if (RangeContainsCaret(runs_[run]->range, position, affinity))
       break;
   return run;
 }
@@ -726,15 +747,14 @@ size_t RenderTextWin::GetRunContainingPoint(const Point& point) const {
 
 SelectionModel RenderTextWin::FirstSelectionModelInsideRun(
     internal::TextRun* run) {
-  size_t caret = run->range.start();
-  size_t cursor = IndexOfAdjacentGrapheme(caret, CURSOR_FORWARD);
-  return SelectionModel(cursor, caret, SelectionModel::TRAILING);
+  size_t cursor = IndexOfAdjacentGrapheme(run->range.start(), CURSOR_FORWARD);
+  return SelectionModel(cursor, CURSOR_BACKWARD);
 }
 
 SelectionModel RenderTextWin::LastSelectionModelInsideRun(
     internal::TextRun* run) {
   size_t caret = IndexOfAdjacentGrapheme(run->range.end(), CURSOR_BACKWARD);
-  return SelectionModel(caret, caret, SelectionModel::LEADING);
+  return SelectionModel(caret, CURSOR_FORWARD);
 }
 
 RenderText* RenderText::CreateRenderText() {

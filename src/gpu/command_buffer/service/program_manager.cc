@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/program_manager.h"
 
 #include <algorithm>
+#include <set>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -31,9 +32,11 @@ static int ShaderTypeToIndex(GLenum shader_type) {
 ProgramManager::ProgramInfo::UniformInfo::UniformInfo(
     GLsizei _size,
     GLenum _type,
+    int _fake_location_base,
     const std::string& _name)
     : size(_size),
       type(_type),
+      fake_location_base(_fake_location_base),
       is_array(false),
       name(_name) {
 }
@@ -64,7 +67,6 @@ void ProgramManager::ProgramInfo::Reset() {
   uniform_infos_.clear();
   sampler_indices_.clear();
   attrib_location_to_index_map_.clear();
-  location_infos_.clear();
 }
 
 void ProgramManager::ProgramInfo::UpdateLogInfo() {
@@ -128,13 +130,11 @@ void ProgramManager::ProgramInfo::Update() {
     attrib_location_to_index_map_[info.location] = ii;
   }
 
-  GLint num_uniforms = 0;
   max_len = 0;
+  GLint num_uniforms = 0;
   glGetProgramiv(service_id_, GL_ACTIVE_UNIFORMS, &num_uniforms);
   glGetProgramiv(service_id_, GL_ACTIVE_UNIFORM_MAX_LENGTH, &max_len);
   name_buffer.reset(new char[max_len]);
-  max_location = -1;
-  int index = 0;  // this index tracks valid uniforms.
   for (GLint ii = 0; ii < num_uniforms; ++ii) {
     GLsizei length = 0;
     GLsizei size = 0;
@@ -145,36 +145,19 @@ void ProgramManager::ProgramInfo::Update() {
     DCHECK(length == 0 || name_buffer[length] == '\0');
     // TODO(gman): Should we check for error?
     if (!IsInvalidPrefix(name_buffer.get(), length)) {
-      GLint location =  glGetUniformLocation(service_id_, name_buffer.get());
+      GLint location = glGetUniformLocation(service_id_, name_buffer.get());
       std::string name;
       std::string original_name;
       GetCorrectedVariableInfo(
           true, name_buffer.get(), &name, &original_name, &size, &type);
-      const UniformInfo* info =
-          AddUniformInfo(size, type, location, name, original_name);
-      for (size_t jj = 0; jj < info->element_locations.size(); ++jj) {
-        if (info->element_locations[jj] > max_location) {
-          max_location = info->element_locations[jj];
-        }
-      }
+      const UniformInfo* info = AddUniformInfo(
+          size, type, location, name, original_name);
       if (info->IsSampler()) {
-        sampler_indices_.push_back(index);
+        sampler_indices_.push_back(info->fake_location_base);
       }
       max_uniform_name_length_ =
           std::max(max_uniform_name_length_,
                    static_cast<GLsizei>(info->name.size()));
-      ++index;
-    }
-  }
-  // Create uniform location to index map.
-  location_infos_.resize(max_location + 1);
-  for (GLint ii = 0; ii <= max_location; ++ii) {
-    location_infos_[ii] = LocationInfo(-1, -1);
-  }
-  for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
-    const UniformInfo& info = uniform_infos_[ii];
-    for (size_t jj = 0; jj < info.element_locations.size(); ++jj) {
-      location_infos_[info.element_locations[jj]] = LocationInfo(ii, jj);
     }
   }
   valid_ = true;
@@ -184,6 +167,10 @@ void ProgramManager::ProgramInfo::Link() {
   ClearLinkStatus();
   if (!CanLink()) {
     set_log_info("missing shaders");
+    return;
+  }
+  if (DetectAttribLocationBindingConflicts()) {
+    set_log_info("glBindAttribLocation() conflicts");
     return;
   }
 
@@ -206,14 +193,14 @@ void ProgramManager::ProgramInfo::Validate() {
   UpdateLogInfo();
 }
 
-GLint ProgramManager::ProgramInfo::GetUniformLocation(
+GLint ProgramManager::ProgramInfo::GetUniformFakeLocation(
     const std::string& name) const {
   for (GLuint ii = 0; ii < uniform_infos_.size(); ++ii) {
     const UniformInfo& info = uniform_infos_[ii];
     if (info.name == name ||
         (info.is_array &&
          info.name.compare(0, info.name.size() - 3, name) == 0)) {
-      return info.element_locations[0];
+      return info.fake_location_base;
     } else if (info.is_array &&
                name.size() >= 3 && name[name.size() - 1] == ']') {
       // Look for an array specification.
@@ -234,7 +221,7 @@ GLint ProgramManager::ProgramInfo::GetUniformLocation(
           index = index * 10 + digit;
         }
         if (!bad && index >= 0 && index < info.size) {
-          return info.element_locations[index];
+          return GetFakeLocation(info.fake_location_base, index);
         }
       }
     }
@@ -254,14 +241,23 @@ GLint ProgramManager::ProgramInfo::GetAttribLocation(
 }
 
 const ProgramManager::ProgramInfo::UniformInfo*
-    ProgramManager::ProgramInfo::GetUniformInfoByLocation(
-        GLint location, GLint* array_index) const {
+    ProgramManager::ProgramInfo::GetUniformInfoByFakeLocation(
+        GLint fake_location, GLint* real_location, GLint* array_index) const {
+  DCHECK(real_location);
   DCHECK(array_index);
-  if (location >= 0 && static_cast<size_t>(location) < location_infos_.size()) {
-    const LocationInfo& info = location_infos_[location];
-    if (info.uniform_index >= 0) {
-      *array_index = info.array_index;
-      return &uniform_infos_[info.uniform_index];
+  if (fake_location < 0) {
+    return NULL;
+  }
+
+  GLint uniform_index = GetUniformInfoIndexFromFakeLocation(fake_location);
+  if (uniform_index >= 0 &&
+      static_cast<size_t>(uniform_index) < uniform_infos_.size()) {
+    const UniformInfo& uniform_info = uniform_infos_[uniform_index];
+    GLint element_index = GetArrayElementIndexFromFakeLocation(fake_location);
+    if (element_index < uniform_info.size) {
+      *real_location = uniform_info.element_locations[element_index];
+      *array_index = element_index;
+      return &uniform_info;
     }
   }
   return NULL;
@@ -306,10 +302,12 @@ void ProgramManager::ProgramInfo::GetCorrectedVariableInfo(
 
 const ProgramManager::ProgramInfo::UniformInfo*
     ProgramManager::ProgramInfo::AddUniformInfo(
-        GLsizei size, GLenum type, GLint location, const std::string& name,
-        const std::string& original_name) {
+        GLsizei size, GLenum type, GLint location,
+        const std::string& name, const std::string& original_name) {
   const char* kArraySpec = "[0]";
-  uniform_infos_.push_back(UniformInfo(size, type, original_name));
+  int uniform_index = uniform_infos_.size();
+  uniform_infos_.push_back(
+      UniformInfo(size, type, uniform_index, original_name));
   UniformInfo& info = uniform_infos_.back();
   info.element_locations.resize(size);
   info.element_locations[0] = location;
@@ -347,15 +345,20 @@ const ProgramManager::ProgramInfo::UniformInfo*
 }
 
 bool ProgramManager::ProgramInfo::SetSamplers(
-    GLint location, GLsizei count, const GLint* value) {
-  if (location >= 0 && static_cast<size_t>(location) < location_infos_.size()) {
-    const LocationInfo& location_info = location_infos_[location];
-    if (location_info.uniform_index >= 0) {
-      UniformInfo& info = uniform_infos_[location_info.uniform_index];
-      count = std::min(info.size - location_info.array_index, count);
+    GLint fake_location, GLsizei count, const GLint* value) {
+  if (fake_location < 0) {
+    return false;
+  }
+  GLint uniform_index = GetUniformInfoIndexFromFakeLocation(fake_location);
+  if (uniform_index >= 0 &&
+      static_cast<size_t>(uniform_index) < uniform_infos_.size()) {
+    UniformInfo& info = uniform_infos_[uniform_index];
+    GLint element_index = GetArrayElementIndexFromFakeLocation(fake_location);
+    if (element_index < info.size) {
+      count = std::min(info.size - element_index, count);
       if (info.IsSampler() && count > 0) {
         std::copy(value, value + count,
-                  info.texture_units.begin() + location_info.array_index);
+                  info.texture_units.begin() + element_index);
         return true;
       }
     }
@@ -444,13 +447,38 @@ bool ProgramManager::ProgramInfo::CanLink() const {
   return true;
 }
 
+bool ProgramManager::ProgramInfo::DetectAttribLocationBindingConflicts() const {
+  std::set<GLint> location_binding_used;
+  for (std::map<std::string, GLint>::const_iterator it =
+           bind_attrib_location_map_.begin();
+       it != bind_attrib_location_map_.end(); ++it) {
+    // Find out if an attribute is declared in this program's shaders.
+    bool active = false;
+    for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+      if (!attached_shaders_[ii] || !attached_shaders_[ii]->IsValid())
+        continue;
+      if (attached_shaders_[ii]->GetAttribInfo(it->first)) {
+        active = true;
+        break;
+      }
+    }
+    if (active) {
+      std::pair<std::set<GLint>::iterator, bool> result =
+          location_binding_used.insert(it->second);
+      if (!result.second)
+        return true;
+    }
+  }
+  return false;
+}
+
 static uint32 ComputeOffset(const void* start, const void* position) {
   return static_cast<const uint8*>(position) -
          static_cast<const uint8*>(start);
 }
 
 void ProgramManager::ProgramInfo::GetProgramInfo(
-    CommonDecoder::Bucket* bucket) const {
+    ProgramManager* manager, CommonDecoder::Bucket* bucket) const {
   // NOTE: It seems to me the math in here does not need check for overflow
   // because the data being calucated from has various small limits. The max
   // number of attribs + uniforms is somewhere well under 1024. The maximum size
@@ -516,7 +544,7 @@ void ProgramManager::ProgramInfo::GetProgramInfo(
     inputs->name_length = info.name.size();
     DCHECK(static_cast<size_t>(info.size) == info.element_locations.size());
     for (size_t jj = 0; jj < info.element_locations.size(); ++jj) {
-      *locations++ = info.element_locations[jj];
+      *locations++ = manager->SwizzleLocation(ii + jj * 0x10000);
     }
     memcpy(strings, info.name.c_str(), info.name.size());
     strings += info.name.size();
@@ -528,7 +556,14 @@ void ProgramManager::ProgramInfo::GetProgramInfo(
 
 ProgramManager::ProgramInfo::~ProgramInfo() {}
 
-ProgramManager::ProgramManager() {}
+// TODO(gman): make this some kind of random number. Base::RandInt is not
+// callable because of the sandbox. What matters is that it's possibly different
+// by at least 1 bit each time chrome is run.
+static int uniform_random_offset_ = 3;
+
+ProgramManager::ProgramManager()
+    : uniform_swizzle_(uniform_random_offset_++ % 15) {
+}
 
 ProgramManager::~ProgramManager() {
   DCHECK(program_infos_.empty());
@@ -626,6 +661,25 @@ void ProgramManager::UnuseProgram(
   DCHECK(IsOwned(info));
   info->DecUseCount();
   RemoveProgramInfoIfUnused(shader_manager, info);
+}
+
+// Swizzles the locations to prevent developers from assuming they
+// can do math on uniforms. According to the OpenGL ES 2.0 spec
+// the location of "someuniform[1]" is not 'n' more than "someuniform[0]".
+static GLint Swizzle(GLint location) {
+  return (location & 0xF0000000U) |
+         ((location & 0x0AAAAAAAU) >> 1) |
+         ((location & 0x05555555U) << 1);
+}
+
+// Adds uniform_swizzle_ to prevent developers from assuming that locations are
+// always the same across GPUs and drivers.
+GLint ProgramManager::SwizzleLocation(GLint v) const {
+  return v < 0 ? v : (Swizzle(v) + uniform_swizzle_);
+}
+
+GLint ProgramManager::UnswizzleLocation(GLint v) const {
+  return v < 0 ? v : Swizzle(v - uniform_swizzle_);
 }
 
 }  // namespace gles2

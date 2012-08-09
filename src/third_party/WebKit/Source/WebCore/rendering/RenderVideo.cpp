@@ -29,11 +29,13 @@
 #include "RenderVideo.h"
 
 #include "Document.h"
+#include "Frame.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "HTMLNames.h"
 #include "HTMLVideoElement.h"
 #include "MediaPlayer.h"
+#include "Page.h"
 #include "PaintInfo.h"
 #include "RenderView.h"
 
@@ -164,7 +166,7 @@ IntRect RenderVideo::videoBox() const
     else
         elementSize = intrinsicSize();
 
-    IntRect contentRect = contentBoxRect();
+    IntRect contentRect = pixelSnappedIntRect(contentBoxRect());
     if (elementSize.isEmpty() || contentRect.isEmpty())
         return IntRect();
 
@@ -196,23 +198,36 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
     MediaPlayer* mediaPlayer = mediaElement()->player();
     bool displayingPoster = videoElement()->shouldDisplayPosterImage();
 
+    Page* page = 0;
+    if (Frame* frame = this->frame())
+        page = frame->page();
+
     if (!displayingPoster) {
-        if (!mediaPlayer)
+        if (!mediaPlayer) {
+            if (page && paintInfo.phase == PaintPhaseForeground)
+                page->addRelevantUnpaintedObject(this, visualOverflowRect());
             return;
+        }
         updatePlayer();
     }
 
     LayoutRect rect = videoBox();
-    if (rect.isEmpty())
+    if (rect.isEmpty()) {
+        if (page && paintInfo.phase == PaintPhaseForeground)
+            page->addRelevantUnpaintedObject(this, visualOverflowRect());
         return;
+    }
     rect.moveBy(paintOffset);
+
+    if (page && paintInfo.phase == PaintPhaseForeground)
+        page->addRelevantRepaintedObject(this, rect);
 
     if (displayingPoster)
         paintIntoRect(paintInfo.context, rect);
     else if (document()->view() && document()->view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers)
-        mediaPlayer->paintCurrentFrameInContext(paintInfo.context, rect);
+        mediaPlayer->paintCurrentFrameInContext(paintInfo.context, pixelSnappedIntRect(rect));
     else
-        mediaPlayer->paint(paintInfo.context, rect);
+        mediaPlayer->paint(paintInfo.context, pixelSnappedIntRect(rect));
 }
 
 void RenderVideo::layout()

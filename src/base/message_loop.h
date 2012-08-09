@@ -14,11 +14,11 @@
 #include "base/callback_forward.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_helpers.h"
 #include "base/message_loop_proxy.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "base/synchronization/lock.h"
 #include "base/tracking_info.h"
 #include "base/time.h"
@@ -67,11 +67,12 @@ class Histogram;
 // (DoDragDrop), printer functions (StartDoc) and *many* others.
 //
 // Sample workaround when inner task processing is needed:
-//   bool old_state = MessageLoop::current()->NestableTasksAllowed();
-//   MessageLoop::current()->SetNestableTasksAllowed(true);
-//   HRESULT hr = DoDragDrop(...); // Implicitly runs a modal message loop here.
-//   MessageLoop::current()->SetNestableTasksAllowed(old_state);
-//   // Process hr  (the result returned by DoDragDrop().
+//   HRESULT hr;
+//   {
+//     MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+//     hr = DoDragDrop(...); // Implicitly runs a modal message loop.
+//   }
+//   // Process |hr| (the result returned by DoDragDrop()).
 //
 // Please be SURE your task is reentrant (nestable) and all global variables
 // are stable and accessible before calling SetNestableTasksAllowed(true).
@@ -198,7 +199,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // from RefCountedThreadSafe<T>!
   template <class T>
   void DeleteSoon(const tracked_objects::Location& from_here, const T* object) {
-    base::subtle::DeleteHelperInternal<T, void>::DeleteOnMessageLoop(
+    base::subtle::DeleteHelperInternal<T, void>::DeleteViaSequencedTaskRunner(
         this, from_here, object);
   }
 
@@ -215,7 +216,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   template <class T>
   void ReleaseSoon(const tracked_objects::Location& from_here,
                    const T* object) {
-    base::subtle::ReleaseHelperInternal<T, void>::ReleaseOnMessageLoop(
+    base::subtle::ReleaseHelperInternal<T, void>::ReleaseViaSequencedTaskRunner(
         this, from_here, object);
   }
 
@@ -263,6 +264,10 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // of recursive message loops. Some unwanted message loop may occurs when
   // using common controls or printer functions. By default, recursive task
   // processing is disabled.
+  //
+  // Please utilize |ScopedNestableTaskAllower| instead of calling these methods
+  // directly.  In general nestable message loops are to be avoided.  They are
+  // dangerous and difficult to get right, so please use with extreme caution.
   //
   // The specific case where tasks get queued is:
   // - The thread is running a message loop.

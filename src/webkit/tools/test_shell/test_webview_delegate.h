@@ -52,8 +52,6 @@ class WebWidgetHost;
 
 namespace WebKit {
 class WebDeviceOrientationClient;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebStorageNamespace;
 struct WebWindowFeatures;
 }
@@ -84,15 +82,15 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       WebKit::WebFrame* creator,
       const WebKit::WebURLRequest& request,
       const WebKit::WebWindowFeatures& features,
-      const WebKit::WebString& frame_name);
+      const WebKit::WebString& frame_name,
+      WebKit::WebNavigationPolicy policy);
   virtual WebKit::WebWidget* createPopupMenu(WebKit::WebPopupType popup_type);
   virtual WebKit::WebWidget* createPopupMenu(
       const WebKit::WebPopupMenuInfo& info);
   virtual WebKit::WebStorageNamespace* createSessionStorageNamespace(
       unsigned quota);
   virtual WebKit::WebGraphicsContext3D* createGraphicsContext3D(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes,
-      bool direct);
+      const WebKit::WebGraphicsContext3D::Attributes& attributes);
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name, unsigned source_line);
@@ -133,8 +131,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       const WebKit::WebString& default_value, WebKit::WebString* actual_value);
   virtual bool runModalBeforeUnloadDialog(
       WebKit::WebFrame* frame, const WebKit::WebString& message);
-  virtual void showContextMenu(
-      WebKit::WebFrame* frame, const WebKit::WebContextMenuData& data);
   virtual void setStatusText(const WebKit::WebString& text);
   virtual void startDragging(
       const WebKit::WebDragData& data, WebKit::WebDragOperationsMask mask,
@@ -267,12 +263,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
 #if defined(OS_WIN)
   IDropTarget* drop_delegate() { return drop_delegate_.get(); }
 #endif
-  const CapturedContextMenuEvents& captured_context_menu_events() const {
-    return captured_context_menu_events_;
-  }
-  void clear_captured_context_menu_events() {
-    captured_context_menu_events_.clear();
-  }
 
   void set_pending_extra_data(TestShellExtraData* extra_data) {
     pending_extra_data_.reset(extra_data);
@@ -405,7 +395,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   ResourceMap resource_identifier_map_;
   std::string GetResourceDescription(uint32 identifier);
 
-  CapturedContextMenuEvents captured_context_menu_events_;
   scoped_ptr<WebKit::WebContextMenuData> last_context_menu_data_;
 
   WebCursor current_cursor_;

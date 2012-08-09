@@ -54,6 +54,7 @@ public:
     virtual void setDefaultFixedFontSize(int);
     virtual void setMinimumFontSize(int);
     virtual void setMinimumLogicalFontSize(int);
+    virtual void setDefaultDeviceScaleFactor(int);
     virtual void setDefaultTextEncodingName(const WebString&);
     virtual void setJavaScriptEnabled(bool);
     virtual void setWebSecurityEnabled(bool);
@@ -88,8 +89,11 @@ public:
     virtual void setOfflineWebApplicationCacheEnabled(bool);
     virtual void setWebAudioEnabled(bool);
     virtual void setExperimentalWebGLEnabled(bool);
+    virtual void setExperimentalCSSRegionsEnabled(bool);
+    virtual void setExperimentalCSSCustomFilterEnabled(bool);
     virtual void setOpenGLMultisamplingEnabled(bool);
     virtual void setPrivilegedWebGLExtensionsEnabled(bool);
+    virtual void setWebGLErrorsToConsoleEnabled(bool);
     virtual void setShowDebugBorders(bool);
     virtual void setShowFPSCounter(bool);
     virtual bool showFPSCounter() const { return m_showFPSCounter; }
@@ -107,11 +111,13 @@ public:
     virtual void setAcceleratedCompositingForCanvasEnabled(bool);
     virtual void setAcceleratedCompositingForAnimationEnabled(bool);
     virtual void setAccelerated2dCanvasEnabled(bool);
+    virtual void setDeferred2dCanvasEnabled(bool);
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool);
     virtual void setMinimumAccelerated2dCanvasSize(int);
     virtual void setAcceleratedFiltersEnabled(bool);
     virtual void setMemoryInfoEnabled(bool);
     virtual void setHyperlinkAuditingEnabled(bool);
+    virtual void setLayoutFallbackWidth(int);
     virtual void setAsynchronousSpellCheckingEnabled(bool);
     virtual void setUnifiedTextCheckerEnabled(bool);
     virtual void setCaretBrowsingEnabled(bool);
@@ -121,8 +127,11 @@ public:
     virtual void setFullScreenEnabled(bool);
     virtual void setAllowDisplayOfInsecureContent(bool);
     virtual void setAllowRunningOfInsecureContent(bool);
+    virtual void setPasswordEchoEnabled(bool);
+    virtual void setPasswordEchoDurationInSeconds(double);
     virtual void setShouldPrintBackgrounds(bool);
     virtual void setEnableScrollAnimator(bool);
+    virtual bool scrollAnimatorEnabled() const;
     virtual void setHixie76WebSocketProtocolEnabled(bool);
     virtual void setVisualWordMovementEnabled(bool);
     virtual void setShouldDisplaySubtitles(bool);
@@ -131,12 +140,16 @@ public:
     virtual void setAcceleratedPaintingEnabled(bool);
     virtual void setPerTilePaintingEnabled(bool);
     virtual void setPartialSwapEnabled(bool);
+    virtual void setThreadedAnimationEnabled(bool);
+    virtual void setViewportEnabled(bool);
+    virtual bool viewportEnabled() const { return m_viewportEnabled; }
 
 private:
     WebCore::Settings* m_settings;
     bool m_compositeToTextureEnabled;
     bool m_showFPSCounter;
     bool m_showPlatformLayerTree;
+    bool m_viewportEnabled;
 };
 
 } // namespace WebKit

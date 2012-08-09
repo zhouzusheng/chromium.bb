@@ -147,6 +147,16 @@ public:
     static bool webkitSpeechEnabled() { return isSpeechInputEnabled; }
     static bool webkitGrammarEnabled() { return isSpeechInputEnabled; }
 
+#if ENABLE(SCRIPTED_SPEECH)
+    static void setScriptedSpeechEnabled(bool isEnabled) { isScriptedSpeechEnabled = isEnabled; }
+    static bool scriptedSpeechEnabled() { return isScriptedSpeechEnabled; }
+    static bool webkitSpeechRecognitionEnabled() { return isScriptedSpeechEnabled; }
+    static bool webkitSpeechRecognitionErrorEnabled() { return isScriptedSpeechEnabled; }
+    static bool webkitSpeechRecognitionEventEnabled() { return isScriptedSpeechEnabled; }
+    static bool webkitSpeechGrammarEnabled() { return isScriptedSpeechEnabled; }
+    static bool webkitSpeechGrammarListEnabled() { return isScriptedSpeechEnabled; }
+#endif
+
 #if ENABLE(XHR_RESPONSE_BLOB)
     static bool xhrResponseBlobEnabled() { return isXHRResponseBlobEnabled; }
     static void setXHRResponseBlobEnabled(bool isEnabled) { isXHRResponseBlobEnabled = isEnabled; }
@@ -168,7 +178,9 @@ public:
     static bool mediaStreamEnabled() { return isMediaStreamEnabled; }
     static void setMediaStreamEnabled(bool isEnabled) { isMediaStreamEnabled = isEnabled; }
     static bool webkitGetUserMediaEnabled() { return isMediaStreamEnabled; }
-    static bool webkitPeerConnectionEnabled() { return isMediaStreamEnabled; }
+    static bool webkitDeprecatedPeerConnectionEnabled() { return isMediaStreamEnabled; }
+    static bool webkitMediaStreamEnabled() { return isMediaStreamEnabled; }
+    static bool webkitPeerConnection00Enabled() { return isMediaStreamEnabled; }
 #endif
 
 #if ENABLE(GAMEPAD)
@@ -196,6 +208,11 @@ public:
     static void setShadowDOMEnabled(bool isEnabled) { isShadowDOMEnabled = isEnabled; }
 #endif
 
+#if ENABLE(STYLE_SCOPED)
+    static bool styleScopedEnabled() { return isStyleScopedEnabled; }
+    static void setStyleScopedEnabled(bool isEnabled) { isStyleScopedEnabled = isEnabled; }
+#endif
+
 private:
     // Never instantiate.
     RuntimeEnabledFeatures() { }
@@ -213,6 +230,9 @@ private:
     static bool isDeviceMotionEnabled;
     static bool isDeviceOrientationEnabled;
     static bool isSpeechInputEnabled;
+#if ENABLE(SCRIPTED_SPEECH)
+    static bool isScriptedSpeechEnabled;
+#endif
 #if ENABLE(XHR_RESPONSE_BLOB)
     static bool isXHRResponseBlobEnabled;
 #endif
@@ -255,6 +275,10 @@ private:
 
 #if ENABLE(SHADOW_DOM)
     static bool isShadowDOMEnabled;
+#endif
+
+#if ENABLE(STYLE_SCOPED)
+    static bool isStyleScopedEnabled;
 #endif
 };
 

@@ -118,56 +118,76 @@ namespace webkit_glue {
 
 static int ToMessageID(WebLocalizedString::Name name) {
   switch (name) {
-    case WebLocalizedString::SubmitButtonDefaultLabel:
-      return IDS_FORM_SUBMIT_LABEL;
-    case WebLocalizedString::InputElementAltText:
-      return IDS_FORM_INPUT_ALT;
-    case WebLocalizedString::ResetButtonDefaultLabel:
-      return IDS_FORM_RESET_LABEL;
+    case WebLocalizedString::AXButtonActionVerb:
+      return IDS_AX_BUTTON_ACTION_VERB;
+    case WebLocalizedString::AXCheckedCheckBoxActionVerb:
+      return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
+    case WebLocalizedString::AXHeadingText:
+      return IDS_AX_ROLE_HEADING;
+    case WebLocalizedString::AXImageMapText:
+      return IDS_AX_ROLE_IMAGE_MAP;
+    case WebLocalizedString::AXLinkActionVerb:
+      return IDS_AX_LINK_ACTION_VERB;
+    case WebLocalizedString::AXLinkText:
+      return IDS_AX_ROLE_LINK;
+    case WebLocalizedString::AXListMarkerText:
+      return IDS_AX_ROLE_LIST_MARKER;
+    case WebLocalizedString::AXRadioButtonActionVerb:
+      return IDS_AX_RADIO_BUTTON_ACTION_VERB;
+    case WebLocalizedString::AXTextFieldActionVerb:
+      return IDS_AX_TEXT_FIELD_ACTION_VERB;
+    case WebLocalizedString::AXUncheckedCheckBoxActionVerb:
+      return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
+    case WebLocalizedString::AXWebAreaText:
+      return IDS_AX_ROLE_WEB_AREA;
+    case WebLocalizedString::DetailsLabel:
+      return IDS_DETAILS_WITHOUT_SUMMARY_LABEL;
     case WebLocalizedString::FileButtonChooseFileLabel:
       return IDS_FORM_FILE_BUTTON_LABEL;
     case WebLocalizedString::FileButtonChooseMultipleFilesLabel:
       return IDS_FORM_MULTIPLE_FILES_BUTTON_LABEL;
     case WebLocalizedString::FileButtonNoFileSelectedLabel:
       return IDS_FORM_FILE_NO_FILE_LABEL;
-    case WebLocalizedString::MultipleFileUploadText:
-      return IDS_FORM_FILE_MULTIPLE_UPLOAD;
-    case WebLocalizedString::DetailsLabel:
-      return IDS_DETAILS_WITHOUT_SUMMARY_LABEL;
-    case WebLocalizedString::SearchableIndexIntroduction:
-      return IDS_SEARCHABLE_INDEX_INTRO;
-    case WebLocalizedString::SearchMenuNoRecentSearchesText:
-      return IDS_RECENT_SEARCHES_NONE;
-    case WebLocalizedString::SearchMenuRecentSearchesText:
-      return IDS_RECENT_SEARCHES;
-    case WebLocalizedString::SearchMenuClearRecentSearchesText:
-      return IDS_RECENT_SEARCHES_CLEAR;
-    case WebLocalizedString::AXWebAreaText:
-      return IDS_AX_ROLE_WEB_AREA;
-    case WebLocalizedString::AXLinkText:
-      return IDS_AX_ROLE_LINK;
-    case WebLocalizedString::AXListMarkerText:
-      return IDS_AX_ROLE_LIST_MARKER;
-    case WebLocalizedString::AXImageMapText:
-      return IDS_AX_ROLE_IMAGE_MAP;
-    case WebLocalizedString::AXHeadingText:
-      return IDS_AX_ROLE_HEADING;
-    case WebLocalizedString::AXButtonActionVerb:
-      return IDS_AX_BUTTON_ACTION_VERB;
-    case WebLocalizedString::AXRadioButtonActionVerb:
-      return IDS_AX_RADIO_BUTTON_ACTION_VERB;
-    case WebLocalizedString::AXTextFieldActionVerb:
-      return IDS_AX_TEXT_FIELD_ACTION_VERB;
-    case WebLocalizedString::AXCheckedCheckBoxActionVerb:
-      return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
-    case WebLocalizedString::AXUncheckedCheckBoxActionVerb:
-      return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
-    case WebLocalizedString::AXLinkActionVerb:
-      return IDS_AX_LINK_ACTION_VERB;
+    case WebLocalizedString::InputElementAltText:
+      return IDS_FORM_INPUT_ALT;
     case WebLocalizedString::KeygenMenuHighGradeKeySize:
       return IDS_KEYGEN_HIGH_GRADE_KEY;
     case WebLocalizedString::KeygenMenuMediumGradeKeySize:
       return IDS_KEYGEN_MED_GRADE_KEY;
+    case WebLocalizedString::MissingPluginText:
+      return IDS_PLUGIN_INITIALIZATION_ERROR;
+    case WebLocalizedString::MultipleFileUploadText:
+      return IDS_FORM_FILE_MULTIPLE_UPLOAD;
+    case WebLocalizedString::ResetButtonDefaultLabel:
+      return IDS_FORM_RESET_LABEL;
+    case WebLocalizedString::SearchableIndexIntroduction:
+      return IDS_SEARCHABLE_INDEX_INTRO;
+    case WebLocalizedString::SearchMenuClearRecentSearchesText:
+      return IDS_RECENT_SEARCHES_CLEAR;
+    case WebLocalizedString::SearchMenuNoRecentSearchesText:
+      return IDS_RECENT_SEARCHES_NONE;
+    case WebLocalizedString::SearchMenuRecentSearchesText:
+      return IDS_RECENT_SEARCHES;
+    case WebLocalizedString::SubmitButtonDefaultLabel:
+      return IDS_FORM_SUBMIT_LABEL;
+    case WebLocalizedString::ValidationPatternMismatch:
+      return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
+    case WebLocalizedString::ValidationRangeOverflow:
+      return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
+    case WebLocalizedString::ValidationRangeUnderflow:
+      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
+    case WebLocalizedString::ValidationStepMismatch:
+      return IDS_FORM_VALIDATION_STEP_MISMATCH;
+    case WebLocalizedString::ValidationTooLong:
+      return IDS_FORM_VALIDATION_TOO_LONG;
+    case WebLocalizedString::ValidationTypeMismatch:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH;
+    case WebLocalizedString::ValidationTypeMismatchForEmail:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL;
+    case WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL;
+    case WebLocalizedString::ValidationTypeMismatchForURL:
+      return IDS_FORM_VALIDATION_TYPE_MISMATCH_URL;
     case WebLocalizedString::ValidationValueMissing:
       return IDS_FORM_VALIDATION_VALUE_MISSING;
     case WebLocalizedString::ValidationValueMissingForCheckbox:
@@ -180,24 +200,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_VALUE_MISSING_RADIO;
     case WebLocalizedString::ValidationValueMissingForSelect:
       return IDS_FORM_VALIDATION_VALUE_MISSING_SELECT;
-    case WebLocalizedString::ValidationTypeMismatch:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH;
-    case WebLocalizedString::ValidationTypeMismatchForEmail:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_EMAIL;
-    case WebLocalizedString::ValidationTypeMismatchForMultipleEmail:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_MULTIPLE_EMAIL;
-    case WebLocalizedString::ValidationTypeMismatchForURL:
-      return IDS_FORM_VALIDATION_TYPE_MISMATCH_URL;
-    case WebLocalizedString::ValidationPatternMismatch:
-      return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
-    case WebLocalizedString::ValidationTooLong:
-      return IDS_FORM_VALIDATION_TOO_LONG;
-    case WebLocalizedString::ValidationRangeUnderflow:
-      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
-    case WebLocalizedString::ValidationRangeOverflow:
-      return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
-    case WebLocalizedString::ValidationStepMismatch:
-      return IDS_FORM_VALIDATION_STEP_MISMATCH;
     // This "default:" line exists to avoid compile warnings about enum
     // coverage when we add a new symbol to WebLocalizedString.h in WebKit.
     // After a planned WebKit patch is landed, we need to add a case statement
@@ -291,20 +293,6 @@ void WebKitPlatformSupportImpl::histogramEnumeration(
   counter->Add(sample);
 }
 
-bool WebKitPlatformSupportImpl::isTraceEventEnabled() const {
-  return !!*base::debug::TraceLog::GetCategoryEnabled("webkit");
-}
-
-void WebKitPlatformSupportImpl::traceEventBegin(const char* name, void* id,
-                                                const char* extra) {
-  TRACE_EVENT_BEGIN_ETW(name, id, extra);
-}
-
-void WebKitPlatformSupportImpl::traceEventEnd(const char* name, void* id,
-                                              const char* extra) {
-  TRACE_EVENT_END_ETW(name, id, extra);
-}
-
 const unsigned char* WebKitPlatformSupportImpl::getTraceCategoryEnabledFlag(
     const char* category_name) {
   return TRACE_EVENT_API_GET_CATEGORY_ENABLED(category_name);
@@ -387,6 +375,9 @@ struct DataResource {
 
 const DataResource kDataResources[] = {
   { "missingImage", IDR_BROKENIMAGE },
+#if defined(OS_ANDROID)
+  { "mediaFullscreen", IDR_MEDIA_FULLSCREEN_BUTTON },
+#endif
   { "mediaPause", IDR_MEDIA_PAUSE_BUTTON },
   { "mediaPlay", IDR_MEDIA_PLAY_BUTTON },
   { "mediaPlayDisabled", IDR_MEDIA_PLAY_BUTTON_DISABLED },
@@ -561,6 +552,7 @@ void WebKitPlatformSupportImpl::setSharedTimerFireInterval(
   shared_timer_.Stop();
   shared_timer_.Start(FROM_HERE, base::TimeDelta::FromMicroseconds(interval),
                       this, &WebKitPlatformSupportImpl::DoTimeout);
+  OnStartSharedTimer(base::TimeDelta::FromMicroseconds(interval));
 }
 
 void WebKitPlatformSupportImpl::stopSharedTimer() {
@@ -699,7 +691,7 @@ void WebKitPlatformSupportImpl::ResumeSharedTimer() {
   // The shared timer may have fired or been adjusted while we were suspended.
   if (--shared_timer_suspended_ == 0 && !shared_timer_.IsRunning()) {
     setSharedTimerFireInterval(
-        monotonicallyIncreasingTime() - shared_timer_fire_time_);
+        shared_timer_fire_time_ - monotonicallyIncreasingTime());
   }
 }
 

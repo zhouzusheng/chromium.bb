@@ -46,17 +46,17 @@ namespace WebCore {
 
 namespace {
 
-inline LayoutSize ownerFrameToMainFrameOffset(const RenderObject* o)
+inline LayoutPoint ownerFrameToMainFrameOffset(const RenderObject* o)
 {
     ASSERT(o->node());
     Frame* containingFrame = o->frame();
     if (!containingFrame)
-        return LayoutSize();
+        return LayoutPoint();
 
     Frame* mainFrame = containingFrame->page()->mainFrame();
 
-    LayoutPoint mainFramePoint = mainFrame->view()->rootViewToContents(containingFrame->view()->contentsToRootView(LayoutPoint()));
-    return toLayoutSize(mainFramePoint);
+    LayoutPoint mainFramePoint = mainFrame->view()->rootViewToContents(containingFrame->view()->contentsToRootView(IntPoint()));
+    return mainFramePoint;
 }
 
 AffineTransform localToAbsoluteTransform(const RenderObject* o)
@@ -81,49 +81,108 @@ AffineTransform localToAbsoluteTransform(const RenderObject* o)
     return transform;
 }
 
-Path pathForRenderBox(RenderBox* o)
+inline bool contains(const LayoutRect& rect, int x)
 {
-    ASSERT(o);
-
-    LayoutRect contentBox;
-    LayoutRect paddingBox;
-    LayoutRect borderBox;
-
-    contentBox = o->contentBoxRect();
-    paddingBox = LayoutRect(
-            contentBox.x() - o->paddingLeft(),
-            contentBox.y() - o->paddingTop(),
-            contentBox.width() + o->paddingLeft() + o->paddingRight(),
-            contentBox.height() + o->paddingTop() + o->paddingBottom());
-    borderBox = LayoutRect(
-            paddingBox.x() - o->borderLeft(),
-            paddingBox.y() - o->borderTop(),
-            paddingBox.width() + o->borderLeft() + o->borderRight(),
-            paddingBox.height() + o->borderTop() + o->borderBottom());
-
-    FloatRect rect(borderBox);
-    rect.inflate(5);
-
-    rect.move(ownerFrameToMainFrameOffset(o));
-
-    Path path;
-    path.addRoundedRect(rect, FloatSize(10, 10));
-
-    return path;
+    return !rect.isEmpty() && x >= rect.x() && x <= rect.maxX();
 }
 
-Path pathForRenderInline(RenderInline* o)
+inline bool strikes(const LayoutRect& a, const LayoutRect& b)
 {
-    // FIXME: Adapt this to not just use the bounding box.
-    LayoutRect borderBox = o->linesBoundingBox();
+    return !a.isEmpty() && !b.isEmpty()
+        && a.x() <= b.maxX() && b.x() <= a.maxX()
+        && a.y() <= b.maxY() && b.y() <= a.maxY();
+}
 
-    FloatRect rect(borderBox);
-    rect.inflate(5);
+inline void shiftXEdgesToContainIfStrikes(LayoutRect& rect, const LayoutRect& other)
+{
+    if (rect.isEmpty())
+        return;
+    LayoutUnit leftSide = rect.x();
+    LayoutUnit rightSide = rect.maxX();
 
-    rect.move(ownerFrameToMainFrameOffset(o));
+    if (!other.isEmpty() && strikes(rect, other)) {
+        leftSide = std::min(leftSide, other.x());
+        rightSide = std::max(rightSide, other.maxX());
+    }
 
+    rect.setX(leftSide);
+    rect.setWidth(rightSide - leftSide);
+}
+
+inline void addHighlightRect(Path& path, const LayoutRect& rect, const LayoutRect& prev, const LayoutRect& next)
+{
+    // The rounding check depends on the rects not intersecting eachother,
+    // or being contained for that matter.
+    ASSERT(!rect.intersects(prev));
+    ASSERT(!rect.intersects(next));
+
+    if (rect.isEmpty())
+        return;
+
+    const int rounding = 4;
+
+    FloatRect copy(rect);
+    copy.inflateX(rounding);
+    copy.inflateY(rounding / 2);
+
+    FloatSize rounded(rounding * 1.8, rounding * 1.8);
+    FloatSize squared(0, 0);
+
+    path.addBeziersForRoundedRect(copy,
+            contains(prev, rect.x()) ? squared : rounded,
+            contains(prev, rect.maxX()) ? squared : rounded,
+            contains(next, rect.x()) ? squared : rounded,
+            contains(next, rect.maxX()) ? squared : rounded);
+}
+
+Path pathForRenderer(RenderObject* o)
+{
+    ASSERT(o);
     Path path;
-    path.addRoundedRect(rect, FloatSize(10, 10));
+
+    Vector<IntRect> rects;
+    o->addFocusRingRects(rects, /* acc. offset */ ownerFrameToMainFrameOffset(o));
+
+    // The basic idea is to allow up to three different boxes in order to highlight
+    // text with line breaks more nicer than using a bounding box.
+
+    // Merge all center boxes (all but the first and the last).
+    LayoutRect mid;
+    for (size_t i = 1; i < rects.size() - 1; ++i)
+        mid.uniteIfNonZero(rects.at(i));
+
+    Vector<LayoutRect> drawableRects;
+
+    if (!mid.isEmpty())
+        drawableRects.append(mid);
+
+    // Add the first box, but merge it with the center boxes if it intersects.
+    if (rects.size() && !rects.first().isEmpty()) {
+        // Adjust center boxes to boundary of first
+        if (drawableRects.size())
+            shiftXEdgesToContainIfStrikes(drawableRects.last(), rects.first());
+        if (drawableRects.size() && drawableRects.last().intersects(rects.first()))
+            drawableRects.last().unite(rects.first());
+        else
+            drawableRects.prepend(rects.first());
+    }
+
+    // Add the last box, but merge it with the center boxes if it intersects.
+    if (rects.size() > 1 && !rects.last().isEmpty()) {
+        // Adjust center boxes to boundary of last
+        if (drawableRects.size())
+            shiftXEdgesToContainIfStrikes(drawableRects.last(), rects.last());
+        if (drawableRects.size() && drawableRects.last().intersects(rects.last()))
+            drawableRects.last().unite(rects.last());
+        else
+            drawableRects.append(rects.last());
+    }
+
+    for (size_t i = 0; i < drawableRects.size(); ++i) {
+        LayoutRect prev = i ? drawableRects.at(i - 1) : LayoutRect();
+        LayoutRect next = i < (drawableRects.size() - 1) ? drawableRects.at(i + 1) : LayoutRect();
+        addHighlightRect(path, drawableRects.at(i), prev, next);
+    }
 
     return path;
 }
@@ -140,12 +199,9 @@ Path pathForNodeHighlight(const Node* node)
     if (!renderer || (!renderer->isBox() && !renderer->isRenderInline()))
         return path;
 
-    if (renderer->isBox())
-        path = pathForRenderBox(toRenderBox(renderer));
-    else
-        path = pathForRenderInline(toRenderInline(renderer));
-
+    path = pathForRenderer(renderer);
     path.transform(localToAbsoluteTransform(renderer));
+
     return path;
 }
 

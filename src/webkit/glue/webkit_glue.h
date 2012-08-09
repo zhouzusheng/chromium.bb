@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,8 +36,6 @@ class WebString;
 namespace webkit_glue {
 
 WEBKIT_GLUE_EXPORT void SetJavaScriptFlags(const std::string& flags);
-
-WEBKIT_GLUE_EXPORT void SetDartFlags(const std::string& flags);
 
 // Turn on logging for flags in the provided comma delimited list.
 WEBKIT_GLUE_EXPORT void EnableWebCoreLogChannels(const std::string& channels);
@@ -97,6 +95,11 @@ WEBKIT_GLUE_EXPORT std::string CreateHistoryStateForURL(const GURL& url);
 
 // Removes any form data state from the history state string |content_state|.
 WEBKIT_GLUE_EXPORT std::string RemoveFormDataFromHistoryState(
+    const std::string& content_state);
+
+// Removes form data containing passwords from the history state string
+// |content_state|.
+WEBKIT_GLUE_EXPORT std::string RemovePasswordDataFromHistoryState(
     const std::string& content_state);
 
 // Removes scroll offset from the history state string |content_state|.

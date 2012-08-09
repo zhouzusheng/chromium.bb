@@ -109,6 +109,9 @@ public:
         GestureTap,
         GestureTapDown,
         GestureDoubleTap,
+        GesturePinchBegin,
+        GesturePinchEnd,
+        GesturePinchUpdate,
 
         // WebTouchEvent
         TouchStart,
@@ -194,6 +197,7 @@ public:
             || type == GestureScrollUpdate
             || type == GestureFlingStart
             || type == GestureFlingCancel
+            || type == GestureTapDown
             || type == GestureTap; // FIXME: Why is GestureTap on this list?
     }
 };
@@ -351,6 +355,8 @@ public:
     int y;
     int globalX;
     int globalY;
+
+    // NOTE: |deltaX| and |deltaY| represents the amount to scroll for Scroll gesture events. For Pinch gesture events, |deltaX| represents the scaling/magnification factor.
     float deltaX;
     float deltaY;
 

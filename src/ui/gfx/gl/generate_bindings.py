@@ -21,6 +21,9 @@ GL_FUNCTIONS = [
   'names': ['glBeginQuery'],
   'arguments': 'GLenum target, GLuint id', },
 { 'return_type': 'void',
+  'names': ['glBeginQueryARB', 'glBeginQueryEXT'],
+  'arguments': 'GLenum target, GLuint id', },
+{ 'return_type': 'void',
   'names': ['glBindAttribLocation'],
   'arguments': 'GLuint program, GLuint index, const char* name', },
 { 'return_type': 'void',
@@ -146,6 +149,9 @@ GL_FUNCTIONS = [
   'names': ['glDeleteQueries'],
   'arguments': 'GLsizei n, const GLuint* ids', },
 { 'return_type': 'void',
+  'names': ['glDeleteQueriesARB', 'glDeleteQueriesEXT'],
+  'arguments': 'GLsizei n, const GLuint* ids', },
+{ 'return_type': 'void',
   'names': ['glDeleteRenderbuffersEXT', 'glDeleteRenderbuffers'],
   'arguments': 'GLsizei n, const GLuint* renderbuffers', },
 { 'return_type': 'void',
@@ -204,6 +210,9 @@ GL_FUNCTIONS = [
   'names': ['glEndQuery'],
   'arguments': 'GLenum target', },
 { 'return_type': 'void',
+  'names': ['glEndQueryARB', 'glEndQueryEXT'],
+  'arguments': 'GLenum target', },
+{ 'return_type': 'void',
   'names': ['glFinish'],
   'arguments': 'void', },
 { 'return_type': 'void',
@@ -227,6 +236,9 @@ GL_FUNCTIONS = [
   'arguments': 'GLsizei n, GLuint* buffers', },
 { 'return_type': 'void',
   'names': ['glGenQueries'],
+  'arguments': 'GLsizei n, GLuint* ids', },
+{ 'return_type': 'void',
+  'names': ['glGenQueriesARB', 'glGenQueriesEXT'],
   'arguments': 'GLsizei n, GLuint* ids', },
 { 'return_type': 'void',
   'names': ['glGenerateMipmapEXT', 'glGenerateMipmap'],
@@ -294,6 +306,9 @@ GL_FUNCTIONS = [
   'names': ['glGetQueryiv'],
   'arguments': 'GLenum target, GLenum pname, GLint* params', },
 { 'return_type': 'void',
+  'names': ['glGetQueryivARB', 'glGetQueryivEXT'],
+  'arguments': 'GLenum target, GLenum pname, GLint* params', },
+{ 'return_type': 'void',
   'names': ['glGetQueryObjecti64v'],
   'arguments': 'GLuint id, GLenum pname, GLint64* params', },
 { 'return_type': 'void',
@@ -304,6 +319,9 @@ GL_FUNCTIONS = [
   'arguments': 'GLuint id, GLenum pname, GLuint64* params', },
 { 'return_type': 'void',
   'names': ['glGetQueryObjectuiv'],
+  'arguments': 'GLuint id, GLenum pname, GLuint* params', },
+{ 'return_type': 'void',
+  'names': ['glGetQueryObjectuivARB', 'glGetQueryObjectuivEXT'],
   'arguments': 'GLuint id, GLenum pname, GLuint* params', },
 { 'return_type': 'void',
   'names': ['glGetRenderbufferParameterivEXT', 'glGetRenderbufferParameteriv'],
@@ -375,6 +393,9 @@ GL_FUNCTIONS = [
 { 'return_type': 'GLboolean',
   'names': ['glIsProgram'],
   'arguments': 'GLuint program', },
+{ 'return_type': 'GLboolean',
+  'names': ['glIsQueryARB', 'glIsQueryEXT'],
+  'arguments': 'GLuint query', },
 { 'return_type': 'GLboolean',
   'names': ['glIsRenderbufferEXT', 'glIsRenderbuffer'],
   'arguments': 'GLuint renderbuffer', },
@@ -635,6 +656,18 @@ GL_FUNCTIONS = [
   'arguments':
     'GLsync sync, GLenum pname, GLsizei bufSize, GLsizei* length,'
     'GLint* values', },
+{ 'return_type': 'void',
+  'names': ['glDrawArraysInstancedANGLE', 'glDrawArraysInstancedARB'],
+  'arguments': 'GLenum mode, GLint first, GLsizei count, GLsizei primcount', },
+{ 'return_type': 'void',
+  'names': ['glDrawElementsInstancedANGLE', 'glDrawElementsInstancedARB'],
+  'arguments':
+      'GLenum mode, GLsizei count, GLenum type, const void* indices, '
+      'GLsizei primcount', },
+{ 'return_type': 'void',
+  'names': ['glVertexAttribDivisorANGLE', 'glVertexAttribDivisorARB'],
+  'arguments':
+      'GLuint index, GLuint divisor', },
 ]
 
 OSMESA_FUNCTIONS = [
@@ -1398,13 +1431,13 @@ def GetFunctionToExtensionMap(extensions):
   Returns:
     Map of function name => extension name.
   """
-  function_to_extension = {}
+  function_to_extensions = {}
   for extension, functions in extensions.items():
     for function in functions:
-      assert function not in function_to_extension, \
-          "Duplicate function: " + function
-      function_to_extension[function] = extension
-  return function_to_extension
+      if not function in function_to_extensions:
+        function_to_extensions[function] = []
+      function_to_extensions[function].append(extension)
+  return function_to_extensions
 
 
 def LooksLikeExtensionFunction(function):
@@ -1426,7 +1459,7 @@ def GetUsedExtensionFunctions(functions, extension_headers, extra_extensions):
   """
   # Parse known extensions.
   extensions = GetExtensionFunctions(extension_headers)
-  functions_to_extension = GetFunctionToExtensionMap(extensions)
+  functions_to_extensions = GetFunctionToExtensionMap(extensions)
 
   # Collect all used extension functions.
   used_extension_functions = collections.defaultdict(lambda: [])
@@ -1434,11 +1467,11 @@ def GetUsedExtensionFunctions(functions, extension_headers, extra_extensions):
     for name in func['names']:
       # Make sure we know about all extension functions.
       if (LooksLikeExtensionFunction(name) and
-          not name in functions_to_extension):
+          not name in functions_to_extensions):
         raise RuntimeError('%s looks like an extension function but does not '
             'belong to any of the known extensions.' % name)
-      if name in functions_to_extension:
-        extensions = [functions_to_extension[name]]
+      if name in functions_to_extensions:
+        extensions = functions_to_extensions[name][:]
         if 'other_extensions' in func:
           extensions.extend(func['other_extensions'])
         for extension in extensions:

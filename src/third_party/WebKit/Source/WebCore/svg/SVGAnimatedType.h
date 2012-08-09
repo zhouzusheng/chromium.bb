@@ -34,6 +34,7 @@ class SVGNumberList;
 class SVGPathByteStream;
 class SVGPointList;
 class SVGPreserveAspectRatio;
+class SVGTransformList;
 
 class SVGAnimatedType {
     WTF_MAKE_FAST_ALLOCATED;
@@ -44,6 +45,7 @@ public:
     static PassOwnPtr<SVGAnimatedType> createBoolean(bool*);
     static PassOwnPtr<SVGAnimatedType> createColor(Color*);
     static PassOwnPtr<SVGAnimatedType> createInteger(int*);
+    static PassOwnPtr<SVGAnimatedType> createIntegerOptionalInteger(std::pair<int, int>*);
     static PassOwnPtr<SVGAnimatedType> createLength(SVGLength*);
     static PassOwnPtr<SVGAnimatedType> createLengthList(SVGLengthList*);
     static PassOwnPtr<SVGAnimatedType> createNumber(float*);
@@ -54,6 +56,8 @@ public:
     static PassOwnPtr<SVGAnimatedType> createPreserveAspectRatio(SVGPreserveAspectRatio*);
     static PassOwnPtr<SVGAnimatedType> createRect(FloatRect*);
     static PassOwnPtr<SVGAnimatedType> createString(String*);
+    static PassOwnPtr<SVGAnimatedType> createTransformList(SVGTransformList*);
+    static bool supportsAnimVal(AnimatedPropertyType);
 
     AnimatedPropertyType type() const { return m_type; }
 
@@ -61,6 +65,7 @@ public:
     bool& boolean();
     Color& color();
     int& integer();
+    std::pair<int, int>& integerOptionalInteger();
     SVGLength& length();
     SVGLengthList& lengthList();
     float& number();
@@ -71,6 +76,7 @@ public:
     SVGPreserveAspectRatio& preserveAspectRatio();
     FloatRect& rect();
     String& string();
+    SVGTransformList& transformList();
 
     String valueAsString();
     bool setValueAsString(const QualifiedName&, const String&);
@@ -93,6 +99,7 @@ private:
         bool* boolean;
         Color* color;
         int* integer;
+        std::pair<int, int>* integerOptionalInteger;
         SVGLength* length;
         SVGLengthList* lengthList;
         float* number;
@@ -103,6 +110,7 @@ private:
         SVGPointList* pointList;
         FloatRect* rect;
         String* string;
+        SVGTransformList* transformList;
     } m_data;
 };
     

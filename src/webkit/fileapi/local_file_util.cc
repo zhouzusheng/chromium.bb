@@ -9,6 +9,7 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/fileapi/file_system_path.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_util.h"
 
@@ -17,9 +18,9 @@ namespace fileapi {
 class LocalFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
  public:
   LocalFileEnumerator(const FilePath& platform_root_path,
-                                const FilePath& virtual_root_path,
-                                bool recursive,
-                                file_util::FileEnumerator::FileType file_type)
+                      const FilePath& virtual_root_path,
+                      bool recursive,
+                      file_util::FileEnumerator::FileType file_type)
       : file_enum_(platform_root_path, recursive, file_type),
         platform_root_path_(platform_root_path),
         virtual_root_path_(virtual_root_path) {
@@ -32,7 +33,9 @@ class LocalFileEnumerator : public FileSystemFileUtil::AbstractFileEnumerator {
 
   virtual FilePath Next() OVERRIDE;
   virtual int64 Size() OVERRIDE;
+  virtual base::Time LastModifiedTime() OVERRIDE;
   virtual bool IsDirectory() OVERRIDE;
+  virtual bool IsLink() OVERRIDE;
 
  private:
   file_util::FileEnumerator file_enum_;
@@ -56,8 +59,16 @@ int64 LocalFileEnumerator::Size() {
   return file_util::FileEnumerator::GetFilesize(file_util_info_);
 }
 
+base::Time LocalFileEnumerator::LastModifiedTime() {
+  return file_util::FileEnumerator::GetLastModifiedTime(file_util_info_);
+}
+
 bool LocalFileEnumerator::IsDirectory() {
   return file_util::FileEnumerator::IsDirectory(file_util_info_);
+}
+
+bool LocalFileEnumerator::IsLink() {
+  return file_util::FileEnumerator::IsLink(file_util_info_);
 }
 
 LocalFileUtil::LocalFileUtil(FileSystemFileUtil* underlying_file_util)
@@ -69,12 +80,10 @@ LocalFileUtil::~LocalFileUtil() {
 
 PlatformFileError LocalFileUtil::CreateOrOpen(
     FileSystemOperationContext* context,
-    const FilePath& file_path, int file_flags,
+    const FileSystemPath& path, int file_flags,
     PlatformFile* file_handle, bool* created) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->CreateOrOpen(
       context, local_path, file_flags, file_handle, created);
@@ -82,12 +91,10 @@ PlatformFileError LocalFileUtil::CreateOrOpen(
 
 PlatformFileError LocalFileUtil::EnsureFileExists(
     FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FileSystemPath& path,
     bool* created) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->EnsureFileExists(
       context, local_path, created);
@@ -95,13 +102,11 @@ PlatformFileError LocalFileUtil::EnsureFileExists(
 
 PlatformFileError LocalFileUtil::CreateDirectory(
     FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FileSystemPath& path,
     bool exclusive,
     bool recursive) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->CreateDirectory(
       context, local_path, exclusive, recursive);
@@ -109,42 +114,25 @@ PlatformFileError LocalFileUtil::CreateDirectory(
 
 PlatformFileError LocalFileUtil::GetFileInfo(
     FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FileSystemPath& path,
     base::PlatformFileInfo* file_info,
     FilePath* platform_file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->GetFileInfo(
       context, local_path, file_info, platform_file_path);
 }
 
-PlatformFileError LocalFileUtil::ReadDirectory(
-    FileSystemOperationContext* context,
-    const FilePath& file_path,
-    std::vector<base::FileUtilProxy::Entry>* entries) {
-  // TODO(kkanetkar): Implement directory read in multiple chunks.
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
-    return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-  return underlying_file_util()->ReadDirectory(
-      context, local_path, entries);
-}
-
 FileSystemFileUtil::AbstractFileEnumerator* LocalFileUtil::CreateFileEnumerator(
     FileSystemOperationContext* context,
-    const FilePath& root_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          root_path);
-  if (local_path.empty())
+    const FileSystemPath& root_path,
+    bool recursive) {
+  FileSystemPath local_path = GetLocalPath(context, root_path);
+  if (local_path.internal_path().empty())
     return new EmptyFileEnumerator();
   return new LocalFileEnumerator(
-      local_path, root_path, true,
+      local_path.internal_path(), root_path.internal_path(), recursive,
       static_cast<file_util::FileEnumerator::FileType>(
           file_util::FileEnumerator::FILES |
           file_util::FileEnumerator::DIRECTORIES));
@@ -152,27 +140,23 @@ FileSystemFileUtil::AbstractFileEnumerator* LocalFileUtil::CreateFileEnumerator(
 
 PlatformFileError LocalFileUtil::GetLocalFilePath(
     FileSystemOperationContext* context,
-    const FilePath& virtual_path,
-    FilePath* local_path) {
-  FilePath path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-                   virtual_path);
-  if (path.empty())
+    const FileSystemPath& file_system_path,
+    FilePath* local_file_path) {
+  FileSystemPath local_path = GetLocalPath(context, file_system_path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
 
-  *local_path = path;
+  *local_file_path = local_path.internal_path();
   return base::PLATFORM_FILE_OK;
 }
 
 PlatformFileError LocalFileUtil::Touch(
     FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FileSystemPath& path,
     const base::Time& last_access_time,
     const base::Time& last_modified_time) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->Touch(
       context, local_path, last_access_time, last_modified_time);
@@ -180,12 +164,10 @@ PlatformFileError LocalFileUtil::Touch(
 
 PlatformFileError LocalFileUtil::Truncate(
     FileSystemOperationContext* context,
-    const FilePath& file_path,
+    const FileSystemPath& path,
     int64 length) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->Truncate(
       context, local_path, length);
@@ -193,11 +175,9 @@ PlatformFileError LocalFileUtil::Truncate(
 
 bool LocalFileUtil::PathExists(
     FileSystemOperationContext* context,
-    const FilePath& file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+    const FileSystemPath& path) {
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return false;
   return underlying_file_util()->PathExists(
       context, local_path);
@@ -205,11 +185,9 @@ bool LocalFileUtil::PathExists(
 
 bool LocalFileUtil::DirectoryExists(
     FileSystemOperationContext* context,
-    const FilePath& file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+    const FileSystemPath& path) {
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return false;
   return underlying_file_util()->DirectoryExists(
       context, local_path);
@@ -217,11 +195,9 @@ bool LocalFileUtil::DirectoryExists(
 
 bool LocalFileUtil::IsDirectoryEmpty(
     FileSystemOperationContext* context,
-    const FilePath& file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+    const FileSystemPath& path) {
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return true;
   return underlying_file_util()->IsDirectoryEmpty(
       context, local_path);
@@ -229,19 +205,15 @@ bool LocalFileUtil::IsDirectoryEmpty(
 
 PlatformFileError LocalFileUtil::CopyOrMoveFile(
     FileSystemOperationContext* context,
-    const FilePath& src_file_path,
-    const FilePath& dest_file_path,
+    const FileSystemPath& src_path,
+    const FileSystemPath& dest_path,
     bool copy) {
   // TODO(ericu): If they share a root URL, this could be optimized.
-  FilePath local_src_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          src_file_path);
-  if (local_src_path.empty())
+  FileSystemPath local_src_path = GetLocalPath(context, src_path);
+  if (local_src_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-  FilePath local_dest_path =
-      GetLocalPath(context, context->dest_origin_url(), context->dest_type(),
-          dest_file_path);
-  if (local_dest_path.empty())
+  FileSystemPath local_dest_path = GetLocalPath(context, dest_path);
+  if (local_dest_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->CopyOrMoveFile(
       context, local_src_path, local_dest_path, copy);
@@ -250,26 +222,24 @@ PlatformFileError LocalFileUtil::CopyOrMoveFile(
 // TODO(dmikurube): Make it independent from CopyOrMoveFile.
 PlatformFileError LocalFileUtil::CopyInForeignFile(
     FileSystemOperationContext* context,
-    const FilePath& src_file_path,
-    const FilePath& dest_file_path) {
-  if (src_file_path.empty())
+    const FileSystemPath& underlying_src_path,
+    const FileSystemPath& dest_path) {
+  if (underlying_src_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-  FilePath local_dest_path =
-      GetLocalPath(context, context->dest_origin_url(), context->dest_type(),
-          dest_file_path);
-  if (local_dest_path.empty())
+  FileSystemPath local_dest_path = GetLocalPath(context, dest_path);
+  if (local_dest_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->CopyOrMoveFile(
-      context, src_file_path, local_dest_path, true);
+      context,
+      underlying_src_path,
+      local_dest_path, true);
 }
 
 PlatformFileError LocalFileUtil::DeleteFile(
     FileSystemOperationContext* context,
-    const FilePath& file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+    const FileSystemPath& path) {
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->DeleteFile(
       context, local_path);
@@ -277,26 +247,25 @@ PlatformFileError LocalFileUtil::DeleteFile(
 
 PlatformFileError LocalFileUtil::DeleteSingleDirectory(
     FileSystemOperationContext* context,
-    const FilePath& file_path) {
-  FilePath local_path =
-      GetLocalPath(context, context->src_origin_url(), context->src_type(),
-          file_path);
-  if (local_path.empty())
+    const FileSystemPath& path) {
+  FileSystemPath local_path = GetLocalPath(context, path);
+  if (local_path.internal_path().empty())
     return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
   return underlying_file_util()->DeleteSingleDirectory(
       context, local_path);
 }
 
-FilePath LocalFileUtil::GetLocalPath(
+FileSystemPath LocalFileUtil::GetLocalPath(
     FileSystemOperationContext* context,
-    const GURL& origin_url,
-    FileSystemType type,
-    const FilePath& virtual_path) {
-  FilePath root = context->file_system_context()->GetMountPointProvider(type)->
-      GetFileSystemRootPathOnFileThread(origin_url, type, virtual_path, false);
+    const FileSystemPath& path) {
+  FileSystemMountPointProvider* provider =
+      context->file_system_context()->GetMountPointProvider(path.type());
+  DCHECK(provider);
+  FilePath root = provider->GetFileSystemRootPathOnFileThread(
+      path.origin(), path.type(), path.internal_path(), false);
   if (root.empty())
-    return FilePath();
-  return root.Append(virtual_path);
+    return FileSystemPath();
+  return path.WithInternalPath(root.Append(path.internal_path()));
 }
 
 }  // namespace fileapi

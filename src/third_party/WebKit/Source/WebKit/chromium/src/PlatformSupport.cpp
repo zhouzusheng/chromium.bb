@@ -947,19 +947,24 @@ void PlatformSupport::paintThemePart(
 
 // Trace Event ----------------------------------------------------------------
 
-bool PlatformSupport::isTraceEventEnabled()
+const unsigned char* PlatformSupport::getTraceCategoryEnabledFlag(const char* categoryName)
 {
-    return webKitPlatformSupport()->isTraceEventEnabled();
+    return webKitPlatformSupport()->getTraceCategoryEnabledFlag(categoryName);
 }
-
-void PlatformSupport::traceEventBegin(const char* name, void* id, const char* extra)
+int PlatformSupport::addTraceEvent(char phase,
+                                   const unsigned char* categoryEnabledFlag,
+                                   const char* name,
+                                   unsigned long long id,
+                                   int numArgs,
+                                   const char** argNames,
+                                   const unsigned char* argTypes,
+                                   const unsigned long long* argValues,
+                                   int thresholdBeginId,
+                                   long long threshold,
+                                   unsigned char flags)
 {
-    webKitPlatformSupport()->traceEventBegin(name, id, extra);
-}
-
-void PlatformSupport::traceEventEnd(const char* name, void* id, const char* extra)
-{
-    webKitPlatformSupport()->traceEventEnd(name, id, extra);
+    return webKitPlatformSupport()->addTraceEvent(
+        phase, categoryEnabledFlag, name, id, numArgs, argNames, argTypes, argValues,  thresholdBeginId, threshold, flags);
 }
 
 // Visited Links --------------------------------------------------------------
@@ -1092,17 +1097,17 @@ bool PlatformSupport::screenIsMonochrome(Widget* widget)
     return client->screenInfo().isMonochrome;
 }
 
-IntRect PlatformSupport::screenRect(FrameView* frameView)
+IntRect PlatformSupport::screenRect(Widget* widget)
 {
-    WebWidgetClient* client = toWebWidgetClient(frameView);
+    WebWidgetClient* client = toWebWidgetClient(widget);
     if (!client)
         return IntRect();
     return client->screenInfo().rect;
 }
 
-IntRect PlatformSupport::screenAvailableRect(FrameView* frameView)
+IntRect PlatformSupport::screenAvailableRect(Widget* widget)
 {
-    WebWidgetClient* client = toWebWidgetClient(frameView);
+    WebWidgetClient* client = toWebWidgetClient(widget);
     if (!client)
         return IntRect();
     return client->screenInfo().availableRect;
@@ -1130,5 +1135,10 @@ WorkerContextProxy* WorkerContextProxy::create(Worker* worker)
     return WebWorkerClientImpl::createWorkerContextProxy(worker);
 }
 #endif
+
+bool PlatformSupport::canAccelerate2dCanvas()
+{
+    return webKitPlatformSupport()->canAccelerate2dCanvas();
+}
 
 } // namespace WebCore

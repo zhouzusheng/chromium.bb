@@ -8,20 +8,6 @@
 
 namespace media {
 
-void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status) {
-  DCHECK(!cb->is_null());
-  FilterStatusCB tmp_cb(*cb);
-  cb->Reset();
-  tmp_cb.Run(status);
-}
-
-void ResetAndRunCB(base::Closure* cb) {
-  DCHECK(!cb->is_null());
-  base::Closure tmp_cb(*cb);
-  cb->Reset();
-  tmp_cb.Run();
-}
-
 Filter::Filter() : host_(NULL) {}
 
 Filter::~Filter() {}
@@ -63,7 +49,7 @@ void Filter::Stop(const base::Closure& callback) {
 
 void Filter::SetPlaybackRate(float playback_rate) {}
 
-void Filter::Seek(base::TimeDelta time, const FilterStatusCB& callback) {
+void Filter::Seek(base::TimeDelta time, const PipelineStatusCB& callback) {
   DCHECK(!callback.is_null());
   callback.Run(PIPELINE_OK);
 }
@@ -75,14 +61,23 @@ VideoDecoder::VideoDecoder() {}
 
 VideoDecoder::~VideoDecoder() {}
 
+void VideoDecoder::Play(const base::Closure& /* callback */) {
+  LOG(FATAL) << "VideoDecoder::Play is not supposed to be called.";
+}
+
+void VideoDecoder::Pause(const base::Closure& /* callback */) {
+  LOG(FATAL) << "VideoDecoder::Pause is not supposed to be called.";
+}
+
+void VideoDecoder::Seek(base::TimeDelta /* time */,
+                        const PipelineStatusCB& /* callback */) {
+  LOG(FATAL) << "VideoDecoder::Seek is not supposed to be called.";
+}
+
 bool VideoDecoder::HasAlpha() const {
   return false;
 }
 
 void VideoDecoder::PrepareForShutdownHack() {}
-
-AudioDecoder::AudioDecoder() {}
-
-AudioDecoder::~AudioDecoder() {}
 
 }  // namespace media

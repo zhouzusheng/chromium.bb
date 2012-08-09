@@ -43,7 +43,6 @@
 #include "HTMLInputElement.h"
 #include "HiddenInputType.h"
 #include "ImageInputType.h"
-#include "IsIndexInputType.h"
 #include "KeyboardEvent.h"
 #include "LocalizedStrings.h"
 #include "MonthInputType.h"
@@ -57,6 +56,7 @@
 #include "ResetInputType.h"
 #include "SearchInputType.h"
 #include "ShadowRoot.h"
+#include "ShadowTree.h"
 #include "SubmitInputType.h"
 #include "TelephoneInputType.h"
 #include "TextInputType.h"
@@ -96,7 +96,6 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     map->add(InputTypeNames::file(), FileInputType::create);
     map->add(InputTypeNames::hidden(), HiddenInputType::create);
     map->add(InputTypeNames::image(), ImageInputType::create);
-    map->add(InputTypeNames::isindex(), IsIndexInputType::create);
 #if ENABLE(INPUT_TYPE_MONTH)
     map->add(InputTypeNames::month(), MonthInputType::create);
 #endif
@@ -161,7 +160,7 @@ bool InputType::saveFormControlState(String& result) const
     return true;
 }
 
-void InputType::restoreFormControlState(const String& state) const
+void InputType::restoreFormControlState(const String& state)
 {
     element()->setValue(state);
 }
@@ -194,7 +193,7 @@ double InputType::valueAsNumber() const
     return numeric_limits<double>::quiet_NaN();
 }
 
-void InputType::setValueAsNumber(double, bool, ExceptionCode& ec) const
+void InputType::setValueAsNumber(double, TextFieldEventBehavior, ExceptionCode& ec) const
 {
     ec = INVALID_STATE_ERR;
 }
@@ -380,7 +379,11 @@ void InputType::createShadowSubtree()
 
 void InputType::destroyShadowSubtree()
 {
-    element()->removeShadowRoot();
+    if (!element()->hasShadowRoot())
+        return;
+
+    if (ShadowRoot* root = element()->shadowTree()->oldestShadowRoot())
+        root->removeAllChildren();
 }
 
 double InputType::parseToDouble(const String&, double defaultValue) const
@@ -537,15 +540,12 @@ bool InputType::storesValueSeparateFromAttribute()
     return true;
 }
 
-void InputType::setValue(const String& sanitizedValue, bool, bool sendChangeEvent)
+void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
-    element()->setValueInternal(sanitizedValue, sendChangeEvent);
+    element()->setValueInternal(sanitizedValue, eventBehavior);
     element()->setNeedsStyleRecalc();
-}
-
-void InputType::dispatchChangeEventInResponseToSetValue()
-{
-    element()->dispatchFormControlChangeEvent();
+    if (valueChanged && eventBehavior != DispatchNoEvent)
+        element()->dispatchFormControlChangeEvent();
 }
 
 bool InputType::canSetValue(const String&)
@@ -658,6 +658,11 @@ bool InputType::isImageButton() const
     return false;
 }
 
+bool InputType::supportLabels() const
+{
+    return true;
+}
+
 bool InputType::isNumberField() const
 {
     return false;
@@ -731,6 +736,11 @@ String InputType::defaultToolTip() const
     return String();
 }
 
+bool InputType::supportsIndeterminateAppearance() const
+{
+    return false;
+}
+
 namespace InputTypeNames {
 
 // The type names must be lowercased because they will be the return values of
@@ -795,12 +805,6 @@ const AtomicString& hidden()
 const AtomicString& image()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("image"));
-    return name;
-}
-
-const AtomicString& isindex()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("khtml_isindex"));
     return name;
 }
 

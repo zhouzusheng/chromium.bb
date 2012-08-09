@@ -44,41 +44,12 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-// Helper to check if the Frame's document contains elements that can instantiate plugins.
-// Does a recursive check for nested Frames too.
-static bool hasPluginElements(Frame* frame)
-{
-    if (!frame)
-        return false;
-
-    // Search for a plugin element in this document.
-    Document* document = frame->document();
-    for (Node* node = document->firstChild(); node; node = node->traverseNextNode(document)) {
-        if (!node->isElementNode())
-            continue;
-
-        Element* element = static_cast<Element*>(node);
-        if (element->hasLocalName(embedTag) || element->hasLocalName(objectTag))
-            return true;
-    }
-
-    // Do the same for the nested frames.
-    for (Frame* child = frame->tree()->firstChild(); child; child = child->tree()->nextSibling()) {
-        if (hasPluginElements(child))
-            return true;
-    }
-
-    return false;
-}
-
 HTMLFrameElementBase::HTMLFrameElementBase(const QualifiedName& tagName, Document* document)
     : HTMLFrameOwnerElement(tagName, document)
     , m_scrolling(ScrollbarAuto)
     , m_marginWidth(-1)
     , m_marginHeight(-1)
-    , m_checkInDocumentTimer(this, &HTMLFrameElementBase::checkInDocumentTimerFired)
     , m_viewSource(false)
-    , m_remainsAliveOnRemovalFromTree(false)
 {
 }
 
@@ -131,13 +102,13 @@ void HTMLFrameElementBase::openURL(bool lockHistory, bool lockBackForwardList)
         contentFrame()->setInViewSourceMode(viewSourceMode());
 }
 
-void HTMLFrameElementBase::parseMappedAttribute(Attribute* attr)
+void HTMLFrameElementBase::parseAttribute(Attribute* attr)
 {
     if (attr->name() == srcAttr)
         setLocation(stripLeadingAndTrailingHTMLSpaces(attr->value()));
     else if (isIdAttributeName(attr->name())) {
         // Important to call through to base for the id attribute so the hasID bit gets set.
-        HTMLFrameOwnerElement::parseMappedAttribute(attr);
+        HTMLFrameOwnerElement::parseAttribute(attr);
         m_frameName = attr->value();
     } else if (attr->name() == nameAttr) {
         m_frameName = attr->value();
@@ -169,35 +140,21 @@ void HTMLFrameElementBase::parseMappedAttribute(Attribute* attr)
         // FIXME: should <frame> elements have beforeunload handlers?
         setAttributeEventListener(eventNames().beforeunloadEvent, createAttributeEventListener(this, attr));
     } else
-        HTMLFrameOwnerElement::parseMappedAttribute(attr);
+        HTMLFrameOwnerElement::parseAttribute(attr);
 }
 
 void HTMLFrameElementBase::setNameAndOpenURL()
 {
-    m_frameName = getAttribute(nameAttr);
+    m_frameName = getNameAttribute();
     if (m_frameName.isNull())
         m_frameName = getIdAttribute();
     openURL();
-}
-
-void HTMLFrameElementBase::updateOnReparenting()
-{
-    ASSERT(m_remainsAliveOnRemovalFromTree);
-
-    if (Frame* frame = contentFrame())
-        frame->transferChildFrameToNewDocument();
 }
 
 void HTMLFrameElementBase::insertedIntoDocument()
 {
     HTMLFrameOwnerElement::insertedIntoDocument();
 
-    if (m_remainsAliveOnRemovalFromTree) {
-        updateOnReparenting();
-        m_remainsAliveOnRemovalFromTree = false;
-        m_checkInDocumentTimer.stop();
-        return;
-    }
     // DocumentFragments don't kick of any loads.
     if (!document()->frame())
         return;
@@ -275,47 +232,6 @@ int HTMLFrameElementBase::height()
     if (!renderBox())
         return 0;
     return renderBox()->height();
-}
-
-// Some types of content can restrict the ability to move the iframes between pages.
-// For example, the plugin infrastructure of an embedder may associate the plugin instances
-// with the top-level Frame for tracking various resources and failure to transfer those
-// resources correctly may lead to crashes and other ill effects (https://bugs.webkit.org/show_bug.cgi?id=68267)
-bool HTMLFrameElementBase::canRemainAliveOnRemovalFromTree()
-{
-    return !hasPluginElements(contentFrame());
-}
-
-void HTMLFrameElementBase::setRemainsAliveOnRemovalFromTree(bool value)
-{
-    ASSERT(!value || canRemainAliveOnRemovalFromTree());
-    m_remainsAliveOnRemovalFromTree = value;
-
-    // There is a possibility that JS will do document.adoptNode() on this element but will not insert it into the tree.
-    // Start the async timer that is normally stopped by attach(). If it's not stopped and fires, it'll unload the frame.
-    if (value)
-        m_checkInDocumentTimer.startOneShot(0);
-    else {
-        m_checkInDocumentTimer.stop();
-        willRemove();
-    }
-}
-
-void HTMLFrameElementBase::checkInDocumentTimerFired(Timer<HTMLFrameElementBase>*)
-{
-    ASSERT(!attached());
-    ASSERT(m_remainsAliveOnRemovalFromTree);
-
-    m_remainsAliveOnRemovalFromTree = false;
-    willRemove();
-}
-
-void HTMLFrameElementBase::willRemove()
-{
-    if (m_remainsAliveOnRemovalFromTree)
-        return;
-
-    HTMLFrameOwnerElement::willRemove();
 }
 
 #if ENABLE(FULLSCREEN_API)

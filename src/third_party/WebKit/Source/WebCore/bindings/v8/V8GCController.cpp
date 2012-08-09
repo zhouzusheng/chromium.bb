@@ -210,7 +210,7 @@ public:
 
     virtual intptr_t GetHash()
     {
-        return reinterpret_cast<intptr_t>(m_object);
+        return PtrHash<void*>::hash(m_object);
     }
     
     virtual const char* GetLabel()
@@ -291,7 +291,7 @@ typedef Vector<GrouperItem> GrouperList;
 // element of the tree to which it belongs.
 static GroupId calculateGroupId(Node* node)
 {
-    if (node->inDocument() || (node->hasTagName(HTMLNames::imgTag) && !static_cast<HTMLImageElement*>(node)->haveFiredLoadEvent()))
+    if (node->inDocument() || (node->hasTagName(HTMLNames::imgTag) && static_cast<HTMLImageElement*>(node)->hasPendingLoadEvent()))
         return GroupId(node->document());
 
     Node* root = node;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -85,8 +85,11 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // This transaction is being deleted and we are not done writing to the cache.
   // We need to indicate that the response data was truncated.  Returns true on
-  // success.
+  // success. Keep in mind that this operation may have side effects, such as
+  // deleting the active entry.
   bool AddTruncatedFlag();
+
+  HttpCache::ActiveEntry* entry() { return entry_; }
 
   // Returns the LoadState of the writer transaction of a given ActiveEntry. In
   // other words, returns the LoadState of this transaction without asking the
@@ -306,6 +309,11 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Called when we are done writing to the cache entry.
   void DoneWritingToEntry(bool success);
+
+  // Returns an error to signal the caller that the current read failed. The
+  // current operation |result| is also logged. If |restart| is true, the
+  // transaction should be restarted.
+  int OnCacheReadError(int result, bool restart);
 
   // Deletes the current partial cache entry (sparse), and optionally removes
   // the control object (partial_).

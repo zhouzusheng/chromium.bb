@@ -6,15 +6,14 @@
 #define NET_URL_REQUEST_URL_REQUEST_H_
 #pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 
 #include "base/debug/leak_tracker.h"
 #include "base/logging.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "base/supports_user_data.h"
 #include "base/time.h"
 #include "base/threading/non_thread_safe.h"
 #include "googleurl/src/gurl.h"
@@ -35,11 +34,9 @@ class FilePath;
 class AutoUpdateInterceptor;
 class ChildProcessSecurityPolicyTest;
 class ComponentUpdateInterceptor;
-class ResourceDispatcherHostTest;
 class TestAutomationProvider;
 class URLRequestAutomationJob;
 class UserScriptListenerTest;
-class NetworkDelayListenerTest;
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
@@ -47,6 +44,12 @@ namespace appcache {
 class AppCacheInterceptor;
 class AppCacheRequestHandlerTest;
 class AppCacheURLRequestJobTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace content {
+class ResourceDispatcherHostTest;
 }
 
 // Temporary layering violation to allow existing users of a deprecated
@@ -99,7 +102,8 @@ typedef std::vector<std::string> ResponseCookies;
 //
 // NOTE: All usage of all instances of this class should be on the same thread.
 //
-class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
+                              public base::SupportsUserData {
  public:
   // Callback function implemented by protocol handlers to create new jobs.
   // The factory may return NULL to indicate an error, which will cause other
@@ -114,14 +118,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 #define HTTP_ATOM(x) HTTP_ ## x,
 #include "net/http/http_atom_list.h"
 #undef HTTP_ATOM
-  };
-
-  // Derive from this class and add your own data members to associate extra
-  // information with a URLRequest. Use GetUserData(key) and SetUserData()
-  class UserData {
-   public:
-    UserData() {}
-    virtual ~UserData() {}
   };
 
   // This class handles network interception.  Use with
@@ -164,16 +160,15 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     friend class ::AutoUpdateInterceptor;
     friend class ::ChildProcessSecurityPolicyTest;
     friend class ::ComponentUpdateInterceptor;
-    friend class ::ResourceDispatcherHostTest;
     friend class ::TestAutomationProvider;
     friend class ::UserScriptListenerTest;
-    friend class ::NetworkDelayListenerTest;
     friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
     friend class URLRequestFilter;
     friend class appcache::AppCacheInterceptor;
     friend class appcache::AppCacheRequestHandlerTest;
     friend class appcache::AppCacheURLRequestJobTest;
+    friend class content::ResourceDispatcherHostTest;
     friend class fileapi::FileSystemDirURLRequestJobTest;
     friend class fileapi::FileSystemOperationWriteTest;
     friend class fileapi::FileSystemURLRequestJobTest;
@@ -270,19 +265,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
                                        const SSLInfo& ssl_info,
                                        bool fatal);
 
-    // Called when reading cookies to allow the delegate to block access to the
-    // cookie. This method will never be invoked when LOAD_DO_NOT_SEND_COOKIES
-    // is specified.
-    virtual bool CanGetCookies(const URLRequest* request,
-                               const CookieList& cookie_list) const;
-
-    // Called when a cookie is set to allow the delegate to block access to the
-    // cookie. This method will never be invoked when LOAD_DO_NOT_SAVE_COOKIES
-    // is specified.
-    virtual bool CanSetCookie(const URLRequest* request,
-                              const std::string& cookie_line,
-                              CookieOptions* options) const;
-
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
     // request->status() will be set.  On success, all redirects have been
@@ -307,14 +289,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
   // will not have any more of its methods called.
-  ~URLRequest();
-
-  // The user data allows the clients to associate data with this request.
-  // Multiple user data values can be stored under different keys.
-  // This request will TAKE OWNERSHIP of the given data pointer, and will
-  // delete the object if it is changed or the request is destroyed.
-  UserData* GetUserData(const void* key) const;
-  void SetUserData(const void* key, UserData* data);
+  virtual ~URLRequest();
 
   // Returns true if the scheme can be handled by URLRequest. False otherwise.
   static bool IsHandledProtocol(const std::string& scheme);
@@ -330,10 +305,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Allow access to file:// on ChromeOS for tests.
   static void AllowFileAccess();
   static bool IsFileAccessAllowed();
-
-  // See switches::kEnableMacCookies.
-  static void EnableMacCookies();
-  static bool AreMacCookiesEnabled();
 
   // The original url is the url used to initialize the request, and it may
   // differ from the url if the request was redirected.
@@ -529,13 +500,13 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values).
-  void SimulateError(int error);
+  void CancelWithError(int error);
 
   // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values) and attaches |ssl_info| as the SSLInfo for that request.  This
   // is useful to attach a certificate and certificate error to a canceled
   // request.
-  void SimulateSSLError(int error, const SSLInfo& ssl_info);
+  void CancelWithSSLError(int error, const SSLInfo& ssl_info);
 
   // Read initiates an asynchronous read from the response, and must only
   // be called after the OnResponseStarted callback is received with a
@@ -630,8 +601,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
  private:
   friend class URLRequestJob;
-
-  typedef std::map<const void*, linked_ptr<UserData> > UserDataMap;
 
   // Registers a new protocol handler for the given scheme. If the scheme is
   // already handled, this will overwrite the given factory. To delete the
@@ -740,9 +709,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Start() is called to the time we dispatch RequestComplete and indicates
   // whether the job is active.
   bool is_pending_;
-
-  // Externally-defined data accessible by key
-  UserDataMap user_data_;
 
   // Number of times we're willing to redirect.  Used to guard against
   // infinite redirects.

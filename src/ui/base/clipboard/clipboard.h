@@ -10,14 +10,23 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
+#include "base/threading/thread_checker.h"
 #include "ui/base/ui_export.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include <gdk/gdk.h>
+#endif
+
+#if defined(OS_ANDROID)
+#include <jni.h>
+
+#include "base/android/jni_android.h"
+#include "base/android/scoped_java_ref.h"
 #endif
 
 namespace gfx {
@@ -39,8 +48,15 @@ class NSString;
 
 namespace ui {
 
-class UI_EXPORT Clipboard {
+class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
  public:
+  // MIME type constants.
+  static const char kMimeTypeText[];
+  static const char kMimeTypeURIList[];
+  static const char kMimeTypeDownloadURL[];
+  static const char kMimeTypeHTML[];
+  static const char kMimeTypePNG[];
+
   // Platform neutral holder for native data representation of a clipboard type.
   struct UI_EXPORT FormatType {
     FormatType();
@@ -48,6 +64,13 @@ class UI_EXPORT Clipboard {
 
     std::string Serialize() const;
     static FormatType Deserialize(const std::string& serialization);
+
+    // FormatType can be used as the key in a map on some platforms.
+#if defined(OS_WIN) || defined(USE_AURA)
+    bool operator<(const FormatType& other) const {
+      return data_ < other.data_;
+    }
+#endif
 
    private:
     friend class Clipboard;
@@ -75,6 +98,11 @@ class UI_EXPORT Clipboard {
     explicit FormatType(const GdkAtom& native_format);
     const GdkAtom& ToGdkAtom() const { return data_; }
     GdkAtom data_;
+#elif defined(OS_ANDROID)
+    explicit FormatType(const std::string& native_format);
+    const std::string& data() const { return data_; }
+    int compare(const std::string& str) const { return data_.compare(str); }
+    std::string data_;
 #else
 #error No FormatType definition.
 #endif
@@ -130,9 +158,7 @@ class UI_EXPORT Clipboard {
 
   // Buffer designates which clipboard the action should be applied to.
   // Only platforms that use the X Window System support the selection
-  // buffer. Furthermore we currently only use a buffer other than the
-  // standard buffer when reading from the clipboard so only those
-  // functions accept a buffer parameter.
+  // buffer.
   enum Buffer {
     BUFFER_STANDARD,
     BUFFER_SELECTION,
@@ -161,11 +187,12 @@ class UI_EXPORT Clipboard {
   // contents of |objects|. On Windows they are copied to the system clipboard.
   // On linux they are copied into a structure owned by the Clipboard object and
   // kept until the system clipboard is set again.
-  void WriteObjects(const ObjectMap& objects);
+  void WriteObjects(Buffer buffer, const ObjectMap& objects);
 
   // On Linux/BSD, we need to know when the clipboard is set to a URL.  Most
   // platforms don't care.
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(USE_AURA)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(USE_AURA) \
+    || defined(OS_ANDROID)
   void DidWriteURL(const std::string& utf8_text) {}
 #else  // !defined(OS_WIN) && !defined(OS_MACOSX)
   void DidWriteURL(const std::string& utf8_text);
@@ -178,6 +205,9 @@ class UI_EXPORT Clipboard {
 
   // Tests whether the clipboard contains a certain format
   bool IsFormatAvailable(const FormatType& format, Buffer buffer) const;
+
+  // Clear the clipboard data.
+  void Clear(Buffer buffer);
 
   void ReadAvailableTypes(Buffer buffer, std::vector<string16>* types,
                           bool* contains_filenames) const;
@@ -204,11 +234,6 @@ class UI_EXPORT Clipboard {
 
   // Reads a bookmark from the clipboard, if available.
   void ReadBookmark(string16* title, std::string* url) const;
-
-  // Reads a file or group of files from the clipboard, if available, into the
-  // out parameter.
-  void ReadFile(FilePath* file) const;
-  void ReadFiles(std::vector<FilePath>* files) const;
 
   // Reads raw data from the clipboard with the given format type. Stores result
   // as a byte vector.
@@ -311,7 +336,7 @@ class UI_EXPORT Clipboard {
 
  private:
   // Write changes to gtk clipboard.
-  void SetGtkClipboard();
+  void SetGtkClipboard(Buffer buffer);
   // Insert a mapping into clipboard_data_.
   void InsertMapping(const char* key, char* data, size_t data_len);
 
@@ -321,12 +346,31 @@ class UI_EXPORT Clipboard {
   TargetMap* clipboard_data_;
   GtkClipboard* clipboard_;
   GtkClipboard* primary_selection_;
-#endif
+#elif defined(OS_ANDROID)
+  // Returns whether some text is available from the Android Clipboard.
+  bool IsTextAvailableFromAndroid() const;
 
-  // MIME type constants.
-  static const char kMimeTypeText[];
-  static const char kMimeTypeHTML[];
-  static const char kMimeTypePNG[];
+  // Make sure that the Android Clipboard contents matches what we think it
+  // should contain. If it changed, a copy occured from another application and
+  // all internal data is dropped.
+  void ValidateInternalClipboard() const;
+
+  // Clear the Clipboard for all types. Both for Android and internal.
+  void Clear();
+
+  // Clear the internal clipboard.
+  void ClearInternalClipboard() const;
+
+  // This private method is used to set non text key/value.
+  void Set(const std::string& key, const std::string& value);
+
+  // Java class and methods for the Android ClipboardManager.
+  base::android::ScopedJavaGlobalRef<jobject> clipboard_manager_;
+  jmethodID set_text_;
+  jmethodID has_text_;
+  jmethodID get_text_;
+  jmethodID to_string_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(Clipboard);
 };

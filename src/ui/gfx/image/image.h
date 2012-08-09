@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,9 @@
 // cheaply passed around by value, the actual image data is stored in a ref-
 // counted member. When all Images referencing this storage are deleted, the
 // actual representations are deleted, too.
+//
+// Images can be empty, in which case they have no backing representation.
+// Attempting to use an empty Image will result in a crash.
 
 #ifndef UI_GFX_IMAGE_IMAGE_H_
 #define UI_GFX_IMAGE_IMAGE_H_
@@ -55,9 +58,16 @@ class UI_EXPORT Image {
 
   typedef std::map<RepresentationType, internal::ImageRep*> RepresentationMap;
 
+  // Creates an empty image with no representations.
+  Image();
+
   // Creates a new image with the default representation. The object will take
   // ownership of the image.
   explicit Image(const SkBitmap* bitmap);
+
+  // Creates a new image by copying the bitmap for use as the default
+  // representation.
+  explicit Image(const SkBitmap& bitmap);
 
   // To create an Image that supports multiple resolutions pass a vector
   // of bitmaps, one for each resolution.
@@ -100,7 +110,7 @@ class UI_EXPORT Image {
   // backing pixels are shared amongst all copies (a fact of each of the
   // converted representations, rather than a limitation imposed by Image) and
   // so the result should be considered immutable.
-  const SkBitmap* CopySkBitmap() const;
+  SkBitmap* CopySkBitmap() const;
 #if defined(TOOLKIT_USES_GTK)
   GdkPixbuf* CopyGdkPixbuf() const;
 #elif defined(OS_MACOSX)
@@ -109,11 +119,7 @@ class UI_EXPORT Image {
 
   // DEPRECATED ----------------------------------------------------------------
   // Conversion handlers. These wrap the ToType() variants.
-  operator const SkBitmap*() const;
-  operator const SkBitmap&() const;
-#if defined(TOOLKIT_USES_GTK)
-  operator GdkPixbuf*() const;
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
   operator NSImage*() const;
 #endif
   // ---------------------------------------------------------------------------
@@ -133,6 +139,9 @@ class UI_EXPORT Image {
 
   // Returns the number of representations.
   size_t RepresentationCount() const;
+
+  // Returns true if this Image has no representations.
+  bool IsEmpty() const;
 
   // Swaps this image's internal representations with |other|.
   void SwapRepresentations(gfx::Image* other);

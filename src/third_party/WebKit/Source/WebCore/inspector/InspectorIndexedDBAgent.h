@@ -39,17 +39,18 @@
 
 namespace WebCore {
 
+class InjectedScriptManager;
 class InspectorPageAgent;
 
 typedef String ErrorString;
 
-class InspectorIndexedDBAgent : public InspectorBaseAgent<InspectorIndexedDBAgent> {
+class InspectorIndexedDBAgent : public InspectorBaseAgent<InspectorIndexedDBAgent>, public InspectorBackendDispatcher::IndexedDBCommandHandler {
 public:
     class FrontendProvider;
 
-    static PassOwnPtr<InspectorIndexedDBAgent> create(InstrumentingAgents* instrumentingAgents, InspectorState* state, InspectorPageAgent* pageAgent)
+    static PassOwnPtr<InspectorIndexedDBAgent> create(InstrumentingAgents* instrumentingAgents, InspectorState* state, InjectedScriptManager* injectedScriptManager, InspectorPageAgent* pageAgent)
     {
-        return adoptPtr(new InspectorIndexedDBAgent(instrumentingAgents, state, pageAgent));
+        return adoptPtr(new InspectorIndexedDBAgent(instrumentingAgents, state, injectedScriptManager, pageAgent));
     }
     ~InspectorIndexedDBAgent();
 
@@ -58,13 +59,15 @@ public:
     virtual void restore();
 
     // Called from the front-end.
-    void enable(ErrorString*);
-    void disable(ErrorString*);
-    void requestDatabaseNamesForFrame(ErrorString*, int requestId, const String& frameId);
-    void requestDatabase(ErrorString*, int requestId, const String& frameId, const String& databaseName);
+    virtual void enable(ErrorString*);
+    virtual void disable(ErrorString*);
+    virtual void requestDatabaseNamesForFrame(ErrorString*, int requestId, const String& frameId);
+    virtual void requestDatabase(ErrorString*, int requestId, const String& frameId, const String& databaseName);
+    virtual void requestData(ErrorString*, int requestId, const String& frameId, const String& databaseName, const String& objectStoreName, const String& indexName, int skipCount, int pageSize, const RefPtr<InspectorObject>* keyRange);
 private:
-    InspectorIndexedDBAgent(InstrumentingAgents*, InspectorState*, InspectorPageAgent*);
+    InspectorIndexedDBAgent(InstrumentingAgents*, InspectorState*, InjectedScriptManager*, InspectorPageAgent*);
 
+    InjectedScriptManager* m_injectedScriptManager;
     InspectorPageAgent* m_pageAgent;
     RefPtr<FrontendProvider> m_frontendProvider;
     bool m_enabled;

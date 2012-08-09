@@ -17,6 +17,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
+#include "base/profiler/alternate_timer.h"
 #include "base/profiler/tracked_time.h"
 #include "base/time.h"
 #include "base/synchronization/lock.h"
@@ -185,8 +186,6 @@
 // DeathData that is reset (as synchronously as possible) during each snapshot.
 // This will facilitate displaying a max value for each snapshot period.
 
-class MessageLoop;
-
 namespace tracked_objects {
 
 //------------------------------------------------------------------------------
@@ -262,18 +261,18 @@ class BASE_EXPORT DeathData {
 
   // Update stats for a task destruction (death) that had a Run() time of
   // |duration|, and has had a queueing delay of |queue_duration|.
-  void RecordDeath(const DurationInt queue_duration,
-                   const DurationInt run_duration,
+  void RecordDeath(const int32 queue_duration,
+                   const int32 run_duration,
                    int random_number);
 
   // Metrics accessors, used only in tests.
   int count() const;
-  DurationInt run_duration_sum() const;
-  DurationInt run_duration_max() const;
-  DurationInt run_duration_sample() const;
-  DurationInt queue_duration_sum() const;
-  DurationInt queue_duration_max() const;
-  DurationInt queue_duration_sample() const;
+  int32 run_duration_sum() const;
+  int32 run_duration_max() const;
+  int32 run_duration_sample() const;
+  int32 queue_duration_sum() const;
+  int32 queue_duration_max() const;
+  int32 queue_duration_sample() const;
 
   // Construct a DictionaryValue instance containing all our stats. The caller
   // assumes ownership of the returned instance.
@@ -291,16 +290,16 @@ class BASE_EXPORT DeathData {
   // Number of runs seen (divisor for calculating averages).
   int count_;
   // Basic tallies, used to compute averages.
-  DurationInt run_duration_sum_;
-  DurationInt queue_duration_sum_;
+  int32 run_duration_sum_;
+  int32 queue_duration_sum_;
   // Max values, used by local visualization routines.  These are often read,
   // but rarely updated.
-  DurationInt run_duration_max_;
-  DurationInt queue_duration_max_;
+  int32 run_duration_max_;
+  int32 queue_duration_max_;
   // Samples, used by by crowd sourcing gatherers.  These are almost never read,
   // and rarely updated.
-  DurationInt run_duration_sample_;
-  DurationInt queue_duration_sample_;
+  int32 run_duration_sample_;
+  int32 queue_duration_sample_;
 };
 
 //------------------------------------------------------------------------------
@@ -442,15 +441,17 @@ class BASE_EXPORT ThreadData {
   // PROFILING_ACTIVE (i.e., it can't be set to a higher level than what is
   // compiled into the binary, and parent-child tracking at the
   // PROFILING_CHILDREN_ACTIVE level might not be compiled in).
-  static bool InitializeAndSetTrackingStatus(bool status);
+  static bool InitializeAndSetTrackingStatus(Status status);
+
+  static Status status();
 
   // Indicate if any sort of profiling is being done (i.e., we are more than
   // DEACTIVATED).
-  static bool tracking_status();
+  static bool TrackingStatus();
 
   // For testing only, indicate if the status of parent-child tracking is turned
-  // on.  This is currently a compiled option, atop tracking_status().
-  static bool tracking_parent_child_status();
+  // on.  This is currently a compiled option, atop TrackingStatus().
+  static bool TrackingParentChildStatus();
 
   // Special versions of Now() for getting times at start and end of a tracked
   // run.  They are super fast when tracking is disabled, and have some internal
@@ -466,6 +467,12 @@ class BASE_EXPORT ThreadData {
   // ifdef'ed to be small enough (allowing the profiler to be "compiled out" of
   // the code).
   static TrackedTime Now();
+
+  // Use the function |now| to provide current times, instead of calling the
+  // TrackedTime::Now() function.  Since this alternate function is being used,
+  // the other time arguments (used for calculating queueing delay) will be
+  // ignored.
+  static void SetAlternateTimeSource(NowFunction* now);
 
   // This function can be called at process termination to validate that thread
   // cleanup routines have been called for at least some number of named
@@ -507,9 +514,7 @@ class BASE_EXPORT ThreadData {
   Births* TallyABirth(const Location& location);
 
   // Find a place to record a death on this thread.
-  void TallyADeath(const Births& birth,
-                   DurationInt queue_duration,
-                   DurationInt duration);
+  void TallyADeath(const Births& birth, int32 queue_duration, int32 duration);
 
   // Using our lock, make a copy of the specified maps.  This call may be made
   // on  non-local threads, which necessitate the use of the lock to prevent
@@ -542,6 +547,10 @@ class BASE_EXPORT ThreadData {
   // delete recursively all data structures, starting with the list of
   // ThreadData instances.
   static void ShutdownSingleThreadedCleanup(bool leak);
+
+  // When non-null, this specifies an external function that supplies monotone
+  // increasing time functcion.
+  static NowFunction* now_function_;
 
   // We use thread local store to identify which ThreadData to interact with.
   static base::ThreadLocalStorage::StaticSlot tls_index_;
@@ -701,30 +710,6 @@ class BASE_EXPORT DataCollector {
   ThreadData::ParentChildSet parent_child_set_;
 
   DISALLOW_COPY_AND_ASSIGN(DataCollector);
-};
-
-//------------------------------------------------------------------------------
-// Provide simple way to to start global tracking, and to tear down tracking
-// when done.  The design has evolved to *not* do any teardown (and just leak
-// all allocated data structures).  As a result, we don't have any code in this
-// destructor, and perhaps this whole class should go away.
-
-class BASE_EXPORT AutoTracking {
- public:
-  AutoTracking() {
-    ThreadData::Initialize();
-  }
-
-  ~AutoTracking() {
-    // TODO(jar): Consider emitting a CSV dump of the data at this point.  This
-    // should be called after the message loops have all terminated (or at least
-    // the main message loop is gone), so there is little chance for additional
-    // tasks to be Run.
-  }
-
- private:
-
-  DISALLOW_COPY_AND_ASSIGN(AutoTracking);
 };
 
 }  // namespace tracked_objects

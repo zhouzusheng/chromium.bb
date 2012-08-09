@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,75 +14,103 @@
 namespace base {
 namespace win {
 
-// Used so we always remember to close the handle.
-// The class interface matches that of ScopedStdioHandle in  addition to an
-// IsValid() method since invalid handles on windows can be either NULL or
-// INVALID_HANDLE_VALUE (-1).
-//
-// Example:
-//   ScopedHandle hfile(CreateFile(...));
-//   if (!hfile.Get())
-//     ...process error
-//   ReadFile(hfile.Get(), ...);
-//
-// To sqirrel the handle away somewhere else:
-//   secret_handle_ = hfile.Take();
-//
-// To explicitly close the handle:
-//   hfile.Close();
-class ScopedHandle {
+// Generic wrapper for raw handles that takes care of closing handles
+// automatically. The class interface follows the style of
+// the ScopedStdioHandle class with a few additions:
+//   - IsValid() method can tolerate multiple invalid handle values such as NULL
+//     and INVALID_HANDLE_VALUE (-1) for Win32 handles.
+//   - Receive() method allows to receive a handle value from a function that
+//     takes a raw handle pointer only.
+template <class Traits>
+class GenericScopedHandle {
  public:
-  ScopedHandle() : handle_(NULL) {
+  typedef typename Traits::Handle Handle;
+
+  GenericScopedHandle() : handle_(Traits::NullHandle()) {}
+
+  explicit GenericScopedHandle(Handle handle) : handle_(Traits::NullHandle()) {
+    Set(handle);
   }
 
-  explicit ScopedHandle(HANDLE h) : handle_(NULL) {
-    Set(h);
-  }
-
-  ~ScopedHandle() {
+  ~GenericScopedHandle() {
     Close();
   }
 
-  // Use this instead of comparing to INVALID_HANDLE_VALUE to pick up our NULL
-  // usage for errors.
   bool IsValid() const {
-    return handle_ != NULL;
+    return Traits::IsHandleValid(handle_);
   }
 
-  void Set(HANDLE new_handle) {
-    Close();
+  void Set(Handle handle) {
+    if (handle_ != handle) {
+      Close();
 
-    // Windows is inconsistent about invalid handles, so we always use NULL
-    if (new_handle != INVALID_HANDLE_VALUE)
-      handle_ = new_handle;
+      if (Traits::IsHandleValid(handle)) {
+        handle_ = handle;
+      }
+    }
   }
 
-  HANDLE Get() {
+  Handle Get() const {
     return handle_;
   }
 
-  operator HANDLE() { return handle_; }
-
-  HANDLE Take() {
-    // transfers ownership away from this object
-    HANDLE h = handle_;
-    handle_ = NULL;
-    return h;
+  operator Handle() const {
+    return handle_;
   }
 
+  Handle* Receive() {
+    DCHECK(!Traits::IsHandleValid(handle_)) << "Handle must be NULL";
+    return &handle_;
+  }
+
+  // Transfers ownership away from this object.
+  Handle Take() {
+    Handle temp = handle_;
+    handle_ = Traits::NullHandle();
+    return temp;
+  }
+
+  // Explicitly closes the owned handle.
   void Close() {
-    if (handle_) {
-      if (!::CloseHandle(handle_)) {
+    if (Traits::IsHandleValid(handle_)) {
+      if (!Traits::CloseHandle(handle_)) {
         NOTREACHED();
       }
-      handle_ = NULL;
+      handle_ = Traits::NullHandle();
     }
   }
 
  private:
-  HANDLE handle_;
-  DISALLOW_COPY_AND_ASSIGN(ScopedHandle);
+  Handle handle_;
+
+  DISALLOW_COPY_AND_ASSIGN(GenericScopedHandle);
 };
+
+// The traits class for Win32 handles that can be closed via CloseHandle() API.
+class HandleTraits {
+ public:
+  typedef HANDLE Handle;
+
+  // Closes the handle.
+  static bool CloseHandle(HANDLE handle) {
+    return ::CloseHandle(handle) != FALSE;
+  }
+
+  // Returns true if the handle value is valid.
+  static bool IsHandleValid(HANDLE handle) {
+    return handle != NULL && handle != INVALID_HANDLE_VALUE;
+  }
+
+  // Returns NULL handle value.
+  static HANDLE NullHandle() {
+    return NULL;
+  }
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(HandleTraits);
+};
+
+typedef GenericScopedHandle<HandleTraits> ScopedHandle;
 
 }  // namespace win
 }  // namespace base

@@ -117,7 +117,10 @@ void RenderView::layout()
     if (relayoutChildren) {
         setChildNeedsLayout(true, false);
         for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-            if (child->style()->logicalHeight().isPercent() || child->style()->logicalMinHeight().isPercent() || child->style()->logicalMaxHeight().isPercent())
+            if ((child->isBox() && toRenderBox(child)->hasRelativeLogicalHeight())
+                    || child->style()->logicalHeight().isPercent()
+                    || child->style()->logicalMinHeight().isPercent()
+                    || child->style()->logicalMaxHeight().isPercent())
                 child->setChildNeedsLayout(true, false);
         }
     }
@@ -197,6 +200,17 @@ void RenderView::calcColumnWidth()
         }
     }
     setDesiredColumnCountAndWidth(1, columnWidth);
+}
+
+ColumnInfo::PaginationUnit RenderView::paginationUnit() const
+{
+    if (m_frameView) {
+        if (Frame* frame = m_frameView->frame()) {
+            if (Page* page = frame->page())
+                return (frame == page->mainFrame() && page->pagination().behavesLikeColumns) ? ColumnInfo::Column : ColumnInfo::Page;
+        }
+    }
+    return ColumnInfo::Page;
 }
 
 void RenderView::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -287,7 +301,10 @@ bool RenderView::shouldRepaint(const IntRect& r) const
 
     if (!m_frameView)
         return false;
-    
+
+    if (m_frameView->repaintsDisabled())
+        return false;
+
     return true;
 }
 
@@ -355,9 +372,9 @@ void RenderView::computeRectForRepaint(RenderBoxModelObject* repaintContainer, I
         rect = m_layer->transform()->mapRect(rect);
 }
 
-void RenderView::absoluteRects(Vector<LayoutRect>& rects, const LayoutPoint& accumulatedOffset) const
+void RenderView::absoluteRects(Vector<IntRect>& rects, const LayoutPoint& accumulatedOffset) const
 {
-    rects.append(LayoutRect(accumulatedOffset, m_layer->size()));
+    rects.append(pixelSnappedIntRect(accumulatedOffset, m_layer->size()));
 }
 
 void RenderView::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
@@ -692,7 +709,7 @@ void RenderView::notifyWidgets(WidgetNotification notification)
 IntRect RenderView::viewRect() const
 {
     if (printing())
-        return IntRect(0, 0, width(), height());
+        return IntRect(IntPoint(), size());
     if (m_frameView)
         return m_frameView->visibleContentRect();
     return IntRect();

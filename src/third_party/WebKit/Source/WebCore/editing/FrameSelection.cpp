@@ -425,10 +425,17 @@ static void updatePositionAfterAdoptingTextReplacement(Position& position, Chara
         position.moveToOffset(positionOffset - oldLength + newLength);
 }
 
+static inline bool nodeIsDetachedFromDocument(Node* node)
+{
+    ASSERT(node);
+    Node* highest = highestAncestor(node);
+    return highest->nodeType() == Node::DOCUMENT_FRAGMENT_NODE && !highest->isShadowRoot();
+}
+
 void FrameSelection::textWillBeReplaced(CharacterData* node, unsigned offset, unsigned oldLength, unsigned newLength)
 {
     // The fragment check is a performance optimization. See http://trac.webkit.org/changeset/30062.
-    if (isNone() || !node || highestAncestor(node)->nodeType() == Node::DOCUMENT_FRAGMENT_NODE)
+    if (isNone() || !node || nodeIsDetachedFromDocument(node))
         return;
 
     Position base = m_selection.base();
@@ -635,11 +642,14 @@ VisiblePosition FrameSelection::modifyMovingRight(TextGranularity granularity)
             pos = VisiblePosition(m_selection.extent(), m_selection.affinity()).right(true);
         break;
     case WordGranularity:
+#if !OS(WINCE)
+        // Visual word movement relies on isWordTextBreak which is not implemented in WinCE.
         if (visualWordMovementEnabled()
             || (m_frame && m_frame->editor()->behavior().shouldMoveLeftRightByWordInVisualOrder())) {
             pos = rightWordPosition(VisiblePosition(m_selection.extent(), m_selection.affinity()));
             break;
         }
+#endif
     case SentenceGranularity:
     case LineGranularity:
     case ParagraphGranularity:
@@ -802,11 +812,13 @@ VisiblePosition FrameSelection::modifyMovingLeft(TextGranularity granularity)
             pos = VisiblePosition(m_selection.extent(), m_selection.affinity()).left(true);
         break;
     case WordGranularity:
+#if !OS(WINCE)
         if (visualWordMovementEnabled()
             || (m_frame && m_frame->editor()->behavior().shouldMoveLeftRightByWordInVisualOrder())) {
             pos = leftWordPosition(VisiblePosition(m_selection.extent(), m_selection.affinity()));
             break;
         }
+#endif
     case SentenceGranularity:
     case LineGranularity:
     case ParagraphGranularity:
@@ -975,9 +987,9 @@ bool FrameSelection::modify(EAlteration alter, SelectionDirection direction, Tex
 }
 
 // FIXME: Maybe baseline would be better?
-static bool absoluteCaretY(const VisiblePosition &c, LayoutUnit &y)
+static bool absoluteCaretY(const VisiblePosition &c, int &y)
 {
-    LayoutRect rect = c.absoluteCaretBounds();
+    IntRect rect = c.absoluteCaretBounds();
     if (rect.isEmpty())
         return false;
     y = rect.y() + rect.height() / 2;
@@ -1016,12 +1028,12 @@ bool FrameSelection::modify(EAlteration alter, unsigned verticalDistance, Vertic
         break;
     }
 
-    LayoutUnit startY;
+    int startY;
     if (!absoluteCaretY(pos, startY))
         return false;
     if (direction == DirectionUp)
         startY = -startY;
-    LayoutUnit lastY = startY;
+    int lastY = startY;
 
     VisiblePosition result;
     VisiblePosition next;
@@ -1033,12 +1045,12 @@ bool FrameSelection::modify(EAlteration alter, unsigned verticalDistance, Vertic
 
         if (next.isNull() || next == p)
             break;
-        LayoutUnit nextY;
+        int nextY;
         if (!absoluteCaretY(next, nextY))
             break;
         if (direction == DirectionUp)
             nextY = -nextY;
-        if (nextY - startY > static_cast<LayoutUnit>(verticalDistance))
+        if (nextY - startY > static_cast<int>(verticalDistance))
             break;
         if (nextY >= lastY) {
             lastY = nextY;
@@ -1235,11 +1247,11 @@ LayoutRect FrameSelection::localCaretRect()
     return localCaretRectWithoutUpdate();
 }
 
-LayoutRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect) const
+IntRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect) const
 {
     RenderObject* caretPainter = caretRenderer(node);
     if (!caretPainter)
-        return LayoutRect();
+        return IntRect();
     
     LayoutRect localRect(rect);
     if (caretPainter->isBox())
@@ -1247,7 +1259,7 @@ LayoutRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& r
     return caretPainter->localToAbsoluteQuad(FloatRect(localRect)).enclosingBoundingBox();
 }
 
-LayoutRect FrameSelection::absoluteCaretBounds()
+IntRect FrameSelection::absoluteCaretBounds()
 {
     recomputeCaretRect();
     return m_absCaretBounds;
@@ -1263,7 +1275,7 @@ static LayoutRect repaintRectForCaret(LayoutRect caret)
     return caret;
 }
 
-LayoutRect CaretBase::caretRepaintRect(Node* node) const
+IntRect CaretBase::caretRepaintRect(Node* node) const
 {
     return absoluteBoundsForLocalRect(node, repaintRectForCaret(localCaretRectWithoutUpdate()));
 }
@@ -1285,19 +1297,22 @@ bool FrameSelection::recomputeCaretRect()
     if (oldRect == newRect && !m_absCaretBoundsDirty)
         return false;
 
-    LayoutRect oldAbsCaretBounds = m_absCaretBounds;
+    IntRect oldAbsCaretBounds = m_absCaretBounds;
     // FIXME: Rename m_caretRect to m_localCaretRect.
     m_absCaretBounds = absoluteBoundsForLocalRect(m_selection.start().deprecatedNode(), localCaretRectWithoutUpdate());
     m_absCaretBoundsDirty = false;
     
     if (oldAbsCaretBounds == m_absCaretBounds)
         return false;
-        
-    LayoutRect oldAbsoluteCaretRepaintBounds = m_absoluteCaretRepaintBounds;
+
+#if ENABLE(TEXT_CARET)
+    IntRect oldAbsoluteCaretRepaintBounds = m_absoluteCaretRepaintBounds;
+#endif
+
     // We believe that we need to inflate the local rect before transforming it to obtain the repaint bounds.
     m_absoluteCaretRepaintBounds = caretRepaintRect(m_selection.start().deprecatedNode());
 
-#if ENABLE(TEXT_CARET)    
+#if ENABLE(TEXT_CARET)
     if (RenderView* view = toRenderView(m_frame->document()->renderer())) {
         // FIXME: make caret repainting container-aware.
         view->repaintRectangleInViewAndCompositedLayers(oldAbsoluteCaretRepaintBounds, false);
@@ -1837,7 +1852,7 @@ void DragCaretController::paintDragCaret(Frame* frame, GraphicsContext* p, const
 #endif
 }
 
-PassRefPtr<CSSMutableStyleDeclaration> FrameSelection::copyTypingStyle() const
+PassRefPtr<StylePropertySet> FrameSelection::copyTypingStyle() const
 {
     if (!m_typingStyle || !m_typingStyle->style())
         return 0;

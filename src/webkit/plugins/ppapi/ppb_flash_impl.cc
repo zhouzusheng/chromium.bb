@@ -23,6 +23,7 @@
 #include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkTemplates.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -199,10 +200,8 @@ int32_t Navigate11(PP_Resource request_id,
 }
 
 void RunMessageLoop(PP_Instance instance) {
-  bool old_state = MessageLoop::current()->NestableTasksAllowed();
-  MessageLoop::current()->SetNestableTasksAllowed(true);
+  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
   MessageLoop::current()->Run();
-  MessageLoop::current()->SetNestableTasksAllowed(old_state);
 }
 
 void QuitMessageLoop(PP_Instance instance) {
@@ -244,6 +243,29 @@ void PreLoadFontWin(const void* logfontw) {
   // Not implemented in-process.
 }
 
+PP_Bool IsRectTopmost(PP_Instance pp_instance, const PP_Rect* rect) {
+  PluginInstance* instance = HostGlobals::Get()->GetInstance(pp_instance);
+  if (!instance)
+    return PP_FALSE;
+  return PP_FromBool(instance->IsRectTopmost(
+      gfx::Rect(rect->point.x, rect->point.y,
+                rect->size.width, rect->size.height)));
+}
+
+int32_t InvokePrinting(PP_Instance pp_instance) {
+  PluginInstance* instance = HostGlobals::Get()->GetInstance(pp_instance);
+  if (!instance)
+    return PP_ERROR_BADARGUMENT;
+
+  // TODO(viettrungluu): Implement me.
+
+  return PP_ERROR_NOTSUPPORTED;
+}
+
+void UpdateActivity(PP_Instance pp_instance) {
+  // TODO(viettrungluu): Implement me.
+}
+
 const PPB_Flash_11 ppb_flash_11 = {
   &SetInstanceAlwaysOnTop,
   &DrawGlyphs11,
@@ -255,7 +277,7 @@ const PPB_Flash_11 ppb_flash_11 = {
   &GetCommandLineArgs
 };
 
-const PPB_Flash ppb_flash_12 = {
+const PPB_Flash_12_0 ppb_flash_12_0 = {
   &SetInstanceAlwaysOnTop,
   &DrawGlyphs,
   &GetProxyForURL,
@@ -267,6 +289,21 @@ const PPB_Flash ppb_flash_12 = {
   &PreLoadFontWin
 };
 
+const PPB_Flash_12_1 ppb_flash_12_1 = {
+  &SetInstanceAlwaysOnTop,
+  &DrawGlyphs,
+  &GetProxyForURL,
+  &Navigate,
+  &RunMessageLoop,
+  &QuitMessageLoop,
+  &GetLocalTimeZoneOffset,
+  &GetCommandLineArgs,
+  &PreLoadFontWin,
+  &IsRectTopmost,
+  &InvokePrinting,
+  &UpdateActivity
+};
+
 }  // namespace
 
 // static
@@ -276,7 +313,12 @@ const PPB_Flash_11* PPB_Flash_Impl::GetInterface11() {
 
 // static
 const PPB_Flash_12_0* PPB_Flash_Impl::GetInterface12_0() {
-  return &ppb_flash_12;
+  return &ppb_flash_12_0;
+}
+
+// static
+const PPB_Flash_12_1* PPB_Flash_Impl::GetInterface12_1() {
+  return &ppb_flash_12_1;
 }
 
 }  // namespace ppapi

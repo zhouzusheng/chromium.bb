@@ -46,6 +46,7 @@
 
 #if USE(GSTREAMER)
 #include "MediaPlayerPrivateGStreamer.h"
+#define PlatformMediaEngineClassName MediaPlayerPrivateGStreamer
 #endif
 
 #if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
@@ -70,6 +71,9 @@
 #endif
 #elif PLATFORM(CHROMIUM)
 #include "MediaPlayerPrivateChromium.h"
+#define PlatformMediaEngineClassName MediaPlayerPrivate
+#elif PLATFORM(BLACKBERRY)
+#include "MediaPlayerPrivateBlackBerry.h"
 #define PlatformMediaEngineClassName MediaPlayerPrivate
 #endif
 
@@ -193,10 +197,6 @@ static Vector<MediaPlayerFactory*>& installedMediaEngines()
     if (!enginesQueried) {
         enginesQueried = true;
 
-#if USE(GSTREAMER)
-        MediaPlayerPrivateGStreamer::registerMediaEngine(addMediaEngine);
-#endif
-
 #if USE(AVFOUNDATION)
         if (Settings::isAVFoundationEnabled()) {
 #if PLATFORM(MAC)
@@ -207,7 +207,7 @@ static Vector<MediaPlayerFactory*>& installedMediaEngines()
         }
 #endif
 
-#if !PLATFORM(GTK) && !PLATFORM(EFL) && !(PLATFORM(QT) && USE(GSTREAMER))
+#if defined(PlatformMediaEngineClassName)
         PlatformMediaEngineClassName::registerMediaEngine(addMediaEngine);
 #endif
     }
@@ -931,6 +931,22 @@ AudioSourceProvider* MediaPlayer::audioSourceProvider()
     return m_private->audioSourceProvider();
 }
 #endif // WEB_AUDIO
+    
+String MediaPlayer::referrer() const
+{
+    if (!m_mediaPlayerClient)
+        return String();
+
+    return m_mediaPlayerClient->mediaPlayerReferrer();
+}
+
+String MediaPlayer::userAgent() const
+{
+    if (!m_mediaPlayerClient)
+        return String();
+    
+    return m_mediaPlayerClient->mediaPlayerUserAgent();
+}
 
 }
 

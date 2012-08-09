@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined(ENABLE_GPU)
-
 #include "webkit/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 #include <GLES2/gl2.h>
@@ -90,28 +88,6 @@ class GLInProcessContext : public base::SupportsWeakPtr<GLInProcessContext> {
   void PumpCommands();
   bool GetBufferChanged(int32 transfer_buffer_id);
 
-  // Create a GLInProcessContext that renders directly to a view. The view and
-  // the associated window must not be destroyed until the returned
-  // GLInProcessContext has been destroyed, otherwise the GPU process might
-  // attempt to render to an invalid window handle.
-  //
-  // NOTE: on Mac OS X, this entry point is only used to set up the
-  // accelerated compositor's output. On this platform, we actually pass
-  // a gfx::PluginWindowHandle in place of the gfx::NativeViewId,
-  // because the facility to allocate a fake PluginWindowHandle is
-  // already in place. We could add more entry points and messages to
-  // allocate both fake PluginWindowHandles and NativeViewIds and map
-  // from fake NativeViewIds to PluginWindowHandles, but this seems like
-  // unnecessary complexity at the moment.
-  //
-  static GLInProcessContext* CreateViewContext(
-      gfx::PluginWindowHandle render_surface,
-      GLInProcessContext* context_group,
-      const char* allowed_extensions,
-      const int32* attrib_list,
-      const GURL& active_url,
-      gfx::GpuPreference gpu_preference);
-
   // Create a GLInProcessContext that renders to an offscreen frame buffer. If
   // parent is not NULL, that GLInProcessContext can access a copy of the
   // created GLInProcessContext's frame buffer that is updated every time
@@ -126,7 +102,6 @@ class GLInProcessContext : public base::SupportsWeakPtr<GLInProcessContext> {
       GLInProcessContext* context_group,
       const char* allowed_extensions,
       const int32* attrib_list,
-      const GURL& active_url,
       gfx::GpuPreference gpu_preference);
 
   // For an offscreen frame buffer GLInProcessContext, return the texture ID
@@ -171,13 +146,10 @@ class GLInProcessContext : public base::SupportsWeakPtr<GLInProcessContext> {
  private:
   explicit GLInProcessContext(GLInProcessContext* parent);
 
-  bool Initialize(bool onscreen,
-                  gfx::PluginWindowHandle render_surface,
-                  const gfx::Size& size,
+  bool Initialize(const gfx::Size& size,
                   GLInProcessContext* context_group,
                   const char* allowed_extensions,
                   const int32* attrib_list,
-                  const GURL& active_url,
                   gfx::GpuPreference gpu_preference);
   void Destroy();
 
@@ -240,57 +212,23 @@ GLInProcessContext::~GLInProcessContext() {
   Destroy();
 }
 
-GLInProcessContext* GLInProcessContext::CreateViewContext(
-    gfx::PluginWindowHandle render_surface,
-    GLInProcessContext* context_group,
-    const char* allowed_extensions,
-    const int32* attrib_list,
-    const GURL& active_url,
-    gfx::GpuPreference gpu_preference) {
-#if defined(ENABLE_GPU)
-  scoped_ptr<GLInProcessContext> context(new GLInProcessContext(NULL));
-  if (!context->Initialize(
-      true,
-      render_surface,
-      gfx::Size(),
-      context_group,
-      allowed_extensions,
-      attrib_list,
-      active_url,
-      gpu_preference))
-    return NULL;
-
-  return context.release();
-#else
-  return NULL;
-#endif
-}
-
 GLInProcessContext* GLInProcessContext::CreateOffscreenContext(
     GLInProcessContext* parent,
     const gfx::Size& size,
     GLInProcessContext* context_group,
     const char* allowed_extensions,
     const int32* attrib_list,
-    const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
-#if defined(ENABLE_GPU)
   scoped_ptr<GLInProcessContext> context(new GLInProcessContext(parent));
   if (!context->Initialize(
-      false,
-      gfx::kNullPluginWindow,
       size,
       context_group,
       allowed_extensions,
       attrib_list,
-      active_url,
       gpu_preference))
     return NULL;
 
   return context.release();
-#else
-  return NULL;
-#endif
 }
 
 // In the normal command buffer implementation, all commands are passed over IPC
@@ -399,13 +337,10 @@ GLInProcessContext::GLInProcessContext(GLInProcessContext* parent)
       last_error_(SUCCESS) {
 }
 
-bool GLInProcessContext::Initialize(bool onscreen,
-                                    gfx::PluginWindowHandle render_surface,
-                                    const gfx::Size& size,
+bool GLInProcessContext::Initialize(const gfx::Size& size,
                                     GLInProcessContext* context_group,
                                     const char* allowed_extensions,
                                     const int32* attrib_list,
-                                    const GURL& active_url,
                                     gfx::GpuPreference gpu_preference) {
   // Use one share group for all contexts.
   CR_DEFINE_STATIC_LOCAL(scoped_refptr<gfx::GLShareGroup>, share_group,
@@ -472,17 +407,7 @@ bool GLInProcessContext::Initialize(bool onscreen,
 
   decoder_->set_engine(gpu_scheduler_.get());
 
-  if (onscreen) {
-    if (render_surface == gfx::kNullPluginWindow) {
-      LOG(ERROR) << "Invalid surface handle for onscreen context.";
-      command_buffer_.reset();
-    } else {
-      surface_ = gfx::GLSurface::CreateViewGLSurface(false, render_surface);
-    }
-  } else {
-    surface_ = gfx::GLSurface::CreateOffscreenGLSurface(false,
-                                                        gfx::Size(1, 1));
-  }
+  surface_ = gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1));
 
   if (!surface_.get()) {
     LOG(ERROR) << "Could not create GLSurface.";
@@ -582,10 +507,6 @@ WebGraphicsContext3DInProcessCommandBufferImpl::
     WebGraphicsContext3DInProcessCommandBufferImpl()
     : context_(NULL),
       gl_(NULL),
-      web_view_(NULL),
-#if defined(OS_MACOSX)
-      plugin_handle_(NULL),
-#endif  // defined(OS_MACOSX)
       context_lost_callback_(NULL),
       context_lost_reason_(GL_NO_ERROR),
       cached_width_(0),
@@ -599,10 +520,9 @@ WebGraphicsContext3DInProcessCommandBufferImpl::
   g_all_shared_contexts.Pointer()->erase(this);
 }
 
-bool WebGraphicsContext3DInProcessCommandBufferImpl::initialize(
+bool WebGraphicsContext3DInProcessCommandBufferImpl::Initialize(
     WebGraphicsContext3D::Attributes attributes,
-    WebKit::WebView* web_view,
-    bool render_directly_to_web_view) {
+    WebKit::WebGraphicsContext3D* view_context) {
   // Convert WebGL context creation attributes into GLInProcessContext / EGL
   // size requests.
   const int alpha_size = attributes.alpha ? 8 : 0;
@@ -628,20 +548,12 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::initialize(
   // discrete GPU is created, or the last one is destroyed.
   gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
 
-  GURL active_url;
-  if (web_view && web_view->mainFrame())
-    active_url = GURL(web_view->mainFrame()->document().url());
-
   GLInProcessContext* parent_context = NULL;
-  if (!render_directly_to_web_view) {
-    WebKit::WebGraphicsContext3D* view_context =
-        web_view ? web_view->graphicsContext3D() : NULL;
-    if (view_context) {
-      WebGraphicsContext3DInProcessCommandBufferImpl* context_impl =
-          static_cast<WebGraphicsContext3DInProcessCommandBufferImpl*>(
-              view_context);
-      parent_context = context_impl->context_;
-    }
+  if (view_context) {
+    WebGraphicsContext3DInProcessCommandBufferImpl* context_impl =
+        static_cast<WebGraphicsContext3DInProcessCommandBufferImpl*>(
+            view_context);
+    parent_context = context_impl->context_;
   }
 
   WebGraphicsContext3DInProcessCommandBufferImpl* context_group = NULL;
@@ -656,9 +568,7 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::initialize(
       context_group ? context_group->context_ : NULL,
       preferred_extensions,
       attribs,
-      active_url,
       gpu_preference);
-  web_view_ = NULL;
 
   if (!context_)
     return false;
@@ -897,6 +807,19 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::unmapTexSubImage2DCHROMIUM(
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::setVisibilityCHROMIUM(
     bool visible) {
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::
+    setMemoryAllocationChangedCallbackCHROMIUM(
+        WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback) {
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::discardFramebufferEXT(
+    WGC3Denum target, WGC3Dsizei numAttachments, const WGC3Denum* attachments) {
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::
+    ensureFramebufferCHROMIUM() {
 }
 
 void WebGraphicsContext3DInProcessCommandBufferImpl::
@@ -1646,6 +1569,24 @@ DELEGATE_TO_GL_5(texImageIOSurface2DCHROMIUM, TexImageIOSurface2DCHROMIUM,
 DELEGATE_TO_GL_5(texStorage2DEXT, TexStorage2DEXT,
                  WGC3Denum, WGC3Dint, WGC3Duint, WGC3Dint, WGC3Dint)
 
+WebGLId WebGraphicsContext3DInProcessCommandBufferImpl::createQueryEXT() {
+  GLuint o;
+  gl_->GenQueriesEXT(1, &o);
+  return o;
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::
+    deleteQueryEXT(WebGLId query) {
+  gl_->DeleteQueriesEXT(1, &query);
+}
+
+DELEGATE_TO_GL_1R(isQueryEXT, IsQueryEXT, WebGLId, WGC3Dboolean)
+DELEGATE_TO_GL_2(beginQueryEXT, BeginQueryEXT, WGC3Denum, WebGLId)
+DELEGATE_TO_GL_1(endQueryEXT, EndQueryEXT, WGC3Denum)
+DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivEXT, WGC3Denum, WGC3Denum, WGC3Dint*)
+DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
+                 WebGLId, WGC3Denum, WGC3Duint*)
+
 #if WEBKIT_USING_SKIA
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::
     onCreateGrGLInterface() {
@@ -1663,5 +1604,3 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::OnContextLost() {
 
 }  // namespace gpu
 }  // namespace webkit
-
-#endif  // defined(ENABLE_GPU)

@@ -75,11 +75,11 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   // If |buffer_queue_| is not empty will execute on caller's thread, otherwise
   // will post ReadTask to execute on demuxer's thread. Read will acquire
-  // |lock_| for the life of the function so that means |read_callback| must
+  // |lock_| for the life of the function so that means |read_cb| must
   // not make calls into FFmpegDemuxerStream directly or that may cause a
-  // deadlock. |read_callback| should execute as quickly as possible because
+  // deadlock. |read_cb| should execute as quickly as possible because
   // |lock_| is held throughout the life of the callback.
-  virtual void Read(const ReadCallback& read_callback) OVERRIDE;
+  virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void EnableBitstreamConverter() OVERRIDE;
   virtual const AudioDecoderConfig& audio_decoder_config() OVERRIDE;
   virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
@@ -89,7 +89,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual ~FFmpegDemuxerStream();
 
   // Carries out enqueuing a pending read on the demuxer thread.
-  void ReadTask(const ReadCallback& read_callback);
+  void ReadTask(const ReadCB& read_cb);
 
   // Attempts to fulfill a single pending read by dequeueing a buffer and read
   // callback pair and executing the callback. The calling function must
@@ -112,7 +112,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   typedef std::deque<scoped_refptr<Buffer> > BufferQueue;
   BufferQueue buffer_queue_;
 
-  typedef std::deque<ReadCallback> ReadQueue;
+  typedef std::deque<ReadCB> ReadQueue;
   ReadQueue read_queue_;
 
   // Used to translate bitstream formats.
@@ -137,7 +137,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   virtual void PostDemuxTask();
 
   void Initialize(
-      DataSource* data_source, const PipelineStatusCB& callback);
+      DataSource* data_source, const PipelineStatusCB& status_cb);
 
   // Demuxer implementation.
   virtual void Stop(const base::Closure& callback) OVERRIDE;
@@ -173,7 +173,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
 
   // Carries out initialization on the demuxer thread.
   void InitializeTask(
-      DataSource* data_source, const PipelineStatusCB& callback);
+      DataSource* data_source, const PipelineStatusCB& status_cb);
 
   // Carries out a seek on the demuxer thread.
   void SeekTask(base::TimeDelta time, const PipelineStatusCB& cb);
@@ -199,16 +199,12 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // Must be called on the demuxer thread.
   void StreamHasEnded();
 
-  // Read callback method to be passed to DataSource. When the asynchronous
-  // read has completed, this method will be called from DataSource with
-  // number of bytes read or kDataSource in case of error.
-  void OnReadCompleted(size_t size);
-
   // Wait for asynchronous read to complete and return number of bytes read.
-  virtual size_t WaitForRead();
+  virtual int WaitForRead();
 
-  // Signal that read has completed, and |size| bytes have been read.
-  virtual void SignalReadCompleted(size_t size);
+  // Signal the blocked thread that the read has completed, with |size| bytes
+  // read or kReadError in case of error.
+  virtual void SignalReadCompleted(int size);
 
   MessageLoop* message_loop_;
 
@@ -244,7 +240,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // never be reset. This flag is set true and accessed in Read().
   bool read_has_failed_;
 
-  size_t last_read_bytes_;
+  int last_read_bytes_;
   int64 read_position_;
 
   // Initialization can happen before set_host() is called, in which case we

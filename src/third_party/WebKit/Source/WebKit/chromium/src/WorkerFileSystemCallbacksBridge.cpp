@@ -146,7 +146,7 @@ private:
 // that it only gets deleted on the worker context thread which is verified by ~Observer.
 class WorkerFileSystemContextObserver : public WebCore::WorkerContext::Observer {
 public:
-    static PassOwnPtr<WorkerFileSystemContextObserver> create(WorkerContext* context, WorkerFileSystemCallbacksBridge* bridge)
+    static PassOwnPtr<WorkerFileSystemContextObserver> create(WorkerContext* context, PassRefPtr<WorkerFileSystemCallbacksBridge> bridge)
     {
         return adoptPtr(new WorkerFileSystemContextObserver(context, bridge));
     }
@@ -158,15 +158,13 @@ public:
     }
 
 private:
-    WorkerFileSystemContextObserver(WorkerContext* context, WorkerFileSystemCallbacksBridge* bridge)
+    WorkerFileSystemContextObserver(WorkerContext* context, PassRefPtr<WorkerFileSystemCallbacksBridge> bridge)
         : WebCore::WorkerContext::Observer(context)
         , m_bridge(bridge)
     {
     }
 
-    // Since WorkerFileSystemCallbacksBridge manages the lifetime of this class,
-    // m_bridge will be valid throughout its lifetime.
-    WorkerFileSystemCallbacksBridge* m_bridge;
+    RefPtr<WorkerFileSystemCallbacksBridge> m_bridge;
 };
 
 void WorkerFileSystemCallbacksBridge::stop()
@@ -289,6 +287,15 @@ void WorkerFileSystemCallbacksBridge::postReadDirectoryToMainThread(WebFileSyste
                            this, mode));
 }
 
+void WorkerFileSystemCallbacksBridge::postCreateSnapshotFileToMainThread(WebFileSystem* fileSystem, const KURL& internalBlobURL, const KURL& path, const String& mode)
+{
+    ASSERT(fileSystem);
+    dispatchTaskToMainThread(
+        createCallbackTask(&createSnapshotFileOnMainThread,
+                           AllowCrossThreadAccess(fileSystem),
+                           internalBlobURL, path, this, mode));
+}
+
 void WorkerFileSystemCallbacksBridge::openFileSystemOnMainThread(ScriptExecutionContext*, WebCommonWorkerClient* commonClient, WebFileSystem::Type type, long long size, bool create, PassRefPtr<WorkerFileSystemCallbacksBridge> bridge, const String& mode)
 {
     if (!commonClient)
@@ -346,6 +353,11 @@ void WorkerFileSystemCallbacksBridge::directoryExistsOnMainThread(WebCore::Scrip
 void WorkerFileSystemCallbacksBridge::readDirectoryOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem* fileSystem, const KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge> bridge, const String& mode)
 {
     fileSystem->readDirectory(path, MainThreadFileSystemCallbacks::createLeakedPtr(bridge, mode));
+}
+
+void WorkerFileSystemCallbacksBridge::createSnapshotFileOnMainThread(WebCore::ScriptExecutionContext*, WebFileSystem* fileSystem, const KURL& internalBlobURL, const KURL& path, PassRefPtr<WorkerFileSystemCallbacksBridge> bridge, const String& mode)
+{
+    fileSystem->createSnapshotFileAndReadMetadata(internalBlobURL, path, MainThreadFileSystemCallbacks::createLeakedPtr(bridge, mode));
 }
 
 void WorkerFileSystemCallbacksBridge::didFailOnMainThread(WebFileError error, const String& mode)

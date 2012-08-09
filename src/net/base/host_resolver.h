@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -132,10 +132,10 @@ class NET_EXPORT HostResolver {
                       RequestHandle* out_req,
                       const BoundNetLog& net_log) = 0;
 
-  // Resolves the given hostname (or IP address literal) out of cache
-  // only.  This is guaranteed to complete synchronously.  This acts like
-  // |Resolve()| if the hostname is IP literal or cached value exists.
-  // Otherwise, ERR_DNS_CACHE_MISS is returned.
+  // Resolves the given hostname (or IP address literal) out of cache or HOSTS
+  // file (if enabled) only. This is guaranteed to complete synchronously.
+  // This acts like |Resolve()| if the hostname is IP literal, or cached value
+  // or HOSTS entry exists. Otherwise, ERR_DNS_CACHE_MISS is returned.
   virtual int ResolveFromCache(const RequestInfo& info,
                                AddressList* addresses,
                                const BoundNetLog& net_log) = 0;
@@ -182,10 +182,18 @@ NET_EXPORT HostResolver* CreateSystemHostResolver(
     size_t max_retry_attempts,
     NetLog* net_log);
 
-// Creates a HostResolver implementation that sends actual DNS queries to
-// the specified DNS server and parses response and returns results.
+// As above, but the created HostResolver does not use a cache.
+NET_EXPORT HostResolver* CreateNonCachingSystemHostResolver(
+    size_t max_concurrent_resolves,
+    size_t max_retry_attempts,
+    NetLog* net_log);
+
+// As above, but the HostResolver will use the asynchronous DNS client in
+// DnsTransaction, which will be configured using DnsConfigService to match
+// the system DNS settings. If the client fails, the resolver falls back to
+// the global HostResolverProc.
 NET_EXPORT HostResolver* CreateAsyncHostResolver(size_t max_concurrent_resolves,
-                                                 const IPAddressNumber& dns_ip,
+                                                 size_t max_retry_attempts,
                                                  NetLog* net_log);
 }  // namespace net
 

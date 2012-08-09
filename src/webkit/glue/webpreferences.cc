@@ -36,6 +36,7 @@ WebPreferences::WebPreferences()
       default_fixed_font_size(13),
       minimum_font_size(0),
       minimum_logical_font_size(6),
+      default_device_scale_factor(1),
       default_encoding("ISO-8859-1"),
       javascript_enabled(true),
       web_security_enabled(true),
@@ -54,7 +55,7 @@ WebPreferences::WebPreferences()
       uses_page_cache(false),
       remote_fonts_enabled(true),
       javascript_can_access_clipboard(false),
-      xss_auditor_enabled(false),
+      xss_auditor_enabled(true),
       dns_prefetching_enabled(true),
       local_storage_enabled(false),
       databases_enabled(false),
@@ -72,21 +73,22 @@ WebPreferences::WebPreferences()
       experimental_webgl_enabled(false),
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
+      webgl_errors_to_console_enabled(true),
       show_composited_layer_borders(false),
       show_composited_layer_tree(false),
       show_fps_counter(false),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
+      threaded_animation_enabled(false),
       accelerated_compositing_enabled(false),
-      threaded_compositing_enabled(false),
       force_compositing_mode(false),
-      allow_webui_compositing(false),
       composite_to_texture_enabled(false),
       fixed_position_compositing_enabled(false),
       accelerated_layers_enabled(false),
       accelerated_animation_enabled(false),
       accelerated_video_enabled(false),
       accelerated_2d_canvas_enabled(false),
+      deferred_2d_canvas_enabled(false),
       accelerated_painting_enabled(false),
       accelerated_filters_enabled(false),
       accelerated_plugins_enabled(false),
@@ -96,11 +98,13 @@ WebPreferences::WebPreferences()
       fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
+      password_echo_enabled(false),
       should_print_backgrounds(false),
       enable_scroll_animator(false),
       hixie76_websocket_protocol_enabled(false),
       visual_word_movement_enabled(false),
-      per_tile_painting_enabled(false) {
+      per_tile_painting_enabled(false),
+      css_regions_enabled(false) {
 }
 
 WebPreferences::~WebPreferences() {
@@ -182,6 +186,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setDefaultFixedFontSize(default_fixed_font_size);
   settings->setMinimumFontSize(minimum_font_size);
   settings->setMinimumLogicalFontSize(minimum_logical_font_size);
+  settings->setDefaultDeviceScaleFactor(default_device_scale_factor);
   settings->setDefaultTextEncodingName(ASCIIToUTF16(default_encoding));
   settings->setJavaScriptEnabled(javascript_enabled);
   settings->setWebSecurityEnabled(web_security_enabled);
@@ -251,6 +256,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setPrivilegedWebGLExtensionsEnabled(
       privileged_webgl_extensions_enabled);
 
+  // Enable WebGL errors to the JS console if requested.
+  settings->setWebGLErrorsToConsoleEnabled(webgl_errors_to_console_enabled);
+
   // Display colored borders around composited render layers if requested
   // on command line.
   settings->setShowDebugBorders(show_composited_layer_borders);
@@ -262,12 +270,10 @@ void WebPreferences::Apply(WebView* web_view) const {
   // the command line
   settings->setShowPlatformLayerTree(show_composited_layer_tree);
 
+  settings->setThreadedAnimationEnabled(threaded_animation_enabled);
+
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
-
-#ifndef WEBCOMPOSITOR_HAS_INITIALIZE
-  settings->setUseThreadedCompositor(threaded_compositing_enabled);
-#endif
 
   // Always enter compositing if requested on the command line.
   settings->setForceCompositingMode(force_compositing_mode);
@@ -282,6 +288,9 @@ void WebPreferences::Apply(WebView* web_view) const {
 
   // Enable gpu-accelerated 2d canvas if requested on the command line.
   settings->setAccelerated2dCanvasEnabled(accelerated_2d_canvas_enabled);
+
+  // Enable deferred 2d canvas if requested on the command line.
+  settings->setDeferred2dCanvasEnabled(deferred_2d_canvas_enabled);
 
   // Enable gpu-accelerated painting if requested on the command line.
   settings->setAcceleratedPaintingEnabled(accelerated_painting_enabled);
@@ -331,6 +340,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setFullScreenEnabled(fullscreen_enabled);
   settings->setAllowDisplayOfInsecureContent(allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(allow_running_insecure_content);
+  settings->setPasswordEchoEnabled(password_echo_enabled);
   settings->setShouldPrintBackgrounds(should_print_backgrounds);
   settings->setEnableScrollAnimator(enable_scroll_animator);
   settings->setHixie76WebSocketProtocolEnabled(
@@ -339,6 +349,8 @@ void WebPreferences::Apply(WebView* web_view) const {
 
   // Enable per-tile painting if requested on the command line.
   settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
+
+  settings->setExperimentalCSSRegionsEnabled(css_regions_enabled);
 
   WebNetworkStateNotifier::setOnLine(is_online);
 }

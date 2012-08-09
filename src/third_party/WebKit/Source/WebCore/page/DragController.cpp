@@ -27,7 +27,6 @@
 #include "DragController.h"
 
 #if ENABLE(DRAG_SUPPORT)
-#include "CSSMutableStyleDeclaration.h"
 #include "Clipboard.h"
 #include "ClipboardAccessPolicy.h"
 #include "CachedResourceLoader.h"
@@ -64,6 +63,7 @@
 #include "ResourceRequest.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
+#include "StylePropertySet.h"
 #include "Text.h"
 #include "TextEvent.h"
 #include "htmlediting.h"
@@ -270,8 +270,8 @@ static HTMLInputElement* asFileInput(Node* node)
     HTMLInputElement* inputElement = node->toInputElement();
 
     // If this is a button inside of the a file input, move up to the file input.
-    if (inputElement && inputElement->isTextButton() && inputElement->treeScope()->isShadowRoot())
-        inputElement = inputElement->treeScope()->shadowHost()->toInputElement();
+    if (inputElement && inputElement->isTextButton() && inputElement->treeScope()->rootNode()->isShadowRoot())
+        inputElement = inputElement->treeScope()->rootNode()->shadowHost()->toInputElement();
 
     return inputElement && inputElement->isFileUpload() ? inputElement : 0;
 }
@@ -424,6 +424,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
     ASSERT(dragData);
     ASSERT(!m_isHandlingDrag);
 
+    RefPtr<HTMLInputElement> fileInput = m_fileInputElementUnderMouse;
     if (m_fileInputElementUnderMouse) {
         m_fileInputElementUnderMouse->setCanReceiveDroppedFiles(false);
         m_fileInputElementUnderMouse = 0;
@@ -447,7 +448,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
         if (!color.isValid())
             return false;
         RefPtr<Range> innerRange = innerFrame->selection()->toNormalizedRange();
-        RefPtr<CSSMutableStyleDeclaration> style = CSSMutableStyleDeclaration::create();
+        RefPtr<StylePropertySet> style = StylePropertySet::create();
         style->setProperty(CSSPropertyColor, color.serialized(), false);
         if (!innerFrame->editor()->shouldApplyStyle(style.get(), innerRange.get()))
             return false;
@@ -456,16 +457,11 @@ bool DragController::concludeEditDrag(DragData* dragData)
         return true;
     }
 
-    if (!m_page->dragController()->canProcessDrag(dragData)) {
-        m_page->dragCaretController()->clear();
-        return false;
-    }
-
-    if (HTMLInputElement* fileInput = asFileInput(element)) {
+    if (dragData->containsFiles() && fileInput) {
+        // fileInput should be the element we hit tested for, unless it was made
+        // display:none in a drop event handler.
+        ASSERT(fileInput == element || !fileInput->renderer());
         if (fileInput->disabled())
-            return false;
-
-        if (!dragData->containsFiles())
             return false;
 
         Vector<String> filenames;
@@ -474,7 +470,13 @@ bool DragController::concludeEditDrag(DragData* dragData)
             return false;
 
         fileInput->receiveDroppedFiles(filenames);
+        m_client->willPerformDragDestinationAction(DragDestinationActionUpload, dragData);
         return true;
+    }
+
+    if (!m_page->dragController()->canProcessDrag(dragData)) {
+        m_page->dragCaretController()->clear();
+        return false;
     }
 
     VisibleSelection dragCaret = m_page->dragCaretController()->caretPosition();

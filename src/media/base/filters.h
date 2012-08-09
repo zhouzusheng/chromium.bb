@@ -38,25 +38,12 @@
 
 namespace media {
 
+class AudioDecoder;
 class Buffer;
 class Decoder;
 class DemuxerStream;
 class Filter;
 class FilterHost;
-
-struct PipelineStatistics;
-
-// Used for completing asynchronous methods.
-typedef base::Callback<void(PipelineStatus)> FilterStatusCB;
-
-// These functions copy |*cb|, call Reset() on |*cb|, and then call Run()
-// on the copy.  This is used in the common case where you need to clear
-// a callback member variable before running the callback.
-MEDIA_EXPORT void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status);
-MEDIA_EXPORT void ResetAndRunCB(base::Closure* cb);
-
-// Used for updating pipeline statistics.
-typedef base::Callback<void(const PipelineStatistics&)> StatisticsCallback;
 
 class MEDIA_EXPORT Filter : public base::RefCountedThreadSafe<Filter> {
  public:
@@ -100,7 +87,7 @@ class MEDIA_EXPORT Filter : public base::RefCountedThreadSafe<Filter> {
 
   // Carry out any actions required to seek to the given time, executing the
   // callback upon completion.
-  virtual void Seek(base::TimeDelta time, const FilterStatusCB& callback);
+  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& callback);
 
   // This method is called from the pipeline when the audio renderer
   // is disabled. Filters can ignore the notification if they do not
@@ -124,10 +111,10 @@ class MEDIA_EXPORT VideoDecoder : public Filter {
  public:
   // Initialize a VideoDecoder with the given DemuxerStream, executing the
   // callback upon completion.
-  // stats_callback is used to update global pipeline statistics.
+  // statistics_cb is used to update global pipeline statistics.
   virtual void Initialize(DemuxerStream* stream,
-                          const PipelineStatusCB& callback,
-                          const StatisticsCallback& stats_callback) = 0;
+                          const PipelineStatusCB& status_cb,
+                          const StatisticsCB& statistics_cb) = 0;
 
   // Request a frame to be decoded and returned via the provided callback.
   // Only one read may be in flight at any given time.
@@ -139,7 +126,7 @@ class MEDIA_EXPORT VideoDecoder : public Filter {
   // the stream. NULL video frames indicate an aborted read. This can happen if
   // the DemuxerStream gets flushed and doesn't have any more data to return.
   typedef base::Callback<void(scoped_refptr<VideoFrame>)> ReadCB;
-  virtual void Read(const ReadCB& callback) = 0;
+  virtual void Read(const ReadCB& read_cb) = 0;
 
   // Returns the natural width and height of decoded video in pixels.
   //
@@ -166,67 +153,53 @@ class MEDIA_EXPORT VideoDecoder : public Filter {
  protected:
   VideoDecoder();
   virtual ~VideoDecoder();
+
+ private:
+  // These functions will be removed later. Declare here to make sure they are
+  // not called from VideoDecoder interface anymore.
+  // TODO(xhwang): Remove them when VideoDecoder is not a Filter any more.
+  // See bug: crbug.com/108340
+  virtual void Play(const base::Closure& callback) OVERRIDE;
+  virtual void Pause(const base::Closure& callback) OVERRIDE;
+  virtual void Seek(base::TimeDelta time,
+                    const PipelineStatusCB& callback) OVERRIDE;
 };
-
-
-class MEDIA_EXPORT AudioDecoder : public Filter {
- public:
-  // Initialize a AudioDecoder with the given DemuxerStream, executing the
-  // callback upon completion.
-  // stats_callback is used to update global pipeline statistics.
-  //
-  // TODO(scherkus): switch to PipelineStatus callback.
-  virtual void Initialize(DemuxerStream* stream, const base::Closure& callback,
-                          const StatisticsCallback& stats_callback) = 0;
-
-  // Request samples to be decoded and returned via the provided callback.
-  // Only one read may be in flight at any given time.
-  //
-  // Implementations guarantee that the callback will not be called from within
-  // this method.
-  //
-  // Non-NULL sample buffer pointers will contain decoded audio data or may
-  // indicate the end of the stream. A NULL buffer pointer indicates an aborted
-  // Read(). This can happen if the DemuxerStream gets flushed and doesn't have
-  // any more data to return.
-  typedef base::Callback<void(scoped_refptr<Buffer>)> ReadCB;
-  virtual void Read(const ReadCB& callback) = 0;
-
-  // Returns various information about the decoded audio format.
-  virtual int bits_per_channel() = 0;
-  virtual ChannelLayout channel_layout() = 0;
-  virtual int samples_per_second() = 0;
-
- protected:
-  AudioDecoder();
-  virtual ~AudioDecoder();
-};
-
 
 class MEDIA_EXPORT VideoRenderer : public Filter {
  public:
+  // Used to update the pipeline's clock time. The parameter is the time that
+  // the clock should not exceed.
+  typedef base::Callback<void(base::TimeDelta)> TimeCB;
+
   // Initialize a VideoRenderer with the given VideoDecoder, executing the
   // callback upon completion.
-  virtual void Initialize(VideoDecoder* decoder, const base::Closure& callback,
-                          const StatisticsCallback& stats_callback) = 0;
+  virtual void Initialize(const scoped_refptr<VideoDecoder>& decoder,
+                          const PipelineStatusCB& status_cb,
+                          const StatisticsCB& statistics_cb,
+                          const TimeCB& time_cb) = 0;
 
   // Returns true if this filter has received and processed an end-of-stream
   // buffer.
   virtual bool HasEnded() = 0;
 };
 
-
 class MEDIA_EXPORT AudioRenderer : public Filter {
  public:
+  // Used to update the pipeline's clock time. The first parameter is the
+  // current time, and the second parameter is the time that the clock must not
+  // exceed.
+  typedef base::Callback<void(base::TimeDelta, base::TimeDelta)> TimeCB;
+
   // Initialize a AudioRenderer with the given AudioDecoder, executing the
-  // |init_callback| upon completion. |underflow_callback| is called when the
+  // |init_cb| upon completion. |underflow_cb| is called when the
   // renderer runs out of data to pass to the audio card during playback.
-  // If the |underflow_callback| is called ResumeAfterUnderflow() must be called
+  // If the |underflow_cb| is called ResumeAfterUnderflow() must be called
   // to resume playback. Pause(), Seek(), or Stop() cancels the underflow
   // condition.
-  virtual void Initialize(AudioDecoder* decoder,
-                          const base::Closure& init_callback,
-                          const base::Closure& underflow_callback) = 0;
+  virtual void Initialize(const scoped_refptr<AudioDecoder>& decoder,
+                          const PipelineStatusCB& init_cb,
+                          const base::Closure& underflow_cb,
+                          const TimeCB& time_cb) = 0;
 
   // Returns true if this filter has received and processed an end-of-stream
   // buffer.

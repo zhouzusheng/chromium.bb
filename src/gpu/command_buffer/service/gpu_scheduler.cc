@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,7 @@ using ::base::SharedMemory;
 namespace gpu {
 
 namespace {
-const int64 kRescheduleTimeOutDelay = 100;
+const int64 kRescheduleTimeOutDelay = 1000;
 }
 
 GpuScheduler::GpuScheduler(
@@ -74,6 +74,8 @@ void GpuScheduler::PutChanged() {
     command_buffer_->SetGetOffset(static_cast<int32>(parser_->get()));
 
     if (error::IsError(error)) {
+      LOG(ERROR) << "[" << decoder_ << "] "
+                 << "GPU PARSE ERROR: " << error;
       command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
       command_buffer_->SetParseError(error);
       return;
@@ -135,7 +137,8 @@ bool GpuScheduler::IsScheduled() {
 }
 
 bool GpuScheduler::HasMoreWork() {
-  return !unschedule_fences_.empty();
+  return !unschedule_fences_.empty() ||
+         (decoder_ && decoder_->ProcessPendingQueries());
 }
 
 void GpuScheduler::SetScheduledCallback(
@@ -191,6 +194,7 @@ void GpuScheduler::SetCommandProcessedCallback(
 void GpuScheduler::DeferToFence(base::Closure task) {
   unschedule_fences_.push(make_linked_ptr(
        new UnscheduleFence(gfx::GLFence::Create(), task)));
+  SetScheduled(false);
 }
 
 bool GpuScheduler::PollUnscheduleFences() {
@@ -202,6 +206,7 @@ bool GpuScheduler::PollUnscheduleFences() {
       if (unschedule_fences_.front()->fence->HasCompleted()) {
         unschedule_fences_.front()->task.Run();
         unschedule_fences_.pop();
+        SetScheduled(true);
       } else {
         return false;
       }
@@ -212,6 +217,7 @@ bool GpuScheduler::PollUnscheduleFences() {
     while (!unschedule_fences_.empty()) {
       unschedule_fences_.front()->task.Run();
       unschedule_fences_.pop();
+      SetScheduled(true);
     }
   }
 

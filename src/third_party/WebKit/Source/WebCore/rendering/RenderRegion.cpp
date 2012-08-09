@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 Adobe Systems Incorporated. All Rights Reserved.
+ * Copyright (C) 2011 Adobe Systems Incorporated. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,7 +47,10 @@ RenderRegion::RenderRegion(Node* node, RenderFlowThread* flowThread)
     , m_parentFlowThread(0)
     , m_isValid(false)
     , m_hasCustomRegionStyle(false)
+    , m_regionState(RegionUndefined)
+    , m_dispatchRegionLayoutUpdateEvent(false)
 {
+    ASSERT(node->document()->cssRegionsEnabled());
 }
 
 LayoutRect RenderRegion::regionOverflowRect() const
@@ -95,6 +98,9 @@ bool RenderRegion::isLastRegion() const
 
 void RenderRegion::setRegionBoxesRegionStyle()
 {
+    if (!hasCustomRegionStyle())
+        return;
+
     for (RenderBoxRegionInfoMap::iterator iter = m_renderBoxRegionInfo.begin(), end = m_renderBoxRegionInfo.end(); iter != end; ++iter) {
         const RenderBox* box = iter->first;
         if (!box->canHaveRegionStyle())
@@ -112,6 +118,9 @@ void RenderRegion::setRegionBoxesRegionStyle()
 
 void RenderRegion::restoreRegionBoxesOriginalStyle()
 {
+    if (!hasCustomRegionStyle())
+        return;
+
     for (RenderBoxRegionInfoMap::iterator iter = m_renderBoxRegionInfo.begin(), end = m_renderBoxRegionInfo.end(); iter != end; ++iter) {
         const RenderBox* box = iter->first;
         RenderBoxRegionStyleMap::iterator it = m_renderBoxRegionStyle.find(box);
@@ -146,7 +155,8 @@ bool RenderRegion::nodeAtPoint(const HitTestRequest& request, HitTestResult& res
 
     // Check our bounds next. For this purpose always assume that we can only be hit in the
     // foreground phase (which is true for replaced elements like images).
-    LayoutRect boundsRect(adjustedLocation, size());
+    LayoutRect boundsRect = borderBoxRectInRegion(result.region());
+    boundsRect.moveBy(adjustedLocation);
     if (visibleToHitTesting() && action == HitTestForeground && boundsRect.intersects(result.rectForPoint(pointInContainer))) {
         // Check the contents of the RenderFlowThread.
         if (m_flowThread && m_flowThread->hitTestRegion(this, request, result, pointInContainer, LayoutPoint(adjustedLocation.x() + borderLeft() + paddingLeft(), adjustedLocation.y() + borderTop() + paddingTop())))

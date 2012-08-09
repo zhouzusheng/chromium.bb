@@ -11,6 +11,7 @@
 #include "media/filters/in_memory_url_protocol.h"
 #include "media/webm/webm_cluster_parser.h"
 #include "media/webm/webm_constants.h"
+#include "media/webm/webm_content_encodings.h"
 #include "media/webm/webm_info_parser.h"
 #include "media/webm/webm_tracks_parser.h"
 
@@ -33,6 +34,10 @@ class FFmpegConfigHelper {
   const VideoDecoderConfig& video_config() const;
 
  private:
+  static const uint8 kWebMHeader[];
+  static const int kSegmentSizeOffset;
+  static const uint8 kEmptyCluster[];
+
   AVFormatContext* CreateFormatContext(const uint8* data, int size);
   bool SetupStreamConfigs();
 
@@ -46,13 +51,9 @@ class FFmpegConfigHelper {
   scoped_ptr<FFmpegURLProtocol> url_protocol_;
 
   // FFmpeg format context for this demuxer. It is created by
-  // av_open_input_file() during demuxer initialization and cleaned up with
+  // avformat_open_input() during demuxer initialization and cleaned up with
   // DestroyAVFormatContext() in the destructor.
   AVFormatContext* format_context_;
-
-  static const uint8 kWebMHeader[];
-  static const int kSegmentSizeOffset;
-  static const uint8 kEmptyCluster[];
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegConfigHelper);
 };
@@ -139,7 +140,7 @@ AVFormatContext* FFmpegConfigHelper::CreateFormatContext(const uint8* data,
 
   // Open FFmpeg AVFormatContext.
   AVFormatContext* context = NULL;
-  int result = av_open_input_file(&context, key.c_str(), NULL, 0, NULL);
+  int result = avformat_open_input(&context, key.c_str(), NULL, NULL);
 
   if (result < 0)
     return NULL;
@@ -148,7 +149,7 @@ AVFormatContext* FFmpegConfigHelper::CreateFormatContext(const uint8* data,
 }
 
 bool FFmpegConfigHelper::SetupStreamConfigs() {
-  int result = av_find_stream_info(format_context_);
+  int result = avformat_find_stream_info(format_context_, NULL);
 
   if (result < 0)
     return false;
@@ -281,9 +282,13 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
 
   bytes_parsed += result;
 
-  double mult = info_parser.timecode_scale() / 1000.0;
-  base::TimeDelta duration =
-      base::TimeDelta::FromMicroseconds(info_parser.duration() * mult);
+  base::TimeDelta duration = kInfiniteDuration();
+
+  if (info_parser.duration() > 0) {
+    double mult = info_parser.timecode_scale() / 1000.0;
+    int64 duration_in_us = info_parser.duration() * mult;
+    duration = base::TimeDelta::FromMicroseconds(duration_in_us);
+  }
 
   FFmpegConfigHelper config_helper;
 
@@ -301,7 +306,9 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
       tracks_parser.audio_track_num(),
       tracks_parser.audio_default_duration(),
       tracks_parser.video_track_num(),
-      tracks_parser.video_default_duration()));
+      tracks_parser.video_default_duration(),
+      tracks_parser.video_encryption_key_id(),
+      tracks_parser.video_encryption_key_id_size()));
 
   ChangeState(PARSING_CLUSTERS);
   init_cb_.Run(true, duration);

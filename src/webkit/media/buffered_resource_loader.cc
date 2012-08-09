@@ -5,17 +5,18 @@
 #include "webkit/media/buffered_resource_loader.h"
 
 #include "base/format_macros.h"
-#include "base/stringprintf.h"
+#include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "media/base/media_log.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "webkit/glue/multipart_response_delegate.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 
 using WebKit::WebFrame;
 using WebKit::WebString;
@@ -24,7 +25,6 @@ using WebKit::WebURLLoader;
 using WebKit::WebURLLoaderOptions;
 using WebKit::WebURLRequest;
 using WebKit::WebURLResponse;
-using webkit_glue::MultipartResponseDelegate;
 
 namespace webkit_media {
 
@@ -102,7 +102,6 @@ BufferedResourceLoader::BufferedResourceLoader(
     float playback_rate,
     media::MediaLog* media_log)
     : defer_strategy_(strategy),
-      range_requested_(false),
       range_supported_(false),
       saved_forward_capacity_(0),
       url_(url),
@@ -131,18 +130,18 @@ BufferedResourceLoader::BufferedResourceLoader(
 BufferedResourceLoader::~BufferedResourceLoader() {}
 
 void BufferedResourceLoader::Start(
-    const net::CompletionCallback& start_callback,
-    const base::Closure& event_callback,
+    const net::CompletionCallback& start_cb,
+    const base::Closure& event_cb,
     WebFrame* frame) {
   // Make sure we have not started.
-  DCHECK(start_callback_.is_null());
-  DCHECK(event_callback_.is_null());
-  DCHECK(!start_callback.is_null());
-  DCHECK(!event_callback.is_null());
+  DCHECK(start_cb_.is_null());
+  DCHECK(event_cb_.is_null());
+  DCHECK(!start_cb.is_null());
+  DCHECK(!event_cb.is_null());
   CHECK(frame);
 
-  start_callback_ = start_callback;
-  event_callback_ = event_callback;
+  start_cb_ = start_cb;
+  event_cb_ = event_cb;
 
   if (first_byte_position_ != kPositionNotSpecified) {
     // TODO(hclam): server may not support range request so |offset_| may not
@@ -155,12 +154,12 @@ void BufferedResourceLoader::Start(
   request.setTargetType(WebURLRequest::TargetIsMedia);
 
   if (IsRangeRequest()) {
-    range_requested_ = true;
     request.setHTTPHeaderField(
         WebString::fromUTF8(net::HttpRequestHeaders::kRange),
         WebString::fromUTF8(GenerateHeaders(first_byte_position_,
                                             last_byte_position_)));
   }
+
   frame->setReferrerForRequest(request, WebKit::WebURL());
 
   // Disable compression, compression for audio/video doesn't make sense...
@@ -187,9 +186,9 @@ void BufferedResourceLoader::Start(
 
 void BufferedResourceLoader::Stop() {
   // Reset callbacks.
-  start_callback_.Reset();
-  event_callback_.Reset();
-  read_callback_.Reset();
+  start_cb_.Reset();
+  event_cb_.Reset();
+  read_cb_.Reset();
 
   // Use the internal buffer to signal that we have been stopped.
   // TODO(hclam): Not so pretty to do this.
@@ -207,16 +206,16 @@ void BufferedResourceLoader::Read(
     int64 position,
     int read_size,
     uint8* buffer,
-    const net::CompletionCallback& read_callback) {
-  DCHECK(start_callback_.is_null());
-  DCHECK(read_callback_.is_null());
-  DCHECK(!read_callback.is_null());
+    const net::CompletionCallback& read_cb) {
+  DCHECK(start_cb_.is_null());
+  DCHECK(read_cb_.is_null());
+  DCHECK(!read_cb.is_null());
   DCHECK(buffer_.get());
   DCHECK(buffer);
   DCHECK_GT(read_size, 0);
 
   // Save the parameter of reading.
-  read_callback_ = read_callback;
+  read_cb_ = read_cb;
   read_position_ = position;
   read_size_ = read_size;
   read_buffer_ = buffer;
@@ -229,6 +228,7 @@ void BufferedResourceLoader::Read(
   // of the file.
   if (instance_size_ != kPositionNotSpecified &&
       instance_size_ <= read_position_) {
+    DVLOG(1) << "Appear to have seeked beyond EOS; returning 0.";
     DoneRead(0);
     return;
   }
@@ -334,9 +334,9 @@ void BufferedResourceLoader::willSendRequest(
     WebURLRequest& newRequest,
     const WebURLResponse& redirectResponse) {
 
-  // The load may have been stopped and |start_callback| is destroyed.
+  // The load may have been stopped and |start_cb| is destroyed.
   // In this case we shouldn't do anything.
-  if (start_callback_.is_null()) {
+  if (start_cb_.is_null()) {
     // Set the url in the request to an invalid value (empty url).
     newRequest.setURL(WebKit::WebURL());
     return;
@@ -362,12 +362,14 @@ void BufferedResourceLoader::didReceiveResponse(
   DVLOG(1) << "didReceiveResponse: " << response.httpStatusCode();
   DCHECK(active_loader_.get());
 
-  // The loader may have been stopped and |start_callback| is destroyed.
+  // The loader may have been stopped and |start_cb| is destroyed.
   // In this case we shouldn't do anything.
-  if (start_callback_.is_null())
+  if (start_cb_.is_null())
     return;
 
-  bool partial_response = false;
+  // Expected content length can be |kPositionNotSpecified|, in that case
+  // |content_length_| is not specified and this is a streaming response.
+  content_length_ = response.expectedContentLength();
 
   // We make a strong assumption that when we reach here we have either
   // received a response from HTTP/HTTPS protocol or the request was
@@ -376,44 +378,51 @@ void BufferedResourceLoader::didReceiveResponse(
   if (url_.SchemeIs(kHttpScheme) || url_.SchemeIs(kHttpsScheme)) {
     int error = net::OK;
 
-    // Check to see whether the server supports byte ranges.
-    std::string accept_ranges =
-        response.httpHeaderField("Accept-Ranges").utf8();
-    range_supported_ = (accept_ranges.find("bytes") != std::string::npos);
+    bool partial_response = (response.httpStatusCode() == kHttpPartialContent);
+    bool ok_response = (response.httpStatusCode() == kHttpOK);
 
-    partial_response = (response.httpStatusCode() == kHttpPartialContent);
+    if (IsRangeRequest()) {
+      // Check to see whether the server supports byte ranges.
+      std::string accept_ranges =
+          response.httpHeaderField("Accept-Ranges").utf8();
+      range_supported_ = (accept_ranges.find("bytes") != std::string::npos);
 
-    if (range_requested_) {
       // If we have verified the partial response and it is correct, we will
       // return net::OK. It's also possible for a server to support range
       // requests without advertising Accept-Ranges: bytes.
-      if (partial_response && VerifyPartialResponse(response))
+      if (partial_response && VerifyPartialResponse(response)) {
         range_supported_ = true;
-      else
+      } else if (ok_response && first_byte_position_ == 0 &&
+                 last_byte_position_ == kPositionNotSpecified) {
+        // We accept a 200 response for a Range:0- request, trusting the
+        // Accept-Ranges header, because Apache thinks that's a reasonable thing
+        // to return.
+        instance_size_ = content_length_;
+      } else {
         error = net::ERR_INVALID_RESPONSE;
-    } else if (response.httpStatusCode() != kHttpOK) {
-      // We didn't request a range but server didn't reply with "200 OK".
-      error = net::ERR_FAILED;
+      }
+    } else {
+      instance_size_ = content_length_;
+      if (response.httpStatusCode() != kHttpOK) {
+        // We didn't request a range but server didn't reply with "200 OK".
+        error = net::ERR_FAILED;
+      }
     }
 
     if (error != net::OK) {
       DoneStart(error);
       return;
     }
+
   } else {
-    // For any protocol other than HTTP and HTTPS, assume range request is
-    // always fulfilled.
-    partial_response = range_requested_;
+    CHECK_EQ(instance_size_, kPositionNotSpecified);
+    if (content_length_ != kPositionNotSpecified) {
+      if (first_byte_position_ == kPositionNotSpecified)
+        instance_size_ = content_length_;
+      else if (last_byte_position_ == kPositionNotSpecified)
+        instance_size_ = content_length_ + first_byte_position_;
+    }
   }
-
-  // Expected content length can be |kPositionNotSpecified|, in that case
-  // |content_length_| is not specified and this is a streaming response.
-  content_length_ = response.expectedContentLength();
-
-  // If we have not requested a range, then the size of the instance is equal
-  // to the content length.
-  if (!partial_response)
-    instance_size_ = content_length_;
 
   // Calls with a successful response.
   DoneStart(net::OK);
@@ -485,8 +494,8 @@ void BufferedResourceLoader::didFinishLoading(
   }
 
   // If there is a start callback, run it.
-  if (!start_callback_.is_null()) {
-    DCHECK(read_callback_.is_null())
+  if (!start_cb_.is_null()) {
+    DCHECK(read_cb_.is_null())
         << "Shouldn't have a read callback during start";
     DoneStart(net::OK);
     return;
@@ -519,12 +528,12 @@ void BufferedResourceLoader::didFail(
   // We don't need to continue loading after failure.
   //
   // Keep it alive until we exit this method so that |error| remains valid.
-  scoped_ptr<ActiveLoader> active_loader(active_loader_.release());
+  scoped_ptr<ActiveLoader> active_loader = active_loader_.Pass();
   NotifyNetworkEvent();
 
   // Don't leave start callbacks hanging around.
-  if (!start_callback_.is_null()) {
-    DCHECK(read_callback_.is_null())
+  if (!start_cb_.is_null()) {
+    DCHECK(read_cb_.is_null())
         << "Shouldn't have a read callback during start";
     DoneStart(net::ERR_FAILED);
     return;
@@ -537,6 +546,8 @@ void BufferedResourceLoader::didFail(
 }
 
 bool BufferedResourceLoader::HasSingleOrigin() const {
+  DCHECK(start_cb_.is_null())
+      << "Start() must complete before calling HasSingleOrigin()";
   return single_origin_;
 }
 
@@ -608,7 +619,7 @@ bool BufferedResourceLoader::ShouldEnableDefer() const {
 
     // Defer if nothing is being requested.
     case kReadThenDefer:
-      return read_callback_.is_null();
+      return read_cb_.is_null();
 
     // Defer if we've reached the max capacity of the threshold.
     case kThresholdDefer:
@@ -631,7 +642,7 @@ bool BufferedResourceLoader::ShouldDisableDefer() const {
     // We have an outstanding read request, and we have not buffered enough
     // yet to fulfill the request; disable defer to get more data.
     case kReadThenDefer:
-      return !read_callback_.is_null() &&
+      return !read_cb_.is_null() &&
           last_offset_ > static_cast<int>(buffer_->forward_bytes());
 
     // We have less than half the capacity of our threshold, so
@@ -702,14 +713,53 @@ void BufferedResourceLoader::ReadInternal() {
   DoneRead(read);
 }
 
+// static
+bool BufferedResourceLoader::ParseContentRange(
+    const std::string& content_range_str, int64* first_byte_position,
+    int64* last_byte_position, int64* instance_size) {
+  const std::string kUpThroughBytesUnit = "bytes ";
+  if (content_range_str.find(kUpThroughBytesUnit) != 0)
+    return false;
+  std::string range_spec =
+      content_range_str.substr(kUpThroughBytesUnit.length());
+  size_t dash_offset = range_spec.find("-");
+  size_t slash_offset = range_spec.find("/");
+
+  if (dash_offset == std::string::npos || slash_offset == std::string::npos ||
+      slash_offset < dash_offset || slash_offset + 1 == range_spec.length()) {
+    return false;
+  }
+  if (!base::StringToInt64(range_spec.substr(0, dash_offset),
+                           first_byte_position) ||
+      !base::StringToInt64(range_spec.substr(dash_offset + 1,
+                                             slash_offset - dash_offset - 1),
+                           last_byte_position)) {
+    return false;
+  }
+  if (slash_offset == range_spec.length() - 2 &&
+      range_spec[slash_offset + 1] == '*') {
+    *instance_size = kPositionNotSpecified;
+  } else {
+    if (!base::StringToInt64(range_spec.substr(slash_offset + 1),
+                             instance_size)) {
+      return false;
+    }
+  }
+  if (*last_byte_position < *first_byte_position ||
+      (*instance_size != kPositionNotSpecified &&
+       *last_byte_position >= *instance_size)) {
+    return false;
+  }
+
+  return true;
+}
+
 bool BufferedResourceLoader::VerifyPartialResponse(
     const WebURLResponse& response) {
   int64 first_byte_position, last_byte_position, instance_size;
-
-  if (!MultipartResponseDelegate::ReadContentRanges(response,
-                                                    &first_byte_position,
-                                                    &last_byte_position,
-                                                    &instance_size)) {
+  if (!ParseContentRange(response.httpHeaderField("Content-Range").utf8(),
+                         &first_byte_position, &last_byte_position,
+                         &instance_size)) {
     return false;
   }
 
@@ -760,20 +810,20 @@ void BufferedResourceLoader::DoneRead(int error) {
   last_offset_ = 0;
   Log();
 
-  net::CompletionCallback read_callback;
-  std::swap(read_callback, read_callback_);
-  read_callback.Run(error);
+  net::CompletionCallback read_cb;
+  std::swap(read_cb, read_cb_);
+  read_cb.Run(error);
 }
 
 void BufferedResourceLoader::DoneStart(int error) {
-  net::CompletionCallback start_callback;
-  std::swap(start_callback, start_callback_);
-  start_callback.Run(error);
+  net::CompletionCallback start_cb;
+  std::swap(start_cb, start_cb_);
+  start_cb.Run(error);
 }
 
 void BufferedResourceLoader::NotifyNetworkEvent() {
-  if (!event_callback_.is_null())
-    event_callback_.Run();
+  if (!event_cb_.is_null())
+    event_cb_.Run();
 }
 
 bool BufferedResourceLoader::IsRangeRequest() const {

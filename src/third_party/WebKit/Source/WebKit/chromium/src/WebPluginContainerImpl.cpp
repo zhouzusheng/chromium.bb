@@ -60,6 +60,7 @@
 #include "FrameLoadRequest.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
+#include "HitTestResult.h"
 #include "HostWindow.h"
 #include "HTMLFormElement.h"
 #include "HTMLNames.h"
@@ -327,8 +328,10 @@ void WebPluginContainerImpl::reportGeometry()
 
     m_webPlugin->updateGeometry(windowRect, clipRect, cutOutRects, isVisible());
 
-    if (m_scrollbarGroup)
+    if (m_scrollbarGroup) {
         m_scrollbarGroup->scrollAnimator()->contentsResized();
+        m_scrollbarGroup->setFrameRect(frameRect());
+    }
 }
 
 void WebPluginContainerImpl::setBackingTextureId(unsigned id)
@@ -369,8 +372,8 @@ void WebPluginContainerImpl::setBackingIOSurfaceId(int width,
 void WebPluginContainerImpl::commitBackingTexture()
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (m_platformLayer.get())
-        m_platformLayer->invalidateRect(FloatRect(FloatPoint(), m_platformLayer->bounds()));
+    if (m_platformLayer)
+        m_platformLayer->setNeedsDisplay();
 #endif
 }
 
@@ -433,6 +436,34 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
     WebViewImpl* view = WebViewImpl::fromPage(m_element->document()->frame()->page());
     view->fullFramePluginZoomLevelChanged(zoomLevel);
 }
+ 
+void WebPluginContainerImpl::setOpaque(bool opaque)
+{
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_platformLayer)
+        m_platformLayer->setOpaque(opaque);
+#endif
+}
+
+bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
+{
+    Page* page = m_element->document()->page();
+    if (!page)
+        return false;
+
+    // hitTestResultAtPoint() takes a padding rectangle.
+    // FIXME: We'll be off by 1 when the width or height is even.
+    IntRect documentRect(x() + rect.x, y() + rect.y, rect.width, rect.height);
+    LayoutPoint center = documentRect.center();
+    // Make the rect we're checking (the point surrounded by padding rects) contained inside the requested rect. (Note that -1/2 is 0.)
+    LayoutSize padding((documentRect.width() - 1) / 2, (documentRect.height() - 1) / 2);
+    HitTestResult result =
+        page->mainFrame()->eventHandler()->hitTestResultAtPoint(center, false, false, DontHitTestScrollbars, HitTestRequest::ReadOnly | HitTestRequest::Active, padding);
+    const HitTestResult::NodeSet& nodes = result.rectBasedTestResult();
+    if (nodes.size() != 1)
+        return false;
+    return (nodes.first().get() == m_element);
+}
 
 void WebPluginContainerImpl::didReceiveResponse(const ResourceResponse& response)
 {
@@ -489,11 +520,10 @@ WebCore::LayerChromium* WebPluginContainerImpl::platformLayer() const
 }
 #endif
 
-
 ScrollbarGroup* WebPluginContainerImpl::scrollbarGroup()
 {
     if (!m_scrollbarGroup)
-        m_scrollbarGroup = adoptPtr(new ScrollbarGroup(m_element->document()->frame()->page()));
+        m_scrollbarGroup = adoptPtr(new ScrollbarGroup(m_element->document()->frame()->view(), frameRect()));
     return m_scrollbarGroup.get();
 }
 
@@ -518,17 +548,6 @@ bool WebPluginContainerImpl::paintCustomOverhangArea(GraphicsContext* context, c
     context->restore();
     return true;
 }
-
-#if ENABLE(GESTURE_EVENTS)
-bool WebPluginContainerImpl::handleGestureEvent(const WebCore::PlatformGestureEvent& gestureEvent)
-{
-    if (m_scrollbarGroup) {
-        m_scrollbarGroup->handleGestureEvent(gestureEvent);
-        return true;
-    }
-    return false;
-}
-#endif
 
 // Private methods -------------------------------------------------------------
 

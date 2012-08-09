@@ -41,7 +41,7 @@
 #include "RenderSVGResourceSolidColor.h"
 #include "SVGPathData.h"
 #include "SVGPathElement.h"
-#include "SVGRenderSupport.h"
+#include "SVGRenderingContext.h"
 #include "SVGResources.h"
 #include "SVGResourcesCache.h"
 #include "SVGStyledTransformableElement.h"
@@ -136,13 +136,21 @@ bool RenderSVGShape::strokeContains(const FloatPoint& point, bool requiresStroke
     if (requiresStroke && !RenderSVGResource::strokePaintingResource(this, style(), fallbackColor))
         return false;
 
-    // FIXME: This is not correct for round linecaps. https://bugs.webkit.org/show_bug.cgi?id=76931
+    const SVGRenderStyle* svgStyle = style()->svgStyle();
     for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i) {
-        if (zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], this->strokeWidth()).contains(point))
-            return true;
+        ASSERT(style()->svgStyle()->hasStroke());
+        float strokeWidth = this->strokeWidth();
+        if (style()->svgStyle()->capStyle() == SquareCap) {
+            if (zeroLengthSubpathRect(m_zeroLengthLinecapLocations[i], strokeWidth).contains(point))
+                return true;
+        } else {
+            ASSERT(style()->svgStyle()->capStyle() == RoundCap);
+            FloatPoint radiusVector(point.x() - m_zeroLengthLinecapLocations[i].x(), point.y() -  m_zeroLengthLinecapLocations[i].y());
+            if (radiusVector.lengthSquared() < strokeWidth * strokeWidth * .25f)
+                return true;
+        }
     }
 
-    const SVGRenderStyle* svgStyle = style()->svgStyle();
     if (!svgStyle->strokeDashArray().isEmpty() || svgStyle->strokeMiterLimit() != svgStyle->initialStrokeMiterLimit()
         || svgStyle->joinStyle() != svgStyle->initialJoinStyle() || svgStyle->capStyle() != svgStyle->initialCapStyle() || static_cast<SVGElement*>(node())->isStyled()) {
         if (!m_path)
@@ -160,7 +168,7 @@ void RenderSVGShape::layout()
     bool updateCachedBoundariesInParents = false;
 
     bool needsShapeUpdate = m_needsShapeUpdate;
-    if (needsShapeUpdate) {
+    if (needsShapeUpdate || m_needsBoundariesUpdate) {
         setIsPaintingFallback(false);
         m_path.clear();
         createShape();
@@ -171,13 +179,6 @@ void RenderSVGShape::layout()
     if (m_needsTransformUpdate) {
         m_localTransform = element->animatedLocalTransform();
         m_needsTransformUpdate = false;
-        updateCachedBoundariesInParents = true;
-    }
-
-    if (m_needsBoundariesUpdate) {
-        setIsPaintingFallback(false);
-        m_path.clear();
-        createShape();
         updateCachedBoundariesInParents = true;
     }
 
@@ -317,7 +318,7 @@ void RenderSVGShape::fillAndStrokePath(GraphicsContext* context)
 
 }
 
-void RenderSVGShape::paint(PaintInfo& paintInfo, const IntPoint&)
+void RenderSVGShape::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
     if (paintInfo.context->paintingDisabled() || style()->visibility() == HIDDEN || isEmpty())
         return;
@@ -332,9 +333,9 @@ void RenderSVGShape::paint(PaintInfo& paintInfo, const IntPoint&)
         childPaintInfo.applyTransform(m_localTransform);
 
         if (childPaintInfo.phase == PaintPhaseForeground) {
-            PaintInfo savedInfo(childPaintInfo);
+            SVGRenderingContext renderingContext(this, childPaintInfo);
 
-            if (SVGRenderSupport::prepareToRenderSVGContent(this, childPaintInfo)) {
+            if (renderingContext.isRenderingPrepared()) {
                 const SVGRenderStyle* svgStyle = style()->svgStyle();
                 if (svgStyle->shapeRendering() == SR_CRISPEDGES)
                     childPaintInfo.context->setShouldAntialias(false);
@@ -344,8 +345,6 @@ void RenderSVGShape::paint(PaintInfo& paintInfo, const IntPoint&)
                 if (svgStyle->hasMarkers())
                     m_markerLayoutInfo.drawMarkers(childPaintInfo);
             }
-
-            SVGRenderSupport::finishRenderSVGContent(this, childPaintInfo, savedInfo.context);
         }
 
         if (drawsOutline)
@@ -355,9 +354,9 @@ void RenderSVGShape::paint(PaintInfo& paintInfo, const IntPoint&)
 
 // This method is called from inside paintOutline() since we call paintOutline()
 // while transformed to our coord system, return local coords
-void RenderSVGShape::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint&)
+void RenderSVGShape::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint&)
 {
-    LayoutRect rect = enclosingLayoutRect(repaintRectInLocalCoordinates());
+    IntRect rect = enclosingIntRect(repaintRectInLocalCoordinates());
     if (!rect.isEmpty())
         rects.append(rect);
 }

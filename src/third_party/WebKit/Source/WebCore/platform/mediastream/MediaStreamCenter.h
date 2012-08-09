@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 Ericsson AB. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,8 +39,14 @@
 
 namespace WebCore {
 
+#if PLATFORM(CHROMIUM)
+class MediaStreamCenterInternal;
+#endif
+
+class IceCandidateDescriptor;
 class MediaStreamComponent;
 class MediaStreamDescriptor;
+class SessionDescriptionDescriptor;
 
 class MediaStreamSourcesQueryClient : public RefCounted<MediaStreamSourcesQueryClient> {
 public:
@@ -47,8 +54,10 @@ public:
 
     virtual bool audio() const = 0;
     virtual bool video() const = 0;
+    virtual bool cameraPreferenceUser() const = 0;
+    virtual bool cameraPreferenceEnvironment() const = 0;
 
-    virtual void mediaStreamSourcesQueryCompleted(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources) = 0;
+    virtual void didCompleteQuery(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources) = 0;
 };
 
 class MediaStreamCenter {
@@ -68,11 +77,18 @@ public:
     void didStopLocalMediaStream(MediaStreamDescriptor*);
     void didConstructMediaStream(MediaStreamDescriptor*);
 
+    String constructSDP(IceCandidateDescriptor*);
+    String constructSDP(SessionDescriptionDescriptor*);
+
     // Calls from the platform to update the DOM objects
     void endLocalMediaStream(MediaStreamDescriptor*);
 
 private:
     MediaStreamCenter();
+
+#if PLATFORM(CHROMIUM)
+    OwnPtr<MediaStreamCenterInternal> m_private;
+#endif
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,11 +10,12 @@ import os
 import types
 import re
 
+from grit import lazy_re
 from grit import util
 from grit.format import interface
 
 # Matches all different types of linebreaks.
-_LINEBREAKS = re.compile('\r\n|\n|\r')
+_LINEBREAKS = lazy_re.compile('\r\n|\n|\r')
 
 '''
 This dictionary defines the langauge charset pair lookup table, which is used

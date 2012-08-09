@@ -286,7 +286,7 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
         heightOfBlock += annotationsAdjustment;
     }
 
-    LayoutUnit gridSnapAdjustment = lineGridSnapAdjustment();
+    LayoutUnit gridSnapAdjustment = lineSnapAdjustment();
     if (gridSnapAdjustment) {
         adjustBlockDirectionPosition(gridSnapAdjustment);
         heightOfBlock += gridSnapAdjustment;
@@ -326,17 +326,17 @@ int RootInlineBox::beforeAnnotationsAdjustment() const
     return result;
 }
 
-LayoutUnit RootInlineBox::lineGridSnapAdjustment(LayoutUnit delta) const
+LayoutUnit RootInlineBox::lineSnapAdjustment(LayoutUnit delta) const
 {
     // If our block doesn't have snapping turned on, do nothing.
     // FIXME: Implement bounds snapping.
-    if (block()->style()->lineGridSnap() != LineGridSnapBaseline)
+    if (block()->style()->lineSnap() == LineSnapNone)
         return 0;
 
     // Get the current line grid and offset.
     LayoutState* layoutState = block()->view()->layoutState();
-    RenderBlock* lineGrid = layoutState->currentLineGrid();
-    LayoutSize lineGridOffset = layoutState->currentLineGridOffset();
+    RenderBlock* lineGrid = layoutState->lineGrid();
+    LayoutSize lineGridOffset = layoutState->lineGridOffset();
     if (!lineGrid || lineGrid->style()->writingMode() != block()->style()->writingMode())
         return 0;
 
@@ -352,45 +352,69 @@ LayoutUnit RootInlineBox::lineGridSnapAdjustment(LayoutUnit delta) const
     // as established by the line box.
     // FIXME: Need to handle crazy line-box-contain values that cause the root line box to not be considered. I assume
     // the grid should honor line-box-contain.
-    LayoutUnit baselineMultiple = lineGridBox->lineBottomWithLeading() - lineGridBox->lineTopWithLeading();
-    if (!baselineMultiple)
+    LayoutUnit gridLineHeight = lineGridBox->lineBottomWithLeading() - lineGridBox->lineTopWithLeading();
+    if (!gridLineHeight)
         return 0;
 
-    LayoutUnit lineGridAscent = lineGrid->style()->fontMetrics().ascent(baselineType());
-    LayoutUnit firstBaselinePosition = lineGridBlockOffset + lineGridAscent + lineGridBox->logicalTop();
-    LayoutUnit currentBaselinePosition = blockOffset + logicalTop() + delta + block()->style()->fontMetrics().ascent(baselineType());
+    LayoutUnit lineGridFontAscent = lineGrid->style()->fontMetrics().ascent(baselineType());
+    LayoutUnit lineGridFontHeight = lineGridBox->logicalHeight();
+    LayoutUnit firstTextTop = lineGridBlockOffset + lineGridBox->logicalTop();
+    LayoutUnit firstLineTopWithLeading = lineGridBlockOffset + lineGridBox->lineTopWithLeading();
+    LayoutUnit firstBaselinePosition = firstTextTop + lineGridFontAscent;
+
+    LayoutUnit currentTextTop = blockOffset + logicalTop() + delta;
+    LayoutUnit currentFontAscent = block()->style()->fontMetrics().ascent(baselineType());
+    LayoutUnit currentBaselinePosition = currentTextTop + currentFontAscent;
+
+    LayoutUnit lineGridPaginationOrigin = isHorizontal() ? layoutState->lineGridPaginationOrigin().height() : layoutState->lineGridPaginationOrigin().width();
 
     // If we're paginated, see if we're on a page after the first one. If so, the grid resets on subsequent pages.
     // FIXME: If the grid is an ancestor of the pagination establisher, then this is incorrect.
     LayoutUnit pageLogicalTop = 0;
     if (layoutState->isPaginated() && layoutState->pageLogicalHeight()) {
-        pageLogicalTop = block()->pageLogicalTopForOffset(logicalTop() + delta);
-        if (pageLogicalTop > lineGridBlockOffset + lineGridBox->logicalTop())
-            firstBaselinePosition = lineGridAscent + pageLogicalTop + lineGridBox->logicalTop() - lineGrid->borderBefore() - lineGrid->paddingBefore();
+        pageLogicalTop = block()->pageLogicalTopForOffset(lineTopWithLeading() + delta);
+        if (pageLogicalTop > firstLineTopWithLeading)
+            firstTextTop = pageLogicalTop + lineGridBox->logicalTop() - lineGrid->borderBefore() - lineGrid->paddingBefore() + lineGridPaginationOrigin;
     }
-            
+
+    if (block()->style()->lineSnap() == LineSnapContain) {
+        // Compute the desired offset from the text-top of a grid line.
+        // Look at our height (logicalHeight()).
+        // Look at the total available height. It's going to be (textBottom - textTop) + (n-1)*(multiple with leading)
+        // where n is number of grid lines required to enclose us.
+        if (logicalHeight() <= lineGridFontHeight)
+            firstTextTop += (lineGridFontHeight - logicalHeight()) / 2;
+        else {
+            LayoutUnit numberOfLinesWithLeading = ceilf(static_cast<float>(logicalHeight() - lineGridFontHeight) / gridLineHeight);
+            LayoutUnit totalHeight = lineGridFontHeight + numberOfLinesWithLeading * gridLineHeight;
+            firstTextTop += (totalHeight - logicalHeight()) / 2;
+        }
+        firstBaselinePosition = firstTextTop + currentFontAscent;
+    } else
+        firstBaselinePosition = firstTextTop + lineGridFontAscent;
+
     // If we're above the first line, just push to the first line.
     if (currentBaselinePosition < firstBaselinePosition)
         return delta + firstBaselinePosition - currentBaselinePosition;
 
     // Otherwise we're in the middle of the grid somewhere. Just push to the next line.
     LayoutUnit baselineOffset = currentBaselinePosition - firstBaselinePosition;
-    LayoutUnit remainder = baselineOffset % baselineMultiple;
+    LayoutUnit remainder = baselineOffset % gridLineHeight;
     LayoutUnit result = delta;
     if (remainder)
-        result += baselineMultiple - remainder;
+        result += gridLineHeight - remainder;
 
     // If we aren't paginated we can return the result.
     if (!layoutState->isPaginated() || !layoutState->pageLogicalHeight() || result == delta)
         return result;
     
-    // We may have shifted to a new page. We need to do a re-snap when that happens.
-    LayoutUnit newPageLogicalTop = block()->pageLogicalTopForOffset(logicalTop() + result);
+    // We may end up shifted to a new page. We need to do a re-snap when that happens.
+    LayoutUnit newPageLogicalTop = block()->pageLogicalTopForOffset(lineBottomWithLeading() + result);
     if (newPageLogicalTop == pageLogicalTop)
         return result;
     
     // Put ourselves at the top of the next page to force a snap onto the new grid established by that page.
-    return lineGridSnapAdjustment(newPageLogicalTop - (blockOffset + logicalTop()));
+    return lineSnapAdjustment(newPageLogicalTop - (blockOffset + lineTopWithLeading()));
 }
 
 GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, 
@@ -556,6 +580,14 @@ InlineBox* RootInlineBox::closestLeafChildForLogicalLeftPosition(int leftPositio
 {
     InlineBox* firstLeaf = firstLeafChild();
     InlineBox* lastLeaf = lastLeafChild();
+
+    if (firstLeaf != lastLeaf) {
+        if (firstLeaf->isLineBreak())
+            firstLeaf = firstLeaf->nextLeafChildIgnoringLineBreak();
+        else if (lastLeaf->isLineBreak())
+            lastLeaf = lastLeaf->prevLeafChildIgnoringLineBreak();
+    }
+
     if (firstLeaf == lastLeaf && (!onlyEditableLeaves || isEditableLeaf(firstLeaf)))
         return firstLeaf;
 
@@ -571,7 +603,7 @@ InlineBox* RootInlineBox::closestLeafChildForLogicalLeftPosition(int leftPositio
         return lastLeaf;
 
     InlineBox* closestLeaf = 0;
-    for (InlineBox* leaf = firstLeaf; leaf; leaf = leaf->nextLeafChild()) {
+    for (InlineBox* leaf = firstLeaf; leaf; leaf = leaf->nextLeafChildIgnoringLineBreak()) {
         if (!leaf->renderer()->isListMarker() && (!onlyEditableLeaves || isEditableLeaf(leaf))) {
             closestLeaf = leaf;
             if (leftPosition < leaf->logicalRight())
@@ -812,7 +844,7 @@ LayoutUnit RootInlineBox::verticalPositionForBox(InlineBox* box, VerticalPositio
         } else if (verticalAlign == BASELINE_MIDDLE)
             verticalPosition += -renderer->lineHeight(firstLine, lineDirection) / 2 + renderer->baselinePosition(baselineType(), firstLine, lineDirection);
         else if (verticalAlign == LENGTH)
-            verticalPosition -= renderer->style()->verticalAlignLength().calcValue(renderer->lineHeight(firstLine, lineDirection));
+            verticalPosition -= valueForLength(renderer->style()->verticalAlignLength(), renderer->lineHeight(firstLine, lineDirection), renderer->view());
     }
 
     // Store the cached value.

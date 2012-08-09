@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -122,6 +122,7 @@
 #endif  // OS_WIN
 
 class Pickle;
+class PickleIterator;
 
 // An abstraction to isolate users from the differences between native
 // pathnames on different platforms.
@@ -339,12 +340,11 @@ class BASE_EXPORT FilePath {
   static FilePath FromUTF8Unsafe(const std::string& utf8);
 
   void WriteToPickle(Pickle* pickle);
-  bool ReadFromPickle(Pickle* pickle, void** iter);
+  bool ReadFromPickle(PickleIterator* iter);
 
-#if defined(FILE_PATH_USES_WIN_SEPARATORS)
-  // Normalize all path separators to backslash.
-  FilePath NormalizeWindowsPathSeparators() const;
-#endif
+  // Normalize all path separators to backslash on Windows
+  // (if FILE_PATH_USES_WIN_SEPARATORS is true), or do nothing on POSIX systems.
+  FilePath NormalizePathSeparators() const;
 
   // Compare two strings in the same way the file system does.
   // Note that these always ignore case, even on file systems that are case-

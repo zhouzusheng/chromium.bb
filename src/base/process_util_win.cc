@@ -174,6 +174,16 @@ ProcessHandle GetCurrentProcessHandle() {
   return ::GetCurrentProcess();
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+  HMODULE hinst = NULL;
+  if (!::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                            static_cast<char*>(address),
+                            &hinst)) {
+    NOTREACHED();
+  }
+  return hinst;
+}
+
 bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle) {
   // We try to limit privileges granted to the handle. If you need this
   // for test code, consider using OpenPrivilegedProcessHandle instead of
@@ -181,7 +191,7 @@ bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle) {
   ProcessHandle result = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_TERMINATE,
                                      FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -196,7 +206,7 @@ bool OpenPrivilegedProcessHandle(ProcessId pid, ProcessHandle* handle) {
                                      SYNCHRONIZE,
                                      FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -208,7 +218,7 @@ bool OpenProcessHandleWithAccess(ProcessId pid,
                                  ProcessHandle* handle) {
   ProcessHandle result = OpenProcess(access_flags, FALSE, pid);
 
-  if (result == INVALID_HANDLE_VALUE)
+  if (result == NULL)
     return false;
 
   *handle = result;
@@ -339,6 +349,8 @@ bool LaunchProcess(const string16& cmdline,
                                       process_info.hProcess)) {
       DLOG(ERROR) << "Could not AssignProcessToObject.";
       KillProcess(process_info.hProcess, kProcessKilledExitCode, true);
+      CloseHandle(process_info.hProcess);
+      CloseHandle(process_info.hThread);
       return false;
     }
 

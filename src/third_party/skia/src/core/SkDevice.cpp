@@ -77,11 +77,11 @@ void SkDevice::unlockPixels() {
 }
 
 const SkBitmap& SkDevice::accessBitmap(bool changePixels) {
-    this->onAccessBitmap(&fBitmap);
+    const SkBitmap& bitmap = this->onAccessBitmap(&fBitmap);
     if (changePixels) {
-        fBitmap.notifyPixelsChanged();
+        bitmap.notifyPixelsChanged();
     }
-    return fBitmap;
+    return bitmap;
 }
 
 void SkDevice::getGlobalBounds(SkIRect* bounds) const {
@@ -95,15 +95,19 @@ void SkDevice::clear(SkColor color) {
     fBitmap.eraseColor(color);
 }
 
-void SkDevice::onAccessBitmap(SkBitmap* bitmap) {}
+const SkBitmap& SkDevice::onAccessBitmap(SkBitmap* bitmap) {return *bitmap;}
 
 void SkDevice::setMatrixClip(const SkMatrix& matrix, const SkRegion& region,
                              const SkClipStack& clipStack) {
 }
 
-bool SkDevice::filterImage(SkImageFilter*, const SkBitmap& src,
-                           const SkMatrix& ctm,
-                           SkBitmap* result, SkIPoint* offset) {
+bool SkDevice::canHandleImageFilter(SkImageFilter*) {
+    return false;
+}
+
+bool SkDevice::filterImage(SkImageFilter* filter, const SkBitmap& src,
+                           const SkMatrix& ctm, SkBitmap* result,
+                           SkIPoint* offset) {
     return false;
 }
 
@@ -208,15 +212,7 @@ bool SkDevice::onReadPixels(const SkBitmap& bitmap,
     }
     SkAutoLockPixels alp(bitmap);
     uint32_t* bmpPixels = reinterpret_cast<uint32_t*>(bitmap.getPixels());
-    if ((SkCanvas::kNative_Premul_Config8888 == config8888 ||
-         kPMColorAlias == config8888)) {
-        SkCopyARGB8888BitmapTo(bmpPixels, bitmap.rowBytes(), subset);
-    } else {
-        SkCopyBitmapToConfig8888(bmpPixels,
-                                 bitmap.rowBytes(),
-                                 config8888,
-                                 subset);
-    }
+    SkCopyBitmapToConfig8888(bmpPixels, bitmap.rowBytes(), config8888, subset);
     return true;
 }
 

@@ -19,6 +19,7 @@
 #include "ui/base/resource/data_pack.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
@@ -41,12 +42,6 @@ const int kLargeFontSizeDelta = 8;
 }  // namespace
 
 ResourceBundle* ResourceBundle::g_shared_instance_ = NULL;
-
-// static
-const SkColor ResourceBundle::toolbar_color =
-     SkColorSetRGB(210, 225, 246);
-const SkColor ResourceBundle::toolbar_separator_color =
-     SkColorSetRGB(182, 186, 192);
 
 // static
 std::string ResourceBundle::InitSharedInstanceWithLocale(
@@ -108,11 +103,16 @@ bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
   return !GetLocaleFilePath(locale).empty();
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX)
 // static
 FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale) {
   FilePath locale_file_path;
+#if defined(OS_ANDROID)
+  PathService::Get(base::DIR_ANDROID_APP_DATA, &locale_file_path);
+  locale_file_path = locale_file_path.Append(FILE_PATH_LITERAL("paks"));
+#else
   PathService::Get(ui::DIR_LOCALES, &locale_file_path);
+#endif
   if (locale_file_path.empty())
     return locale_file_path;
   if (app_locale.empty())
@@ -212,8 +212,7 @@ std::string ResourceBundle::ReloadLocaleResources(
 }
 
 SkBitmap* ResourceBundle::GetBitmapNamed(int resource_id) {
-  const SkBitmap* bitmap =
-      static_cast<const SkBitmap*>(GetImageNamed(resource_id));
+  const SkBitmap* bitmap = GetImageNamed(resource_id).ToSkBitmap();
   return const_cast<SkBitmap*>(bitmap);
 }
 
@@ -351,12 +350,17 @@ SkBitmap* ResourceBundle::LoadBitmap(DataHandle data_handle, int resource_id) {
     return NULL;
 
   SkBitmap bitmap;
-  if (!gfx::PNGCodec::Decode(memory->front(), memory->size(), &bitmap)) {
-    NOTREACHED() << "Unable to decode theme image resource " << resource_id;
-    return NULL;
-  }
+  if (gfx::PNGCodec::Decode(memory->front(), memory->size(), &bitmap))
+    return new SkBitmap(bitmap);
 
-  return new SkBitmap(bitmap);
+  // 99% of our assets are PNGs, however fallback to JPEG.
+  SkBitmap* allocated_bitmap =
+      gfx::JPEGCodec::Decode(memory->front(), memory->size());
+  if (allocated_bitmap)
+    return allocated_bitmap;
+
+  NOTREACHED() << "Unable to decode theme image resource " << resource_id;
+  return NULL;
 }
 
 gfx::Image* ResourceBundle::GetEmptyImage() {

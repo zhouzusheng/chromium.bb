@@ -27,6 +27,7 @@ namespace gles2 {
 
 class ContextGroup;
 class GLES2Util;
+class QueryManager;
 
 struct DisallowedFeatures {
   DisallowedFeatures()
@@ -40,7 +41,7 @@ struct DisallowedFeatures {
 
 // This class implements the AsyncAPIInterface interface, decoding GLES2
 // commands and calling GL.
-class GLES2Decoder : public CommonDecoder {
+class GPU_EXPORT GLES2Decoder : public CommonDecoder {
  public:
   typedef error::Error Error;
   typedef base::Callback<void(int32 id, const std::string& msg)> MsgCallback;
@@ -66,6 +67,18 @@ class GLES2Decoder : public CommonDecoder {
   // Set to true to LOG every command.
   void set_log_commands(bool log_commands) {
     log_commands_ = log_commands;
+  }
+
+  bool log_synthesized_gl_errors() const {
+    return log_synthesized_gl_errors_;
+  }
+
+  // Defaults to true. Set to false for the gpu_unittests as they
+  // are explicitly checking errors are generated and so don't need the numerous
+  // messages. Otherwise, chromium code that generates these errors likely has a
+  // bug.
+  void set_log_synthesized_gl_errors(bool enabled) {
+    log_synthesized_gl_errors_ = enabled;
   }
 
   // Initializes the graphics context. Can create an offscreen
@@ -114,6 +127,12 @@ class GLES2Decoder : public CommonDecoder {
   // Gets the associated ContextGroup
   virtual ContextGroup* GetContextGroup() = 0;
 
+  // Gets the QueryManager for this context.
+  virtual QueryManager* GetQueryManager() = 0;
+
+  // Process any pending queries. Returns false if there are no pending queries.
+  virtual bool ProcessPendingQueries() = 0;
+
   // Sets a callback which is called when a glResizeCHROMIUM command
   // is processed.
   virtual void SetResizeCallback(
@@ -145,12 +164,19 @@ class GLES2Decoder : public CommonDecoder {
   // A callback for messages from the decoder.
   virtual void SetMsgCallback(const MsgCallback& callback) = 0;
 
+  static bool IsAngle();
+
+  // Used for testing only
+  static void set_testing_force_is_angle(bool force);
+
  protected:
   GLES2Decoder();
 
  private:
   bool debug_;
   bool log_commands_;
+  bool log_synthesized_gl_errors_;
+  static bool testing_force_is_angle_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Decoder);
 };

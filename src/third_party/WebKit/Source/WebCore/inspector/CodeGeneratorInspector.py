@@ -56,7 +56,10 @@ TYPE_NAME_FIX_MAP = {
 }
 
 
-TYPES_WITH_RUNTIME_CAST_SET = frozenset([])
+TYPES_WITH_RUNTIME_CAST_SET = frozenset(["Runtime.RemoteObject", "Runtime.PropertyDescriptor",
+                                         "Debugger.FunctionDetails", "Debugger.CallFrame"])
+
+STRICT_ENABLED_DOMAINS = ["CSS", "Debugger", "Page"]
 
 
 cmdline_parser = optparse.OptionParser()
@@ -153,15 +156,9 @@ VALIDATOR_IFDEF_NAME = "!ASSERT_DISABLED"
 class DomainNameFixes:
     @classmethod
     def get_fixed_data(cls, domain_name):
-        if domain_name in cls.agent_type_map:
-            agent_name_res = cls.agent_type_map[domain_name]
-        else:
-            agent_name_res = "Inspector%sAgent" % domain_name
-
         field_name_res = Capitalizer.upper_camel_case_to_lower(domain_name) + "Agent"
 
         class Res(object):
-            agent_type_name = agent_name_res
             skip_js_bind = domain_name in cls.skip_js_bind_domains
             agent_field_name = field_name_res
 
@@ -184,19 +181,6 @@ class DomainNameFixes:
         return Res
 
     skip_js_bind_domains = set(["Runtime", "DOMDebugger"])
-    agent_type_map = {"Network": "InspectorResourceAgent", "Inspector": "InspectorAgent", }
-
-
-class CParamType(object):
-    def __init__(self, type, setter_format="%s"):
-        self.type = type
-        self.setter_format = setter_format
-
-    def get_text(self):
-        return self.type
-
-    def get_setter_format(self):
-        return self.setter_format
 
 
 class RawTypes(object):
@@ -243,14 +227,6 @@ class RawTypes(object):
         need_internal_runtime_cast_ = False
 
         @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            return cls.default_c_param_type
-
-        @staticmethod
-        def is_event_param_check_optional():
-            return False
-
-        @classmethod
         def request_raw_internal_runtime_cast(cls):
             if not cls.need_internal_runtime_cast_:
                 RawTypes.types_to_generate_validator_.append(cls)
@@ -280,13 +256,6 @@ class RawTypes(object):
 
 
     class String(BaseType):
-        @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            if param_type == ParamType.EVENT or param_type == ParamType.TYPE_BUILDER_OUTPUT:
-                return cls._ref_c_type
-            else:
-                return cls._plain_c_type
-
         @staticmethod
         def get_getter_name():
             return "String"
@@ -317,8 +286,13 @@ class RawTypes(object):
         def is_heavy_value():
             return True
 
-        _plain_c_type = CParamType("String")
-        _ref_c_type = CParamType("const String&")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "String"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.String
 
     class Int(BaseType):
         @staticmethod
@@ -353,12 +327,18 @@ class RawTypes(object):
         def is_heavy_value():
             return False
 
-        default_c_param_type = CParamType("int")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "int"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Int
 
     class Number(BaseType):
         @staticmethod
         def get_getter_name():
-            return "Object"
+            return "Double"
 
         @staticmethod
         def get_setter_name():
@@ -366,15 +346,19 @@ class RawTypes(object):
 
         @staticmethod
         def get_c_initializer():
-            raise Exception("Unsupported")
+            return "0"
 
         @staticmethod
         def get_js_bind_type():
-            raise Exception("Unsupported")
+            return "number"
 
         @staticmethod
         def get_validate_method_params():
-            raise Exception("TODO")
+            class ValidateMethodParams:
+                name = "Double"
+                var_type = "double"
+                as_method_name = "Number"
+            return ValidateMethodParams
 
         @staticmethod
         def get_output_pass_model():
@@ -384,19 +368,15 @@ class RawTypes(object):
         def is_heavy_value():
             return False
 
-        default_c_param_type = CParamType("double")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "double"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Number
 
     class Bool(BaseType):
-        @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            if param_type == ParamType.EVENT:
-                if optional:
-                    return cls._ref_c_type
-                else:
-                    return cls._plain_c_type
-            else:
-                return cls._plain_c_type
-
         @staticmethod
         def get_getter_name():
             return "Boolean"
@@ -412,12 +392,12 @@ class RawTypes(object):
             return "boolean"
 
         @staticmethod
-        def is_event_param_check_optional():
-            return True
-
-        @staticmethod
         def get_validate_method_params():
-            raise Exception("TODO")
+            class ValidateMethodParams:
+                name = "Boolean"
+                var_type = "bool"
+                as_method_name = "Boolean"
+            return ValidateMethodParams
 
         @staticmethod
         def get_output_pass_model():
@@ -427,17 +407,15 @@ class RawTypes(object):
         def is_heavy_value():
             return False
 
-        _plain_c_type = CParamType("bool")
-        _ref_c_type = CParamType("const bool* const", "*%s")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "bool"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Bool
 
     class Object(BaseType):
-        @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            if param_type == ParamType.EVENT or param_type == ParamType.TYPE_BUILDER_OUTPUT:
-                return cls._ref_c_type
-            else:
-                return cls._plain_c_type
-
         @staticmethod
         def get_getter_name():
             return "Object"
@@ -451,10 +429,6 @@ class RawTypes(object):
         @staticmethod
         def get_js_bind_type():
             return "object"
-
-        @staticmethod
-        def is_event_param_check_optional():
-            return True
 
         @staticmethod
         def get_output_argument_prefix():
@@ -472,17 +446,15 @@ class RawTypes(object):
         def is_heavy_value():
             return True
 
-        _plain_c_type = CParamType("RefPtr<InspectorObject>")
-        _ref_c_type = CParamType("PassRefPtr<InspectorObject>")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "InspectorObject"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Object
 
     class Any(BaseType):
-        @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            if param_type == ParamType.EVENT or param_type == ParamType.TYPE_BUILDER_OUTPUT:
-                return cls._ref_c_type
-            else:
-                return cls._plain_c_type
-
         @staticmethod
         def get_getter_name():
             return "Value"
@@ -498,12 +470,8 @@ class RawTypes(object):
             raise Exception("Unsupported")
 
         @staticmethod
-        def is_event_param_check_optional():
-            return True
-
-        @staticmethod
         def generate_validate_method(writer):
-            writer.newline("static void assertAny(InspectorValue* value)\n")
+            writer.newline("static void assertAny(InspectorValue*)\n")
             writer.newline("{\n")
             writer.newline("    // No-op.\n")
             writer.newline("}\n\n\n")
@@ -520,19 +488,15 @@ class RawTypes(object):
         def is_heavy_value():
             return True
 
-        _plain_c_type = CParamType("RefPtr<InspectorValue>")
-        _ref_c_type = CParamType("PassRefPtr<InspectorValue>")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "InspectorValue"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Any
 
     class Array(BaseType):
-        @classmethod
-        def get_c_param_type(cls, param_type, optional):
-            if param_type == ParamType.OUTPUT:
-                return cls._plain_c_type
-            elif param_type == ParamType.INPUT:
-                return cls._plain_c_type
-            else:
-                return cls._ref_c_type
-
         @staticmethod
         def get_getter_name():
             return "Array"
@@ -546,10 +510,6 @@ class RawTypes(object):
         @staticmethod
         def get_js_bind_type():
             return "object"
-
-        @staticmethod
-        def is_event_param_check_optional():
-            return True
 
         @staticmethod
         def get_output_argument_prefix():
@@ -567,15 +527,195 @@ class RawTypes(object):
         def is_heavy_value():
             return True
 
-        _plain_c_type = CParamType("RefPtr<InspectorArray>")
-        _ref_c_type = CParamType("PassRefPtr<InspectorArray>")
+        @staticmethod
+        def get_array_item_raw_c_type_text():
+            return "InspectorArray"
+
+        @staticmethod
+        def get_raw_type_model():
+            return TypeModel.Array
 
 
-class ParamType(object):
-    INPUT = "input"
-    OUTPUT = "output"
-    EVENT = "event"
-    TYPE_BUILDER_OUTPUT = "typeBuilderOutput"
+def replace_right_shift(input_str):
+    return input_str.replace(">>", "> >")
+
+
+class CommandReturnPassModel:
+    class ByReference:
+        def __init__(self, var_type, set_condition):
+            self.var_type = var_type
+            self.set_condition = set_condition
+
+        def get_return_var_type(self):
+            return self.var_type
+
+        @staticmethod
+        def get_output_argument_prefix():
+            return ""
+
+        @staticmethod
+        def get_output_to_raw_expression():
+            return "%s"
+
+        def get_output_parameter_type(self):
+            return self.var_type + "&"
+
+        def get_set_return_condition(self):
+            return self.set_condition
+
+    class ByPointer:
+        def __init__(self, var_type):
+            self.var_type = var_type
+
+        def get_return_var_type(self):
+            return self.var_type
+
+        @staticmethod
+        def get_output_argument_prefix():
+            return "&"
+
+        @staticmethod
+        def get_output_to_raw_expression():
+            return "%s"
+
+        def get_output_parameter_type(self):
+            return self.var_type + "*"
+
+        @staticmethod
+        def get_set_return_condition():
+            return None
+
+    class OptOutput:
+        def __init__(self, var_type):
+            self.var_type = var_type
+
+        def get_return_var_type(self):
+            return "TypeBuilder::OptOutput<%s>" % self.var_type
+
+        @staticmethod
+        def get_output_argument_prefix():
+            return "&"
+
+        @staticmethod
+        def get_output_to_raw_expression():
+            return "%s.getValue()"
+
+        def get_output_parameter_type(self):
+            return "TypeBuilder::OptOutput<%s>*" % self.var_type
+
+        @staticmethod
+        def get_set_return_condition():
+            return "%s.isAssigned()"
+
+
+class TypeModel:
+    class RefPtrBased:
+        def __init__(self, class_name):
+            self.class_name = class_name
+            self.optional = False
+
+        def get_optional(self):
+            result = TypeModel.RefPtrBased(self.class_name)
+            result.optional = True
+            return result
+
+        def get_command_return_pass_model(self):
+            if self.optional:
+                set_condition = "%s"
+            else:
+                set_condition = None
+            return CommandReturnPassModel.ByReference(replace_right_shift("RefPtr<%s>" % self.class_name), set_condition)
+
+        def get_input_param_type_text(self):
+            return replace_right_shift("PassRefPtr<%s>" % self.class_name)
+
+        @staticmethod
+        def get_event_setter_expression_pattern():
+            return "%s"
+
+    class Enum:
+        def __init__(self, base_type_name):
+            self.type_name = base_type_name + "::Enum"
+
+        def get_optional(base_self):
+            class EnumOptional:
+                @classmethod
+                def get_optional(cls):
+                    return cls
+
+                @staticmethod
+                def get_command_return_pass_model():
+                    return CommandReturnPassModel.OptOutput(base_self.type_name)
+
+                @staticmethod
+                def get_input_param_type_text():
+                    return base_self.type_name + "*"
+
+                @staticmethod
+                def get_event_setter_expression_pattern():
+                    raise Exception("TODO")
+            return EnumOptional
+
+        def get_command_return_pass_model(self):
+            return CommandReturnPassModel.ByPointer(self.type_name)
+
+        def get_input_param_type_text(self):
+            return self.type_name
+
+        @staticmethod
+        def get_event_setter_expression_pattern():
+            return "%s"
+
+    class ValueType:
+        def __init__(self, type_name, is_heavy):
+            self.type_name = type_name
+            self.is_heavy = is_heavy
+
+        def get_optional(self):
+            return self.ValueOptional(self)
+
+        def get_command_return_pass_model(self):
+            return CommandReturnPassModel.ByPointer(self.type_name)
+
+        def get_input_param_type_text(self):
+            if self.is_heavy:
+                return "const %s&" % self.type_name
+            else:
+                return self.type_name
+
+        @staticmethod
+        def get_event_setter_expression_pattern():
+            return "%s"
+
+        class ValueOptional:
+            def __init__(self, base):
+                self.base = base
+
+            def get_optional(self):
+                return self
+
+            def get_command_return_pass_model(self):
+                return CommandReturnPassModel.OptOutput(self.base.type_name)
+
+            def get_input_param_type_text(self):
+                return "const %s* const" % self.base.type_name
+
+            @staticmethod
+            def get_event_setter_expression_pattern():
+                return "*%s"
+
+    @classmethod
+    def init_class(cls):
+        cls.Bool = cls.ValueType("bool", False)
+        cls.Int = cls.ValueType("int", False)
+        cls.Number = cls.ValueType("double", False)
+        cls.String = cls.ValueType("String", True)
+        cls.Object = cls.RefPtrBased("InspectorObject")
+        cls.Array = cls.RefPtrBased("InspectorArray")
+        cls.Any = cls.RefPtrBased("InspectorValue")
+
+TypeModel.init_class()
+
 
 # Collection of InspectorObject class methods that are likely to be overloaded in generated class.
 # We must explicitly import all overloaded methods or they won't be available to user.
@@ -700,7 +840,7 @@ class TypeBindings:
     def create_ad_hoc_type_declaration(json_typable, context_domain_name, ad_hoc_type_context):
         class Helper:
             is_ad_hoc = True
-            full_name_prefix_for_use = ""
+            full_name_prefix_for_use = ad_hoc_type_context.container_relative_name_prefix
             full_name_prefix_for_impl = ad_hoc_type_context.container_full_name_prefix
 
             @staticmethod
@@ -807,16 +947,20 @@ class TypeBindings:
                         return helper.full_name_prefix_for_use + fixed_type_name.class_name + "::assertCorrectValue"
 
                     @classmethod
-                    def get_in_c_type_text(cls, optional):
+                    def get_array_item_c_type_text(cls):
                         return helper.full_name_prefix_for_use + fixed_type_name.class_name + "::Enum"
 
                     @staticmethod
                     def get_setter_value_expression_pattern():
-                        return "getEnumConstantValue(%s)"
+                        return "TypeBuilder::getEnumConstantValue(%s)"
 
                     @staticmethod
                     def reduce_to_raw_type():
                         return RawTypes.String
+
+                    @staticmethod
+                    def get_type_model():
+                        return TypeModel.Enum(helper.full_name_prefix_for_use + fixed_type_name.class_name)
 
                 return EnumBinding
             else:
@@ -848,12 +992,16 @@ class TypeBindings:
                             return RawTypes.String
 
                         @staticmethod
+                        def get_type_model():
+                            return TypeModel.String
+
+                        @staticmethod
                         def get_setter_value_expression_pattern():
                             return None
 
                         @classmethod
-                        def get_in_c_type_text(cls, optional):
-                            return cls.reduce_to_raw_type().get_c_param_type(ParamType.EVENT, optional).get_text()
+                        def get_array_item_c_type_text(cls):
+                            return cls.reduce_to_raw_type().get_array_item_raw_c_type_text()
 
                     return PlainString
 
@@ -902,11 +1050,15 @@ class TypeBindings:
                             return RawTypes.String
 
                         @staticmethod
+                        def get_type_model():
+                            return TypeModel.ValueType("%s%s" % (helper.full_name_prefix_for_use, fixed_type_name.class_name), True)
+
+                        @staticmethod
                         def get_setter_value_expression_pattern():
                             return None
 
                         @classmethod
-                        def get_in_c_type_text(cls, optional):
+                        def get_array_item_c_type_text(cls):
                             return "const %s%s&" % (helper.full_name_prefix_for_use, fixed_type_name.class_name)
 
                     return TypedefString
@@ -1089,6 +1241,8 @@ class TypeBindings:
     }
 """ % class_name)
 
+                                writer.newline("    typedef TypeBuilder::StructItemTraits ItemTraits;\n")
+
                                 for prop_data in resolve_data.optional_properties:
                                     prop_name = prop_data.p["name"]
                                     param_type_binding = prop_data.param_type_binding
@@ -1132,22 +1286,29 @@ class TypeBindings:
                                     validator_writer.newline("    RefPtr<InspectorObject> object;\n")
                                     validator_writer.newline("    bool castRes = value->asObject(&object);\n")
                                     validator_writer.newline("    ASSERT_UNUSED(castRes, castRes);\n")
-                                    validator_writer.newline("    InspectorObject::iterator it;\n")
                                     for prop_data in resolve_data.main_properties:
-                                        validator_writer.newline("    it = object->find(\"%s\");\n" % prop_data.p["name"])
-                                        validator_writer.newline("    ASSERT(it != object->end());\n")
-                                        validator_writer.newline("    %s(it->second.get());\n" % prop_data.param_type_binding.get_validator_call_text())
-
-                                    validator_writer.newline("    int count = %s;\n" % len(resolve_data.main_properties))
-
-                                    for prop_data in resolve_data.optional_properties:
-                                        validator_writer.newline("    it = object->find(\"%s\");\n" % prop_data.p["name"])
-                                        validator_writer.newline("    if (it != object->end()) {\n")
-                                        validator_writer.newline("        %s(it->second.get());\n" % prop_data.param_type_binding.get_validator_call_text())
-                                        validator_writer.newline("        ++count;\n")
+                                        validator_writer.newline("    {\n")
+                                        it_name = "%sPos" % prop_data.p["name"]
+                                        validator_writer.newline("        InspectorObject::iterator %s;\n" % it_name)
+                                        validator_writer.newline("        %s = object->find(\"%s\");\n" % (it_name, prop_data.p["name"]))
+                                        validator_writer.newline("        ASSERT(%s != object->end());\n" % it_name)
+                                        validator_writer.newline("        %s(%s->second.get());\n" % (prop_data.param_type_binding.get_validator_call_text(), it_name))
                                         validator_writer.newline("    }\n")
 
-                                    validator_writer.newline("    ASSERT(count == object->size());\n")
+                                    validator_writer.newline("    int foundPropertiesCount = %s;\n" % len(resolve_data.main_properties))
+
+                                    for prop_data in resolve_data.optional_properties:
+                                        validator_writer.newline("    {\n")
+                                        it_name = "%sPos" % prop_data.p["name"]
+                                        validator_writer.newline("        InspectorObject::iterator %s;\n" % it_name)
+                                        validator_writer.newline("        %s = object->find(\"%s\");\n" % (it_name, prop_data.p["name"]))
+                                        validator_writer.newline("        if (%s != object->end()) {\n" % it_name)
+                                        validator_writer.newline("            %s(%s->second.get());\n" % (prop_data.param_type_binding.get_validator_call_text(), it_name))
+                                        validator_writer.newline("            ++foundPropertiesCount;\n")
+                                        validator_writer.newline("        }\n")
+                                        validator_writer.newline("    }\n")
+
+                                    validator_writer.newline("    ASSERT(foundPropertiesCount == object->size());\n")
                                     validator_writer.newline("}\n\n\n")
 
                                 writer.newline("};\n\n")
@@ -1174,8 +1335,8 @@ class TypeBindings:
                         return helper.full_name_prefix_for_use + fixed_type_name.class_name + "::assertCorrectValue"
 
                     @classmethod
-                    def get_in_c_type_text(cls, optional):
-                        return "PassRefPtr<" + helper.full_name_prefix_for_use + fixed_type_name.class_name + ">"
+                    def get_array_item_c_type_text(cls):
+                        return helper.full_name_prefix_for_use + fixed_type_name.class_name
 
                     @staticmethod
                     def get_setter_value_expression_pattern():
@@ -1185,6 +1346,10 @@ class TypeBindings:
                     def reduce_to_raw_type():
                         return RawTypes.Object
 
+                    @staticmethod
+                    def get_type_model():
+                        return TypeModel.RefPtrBased(helper.full_name_prefix_for_use + fixed_type_name.class_name)
+
                     class AdHocTypeContextImpl:
                         def __init__(self, property_name, class_name, resolve_context, ad_hoc_type_list, parent_full_name_prefix):
                             self.property_name = property_name
@@ -1192,6 +1357,7 @@ class TypeBindings:
                             self.resolve_context = resolve_context
                             self.ad_hoc_type_list = ad_hoc_type_list
                             self.container_full_name_prefix = parent_full_name_prefix + class_name + "::"
+                            self.container_relative_name_prefix = ""
 
                         def get_type_name_fix(self):
                             class NameFix:
@@ -1231,8 +1397,8 @@ class TypeBindings:
                         raise Exception("Unsupported")
 
                     @classmethod
-                    def get_in_c_type_text(cls, optional):
-                        return cls.reduce_to_raw_type().get_c_param_type(ParamType.EVENT, optional).get_text()
+                    def get_array_item_c_type_text(cls):
+                        return cls.reduce_to_raw_type().get_array_item_raw_c_type_text()
 
                     @staticmethod
                     def get_setter_value_expression_pattern():
@@ -1242,158 +1408,112 @@ class TypeBindings:
                     def reduce_to_raw_type():
                         return RawTypes.Object
 
+                    @staticmethod
+                    def get_type_model():
+                        return TypeModel.Object
+
                 return PlainObjectBinding
         elif json_typable["type"] == "array":
+            if "items" in json_typable:
 
-            class ArrayBinding:
-                resolve_data_ = None
-                need_internal_runtime_cast_ = False
+                ad_hoc_types = []
 
-                @classmethod
-                def resolve_inner(cls, resolve_context):
-                    if cls.resolve_data_:
-                        return
+                class AdHocTypeContext:
+                    container_full_name_prefix = "<not yet defined>"
+                    container_relative_name_prefix = "<not yet defined>"
 
-                    ad_hoc_types = []
-                    if "items" in json_typable:
+                    @staticmethod
+                    def get_type_name_fix():
+                        return fixed_type_name
 
-                        class AdHocTypeContext:
-                            container_full_name_prefix = "<not yet defined>"
+                    @staticmethod
+                    def add_type(binding):
+                        ad_hoc_types.append(binding)
+
+                item_binding = resolve_param_type(json_typable["items"], context_domain_name, AdHocTypeContext)
+
+                class ArrayBinding:
+                    resolve_data_ = None
+                    need_internal_runtime_cast_ = False
+
+                    @classmethod
+                    def resolve_inner(cls, resolve_context):
+                        if cls.resolve_data_:
+                            return
+
+                        class ResolveData:
+                            item_type_binding = item_binding
+                            ad_hoc_type_list = ad_hoc_types
+
+                        cls.resolve_data_ = ResolveData
+
+                        for t in ad_hoc_types:
+                            t.resolve_inner(resolve_context)
+
+                    @classmethod
+                    def request_user_runtime_cast(cls, request):
+                        raise Exception("Not implemented yet")
+
+                    @classmethod
+                    def request_internal_runtime_cast(cls):
+                        cls.need_internal_runtime_cast_ = True
+                        cls.resolve_data_.item_type_binding.request_internal_runtime_cast()
+
+                    @classmethod
+                    def get_code_generator(array_binding_cls):
+
+                        class CodeGenerator:
+                            @staticmethod
+                            def generate_type_builder(writer, generate_context):
+                                ad_hoc_type_writer = writer
+
+                                resolve_data = array_binding_cls.resolve_data_
+
+                                for ad_hoc_type in resolve_data.ad_hoc_type_list:
+                                    code_generator = ad_hoc_type.get_code_generator()
+                                    if code_generator:
+                                        code_generator.generate_type_builder(ad_hoc_type_writer, generate_context)
 
                             @staticmethod
-                            def get_type_name_fix():
-                                class NameFix:
-                                    class_name = "Item"
-
-                                    @staticmethod
-                                    def output_comment(writer):
-                                        pass
-
-                                return NameFix
+                            def generate_forward_declaration(writer):
+                                pass
 
                             @staticmethod
-                            def add_type(binding):
-                                ad_hoc_types.append(binding)
+                            def register_use(forward_listener):
+                                item_code_generator = item_binding.get_code_generator()
+                                if item_code_generator:
+                                    item_code_generator.register_use(forward_listener)
 
-                        item_binding = resolve_param_type(json_typable["items"], context_domain_name, AdHocTypeContext)
-                    else:
-                        item_binding = RawTypeBinding(RawTypes.Any)
+                            @staticmethod
+                            def get_generate_pass_id():
+                                return TypeBuilderPass.MAIN
 
-                    code_generator = item_binding.get_code_generator()
-                    if code_generator:
-                        code_generator.register_use(resolve_context.forward_listener)
+                        return CodeGenerator
 
-                    class ResolveData:
-                        item_type_binding = item_binding
-                        ad_hoc_type_list = ad_hoc_types
+                    @classmethod
+                    def get_validator_call_text(cls):
+                        return cls.get_array_item_c_type_text() + "::assertCorrectValue"
 
-                    cls.resolve_data_ = ResolveData
+                    @classmethod
+                    def get_array_item_c_type_text(cls):
+                        return replace_right_shift("TypeBuilder::Array<%s>" % cls.resolve_data_.item_type_binding.get_array_item_c_type_text())
 
-                    for t in ad_hoc_types:
-                        t.resolve_inner(resolve_context)
+                    @staticmethod
+                    def get_setter_value_expression_pattern():
+                        return None
 
-                @classmethod
-                def request_user_runtime_cast(cls, request):
-                    raise Exception("Not implemented yet")
+                    @staticmethod
+                    def reduce_to_raw_type():
+                        return RawTypes.Array
 
-                @classmethod
-                def request_internal_runtime_cast(cls):
-                    cls.need_internal_runtime_cast_ = True
-                    cls.resolve_data_.item_type_binding.request_internal_runtime_cast()
+                    @classmethod
+                    def get_type_model(cls):
+                        return TypeModel.RefPtrBased(cls.get_array_item_c_type_text())
 
-                @classmethod
-                def get_code_generator(array_binding_cls):
-
-                    class CodeGenerator:
-                        @staticmethod
-                        def generate_type_builder(writer, generate_context):
-                            helper.write_doc(writer)
-                            class_name = fixed_type_name.class_name
-                            fixed_type_name.output_comment(writer)
-                            writer.newline("class ")
-                            writer.append(class_name)
-                            writer.append(" : public InspectorArray {\n")
-                            writer.newline("private:\n")
-                            writer.newline("    %s() { }\n" % fixed_type_name.class_name)
-                            writer.append("\n")
-                            writer.newline("public:\n")
-                            ad_hoc_type_writer = writer.insert_writer("    ")
-
-                            resolve_data = array_binding_cls.resolve_data_
-
-                            for ad_hoc_type in resolve_data.ad_hoc_type_list:
-                                code_generator = ad_hoc_type.get_code_generator()
-                                if code_generator:
-                                    code_generator.generate_type_builder(ad_hoc_type_writer, generate_context)
-
-                            item_type_binding = resolve_data.item_type_binding
-
-                            for item_type_opt in MethodGenerateModes.get_modes(item_type_binding):
-                                writer.newline("    void addItem")
-                                writer.append("(%s value)\n" % item_type_opt.get_c_param_type_text(item_type_binding))
-                                writer.newline("    {\n")
-                                writer.newline("        this->push%s(%s);\n"
-                                    % (item_type_binding.reduce_to_raw_type().get_setter_name(),
-                                       item_type_opt.get_setter_value_expression(item_type_binding, "value")))
-                                writer.newline("    }\n")
-
-                            writer.append("\n")
-                            writer.newline("    static PassRefPtr<%s> create() {\n" % fixed_type_name.class_name)
-                            writer.newline("        return adoptRef(new %s());\n" % fixed_type_name.class_name)
-                            writer.newline("    }\n")
-
-                            if array_binding_cls.need_internal_runtime_cast_:
-                                writer.append("#if %s\n" % VALIDATOR_IFDEF_NAME)
-                                writer.newline("    static void assertCorrectValue(InspectorValue* value);\n")
-                                writer.append("#endif  // %s\n" % VALIDATOR_IFDEF_NAME)
-
-                                validator_writer = generate_context.validator_writer
-                                validator_writer.newline("void %s%s::assertCorrectValue(InspectorValue* value)\n" % (helper.full_name_prefix_for_impl, class_name))
-                                validator_writer.newline("{\n")
-                                validator_writer.newline("    RefPtr<InspectorArray> array;\n")
-                                validator_writer.newline("    bool castRes = value->asArray(&array);\n")
-                                validator_writer.newline("    ASSERT_UNUSED(castRes, castRes);\n")
-                                validator_writer.newline("    for (unsigned i = 0; i < array->length(); ++i) {\n")
-                                validator_writer.newline("        %s(array->get(i).get());\n" % resolve_data.item_type_binding.get_validator_call_text())
-                                validator_writer.newline("    }\n")
-                                validator_writer.newline("}\n\n\n")
-
-                            writer.newline("};\n\n")
-
-                        @staticmethod
-                        def generate_forward_declaration(writer):
-                            class_name = fixed_type_name.class_name
-                            writer.newline("class ")
-                            writer.append(class_name)
-                            writer.append(";\n")
-
-                        @staticmethod
-                        def register_use(forward_listener):
-                            helper.add_to_forward_listener(forward_listener)
-
-                        @staticmethod
-                        def get_generate_pass_id():
-                            return TypeBuilderPass.MAIN
-
-                    return CodeGenerator
-
-                @staticmethod
-                def get_validator_call_text():
-                    return helper.full_name_prefix_for_use + fixed_type_name.class_name + "::assertCorrectValue"
-
-                @classmethod
-                def get_in_c_type_text(cls, optional):
-                    return "PassRefPtr<%s%s>" % (helper.full_name_prefix_for_use, fixed_type_name.class_name)
-
-                @staticmethod
-                def get_setter_value_expression_pattern():
-                    return None
-
-                @staticmethod
-                def reduce_to_raw_type():
-                    return RawTypes.Array
-
-            return ArrayBinding
+                return ArrayBinding
+            else:
+                # Fall-through to raw type.
+                pass
 
         raw_type = RawTypes.get(json_typable["type"])
 
@@ -1419,14 +1539,17 @@ class RawTypeBinding:
     def get_validator_call_text(self):
         return self.raw_type_.get_raw_validator_call_text()
 
-    def get_in_c_type_text(self, optional):
-        return self.raw_type_.get_c_param_type(ParamType.EVENT, optional).get_text()
+    def get_array_item_c_type_text(self):
+        return self.raw_type_.get_array_item_raw_c_type_text()
 
     def get_setter_value_expression_pattern(self):
         return None
 
     def reduce_to_raw_type(self):
         return self.raw_type_
+
+    def get_type_model(self):
+        return self.raw_type_.get_raw_type_model()
 
 
 class TypeData(object):
@@ -1600,13 +1723,16 @@ ${frontendDomainMethodDeclarations}        void setInspectorFrontendChannel(Insp
     if (!$agentField)
         protocolErrors->pushString("${domainName} handler is not available.");
 $methodOutCode
-    ErrorString error;
 $methodInCode
-    if (!protocolErrors->length())
+    RefPtr<InspectorObject> result = InspectorObject::create();
+    ErrorString error;
+    if (!protocolErrors->length()) {
         $agentField->$methodName(&error$agentCallParams);
 
-    RefPtr<InspectorObject> result = InspectorObject::create();
-${responseCook}    sendResponse(callId, result, String::format("Some arguments of method '%s' can't be processed", "$domainName.$methodName"), protocolErrors, error);
+        if (!error.length()) {
+${responseCook}        }
+    }
+    sendResponse(callId, result, String::format("Some arguments of method '%s' can't be processed", "$domainName.$methodName"), protocolErrors, error);
 }
 """)
 
@@ -1641,14 +1767,6 @@ typedef String ErrorString;
 
 #if ENABLE(INSPECTOR)
 
-namespace TypeBuilder {
-${forwards}
-
-String getEnumConstantValue(int code);
-
-${typeBuilders}
-} // namespace TypeBuilder
-
 class InspectorFrontend {
 public:
     InspectorFrontend(InspectorFrontendChannel*);
@@ -1680,8 +1798,6 @@ class InspectorAgent;
 class InspectorObject;
 class InspectorArray;
 class InspectorFrontendChannel;
-
-$forwardDeclarations
 
 typedef String ErrorString;
 
@@ -1727,17 +1843,17 @@ $methodNamesEnumContent
 """
 
 #include "config.h"
+
+#if ENABLE(INSPECTOR)
+
 #include "InspectorBackendDispatcher.h"
 #include <wtf/text/WTFString.h>
 #include <wtf/text/CString.h>
-
-#if ENABLE(INSPECTOR)
 
 #include "InspectorAgent.h"
 #include "InspectorValues.h"
 #include "InspectorFrontendChannel.h"
 #include <wtf/text/WTFString.h>
-$includes
 
 namespace WebCore {
 
@@ -1753,9 +1869,9 @@ public:
 $constructorInit
     { }
 
-    void clearFrontend() { m_inspectorFrontendChannel = 0; }
-    void dispatch(const String& message);
-    void reportProtocolError(const long* const callId, CommonErrorCode, const String& errorMessage, PassRefPtr<InspectorArray> data) const;
+    virtual void clearFrontend() { m_inspectorFrontendChannel = 0; }
+    virtual void dispatch(const String& message);
+    virtual void reportProtocolError(const long* const callId, CommonErrorCode, const String& errorMessage, PassRefPtr<InspectorArray> data) const;
     using InspectorBackendDispatcher::reportProtocolError;
 
 $setters
@@ -1765,11 +1881,16 @@ $methodDeclarations
     InspectorFrontendChannel* m_inspectorFrontendChannel;
 $fieldDeclarations
 
+    template<typename R, typename V, typename V0>
+    static R getPropertyValueImpl(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors, V0 initial_value, bool (*as_method)(InspectorValue*, V*), const char* type_name);
+
     static int getInt(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
+    static double getDouble(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
     static String getString(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
     static bool getBoolean(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
     static PassRefPtr<InspectorObject> getObject(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
     static PassRefPtr<InspectorArray> getArray(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors);
+
     void sendResponse(long callId, PassRefPtr<InspectorObject> result, const String& errorMessage, PassRefPtr<InspectorArray> protocolErrors, ErrorString invocationError);
 
 };
@@ -1896,19 +2017,20 @@ void InspectorBackendDispatcherImpl::reportProtocolError(const long* const callI
         m_inspectorFrontendChannel->sendMessageToFrontend(message->toJSONString());
 }
 
-int InspectorBackendDispatcherImpl::getInt(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
+template<typename R, typename V, typename V0>
+R InspectorBackendDispatcherImpl::getPropertyValueImpl(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors, V0 initial_value, bool (*as_method)(InspectorValue*, V*), const char* type_name)
 {
     ASSERT(protocolErrors);
 
     if (valueFound)
         *valueFound = false;
 
-    int value = 0;
+    V value = initial_value;
 
     if (!object) {
         if (!valueFound) {
             // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type 'Number'.", name.utf8().data()));
+            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type '%s'.", name.utf8().data(), type_name));
         }
         return value;
     }
@@ -1918,152 +2040,55 @@ int InspectorBackendDispatcherImpl::getInt(InspectorObject* object, const String
 
     if (valueIterator == end) {
         if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type 'Number' was not found.", name.utf8().data()));
+            protocolErrors->pushString(String::format("Parameter '%s' with type '%s' was not found.", name.utf8().data(), type_name));
         return value;
     }
 
-    if (!valueIterator->second->asNumber(&value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be 'Number'.", name.utf8().data()));
+    if (!as_method(valueIterator->second.get(), &value))
+        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be '%s'.", name.utf8().data(), type_name));
     else
         if (valueFound)
             *valueFound = true;
     return value;
+}
+
+struct AsMethodBridges {
+    static bool asInt(InspectorValue* value, int* output) { return value->asNumber(output); }
+    static bool asDouble(InspectorValue* value, double* output) { return value->asNumber(output); }
+    static bool asString(InspectorValue* value, String* output) { return value->asString(output); }
+    static bool asBoolean(InspectorValue* value, bool* output) { return value->asBoolean(output); }
+    static bool asObject(InspectorValue* value, RefPtr<InspectorObject>* output) { return value->asObject(output); }
+    static bool asArray(InspectorValue* value, RefPtr<InspectorArray>* output) { return value->asArray(output); }
+};
+
+int InspectorBackendDispatcherImpl::getInt(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
+{
+    return getPropertyValueImpl<int, int, int>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asInt, "Number");
+}
+
+double InspectorBackendDispatcherImpl::getDouble(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
+{
+    return getPropertyValueImpl<double, double, double>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asDouble, "Number");
 }
 
 String InspectorBackendDispatcherImpl::getString(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
 {
-    ASSERT(protocolErrors);
-
-    if (valueFound)
-        *valueFound = false;
-
-    String value = "";
-
-    if (!object) {
-        if (!valueFound) {
-            // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type 'String'.", name.utf8().data()));
-        }
-        return value;
-    }
-
-    InspectorObject::const_iterator end = object->end();
-    InspectorObject::const_iterator valueIterator = object->find(name);
-
-    if (valueIterator == end) {
-        if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type 'String' was not found.", name.utf8().data()));
-        return value;
-    }
-
-    if (!valueIterator->second->asString(&value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be 'String'.", name.utf8().data()));
-    else
-        if (valueFound)
-            *valueFound = true;
-    return value;
+    return getPropertyValueImpl<String, String, String>(object, name, valueFound, protocolErrors, "", AsMethodBridges::asString, "String");
 }
 
 bool InspectorBackendDispatcherImpl::getBoolean(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
 {
-    ASSERT(protocolErrors);
-
-    if (valueFound)
-        *valueFound = false;
-
-    bool value = false;
-
-    if (!object) {
-        if (!valueFound) {
-            // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type 'Boolean'.", name.utf8().data()));
-        }
-        return value;
-    }
-
-    InspectorObject::const_iterator end = object->end();
-    InspectorObject::const_iterator valueIterator = object->find(name);
-
-    if (valueIterator == end) {
-        if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type 'Boolean' was not found.", name.utf8().data()));
-        return value;
-    }
-
-    if (!valueIterator->second->asBoolean(&value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be 'Boolean'.", name.utf8().data()));
-    else
-        if (valueFound)
-            *valueFound = true;
-    return value;
+    return getPropertyValueImpl<bool, bool, bool>(object, name, valueFound, protocolErrors, false, AsMethodBridges::asBoolean, "Boolean");
 }
 
 PassRefPtr<InspectorObject> InspectorBackendDispatcherImpl::getObject(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
 {
-    ASSERT(protocolErrors);
-
-    if (valueFound)
-        *valueFound = false;
-
-    RefPtr<InspectorObject> value = InspectorObject::create();
-
-    if (!object) {
-        if (!valueFound) {
-            // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type 'Object'.", name.utf8().data()));
-        }
-        return value;
-    }
-
-    InspectorObject::const_iterator end = object->end();
-    InspectorObject::const_iterator valueIterator = object->find(name);
-
-    if (valueIterator == end) {
-        if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type 'Object' was not found.", name.utf8().data()));
-        return value;
-    }
-
-    if (!valueIterator->second->asObject(&value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be 'Object'.", name.utf8().data()));
-    else
-        if (valueFound)
-            *valueFound = true;
-    return value;
+    return getPropertyValueImpl<PassRefPtr<InspectorObject>, RefPtr<InspectorObject>, InspectorObject*>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asObject, "Object");
 }
 
 PassRefPtr<InspectorArray> InspectorBackendDispatcherImpl::getArray(InspectorObject* object, const String& name, bool* valueFound, InspectorArray* protocolErrors)
 {
-    ASSERT(protocolErrors);
-
-    if (valueFound)
-        *valueFound = false;
-
-    RefPtr<InspectorArray> value = InspectorArray::create();
-
-    if (!object) {
-        if (!valueFound) {
-            // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type 'Array'.", name.utf8().data()));
-        }
-        return value;
-    }
-
-    InspectorObject::const_iterator end = object->end();
-    InspectorObject::const_iterator valueIterator = object->find(name);
-
-    if (valueIterator == end) {
-        if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type 'Array' was not found.", name.utf8().data()));
-        return value;
-    }
-
-    if (!valueIterator->second->asArray(&value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be 'Array'.", name.utf8().data()));
-    else
-        if (valueFound)
-            *valueFound = true;
-    return value;
+    return getPropertyValueImpl<PassRefPtr<InspectorArray>, RefPtr<InspectorArray>, InspectorArray*>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asArray, "Array");
 }
 
 bool InspectorBackendDispatcher::getCommandName(const String& message, String* result)
@@ -2111,23 +2136,6 @@ $constructorInit{
 
 $methods
 
-namespace TypeBuilder {
-
-const char* const enum_constant_values[] = {
-$enumConstantValues};
-
-String getEnumConstantValue(int code) {
-    // Test variable from generated sources, declared in InspectorTypeBuilder.h and defined in InspectorTypeBuilder.cpp
-    ASSERT(typeBuilderTestVariable);
-    return enum_constant_values[code];
-}
-
-} // namespace TypeBuilder
-
-#if """ + VALIDATOR_IFDEF_NAME + """
-$validatorCode
-#endif // """ + VALIDATOR_IFDEF_NAME + """
-
 } // namespace WebCore
 
 #endif // ENABLE(INSPECTOR)
@@ -2138,14 +2146,141 @@ $validatorCode
 #ifndef InspectorTypeBuilder_h
 #define InspectorTypeBuilder_h
 
+#if ENABLE(INSPECTOR)
+
+#include "InspectorValues.h"
+#include <PlatformString.h>
+#include <wtf/Assertions.h>
+#include <wtf/PassRefPtr.h>
+
 namespace WebCore {
 
-// FIXME: move here TypeBuilder namespace from InspectorFrontend.h
+namespace TypeBuilder {
 
-// FIXME: Used to test that we don't miss .cpp file. Remove once tested.
-extern bool typeBuilderTestVariable;
+template<typename T>
+class OptOutput {
+public:
+    OptOutput() : m_assigned(false) { }
+
+    void operator=(T value)
+    {
+        m_value = value;
+        m_assigned = true;
+    }
+
+    bool isAssigned() { return m_assigned; }
+
+    T getValue()
+    {
+        ASSERT(isAssigned());
+        return m_value;
+    }
+
+private:
+    T m_value;
+    bool m_assigned;
+
+    WTF_MAKE_NONCOPYABLE(OptOutput);
+};
+
+
+// This class provides "Traits" type for the input type T. It is programmed using C++ template specialization
+// technique. By default it simply takes "ItemTraits" type from T, but it doesn't work with the base types.
+template<typename T>
+struct ArrayItemHelper {
+    typedef typename T::ItemTraits Traits;
+};
+
+template<typename T>
+class Array : public InspectorArray {
+private:
+    Array() { }
+
+public:
+    void addItem(PassRefPtr<T> value)
+    {
+        ArrayItemHelper<T>::Traits::pushRefPtr(this, value);
+    }
+
+    void addItem(T value)
+    {
+        ArrayItemHelper<T>::Traits::pushRaw(this, value);
+    }
+
+    static PassRefPtr<Array<T> > create()
+    {
+        return adoptRef(new Array<T>());
+    }
+
+    static PassRefPtr<Array<T> > runtimeCast(PassRefPtr<InspectorValue> value)
+    {
+        RefPtr<InspectorArray> array;
+        bool castRes = value->asArray(&array);
+        ASSERT_UNUSED(castRes, castRes);
+#if !ASSERT_DISABLED
+        assertCorrectValue(array.get());
+#endif  // !ASSERT_DISABLED
+        COMPILE_ASSERT(sizeof(Array<T>) == sizeof(InspectorArray), type_cast_problem);
+        return static_cast<Array<T>*>(array.get());
+    }
+
+#if """ + VALIDATOR_IFDEF_NAME + """
+    static void assertCorrectValue(InspectorValue* value)
+    {
+        RefPtr<InspectorArray> array;
+        bool castRes = value->asArray(&array);
+        ASSERT_UNUSED(castRes, castRes);
+        for (unsigned i = 0; i < array->length(); i++)
+            ArrayItemHelper<T>::Traits::template assertCorrectValue<T>(array->get(i).get());
+    }
+
+#endif // """ + VALIDATOR_IFDEF_NAME + """
+};
+
+struct StructItemTraits {
+    static void pushRefPtr(InspectorArray* array, PassRefPtr<InspectorObject> value)
+    {
+        array->pushObject(value);
+    }
+
+    template<typename T>
+    static void assertCorrectValue(InspectorValue* value) {
+        T::assertCorrectValue(value);
+    }
+};
+
+template<>
+struct ArrayItemHelper<String> {
+    struct Traits {
+        static void pushRaw(InspectorArray* array, const String& value)
+        {
+            array->pushString(value);
+        }
+    };
+};
+
+template<>
+struct ArrayItemHelper<InspectorObject> {
+    struct Traits {
+        static void pushRefPtr(InspectorArray* array, PassRefPtr<InspectorObject> value)
+        {
+            array->pushObject(value);
+        }
+    };
+};
+
+${forwards}
+
+String getEnumConstantValue(int code);
+
+${typeBuilders}
+} // namespace TypeBuilder
+
 
 } // namespace WebCore
+
+#endif // ENABLE(INSPECTOR)
+
 #endif // !defined(InspectorTypeBuilder_h)
 
 """)
@@ -2160,10 +2295,22 @@ extern bool typeBuilderTestVariable;
 
 namespace WebCore {
 
-// FIXME: move here TypeBuilder namespace from InspectorFrontend.cpp
+namespace TypeBuilder {
 
-// FIXME: Used to test that we don't miss .cpp file. Remove once tested.
-bool typeBuilderTestVariable = true;
+const char* const enum_constant_values[] = {
+$enumConstantValues};
+
+String getEnumConstantValue(int code) {
+    return enum_constant_values[code];
+}
+
+} // namespace TypeBuilder
+
+#if """ + VALIDATOR_IFDEF_NAME + """
+
+$validatorCode
+
+#endif // """ + VALIDATOR_IFDEF_NAME + """
 
 } // namespace WebCore
 
@@ -2269,7 +2416,7 @@ class MethodGenerateModes:
     class StrictParameterMode:
         @staticmethod
         def get_c_param_type_text(type_binding):
-            return type_binding.get_in_c_type_text(False)
+            return type_binding.get_type_model().get_input_param_type_text()
 
         @staticmethod
         def get_setter_value_expression(param_type_binding, value_ref):
@@ -2282,7 +2429,7 @@ class MethodGenerateModes:
     class RawParameterMode:
         @staticmethod
         def get_c_param_type_text(type_binding):
-            return type_binding.reduce_to_raw_type().get_c_param_type(ParamType.TYPE_BUILDER_OUTPUT, False).get_text()
+            return type_binding.reduce_to_raw_type().get_raw_type_model().get_input_param_type_text()
 
         @staticmethod
         def get_setter_value_expression(param_type_binding, value_ref):
@@ -2291,8 +2438,8 @@ class MethodGenerateModes:
     class CombinedMode:
         @staticmethod
         def get_c_param_type_text(type_binding):
-            return get_annotated_type_text(type_binding.reduce_to_raw_type().get_c_param_type(ParamType.TYPE_BUILDER_OUTPUT, False).get_text(),
-                type_binding.get_in_c_type_text(False))
+            return get_annotated_type_text(type_binding.reduce_to_raw_type().get_raw_type_model().get_input_param_type_text(),
+                type_binding.get_type_model().get_input_param_type_text())
 
         @staticmethod
         def get_setter_value_expression(param_type_binding, value_ref):
@@ -2319,8 +2466,6 @@ class Generator:
     backend_setters_list = []
     backend_constructor_init_list = []
     backend_field_list = []
-    backend_forward_list = []
-    backend_include_list = []
     frontend_constructor_init_list = []
     type_builder_fragments = []
     type_builder_forwards = []
@@ -2381,10 +2526,11 @@ class Generator:
             agent_interface_name = Capitalizer.lower_camel_case_to_upper(domain_name) + "CommandHandler"
             Generator.backend_agent_interface_list.append("    class %s {\n" % agent_interface_name)
             Generator.backend_agent_interface_list.append("    public:\n")
-            Generator.backend_agent_interface_list.append("        virtual ~%s() { }\n" % agent_interface_name);
             if "commands" in json_domain:
                 for json_command in json_domain["commands"]:
-                    Generator.process_command(json_command, domain_name, agent_field_name)
+                    Generator.process_command(json_command, domain_name, agent_field_name, agent_interface_name)
+            Generator.backend_agent_interface_list.append("\n    protected:\n")
+            Generator.backend_agent_interface_list.append("        virtual ~%s() { }\n" % agent_interface_name)
             Generator.backend_agent_interface_list.append("    };\n\n")
 
             if domain_guard:
@@ -2399,9 +2545,7 @@ class Generator:
             Generator.backend_constructor_init_list,
             Generator.backend_virtual_setters_list,
             Generator.backend_setters_list,
-            Generator.backend_field_list,
-            Generator.backend_forward_list,
-            Generator.backend_include_list]
+            Generator.backend_field_list]
 
         for json_domain in sorted_json_domains:
             domain_name = json_domain["domain"]
@@ -2415,14 +2559,11 @@ class Generator:
 
             agent_interface_name = Capitalizer.lower_camel_case_to_upper(domain_name) + "CommandHandler"
 
-            agent_type_name = domain_fixes.agent_type_name
             agent_field_name = domain_fixes.agent_field_name
             Generator.backend_constructor_init_list.append("        , m_%s(0)" % agent_field_name)
-            Generator.backend_virtual_setters_list.append("    virtual void registerAgent(%s /* %s */* %s) = 0;" % (agent_type_name, agent_interface_name, agent_field_name))
-            Generator.backend_setters_list.append("    void registerAgent(%s /* %s */* %s) { ASSERT(!m_%s); m_%s = %s; }" % (agent_type_name, agent_interface_name, agent_field_name, agent_field_name, agent_field_name, agent_field_name))
-            Generator.backend_field_list.append("    %s /* %s */* m_%s;" % (agent_type_name, agent_interface_name, agent_field_name))
-            Generator.backend_forward_list.append("class %s;" % agent_type_name)
-            Generator.backend_include_list.append("#include \"%s.h\"" % agent_type_name)
+            Generator.backend_virtual_setters_list.append("    virtual void registerAgent(%s* %s) = 0;" % (agent_interface_name, agent_field_name))
+            Generator.backend_setters_list.append("    virtual void registerAgent(%s* %s) { ASSERT(!m_%s); m_%s = %s; }" % (agent_interface_name, agent_field_name, agent_field_name, agent_field_name, agent_field_name))
+            Generator.backend_field_list.append("    %s* m_%s;" % (agent_interface_name, agent_field_name))
 
             if domain_guard:
                 for l in reversed(sorted_cycle_guardable_list_list):
@@ -2433,6 +2574,9 @@ class Generator:
     @staticmethod
     def process_event(json_event, domain_name, frontend_method_declaration_lines):
         event_name = json_event["name"]
+
+        strict_mode = domain_name in STRICT_ENABLED_DOMAINS
+
         parameter_list = []
         method_line_list = []
         backend_js_event_param_list = []
@@ -2444,63 +2588,35 @@ class Generator:
             for json_parameter in json_event["parameters"]:
                 parameter_name = json_parameter["name"]
 
-                raw_type = resolve_param_raw_type(json_parameter, domain_name)
+                param_type_binding = Generator.resolve_type_and_generate_ad_hoc(json_parameter, event_name, domain_name, ad_hoc_type_writer, "")
 
-                json_optional = "optional" in json_parameter and json_parameter["optional"]
+                raw_type = param_type_binding.reduce_to_raw_type()
+                raw_type_binding = RawTypeBinding(raw_type)
 
-                optional_mask = raw_type.is_event_param_check_optional()
-                c_type = raw_type.get_c_param_type(ParamType.EVENT, json_optional)
+                optional = bool(json_parameter.get("optional"))
 
                 setter_type = raw_type.get_setter_name()
 
-                optional = optional_mask and json_optional
+                type_model = param_type_binding.get_type_model()
+                raw_type_model = raw_type_binding.get_type_model()
+                if optional:
+                    type_model = type_model.get_optional()
+                    raw_type_model = raw_type_model.get_optional()
 
-                ad_hoc_type_list = []
-
-                class AdHocTypeContext:
-                    container_full_name_prefix = "<not yet defined>"
-
-                    @staticmethod
-                    def get_type_name_fix():
-                        class NameFix:
-                            class_name = Capitalizer.lower_camel_case_to_upper(parameter_name)
-
-                            @staticmethod
-                            def output_comment(writer):
-                                writer.newline("// Named after parameter name '%s' while generating event %s.\n" % (parameter_name, event_name))
-
-                        return NameFix
-
-                    @staticmethod
-                    def add_type(binding):
-                        ad_hoc_type_list.append(binding)
-
-                param_type_binding = resolve_param_type(json_parameter, domain_name, AdHocTypeContext)
-
-                class EventForwardListener:
-                    @staticmethod
-                    def add_type_data(type_data):
-                        pass
-
-                class EventResolveContext:
-                    forward_listener = EventForwardListener
-
-                for type in ad_hoc_type_list:
-                    type.resolve_inner(EventResolveContext)
-
-                class EventGenerateContext:
-                    validator_writer = "not supported in EventGenerateContext"
-
-                for type in ad_hoc_type_list:
-                    generator = type.get_code_generator()
-                    if generator:
-                        generator.generate_type_builder(ad_hoc_type_writer, EventGenerateContext)
-
-                annotated_type = get_annotated_type_text(c_type.get_text(), param_type_binding.get_in_c_type_text(json_optional))
+                if strict_mode:
+                    # All types are strict.
+                    annotated_type = type_model.get_input_param_type_text()
+                    mode_type_binding = param_type_binding
+                else:
+                    # All types are raw.
+                    annotated_type = get_annotated_type_text(raw_type_model.get_input_param_type_text(), type_model.get_input_param_type_text())
+                    mode_type_binding = raw_type_binding
 
                 parameter_list.append("%s %s" % (annotated_type, parameter_name))
 
-                setter_argument = c_type.get_setter_format() % parameter_name
+                setter_argument = raw_type_model.get_event_setter_expression_pattern() % parameter_name
+                if mode_type_binding.get_setter_value_expression_pattern():
+                    setter_argument = mode_type_binding.get_setter_value_expression_pattern() % setter_argument
 
                 setter_code = "    paramsObject->set%s(\"%s\", %s);\n" % (setter_type, parameter_name, setter_argument)
                 if optional:
@@ -2521,11 +2637,18 @@ class Generator:
             domain_name, event_name, join(backend_js_event_param_list, ", ")))
 
     @staticmethod
-    def process_command(json_command, domain_name, agent_field_name):
+    def process_command(json_command, domain_name, agent_field_name, agent_interface_name):
         json_command_name = json_command["name"]
+
+        strict_mode = domain_name in STRICT_ENABLED_DOMAINS
+
         Generator.method_name_enum_list.append("        k%s_%sCmd," % (domain_name, json_command["name"]))
         Generator.method_handler_list.append("            &InspectorBackendDispatcherImpl::%s_%s," % (domain_name, json_command_name))
         Generator.backend_method_declaration_list.append("    void %s_%s(long callId, InspectorObject* requestMessageObject);" % (domain_name, json_command_name))
+
+        ad_hoc_type_output = []
+        Generator.backend_agent_interface_list.append(ad_hoc_type_output)
+        ad_hoc_type_writer = Writer(ad_hoc_type_output, "        ")
 
         Generator.backend_agent_interface_list.append("        virtual void %s(ErrorString*" % json_command_name)
 
@@ -2546,21 +2669,28 @@ class Generator:
                 json_param_name = json_parameter["name"]
                 param_raw_type = resolve_param_raw_type(json_parameter, domain_name)
 
-                var_type = param_raw_type.get_c_param_type(ParamType.INPUT, None)
-                formal_param_type = var_type
                 getter_name = param_raw_type.get_getter_name()
 
                 optional = json_parameter.get("optional")
+
+                non_optional_type_model = param_raw_type.get_raw_type_model()
+                if optional:
+                    type_model = non_optional_type_model.get_optional()
+                else:
+                    type_model = non_optional_type_model
+
                 if optional:
                     code = ("    bool %s_valueFound = false;\n"
                             "    %s in_%s = get%s(paramsContainerPtr, \"%s\", &%s_valueFound, protocolErrorsPtr);\n" %
-                           (json_param_name, var_type.get_text(), json_param_name, getter_name, json_param_name, json_param_name))
+                           (json_param_name, non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name, getter_name, json_param_name, json_param_name))
                     param = ", %s_valueFound ? &in_%s : 0" % (json_param_name, json_param_name)
+                    # FIXME: pass optional refptr-values as PassRefPtr
                     formal_param_type_pattern = "const %s*"
                 else:
                     code = ("    %s in_%s = get%s(paramsContainerPtr, \"%s\", 0, protocolErrorsPtr);\n" %
-                            (var_type.get_text(), json_param_name, getter_name, json_param_name))
+                            (non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name, getter_name, json_param_name))
                     param = ", in_%s" % json_param_name
+                    # FIXME: pass not-optional refptr-values as NonNullPassRefPtr
                     if param_raw_type.is_heavy_value():
                         formal_param_type_pattern = "const %s&"
                     else:
@@ -2568,7 +2698,7 @@ class Generator:
 
                 method_in_code += code
                 agent_call_param_list.append(param)
-                Generator.backend_agent_interface_list.append(", %s in_%s" % (formal_param_type_pattern % formal_param_type.get_text(), json_param_name))
+                Generator.backend_agent_interface_list.append(", %s in_%s" % (formal_param_type_pattern % non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name))
 
                 js_bind_type = param_raw_type.get_js_bind_type()
                 js_param_text = "{\"name\": \"%s\", \"type\": \"%s\", \"optional\": %s}" % (
@@ -2588,33 +2718,70 @@ class Generator:
 
                 json_return_name = json_return["name"]
 
-                optional = "optional" in json_return and json_return["optional"]
+                optional = bool(json_return.get("optional"))
 
-                raw_type = resolve_param_raw_type(json_return, domain_name)
+                return_type_binding = Generator.resolve_type_and_generate_ad_hoc(json_return, json_command_name, domain_name, ad_hoc_type_writer, agent_interface_name + "::")
+
+                raw_type = return_type_binding.reduce_to_raw_type()
                 setter_type = raw_type.get_setter_name()
                 initializer = raw_type.get_c_initializer()
-                var_type = raw_type.get_c_param_type(ParamType.OUTPUT, None)
 
-                code = "    %s out_%s = %s;\n" % (var_type.get_text(), json_return_name, initializer)
-                param = ", %sout_%s" % (raw_type.get_output_pass_model().get_argument_prefix(), json_return_name)
-                cook = "        result->set%s(\"%s\", out_%s);\n" % (setter_type, json_return_name, json_return_name)
+                type_model = return_type_binding.get_type_model()
                 if optional:
+                    type_model = type_model.get_optional()
+
+                if strict_mode:
+                    # All types are strict. Values do not have default values.
+                    code = "    %s out_%s;\n" % (type_model.get_command_return_pass_model().get_return_var_type(), json_return_name)
+                    param = ", %sout_%s" % (type_model.get_command_return_pass_model().get_output_argument_prefix(), json_return_name)
+                    var_name = "out_%s" % json_return_name
+                    setter_argument = type_model.get_command_return_pass_model().get_output_to_raw_expression() % var_name
+                    if return_type_binding.get_setter_value_expression_pattern():
+                        setter_argument = return_type_binding.get_setter_value_expression_pattern() % setter_argument
+
+                    cook = "            result->set%s(\"%s\", %s);\n" % (setter_type, json_return_name,
+                                                                     setter_argument)
+
+                    set_condition_pattern = type_model.get_command_return_pass_model().get_set_return_condition()
+                    if set_condition_pattern:
+                        cook = ("            if (%s)\n    " % (set_condition_pattern % var_name)) + cook
+                    annotated_type = type_model.get_command_return_pass_model().get_output_parameter_type()
+                else:
+                    # All types are raw. Values always have default values.
+                    raw_type_model = return_type_binding.get_type_model()
+                    if optional:
+                        raw_type_model = raw_type_model.get_optional()
+
+                    code = "    %s out_%s = %s;\n" % (raw_type.get_raw_type_model().get_command_return_pass_model().get_return_var_type(), json_return_name, initializer)
+                    param = ", %sout_%s" % (raw_type.get_output_pass_model().get_argument_prefix(), json_return_name)
+                    cook = "            result->set%s(\"%s\", out_%s);\n" % (setter_type, json_return_name, json_return_name)
+                    if optional:
                         # FIXME: support optional properly. Probably an additional output parameter should be in each case.
-                    if var_type.get_text() == "bool":
-                        cook = ("        if (out_%s)\n    " % json_return_name) + cook
-                    else:
-                        cook = "        // FIXME: support optional here.\n" + cook
+                        # FIXME: refactor this condition; it's a hack now.
+                        var_type_text = raw_type.get_raw_type_model().get_command_return_pass_model().get_return_var_type()
+                        if var_type_text == "bool" or var_type_text.startswith("RefPtr<"):
+                            cook = ("            if (out_%s)\n    " % json_return_name) + cook
+                        else:
+                            cook = "            // FIXME: support optional here.\n" + cook
+
+                    annotated_type = get_annotated_type_text(raw_type.get_raw_type_model().get_command_return_pass_model().get_return_var_type() + raw_type.get_output_pass_model().get_parameter_type_suffix(),
+                                                             type_model.get_command_return_pass_model().get_output_parameter_type())
+
+                param_name = "out_%s" % json_return_name
+                if optional:
+                    param_name = "opt_" + param_name
+
+                Generator.backend_agent_interface_list.append(", %s %s" % (annotated_type, param_name))
+                response_cook_list.append(cook)
 
                 method_out_code += code
                 agent_call_param_list.append(param)
-                Generator.backend_agent_interface_list.append(", %s%s out_%s" % (var_type.get_text(), raw_type.get_output_pass_model().get_parameter_type_suffix(), json_return_name))
-                response_cook_list.append(cook)
 
                 backend_js_reply_param_list.append("\"%s\"" % json_return_name)
 
             js_reply_list = "[%s]" % join(backend_js_reply_param_list, ", ")
 
-            response_cook_text = "    if (!protocolErrors->length() && !error.length()) {\n%s    }\n" % join(response_cook_list, "")
+            response_cook_text = join(response_cook_list, "")
 
         Generator.backend_method_implementation_list.append(Templates.backend_method.substitute(None,
             domainName=domain_name, methodName=json_command_name,
@@ -2628,6 +2795,53 @@ class Generator:
 
         Generator.backend_js_domain_initializer_list.append("InspectorBackend.registerCommand(\"%s.%s\", [%s], %s);\n" % (domain_name, json_command_name, js_parameters_text, js_reply_list))
         Generator.backend_agent_interface_list.append(") = 0;\n")
+
+    @staticmethod
+    def resolve_type_and_generate_ad_hoc(json_param, method_name, domain_name, ad_hoc_type_writer, container_relative_name_prefix_param):
+        param_name = json_param["name"]
+        ad_hoc_type_list = []
+
+        class AdHocTypeContext:
+            container_full_name_prefix = "<not yet defined>"
+            container_relative_name_prefix = container_relative_name_prefix_param
+
+            @staticmethod
+            def get_type_name_fix():
+                class NameFix:
+                    class_name = Capitalizer.lower_camel_case_to_upper(param_name)
+
+                    @staticmethod
+                    def output_comment(writer):
+                        writer.newline("// Named after parameter '%s' while generating command/event %s.\n" % (param_name, method_name))
+
+                return NameFix
+
+            @staticmethod
+            def add_type(binding):
+                ad_hoc_type_list.append(binding)
+
+        type_binding = resolve_param_type(json_param, domain_name, AdHocTypeContext)
+
+        class InterfaceForwardListener:
+            @staticmethod
+            def add_type_data(type_data):
+                pass
+
+        class InterfaceResolveContext:
+            forward_listener = InterfaceForwardListener
+
+        for type in ad_hoc_type_list:
+            type.resolve_inner(InterfaceResolveContext)
+
+        class InterfaceGenerateContext:
+            validator_writer = "not supported in InterfaceGenerateContext"
+
+        for type in ad_hoc_type_list:
+            generator = type.get_code_generator()
+            if generator:
+                generator.generate_type_builder(ad_hoc_type_writer, InterfaceGenerateContext)
+
+        return type_binding
 
     @staticmethod
     def process_types(type_map):
@@ -2723,35 +2937,33 @@ backend_js_file = open(output_cpp_dirname + "/InspectorBackendStub.js", "w")
 
 backend_h_file.write(Templates.backend_h.substitute(None,
     virtualSetters=join(Generator.backend_virtual_setters_list, "\n"),
-    agentInterfaces=join(Generator.backend_agent_interface_list, ""),
-    methodNamesEnumContent=join(Generator.method_name_enum_list, "\n"),
-    forwardDeclarations=join(Generator.backend_forward_list, "\n")))
+    agentInterfaces=join(flatten_list(Generator.backend_agent_interface_list), ""),
+    methodNamesEnumContent=join(Generator.method_name_enum_list, "\n")))
 
 backend_cpp_file.write(Templates.backend_cpp.substitute(None,
     constructorInit=join(Generator.backend_constructor_init_list, "\n"),
     setters=join(Generator.backend_setters_list, "\n"),
     fieldDeclarations=join(Generator.backend_field_list, "\n"),
     methodNameDeclarations=join(Generator.backend_method_name_declaration_list, "\n"),
-    includes=join(Generator.backend_include_list, "\n"),
     methods=join(Generator.backend_method_implementation_list, "\n"),
     methodDeclarations=join(Generator.backend_method_declaration_list, "\n"),
     messageHandlers=join(Generator.method_handler_list, "\n")))
 
 frontend_h_file.write(Templates.frontend_h.substitute(None,
-         fieldDeclarations=join(Generator.frontend_class_field_lines, ""),
-         domainClassList=join(Generator.frontend_domain_class_lines, ""),
-         typeBuilders=join(flatten_list(Generator.type_builder_fragments), ""),
-         forwards=join(Generator.type_builder_forwards, "")))
+    fieldDeclarations=join(Generator.frontend_class_field_lines, ""),
+    domainClassList=join(Generator.frontend_domain_class_lines, "")))
 
 frontend_cpp_file.write(Templates.frontend_cpp.substitute(None,
     constructorInit=join(Generator.frontend_constructor_init_list, ""),
-    methods=join(Generator.frontend_method_list, "\n"),
+    methods=join(Generator.frontend_method_list, "\n")))
+
+typebuilder_h_file.write(Templates.typebuilder_h.substitute(None,
+    typeBuilders=join(flatten_list(Generator.type_builder_fragments), ""),
+    forwards=join(Generator.type_builder_forwards, "")))
+
+typebuilder_cpp_file.write(Templates.typebuilder_cpp.substitute(None,
     enumConstantValues=EnumConstants.get_enum_constant_code(),
     validatorCode=join(flatten_list(Generator.validator_impl_list), "")))
-
-typebuilder_h_file.write(Templates.typebuilder_h.substitute(None))
-
-typebuilder_cpp_file.write(Templates.typebuilder_cpp.substitute(None))
 
 backend_js_file.write(Templates.backend_js.substitute(None,
     domainInitializers=join(Generator.backend_js_domain_initializer_list, "")))

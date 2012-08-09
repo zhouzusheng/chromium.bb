@@ -175,10 +175,8 @@ static bool FindByLogFont(SkTypeface* face, SkTypeface::Style requestedStyle, vo
 SkTypeface* SkCreateTypefaceFromLOGFONT(const LOGFONT& origLF) {
     LOGFONT lf = origLF;
     make_canonical(&lf);
-    SkTypeface* face = SkTypefaceCache::FindByProc(FindByLogFont, &lf);
-    if (face) {
-        face->ref();
-    } else {
+    SkTypeface* face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
+    if (NULL == face) {
         face = LogFontTypeface::Create(lf);
         SkTypefaceCache::Add(face, get_style(lf));
     }
@@ -205,7 +203,9 @@ SkFontID SkFontHost::NextLogicalFont(SkFontID currFontID, SkFontID origFontID) {
 
 static void ensure_typeface_accessible(SkFontID fontID) {
     LogFontTypeface* face = (LogFontTypeface*)SkTypefaceCache::FindByID(fontID);
-    SkFontHost::EnsureTypefaceAccessible(*face);
+    if (face) {
+        SkFontHost::EnsureTypefaceAccessible(*face);
+    }
 }
 
 static void GetLogFontByID(SkFontID fontID, LOGFONT* lf) {
@@ -1100,7 +1100,8 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
         populate_glyph_to_unicode(hdc, glyphCount, &(info->fGlyphToUnicode));
     }
 
-    if (otm.otmTextMetrics.tmPitchAndFamily & TMPF_TRUETYPE) {
+    if (glyphCount > 0 &&
+        (otm.otmTextMetrics.tmPitchAndFamily & TMPF_TRUETYPE)) {
         info->fType = SkAdvancedTypefaceMetrics::kTrueType_Font;
     } else {
         info->fType = SkAdvancedTypefaceMetrics::kOther_Font;

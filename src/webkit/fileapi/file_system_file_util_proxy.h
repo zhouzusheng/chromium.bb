@@ -25,50 +25,147 @@ using base::PlatformFile;
 using base::PlatformFileError;
 using base::PlatformFileInfo;
 
-// This class provides relay methods for supporting asynchronous access to
-// FileSystem API operations.  (Most of necessary relay methods are provided
-// by base::FileUtilProxy, but there are a few operations that are not
-// covered or are slightly different from the version of base::FileUtilProxy.
+class FileSystemFileUtil;
+class FileSystemOperationContext;
+class FileSystemPath;
+
+// This class provides asynchronous access to FileSystemFileUtil methods for
+// FileSystem API operations.  This also implements cross-FileUtil copy/move
+// operations on top of FileSystemFileUtil methods.
 class FileSystemFileUtilProxy {
  public:
+  // Some of the proxy routines are just wrapping around the FileUtilProxy's
+  // relay methods, so we use the same types as FileUtilProxy for them.
   typedef base::FileUtilProxy::Entry Entry;
+  typedef base::FileUtilProxy::CreateOrOpenCallback CreateOrOpenCallback;
 
-  typedef base::Callback<void(PlatformFileError,
-                              bool /* created */
+  typedef base::Callback<void(PlatformFileError status)> StatusCallback;
+  typedef base::Callback<void(PlatformFileError status,
+                              bool created
                               )> EnsureFileExistsCallback;
-  typedef base::Callback<void(PlatformFileError,
-                              const PlatformFileInfo&,
-                              const FilePath& /* platform_path */
+  typedef base::Callback<void(PlatformFileError status,
+                              const PlatformFileInfo& info,
+                              const FilePath& platform_path
                               )> GetFileInfoCallback;
   typedef base::Callback<void(PlatformFileError,
-                              const std::vector<Entry>&
-                              )> ReadDirectoryCallback;
+                              const std::vector<Entry>&,
+                              bool has_more)> ReadDirectoryCallback;
 
-  typedef base::Callback<PlatformFileError(bool* /* created */
-                                           )> EnsureFileExistsTask;
-  typedef base::Callback<PlatformFileError(PlatformFileInfo*,
-                                           FilePath*)> GetFileInfoTask;
-  typedef base::Callback<PlatformFileError(std::vector<Entry>*
-                                           )> ReadDirectoryTask;
+  // Deletes a file or a directory on the given |message_loop_proxy|.
+  // It is an error to delete a non-empty directory with recursive=false.
+  static bool Delete(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
+      bool recursive,
+      const StatusCallback& callback);
 
-  // Calls EnsureFileExistsTask |task| on the given |message_loop_proxy|.
-  static bool RelayEnsureFileExists(
-      scoped_refptr<MessageLoopProxy> message_loop_proxy,
-      const EnsureFileExistsTask& task,
+  // Creates or opens a file with the given flags by calling |file_util|'s
+  // CreateOrOpen method on the given |message_loop_proxy|.
+  static bool CreateOrOpen(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
+      int file_flags,
+      const CreateOrOpenCallback& callback);
+
+  // Copies a file or a directory from |src_path| to |dest_path| by calling
+  // FileSystemFileUtil's following methods on the given |message_loop_proxy|.
+  // - CopyOrMoveFile() for same-filesystem operations
+  // - CopyInForeignFile() for (limited) cross-filesystem operations
+  //
+  // Error cases:
+  // If destination's parent doesn't exist.
+  // If source dir exists but destination path is an existing file.
+  // If source file exists but destination path is an existing directory.
+  // If source is a parent of destination.
+  // If source doesn't exist.
+  // If source and dest are the same path in the same filesystem.
+  static bool Copy(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* src_util,
+      FileSystemFileUtil* dest_util,
+      const FileSystemPath& src_path,
+      const FileSystemPath& dest_path,
+      const StatusCallback& callback);
+
+  // Moves a file or a directory from |src_path| to |dest_path| by calling
+  // FileSystemFileUtil's following methods on the given |message_loop_proxy|.
+  // - CopyOrMoveFile() for same-filesystem operations
+  // - CopyInForeignFile() for (limited) cross-filesystem operations
+  //
+  // This method returns an error on the same error cases with Copy.
+  static bool Move(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* src_util,
+      FileSystemFileUtil* dest_util,
+      const FileSystemPath& src_path,
+      const FileSystemPath& dest_path,
+      const StatusCallback& callback);
+
+  // Ensures that the given |path| exist by calling |file_util|'s
+  // EnsureFileExists method on the given |message_loop_proxy|.
+  static bool EnsureFileExists(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
       const EnsureFileExistsCallback& callback);
 
-  // Calls GetFileInfoTask |task| on the given |message_loop_proxy|.
-  static bool RelayGetFileInfo(
-      scoped_refptr<MessageLoopProxy> message_loop_proxy,
-      const GetFileInfoTask& task,
+  // Creates directory at a given path by calling |file_util|'s
+  // CreateDirectory method on the given |message_loop_proxy|.
+  static bool CreateDirectory(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
+      bool exclusive,
+      bool recursive,
+      const StatusCallback& callback);
+
+  // Retrieves the information about a file by calling |file_util|'s
+  // GetFileInfo method on the given |message_loop_proxy|.
+  static bool GetFileInfo(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
       const GetFileInfoCallback& callback);
 
-  // Calls ReadDirectoryTask |task| on the given |message_loop_proxy|.
+  // Reads the filenames in |path| by calling |file_util|'s
+  // ReadDirectory method on the given |message_loop_proxy|.
   // TODO: this should support returning entries in multiple chunks.
-  static bool RelayReadDirectory(
-      scoped_refptr<MessageLoopProxy> message_loop_proxy,
-      const ReadDirectoryTask& task,
+  static bool ReadDirectory(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
       const ReadDirectoryCallback& callback);
+
+  // Touches a file by calling |file_util|'s Touch method
+  // on the given |message_loop_proxy|.
+  static bool Touch(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
+      const base::Time& last_access_time,
+      const base::Time& last_modified_time,
+      const StatusCallback& callback);
+
+  // Truncates a file to the given length by calling |file_util|'s
+  // Truncate method on the given |message_loop_proxy|.
+  static bool Truncate(
+      MessageLoopProxy* message_loop_proxy,
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemPath& path,
+      int64 length,
+      const StatusCallback& callback);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(FileSystemFileUtilProxy);

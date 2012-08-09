@@ -80,14 +80,13 @@ public:
     virtual int saveLayer(const SkRect* bounds, const SkPaint* paint,
                           SaveFlags flags) SK_OVERRIDE;
     virtual void restore() SK_OVERRIDE;
-    virtual int getSaveCount() const SK_OVERRIDE;
+    virtual bool isDrawingToLayer() const SK_OVERRIDE;
     virtual bool translate(SkScalar dx, SkScalar dy) SK_OVERRIDE;
     virtual bool scale(SkScalar sx, SkScalar sy) SK_OVERRIDE;
     virtual bool rotate(SkScalar degrees) SK_OVERRIDE;
     virtual bool skew(SkScalar sx, SkScalar sy) SK_OVERRIDE;
     virtual bool concat(const SkMatrix& matrix) SK_OVERRIDE;
     virtual void setMatrix(const SkMatrix& matrix) SK_OVERRIDE;
-    virtual const SkMatrix& getTotalMatrix() const SK_OVERRIDE;
     virtual bool clipRect(const SkRect& rect, SkRegion::Op op,
                           bool doAntiAlias) SK_OVERRIDE;
     virtual bool clipPath(const SkPath& path, SkRegion::Op op,
@@ -143,7 +142,6 @@ public:
     class DeviceContext : public SkRefCnt {
     public:
         virtual void prepareForDraw() {}
-        virtual void flush() {}
     };
 
 public:
@@ -182,9 +180,14 @@ public:
          */
         SkDevice* immediateDevice() const {return fImmediateDevice;}
 
+        /**
+         *  Returns true if an opaque draw operation covering the entire canvas
+         *  was performed since the last call to isFreshFrame().
+         */
+        bool isFreshFrame();
+
         void flushPending();
-        void flushContext();
-        void purgePending();
+        void contentsCleared();
         void flushIfNeeded(const SkBitmap& bitmap);
 
         virtual uint32_t getDeviceCapabilities() SK_OVERRIDE;
@@ -201,7 +204,7 @@ public:
                                  SkCanvas::Config8888 config8888) SK_OVERRIDE;
 
     protected:
-        virtual void onAccessBitmap(SkBitmap*) SK_OVERRIDE;
+        virtual const SkBitmap& onAccessBitmap(SkBitmap*) SK_OVERRIDE;
         virtual bool onReadPixels(const SkBitmap& bitmap,
                                   int x, int y,
                                   SkCanvas::Config8888 config8888) SK_OVERRIDE;
@@ -277,6 +280,7 @@ public:
         SkCanvas* fImmediateCanvas;
         SkCanvas* fRecordingCanvas;
         DeviceContext* fDeviceContext;
+        bool fFreshFrame;
     };
 
     DeferredDevice* getDeferredDevice() const;

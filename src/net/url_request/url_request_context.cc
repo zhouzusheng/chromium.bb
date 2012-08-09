@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/string_util.h"
-#include "net/base/cookie_store.h"
 #include "net/base/host_resolver.h"
+#include "net/cookies/cookie_store.h"
 #include "net/ftp/ftp_transaction_factory.h"
 #include "net/http/http_transaction_factory.h"
 
@@ -18,7 +18,7 @@ URLRequestContext::URLRequestContext()
       net_log_(NULL),
       host_resolver_(NULL),
       cert_verifier_(NULL),
-      origin_bound_cert_service_(NULL),
+      server_bound_cert_service_(NULL),
       fraudulent_certificate_reporter_(NULL),
       http_auth_handler_factory_(NULL),
       proxy_service_(NULL),
@@ -36,7 +36,7 @@ void URLRequestContext::CopyFrom(URLRequestContext* other) {
   set_net_log(other->net_log());
   set_host_resolver(other->host_resolver());
   set_cert_verifier(other->cert_verifier());
-  set_origin_bound_cert_service(other->origin_bound_cert_service());
+  set_server_bound_cert_service(other->server_bound_cert_service());
   set_fraudulent_certificate_reporter(other->fraudulent_certificate_reporter());
   set_http_auth_handler_factory(other->http_auth_handler_factory());
   set_proxy_service(other->proxy_service());

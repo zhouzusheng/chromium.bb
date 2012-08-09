@@ -44,6 +44,8 @@ class Time;
 
 namespace file_util {
 
+extern bool g_bug108724_debug;
+
 //-----------------------------------------------------------------------------
 // Functions that operate purely on a path string w/o touching the filesystem:
 
@@ -388,6 +390,13 @@ BASE_EXPORT bool GetCurrentDirectory(FilePath* path);
 // Sets the current working directory for the process.
 BASE_EXPORT bool SetCurrentDirectory(const FilePath& path);
 
+// Attempts to find a number that can be appended to the |path| to make it
+// unique. If |path| does not exist, 0 is returned.  If it fails to find such
+// a number, -1 is returned. If |suffix| is not empty, also checks the
+// existence of it with the given suffix.
+BASE_EXPORT int GetUniquePathNumber(const FilePath& path,
+                                    const FilePath::StringType& suffix);
+
 #if defined(OS_POSIX)
 // Test that |path| can only be changed by a given user and members of
 // a given set of groups.
@@ -506,6 +515,7 @@ class BASE_EXPORT FileEnumerator {
 
   // Looks inside a FindInfo and determines if it's a directory.
   static bool IsDirectory(const FindInfo& info);
+  static bool IsLink(const FindInfo& info);
 
   static FilePath GetFilename(const FindInfo& find_info);
   static int64 GetFilesize(const FindInfo& find_info);
@@ -608,16 +618,6 @@ BASE_EXPORT bool HasFileBeenModifiedSince(
     const FileEnumerator::FindInfo& find_info,
     const base::Time& cutoff_time);
 
-#if defined(OS_WIN)
-  // Loads the file passed in as an image section and touches pages to avoid
-  // subsequent hard page faults during LoadLibrary. The size to be pre read
-  // is passed in. If it is 0 then the whole file is paged in. The step size
-  // which indicates the number of bytes to skip after every page touched is
-  // also passed in.
-bool BASE_EXPORT PreReadImage(const wchar_t* file_path, size_t size_to_read,
-                              size_t step_size);
-#endif  // OS_WIN
-
 #if defined(OS_LINUX)
 // Broad categories of file systems as returned by statfs() on Linux.
 enum FileSystemType {
@@ -639,9 +639,5 @@ BASE_EXPORT bool GetFileSystemType(const FilePath& path, FileSystemType* type);
 #endif
 
 }  // namespace file_util
-
-// Deprecated functions have been moved to this separate header file,
-// which must be included last after all the above definitions.
-#include "base/file_util_deprecated.h"
 
 #endif  // BASE_FILE_UTIL_H_

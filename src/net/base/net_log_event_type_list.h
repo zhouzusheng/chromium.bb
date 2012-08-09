@@ -56,72 +56,22 @@ EVENT_TYPE(HOST_RESOLVER_IMPL)
 // If an error occurred, the END phase will contain these parameters:
 //   {
 //     "net_error": <The net error code integer for the failure>,
-//     "os_error": <The exact error code integer that getaddrinfo() returned>,
 //   }
-
 EVENT_TYPE(HOST_RESOLVER_IMPL_REQUEST)
 
 // This event is logged when a request is handled by a cache entry.
 EVENT_TYPE(HOST_RESOLVER_IMPL_CACHE_HIT)
 
-// This event means a request was queued/dequeued for subsequent job creation,
-// because there are already too many active HostResolverImpl::Jobs.
-//
-// The BEGIN phase contains the following parameters:
-//
-//   {
-//     "priority": <Priority of the queued request>,
-//   }
-EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_POOL_QUEUE)
-
-// This event is created when a new HostResolverImpl::Request is evicted from
-// JobPool without a Job being created, because the limit on number of queued
-// Requests was reached.
-EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_POOL_QUEUE_EVICTED)
+// This event is logged when a request is handled by a HOSTS entry.
+EVENT_TYPE(HOST_RESOLVER_IMPL_HOSTS_HIT)
 
 // This event is created when a new HostResolverImpl::Job is about to be created
 // for a request.
 EVENT_TYPE(HOST_RESOLVER_IMPL_CREATE_JOB)
 
-// This event is created when HostResolverImpl::Job is about to start a new
-// attempt to resolve the host.
+// The creation/completion of a HostResolverImpl::Job which is created for
+// Requests that cannot be resolved synchronously.
 //
-// The ATTEMPT_STARTED event has the parameters:
-//
-//   {
-//     "attempt_number": <the number of the attempt that is resolving the host>,
-//   }
-EVENT_TYPE(HOST_RESOLVER_IMPL_ATTEMPT_STARTED)
-
-// This event is created when HostResolverImpl::Job has finished resolving the
-// host.
-//
-// The ATTEMPT_FINISHED event has the parameters:
-//
-//   {
-//     "attempt_number": <the number of the attempt that has resolved the host>,
-//   }
-// If an error occurred, the END phase will contain these additional parameters:
-//   {
-//     "net_error": <The net error code integer for the failure>,
-//     "os_error": <The exact error code integer that getaddrinfo() returned>,
-//   }
-EVENT_TYPE(HOST_RESOLVER_IMPL_ATTEMPT_FINISHED)
-
-// This is logged for a request when it's attached to a
-// HostResolverImpl::Job.  When this occurs without a preceding
-// HOST_RESOLVER_IMPL_CREATE_JOB entry, it means the request was attached to an
-// existing HostResolverImpl::Job.
-//
-// If the BoundNetLog used to create the event has a valid source id, the BEGIN
-// phase contains the following parameters:
-//
-//   {
-//     "source_dependency": <Source identifier for the attached Job>,
-//   }
-EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_ATTACH)
-
-// The creation/completion of a host resolve (DNS) job.
 // The BEGIN phase contains the following parameters:
 //
 //   {
@@ -136,9 +86,110 @@ EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_ATTACH)
 // If an error occurred, the END phase will contain these parameters:
 //   {
 //     "net_error": <The net error code integer for the failure>,
-//     "os_error": <The exact error code integer that getaddrinfo() returned>,
 //   }
 EVENT_TYPE(HOST_RESOLVER_IMPL_JOB)
+
+// This event is created when a HostResolverImpl::Job is evicted from
+// PriorityDispatch before it can start, because the limit on number of queued
+// Jobs was reached.
+EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_EVICTED)
+
+// This event is created when a HostResolverImpl::Job is started by
+// PriorityDispatch.
+EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_STARTED)
+
+// This event is created when HostResolverImpl::ProcJob is about to start a new
+// attempt to resolve the host.
+//
+// The ATTEMPT_STARTED event has the parameters:
+//
+//   {
+//     "attempt_number": <the number of the attempt that is resolving the host>,
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_ATTEMPT_STARTED)
+
+// This event is created when HostResolverImpl::ProcJob has finished resolving
+// the host.
+//
+// The ATTEMPT_FINISHED event has the parameters:
+//
+//   {
+//     "attempt_number": <the number of the attempt that has resolved the host>,
+//   }
+// If an error occurred, the END phase will contain these additional parameters:
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//     "os_error": <The exact error code integer that getaddrinfo() returned>,
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_ATTEMPT_FINISHED)
+
+// This is logged for a request when it's attached to a
+// HostResolverImpl::Job. When this occurs without a preceding
+// HOST_RESOLVER_IMPL_CREATE_JOB entry, it means the request was attached to an
+// existing HostResolverImpl::Job.
+//
+// The event contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source identifier for the attached Job>,
+//   }
+//
+EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_ATTACH)
+
+// This event is logged for the job to which the request is attached.
+// In that case, the event contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source identifier for the attached Request>,
+//     "priority": <New priority of the job>,
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_REQUEST_ATTACH)
+
+// This is logged for a job when a request is cancelled and detached.
+//
+// The event contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source identifier for the detached Request>,
+//     "priority": <New priority of the job>,
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_JOB_REQUEST_DETACH)
+
+// The creation/completion of a HostResolverImpl::ProcTask to call getaddrinfo.
+// The BEGIN phase contains the following parameters:
+//
+//   {
+//     "hostname": <Hostname associated with the request>,
+//   }
+//
+// On success, the END phase has these parameters:
+//   {
+//     "address_list": <The resolved addresses>,
+//   }
+// If an error occurred, the END phase will contain these parameters:
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//     "os_error": <The exact error code integer that getaddrinfo() returned>,
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_PROC_TASK)
+
+// The creation/completion of a HostResolverImpl::DnsTask to manage a
+// DnsTransaction. The BEGIN phase contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source id of DnsTransaction>,
+//   }
+//
+// On success, the END phase has these parameters:
+//   {
+//     "address_list": <The resolved addresses>,
+//   }
+// If an error occurred, the END phase will contain these parameters:
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//     "dns_error": <The detailed DnsResponse::Result>
+//   }
+EVENT_TYPE(HOST_RESOLVER_IMPL_DNS_TASK)
 
 // ------------------------------------------------------------------------
 // InitProxyResolver
@@ -406,14 +457,14 @@ EVENT_TYPE(SSL_SERVER_HANDSHAKE)
 // The SSL server requested a client certificate.
 EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
 
-// The start/end of getting an origin-bound certificate and private key.
+// The start/end of getting a domain-bound certificate and private key.
 //
 // The END event will contain the following parameters on failure:
 //
 //   {
 //     "net_error": <Net integer error code>,
 //   }
-EVENT_TYPE(SSL_GET_ORIGIN_BOUND_CERT)
+EVENT_TYPE(SSL_GET_DOMAIN_BOUND_CERT)
 
 // A client certificate (or none) was provided to the SSL library to be sent
 // to the SSL server.
@@ -924,12 +975,14 @@ EVENT_TYPE(SPDY_SESSION_SYN_REPLY)
 //   }
 EVENT_TYPE(SPDY_SESSION_SEND_SETTINGS)
 
-// Receipt of a SPDY SETTINGS frame.
+// Receipt of a SPDY SETTING frame.
 // The following parameters are attached:
 //   {
-//     "settings": <The list of setting id:value pairs>,
+//     "id":    <The setting id>,
+//     "flags": <The setting flags>,
+//     "value": <The setting value>,
 //   }
-EVENT_TYPE(SPDY_SESSION_RECV_SETTINGS)
+EVENT_TYPE(SPDY_SESSION_RECV_SETTING)
 
 // The receipt of a RST_STREAM
 // The following parameters are attached:
@@ -944,6 +997,7 @@ EVENT_TYPE(SPDY_SESSION_RST_STREAM)
 //   {
 //     "stream_id": <The stream ID for the window update>,
 //     "status": <The reason for the RST_STREAM>,
+//     "description": <The textual description for the RST_STREAM>,
 //   }
 EVENT_TYPE(SPDY_SESSION_SEND_RST_STREAM)
 
@@ -968,17 +1022,23 @@ EVENT_TYPE(SPDY_SESSION_GOAWAY)
 //   {
 //     "stream_id": <The stream ID for the window update>,
 //     "delta"    : <The delta window size>,
-//     "new_size" : <The new window size (computed)>,
 //   }
-EVENT_TYPE(SPDY_SESSION_SEND_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_SESSION_RECEIVED_WINDOW_UPDATE)
 
 // Sending of a SPDY WINDOW_UPDATE frame (which controls the receive window).
 //   {
 //     "stream_id": <The stream ID for the window update>,
 //     "delta"    : <The delta window size>,
-//     "new_size" : <The new window size (computed)>,
 //   }
-EVENT_TYPE(SPDY_SESSION_RECV_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_SESSION_SENT_WINDOW_UPDATE)
+
+// Sending of a SPDY CREDENTIAL frame (which sends a certificate or
+// certificate chain to the server).
+//   {
+//     "slot"     : <The slot that this certificate should be stored in >,
+//     "origin"   : <The origin this certificate should be used for>,
+//   }
+EVENT_TYPE(SPDY_SESSION_SEND_CREDENTIAL)
 
 // Sending a data frame
 //   {
@@ -1001,7 +1061,8 @@ EVENT_TYPE(SPDY_SESSION_STALLED_ON_SEND_WINDOW)
 
 // Session is closing
 //   {
-//     "status": <The error status of the closure>,
+//     "status"     : <The error status of the closure>,
+//     "description": <The textual description for the closure>,
 //   }
 EVENT_TYPE(SPDY_SESSION_CLOSE)
 
@@ -1060,7 +1121,7 @@ EVENT_TYPE(SPDY_STREAM_ADOPTED_PUSH_STREAM)
 //     "delta":      <The window size delta>,
 //     "new_window": <The new window size>,
 //   }
-EVENT_TYPE(SPDY_STREAM_SEND_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_STREAM_UPDATE_SEND_WINDOW)
 
 // This event indicates that the recv window has been updated
 //   {
@@ -1068,7 +1129,15 @@ EVENT_TYPE(SPDY_STREAM_SEND_WINDOW_UPDATE)
 //     "delta":      <The window size delta>,
 //     "new_window": <The new window size>,
 //   }
-EVENT_TYPE(SPDY_STREAM_RECV_WINDOW_UPDATE)
+EVENT_TYPE(SPDY_STREAM_UPDATE_RECV_WINDOW)
+
+// This event indicates a stream error
+//   {
+//     "id":          <The stream id>,
+//     "status":      <The error status>,
+//     "description": <The textual description for the error>,
+//   }
+EVENT_TYPE(SPDY_STREAM_ERROR)
 
 // ------------------------------------------------------------------------
 // HttpStreamParser
@@ -1170,6 +1239,22 @@ EVENT_TYPE(APPCACHE_DELIVERING_ERROR_RESPONSE)
 // underlying network has changed.
 EVENT_TYPE(NETWORK_IP_ADDRESSES_CHANGED)
 
+
+// This event is emitted whenever HostResolverImpl receives a new DnsConfig
+// from the DnsConfigService.
+//   {
+//     "nameservers":                <List of name server IPs>,
+//     "search":                     <List of domain suffixes>,
+//     "append_to_multi_label_name": <See DnsConfig>,
+//     "ndots":                      <See DnsConfig>,
+//     "timeout":                    <See DnsConfig>,
+//     "attempts":                   <See DnsConfig>,
+//     "rotate":                     <See DnsConfig>,
+//     "edns0":                      <See DnsConfig>,
+//     "num_hosts":                  <Number of entries in the HOSTS file>
+//   }
+EVENT_TYPE(DNS_CONFIG_CHANGED)
+
 // ------------------------------------------------------------------------
 // Exponential back-off throttling events
 // ------------------------------------------------------------------------
@@ -1207,8 +1292,6 @@ EVENT_TYPE(THROTTLING_GOT_CUSTOM_RETRY_AFTER)
 // {
 //   "hostname": <The hostname it is trying to resolve>,
 //   "query_type": <Type of the query>,
-//   "source_dependency":  <Source id, if any, of what created the
-//                          transaction>,
 // }
 //
 // The END phase contains the following parameters:
@@ -1239,7 +1322,8 @@ EVENT_TYPE(DNS_TRANSACTION_QUERY)
 // It has a single parameter:
 //
 //   {
-//     "socket_source": <Source id of the UDP socket created for the attempt>,
+//     "source_dependency": <Source id of the UDP socket created for the
+//                           attempt>,
 //   }
 EVENT_TYPE(DNS_TRANSACTION_ATTEMPT)
 
@@ -1250,49 +1334,10 @@ EVENT_TYPE(DNS_TRANSACTION_ATTEMPT)
 //   {
 //     "rcode": <rcode in the received response>,
 //     "answer_count": <answer_count in the received response>,
-//     "socket_source": <Source id of the UDP socket that received the
-//                       response>,
+//     "source_dependency": <Source id of the UDP socket that received the
+//                           response>,
 //   }
 EVENT_TYPE(DNS_TRANSACTION_RESPONSE)
-
-// ------------------------------------------------------------------------
-// AsyncHostResolver
-// ------------------------------------------------------------------------
-
-// The start/end of waiting on a host resolve (DNS) request.
-// The BEGIN phase contains the following parameters:
-//
-//   {
-//     "source_dependency": <Source id of the request being waited on>,
-//   }
-EVENT_TYPE(ASYNC_HOST_RESOLVER)
-
-// The start/end of a host resolve (DNS) request.
-//
-// The BEGIN phase contains the following parameters:
-//
-//   {
-//     "hostname": <Hostname associated with the request>,
-//     "address_family": <Address family of the request>,
-//     "allow_cached_response": <Whether to allow cached response>,
-//     "only_use_cached_response": <Use cached results only>,
-//     "is_speculative": <Whether the lookup is speculative>,
-//     "priority": <Priority of the request>,
-//     "source_dependency": <Source id, if any, of what created the request>,
-//   }
-//
-// If an error occurred, the END phase will contain this parameter:
-//   {
-//     "net_error": <The net error code integer for the failure>,
-//   }
-EVENT_TYPE(ASYNC_HOST_RESOLVER_REQUEST)
-
-// This event is created when a new DnsTransaction is about to be created
-// for a request.
-EVENT_TYPE(ASYNC_HOST_RESOLVER_CREATE_DNS_TRANSACTION)
-
-// This event is logged when a request is handled by a cache entry.
-EVENT_TYPE(ASYNC_HOST_RESOLVER_CACHE_HIT)
 
 // ------------------------------------------------------------------------
 // ChromeExtension
@@ -1407,3 +1452,190 @@ EVENT_TYPE(HTTP_PIPELINED_CONNECTION_RECEIVED_HEADERS)
 //     "must_close": <True if the pipeline must shut down>,
 //   }
 EVENT_TYPE(HTTP_PIPELINED_CONNECTION_STREAM_CLOSED)
+
+// ------------------------------------------------------------------------
+// Download start events.
+// ------------------------------------------------------------------------
+
+// This event is created when a download is started, and lets the URL request
+// event source know what download source it is using.
+//   {
+//     "source_dependency": <Source id of the download>,
+//   }
+EVENT_TYPE(DOWNLOAD_STARTED)
+
+// This event is created when a download is started, and lets the download
+// event source know what URL request it's associated with.
+//   {
+//     "source_dependency": <Source id of the request being waited on>,
+//   }
+EVENT_TYPE(DOWNLOAD_URL_REQUEST)
+
+// ------------------------------------------------------------------------
+// DownloadItem events.
+// ------------------------------------------------------------------------
+
+// This event lives for as long as a download item is active.
+// The BEGIN event occurs right after constrction, and has the following
+// parameters:
+//   {
+//     "type": <New/history/save page>,
+//     "id": <Download ID>,
+//     "original_url": <URL that initiated the download>,
+//     "final_url": <URL of the actual download file>,
+//     "file_name": <initial file name, based on DownloadItem's members:
+//                   For History downloads it's the |full_path_|
+//                   For other downloads, uses the first non-empty variable of:
+//                     |state_info.force_filename|
+//                     |suggested_filename_|
+//                     the filename specified in the final URL>,
+//     "danger_type": <NOT,FILE,URL,CONTENT,MAYBE_CONTENT>,
+//     "safety_state": <SAFE, DANGEROUS, DANGEROUS_BUT_VALIDATED>,
+//     "start_offset": <Where to start writing (defaults to 0)>,
+//   }
+// The END event will occur when the download is interrupted, canceled or
+// completed.
+EVENT_TYPE(DOWNLOAD_ITEM_ACTIVE)
+
+// This event is created when a download item has been checked by the
+// safe browsing system.
+//   {
+//     "danger_type": <NOT,FILE,URL,CONTENT,MAYBE_CONTENT>,
+//     "safety_state": <SAFE, DANGEROUS, DANGEROUS_BUT_VALIDATED>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_SAFETY_STATE_UPDATED)
+
+// This event is created when a download item has been inserted into the
+// history database.
+//   {
+//     "db_handle": <The database handle for the item>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_IN_HISTORY)
+
+// This event is created when a download item is updated.
+//   {
+//     "bytes_so_far": <Number of bytes received>,
+//     "hash_state": <Current hash state, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_UPDATED)
+
+// This event is created when a download item is renamed.
+//   {
+//     "old_filename": <Old file name>,
+//     "new_filename": <New file name>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_RENAMED)
+
+// This event is created when a download item is interrupted.
+//   {
+//     "reason": <The reason for the interruption>,
+//     "bytes_so_far": <Number of bytes received>,
+//     "hash_state": <Current hash state, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_INTERRUPTED)
+
+// This event is created when a download item is resumed.
+//   {
+//     "user_initiated": <True if user initiated resume>,
+//     "reason": <The reason for the interruption>,
+//     "bytes_so_far": <Number of bytes received>,
+//     "hash_state": <Current hash state, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_RESUMED)
+
+// This event is created when a download item is finished.
+//   {
+//     "bytes_so_far": <Number of bytes received>,
+//     "final_hash": <Final hash, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_FINISHED)
+
+// This event is created when a download item is canceled.
+//   {
+//     "bytes_so_far": <Number of bytes received>,
+//     "hash_state": <Current hash state, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_CANCELED)
+
+// ------------------------------------------------------------------------
+// DownloadFile events.
+// ------------------------------------------------------------------------
+
+// This event is created when a download file is opened, and lasts until
+// the file is closed.
+// The BEGIN event has the following parameters:
+//   {
+//     "file_name": <The name of the file>,
+//     "start_offset": <The position at which to start writing>,
+//   }
+EVENT_TYPE(DOWNLOAD_FILE_OPENED)
+
+// This event is created when a download file is written to.
+//   {
+//     "byte_count": <Number of bytes written in this call>,
+//   }
+EVENT_TYPE(DOWNLOAD_FILE_WRITTEN)
+
+// This event is created when a download file is renamed.
+//   {
+//     "old_filename": <Old filename>,
+//     "new_filename": <New filename>,
+//   }
+EVENT_TYPE(DOWNLOAD_FILE_RENAMED)
+
+// This event is created when a download file is closed.  This event is allowed
+// to occur even if the file is not open.
+EVENT_TYPE(DOWNLOAD_FILE_CLOSED)
+
+// This event is created when a download file is detached.
+EVENT_TYPE(DOWNLOAD_FILE_DETACHED)
+
+// This event is created when a download file is deleted.
+EVENT_TYPE(DOWNLOAD_FILE_DELETED)
+
+// This event is created when a download file operation has an error.
+//   {
+//     "operation": <open, write, close, etc>,
+//     "net_error": <net::Error code>,
+//   }
+EVENT_TYPE(DOWNLOAD_FILE_ERROR)
+
+// ------------------------------------------------------------------------
+// FileStream events.
+// ------------------------------------------------------------------------
+
+// This event lasts the lifetime of a file stream.
+EVENT_TYPE(FILE_STREAM_ALIVE)
+
+// This event is created when a file stream is associated with a NetLog source.
+// It indicates what file stream event source is used.
+//   {
+//     "source_dependency": <Source id of the file stream>,
+//   }
+EVENT_TYPE(FILE_STREAM_SOURCE)
+
+// This event is created when a file stream is associated with a NetLog source.
+// It indicates what event source owns the file stream source.
+//   {
+//     "source_dependency": <Source id of the owner of the file stream>,
+//   }
+EVENT_TYPE(FILE_STREAM_BOUND_TO_OWNER)
+
+// Mark the opening/closing of a file stream.
+// The BEGIN event has the following parameters:
+//   {
+//     "file_name".
+//   }
+EVENT_TYPE(FILE_STREAM_OPEN)
+
+// This event is created when a file stream's Close() is called.
+// This may occur even when the file is not open.
+EVENT_TYPE(FILE_STREAM_CLOSE)
+
+// This event is created when a file stream operation has an error.
+//   {
+//     "operation": <open, write, close, etc>,
+//     "os_error": <OS-dependent error code>,
+//     "net_error": <net::Error code>,
+//   }
+EVENT_TYPE(FILE_STREAM_ERROR)

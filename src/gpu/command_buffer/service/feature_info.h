@@ -9,12 +9,13 @@
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 namespace gles2 {
 
 // FeatureInfo records the features that are available for a ContextGroup.
-class FeatureInfo : public base::RefCounted<FeatureInfo> {
+class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
  public:
   typedef scoped_refptr<FeatureInfo> Ref;
 
@@ -30,7 +31,10 @@ class FeatureInfo : public base::RefCounted<FeatureInfo> {
           chromium_stream_texture(false),
           angle_translated_shader_source(false),
           angle_pack_reverse_row_order(false),
-          arb_texture_rectangle(false) {
+          arb_texture_rectangle(false),
+          angle_instanced_arrays(false),
+          occlusion_query_boolean(false),
+          use_arb_occlusion_query2_for_occlusion_query_boolean(false) {
     }
 
     bool chromium_framebuffer_multisample;
@@ -44,6 +48,9 @@ class FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool angle_translated_shader_source;
     bool angle_pack_reverse_row_order;
     bool arb_texture_rectangle;
+    bool angle_instanced_arrays;
+    bool occlusion_query_boolean;
+    bool use_arb_occlusion_query2_for_occlusion_query_boolean;
   };
 
   FeatureInfo();

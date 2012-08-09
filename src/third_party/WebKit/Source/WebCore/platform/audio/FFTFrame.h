@@ -47,11 +47,22 @@
 #include "mkl_dfti.h"
 #endif // USE(WEBAUDIO_MKL)
 
+#if USE(WEBAUDIO_GSTREAMER)
+#include <glib.h>
+G_BEGIN_DECLS
+#include <gst/fft/gstfftf32.h>
+G_END_DECLS
+#endif // USE(WEBAUDIO_GSTREAMER)
+
 #if USE(WEBAUDIO_FFMPEG)
 struct RDFTContext;
 #endif // USE(WEBAUDIO_FFMPEG)
 
 #endif // !USE_ACCELERATE_FFT
+
+#if USE(WEBAUDIO_IPP)
+#include <ipps.h>
+#endif // USE(WEBAUDIO_IPP)
 
 #include <wtf/PassOwnPtr.h>
 #include <wtf/Platform.h>
@@ -145,6 +156,24 @@ private:
     AudioFloatArray m_realData;
     AudioFloatArray m_imagData;
 #endif // USE(WEBAUDIO_FFMPEG)
+
+#if USE(WEBAUDIO_GSTREAMER)
+    GstFFTF32* m_fft;
+    GstFFTF32* m_inverseFft;
+    GstFFTF32Complex* m_complexData;
+    AudioFloatArray m_realData;
+    AudioFloatArray m_imagData;
+#endif // USE(WEBAUDIO_GSTREAMER)
+
+#if USE(WEBAUDIO_IPP)
+    Ipp8u* m_buffer;
+    IppsDFTSpec_R_32f* m_DFTSpec;
+
+    float* getUpToDateComplexData();
+    AudioFloatArray m_complexData;
+    AudioFloatArray m_realData;
+    AudioFloatArray m_imagData;
+#endif // USE(WEBAUDIO_IPP)
 
 #endif // !USE_ACCELERATE_FFT
 };

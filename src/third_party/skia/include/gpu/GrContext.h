@@ -16,6 +16,7 @@
 // remove.
 #include "GrRenderTarget.h" 
 
+class GrAutoScratchTexture;
 class GrDrawTarget;
 class GrFontCache;
 class GrGpu;
@@ -87,7 +88,7 @@ public:
      * Token that refers to an entry in the texture cache. Returned by
      * functions that lock textures. Passed to unlockTexture.
      */
-    class TextureCacheEntry {
+    class SK_API TextureCacheEntry {
     public:
         TextureCacheEntry() : fEntry(NULL) {}
         TextureCacheEntry(const TextureCacheEntry& e) : fEntry(e.fEntry) {}
@@ -577,30 +578,42 @@ public:
     void resolveRenderTarget(GrRenderTarget* target);
 
     /**
-     * Applies a 1D convolution kernel in the X direction to a rectangle of
-     * pixels from a given texture.
-     * @param texture         the texture to read from
-     * @param rect            the destination rectangle
-     * @param kernel          the convolution kernel (kernelWidth elements)
-     * @param kernelWidth     the width of the convolution kernel
+     * Applies a 2D Gaussian blur to a given texture.
+     * @param srcTexture      The source texture to be blurred.
+     * @param temp1           A scratch texture.  Must not be NULL.
+     * @param temp2           A scratch texture.  May be NULL, in which case
+     *                        srcTexture is overwritten with intermediate
+     *                        results.
+     * @param rect            The destination rectangle.
+     * @param sigmaX          The blur's standard deviation in X.
+     * @param sigmaY          The blur's standard deviation in Y.
+     * @return the blurred texture, which may be temp1, temp2 or srcTexture.
      */
-    void convolveInX(GrTexture* texture,
-                     const SkRect& rect,
-                     const float* kernel,
-                     int kernelWidth);
+     GrTexture* gaussianBlur(GrTexture* srcTexture,
+                             GrAutoScratchTexture* temp1,
+                             GrAutoScratchTexture* temp2,
+                             const SkRect& rect,
+                             float sigmaX, float sigmaY);
+
     /**
-     * Applies a 1D convolution kernel in the Y direction to a rectangle of
-     * pixels from a given texture.
-     * direction.
-     * @param texture         the texture to read from
-     * @param rect            the destination rectangle
-     * @param kernel          the convolution kernel (kernelWidth elements)
-     * @param kernelWidth     the width of the convolution kernel
+     * Applies a 2D morphology to a given texture.
+     * @param srcTexture      The source texture to be blurred.
+     * @param rect            The destination rectangle.
+     * @param temp1           A scratch texture.  Must not be NULL.
+     * @param temp2           A scratch texture.  Must not be NULL.
+     * @param filter          The morphology filter.  Must be kDilate_Filter or
+     *                        kErode_Filter.
+     * @param radius          The morphology radius in X and Y.  The filter is
+     *                        applied to a fWidth by fHeight rectangle of
+     *                        pixels.
+     * @return the morphed texture, which may be temp1, temp2 or srcTexture.
      */
-    void convolveInY(GrTexture* texture,
-                     const SkRect& rect,
-                     const float* kernel,
-                     int kernelWidth);
+    GrTexture* applyMorphology(GrTexture* srcTexture,
+                               const GrRect& rect,
+                               GrTexture* temp1, GrTexture* temp2,
+                               GrSamplerState::Filter filter,
+                               SkISize radius);
+    
     ///////////////////////////////////////////////////////////////////////////
     // Helpers
 
@@ -669,7 +682,6 @@ private:
 
     GrIndexBuffer*              fAAFillRectIndexBuffer;
     GrIndexBuffer*              fAAStrokeRectIndexBuffer;
-    int                         fMaxOffscreenAASize;
 
     GrContext(GrGpu* gpu);
 
@@ -698,46 +710,8 @@ private:
 
     GrPathRenderer* getPathRenderer(const GrPath& path,
                                     GrPathFill fill,
+                                    const GrDrawTarget* target,
                                     bool antiAlias);
-
-    struct OffscreenRecord;
-
-    // determines whether offscreen AA should be applied
-    bool doOffscreenAA(GrDrawTarget* target,
-                       bool isHairLines) const;
-
-    // attempts to setup offscreen AA. All paint state must be transferred to
-    // target by the time this is called.
-    bool prepareForOffscreenAA(GrDrawTarget* target,
-                               bool requireStencil,
-                               const GrIRect& boundRect,
-                               GrPathRenderer* pr,
-                               OffscreenRecord* record);
-
-    // sets up target to draw coverage to the supersampled render target
-    void setupOffscreenAAPass1(GrDrawTarget* target,
-                               const GrIRect& boundRect,
-                               int tileX, int tileY,
-                               OffscreenRecord* record);
-
-    // sets up target to sample coverage of supersampled render target back
-    // to the main render target using stage kOffscreenStage.
-    void doOffscreenAAPass2(GrDrawTarget* target,
-                            const GrPaint& paint,
-                            const GrIRect& boundRect,
-                            int tileX, int tileY,
-                            OffscreenRecord* record);
-
-    // restored the draw target state and releases offscreen target to cache
-    void cleanupOffscreenAA(GrDrawTarget* target,
-                            GrPathRenderer* pr,
-                            OffscreenRecord* record);
-
-    void convolve(GrTexture* texture,
-                  const SkRect& rect,
-                  float imageIncrement[2],
-                  const float* kernel,
-                  int kernelWidth);
 
     /**
      * Flags to the internal read/write pixels funcs

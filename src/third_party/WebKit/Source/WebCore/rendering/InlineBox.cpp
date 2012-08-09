@@ -20,8 +20,10 @@
 #include "config.h"
 #include "InlineBox.h"
 
+#include "Frame.h"
 #include "HitTestResult.h"
 #include "InlineFlowBox.h"
+#include "Page.h"
 #include "PaintInfo.h"
 #include "RenderArena.h"
 #include "RenderBlock.h"
@@ -292,7 +294,23 @@ InlineBox* InlineBox::prevLeafChild() const
         leaf = parent()->prevLeafChild();
     return leaf;
 }
-    
+
+InlineBox* InlineBox::nextLeafChildIgnoringLineBreak() const
+{
+    InlineBox* leaf = nextLeafChild();
+    if (leaf && leaf->isLineBreak())
+        return 0;
+    return leaf;
+}
+
+InlineBox* InlineBox::prevLeafChildIgnoringLineBreak() const
+{
+    InlineBox* leaf = prevLeafChild();
+    if (leaf && leaf->isLineBreak())
+        return 0;
+    return leaf;
+}
+
 RenderObject::SelectionState InlineBox::selectionState()
 {
     return renderer()->selectionState();
@@ -347,14 +365,14 @@ FloatPoint InlineBox::flipForWritingMode(const FloatPoint& point)
     return root()->block()->flipForWritingMode(point);
 }
 
-void InlineBox::flipForWritingMode(IntRect& rect)
+void InlineBox::flipForWritingMode(LayoutRect& rect)
 {
     if (!renderer()->style()->isFlippedBlocksWritingMode())
         return;
     root()->block()->flipForWritingMode(rect);
 }
 
-IntPoint InlineBox::flipForWritingMode(const IntPoint& point)
+LayoutPoint InlineBox::flipForWritingMode(const LayoutPoint& point)
 {
     if (!renderer()->style()->isFlippedBlocksWritingMode())
         return point;

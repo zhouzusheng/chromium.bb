@@ -29,14 +29,14 @@
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
-
+#include <wtf/text/WTFString.h>
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 #endif
-
 #if PLATFORM(GTK)
 #include <PasteboardHelper.h>
 #endif
+#include <wtf/Vector.h>
 
 // FIXME: This class is too high-level to be in the platform directory, since it
 // uses the DOM and makes calls to Editor. It should either be divested of its
@@ -44,7 +44,6 @@
 
 #if PLATFORM(MAC)
 OBJC_CLASS NSFileWrapper;
-OBJC_CLASS NSPasteboard;
 OBJC_CLASS NSArray;
 #endif
 
@@ -60,11 +59,11 @@ typedef struct HWND__* HWND;
 namespace WebCore {
 
 #if PLATFORM(MAC)
-extern NSString *WebArchivePboardType;
-extern NSString *WebSmartPastePboardType;
-extern NSString *WebURLNamePboardType;
-extern NSString *WebURLPboardType;
-extern NSString *WebURLsWithTitlesPboardType;
+extern const char* WebArchivePboardType;
+extern const char* WebSmartPastePboardType;
+extern const char* WebURLNamePboardType;
+extern const char* WebURLPboardType;
+extern const char* WebURLsWithTitlesPboardType;
 #endif
 
 class Clipboard;
@@ -80,9 +79,8 @@ class Pasteboard {
     WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
 public:
 #if PLATFORM(MAC)
-    void writeSelectionForTypes(NSArray* pasteboardTypes, Range* selectedRange, bool canSmartCopyOrDelete, Frame*);
-    void writeURLForTypes(NSArray* types, const KURL&, const String& titleStr, Frame*);
-
+    // This is required to support OS X services.
+    void writeSelectionForTypes(const Vector<String>& pasteboardTypes, Range* selectedRange, bool canSmartCopyOrDelete, Frame*);
     Pasteboard(const String& pasteboardName);
 #endif
     
@@ -91,10 +89,6 @@ public:
     void writePlainText(const String&);
     void writeURL(const KURL&, const String&, Frame* = 0);
     void writeImage(Node*, const KURL&, const String& title);
-#if PLATFORM(MAC)
-    void writeFileWrapperAsRTFDAttachment(NSFileWrapper*);
-    String asURL(Frame*);
-#endif
     void writeClipboard(Clipboard*);
     void clear();
     bool canSmartReplace();
@@ -114,10 +108,7 @@ private:
     Pasteboard();
 
 #if PLATFORM(MAC)
-    RetainPtr<NSPasteboard> m_pasteboard;
-    PassRefPtr<DocumentFragment> documentFragmentWithImageResource(Frame* frame, PassRefPtr<ArchiveResource> resource);
-    PassRefPtr<DocumentFragment> documentFragmentWithRtf(Frame* frame, NSString* pboardType);
-    NSURL *getBestURL(Frame *);
+    String m_pasteboardName;
 #endif
 
 #if PLATFORM(WIN)

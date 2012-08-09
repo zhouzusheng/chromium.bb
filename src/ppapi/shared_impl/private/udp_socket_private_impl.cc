@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,13 +22,13 @@ const int32_t UDPSocketPrivateImpl::kMaxWriteSize = 1024 * 1024;
 
 UDPSocketPrivateImpl::UDPSocketPrivateImpl(const HostResource& resource,
                                            uint32 socket_id)
-    : Resource(resource) {
+    : Resource(OBJECT_IS_PROXY, resource) {
   Init(socket_id);
 }
 
 UDPSocketPrivateImpl::UDPSocketPrivateImpl(PP_Instance instance,
                                            uint32 socket_id)
-    : Resource(instance) {
+    : Resource(OBJECT_IS_IMPL, instance) {
   Init(socket_id);
 }
 
@@ -56,6 +56,14 @@ int32_t UDPSocketPrivateImpl::Bind(const PP_NetAddress_Private* addr,
   // Send the request, the browser will call us back via BindACK.
   SendBind(*addr);
   return PP_OK_COMPLETIONPENDING;
+}
+
+PP_Bool UDPSocketPrivateImpl::GetBoundAddress(PP_NetAddress_Private* addr) {
+  if (!addr || !bound_ || closed_)
+    return PP_FALSE;
+
+  *addr = bound_addr_;
+  return PP_TRUE;
 }
 
 int32_t UDPSocketPrivateImpl::RecvFrom(char* buffer,
@@ -122,7 +130,9 @@ void UDPSocketPrivateImpl::Close() {
   PostAbortIfNecessary(&sendto_callback_);
 }
 
-void UDPSocketPrivateImpl::OnBindCompleted(bool succeeded) {
+void UDPSocketPrivateImpl::OnBindCompleted(
+    bool succeeded,
+    const PP_NetAddress_Private& addr) {
   if (!TrackedCallback::IsPending(bind_callback_)) {
     NOTREACHED();
     return;
@@ -131,8 +141,10 @@ void UDPSocketPrivateImpl::OnBindCompleted(bool succeeded) {
   if (succeeded)
     bound_ = true;
 
+  bound_addr_ = addr;
+
   TrackedCallback::ClearAndRun(&bind_callback_,
-                               succeeded ? PP_OK : PP_ERROR_FAILED);
+      succeeded ? PP_OK : PP_ERROR_FAILED);
 }
 
 void UDPSocketPrivateImpl::OnRecvFromCompleted(
@@ -180,6 +192,9 @@ void UDPSocketPrivateImpl::Init(uint32 socket_id) {
   recvfrom_addr_.size = 0;
   memset(recvfrom_addr_.data, 0,
          arraysize(recvfrom_addr_.data) * sizeof(*recvfrom_addr_.data));
+  bound_addr_.size = 0;
+  memset(bound_addr_.data, 0,
+         arraysize(bound_addr_.data) * sizeof(*bound_addr_.data));
 }
 
 void UDPSocketPrivateImpl::PostAbortIfNecessary(

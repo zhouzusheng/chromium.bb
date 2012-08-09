@@ -44,12 +44,14 @@ public:
 
     static bool isSMILElement(Node*);
 
-    virtual void parseMappedAttribute(Attribute*);
-    virtual void attributeChanged(Attribute*, bool preserveDecls);
+    bool isSupportedAttribute(const QualifiedName&);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
     virtual void insertedIntoDocument();
     virtual void removedFromDocument();
     
     virtual bool hasValidAttributeType() = 0;
+    virtual void animationAttributeChanged() = 0;
 
     SMILTimeContainer* timeContainer() const { return m_timeContainer.get(); }
 
@@ -73,8 +75,6 @@ public:
     };
 
     FillMode fill() const;
-
-    String xlinkHref() const;
 
     SMILTime dur() const;
     SMILTime repeatDur() const;
@@ -109,18 +109,18 @@ public:
     virtual void applyResultsToTarget() = 0;
 
 protected:
-    void addBeginTime(SMILTime eventTime, SMILTime endTime);
-    void addEndTime(SMILTime eventTime, SMILTime endTime);
+    void addBeginTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin = SMILTimeWithOrigin::ParserOrigin);
+    void addEndTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin = SMILTimeWithOrigin::ParserOrigin);
 
     void setInactive() { m_activeState = Inactive; }
 
     // Sub-classes may need to take action when the target is changed.
-    virtual void targetElementDidChange(SVGElement*) { }
+    virtual void targetElementWillChange(SVGElement* currentTarget, SVGElement* newTarget);
+    virtual void endedActiveInterval();
 
 private:
     virtual void startedActiveInterval() = 0;
     virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) = 0;
-    virtual void endedActiveInterval() = 0;
 
     enum BeginOrEnd {
         Begin,
@@ -202,8 +202,8 @@ private:
     TimeDependentSet m_timeDependents;
 
     // Instance time lists
-    Vector<SMILTime> m_beginTimes;
-    Vector<SMILTime> m_endTimes;
+    Vector<SMILTimeWithOrigin> m_beginTimes;
+    Vector<SMILTimeWithOrigin> m_endTimes;
 
     // This is the upcoming or current interval
     SMILTime m_intervalBegin;

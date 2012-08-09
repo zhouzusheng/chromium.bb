@@ -1,5 +1,5 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -34,9 +34,6 @@ def _ReadFirstIdsFromFile(filename, defines):
   # parameter of the .grd file rather than of the resource_ids file.
   src_root_dir = os.path.abspath(os.path.join(os.path.dirname(filename),
                                               first_ids_dict['SRCDIR']))
-  # Special case for testing.
-  if first_ids_dict['SRCDIR'] == '':
-    src_root_dir = ''
 
   def ReplaceVariable(matchobj):
     for key, value in defines.iteritems():

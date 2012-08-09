@@ -71,22 +71,6 @@ void ScrollableArea::setScrollOrigin(const IntPoint& origin)
         m_scrollOriginChanged = true;
     }
 }
- 
-void ScrollableArea::setScrollOriginX(int x)
-{
-    if (m_scrollOrigin.x() != x) {
-        m_scrollOrigin.setX(x);
-        m_scrollOriginChanged = true;
-    }
-}
-
-void ScrollableArea::setScrollOriginY(int y)
-{
-    if (m_scrollOrigin.y() != y) {
-        m_scrollOrigin.setY(y);
-        m_scrollOriginChanged = true;
-    }
-}
 
 bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
 {
@@ -117,9 +101,11 @@ bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granula
     case ScrollByPixel:
         step = scrollbar->pixelStep();
         break;
+    case ScrollByPixelVelocity:
+        break;
     }
 
-    if (direction == ScrollUp || direction == ScrollLeft)
+    if (granularity != ScrollByPixelVelocity && (direction == ScrollUp || direction == ScrollLeft))
         multiplier = -multiplier;
 
     return scrollAnimator()->scroll(orientation, granularity, step, multiplier);
@@ -133,48 +119,21 @@ void ScrollableArea::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 void ScrollableArea::scrollToOffsetWithoutAnimation(ScrollbarOrientation orientation, float offset)
 {
     if (orientation == HorizontalScrollbar)
-        scrollToXOffsetWithoutAnimation(offset);
+        scrollToOffsetWithoutAnimation(FloatPoint(offset, scrollAnimator()->currentPosition().y()));
     else
-        scrollToYOffsetWithoutAnimation(offset);
+        scrollToOffsetWithoutAnimation(FloatPoint(scrollAnimator()->currentPosition().x(), offset));
 }
 
-void ScrollableArea::scrollToXOffsetWithoutAnimation(float x)
+void ScrollableArea::notifyScrollPositionChanged(const IntPoint& position)
 {
-    scrollToOffsetWithoutAnimation(FloatPoint(x, scrollAnimator()->currentPosition().y()));
+    scrollPositionChanged(position);
+    scrollAnimator()->setCurrentPosition(position);
 }
 
-void ScrollableArea::scrollToYOffsetWithoutAnimation(float y)
-{
-    scrollToOffsetWithoutAnimation(FloatPoint(scrollAnimator()->currentPosition().x(), y));
-}
-
-void ScrollableArea::zoomAnimatorTransformChanged(float, float, float, ZoomAnimationState)
-{
-    // Requires FrameView to override this.
-}
-
-bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
-{
-    return scrollAnimator()->handleWheelEvent(wheelEvent);
-}
-
-#if ENABLE(GESTURE_EVENTS)
-void ScrollableArea::handleGestureEvent(const PlatformGestureEvent& gestureEvent)
-{
-    scrollAnimator()->handleGestureEvent(gestureEvent);
-}
-#endif
-
-// NOTE: Only called from Internals for testing.
-void ScrollableArea::setScrollOffsetFromInternals(const IntPoint& offset)
-{
-    setScrollOffsetFromAnimation(offset);
-}
-
-void ScrollableArea::setScrollOffsetFromAnimation(const IntPoint& offset)
+void ScrollableArea::scrollPositionChanged(const IntPoint& position)
 {
     // Tell the derived class to scroll its contents.
-    setScrollOffset(offset);
+    setScrollOffset(position);
 
     Scrollbar* verticalScrollbar = this->verticalScrollbar();
 
@@ -198,6 +157,27 @@ void ScrollableArea::setScrollOffsetFromAnimation(const IntPoint& offset)
         if (verticalScrollbar->isOverlayScrollbar() && !hasLayerForVerticalScrollbar())
             verticalScrollbar->invalidate();
     }
+
+    scrollAnimator()->notifyContentAreaScrolled();
+}
+
+bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
+{
+    return scrollAnimator()->handleWheelEvent(wheelEvent);
+}
+
+// NOTE: Only called from Internals for testing.
+void ScrollableArea::setScrollOffsetFromInternals(const IntPoint& offset)
+{
+    setScrollOffsetFromAnimation(offset);
+}
+
+void ScrollableArea::setScrollOffsetFromAnimation(const IntPoint& offset)
+{
+    if (requestScrollPositionUpdate(offset))
+        return;
+
+    scrollPositionChanged(offset);
 }
 
 void ScrollableArea::willStartLiveResize()
@@ -205,7 +185,8 @@ void ScrollableArea::willStartLiveResize()
     if (m_inLiveResize)
         return;
     m_inLiveResize = true;
-    scrollAnimator()->willStartLiveResize();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->willStartLiveResize();
 }
 
 void ScrollableArea::willEndLiveResize()
@@ -213,27 +194,32 @@ void ScrollableArea::willEndLiveResize()
     if (!m_inLiveResize)
         return;
     m_inLiveResize = false;
-    scrollAnimator()->willEndLiveResize();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->willEndLiveResize();
 }    
 
 void ScrollableArea::contentAreaWillPaint() const
 {
-    scrollAnimator()->contentAreaWillPaint();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->contentAreaWillPaint();
 }
 
 void ScrollableArea::mouseEnteredContentArea() const
 {
-    scrollAnimator()->mouseEnteredContentArea();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->mouseEnteredContentArea();
 }
 
 void ScrollableArea::mouseExitedContentArea() const
 {
-    scrollAnimator()->mouseEnteredContentArea();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->mouseEnteredContentArea();
 }
 
 void ScrollableArea::mouseMovedInContentArea() const
 {
-    scrollAnimator()->mouseMovedInContentArea();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->mouseMovedInContentArea();
 }
 
 void ScrollableArea::mouseEnteredScrollbar(Scrollbar* scrollbar) const
@@ -248,12 +234,14 @@ void ScrollableArea::mouseExitedScrollbar(Scrollbar* scrollbar) const
 
 void ScrollableArea::contentAreaDidShow() const
 {
-    scrollAnimator()->contentAreaDidShow();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->contentAreaDidShow();
 }
 
 void ScrollableArea::contentAreaDidHide() const
 {
-    scrollAnimator()->contentAreaDidHide();
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->contentAreaDidHide();
 }
 
 void ScrollableArea::didAddVerticalScrollbar(Scrollbar* scrollbar)
@@ -277,14 +265,15 @@ void ScrollableArea::didAddHorizontalScrollbar(Scrollbar* scrollbar)
     setScrollbarOverlayStyle(scrollbarOverlayStyle());
 }
 
-void ScrollableArea::contentsResized()
-{
-    scrollAnimator()->contentsResized();
-}
-
 void ScrollableArea::willRemoveHorizontalScrollbar(Scrollbar* scrollbar)
 {
     scrollAnimator()->willRemoveHorizontalScrollbar(scrollbar);
+}
+
+void ScrollableArea::contentsResized()
+{
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->contentsResized();
 }
 
 bool ScrollableArea::hasOverlayScrollbars() const
@@ -308,40 +297,19 @@ void ScrollableArea::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle
     }
 }
 
-bool ScrollableArea::isPinnedInBothDirections(const IntSize& scrollDelta) const
-{
-    return isPinnedHorizontallyInDirection(scrollDelta.width()) && isPinnedVerticallyInDirection(scrollDelta.height());
-}
-
-bool ScrollableArea::isPinnedHorizontallyInDirection(int horizontalScrollDelta) const
-{
-    if (horizontalScrollDelta < 0 && isHorizontalScrollerPinnedToMinimumPosition())
-        return true;
-    if (horizontalScrollDelta > 0 && isHorizontalScrollerPinnedToMaximumPosition())
-        return true;
-    return false;
-}
-
-bool ScrollableArea::isPinnedVerticallyInDirection(int verticalScrollDelta) const
-{
-    if (verticalScrollDelta < 0 && isVerticalScrollerPinnedToMinimumPosition())
-        return true;
-    if (verticalScrollDelta > 0 && isVerticalScrollerPinnedToMaximumPosition())
-        return true;
-    return false;
-}
-
 void ScrollableArea::invalidateScrollbar(Scrollbar* scrollbar, const IntRect& rect)
 {
 #if USE(ACCELERATED_COMPOSITING)
     if (scrollbar == horizontalScrollbar()) {
         if (GraphicsLayer* graphicsLayer = layerForHorizontalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
+            graphicsLayer->setContentsNeedsDisplay();
             return;
         }
     } else if (scrollbar == verticalScrollbar()) {
         if (GraphicsLayer* graphicsLayer = layerForVerticalScrollbar()) {
             graphicsLayer->setNeedsDisplay();
+            graphicsLayer->setContentsNeedsDisplay();
             return;
         }
     }
@@ -385,6 +353,12 @@ bool ScrollableArea::hasLayerForScrollCorner() const
 #else
     return false;
 #endif
+}
+
+void ScrollableArea::serviceScrollAnimations()
+{
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        scrollAnimator->serviceScrollAnimations();
 }
 
 } // namespace WebCore

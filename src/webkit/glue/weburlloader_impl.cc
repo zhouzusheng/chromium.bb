@@ -35,6 +35,7 @@
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webkitplatformsupport_impl.h"
 #include "webkit/glue/weburlrequest_extradata_impl.h"
+#include "webkit/glue/weburlresponse_extradata_impl.h"
 
 using base::Time;
 using base::TimeTicks;
@@ -132,7 +133,7 @@ bool GetInfoFromDataURL(const GURL& url,
     info->mime_type.swap(mime_type);
     info->charset.swap(charset);
     info->security_info.clear();
-    info->content_length = -1;
+    info->content_length = data->length();
     info->encoded_data_length = 0;
 
     return true;
@@ -170,6 +171,8 @@ void PopulateURLResponse(
   response->setConnectionID(info.connection_id);
   response->setConnectionReused(info.connection_reused);
   response->setDownloadFilePath(FilePathToWebString(info.download_file_path));
+  response->setExtraData(new WebURLResponseExtraDataImpl(
+      info.npn_negotiated_protocol));
 
   const ResourceLoadTimingInfo& timing_info = info.load_timing;
   if (!timing_info.base_time.is_null()) {
@@ -564,7 +567,7 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
     std::string mime_type;
     std::string charset;
-    bool had_charset;
+    bool had_charset = false;
     std::string boundary;
     net::HttpUtil::ParseContentType(content_type, &mime_type, &charset,
                                     &had_charset, &boundary);

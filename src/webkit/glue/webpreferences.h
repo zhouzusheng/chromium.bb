@@ -43,6 +43,7 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   int default_fixed_font_size;
   int minimum_font_size;
   int minimum_logical_font_size;
+  int default_device_scale_factor;
   std::string default_encoding;
   bool javascript_enabled;
   bool web_security_enabled;
@@ -86,21 +87,22 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool experimental_webgl_enabled;
   bool gl_multisampling_enabled;
   bool privileged_webgl_extensions_enabled;
+  bool webgl_errors_to_console_enabled;
   bool show_composited_layer_borders;
   bool show_composited_layer_tree;
   bool show_fps_counter;
   bool asynchronous_spell_checking_enabled;
   bool unified_textchecker_enabled;
+  bool threaded_animation_enabled;
   bool accelerated_compositing_enabled;
-  bool threaded_compositing_enabled;
   bool force_compositing_mode;
-  bool allow_webui_compositing;
   bool composite_to_texture_enabled;
   bool fixed_position_compositing_enabled;
   bool accelerated_layers_enabled;
   bool accelerated_animation_enabled;
   bool accelerated_video_enabled;
   bool accelerated_2d_canvas_enabled;
+  bool deferred_2d_canvas_enabled;
   bool accelerated_painting_enabled;
   bool accelerated_filters_enabled;
   bool accelerated_plugins_enabled;
@@ -110,11 +112,13 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
+  bool password_echo_enabled;
   bool should_print_backgrounds;
   bool enable_scroll_animator;
   bool hixie76_websocket_protocol_enabled;
   bool visual_word_movement_enabled;
   bool per_tile_painting_enabled;
+  bool css_regions_enabled;
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for
   // the embedder to use the same default value.

@@ -320,10 +320,11 @@ void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ScriptExecutionContext::Ta
     m_loadingDocument->postTask(task);
 }
 
-void WebSharedWorkerImpl::postTaskForModeToWorkerContext(
+bool WebSharedWorkerImpl::postTaskForModeToWorkerContext(
     PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
 {
     m_workerThread->runLoop().postTaskForMode(task, mode);
+    return true;
 }
 
 
@@ -443,6 +444,7 @@ static void dispatchOnInspectorBackendTask(ScriptExecutionContext* context, cons
 void WebSharedWorkerImpl::dispatchDevToolsMessage(const WebString& message)
 {
     workerThread()->runLoop().postTaskForMode(createCallbackTask(dispatchOnInspectorBackendTask, String(message)), WorkerDebuggerAgent::debuggerTaskMode);
+    WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(workerThread());
 }
 
 WebSharedWorker* WebSharedWorker::create(WebSharedWorkerClient* client)

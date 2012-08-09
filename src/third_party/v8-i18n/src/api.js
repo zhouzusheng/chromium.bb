@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,48 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO(cira): Rename v8Locale into LocaleInfo once we have stable API.
+//
+// WARNING: This API is deprecated and will soon be replaced by ECMAScript
+// Globalization API as soon as that specification becomes stable.
+//
+
 /**
- * LocaleInfo class is an aggregate class of all i18n API calls.
- * @param {Object} settings - localeID and regionID to create LocaleInfo from.
- *   {Array.<string>|string} settings.localeID -
- *     Unicode identifier of the locale.
- *     See http://unicode.org/reports/tr35/#BCP_47_Conformance
- *   {string} settings.regionID - ISO3166 region ID with addition of
- *     invalid, undefined and reserved region codes.
+ * v8Locale class is an aggregate class of all i18n API calls.
+ * @param {string} localeID - Unicode identifier of the locale to create
+ *   v8Locale from. See http://unicode.org/reports/tr35/#BCP_47_Conformance
  * @constructor
  */
-v8Locale = function(settings) {
+v8Locale = function(localeID) {
   native function NativeJSLocale();
+  var properties;
 
-  // Assume user wanted to do v8Locale("sr");
-  if (typeof(settings) === "string") {
-    settings = {'localeID': settings};
+  // Make sure we don't pollute the global object if we are called without 'new'
+  if (!(this instanceof v8Locale)) {
+    return new v8Locale(localeID);
   }
 
-  var properties = NativeJSLocale(
-      v8Locale.__createSettingsOrDefault(settings, {'localeID': 'root'}));
+  if (typeof(localeID) !== 'string') {
+    localeID = 'root';
+  }
+
+  properties = NativeJSLocale({'localeID': localeID});
 
   // Keep the resolved ICU locale ID around to avoid resolving localeID to
   // ICU locale ID every time BreakIterator, Collator and so forth are called.
   this.__icuLocaleID = properties.icuLocaleID;
-  this.options = {'localeID': properties.localeID,
-                  'regionID': properties.regionID};
-};
-
-/**
- * Clones existing locale with possible overrides for some of the options.
- * @param {!Object} settings - overrides for current locale settings.
- * @returns {Object} - new LocaleInfo object.
- */
-v8Locale.prototype.derive = function(settings) {
-  return new v8Locale(
-      v8Locale.__createSettingsOrDefault(settings, this.options));
+  this.options = {'localeID': properties.localeID};
+  
+  return this;
 };
 
 /**
  * v8BreakIterator class implements locale aware segmenatation.
- * It is not part of EcmaScript proposal.
+ * It is not part of ECMAScript proposal.
  * @param {Object} locale - locale object to pass to break
  *   iterator implementation.
  * @param {string} type - type of segmenatation:
@@ -69,9 +64,7 @@ v8Locale.v8BreakIterator = function(locale, type) {
 
   locale = v8Locale.__createLocaleOrDefault(locale);
   // BCP47 ID would work in this case, but we use ICU locale for consistency.
-  var iterator = NativeJSBreakIterator(locale.__icuLocaleID, type);
-  iterator.type = type;
-  return iterator;
+  return NativeJSBreakIterator(locale.__icuLocaleID, type);
 };
 
 /**
@@ -93,11 +86,9 @@ v8Locale.v8BreakIterator.BreakType = {
  * @returns {Object} - new v8BreakIterator object.
  */
 v8Locale.prototype.v8CreateBreakIterator = function(type) {
-  return new v8Locale.v8BreakIterator(this, type);
+  return v8Locale.v8BreakIterator(this, type);
 };
 
-// TODO(jungshik): Set |collator.options| to actually recognized / resolved
-// values.
 /**
  * Collator class implements locale-aware sort.
  * @param {Object} locale - locale object to pass to collator implementation.
@@ -111,10 +102,13 @@ v8Locale.prototype.v8CreateBreakIterator = function(type) {
 v8Locale.Collator = function(locale, settings) {
   native function NativeJSCollator();
 
+  var cleanSettings = v8Locale.__copyOptions(
+    {}, settings,
+    ['ignoreCase', 'ignoreAccents', 'numeric']
+  );
+  
   locale = v8Locale.__createLocaleOrDefault(locale);
-  var collator = NativeJSCollator(
-      locale.__icuLocaleID, v8Locale.__createSettingsOrDefault(settings, {}));
-  return collator;
+  return NativeJSCollator(locale.__icuLocaleID, cleanSettings);
 };
 
 /**
@@ -123,7 +117,7 @@ v8Locale.Collator = function(locale, settings) {
  * @returns {Object} - new Collator object.
  */
 v8Locale.prototype.createCollator = function(settings) {
-  return new v8Locale.Collator(this, settings);
+  return v8Locale.Collator(this, settings);
 };
 
 /**
@@ -132,83 +126,29 @@ v8Locale.prototype.createCollator = function(settings) {
  * @param {Object} locale - locale object to pass to formatter.
  * @param {Object} settings - formatting flags:
  *   - skeleton
- *   - dateStyle
- *   - timeStyle
+ *   - dateType
  * @private
  * @constructor
  */
 v8Locale.__DateTimeFormat = function(locale, settings) {
   native function NativeJSDateTimeFormat();
 
-  settings = v8Locale.__createSettingsOrDefault(settings, {});
+  var cleanSettings;
+  var validTypes = /^(short|medium|long|full)$/;
 
-  var cleanSettings = {};
-  if (settings.hasOwnProperty('skeleton')) {
-    cleanSettings['skeleton'] = settings['skeleton'];
-  } else {
-    cleanSettings = {};
-    if (settings.hasOwnProperty('dateStyle')) {
-      var ds = settings['dateStyle'];
-      if (!/^(short|medium|long|full)$/.test(ds)) ds = 'short';
-      cleanSettings['dateStyle'] = ds;
-    } else if (settings.hasOwnProperty('dateType')) {
-      // Obsolete. New spec requires dateStyle, but we'll keep this around
-      // for current users.
-      // TODO(cira): Remove when all internal users switch to dateStyle.
-      var dt = settings['dateType'];
-      if (!/^(short|medium|long|full)$/.test(dt)) dt = 'short';
-      cleanSettings['dateStyle'] = dt;
+  cleanSettings = v8Locale.__copyOptions({}, settings, 'skeleton');
+  if (cleanSettings.skeleton === undefined) {
+    if (settings && settings.dateType && validTypes.test(settings.dateType)) {
+      cleanSettings.dateStyle = settings.dateType;
+    } else {
+      // Default is to show short date and time.
+      cleanSettings.dateStyle = 'short';
+      cleanSettings.timeStyle = 'short';
     }
-
-    if (settings.hasOwnProperty('timeStyle')) {
-      var ts = settings['timeStyle'];
-      if (!/^(short|medium|long|full)$/.test(ts)) ts = 'short';
-      cleanSettings['timeStyle'] = ts;
-    } else if (settings.hasOwnProperty('timeType')) {
-      // TODO(cira): Remove when all internal users switch to timeStyle.
-      var tt = settings['timeType'];
-      if (!/^(short|medium|long|full)$/.test(tt)) tt = 'short';
-      cleanSettings['timeStyle'] = tt;
-    }
-  }
-
-  // Default is to show short date and time.
-  if (!cleanSettings.hasOwnProperty('skeleton') &&
-      !cleanSettings.hasOwnProperty('dateStyle') &&
-      !cleanSettings.hasOwnProperty('timeStyle')) {
-    cleanSettings = {'dateStyle': 'short',
-                     'timeStyle': 'short'};
   }
 
   locale = v8Locale.__createLocaleOrDefault(locale);
-  var formatter = NativeJSDateTimeFormat(locale.__icuLocaleID, cleanSettings);
-
-  // NativeJSDateTimeFormat creates formatter.options for us, we just need
-  // to append actual settings to it.
-  for (key in cleanSettings) {
-    formatter.options[key] = cleanSettings[key];
-  }
-
-  /**
-   * Clones existing date time format with possible overrides for some
-   * of the options.
-   * @param {!Object} overrideSettings - overrides for current format settings.
-   * @returns {Object} - new DateTimeFormat object.
-   * @public
-   */
-  formatter.derive = function(overrideSettings) {
-    // To remove a setting user can specify undefined as its value. We'll remove
-    // it from the map in that case.
-    for (var prop in overrideSettings) {
-      if (settings.hasOwnProperty(prop) && !overrideSettings[prop]) {
-        delete settings[prop];
-      }
-    }
-    return new v8Locale.__DateTimeFormat(
-        locale, v8Locale.__createSettingsOrDefault(overrideSettings, settings));
-  };
-
-  return formatter;
+  return NativeJSDateTimeFormat(locale.__icuLocaleID, cleanSettings);
 };
 
 /**
@@ -217,138 +157,39 @@ v8Locale.__DateTimeFormat = function(locale, settings) {
  * @returns {Object} - new DateTimeFormat object.
  */
 v8Locale.prototype.createDateTimeFormat = function(settings) {
-  return new v8Locale.__DateTimeFormat(this, settings);
+  return v8Locale.__DateTimeFormat(this, settings);
 };
 
 /**
- * NumberFormat class implements locale-aware number formatting.
- * Constructor is not part of public API.
- * @param {Object} locale - locale object to pass to formatter.
- * @param {Object} settings - formatting flags:
- *   - skeleton
- *   - pattern
- *   - style - decimal, currency, percent or scientific
- *   - currencyCode - ISO 4217 3-letter currency code
- * @private
- * @constructor
- */
-v8Locale.__NumberFormat = function(locale, settings) {
-  native function NativeJSNumberFormat();
-
-  settings = v8Locale.__createSettingsOrDefault(settings, {});
-
-  var cleanSettings = {};
-  if (settings.hasOwnProperty('skeleton')) {
-    // Assign skeleton to cleanSettings and fix invalid currency pattern
-    // if present - 'ooxo' becomes 'o'.
-    cleanSettings['skeleton'] =
-        settings['skeleton'].replace(/\u00a4+[^\u00a4]+\u00a4+/g, '\u00a4');
-  } else if (settings.hasOwnProperty('pattern')) {
-    cleanSettings['pattern'] = settings['pattern'];
-  } else if (settings.hasOwnProperty('style')) {
-    var style = settings['style'];
-    if (!/^(decimal|currency|percent|scientific)$/.test(style)) {
-      style = 'decimal';
-    }
-    cleanSettings['style'] = style;
-  }
-
-  // Default is to show decimal style.
-  if (!cleanSettings.hasOwnProperty('skeleton') &&
-      !cleanSettings.hasOwnProperty('pattern') &&
-      !cleanSettings.hasOwnProperty('style')) {
-    cleanSettings = {'style': 'decimal'};
-  }
-
-  // Add currency code if available and valid (3-letter ASCII code).
-  if (settings.hasOwnProperty('currencyCode') &&
-      /^[a-zA-Z]{3}$/.test(settings['currencyCode'])) {
-    cleanSettings['currencyCode'] = settings['currencyCode'].toUpperCase();
-  }
-
-  locale = v8Locale.__createLocaleOrDefault(locale);
-  // Pass in region ID for proper currency detection. Use ZZ if region is empty.
-  var region = locale.options.regionID !== '' ? locale.options.regionID : 'ZZ';
-  var formatter = NativeJSNumberFormat(
-      locale.__icuLocaleID, 'und_' + region, cleanSettings);
-
-  // ICU doesn't always uppercase the currency code.
-  if (formatter.options.hasOwnProperty('currencyCode')) {
-    formatter.options['currencyCode'] =
-        formatter.options['currencyCode'].toUpperCase();
-  }
-
-  for (key in cleanSettings) {
-    // Don't overwrite keys that are alredy in.
-    if (formatter.options.hasOwnProperty(key)) continue;
-
-    formatter.options[key] = cleanSettings[key];
-  }
-
-  /**
-   * Clones existing number format with possible overrides for some
-   * of the options.
-   * @param {!Object} overrideSettings - overrides for current format settings.
-   * @returns {Object} - new or cached NumberFormat object.
-   * @public
-   */
-  formatter.derive = function(overrideSettings) {
-    // To remove a setting user can specify undefined as its value. We'll remove
-    // it from the map in that case.
-    for (var prop in overrideSettings) {
-      if (settings.hasOwnProperty(prop) && !overrideSettings[prop]) {
-        delete settings[prop];
-      }
-    }
-    return new v8Locale.__NumberFormat(
-        locale, v8Locale.__createSettingsOrDefault(overrideSettings, settings));
-  };
-
-  return formatter;
-};
-
-/**
- * Creates new NumberFormat based on current locale.
- * @param {Object} - formatting flags. See constructor.
- * @returns {Object} - new or cached NumberFormat object.
- */
-v8Locale.prototype.createNumberFormat = function(settings) {
-  return new v8Locale.__NumberFormat(this, settings);
-};
-
-/**
- * Merges user settings and defaults.
- * Settings that are not of object type are rejected.
- * Actual property values are not validated, but whitespace is trimmed if they
+ * Add values of listed options to the target object, if the values exist and
  * are strings.
- * @param {!Object} settings - user provided settings.
- * @param {!Object} defaults - default values for this type of settings.
- * @returns {Object} - valid settings object.
+ * @param {Object} targetObject - target object.
+ * @param {Object} sourceObject - source object.
+ * @param {Array.<string>|string} optionList - an option name or a list of
+ *   option names.
+ * @returns {Object} - reference to potentially modified targetObject.
  * @private
  */
-v8Locale.__createSettingsOrDefault = function(settings, defaults) {
-  if (!settings || typeof(settings) !== 'object' ) {
-    return defaults;
-  }
-  for (var key in defaults) {
-    if (!settings.hasOwnProperty(key)) {
-      settings[key] = defaults[key];
-    }
-  }
-  // Clean up settings.
-  for (var key in settings) {
-    // Trim whitespace.
-    if (typeof(settings[key]) === "string") {
-      settings[key] = settings[key].trim();
-    }
-    // Remove all properties that are set to undefined/null. This allows
-    // derive method to remove a setting we don't need anymore.
-    if (!settings[key]) {
-      delete settings[key];
-    }
+v8Locale.__copyOptions = function(targetObject, sourceObject, optionList) {
+  var i, option, value;
+
+  if (!sourceObject) {
+    return targetObject;
   }
 
-  return settings;
+  if (typeof(optionList) === 'string') {
+    optionList = [optionList];
+  }
+  
+  for (i = 0; i < optionList.length; i += 1) {
+    option = optionList[i];
+    value = sourceObject[option];
+    if (typeof(value) === 'string') {
+      targetObject[option] = value;
+    }
+  }
+  
+  return targetObject;
 };
 
 /**

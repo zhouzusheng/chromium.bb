@@ -40,7 +40,8 @@ class MEDIA_EXPORT GpuVideoDecoder
 
     // Allocate & delete native textures.
     virtual bool CreateTextures(int32 count, const gfx::Size& size,
-                                std::vector<uint32>* texture_ids) = 0;
+                                std::vector<uint32>* texture_ids,
+                                uint32* texture_target) = 0;
     virtual void DeleteTexture(uint32 texture_id) = 0;
 
     // Allocate & return a shared memory segment.  Caller is responsible for
@@ -53,20 +54,21 @@ class MEDIA_EXPORT GpuVideoDecoder
   };
 
   GpuVideoDecoder(MessageLoop* message_loop,
+                  MessageLoop* vda_loop,
                   const scoped_refptr<Factories>& factories);
   virtual ~GpuVideoDecoder();
 
   // Filter implementation.
   virtual void Stop(const base::Closure& callback) OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) OVERRIDE;
+  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
   virtual void Pause(const base::Closure& callback) OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
 
   // VideoDecoder implementation.
   virtual void Initialize(DemuxerStream* demuxer_stream,
-                          const PipelineStatusCB& callback,
-                          const StatisticsCallback& stats_callback) OVERRIDE;
-  virtual void Read(const ReadCB& callback) OVERRIDE;
+                          const PipelineStatusCB& status_cb,
+                          const StatisticsCB& statistics_cb) OVERRIDE;
+  virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual const gfx::Size& natural_size() OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
   virtual void PrepareForShutdownHack() OVERRIDE;
@@ -132,7 +134,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   // Return a shared-memory segment to the available pool.
   void PutSHM(SHMBuffer* shm_buffer);
 
-  StatisticsCallback statistics_callback_;
+  StatisticsCB statistics_cb_;
 
   // TODO(scherkus): I think this should be calculated by VideoRenderers based
   // on information provided by VideoDecoders (i.e., aspect ratio).
@@ -149,10 +151,10 @@ class MEDIA_EXPORT GpuVideoDecoder
   // if they arrive on other loops.
   scoped_refptr<base::MessageLoopProxy> gvd_loop_proxy_;
 
-  // Creation message loop (typically the render thread).  All calls to vda_
-  // must be made on this loop (and beware this loop is paused during the
-  // Pause/Flush/Stop dance PipelineImpl::Stop() goes through).
-  scoped_refptr<base::MessageLoopProxy> render_loop_proxy_;
+  // Message loop on which to makes all calls to vda_.  (beware this loop may be
+  // paused during the Pause/Flush/Stop dance PipelineImpl::Stop() goes
+  // through).
+  scoped_refptr<base::MessageLoopProxy> vda_loop_proxy_;
 
   scoped_refptr<Factories> factories_;
 
@@ -183,6 +185,9 @@ class MEDIA_EXPORT GpuVideoDecoder
   };
   std::map<int32, BufferPair> bitstream_buffers_in_decoder_;
   std::map<int32, PictureBuffer> picture_buffers_in_decoder_;
+
+  // The texture target used for decoded pictures.
+  uint32 decoder_texture_target_;
 
   struct BufferTimeData {
     BufferTimeData(int32 bbid, base::TimeDelta ts, base::TimeDelta dur);

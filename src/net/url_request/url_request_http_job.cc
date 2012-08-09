@@ -18,7 +18,6 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "net/base/cert_status_flags.h"
-#include "net/base/cookie_monster.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
@@ -29,10 +28,11 @@
 #include "net/base/sdch_manager.h"
 #include "net/base/ssl_cert_request_info.h"
 #include "net/base/ssl_config_service.h"
-#include "net/http/http_mac_signature.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/http/http_status_code.h"
 #include "net/http/http_transaction.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
@@ -47,37 +47,6 @@
 static const char kAvailDictionaryHeader[] = "Avail-Dictionary";
 
 namespace net {
-
-namespace {
-
-void AddAuthorizationHeader(
-    const std::vector<CookieStore::CookieInfo>& cookie_infos,
-    HttpRequestInfo* request_info) {
-  const GURL& url = request_info->url;
-  const std::string& method = request_info->method;
-  std::string request_uri = HttpUtil::PathForRequest(url);
-  const std::string& host = url.host();
-  int port = url.EffectiveIntPort();
-  for (size_t i = 0; i < cookie_infos.size(); ++i) {
-    HttpMacSignature signature;
-    if (!signature.AddStateInfo(cookie_infos[i].name,
-                                cookie_infos[i].creation_date,
-                                cookie_infos[i].mac_key,
-                                cookie_infos[i].mac_algorithm)) {
-      continue;
-    }
-    if (!signature.AddHttpInfo(method, request_uri, host, port))
-      continue;
-    std::string authorization_header;
-    if (!signature.GenerateAuthorizationHeader(&authorization_header))
-      continue;
-    request_info->extra_headers.SetHeader(HttpRequestHeaders::kAuthorization,
-                                          authorization_header);
-    return;  // Only add the first valid header.
-  }
-}
-
-}  // namespace
 
 class URLRequestHttpJob::HttpFilterContext : public FilterContext {
  public:
@@ -351,7 +320,13 @@ void URLRequestHttpJob::StartTransactionInternal() {
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
         &transaction_);
     if (rv == OK) {
+      // TODO(joi): The hard-coded check for "chrome-extension" is
+      // temporary (as of 2012/3/21), intended only to make sure this
+      // change (to throttle only requests originating from
+      // extensions) gets into M19. Right after the M19 branch point,
+      // I will sort this out in a more architecturally-sound way.
       if (!URLRequestThrottlerManager::GetInstance()->enforce_throttling() ||
+          request_->first_party_for_cookies().scheme() != "chrome-extension" ||
           !throttling_entry_->ShouldRejectRequest(request_info_.load_flags)) {
         rv = transaction_->Start(
             &request_info_, start_callback_, request_->net_log());
@@ -508,8 +483,6 @@ void URLRequestHttpJob::OnCookiesLoaded(
     request_info_.extra_headers.SetHeader(
         HttpRequestHeaders::kCookie, cookie_line);
   }
-  if (URLRequest::AreMacCookiesEnabled())
-    AddAuthorizationHeader(cookie_infos, &request_info_);
   DoStartTransaction();
 }
 
@@ -1021,8 +994,9 @@ void URLRequestHttpJob::GetAuthChallengeInfo(
   // sanity checks:
   DCHECK(proxy_auth_state_ == AUTH_STATE_NEED_AUTH ||
          server_auth_state_ == AUTH_STATE_NEED_AUTH);
-  DCHECK(GetResponseHeaders()->response_code() == 401 ||
-         GetResponseHeaders()->response_code() == 407);
+  DCHECK((GetResponseHeaders()->response_code() == HTTP_UNAUTHORIZED) ||
+         (GetResponseHeaders()->response_code() ==
+          HTTP_PROXY_AUTHENTICATION_REQUIRED));
 
   *result = response_info_->auth_challenge;
 }
@@ -1414,36 +1388,11 @@ void URLRequestHttpJob::RecordPerfHistograms(CompletionCause reason) {
     UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeCancel", total_time);
   }
 
-  static bool cache_experiment = false;
-  if (!cache_experiment)
-    cache_experiment = base::FieldTrialList::TrialExists("CacheListSize");
-  if (cache_experiment) {
-    UMA_HISTOGRAM_TIMES(
-        base::FieldTrial::MakeName("Net.HttpJob.TotalTime", "CacheListSize"),
-        total_time);
-    if (reason == FINISHED) {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeSuccess",
-                                     "CacheListSize"),
-          total_time);
-    } else {
-      UMA_HISTOGRAM_TIMES(
-          base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCancel",
-                                     "CacheListSize"),
-          total_time);
-    }
-    if (response_info_) {
-      if (response_info_->was_cached) {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeCached",
-                                       "CacheListSize"),
-            total_time);
-      } else  {
-        UMA_HISTOGRAM_TIMES(
-            base::FieldTrial::MakeName("Net.HttpJob.TotalTimeNotCached",
-                                       "CacheListSize"),
-            total_time);
-      }
+  if (response_info_) {
+    if (response_info_->was_cached) {
+      UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeCached", total_time);
+    } else  {
+      UMA_HISTOGRAM_TIMES("Net.HttpJob.TotalTimeNotCached", total_time);
     }
   }
 

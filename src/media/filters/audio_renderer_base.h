@@ -22,6 +22,7 @@
 #include <deque>
 
 #include "base/synchronization/lock.h"
+#include "media/base/audio_decoder.h"
 #include "media/base/buffers.h"
 #include "media/base/filters.h"
 #include "media/filters/audio_renderer_algorithm_base.h"
@@ -36,14 +37,15 @@ class MEDIA_EXPORT AudioRendererBase : public AudioRenderer {
   // Filter implementation.
   virtual void Play(const base::Closure& callback) OVERRIDE;
   virtual void Pause(const base::Closure& callback) OVERRIDE;
+  virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
-
-  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) OVERRIDE;
+  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
 
   // AudioRenderer implementation.
-  virtual void Initialize(AudioDecoder* decoder,
-                          const base::Closure& init_callback,
-                          const base::Closure& underflow_callback) OVERRIDE;
+  virtual void Initialize(const scoped_refptr<AudioDecoder>& decoder,
+                          const PipelineStatusCB& init_cb,
+                          const base::Closure& underflow_cb,
+                          const TimeCB& time_cb) OVERRIDE;
   virtual bool HasEnded() OVERRIDE;
   virtual void ResumeAfterUnderflow(bool buffer_more_audio) OVERRIDE;
 
@@ -71,9 +73,10 @@ class MEDIA_EXPORT AudioRendererBase : public AudioRenderer {
 
   // Fills the given buffer with audio data by delegating to its |algorithm_|.
   // FillBuffer() also takes care of updating the clock. Returns the number of
-  // bytes copied into |dest|, which may be less than or equal to |len|.
+  // frames copied into |dest|, which may be less than or equal to
+  // |requested_frames|.
   //
-  // If this method is returns less bytes than |len| (including zero), it could
+  // If this method returns fewer frames than |requested_frames|, it could
   // be a sign that the pipeline is stalled or unable to stream the data fast
   // enough.  In such scenarios, the callee should zero out unused portions
   // of their buffer to playback silence.
@@ -93,7 +96,7 @@ class MEDIA_EXPORT AudioRendererBase : public AudioRenderer {
   //
   // Safe to call on any thread.
   uint32 FillBuffer(uint8* dest,
-                    uint32 len,
+                    uint32 requested_frames,
                     const base::TimeDelta& playback_delay);
 
   // Called by OnRenderEndOfStream() or some callback scheduled by derived class
@@ -142,7 +145,7 @@ class MEDIA_EXPORT AudioRendererBase : public AudioRenderer {
   bool pending_read_;
 
   // Keeps track of whether we received and rendered the end of stream buffer.
-  bool recieved_end_of_stream_;
+  bool received_end_of_stream_;
   bool rendered_end_of_stream_;
 
   // Audio time at end of last call to FillBuffer().
@@ -150,12 +153,16 @@ class MEDIA_EXPORT AudioRendererBase : public AudioRenderer {
   base::TimeDelta last_fill_buffer_time_;
 
   // Filter callbacks.
-  base::Closure pause_callback_;
-  FilterStatusCB seek_cb_;
+  base::Closure pause_cb_;
+  PipelineStatusCB seek_cb_;
 
-  base::Closure underflow_callback_;
+  base::Closure underflow_cb_;
+
+  TimeCB time_cb_;
 
   base::TimeDelta seek_timestamp_;
+
+  uint32 bytes_per_frame_;
 
   AudioDecoder::ReadCB read_cb_;
 

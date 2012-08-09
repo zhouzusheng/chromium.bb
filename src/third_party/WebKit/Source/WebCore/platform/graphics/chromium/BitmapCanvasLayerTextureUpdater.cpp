@@ -91,7 +91,8 @@ void BitmapCanvasLayerTextureUpdater::prepareToUpdate(const IntRect& contentRect
     PlatformCanvas::Painter::TextOption textOption =
         borderTexels ? PlatformCanvas::Painter::GrayscaleText : PlatformCanvas::Painter::SubpixelText;
     PlatformCanvas::Painter canvasPainter(&m_canvas, textOption);
-    paintContents(*canvasPainter.context(), contentRect, contentsScale);
+    canvasPainter.skiaContext()->setTrackOpaqueRegion(!layerIsOpaque);
+    paintContents(*canvasPainter.context(), *canvasPainter.skiaContext(), contentRect, contentsScale);
 
     if (!layerIsOpaque)
         *resultingOpaqueRect = canvasPainter.skiaContext()->opaqueRegion().asRect();

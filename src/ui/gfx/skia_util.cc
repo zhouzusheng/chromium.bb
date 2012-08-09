@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,7 @@ namespace gfx {
 
 SkRect RectToSkRect(const gfx::Rect& rect) {
   SkRect r;
-  r.set(SkIntToScalar(rect.x()), SkIntToScalar(rect.y()),
-        SkIntToScalar(rect.right()), SkIntToScalar(rect.bottom()));
+  r.iset(rect.x(), rect.y(), rect.right(), rect.bottom());
   return r;
 }
 
@@ -26,8 +25,8 @@ SkIRect RectToSkIRect(const gfx::Rect& rect) {
 }
 
 gfx::Rect SkRectToRect(const SkRect& rect) {
-  return gfx::Rect(static_cast<int>(rect.fLeft),
-                   static_cast<int>(rect.fTop),
+  return gfx::Rect(static_cast<int>(rect.left()),
+                   static_cast<int>(rect.top()),
                    static_cast<int>(rect.width()),
                    static_cast<int>(rect.height()));
 }
@@ -38,8 +37,8 @@ SkShader* CreateGradientShader(int start_point,
                                SkColor end_color) {
   SkColor grad_colors[2] = { start_color, end_color};
   SkPoint grad_points[2];
-  grad_points[0].set(SkIntToScalar(0), SkIntToScalar(start_point));
-  grad_points[1].set(SkIntToScalar(0), SkIntToScalar(end_point));
+  grad_points[0].iset(0, start_point);
+  grad_points[1].iset(0, end_point);
 
   return SkGradientShader::CreateLinear(
       grad_points, grad_colors, NULL, 2, SkShader::kRepeat_TileMode);

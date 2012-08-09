@@ -47,14 +47,11 @@ PassRefPtr<HTMLTableSectionElement> HTMLTableSectionElement::create(const Qualif
     return adoptRef(new HTMLTableSectionElement(tagName, document));
 }
 
-PassRefPtr<CSSMutableStyleDeclaration> HTMLTableSectionElement::additionalAttributeStyle()
+StylePropertySet* HTMLTableSectionElement::additionalAttributeStyle()
 {
-    ContainerNode* p = parentNode();
-    while (p && !p->hasTagName(tableTag))
-        p = p->parentNode();
-    if (!p)
-        return 0;
-    return static_cast<HTMLTableElement*>(p)->additionalGroupStyle(true);
+    if (HTMLTableElement* table = findParentTable())
+        return table->additionalGroupStyle(true);
+    return 0;
 }
 
 // these functions are rather slow, since we need to get the row at

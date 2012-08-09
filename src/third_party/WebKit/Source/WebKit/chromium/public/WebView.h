@@ -54,6 +54,7 @@ class WebSettings;
 class WebSpellCheckClient;
 class WebString;
 class WebViewClient;
+struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
@@ -260,10 +261,11 @@ public:
     // In auto-resize mode, the view is automatically adjusted to fit the html
     // content within the given bounds.
     virtual void enableAutoResizeMode(
-        bool enable,
         const WebSize& minSize,
         const WebSize& maxSize) = 0;
 
+    // Turn off auto-resize.
+    virtual void disableAutoResizeMode() = 0;
 
     // Media ---------------------------------------------------------------
 
@@ -423,6 +425,14 @@ public:
     // APIs.
     virtual WebGraphicsContext3D* graphicsContext3D() = 0;
 
+    // Context that's in the compositor's share group, but is not the compositor context itself.
+    // Can be used for allocating resources that the compositor will later access.
+    virtual WebGraphicsContext3D* sharedGraphicsContext3D() = 0;
+
+    // Called to inform the WebView that a wheel fling animation was started externally (for instance
+    // by the compositor) but must be completed by the WebView.
+    virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) = 0;
+
     // Visibility -----------------------------------------------------------
 
     // Sets the visibility of the WebView.
@@ -446,7 +456,6 @@ public:
 
     // Simulates a compositor lost context.
     virtual void loseCompositorContext(int numTimes) = 0;
-
 
 protected:
     ~WebView() {}

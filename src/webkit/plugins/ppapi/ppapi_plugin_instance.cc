@@ -10,16 +10,19 @@
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
+#include "base/time.h"
 #include "base/utf_offset_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
-#include "ppapi/c/dev/ppb_gamepad_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
 #include "ppapi/c/dev/ppp_find_dev.h"
 #include "ppapi/c/dev/ppp_selection_dev.h"
+#include "ppapi/c/dev/ppp_text_input_dev.h"
 #include "ppapi/c/dev/ppp_zoom_dev.h"
 #include "ppapi/c/pp_rect.h"
+#include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_core.h"
+#include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
@@ -47,11 +50,13 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "ui/base/range/range.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/event_conversion.h"
 #include "webkit/plugins/ppapi/fullscreen_container.h"
@@ -115,6 +120,7 @@ using WebKit::WebFrame;
 using WebKit::WebInputEvent;
 using WebKit::WebPlugin;
 using WebKit::WebPluginContainer;
+using WebKit::WebScopedUserGesture;
 using WebKit::WebString;
 using WebKit::WebURLRequest;
 using WebKit::WebView;
@@ -219,13 +225,6 @@ COMPILE_ASSERT_MATCHING_ENUM(TypeGrabbing, PP_CURSORTYPE_GRABBING);
 // Do not assert WebCursorInfo::TypeCustom == PP_CURSORTYPE_CUSTOM;
 // PP_CURSORTYPE_CUSTOM is pinned to allow new cursor types.
 
-// Ensure conversion from WebKit::WebGamepads to PP_GamepadsData_Dev is safe.
-// See also DCHECKs in SampleGamepads below.
-COMPILE_ASSERT(sizeof(WebKit::WebGamepads) == sizeof(PP_GamepadsData_Dev),
-               size_difference);
-COMPILE_ASSERT(sizeof(WebKit::WebGamepad) == sizeof(PP_GamepadData_Dev),
-               size_difference);
-
 // Sets |*security_origin| to be the WebKit security origin associated with the
 // document containing the given plugin instance. On success, returns true. If
 // the instance is invalid, returns false and |*security_origin| will be
@@ -289,6 +288,7 @@ PluginInstance::PluginInstance(
       plugin_private_interface_(NULL),
       plugin_pdf_interface_(NULL),
       plugin_selection_interface_(NULL),
+      plugin_textinput_interface_(NULL),
       plugin_zoom_interface_(NULL),
       checked_for_plugin_input_event_interface_(false),
       checked_for_plugin_messaging_interface_(false),
@@ -306,7 +306,10 @@ PluginInstance::PluginInstance(
       text_input_caret_(0, 0, 0, 0),
       text_input_caret_bounds_(0, 0, 0, 0),
       text_input_caret_set_(false),
-      lock_mouse_callback_(PP_BlockUntilComplete()) {
+      selection_caret_(0),
+      selection_anchor_(0),
+      lock_mouse_callback_(PP_BlockUntilComplete()),
+      pending_user_gesture_(0.0) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -350,6 +353,11 @@ PluginInstance::~PluginInstance() {
 void PluginInstance::Delete() {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
+  // Force the MessageChannel to release its "passthrough object" which should
+  // release our last reference to the "InstanceObject" and will probably
+  // destroy it. We want to do this prior to calling DidDestroy in case the
+  // destructor of the instance object tries to use the instance.
+  message_channel_->SetPassthroughObject(NULL);
   instance_interface_->DidDestroy(pp_instance());
 
   if (fullscreen_container_) {
@@ -594,8 +602,7 @@ bool PluginInstance::SendCompositionEventWithUnderlineInformationToPlugin(
   else
     handled = true;  // Unfiltered events are assumed to be handled.
   scoped_refptr<PPB_InputEvent_Shared> event_resource(
-      new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsImpl(),
-                                pp_instance(), event));
+      new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL, pp_instance(), event));
   handled |= PP_ToBool(plugin_input_event_interface_->HandleInputEvent(
       pp_instance(), event_resource->pp_resource()));
   return handled;
@@ -637,6 +644,39 @@ void PluginInstance::UpdateCaretPosition(const gfx::Rect& caret,
 void PluginInstance::SetTextInputType(ui::TextInputType type) {
   text_input_type_ = type;
   delegate()->PluginTextInputTypeChanged(this);
+}
+
+void PluginInstance::SelectionChanged() {
+  // TODO(kinaba): currently the browser always calls RequestSurroundingText.
+  // It can be optimized so that it won't call it back until the information
+  // is really needed.
+
+  // Avoid calling in nested context or else this will reenter the plugin. This
+  // uses a weak pointer rather than exploiting the fact that this class is
+  // refcounted because we don't actually want this operation to affect the
+  // lifetime of the instance.
+  MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&PluginInstance::RequestSurroundingText,
+                 AsWeakPtr(),
+                 static_cast<size_t>(kExtraCharsForTextInput)));
+}
+
+void PluginInstance::UpdateSurroundingText(const std::string& text,
+                                           size_t caret, size_t anchor) {
+  surrounding_text_ = text;
+  selection_caret_ = caret;
+  selection_anchor_ = anchor;
+  delegate()->PluginSelectionChanged(this);
+}
+
+void PluginInstance::GetSurroundingText(string16* text,
+                                        ui::Range* range) const {
+  std::vector<size_t> offsets;
+  offsets.push_back(selection_anchor_);
+  offsets.push_back(selection_caret_);
+  *text = UTF8ToUTF16AndAdjustOffsets(surrounding_text_, &offsets);
+  range->set_start(offsets[0] == string16::npos ? text->size() : offsets[0]);
+  range->set_end(offsets[1] == string16::npos ? text->size() : offsets[1]);
 }
 
 bool PluginInstance::IsPluginAcceptingCompositionEvents() const {
@@ -688,6 +728,15 @@ bool PluginInstance::HandleInputEvent(const WebKit::WebInputEvent& event,
       std::vector< ::ppapi::InputEventData > events;
       CreateInputEventData(event, &events);
 
+      // Allow the user gesture to be pending after the plugin handles the
+      // event. This allows out-of-process plugins to respond to the user
+      // gesture after processing has finished here.
+      WebFrame* frame = container_->element().document().frame();
+      if (frame->isProcessingUserGesture()) {
+        pending_user_gesture_ =
+            ::ppapi::EventTimeToPPTimeTicks(event.timeStampSeconds);
+      }
+
       // Each input event may generate more than one PP_InputEvent.
       for (size_t i = 0; i < events.size(); i++) {
         if (filtered_input_event_mask_ & event_class)
@@ -695,7 +744,7 @@ bool PluginInstance::HandleInputEvent(const WebKit::WebInputEvent& event,
         else
           rv = true;  // Unfiltered events are assumed to be handled.
         scoped_refptr<PPB_InputEvent_Shared> event_resource(
-            new PPB_InputEvent_Shared(PPB_InputEvent_Shared::InitAsImpl(),
+            new PPB_InputEvent_Shared(::ppapi::OBJECT_IS_IMPL,
                                       pp_instance(), events[i]));
 
         rv |= PP_ToBool(plugin_input_event_interface_->HandleInputEvent(
@@ -898,6 +947,16 @@ string16 PluginInstance::GetLinkAtPosition(const gfx::Point& point) {
   return link;
 }
 
+void PluginInstance::RequestSurroundingText(
+    size_t desired_number_of_characters) {
+  // Keep a reference on the stack. See NOTE above.
+  scoped_refptr<PluginInstance> ref(this);
+  if (!LoadTextInputInterface())
+    return;
+  plugin_textinput_interface_->RequestSurroundingText(
+      pp_instance(), desired_number_of_characters);
+}
+
 void PluginInstance::Zoom(double factor, bool text_only) {
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PluginInstance> ref(this);
@@ -1014,6 +1073,16 @@ bool PluginInstance::LoadSelectionInterface() {
   return !!plugin_selection_interface_;
 }
 
+bool PluginInstance::LoadTextInputInterface() {
+  if (!plugin_textinput_interface_) {
+    plugin_textinput_interface_ =
+        static_cast<const PPP_TextInput_Dev*>(module_->GetPluginInterface(
+            PPP_TEXTINPUT_DEV_INTERFACE));
+  }
+
+  return !!plugin_textinput_interface_;
+}
+
 bool PluginInstance::LoadZoomInterface() {
   if (!plugin_zoom_interface_) {
     plugin_zoom_interface_ =
@@ -1052,7 +1121,7 @@ void PluginInstance::SendDidChangeView(const ViewData& previous_view) {
   sent_initial_did_change_view_ = true;
   ScopedPPResource resource(
       ScopedPPResource::PassRef(),
-      (new PPB_View_Shared(PPB_View_Shared::InitAsImpl(),
+      (new PPB_View_Shared(::ppapi::OBJECT_IS_IMPL,
                            pp_instance(), view_data_))->GetReference());
 
   instance_interface_->DidChangeView(pp_instance(), resource,
@@ -1239,19 +1308,15 @@ bool PluginInstance::SetFullscreen(bool fullscreen) {
   if (view_data_.is_fullscreen != desired_fullscreen_state_)
     return false;
 
-  // The browser will allow us to go into fullscreen mode only when processing
-  // a user gesture. This is guaranteed to work with in-process plugins and
-  // out-of-process syncronous proxies, but might be an issue with Flash when
-  // it switches over from PPB_FlashFullscreen.
-  // TODO(polina, bbudge): make this work with asynchronous proxies.
-  WebFrame* frame = container_->element().document().frame();
-  if (fullscreen && !frame->isProcessingUserGesture())
+  if (fullscreen && !IsProcessingUserGesture())
     return false;
 
   VLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
   desired_fullscreen_state_ = fullscreen;
 
   if (fullscreen) {
+    // Create the user gesture in case we're processing one that's pending.
+    WebScopedUserGesture user_gesture;
     // WebKit does not resize the plugin to fill the screen in fullscreen mode,
     // so we will tweak plugin's attributes to support the expected behavior.
     KeepSizeAttributesBeforeFullscreen();
@@ -1335,40 +1400,27 @@ int32_t PluginInstance::Navigate(PPB_URLRequestInfo_Impl* request,
   return PP_OK;
 }
 
+bool PluginInstance::IsRectTopmost(const gfx::Rect& rect) {
+  if (flash_fullscreen_)
+    return true;
+
+#if 0
+  WebView* web_view = container()->element().document().frame()->view();
+  if (!web_view) {
+    NOTREACHED();
+    return false;
+  }
+#else
+//FIXME
+  return container_->isRectTopmost(rect);
+#endif
+}
+
 void PluginInstance::SampleGamepads(PP_Instance instance,
-                                    PP_GamepadsData_Dev* data) {
-
-  // Because the WebKit objects have trivial ctors, using offsetof doesn't
-  // work. Instead use this version based on src/v8/src/globals.h. This
-  // workaround doesn't work in constant expressions as required for
-  // COMPILE_ASSERT, so DCHECK instead.
-
-#define OFFSET_OF(type, field) \
-  (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(4)->field)) - 4)
-
-#define DCHECK_GAMEPADS_OFFSET(webkit_name, pp_name) \
-  DCHECK(OFFSET_OF(WebKit::WebGamepads, webkit_name) \
-             == OFFSET_OF(PP_GamepadsData_Dev, pp_name))
-
-#define DCHECK_GAMEPAD_OFFSET(webkit_name, pp_name) \
-  DCHECK(OFFSET_OF(WebKit::WebGamepad, webkit_name) \
-             == OFFSET_OF(PP_GamepadData_Dev, pp_name))
-
-  DCHECK_GAMEPADS_OFFSET(length, length);
-  DCHECK_GAMEPADS_OFFSET(items, items);
-  DCHECK_GAMEPAD_OFFSET(connected, connected);
-  DCHECK_GAMEPAD_OFFSET(id, id);
-  DCHECK_GAMEPAD_OFFSET(timestamp, timestamp);
-  DCHECK_GAMEPAD_OFFSET(axesLength, axes_length);
-  DCHECK_GAMEPAD_OFFSET(axes, axes);
-  DCHECK_GAMEPAD_OFFSET(buttonsLength, buttons_length);
-  DCHECK_GAMEPAD_OFFSET(buttons, buttons);
-
-#undef OFFSET_OF
-#undef DCHECK_GAMEPADS_OFFSET
-#undef DCHECK_GAMEPAD_OFFSET
-
-  delegate()->SampleGamepads(reinterpret_cast<WebKit::WebGamepads*>(data));
+                                    PP_GamepadsSampleData* data) {
+  WebKit::WebGamepads webkit_data;
+  delegate()->SampleGamepads(&webkit_data);
+  ConvertWebKitGamepadData(webkit_data, data);
 }
 
 bool PluginInstance::IsViewAccelerated() {
@@ -1495,11 +1547,7 @@ bool PluginInstance::PrintRasterOutput(PP_Resource print_output,
   PPB_ImageData_Impl* image =
       static_cast<PPB_ImageData_Impl*>(enter.object());
 
-  // TODO(brettw) this should not require the image to be mapped. It should
-  // instead map on demand. The DCHECK here is to remind you if you see the
-  // assert fire, fix the bug rather than mapping the data.
-  DCHECK(image->is_mapped());
-  if (!image->is_mapped())
+  if (!image->Map())
     return false;
 
   const SkBitmap* bitmap = image->GetMappedBitmap();
@@ -1560,7 +1608,7 @@ bool PluginInstance::DrawJPEGToPlatformDC(
   // However, Skia currently has no JPEG compression code and we cannot
   // depend on gfx/jpeg_codec.h in Skia. So we do the compression here.
   SkAutoLockPixels lock(bitmap);
-  DCHECK(bitmap.getConfig() == SkBitmap::kARGB_8888_Config);
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
   const uint32_t* pixels =
       static_cast<const uint32_t*>(bitmap.getPixels());
   std::vector<unsigned char> compressed_image;
@@ -1600,7 +1648,7 @@ void PluginInstance::DrawSkBitmapToCanvas(
     const gfx::Rect& dest_rect,
     int canvas_height) {
   SkAutoLockPixels lock(bitmap);
-  DCHECK(bitmap.getConfig() == SkBitmap::kARGB_8888_Config);
+  DCHECK(bitmap.config() == SkBitmap::kARGB_8888_Config);
   base::mac::ScopedCFTypeRef<CGDataProviderRef> data_provider(
       CGDataProviderCreateWithData(
           NULL, bitmap.getAddr32(0, 0),
@@ -1647,7 +1695,7 @@ PPB_Graphics3D_Impl* PluginInstance::GetBoundGraphics3D() const {
   return NULL;
 }
 
-void PluginInstance::setBackingTextureId(unsigned int id) {
+void PluginInstance::setBackingTextureId(unsigned int id, bool is_opaque) {
   // If we have a fullscreen_container_ (under PPB_FlashFullscreen)
   // or desired_fullscreen_state is true (under PPB_Fullscreen),
   // then the plugin is fullscreen or transitioning to fullscreen
@@ -1660,8 +1708,10 @@ void PluginInstance::setBackingTextureId(unsigned int id) {
   if (fullscreen_container_ || desired_fullscreen_state_)
     return;
 
-  if (container_)
+  if (container_) {
     container_->setBackingTextureId(id);
+    container_->setOpaque(is_opaque);
+  }
 }
 
 void PluginInstance::AddPluginObject(PluginObject* plugin_object) {
@@ -1679,6 +1729,15 @@ void PluginInstance::RemovePluginObject(PluginObject* plugin_object) {
 bool PluginInstance::IsFullPagePlugin() const {
   WebFrame* frame = container()->element().document().frame();
   return frame->view()->mainFrame()->document().isPluginDocument();
+}
+
+bool PluginInstance::IsProcessingUserGesture() {
+  PP_TimeTicks now =
+      ::ppapi::TimeTicksToPPTimeTicks(base::TimeTicks::Now());
+  // Give a lot of slack so tests won't be flaky. Well behaved plugins will
+  // close the user gesture.
+  const PP_TimeTicks kUserGestureDurationInSeconds = 10.0;
+  return (now - pending_user_gesture_ < kUserGestureDurationInSeconds);
 }
 
 void PluginInstance::OnLockMouseACK(bool succeeded) {
@@ -1720,6 +1779,15 @@ void PluginInstance::SimulateInputEvent(const InputEventData& input_event) {
   }
 }
 
+void PluginInstance::ClosePendingUserGesture(PP_Instance instance,
+                                             PP_TimeTicks timestamp) {
+  // Close the pending user gesture if the plugin had a chance to respond.
+  // Don't close the pending user gesture if the timestamps are equal since
+  // there may be multiple input events with the same timestamp.
+  if (timestamp > pending_user_gesture_)
+    pending_user_gesture_ = 0.0;
+}
+
 PPB_Instance_FunctionAPI* PluginInstance::AsPPB_Instance_FunctionAPI() {
   return this;
 }
@@ -1737,7 +1805,7 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
 
   // Special-case clearing the current device.
   if (!device) {
-    setBackingTextureId(0);
+    setBackingTextureId(0, false);
     InvalidateRect(gfx::Rect());
     return PP_TRUE;
   }
@@ -1762,7 +1830,7 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
       return PP_FALSE;  // Can't bind to more than one instance.
 
     bound_graphics_ = graphics_2d;
-    setBackingTextureId(0);
+    setBackingTextureId(0, graphics_2d->is_always_opaque());
     // BindToInstance will have invalidated the plugin if necessary.
   } else if (graphics_3d) {
     // Make sure graphics can only be bound to the instance it is
@@ -1773,7 +1841,8 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
       return PP_FALSE;
 
     bound_graphics_ = graphics_3d;
-    setBackingTextureId(graphics_3d->GetBackingTextureId());
+    setBackingTextureId(graphics_3d->GetBackingTextureId(),
+                        graphics_3d->IsOpaque());
   } else {
     // The device is not a valid resource type.
     return PP_FALSE;
@@ -1851,9 +1920,24 @@ PP_Var PluginInstance::ExecuteScript(PP_Instance instance,
   return ret;
 }
 
+uint32_t PluginInstance::GetAudioHardwareOutputSampleRate(
+    PP_Instance instance) {
+  return delegate()->GetAudioHardwareOutputSampleRate();
+}
+
+uint32_t PluginInstance::GetAudioHardwareOutputBufferSize(
+    PP_Instance instance) {
+  return delegate()->GetAudioHardwareOutputBufferSize();
+}
+
 PP_Var PluginInstance::GetDefaultCharSet(PP_Instance instance) {
   std::string encoding = delegate()->GetDefaultEncoding();
   return StringVar::StringToPPVar(encoding);
+}
+
+PP_Var PluginInstance::GetFontFamilies(PP_Instance instance) {
+  // No in-process implementation.
+  return PP_MakeUndefined();
 }
 
 void PluginInstance::NumberOfFindResultsChanged(PP_Instance instance,

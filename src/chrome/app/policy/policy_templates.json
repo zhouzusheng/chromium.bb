@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 121
+#   For your editing convenience: highest ID currently used: 144
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -688,9 +688,9 @@
       'type': 'int',
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': False},
-      'example_value': 100,
+      'example_value': 104857600,
       'id': 110,
-      'caption': '''Set disk cache size in megabytes''',
+      'caption': '''Set disk cache size in bytes''',
       'desc': '''Configures the cache size that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached files on the disk.
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided cache size regardless whether the user has specified the '--disk-cache-size' flag or not.
@@ -705,9 +705,9 @@
       'type': 'int',
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': False},
-      'example_value': 250,
+      'example_value': 104857600,
       'id': 111,
-      'caption': '''Set media disk cache size''',
+      'caption': '''Set media disk cache size in bytes''',
       'desc': '''Configures the chache size that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached media files on the disk.
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided cache size regardless whether the user has specified the '--media-cache-size' flag or not.
@@ -752,7 +752,9 @@
 
       If set to disabled site data will not be cleared on exit.
 
-      If this policy is left not set <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the default which is to preserve site data on shut down and the user will be able to change this.''',
+      If this policy is left not set <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the default which is to preserve site data on shut down and the user will be able to change this.
+
+      If the "RestoreOnStartup" policy is set to restore URLs from previous sessions this policy will not clear cookies or other data relevant to restoring the previous browsing session completely.''',
       'label': '''Clear site data on browser shutdown''',
     },
     {
@@ -1091,9 +1093,13 @@
           'caption': '''Configure the list of force-installed extensions''',
           'desc': '''Allows you to specify a list of extensions that will be installed silently, without user interaction.
 
-          Each item of the list is a string, that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). For example: <ph name="EXTENSION_POLICY_EXAMPLE">lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx</ph>. For each item, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retrieve the extension specified by the ID from the specified URL and silently install it. The following pages explain how you can host extensions on your own server. About update URLs: <ph name="LINK_TO_EXTENSION_DOC1">http://code.google.com/chrome/extensions/autoupdate.html</ph> , about hosting extensions in general: <ph name="LINK_TO_EXTENSION_DOC2">http://code.google.com/chrome/extensions/hosting.html</ph>.
+          Each item of the list is a string that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). The extension ID is the 32-letter string found e.g. on <ph name="CHROME_EXTENSIONS_LINK">chrome://extensions</ph> when in developer mode. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">http://code.google.com/chrome/extensions/autoupdate.html</ph>.
 
-          Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. Extensions that are blacklisted in 'ExtensionInstallBlacklist' and not whitelisted, cannot be force-installed by this policy.
+          For each item, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retrieve the extension specified by the extension ID from the update service at the specified update URL and silently install it.
+
+          For example, <ph name="EXTENSION_POLICY_EXAMPLE">lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx</ph> installs the <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME">Google SSL Web Search</ph> extension from the standard Chrome Web Store update URL. For more information about hosting extensions, see: <ph name="LINK_TO_EXTENSION_DOC2">http://code.google.com/chrome/extensions/hosting.html</ph>.
+
+          Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
           If this policy is left not set the user can uninstall any extension  in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
           'label': '''Extension IDs and update URLs to be silently installed''',
@@ -1148,14 +1154,14 @@
           'type': 'int-enum',
           'items': [
             {
-              'name': 'RestoreOnStartupIsNone',
-              'value': 0,
-              'caption': '''Open home page'''
+              'name': 'RestoreOnStartupIsNewTabPage',
+              'value': 5,
+              'caption': '''Open New Tab Page'''
             },
             {
               'name': 'RestoreOnStartupIsLastSession',
               'value': 1,
-              'caption': '''Reopen the URLs that were open last'''
+              'caption': '''Restore the last session'''
             },
             {
               'name': 'RestoreOnStartupIsURLs',
@@ -1173,9 +1179,10 @@
           'caption': '''Action on startup''',
           'desc': '''Allows you to specify the behavior on startup.
 
-          If you choose 'Open home page' the home page will always be opened when you start <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+          If you choose 'Open New Tab Page' the New Tab Page will always be opened when you start <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
-          If you choose 'Reopen the URLs that were open last', the URLs that were open last time <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> was closed will be reopened.
+          If you choose 'Restore the last session', the URLs that were open last time <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> was closed will be reopened and the browsing session will be restored as it was left.
+          Choosing this option disables some settings that rely on sessions or that perform actions on exit (such as Clear browsing data on exit or session-only cookies).
 
           If you choose 'Open a list of URLs', the list of 'URLs to open on startup' will be opened when a user starts <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
@@ -1574,7 +1581,9 @@
           'caption': '''Allow session only cookies on these sites''',
           'desc': '''Allows you to set a list of url patterns that specify sites which are allowed to set session only cookies.
 
-          If this policy is left not set the global default value will be used for all sites either from the 'DefaultCookiesSetting' policy if it is set, or the user's personal configuration otherwise.''',
+          If this policy is left not set the global default value will be used for all sites either from the 'DefaultCookiesSetting' policy if it is set, or the user's personal configuration otherwise.
+
+          If the "RestoreOnStartup" policy is set to restore URLs from previous sessions this policy will not be respectred and cookies will be stored permanently for those sites.''',
         },
         {
           'name': 'ImagesAllowedForUrls',
@@ -1724,7 +1733,7 @@
 
       Setting this policy overrides the default value of 3 hours. Valid values for this policy are in the range from 1800000 (30 minutes) to 86400000 (1 day). Any values not in this range will be clamped to the respective boundary.
 
-      Leaving this policy not set will make <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> use the default value of 3 hours.''',
+      Leaving this policy not set will make <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> use the default value of 3 hours.''',
     },
     {
       'name': 'ChromeFrameRendererSettings',
@@ -1818,14 +1827,14 @@
       },
       'example_value': True,
       'id': 61,
-      'caption': '''Enable lock when ChromeOS devices become idle or suspended.''',
-      'desc': '''Enable lock when ChromeOS devices become idle or suspended.
+      'caption': '''Enable lock when the device become idle or suspended.''',
+      'desc': '''Enable lock when <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices become idle or suspended.
 
-      If you enable this setting, users will be asked for a password to unlock ChromeOS devices from sleep.
+      If you enable this setting, users will be asked for a password to unlock the device from sleep.
 
-      If you disable this setting, users will not be asked for a password to wake ChromeOS devices from sleep.
+      If you disable this setting, users will not be asked for a password to unlock the device from sleep.
 
-      If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph>.
+      If you enable or disable this setting, users cannot change or override it.
 
       If the policy is left not set the user can choose whether he wants to be asked for password to unlock the device or not.''',
     },
@@ -1959,10 +1968,10 @@
       'features': {'dynamic_refresh': False},
       'example_value': '${user_home}/Chrome Frame',
       'id': 87,
-      'caption': '''Set <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> user data directory''',
-      'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use for storing user data.
+      'caption': '''Set <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> user data directory''',
+      'desc': '''Configures the directory that <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> will use for storing user data.
 
-      If you set this policy, <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use the provided directory.
+      If you set this policy, <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> will use the provided directory.
 
       If this setting is left not set the default profile directory will be used.''',
       'label': '''Set user data directory''',
@@ -1980,35 +1989,7 @@
 
       Setting this policy overrides the default value of 3 hours. Valid values for this policy are in the range from 1800000 (30 minutes) to 86400000 (1 day). Any values not in this range will be clamped to the respective boundary.
 
-      Leaving this policy not set will make <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> use the default value of 3 hours.''',
-    },
-    {
-      'name': 'ChromeOsReleaseChannel',
-      'type': 'string-enum',
-      'items': [
-        {
-          'name': 'StableChannel',
-          'value': 'stable-channel',
-          'caption': '''Stable channel'''
-        },
-        {
-          'name': 'BetaChannel',
-          'value': 'beta-channel',
-          'caption': '''Beta channel'''
-        },
-        {
-          'name': 'DevChannel',
-          'value': 'dev-channel',
-          'caption': '''Dev channel (may be unstable)'''
-        }
-      ],
-      'supported_on': ['chrome_os:0.11-'],
-      'device_only': True,
-      'features': {'dynamic_refresh': True},
-      'example_value': 'stable-channel',
-      'id': 91,
-      'caption': '''Release channel''',
-      'desc': '''Specifies the release channel that this device should be locked to.'''
+      Leaving this policy not set will make <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> use the default value of 3 hours.''',
     },
     {
       'name': 'ImportBookmarks',
@@ -2180,7 +2161,7 @@
       'example_value': '{ "NetworkConfigurations": [ { "GUID": "{4b224dfd-6849-7a63-5e394343244ae9c9}", "Name": "my WiFi", "Type": "WiFi", "WiFi": { "SSID": "my WiFi", "HiddenSSID": false, "Security": "None", "AutoConnect": true } } ] }',
       'id': 107,
       'caption': '''User-level network configuration''',
-      'desc': '''Allows pushing network configuration to be applied per-user to a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration''',
+      'desc': '''Allows pushing network configuration to be applied per-user to a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at <ph name="ONC_SPEC_URL">https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration</ph>''',
     },
     {
       'name': 'DeviceOpenNetworkConfiguration',
@@ -2192,7 +2173,7 @@
       'example_value': '{ "NetworkConfigurations": [ { "GUID": "{4b224dfd-6849-7a63-5e394343244ae9c9}", "Name": "my WiFi", "Type": "WiFi", "WiFi": { "SSID": "my WiFi", "HiddenSSID": false, "Security": "None", "AutoConnect": true } } ] }',
       'id': 108,
       'caption': '''Device-level network configuration''',
-      'desc': '''Allows pushing network configuration to be applied for all useers of a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration''',
+      'desc': '''Allows pushing network configuration to be applied for all useers of a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at <ph name="ONC_SPEC_URL">https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration</ph>''',
     },
     {
       'name': 'CloudPrintSubmitEnabled',
@@ -2240,10 +2221,10 @@
       'future': True,
       'example_value': True,
       'id': 114,
-      'caption': '''Enable TLS origin-bound certificates extension''',
-      'desc': '''Specifies whether the TLS origin-bound certificates extension should be enabled.
+      'caption': '''Enable TLS domain-bound certificates extension''',
+      'desc': '''Specifies whether the TLS domain-bound certificates extension should be enabled.
 
-      This setting is used to enable the TLS origin-bound certificates extension for testing.  This experimental setting will be removed in the future.''',
+      This setting is used to enable the TLS domain-bound certificates extension for testing.  This experimental setting will be removed in the future.''',
     },
     {
       'name': 'EnableMemoryInfo',
@@ -2283,6 +2264,18 @@
       If the policy is not set, or is set to false, then record splitting will be used on SSL/TLS connections which use CBC ciphersuites.''',
     },
     {
+      'name': 'EnableOnlineRevocationChecks',
+      'type': 'main',
+      'supported_on': ['chrome.*:19-', 'chrome_os:0.19-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': False,
+      'id': 129,
+      'caption': '''Whether online OCSP/CRL checks are performed''',
+      'desc': '''In light of the fact that soft-fail, online revocation checks provide no effective security benefit, they are disabled by default in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 19 and later. By setting this policy to true, the previous behaviour is restored and online OCSP/CRL checks will be performed.
+
+      If the policy is not set, or is set to false, then Chrome will not perform online revocation checks in Chrome 19 and later.''',
+    },
+    {
       'name': 'ReportDeviceVersionInfo',
       'type': 'main',
       'supported_on': ['chrome_os:0.18-'],
@@ -2320,6 +2313,334 @@
       'desc': '''Report the state of the device's dev switch at boot.
 
       If the policy is not set, or set to false, the state of the dev switch will not be reported.''',
+    },
+    {
+      'name': 'ReportDeviceLocation',
+      'type': 'main',
+      'supported_on': ['chrome_os:20-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'future': True,
+      'example_value': False,
+      'id': 143,
+      'caption': '''Report device location''',
+      'desc': '''Report the geographic location of the device.
+
+      If the policy is not set, or set to false, the location will not be reported.''',
+    },
+    {
+      'name': 'DeviceUserWhitelist',
+      'type': 'list',
+      'supported_on': ['chrome_os:12-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': [ 'madmax@managedchrome.com' ],
+      'id': 122,
+      'caption': '''Login user white list''',
+      'desc': '''Defines the list of users that are allowed to login to the device. Entries are of the form <ph name="USER_WHITELIST_ENTRY_FORMAT">user@domain</ph>, such as <ph name="USER_WHITELIST_ENTRY_EXAMPLE">madmax@managedchrome.com</ph>. To allow arbitrary users on a domain, use entries of the form <ph name="USER_WHITELIST_ENTRY_WILDCARD">*@domain</ph>.
+
+      If this policy is not configured, there are no restrictions on the what users are allowed to sign in. Note that creating new users still requires the <ph name="DEVICEALLOWNEWUSERS_POLICY_NAME">DeviceAllowNewUsers</ph> policy to be configured appropriately.''',
+    },
+    {
+      'name': 'DeviceAllowNewUsers',
+      'type': 'main',
+      'supported_on': ['chrome_os:12-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 123,
+      'caption': '''Allow creation of new user accounts''',
+      'desc': '''Controls whether <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> allows new user accounts to be created. If this policy is set to false, users that do not have an account already will not be able to login.
+
+      If this policy is set to true or not configured, new user accounts will be allowed to be created provided that <ph name="DEVICEUSERWHITELISTPROTO_POLICY_NAME">DeviceUserWhitelist</ph> does not prevent the user from logging in.''',
+    },
+    {
+      'name': 'DeviceGuestModeEnabled',
+      'type': 'main',
+      'supported_on': ['chrome_os:12-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 124,
+      'caption': '''Enable guest mode''',
+      'desc': '''If this policy is set to true or not configured, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will enable guest logins. Guest logins are anonymous user sessions and do not require a password.
+
+      If this policy is set to false, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will not allow guest sessions to be started.''',
+    },
+    {
+      'name': 'DeviceShowUserNamesOnSignin',
+      'type': 'main',
+      'supported_on': ['chrome_os:12-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 125,
+      'caption': '''Show usernames on login screen''',
+      'desc': '''If this policy is set to true or not configured, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will show existing users on the login screen and allow to pick one. If this policy is set to false, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will use the username/password prompt for login.''',
+    },
+    {
+      'name': 'DeviceDataRoamingEnabled',
+      'type': 'main',
+      'supported_on': ['chrome_os:12-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 126,
+      'caption': '''Enable data roaming''',
+      'desc': '''Determines whether data roaming should be enabled for the device. If set to true, data roaming is allowed. If left unconfigured or set to false, data roaming will be not available.''',
+    },
+    {
+      'name': 'DeviceMetricsReportingEnabled',
+      'type': 'main',
+      'supported_on': ['chrome_os:14-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 127,
+      'caption': '''Enable metrics reporting''',
+      'desc': '''Controls whether usage metrics are reported back to Google. If set to true, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will report usage metrics. If not configured or set to false, metrics reporting will be disabled.''',
+    },
+    {
+      'name': 'ChromeOsReleaseChannel',
+      'type': 'string-enum',
+      'items': [
+        {
+          'name': 'StableChannel',
+          'value': 'stable-channel',
+          'caption': '''Stable channel'''
+        },
+        {
+          'name': 'BetaChannel',
+          'value': 'beta-channel',
+          'caption': '''Beta channel'''
+        },
+        {
+          'name': 'DevChannel',
+          'value': 'dev-channel',
+          'caption': '''Dev channel (may be unstable)'''
+        }
+      ],
+      'supported_on': ['chrome_os:0.11-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 'stable-channel',
+      'id': 91,
+      'caption': '''Release channel''',
+      'desc': '''Specifies the release channel that this device should be locked to.'''
+    },
+    {
+      'name': 'ChromeOsReleaseChannelDelegated',
+      'type': 'main',
+      'supported_on': ['chrome_os:0.19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': False,
+      'id': 134,
+      'caption': '''Wether the release channel should be settable by the user or locked.''',
+      'desc': '''If this policy is set to True and the ChromeOsReleaseChannel policy is not specified the users of the enrolling domain will be allowed to change the release channel of the device. If this policy is set to false the device will be locked in whatever channel it was last set.
+
+      The user selected channel will be overriden by the ChromeOsReleaseChannel policy but if the policy channel is more stable than the one that was installed on the device, channel switch might will only after the version of the more stable channel reaches number higher than the one installed on the device.''',
+    },
+    {
+      'name': 'DeviceEphemeralUsersEnabled',
+      'type': 'main',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 128,
+      'caption': '''Wipe user data on sign-out''',
+      'desc': '''Determines whether <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> keeps local account data after logout. If set to true, no persistent accounts are kept by <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> and all data from the user session will be discarded after logout. If this policy is set to false or not configured, the device may keep (encrypted) local user data.''',
+    },
+    {
+      'name': 'DeviceStartUpUrls',
+      'type': 'list',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': [ 'http://google.com', 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaa/' ],
+      'id': 137,
+      'caption': '''Load specified urls on demo login''',
+      'desc': '''This policy is active in retail mode only.
+
+      Determines the set of URLs to be loaded when the demo session is started. This policy will override any other mechanisms for setting the initial URL and thus can only be applied to a session not associated with a particular user.''',
+    },
+    {
+      'name': 'DeviceIdleLogoutTimeout',
+      'type': 'int',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 60000,
+      'id': 130,
+      'caption': '''Timeout until idle user log-out is executed''',
+      'desc': '''This policy is active in retail mode only.
+
+      When the value of this policy is set and is not 0 the currently logged in demo user will be logged out automatically after the specified time.
+
+      The policy value should be specified in milliseconds.''',
+    },
+    {
+      'name': 'DeviceIdleLogoutWarningDuration',
+      'type': 'int',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 15000,
+      'id': 131,
+      'caption': '''Duration of the idle log-out warning message''',
+      'desc': '''This policy is active in retail mode only.
+
+      When DeviceIdleLogoutTimeout is specified this policy defines the duration of the warning box with a count down timer that is shown to the user before the logout is executed.
+
+      The policy value should be specified in milliseconds.''',
+    },
+    {
+      'name': 'DeviceLoginScreenSaverId',
+      'type': 'string',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 'fhblcfnmnbehmifidkddcenilbpddlfk',
+      'id': 132,
+      'caption': '''Screen saver to be used on the sign-in screen in retail mode''',
+      'desc': '''This policy is active in retail mode only.
+
+      Determines the id of the extension to be used as a screen saver on the sign-in screen. The extension must be part of the AppPack that is configured for this domain through the AppPacks policy.''',
+    },
+    {
+      'name': 'DeviceLoginScreenSaverTimeout',
+      'type': 'int',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 120000,
+      'id': 133,
+      'caption': '''Duration of inactivity before the screen saver is shown on the sign-in screen in retail mode''',
+      'desc': '''This policy is active in retail mode only.
+
+      Determines the duration before the screen saver is shown on the sign-in screen for devices in retail mode.
+
+      The policy value should be specified in milliseconds.''',
+    },
+    {
+      'name': 'DeviceAppPack',
+      'type': 'list',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': [ { "extension-id": "khgabmflimjjbclkmljlpmgaleanedem", "update-url": "http://clients2.google.com/service/update2/crx", "online-only": True, } ],
+      'id': 135,
+      'caption': '''List of AppPack extensions''',
+      'desc': '''This policy is active in retail mode only.
+
+      Lists extensions that are automatically installed for the Demo user, for devices in retail mode. These extensions are saved in the device and can be installed while offline, after the installation.
+
+      Each list entry contains a dictionary that must include the extension ID in the 'extension-id' field, and its update URL in the 'update-url' field. The optional 'online-only' field can be set to True to indicate that this extension should be installed only when the device is online at sign-in time.''',
+    },
+    {
+      'name': 'DeviceAutoUpdateDisabled',
+      'type': 'main',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 136,
+      'caption': '''Disables Auto Update''',
+      'desc': '''Disables automatic updates when set to True.
+
+      <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices automatically check for updates when this setting is not configured or set to False.''',
+    },
+    {
+      'name': 'DeviceTargetVersionPrefix',
+      'type': 'string',
+      'supported_on': ['chrome_os:19-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': '1412.',
+      'id': 142,
+      'caption': '''Target Auto Update Version''',
+      'desc': '''Sets a target version for Auto Updates.
+
+      Specifies the prefix of a target version <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> should update to. If the device is running a version that's before the specified prefix, it will update to the latest version with the given prefix. If the device is already on a later version, there is no effect (i.e. no downgrades are performed) and the device will remain on the current version. The prefix format works component-wise as is demonstrated in the following example:
+
+      "" (or not configured): update to latest version available.
+      "1412.": update to any minor version of 1412 (e.g. 1412.24.34 or 1412.60.2)
+      "1412.2.": update to any minor version of 1412.2 (e.g. 1412.2.34 or 1412.2.2)
+      "1412.24.34": update to this specific version only
+      '''
+    },
+    {
+      'name': 'BackgroundModeEnabled',
+      'type': 'main',
+      'supported_on': ['chrome.win:19-', 'chrome.linux:19-'],
+      'features': {
+        'dynamic_refresh': True,
+        'can_be_recommended': True,
+      },
+      'example_value': True,
+      'id': 138,
+      'caption': '''Continue running background apps when <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is closed''',
+      'desc': '''Determines whether a <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> process is started on OS login and keeps running when the last browser window is closed, allowing background apps to remain active. The background process displays an icon in the system tray and can always be closed from there.
+
+      If this policy is set to True, background mode is enabled and cannot be controlled by the user in the browser settings.
+
+      If this policy is set to False, background mode is disabled and cannot be controlled by the user in the browser settings.
+
+      If this policy is left unset, background mode is initially disabled and can be controlled by the user in the browser settings.''',
+    },
+    {
+      'name': 'GData',
+      'type': 'group',
+      'caption': '''Configure GData options''',
+      'desc': '''Configure GData in <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph>.''',
+      'policies': [
+        {
+          'name': 'GDataDisabled',
+          'type': 'main',
+          'supported_on': ['chrome_os:19-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': True,
+          'id': 139,
+          'caption': '''Disables GData''',
+          'desc': '''Disables Google Docs syncing when set to True.
+
+          - i.e. no data is uploaded to Google Docs.
+
+          - if not set or false, users will be able to transfer files to Google Docs.''',
+        },
+        {
+          'name': 'GDataDisabledOverCellular',
+          'type': 'main',
+          'supported_on': ['chrome_os:19-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': True,
+          'id': 140,
+          'caption': '''Disables GData over Cellular connections''',
+          'desc': '''Disables Google Docs syncing when using a cellular connection when set to True.
+
+          - i.e. data is only synced to Google Docs when connected via WiFi or Ethernet.
+
+          - if not set or false, users will be able to transfer files to Google Docs via cellular connections.''',
+        },
+      ],
+    },
+    {
+      'name': 'PinnedLauncherApps',
+      'type': 'list',
+      'supported_on': ['chrome_os:20-' ],
+      'features': {
+        'dynamic_refresh': True,
+        'can_be_recommended': True,
+      },
+      'example_value': ['pjkljhegncpnkpknbcohdijeoejaedia'],
+      'id': 144,
+      'caption': '''List of pinned apps to show in the launcher''',
+      'desc': '''Lists the application identifiers <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> shows as pinned apps in the launcher bar.
+
+      If this policy is configured, the set of applications is fixed and can't be changed by the user.
+
+      If this policy is left unset, the user may change the list of pinned apps in the launcher.''',
     },
   ],
   'messages': {

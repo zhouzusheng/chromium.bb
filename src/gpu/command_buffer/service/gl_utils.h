@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,6 +65,20 @@
 #define GL_LUMINANCE16F_EXT                    0x881E
 #define GL_LUMINANCE_ALPHA16F_EXT              0x881F
 #define GL_BGRA8_EXT                           0x93A1
+
+// GL_ANGLE_instanced_arrays
+#define GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE   0x88FE
+
+// GL_EXT_occlusion_query_boolean
+#define GL_ANY_SAMPLES_PASSED_EXT              0x8C2F
+#define GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT 0x8D6A
+#define GL_CURRENT_QUERY_EXT                   0x8865
+#define GL_QUERY_RESULT_EXT                    0x8866
+#define GL_QUERY_RESULT_AVAILABLE_EXT          0x8867
+
+// GL_CHROMIUM_command_buffer_query
+#define GL_COMMANDS_ISSUED_CHROMIUM            0x84F2
+
 
 #define GL_GLEXT_PROTOTYPES 1
 

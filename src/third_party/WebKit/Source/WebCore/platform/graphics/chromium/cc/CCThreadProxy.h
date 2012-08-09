@@ -25,11 +25,13 @@
 #ifndef CCThreadProxy_h
 #define CCThreadProxy_h
 
+#include "cc/CCAnimationEvents.h"
 #include "cc/CCCompletionEvent.h"
 #include "cc/CCLayerTreeHostImpl.h"
 #include "cc/CCProxy.h"
 #include "cc/CCScheduler.h"
 #include "cc/CCThread.h"
+#include "cc/CCTimer.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
@@ -40,6 +42,7 @@ class CCScheduler;
 class CCScopedThreadProxy;
 class CCTextureUpdater;
 class CCThread;
+class CCThreadProxyContextRecreationTimer;
 
 class CCThreadProxy : public CCProxy, CCLayerTreeHostImplClient, CCSchedulerClient {
 public:
@@ -49,41 +52,63 @@ public:
 
     // CCProxy implementation
     virtual bool compositeAndReadback(void *pixels, const IntRect&);
+    virtual void startPageScaleAnimation(const IntSize& targetPosition, bool useAnchor, float scale, double duration);
     virtual GraphicsContext3D* context();
     virtual void finishAllRendering();
     virtual bool isStarted() const;
+    virtual bool initializeContext();
+    virtual void setSurfaceReady() OVERRIDE;
     virtual bool initializeLayerRenderer();
+    virtual bool recreateContext();
     virtual int compositorIdentifier() const;
     virtual const LayerRendererCapabilities& layerRendererCapabilities() const;
-    virtual void loseCompositorContext(int numTimes);
+    virtual void loseContext();
     virtual void setNeedsAnimate();
     virtual void setNeedsCommit();
     virtual void setNeedsRedraw();
+    virtual bool commitRequested() const;
     virtual void setVisible(bool);
     virtual void start();
     virtual void stop();
-    virtual bool partialTextureUpdateCapability() const;
+    virtual size_t maxPartialTextureUpdates() const;
+    virtual void forceSerializeOnSwapBuffers() OVERRIDE;
 
     // CCLayerTreeHostImplClient implementation
+    virtual void didLoseContextOnImplThread();
     virtual void onSwapBuffersCompleteOnImplThread();
     virtual void setNeedsRedrawOnImplThread();
     virtual void setNeedsCommitOnImplThread();
+    virtual void postAnimationEventsToMainThreadOnImplThread(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime);
 
     // CCSchedulerClient implementation
     virtual bool canDraw();
     virtual bool hasMoreResourceUpdates() const;
     virtual void scheduledActionBeginFrame();
-    virtual void scheduledActionDrawAndSwap();
+    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapIfPossible();
+    virtual CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapForced();
     virtual void scheduledActionUpdateMoreResources();
     virtual void scheduledActionCommit();
+    virtual void scheduledActionBeginContextRecreation();
 
 private:
     explicit CCThreadProxy(CCLayerTreeHost*);
+    friend class CCThreadProxyContextRecreationTimer;
+
+    // Set on impl thread, read on main thread.
+    struct BeginFrameAndCommitState {
+        BeginFrameAndCommitState() : monotonicFrameBeginTime() { }
+        double monotonicFrameBeginTime;
+        OwnPtr<CCScrollAndScaleSet> scrollInfo;
+    };
+    OwnPtr<BeginFrameAndCommitState> m_pendingBeginFrameRequest;
 
     // Called on main thread
-    void beginFrameAndCommit(int sequenceNumber, double frameBeginTime, PassOwnPtr<CCScrollAndScaleSet>);
+    void beginFrame();
     void didCommitAndDrawFrame();
     void didCompleteSwapBuffers();
+    void setAnimationEvents(PassOwnPtr<CCAnimationEventsVector>, double wallClockTime);
+    void beginContextRecreation();
+    void tryToRecreateContext();
 
     // Called on impl thread
     struct ReadbackRequest {
@@ -92,34 +117,48 @@ private:
         void* pixels;
         IntRect rect;
     };
-    PassOwnPtr<CCThread::Task> createBeginFrameAndCommitTaskOnImplThread();
-    void obtainBeginFrameAndCommitTaskFromCCThread(CCCompletionEvent*, CCThread::Task**);
+    void forceBeginFrameOnImplThread(CCCompletionEvent*);
     void beginFrameCompleteOnImplThread(CCCompletionEvent*);
     void requestReadbackOnImplThread(ReadbackRequest*);
+    void requestStartPageScaleAnimationOnImplThread(IntSize targetPosition, bool useAnchor, float scale, double durationSec);
     void finishAllRenderingOnImplThread(CCCompletionEvent*);
     void initializeImplOnImplThread(CCCompletionEvent*);
-    void initializeLayerRendererOnImplThread(GraphicsContext3D*, CCCompletionEvent*, bool* initializeSucceeded, LayerRendererCapabilities*, int* compositorIdentifier);
+    void setSurfaceReadyOnImplThread();
+    void initializeContextOnImplThread(GraphicsContext3D*);
+    void initializeLayerRendererOnImplThread(CCCompletionEvent*, bool* initializeSucceeded, LayerRendererCapabilities*);
     void setVisibleOnImplThread(CCCompletionEvent*, bool visible);
     void layerTreeHostClosedOnImplThread(CCCompletionEvent*);
+    void setFullRootLayerDamageOnImplThread();
+    void recreateContextOnImplThread(CCCompletionEvent*, GraphicsContext3D*, bool* recreateSucceeded, LayerRendererCapabilities*);
+    CCScheduledActionDrawAndSwapResult scheduledActionDrawAndSwapInternal(bool forcedDraw);
+    void forceSerializeOnSwapBuffersOnImplThread(CCCompletionEvent*);
 
     // Accessed on main thread only.
     bool m_animateRequested;
     bool m_commitRequested;
+    bool m_contextLost;
+    OwnPtr<CCThreadProxyContextRecreationTimer> m_contextRecreationTimer;
     CCLayerTreeHost* m_layerTreeHost;
     int m_compositorIdentifier;
+    bool m_layerRendererInitialized;
     LayerRendererCapabilities m_layerRendererCapabilitiesMainThreadCopy;
     bool m_started;
-    int m_lastExecutedBeginFrameAndCommitSequenceNumber;
 
     // Used on the CCThread only.
     OwnPtr<CCLayerTreeHostImpl> m_layerTreeHostImpl;
-    int m_numBeginFrameAndCommitsIssuedOnImplThread;
 
     OwnPtr<CCInputHandler> m_inputHandlerOnImplThread;
 
     OwnPtr<CCScheduler> m_schedulerOnImplThread;
 
     RefPtr<CCScopedThreadProxy> m_mainThreadProxy;
+
+    // Holds on to the GraphicsContext3D we might use for compositing in between initializeContext()
+    // and initializeLayerRenderer() calls.
+    RefPtr<GraphicsContext3D> m_contextBeforeInitializationOnImplThread;
+
+    // Set when the main thread is waiting on a scheduledActionBeginFrame to be issued.
+    CCCompletionEvent* m_beginFrameCompletionEventOnImplThread;
 
     // Set when the main thread is waiing on a readback.
     ReadbackRequest* m_readbackRequestOnImplThread;

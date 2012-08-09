@@ -1,0 +1,11 @@
+win stable release 18.0.1025.162
+released 12/April/2012
+trunk revision 119867
+branch revision 131933
+webkit revision 106313
+webkit version: 535.19
+v8 version 3.8.9.18
+
+created from true branch 1025
+http://src.chromium.org/svn/releases/18.0.1025.162/
+

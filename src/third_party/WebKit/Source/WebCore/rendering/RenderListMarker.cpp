@@ -1131,11 +1131,6 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
             paintCustomHighlight(paintOffset, style()->highlight(), true);
 #endif
         context->drawImage(m_image->image(this, marker.size()).get(), style()->colorSpace(), marker);
-        if (selectionState() != SelectionNone) {
-            LayoutRect selRect = localSelectionRect();
-            selRect.moveBy(boxOrigin);
-            context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor(), style()->colorSpace());
-        }
         return;
     }
 
@@ -1144,12 +1139,6 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
     if (style()->highlight() != nullAtom && !paintInfo.context->paintingDisabled())
         paintCustomHighlight(paintOffset, style()->highlight(), true);
 #endif
-
-    if (selectionState() != SelectionNone) {
-        LayoutRect selRect = localSelectionRect();
-        selRect.moveBy(boxOrigin);
-        context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor(), style()->colorSpace());
-    }
 
     const Color color(style()->visitedDependentColor(CSSPropertyColor));
     context->setStrokeColor(color, style()->colorSpace());

@@ -6795,10 +6795,22 @@ LayoutUnit RenderBlock::adjustForUnsplittableChild(RenderBox* child, LayoutUnit 
         || !hasNextPage(logicalOffset))
         return logicalOffset;
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->m_columnInfo) {
+        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned currentColumn = (totalOffset + childLogicalHeight) / pageLogicalHeight;
+        if (currentColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
     if (remainingLogicalHeight < childLogicalHeight) {
         if (!hasUniformPageLogicalHeight && !pushToNextPageWithMinimumLogicalHeight(remainingLogicalHeight, logicalOffset, childLogicalHeight))
             return logicalOffset;
-        return logicalOffset + remainingLogicalHeight;
+        return logicalOffset + remainingLogicalHeight + spanningHeaderHeight;
     }
     return logicalOffset;
 }

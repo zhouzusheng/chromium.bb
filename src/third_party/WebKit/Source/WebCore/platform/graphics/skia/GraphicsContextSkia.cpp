@@ -55,6 +55,8 @@
 #include <wtf/MathExtras.h>
 #include <wtf/UnusedParam.h>
 
+#include <map>
+
 #if PLATFORM(CHROMIUM) && OS(DARWIN)
 #include <ApplicationServices/ApplicationServices.h>
 #endif
@@ -507,14 +509,32 @@ void GraphicsContext::drawLine(const IntPoint& point1, const IntPoint& point2)
     platformContext()->didDrawPoints(SkCanvas::kLines_PointMode, 2, pts, paint);
 }
 
-void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float width, DocumentMarkerLineStyle style)
+void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float width, DocumentMarkerLineStyle style, const Color& markerColor)
 {
-    if (paintingDisabled())
+    if (paintingDisabled() || markerColor.alpha() == 0)
         return;
 
     // Create the pattern we'll use to draw the underline.
-    int index = style == DocumentMarkerGrammarLineStyle ? 1 : 0;
-    static SkBitmap* misspellBitmap[2] = { 0, 0 };
+    // SHEZ: the rendering becomes weird if alpha is non-opaque.. force it to
+    // SHEZ: be opaque for now, ignoring the alpha component in markerColor
+    const uint32_t lineColor = 0xFF << SK_A32_SHIFT
+                                | markerColor.red() << SK_R32_SHIFT
+                                | markerColor.green() << SK_G32_SHIFT
+                                | markerColor.blue() << SK_B32_SHIFT;
+    const uint32_t antiAlpha = 0x60;
+    const uint32_t antiRed = uint32_t(float(markerColor.red()) * 0.375);
+    const uint32_t antiGreen = uint32_t(float(markerColor.green()) * 0.375);
+    const uint32_t antiBlue = uint32_t(float(markerColor.blue()) * 0.375);
+    const uint32_t antiColor = antiAlpha << SK_A32_SHIFT
+                                | antiRed << SK_R32_SHIFT
+                                | antiGreen << SK_G32_SHIFT
+                                | antiBlue << SK_B32_SHIFT;
+
+    static map<uint32_t, SkBitmap*> misspellBitmaps;
+    SkBitmap* misspellBitmapTmp = misspellBitmaps[lineColor];
+
+    int index = 0;
+    SkBitmap* misspellBitmap[2] = { misspellBitmapTmp, 0 };
     if (!misspellBitmap[index]) {
 #if PLATFORM(CHROMIUM) && OS(DARWIN)
         // Match the artwork used by the Mac.
@@ -528,6 +548,7 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float widt
         const int colPixels = 2;
 #endif
         misspellBitmap[index] = new SkBitmap;
+        misspellBitmaps[lineColor] = misspellBitmap[index];
         misspellBitmap[index]->setConfig(SkBitmap::kARGB_8888_Config,
                                          rowPixels, colPixels);
         misspellBitmap[index]->allocPixels();
@@ -551,16 +572,8 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float widt
             row[3] = transparentColor;
         }
 #else
-        static const uint32_t lineColors[2] = {
-            0xFF << SK_A32_SHIFT | 0xFF << SK_R32_SHIFT, // Opaque red.
-            0xFF << SK_A32_SHIFT | 0xC0 << SK_R32_SHIFT | 0xC0 << SK_G32_SHIFT | 0xC0 << SK_B32_SHIFT, // Opaque gray.
-        };
-        static const uint32_t antiColors[2] = {
-            0x60 << SK_A32_SHIFT | 0x60 << SK_R32_SHIFT, // Semitransparent red
-            0xFF << SK_A32_SHIFT | 0xC0 << SK_R32_SHIFT | 0xC0 << SK_G32_SHIFT | 0xC0 << SK_B32_SHIFT, // Semitransparent gray
-        };
-        const uint32_t lineColor = lineColors[index];
-        const uint32_t antiColor = antiColors[index];
+        
+        
 
         // Pattern:  X o   o X o   o X
         //             o X o   o X o

@@ -2219,11 +2219,11 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         if (id == CSSValueHorizontal || id == CSSValueVertical || id == CSSValueAuto)
             validPrimitive = true;
         break;
-    case CSSPropertyWebkitColumnSpan:        // all | 1
+    case CSSPropertyWebkitColumnSpan:        // all | <number>
         if (id == CSSValueAll)
             validPrimitive = true;
         else
-            validPrimitive = validUnit(value, FNumber | FNonNeg) && value->fValue == 1;
+            validPrimitive = validUnit(value, FNumber | FNonNeg);
         break;
     case CSSPropertyWebkitColumnWidth:         // auto | <length>
         if (id == CSSValueAuto)

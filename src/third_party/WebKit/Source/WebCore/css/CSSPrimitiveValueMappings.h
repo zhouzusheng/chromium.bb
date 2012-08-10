@@ -142,31 +142,6 @@ template<> inline CSSPrimitiveValue::operator LineClampValue() const
     return LineClampValue();
 }
 
-template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnSpan columnSpan)
-    : CSSValue(PrimitiveClass)
-{
-    switch (columnSpan) {
-    case ColumnSpanAll:
-        m_primitiveUnitType = CSS_IDENT;
-        m_value.ident = CSSValueAll;
-        break;
-    case ColumnSpanOne:
-        m_primitiveUnitType = CSS_NUMBER;
-        m_value.num = 1;
-        break;
-    }
-}
-
-template<> inline CSSPrimitiveValue::operator ColumnSpan() const
-{
-    if (m_primitiveUnitType == CSS_IDENT && m_value.ident == CSSValueAll)
-        return ColumnSpanAll;
-    if (m_primitiveUnitType == CSS_NUMBER && m_value.num == 1)
-        return ColumnSpanOne;
-    ASSERT_NOT_REACHED();
-    return ColumnSpanOne;
-}
-
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(PrintColorAdjust value)
     : CSSValue(PrimitiveClass)

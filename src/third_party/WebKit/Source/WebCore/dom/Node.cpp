@@ -317,13 +317,15 @@ Node::StyleChange Node::diff(const RenderStyle* s1, const RenderStyle* s2, Docum
     
     // We just detach if a renderer acquires or loses a column-span, since spanning elements
     // typically won't contain much content.
-    bool colSpan1 = s1 && s1->columnSpan();
-    bool colSpan2 = s2 && s2->columnSpan();
-    
+    unsigned short colSpan1 = s1 ? s1->columnSpan() : 0;
+    unsigned short colSpan2 = s2 ? s2->columnSpan() : 0;
+    bool spansAll1 = s1 && s1->hasSpanAllColumns();
+    bool spansAll2 = s2 && s2->hasSpanAllColumns();
+
     bool specifiesColumns1 = s1 && (!s1->hasAutoColumnCount() || !s1->hasAutoColumnWidth());
     bool specifiesColumns2 = s2 && (!s2->hasAutoColumnCount() || !s2->hasAutoColumnWidth());
 
-    if (display1 != display2 || fl1 != fl2 || colSpan1 != colSpan2 
+    if (display1 != display2 || fl1 != fl2 || colSpan1 != colSpan2 || spansAll1 != spansAll2
         || (specifiesColumns1 != specifiesColumns2 && doc->settings()->regionBasedColumnsEnabled())
         || (s1 && s2 && !s1->contentDataEquivalent(s2)))
         ch = Detach;

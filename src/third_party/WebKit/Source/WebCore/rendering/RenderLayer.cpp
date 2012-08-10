@@ -4014,7 +4014,9 @@ LayoutRect RenderLayer::childrenClipRect() const
     LayoutRect layerBounds;
     ClipRect backgroundRect, foregroundRect, outlineRect;
     calculateRects(clippingRootLayer, 0, PaintingClipRects, renderView->unscaledDocumentRect(), layerBounds, backgroundRect, foregroundRect, outlineRect);
-    return clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(foregroundRect.rect())).enclosingBoundingBox();
+    LayoutRect rect = foregroundRect.rect();
+    rect.unite(clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(rect)).enclosingBoundingBox());
+    return rect;
 }
 
 LayoutRect RenderLayer::selfClipRect() const
@@ -4026,7 +4028,9 @@ LayoutRect RenderLayer::selfClipRect() const
     LayoutRect layerBounds;
     ClipRect backgroundRect, foregroundRect, outlineRect;
     calculateRects(clippingRootLayer, 0, PaintingClipRects, renderView->documentRect(), layerBounds, backgroundRect, foregroundRect, outlineRect);
-    return clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(backgroundRect.rect())).enclosingBoundingBox();
+    LayoutRect rect = backgroundRect.rect();
+    rect.unite(clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(rect)).enclosingBoundingBox());
+    return rect;
 }
 
 LayoutRect RenderLayer::localClipRect() const

@@ -6620,9 +6620,21 @@ LayoutUnit RenderBlock::nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundar
     
     // The logicalOffset is in our coordinate space.  We can add in our pushed offset.
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->m_columnInfo) {
+        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned nextColumn = (totalOffset + remainingLogicalHeight + 1) / pageLogicalHeight;
+        if (nextColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
     if (pageBoundaryRule == ExcludePageBoundary)
-        return logicalOffset + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
-    return logicalOffset + remainingLogicalHeight;
+        return logicalOffset + spanningHeaderHeight + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
+    return logicalOffset + spanningHeaderHeight + remainingLogicalHeight;
 }
 
 static bool inNormalFlow(RenderBox* child)

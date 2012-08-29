@@ -1980,7 +1980,7 @@ StyleBuilder::StyleBuilder()
     setPropertyHandler(CSSPropertyWebkitColumnRuleColor, ApplyPropertyColor<NoInheritFromParent, &RenderStyle::columnRuleColor, &RenderStyle::setColumnRuleColor, &RenderStyle::setVisitedLinkColumnRuleColor, &RenderStyle::color>::createHandler());
     setPropertyHandler(CSSPropertyWebkitColumnRuleWidth, ApplyPropertyComputeLength<unsigned short, &RenderStyle::columnRuleWidth, &RenderStyle::setColumnRuleWidth, &RenderStyle::initialColumnRuleWidth, NormalDisabled, ThicknessEnabled>::createHandler());
     setPropertyHandler(CSSPropertyWebkitColumns, ApplyPropertyExpanding<SuppressValue, CSSPropertyWebkitColumnWidth, CSSPropertyWebkitColumnCount>::createHandler());
-    setPropertyHandler(CSSPropertyWebkitColumnSpan, ApplyPropertyDefault<ColumnSpan, &RenderStyle::columnSpan, ColumnSpan, &RenderStyle::setColumnSpan, ColumnSpan, &RenderStyle::initialColumnSpan>::createHandler());
+    setPropertyHandler(CSSPropertyWebkitColumnSpan, ApplyPropertyAuto<unsigned short, &RenderStyle::columnSpan, &RenderStyle::setColumnSpan, &RenderStyle::hasSpanAllColumns, &RenderStyle::setHasSpanAllColumns, Number, CSSValueAll>::createHandler());
     setPropertyHandler(CSSPropertyWebkitColumnRuleStyle, ApplyPropertyDefault<EBorderStyle, &RenderStyle::columnRuleStyle, EBorderStyle, &RenderStyle::setColumnRuleStyle, EBorderStyle, &RenderStyle::initialBorderStyle>::createHandler());
     setPropertyHandler(CSSPropertyWebkitColumnWidth, ApplyPropertyAuto<float, &RenderStyle::columnWidth, &RenderStyle::setColumnWidth, &RenderStyle::hasAutoColumnWidth, &RenderStyle::setHasAutoColumnWidth, ComputeLength>::createHandler());
 #if ENABLE(CSS3_FLEXBOX)

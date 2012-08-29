@@ -3728,7 +3728,7 @@ bool RenderBox::hasUnsplittableScrollingOverflow() const
 
 bool RenderBox::isUnsplittableForPagination() const
 {
-    return isReplaced() || hasUnsplittableScrollingOverflow() || (parent() && isWritingModeRoot());
+    return isReplaced() || hasUnsplittableScrollingOverflow() || (parent() && isWritingModeRoot()) || isTableCell();
 }
 
 LayoutUnit RenderBox::lineHeight(bool /*firstLine*/, LineDirectionMode direction, LinePositionMode /*linePositionMode*/) const

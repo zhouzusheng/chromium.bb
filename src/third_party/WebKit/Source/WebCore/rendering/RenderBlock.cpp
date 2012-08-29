@@ -2242,8 +2242,6 @@ void RenderBlock::layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloa
     maxFloatLogicalBottom = 0;
 
     RenderBox* next = firstChildBox();
-    RenderBox* previous = 0;
-    ColumnInfo* columnInfo = view()->layoutState()->m_columnInfo;
 
     while (next) {
         RenderBox* child = next;
@@ -2269,17 +2267,6 @@ void RenderBlock::layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloa
 
         // Lay out the child.
         layoutBlockChild(child, marginInfo, previousFloatLogicalBottom, maxFloatLogicalBottom);
-
-        // If the previous child was a spanning header in a multi-column layout, then store the logical top
-        // of the current child as the header "height".  The first line in any column within the column span
-        // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
-        // from the previous child).
-        if (columnInfo && previous && previous->style()->columnSpan() > 1 && !previous->style()->hasSpanAllColumns()) {
-            columnInfo->setSpanningHeaderColumnCount(previous->style()->columnSpan());
-            columnInfo->setSpanningHeaderHeight(child->logicalTop());
-        }
-
-        previous = child;
     }
     
     // Now do the handling of the bottom of the block, adding in our bottom border/padding and
@@ -2289,6 +2276,10 @@ void RenderBlock::layoutBlockChildren(bool relayoutChildren, LayoutUnit& maxFloa
 
 void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, LayoutUnit& previousFloatLogicalBottom, LayoutUnit& maxFloatLogicalBottom)
 {
+    ColumnInfo* columnInfo = view()->layoutState()->m_columnInfo;
+    RenderBox* previousBox = child->previousSiblingBox();
+    bool shouldSetSpanningHeaderInfo = columnInfo && previousBox && previousBox->style()->columnSpan() > 1 && !previousBox->style()->hasSpanAllColumns();
+
     LayoutUnit oldPosMarginBefore = maxPositiveMarginBefore();
     LayoutUnit oldNegMarginBefore = maxNegativeMarginBefore();
 
@@ -2317,6 +2308,14 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
 #endif
     // Go ahead and position the child as though it didn't collapse with the top.
     setLogicalTopForChild(child, logicalTopEstimate, ApplyLayoutDelta);
+    if (shouldSetSpanningHeaderInfo) {
+        // If the previous child was a spanning header in a multi-column layout, then store the logical top
+        // of the current child as the header "height".  The first line in any column within the column span
+        // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
+        // from the previous child).
+        columnInfo->setSpanningHeaderColumnCount(previousBox->style()->columnSpan());
+        columnInfo->setSpanningHeaderHeight(logicalTopEstimate);
+    }
 
     RenderBlock* childRenderBlock = child->isRenderBlock() ? toRenderBlock(child) : 0;
     bool markDescendantsWithFloats = false;
@@ -2364,6 +2363,16 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
 
     // Now we have a final top position.  See if it really does end up being different from our estimate.
     if (logicalTopAfterClear != logicalTopEstimate) {
+        if (shouldSetSpanningHeaderInfo) {
+            columnInfo->setSpanningHeaderHeight(logicalTopEstimate);
+            if (logicalTopAfterClear + child->logicalHeight() >= view()->layoutState()->pageLogicalHeight()) {
+                // If the child's bottom has exceeded the pageLogicalHeight (i.e. the child
+                // spans multiple columns), then it needs a relayout in order to reset the
+                // pagination struts of its lineboxes to match the new spanning header height.
+                child->setChildNeedsLayout(true, MarkOnlyThis);
+            }
+        }
+
         if (child->shrinkToAvoidFloats()) {
             // The child's width depends on the line width.
             // When the child shifts to clear an item, its width can
@@ -6675,9 +6684,21 @@ LayoutUnit RenderBlock::nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundar
     
     // The logicalOffset is in our coordinate space.  We can add in our pushed offset.
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->m_columnInfo) {
+        ColumnInfo* colInfo = view()->layoutState()->m_columnInfo;
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned nextColumn = (totalOffset + remainingLogicalHeight + 1) / pageLogicalHeight;
+        if (nextColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
     if (pageBoundaryRule == ExcludePageBoundary)
-        return logicalOffset + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
-    return logicalOffset + remainingLogicalHeight;
+        return logicalOffset + spanningHeaderHeight + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
+    return logicalOffset + spanningHeaderHeight + remainingLogicalHeight;
 }
 
 static bool inNormalFlow(RenderBox* child)
@@ -6885,7 +6906,7 @@ void RenderBlock::adjustLinePositionForPagination(RootInlineBox* lineBox, Layout
         LayoutUnit totalLogicalHeight = lineHeight + max<LayoutUnit>(0, logicalOffset);
         LayoutUnit pageLogicalHeightAtNewOffset = hasUniformPageLogicalHeight ? pageLogicalHeight : pageLogicalHeightForOffset(logicalOffset + remainingLogicalHeight);
         if (lineBox == firstRootBox() && totalLogicalHeight < pageLogicalHeightAtNewOffset && !isPositioned() && !isTableCell())
-            setPaginationStrut(remainingLogicalHeight + max<LayoutUnit>(0, logicalOffset));
+            setPaginationStrut(remainingLogicalHeight + spanningHeaderHeight + max<LayoutUnit>(0, logicalOffset));
         else {
             delta += remainingLogicalHeight + spanningHeaderHeight;
             lineBox->setPaginationStrut(remainingLogicalHeight + spanningHeaderHeight);

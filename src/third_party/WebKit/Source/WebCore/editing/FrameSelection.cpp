@@ -1941,9 +1941,12 @@ void FrameSelection::revealSelection(const ScrollAlignment& alignment, bool reve
         return;
     case VisibleSelection::CaretSelection:
         rect = absoluteCaretBounds();
+        rect.inflateY(rect.height()/2);
         break;
     case VisibleSelection::RangeSelection:
         rect = revealExtent ? VisiblePosition(extent()).absoluteCaretBounds() : enclosingIntRect(bounds(false));
+        if (revealExtent)
+            rect.inflateY(rect.height()/2);
         break;
     }
 

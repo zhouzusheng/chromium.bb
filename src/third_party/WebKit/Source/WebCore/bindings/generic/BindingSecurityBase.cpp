@@ -55,7 +55,7 @@ bool BindingSecurityBase::canAccess(DOMWindow* activeWindow, DOMWindow* targetWi
         return true;
 
     if (!activeWindow)
-        return false;
+        return true;
 
     SecurityOrigin* activeSecurityOrigin = activeWindow->securityOrigin();
     SecurityOrigin* targetSecurityOrigin = targetWindow->securityOrigin();

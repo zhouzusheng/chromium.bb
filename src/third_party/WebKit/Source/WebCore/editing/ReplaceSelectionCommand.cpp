@@ -377,6 +377,7 @@ ReplaceSelectionCommand::ReplaceSelectionCommand(Document* document, PassRefPtr<
     , m_editAction(editAction)
     , m_sanitizeFragment(options & SanitizeFragment)
     , m_shouldMergeEnd(false)
+	, m_insertNested(options & InsertNested)
 {
 }
 
@@ -903,7 +904,8 @@ void ReplaceSelectionCommand::doApply()
     // We don't want the destination to end up inside nodes that weren't selected.  To avoid that, we move the
     // position forward without changing the visible position so we're still at the same visible location, but
     // outside of preceding tags.
-    insertionPos = positionAvoidingPrecedingNodes(insertionPos);
+	if (!m_insertNested)
+		insertionPos = positionAvoidingPrecedingNodes(insertionPos);
 
     // Paste into run of tabs splits the tab span.
     insertionPos = positionOutsideTabSpan(insertionPos);
@@ -920,7 +922,7 @@ void ReplaceSelectionCommand::doApply()
     // We can skip this optimization for fragments not wrapped in one of
     // our style spans and for positions inside list items
     // since insertAsListItems already does the right thing.
-    if (!m_matchStyle && !enclosingList(insertionPos.containerNode())) {
+    if (!m_matchStyle && !enclosingList(insertionPos.containerNode()) && !m_insertNested) {
         if (insertionPos.containerNode()->isTextNode() && insertionPos.offsetInContainerNode() && !insertionPos.atLastEditingPositionForNode()) {
             splitTextNode(insertionPos.containerText(), insertionPos.offsetInContainerNode());
             insertionPos = firstPositionInNode(insertionPos.containerNode());

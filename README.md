@@ -470,15 +470,28 @@ tooltip to the element where the mouse is.
 ### bugfix/unifiedTextChecking (Edward Christie)
 TODO
 
-### feature/after\_copycut (Angelos Evripiotis)
-TODO
+### feature/after\_copycut (James McIlhargey)
+
+This is a feature we needed in our product, so it is unlikely that we will send
+this upstream.
+
+This branch fires two new events "aftercut" and "aftercopy" which have
+read/write access to the clipboard representation.  This allows us to intercept
+the state of the clipboard after WebKit has populated it and make any tweaks.
+This is useful for selectively overriding some copy/paste behaviour with
+minimal JS code.
 
 ### feature/allowImageLoadCancel (Alex Buch; D32427286)
 TODO
 
 ### feature/can\_supply\_proxy\_service (Angelos Evripiotis)
-TODO
 
+This is a feature we needed in our product, so it is unlikely that we will send
+this upstream.
+
+We needed extra control over the proxy server configuration that's used by
+the SimpleResourceLoaderBridge.  This branch makes it possible to supply a
+custom net::ProxyConfigService so we can provide our own settings
 
 ### feature/colorDocumentMarkers (Shezan Baig; D32415776)
 

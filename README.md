@@ -29,8 +29,8 @@ intention to submit as many bugfixes upstream as we can.
 ## Overall Structure
 
 The structure of this repository is somewhat unconventional, but it serves our
-purpose well.  The `master` branch is not really used (it is actually used by
-an internal buildbot, but is otherwise not very useful).
+purpose well.  The `master` branch is not really used (it just contains this
+README).
 
 Our real entry points are the snapshots we get from upstream.  We tag each of
 these snapshots using the format `upstream/<channel>/<version>`, for example:

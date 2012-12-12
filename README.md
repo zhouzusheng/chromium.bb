@@ -165,11 +165,11 @@ requesting it in the document, so this change makes Chromium honor the
 
 Note that there are two distinct changes introduced by this branch:
 
-* `-webkit-font-smoothing` has no effect in Windows for Skia.
+* The `-webkit-font-smoothing` setting has no effect in Windows for Skia.
   This is the change that is being tracked upstream by WebKit bug
   [86776](https://bugs.webkit.org/show_bug.cgi?id=86776).
 
-* Don't disable ClearType on `ImageBuffer` if it was explicitly requested
+* Don't disable ClearType on `ImageBuffer` if it was explicitly requested.
   This is not yet being tracked upstream.
 
 
@@ -654,10 +654,12 @@ TODO
 TODO
 
 ### feature/instrumentRandomVirtualAlloc (Tianyin Zhang)
-TODO
+
+Retired in favor of `feature/virtualAllocHooks`.
 
 ### feature/disableV8SetAccessCheckCallbacks (Tianyin Zhang)
-TODO
+
+Retired in favor of `bugfix/nonWindowContexts`.
 
 ---
 ###### Microsoft, Windows, Visual Studio and ClearType are registered trademarks of Microsoft Corp.

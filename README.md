@@ -511,7 +511,17 @@ TODO: make this a CSS property instead of a DOM attribute.
 
 
 ### feature/expose-request-context (Imran Haider)
-TODO
+
+This is a feature we needed in our product, so it is unlikely that we will send
+this upstream.
+
+We needed support for listing/reading/writing on the local filesystem.  For the
+local filesystem writer, we need a reference to the blob storage controller so
+that we can get the blob data.  A reference to the blob storage controller can
+be retrieved from the `TestShellRequestContext`.  This commit makes it possible
+for us to get a reference to the `TestShellRequestContext` from the
+`SimpleResourceLoaderBridge`.
+
 
 ### feature/fontSmoothing (Calum Robinson; D36278764)
 
@@ -551,7 +561,32 @@ TODO
 TODO
 
 ### feature/line-erase (Imran Haider)
-TODO
+
+This bugfix addresses an issue when rendering:
+
+    <div contenteditable="true">aaaa<div>bbcc</div></div>
+
+when the width of the browser is such that the "aaaa" takes up the whole line.
+Selecting and copying "aaaa" inbetween "bb" and "cc" will cause the "cc" to
+disappear.
+
+The disappearance of "cc" is caused by a invalid memory access and may
+possibly lead to memory corruption.  The root cause of the problem is that the
+new-line character after the source content is assumed to take some space
+(4 pixels) when it in fact doesn't take any space since it's at the end of the
+line.  This miscalculation causes the final midpoint to not be placed and so
+makes it impossible to compute the trailing whitespace string.
+
+The missing trailing whitespace string causes the midpoint to not be placed
+between the pasted content and the new-line character.  Since the new-line
+character is part of the paragraph instead of being a separate node, the
+new-line is never removed by `removeUnrenderedTextNodesAtEnds()`.  This
+causes the `endOfParagraph()` to return a reference to the new-line character
+instead of the actual end of the pasted content.  At a later point,
+`ReplaceSelectionCommand::mergeEndIfNeeded` makes an assuption that there is
+a character after the end of paragraph, which is an invalid assumption now.
+This leads to an invalid memory access and sometimes causes some nodes to
+disappear.
 
 
 ### feature/nColumnSpan (Shezan Baig; D33399541, D36821222)
@@ -582,7 +617,16 @@ introduce WebKit dependency on our non-WebKit related code.
 
 
 ### feature/opaque-bmp (Imran Haider)
-TODO
+
+This bugfix addresses a misinterpretation of the 4th byte of a 32-bit
+uncompressed BMP image with a v1 header.  As per the
+[specification](http://msdn.microsoft.com/en-us/library/dd183376%28VS.85%29.aspx),
+"The high byte in each DWORD is not used".  Prior to this change, this byte
+was assumed to be unused if its value remained unchanged but interprets it as
+the alpha channel if its value changes throughout the image data.  This
+fallback behavior may cause problem for some users if the BMP image was
+created by an encoder that copied uninitialize values into the 4th byte of
+every pixel.
 
 
 ### feature/preserveSelDirection (Shezan Baig; D36076457)
@@ -625,8 +669,18 @@ This is just a small change to use V8 in a separate DLL.
 ### feature/virtualAllocHooks (Lilit Darbinyan)
 TODO
 
+
 ### feature/timeline-on-startup (Imran Haider)
-TODO
+
+This is a feature we needed in our product, so it is unlikely that we will send
+this upstream.
+
+We needed a way to start up the inspector and the timeline before loading the
+main document.  This change allows us to get a notification when the
+`devtools.js` has completed processing a batch of messages.  The first
+notification tells us that the inspector has processed all of the
+initialization messages and so we can continue to inject JS to kick start the
+timeline and to start loading the main document.
 
 
 ## Retired branches

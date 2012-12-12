@@ -510,14 +510,16 @@ color from the document.
 TODO: make this a CSS property instead of a DOM attribute.
 
 
-### feature/disableV8SetAccessCheckCallbacks (Tianyin Zhang)
-TODO
-
 ### feature/expose-request-context (Imran Haider)
 TODO
 
 ### feature/fontSmoothing (Calum Robinson; D36278764)
-TODO
+
+This is a feature we needed in our product, so it is unlikely that we will send
+this upstream.
+
+This branch adds an API to control the font smoothing selection because the
+product relies on its own custom setting and not the OS default.
 
 
 ### feature/indentOutdentBB (Shezan Baig; D36805707, D32177325)
@@ -652,6 +654,9 @@ TODO
 TODO
 
 ### feature/instrumentRandomVirtualAlloc (Tianyin Zhang)
+TODO
+
+### feature/disableV8SetAccessCheckCallbacks (Tianyin Zhang)
 TODO
 
 ---

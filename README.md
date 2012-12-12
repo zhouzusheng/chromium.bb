@@ -6,11 +6,11 @@ all the modifications made by Bloomberg in order to use it in our environment.
 This repository serves a couple of purposes for us:
 
 * **Provide a trimmed snapshot of the Chromium tree**
-  A typical chromium checkout is about 3GB and fetches code from several
+  A typical Chromium checkout is about 3GB and fetches code from several
 different repositories.  Most of that code is not used by Bloomberg (we only
-use the "test\_shell" portion of Chromium).
+use the `test_shell` portion of Chromium).
 
-  Our checkout is about 260M, and this all comes from a single repo, which
+  Our checkout is about 260MB, and this all comes from a single repo, which
 makes it much easier for us to use internally.
 
 * **Provide a space for us to make/publish changes**
@@ -29,7 +29,7 @@ intention to submit as many bugfixes upstream as we can.
 ## Overall Structure
 
 The structure of this repository is somewhat unconventional, but it serves our
-purpose well.  The "master" branch is not really used (it is actually used by
+purpose well.  The `master` branch is not really used (it is actually used by
 an internal buildbot, but is otherwise not very useful).
 
 Our real entry points are the snapshots we get from upstream.  We tag each of
@@ -39,7 +39,7 @@ these snapshots using the format `upstream/<channel>/<version>`, for example:
 Each tag we snapshot is committed on top of the tag for the previous version.
 This essentially forms a linear branch of upstream versions.
 
-All our "bugfix/" and "feature/" branches are based off one of these tags.  The
+All our `bugfix/` and `feature/` branches are based off one of these tags.  The
 version number of the base tag is appended to the name of the branch, for
 example: `bugfix/offsetleft/19.0.1084.52` is based off the tag
 `upstream/stable/19.0.1084.52`.
@@ -58,19 +58,20 @@ called `bugfix/offsetleft/20.0.1132.47`, based off
 `upstream/stable/20.0.1132.47`, and the previous branch
 `bugfix/offsetleft/19.0.1084.52` is merged and the conflicts are resolved in
 the new branch.  This way, the merge tool we use during releases can work
-autonomously to pickup our offsetleft changes.
+autonomously to pickup our `offsetleft` changes.
 
 
 ## Build Instructions
 
 * Checkout one of the upstream tags (you should pick the latest version).
-* Open chromium/src/webkit/webkit.sln.  This is the generated solution file for
-  "test\_shell" after running "gclient sync" on the original chromium checkout.
-* Build the "test\_shell" project
+* Open `chromium/src/webkit/webkit.sln`.  This is the generated solution file
+  for `test_shell` after running `gclient sync` on the original Chromium
+  checkout.
+* Build the `test_shell` project
 * Now you can start merging branches that you're interested in (see branch
   descriptions below).
 * Each branch introduces a specific fix, which you can test by running
-  "test\_shell" against the URL provided in the branch description.
+  `test_shell` against the URL provided in the branch description.
 
 
 ## Branches
@@ -82,9 +83,9 @@ maintain these branches in our repository.
 
 However, we realize that some of these changes are made in order to adjust the
 behavior of our own product, and may not be desirable/applicable to the general
-web.  For example, the way the Delete/Backspace keys work inside table cells,
-the way indenting/outdenting of list items work etc.  Therefore, we will
-probably not be able to send *everything* upstream.
+web.  For example, the way the `<delete>`/`<backspace>` keys work inside table
+cells, the way indenting/outdenting of list items work, etc.  Therefore, we
+will probably not be able to send *everything* upstream.
 
 
 ### bugfix/autoCorrectionRange (Edward Christie)
@@ -112,9 +113,9 @@ no-op.
 
 This bug can be reproduced in http://jsfiddle.net/FRu9k/
 
-Open this link in Chrome, click the yellow div and hit Enter a bunch of times.
-Then Shift+Up a bunch of times.  Each time you press Up, the result of
-queryCommandValue('bold') changes inconsistently.
+Open this link in Chrome, click the yellow `div` and hit `<enter>` a bunch of
+times.  Then `<shift>`+`<up>` a bunch of times.  Each time you press `<up>`,
+the result of `queryCommandValue('bold')` changes inconsistently.
 
 
 ### bugfix/cancelErrorNotNull (Zhen Yin)
@@ -135,7 +136,7 @@ before it can be sent upstream.
 ### bugfix/cleanWarnings (Shezan Baig)
 
 The purpose of this branch is simply to cleanup the ton of compiler warnings we
-get when building chromium in Visual Studio.  Most of these warnings are
+get when building Chromium in Visual Studio.  Most of these warnings are
 benign, so we simply just disable them.
 
 
@@ -145,29 +146,30 @@ This bug can be reproduced in http://jsfiddle.net/dQtQv/
 
 Open this link in Chrome, then select some text from another tab, and try to
 drag it into the editable div.  Before you drop, you will see a caret at the
-place where the text should go.  When you drop however, event.preventDefault()
-is called, so the text does not get inserted.  However, the drag caret remains
-visible.
+place where the text should go.  When you drop however,
+`event.preventDefault()` is called, so the text does not get inserted.
+However, the drag caret remains visible.
 
 
-### bugfix/cleartypecanvas (Shezan Baig; D32281407; upstream: 86776)
+### bugfix/cleartypecanvas (Shezan Baig; D32281407; upstream: [86776](https://bugs.webkit.org/show_bug.cgi?id=86776))
 
-This bug can be reproduced in TODO (canvas\_text.html)
+This bug can be reproduced in TODO (`canvas_text.html`)
 
 Open this link in Chrome, and notice that the canvas element does not use
-cleartype fonts even though subpixel-antialiased is used.
+ClearType fonts even though `subpixel-antialiased` is used.
 
-Note that when painting to an ImageBuffer, chromium disables cleartype even if
-it is the default on the system.  However, in our case, we are explicitly
-requesting it in the document, so this change makes chromium honor the
--webkit-font-smoothing setting if it is requested explicitly.
+Note that when painting to an `ImageBuffer`, Chromium disables ClearType even
+if it is the default on the system.  However, in our case, we are explicitly
+requesting it in the document, so this change makes Chromium honor the
+`-webkit-font-smoothing` setting if it is requested explicitly.
 
 Note that there are two distinct changes introduced by this branch:
 
-* -webkit-font-smoothing has no effect in Windows for skia
-  This is the change that is being tracked upstream by WebKit bug 86776.
+* `-webkit-font-smoothing` has no effect in Windows for Skia.
+  This is the change that is being tracked upstream by WebKit bug
+  [86776](https://bugs.webkit.org/show_bug.cgi?id=86776).
 
-* Don't disable cleartype on ImageBuffer if it was explicitly requested
+* Don't disable ClearType on `ImageBuffer` if it was explicitly requested
   This is not yet being tracked upstream.
 
 
@@ -194,7 +196,7 @@ that), the scrollbar does not scroll down completely.
 In our product, there is an overlay around the RTE of about a couple of pixels.
 The purpose of the padding on the contenteditable was to prevent this overlay
 from covering the text.  However, since the bottom of the text was right
-against the border of the content-editable, this was causing the descent of
+against the border of the `content-editable`, this was causing the descent of
 some characters to be obscured.
 
 We "fixed" this in this branch by inflating the reveal rect by about half the
@@ -217,25 +219,25 @@ image twice, then outdent the image twice.  There will be one level of
 indentation still left.
 
 
-### bugfix/emptycellcaret (Shezan Baig; upstream: 85385)
+### bugfix/emptycellcaret (Shezan Baig; upstream: [85385](https://bugs.webkit.org/show_bug.cgi?id=85385))
 
 This bug can be reproduced in http://jsfiddle.net/wceLA/
 
 Open this link in Chrome, and put the caret inside an empty table cell.  The
-caret's y-position is outside the table-cell.
+caret's `y-position` is outside the `table-cell`.
 
 
 ### bugfix/fix-modal-loop (Imran Haider)
 TODO
 
 
-### bugfix/fixFlexRounding (Shezan Baig; upstream: 92163)
+### bugfix/fixFlexRounding (Shezan Baig; upstream: [92163](https://bugs.webkit.org/show_bug.cgi?id=92163))
 
 The purpose of this branch is to pull an upstream bugfix into our version of
-chromium, which lags behind the latest upstream version by quite a bit.
+Chromium, which lags behind the latest upstream version by quite a bit.
 
 
-### bugfix/flexReplaced (Shezan Baig; D34372405; upstream: 94237)
+### bugfix/flexReplaced (Shezan Baig; D34372405; upstream: [94237](https://bugs.webkit.org/show_bug.cgi?id=94237))
 
 This branch fixes an issue where replaced elements were not stretching properly
 inside flexboxes.  It has been submitted upstream, so it cannot be reproduced
@@ -247,7 +249,7 @@ in Chrome anymore.
 This bug can be reproduced in TODO
 
 Open the link in Chrome, and zoom the page in and out.  The content outside the
-iframe zooms, but the content inside the iframe does not zoom.
+`iframe` zooms, but the content inside the `iframe` does not zoom.
 
 
 ### bugfix/imgresample (Shezan Baig; D32353761)
@@ -261,7 +263,7 @@ resampling vs linear resampling) doesn't take into account the transformed
 rectangle when a CSS scale has been applied.
 
 Note: When testing this branch with an SVG gile, you may also need the changes
-in the bugfix/svgscale branch in order for the fix to work correctly.
+in the `bugfix/svgscale` branch in order for the fix to work correctly.
 
 
 ### bugfix/indentpre (Shezan Baig; D31922188)
@@ -272,26 +274,26 @@ Open the link in Chrome.  The "Hello" text will be selected on load.  Each time
 you indent the text, the "Hello" will get duplicated.
 
 
-### bugfix/justifyprewrap (Shezan Baig; D31916947; upstream: 84448)
+### bugfix/justifyprewrap (Shezan Baig; D31916947; upstream: [84448](https://bugs.webkit.org/show_bug.cgi?id=84448))
 
 This bug can be reproduced in TODO
 
 Open the link in Chrome.  The second paragraph will not be justified, even
-though "text-align: justify" is specified.
+though `text-align: justify` is specified.
 
 There is an upstream ticket for this issue, but it calls for a much more
 comprehensive fix than what was done in this branch.  In this branch, we just
 enable the existing justification logic in elements that have
-"whitespace:pre-wrap" specified, but the upstream ticket calls for modification
-to the justification logic itself to match how MS Word works.
+`whitespace:pre-wrap` specified, but the upstream ticket calls for modification
+to the justification logic itself to match how Microsoft Word software works.
 
 
-### bugfix/listMarkerAlignment (Shezan Baig; D37088493; upstream: 21709)
+### bugfix/listMarkerAlignment (Shezan Baig; D37088493; upstream: [21709](https://bugs.webkit.org/show_bug.cgi?id=21709))
 
 This bug can be reproduced in TODO
 
 Open the link in Chrome.  The list markers are all left-aligned, even though
-the second and third LI elements are not.
+the second and third `li` elements are not.
 
 
 ### bugfix/listMarkerFont (Shezan Baig; D32534047)
@@ -311,7 +313,8 @@ that we wanted specifically for our product, so it is unlikely that we will
 send this upstream.
 
 This branch makes it so that list markers are not highlighted when the list
-item is selected.  This matches the behavior in Firefox and MS Word.
+item is selected.  This matches the behavior in Firefox and Microsoft Word
+software.
 
 
 ### bugfix/mouseLeaveMousePosition (Zhen Yin)
@@ -324,7 +327,7 @@ This bug can be reproduced in TODO
 
 Open the link in Chrome.  The contents of the table will be selected on load.
 Hit the "List" button multiple times.  Each click executes the
-"insertOrderedList" command.
+`insertOrderedList` command.
 
 On every second click, the table will move down.
 
@@ -335,7 +338,7 @@ Note: This branch has been miscategorized as a bugfix, it is actually a feature
 that we wanted specifically for our product, so it is unlikely that we will
 send this upstream.
 
-This branch removes the assumption that every V8 context has a DOMWindow
+This branch removes the assumption that every V8 context has a `DOMWindow`
 associated with it.  This is necessary for our product because we have multiple
 V8 contexts living in the same process that need to share data with each other.
 
@@ -346,7 +349,7 @@ Note: This branch has been miscategorized as a bugfix, it is actually a feature
 that we wanted specifically for our product, so it is unlikely that we will
 send this upstream.
 
-This branch makes it so that hitting Backspace when the cursor is at the
+This branch makes it so that hitting `<backspace>` when the cursor is at the
 beginning of a table cell will be a no-op.  The default behavior in WebKit is
 to move into the previous cell and start deleting from there.
 
@@ -357,16 +360,16 @@ Note: This branch has been miscategorized as a bugfix, it is actually a feature
 that we wanted specifically for our product, so it is unlikely that we will
 send this upstream.
 
-This branch makes it so that hitting Delete when the cursor is at the end of a
-table cell will be a no-op.  The default behavior in WebKit is to move into the
-next cell and start deleting from there.
+This branch makes it so that hitting `<delete>` when the cursor is at the end
+of a table cell will be a no-op.  The default behavior in WebKit is to move
+into the next cell and start deleting from there.
 
 
 ### bugfix/noRelayoutIfPercentSame (Shezan Baig; D36633185)
 TODO
 
 
-### bugfix/outdentWithBR (Shezan Baig; upstream: 92130)
+### bugfix/outdentWithBR (Shezan Baig; upstream: [92130](https://bugs.webkit.org/show_bug.cgi?id=92130))
 
 This bug can be reproduced in https://bug-92130-attachments.webkit.org/attachment.cgi?id=154080
 
@@ -390,10 +393,10 @@ TODO
 TODO
 
 
-### bugfix/rowOutlines (Shezan Baig; D34115441; upstream: 94007)
+### bugfix/rowOutlines (Shezan Baig; D34115441; upstream: [94007](https://bugs.webkit.org/show_bug.cgi?id=94007))
 
 The purpose of this branch is to pull an upstream bugfix into our version of
-chromium, which lags behind the latest upstream version by quite a bit.
+Chromium, which lags behind the latest upstream version by quite a bit.
 
 
 ### bugfix/scrollClipRect (Shezan Baig; D32861389)
@@ -415,7 +418,7 @@ due to the scale transform being applied.
 TODO
 
 
-### bugfix/selrectantialias (Shezan Baig; D32113976; upstream: 87157)
+### bugfix/selrectantialias (Shezan Baig; D32113976; upstream: [87157](https://bugs.webkit.org/show_bug.cgi?id=87157))
 
 This bug can be reproduced in TODO
 
@@ -439,26 +442,27 @@ loaded.  WebKit's original behavior was to perform spell-check when the user
 makes a change to the document.
 
 
-### bugfix/svgscale (Shezan Baig; D32353761; upstream: 85335)
+### bugfix/svgscale (Shezan Baig; D32353761; upstream: [85335](https://bugs.webkit.org/show_bug.cgi?id=85335))
 
 This bug can be reproduced in TODO
 
-Open the link in Chrome.  When an SVG file is used as a css background, or in
-an IMG element, it does not scale properly.  It only scales properly when used
-in an EMBED element.
+Open the link in Chrome.  When a SVG file is used as a css background, or in
+an `img` element, it does not scale properly.  It only scales properly when
+used in an `embed` element.
 
 
-### bugfix/tablecellpaste (Shezan Baig; upstream: 53933)
+### bugfix/tablecellpaste (Shezan Baig; upstream: [53933](https://bugs.webkit.org/show_bug.cgi?id=53933))
 
 This bug has been fixed upstream, so is no longer reproducable in Chrome.  The
 issue was that pasting text into a table cell would paste the text into the
 next cell instead.
 
-TODO: The upstream fix was actually made in WebKit bug 75004.  We should be
-using that fix instead of our own.
+TODO: The upstream fix was actually made in WebKit bug
+[75004](https://bugs.webkit.org/show_bug.cgi?id=75004).  We should be using
+that fix instead of our own.
 
 
-### bugfix/tooltip\_refresh (Shezan Baig; upstream: 84375)
+### bugfix/tooltip\_refresh (Shezan Baig; upstream: [84375](https://bugs.webkit.org/show_bug.cgi?id=84375))
 
 This bug can be reproduced in http://jsbin.com/omahe3
 
@@ -475,7 +479,7 @@ TODO
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-This branch fires two new events "aftercut" and "aftercopy" which have
+This branch fires two new events `aftercut` and `aftercopy` which have
 read/write access to the clipboard representation.  This allows us to intercept
 the state of the clipboard after WebKit has populated it and make any tweaks.
 This is useful for selectively overriding some copy/paste behaviour with
@@ -490,8 +494,8 @@ This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
 We needed extra control over the proxy server configuration that's used by
-the SimpleResourceLoaderBridge.  This branch makes it possible to supply a
-custom net::ProxyConfigService so we can provide our own settings
+the `SimpleResourceLoaderBridge`.  This branch makes it possible to supply a
+custom `net::ProxyConfigService` so we can provide our own settings
 
 ### feature/colorDocumentMarkers (Shezan Baig; D32415776)
 
@@ -521,7 +525,7 @@ TODO
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-This branch adds "IndentBB" and "OutdentBB" commands that make indenting and
+This branch adds `IndentBB` and `OutdentBB` commands that make indenting and
 outdenting of list items behave closer to how it works in MS Word.
 
 TODO: The code for this is very messy, it needs to be cleaned up.
@@ -532,9 +536,9 @@ TODO: The code for this is very messy, it needs to be cleaned up.
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-We needed to modify the behavior of the "InsertHTML" command.  The WebKit
+We needed to modify the behavior of the `InsertHTML` command.  The WebKit
 behavior is to prevent the inserted HTML from being nested inside style spans.
-This branch adds "InsertHTMLNested" command that allows the HTML to be nested
+This branch adds `InsertHTMLNested` command that allows the HTML to be nested
 inside style spans.
 
 
@@ -554,13 +558,14 @@ This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
 When using the multicolumn feature, there is a way to make an element span
-across all columns (-webkit-column-span: all).
+across all columns (`-webkit-column-span: all`).
 
 However, we needed a way to span across a specified number of columns, (e.g.
--webkit-column-span: 2).  Once CSS Regions is matured (WebKit bug 57312), we
-should be able to use Regions to achieve this effect, then we can get rid of
-this branch.  However, we needed this one specific feature immediately, so this
-branch just hacks it in.
+`-webkit-column-span: 2`).  Once CSS Regions have matured (WebKit bug
+[57312](https://bugs.webkit.org/show_bug.cgi?id=57312)), we should be able to
+use Regions to achieve this effect, then we can get rid of this branch.
+However, we needed this one specific feature immediately, so this branch just
+hacks it in.
 
 
 ### feature/noV8RecursionScopeCheck (Shezan Baig; D34552506)
@@ -568,10 +573,10 @@ branch just hacks it in.
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-This branch makes it so that we don't need to use the MicrotaskSuppression
+This branch makes it so that we don't need to use the `MicrotaskSuppression`
 guard whenever our product invokes Javascript.  Our product uses V8 for
-non-webkit related code.  Having to use the MicrotaskSuppression guard would
-introduce WebKit dependency on our non-webkit related code.
+non-WebKit related code.  Having to use the `MicrotaskSuppression` guard would
+introduce WebKit dependency on our non-WebKit related code.
 
 
 ### feature/opaque-bmp (Imran Haider)
@@ -593,12 +598,12 @@ would be preserved.
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-This branch just adds a print menu item to test\_shell.
+This branch just adds a print menu item to `test_shell`.
 
 
-### feature/resetCachedGDISettings (Shezan Baig; D31921707, upstream: 86891)
+### feature/resetCachedGDISettings (Shezan Baig; D31921707, upstream: [86891](https://bugs.webkit.org/show_bug.cgi?id=86891))
 
-Skia caches GDI settings like cleartype, so when these settings change (for
+Skia caches GDI settings like ClearType, so when these settings change (for
 example, after remoting to a different machine, or manually changing it in the
 system settings), the app does not pick up the new setting.
 
@@ -612,7 +617,7 @@ new processes for each tab, so it picks up the new setting that way.
 This is a feature we needed in our product, so it is unlikely that we will send
 this upstream.
 
-This is just a small change to use v8 in a separate dll.
+This is just a small change to use V8 in a separate DLL.
 
 
 ### feature/virtualAllocHooks (Lilit Darbinyan)
@@ -631,16 +636,16 @@ we simply no longer need the changes for our product).
 ### bugfix/flexboxOverrideHeight (Shezan Baig; D33177416)
 TODO
 
-### bugfix/indentLink (Shezan Baig; D32418391; upstream: 87428)
+### bugfix/indentLink (Shezan Baig; D32418391; upstream: [87428](https://bugs.webkit.org/show_bug.cgi?id=87428))
 TODO
 
-### bugfix/offsetleft (Shezan Baig; upstream: 34875)
+### bugfix/offsetleft (Shezan Baig; upstream: [34875](https://bugs.webkit.org/show_bug.cgi?id=34875))
 TODO
 
 ### bugfix/textOriginRounding (Alex Buch; D34915731)
 TODO
 
-### bugfix/typingStyleAfterDelete (Shezan Baig; D32879084; upstream: 82401)
+### bugfix/typingStyleAfterDelete (Shezan Baig; D32879084; upstream: [82401](https://bugs.webkit.org/show_bug.cgi?id=82401))
 TODO
 
 ### feature/betterVirtualAllocStats (Lilit Darbinyan)
@@ -649,4 +654,7 @@ TODO
 ### feature/instrumentRandomVirtualAlloc (Tianyin Zhang)
 TODO
 
-
+---
+###### Microsoft, Windows, Visual Studio and ClearType are registered trademarks of Microsoft Corp.
+###### Firefox is a registered trademark of Mozilla Corp.
+###### Chrome is a registered trademark of Google Inc.

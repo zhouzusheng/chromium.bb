@@ -3309,8 +3309,18 @@ GapRects RenderBlock::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPo
     if (lastSelectedLine && selectionState() != SelectionEnd && selectionState() != SelectionBoth) {
         // Go ahead and update our lastY to be the bottom of the last selected line.
         lastLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->selectionBottom();
-        lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
-        lastLogicalRight = logicalRightSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
+
+        bool leftGap, rightGap;
+        getSelectionGapInfo(rootBlock, leftGap, rightGap);
+        lastLogicalLeft = leftGap ? logicalLeftSelectionOffset(rootBlock, lastSelectedLine->selectionBottom())
+                                  : offsetFromRootBlock.width() + lastSelectedLine->logicalLeft();
+        lastLogicalRight = rightGap ? logicalRightSelectionOffset(rootBlock, lastSelectedLine->selectionBottom())
+                                    : offsetFromRootBlock.width() + lastSelectedLine->logicalRight();
+        if (lastSelectedLine->selectionState() == SelectionStart) {
+            InlineBox* firstBox = lastSelectedLine->firstSelectedBox();
+            LayoutRect selRect = firstBox->renderer()->selectionRectForRepaint(rootBlock, false);
+            lastLogicalLeft = max(lastLogicalLeft, selRect.x());
+        }
     }
     return result;
 }
@@ -3356,7 +3366,7 @@ GapRects RenderBlock::blockSelectionGaps(RenderBlock* rootBlock, const LayoutPoi
 
             // Fill side gaps on this object based off its state.
             bool leftGap, rightGap;
-            getSelectionGapInfo(childState, leftGap, rightGap);
+            getSelectionGapInfo(rootBlock, leftGap, rightGap);
 
             if (leftGap)
                 result.uniteLeft(logicalLeftSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, this, curr->logicalLeft(), curr->logicalTop(), curr->logicalHeight(), paintInfo));
@@ -3430,8 +3440,14 @@ LayoutRect RenderBlock::logicalRightSelectionGap(RenderBlock* rootBlock, const L
     return gapRect;
 }
 
-void RenderBlock::getSelectionGapInfo(SelectionState state, bool& leftGap, bool& rightGap)
+void RenderBlock::getSelectionGapInfo(RenderBlock* rootBlock, bool& leftGap, bool& rightGap)
 {
+    if (!rootBlock || !rootBlock->isTableCell()) {
+        leftGap = rightGap = false;
+        return;
+    }
+
+    SelectionState state = rootBlock->selectionState();
     bool ltr = style()->isLeftToRightDirection();
     leftGap = (state == RenderObject::SelectionInside) ||
               (state == RenderObject::SelectionEnd && ltr) ||

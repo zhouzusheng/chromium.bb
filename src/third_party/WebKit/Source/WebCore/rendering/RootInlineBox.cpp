@@ -430,10 +430,8 @@ LayoutUnit RootInlineBox::lineSnapAdjustment(LayoutUnit delta) const
 GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, 
                                          LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo* paintInfo)
 {
-    RenderObject::SelectionState lineState = selectionState();
-
     bool leftGap, rightGap;
-    block()->getSelectionGapInfo(lineState, leftGap, rightGap);
+    block()->getSelectionGapInfo(rootBlock, leftGap, rightGap);
 
     GapRects result;
 

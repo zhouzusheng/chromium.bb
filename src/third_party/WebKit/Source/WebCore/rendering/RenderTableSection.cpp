@@ -302,6 +302,28 @@ void RenderTableSection::setCellLogicalWidths()
     statePusher.pop(); // only pops if we pushed
 }
 
+static LayoutUnit shezOffsetFromLogicalTopOfFirstPage(LayoutState* layoutState)
+{
+    ASSERT(layoutState);
+    ASSERT(layoutState->isPaginated());
+    LayoutSize offsetDelta = layoutState->m_layoutOffset - layoutState->m_pageOffset;
+    return offsetDelta.height();
+}
+
+static LayoutUnit shezPageRemainingLogicalHeightForOffset(LayoutState* layoutState, LayoutUnit offset)
+{
+    offset += shezOffsetFromLogicalTopOfFirstPage(layoutState);
+
+    LayoutUnit pageLogicalHeight = layoutState->m_pageLogicalHeight;
+    LayoutUnit remainingHeight = pageLogicalHeight - layoutMod(offset, pageLogicalHeight);
+
+    // If includeBoundaryPoint is true the line exactly on the top edge of a
+    // column will act as being part of the previous column.
+    remainingHeight = layoutMod(remainingHeight, pageLogicalHeight);
+
+    return remainingHeight;
+}
+
 int RenderTableSection::calcRowLogicalHeight()
 {
 #ifndef NDEBUG
@@ -380,6 +402,16 @@ int RenderTableSection::calcRowLogicalHeight()
         // Add the border-spacing to our final position.
         m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : 0;
         m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r]);
+    }
+
+
+    if (view()->layoutState()->pageLogicalHeight()) {
+        LayoutUnit paginationDelta = ZERO_LAYOUT_UNIT;
+        for (unsigned r = 0; r < m_grid.size(); r++) {
+            paginationDelta += m_grid[r].paginationStrut;
+            m_rowPos[r] += floorToInt(paginationDelta);
+        }
+        m_rowPos[m_grid.size()] += floorToInt(paginationDelta);
     }
 
 #ifndef NDEBUG
@@ -519,6 +551,7 @@ void RenderTableSection::layoutRows()
     int rHeight;
     unsigned rindx;
     unsigned totalRows = m_grid.size();
+    bool needToRelayout = false;
 
     // Set the width of our section now.  The rows will also be this width.
     setLogicalWidth(table()->contentLogicalWidth());
@@ -528,20 +561,26 @@ void RenderTableSection::layoutRows()
 
     int vspacing = table()->vBorderSpacing();
     unsigned nEffCols = table()->numEffCols();
+    unsigned rowStart = 0;
 
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
 
-    for (unsigned r = 0; r < totalRows; r++) {
+redoLayout:
+    for (unsigned r = rowStart; r < totalRows; r++) {
         // Set the row's x/y position and width/height.
         if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer) {
             rowRenderer->setLocation(LayoutPoint(0, m_rowPos[r]));
             rowRenderer->setLogicalWidth(logicalWidth());
-            rowRenderer->setLogicalHeight(m_rowPos[r + 1] - m_rowPos[r] - vspacing);
+
+            rHeight = m_rowPos[r + 1] - m_rowPos[r] - vspacing;
+            if (r < totalRows-1)
+                rHeight -= floorToInt(m_grid[r + 1].paginationStrut);
+
+            rowRenderer->setLogicalHeight(rHeight);
             rowRenderer->updateLayerTransform();
         }
 
-        int rowHeightIncreaseForPagination = 0;
-
+        LayoutUnit maxCellHeight = ZERO_LAYOUT_UNIT;
         for (unsigned c = 0; c < nEffCols; c++) {
             CellStruct& cs = cellAt(r, c);
             RenderTableCell* cell = cs.primaryCell();
@@ -551,6 +590,9 @@ void RenderTableSection::layoutRows()
 
             rindx = cell->rowIndex();
             rHeight = m_rowPos[rindx + cell->rowSpan()] - m_rowPos[rindx] - vspacing;
+            for (unsigned rowIndex = rindx+1; rowIndex < totalRows && rowIndex <= rindx+cell->rowSpan(); ++rowIndex) {
+                rHeight -= floorToInt(m_grid[rowIndex].paginationStrut);
+            }
             
             // Force percent height children to lay themselves out again.
             // This will cause these children to grow to fill the cell.
@@ -661,16 +703,6 @@ void RenderTableSection::layoutRows()
 
             cell->layoutIfNeeded();
 
-            // FIXME: Make pagination work with vertical tables.
-            if (view()->layoutState()->pageLogicalHeight() && cell->logicalHeight() != rHeight) {
-                // FIXME: Pagination might have made us change size. For now just shrink or grow the cell to fit without doing a relayout.
-                // We'll also do a basic increase of the row height to accommodate the cell if it's bigger, but this isn't quite right
-                // either. It's at least stable though and won't result in an infinite # of relayouts that may never stabilize.
-                if (cell->logicalHeight() > rHeight)
-                    rowHeightIncreaseForPagination = max<int>(rowHeightIncreaseForPagination, cell->logicalHeight() - rHeight);
-                cell->setLogicalHeight(rHeight);
-            }
-
             LayoutSize childOffset(cell->location() - oldCellRect.location());
             if (childOffset.width() || childOffset.height()) {
                 view()->addLayoutDelta(childOffset);
@@ -681,16 +713,30 @@ void RenderTableSection::layoutRows()
                 if (!table()->selfNeedsLayout() && cell->checkForRepaintDuringLayout())
                     cell->repaintDuringLayoutIfMoved(oldCellRect);
             }
-        }
-        if (rowHeightIncreaseForPagination) {
-            for (unsigned rowIndex = r + 1; rowIndex <= totalRows; rowIndex++)
-                m_rowPos[rowIndex] += rowHeightIncreaseForPagination;
-            for (unsigned c = 0; c < nEffCols; ++c) {
-                Vector<RenderTableCell*, 1>& cells = cellAt(r, c).cells;
-                for (size_t i = 0; i < cells.size(); ++i)
-                    cells[i]->setLogicalHeight(cells[i]->logicalHeight() + rowHeightIncreaseForPagination);
+
+            if (rindx == r && rHeight > maxCellHeight) {
+                maxCellHeight = rHeight;
             }
         }
+
+        if (view()->layoutState()->pageLogicalHeight()) {
+            LayoutUnit remaining = shezPageRemainingLogicalHeightForOffset(view()->layoutState(), m_rowPos[r] - m_grid[r].paginationStrut);
+            LayoutUnit newStrut = floorToInt((maxCellHeight > remaining) ? remaining : ZERO_LAYOUT_UNIT);
+            LayoutUnit delta = newStrut - m_grid[r].paginationStrut;
+            if (ZERO_LAYOUT_UNIT != delta) {
+                for (unsigned rowIndex = r; rowIndex <= totalRows; rowIndex++)
+                    m_rowPos[rowIndex] += floorToInt(delta);
+                m_grid[r].paginationStrut = newStrut;
+                needToRelayout = true;
+                rowStart = r;
+                break;
+            }
+        }
+    }
+
+    if (needToRelayout) {
+        needToRelayout = false;
+        goto redoLayout;
     }
 
 #ifndef NDEBUG

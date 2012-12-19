@@ -25,6 +25,7 @@
 #include "config.h"
 #include "RenderDeprecatedFlexibleBox.h"
 
+#include "Font.h"
 #include "LayoutRepainter.h"
 #include "RenderLayer.h"
 #include "RenderView.h"
@@ -122,7 +123,7 @@ RenderDeprecatedFlexibleBox::RenderDeprecatedFlexibleBox(Node* node)
     : RenderBlock(node)
 {
     setChildrenInline(false); // All of our children must be block-level
-    m_flexingChildren = m_stretchingChildren = false;
+    m_stretchingChildren = false;
 }
 
 RenderDeprecatedFlexibleBox::~RenderDeprecatedFlexibleBox()
@@ -147,7 +148,21 @@ static LayoutUnit marginWidthForChild(RenderBox* child)
 static bool childDoesNotAffectWidthOrFlexing(RenderObject* child)
 {
     // Positioned children and collapsed children don't affect the min/max width.
-    return child->isPositioned() || child->style()->visibility() == COLLAPSE;
+    return child->isOutOfFlowPositioned() || child->style()->visibility() == COLLAPSE;
+}
+
+static LayoutUnit contentWidthForChild(RenderBox* child)
+{
+    if (child->hasOverrideWidth())
+        return child->overrideLogicalContentWidth();
+    return child->logicalWidth() - child->borderAndPaddingLogicalWidth();
+}
+
+static LayoutUnit contentHeightForChild(RenderBox* child)
+{
+    if (child->hasOverrideHeight())
+        return child->overrideLogicalContentHeight();
+    return child->logicalHeight() - child->borderAndPaddingLogicalHeight();
 }
 
 void RenderDeprecatedFlexibleBox::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
@@ -191,7 +206,7 @@ void RenderDeprecatedFlexibleBox::computePreferredLogicalWidths()
     ASSERT(preferredLogicalWidthsDirty());
 
     if (style()->width().isFixed() && style()->width().value() > 0)
-        m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = computeContentBoxLogicalWidth(style()->width().value());
+        m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = adjustContentBoxLogicalWidthForBoxSizing(style()->width().value());
     else {
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = 0;
 
@@ -211,13 +226,13 @@ void RenderDeprecatedFlexibleBox::computePreferredLogicalWidths()
     }
 
     if (style()->minWidth().isFixed() && style()->minWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->minWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->minWidth().value()));
+        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->minWidth().value()));
+        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->minWidth().value()));
     }
 
     if (style()->maxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->maxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->maxWidth().value()));
+        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->maxWidth().value()));
+        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(style()->maxWidth().value()));
     }
 
     LayoutUnit borderAndPadding = borderAndPaddingLogicalWidth();
@@ -242,12 +257,12 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
         if (logicalWidthChangedInRegions())
             relayoutChildren = true;
     }
-    computeInitialRegionRangeForBlock();
+    updateRegionsAndExclusionsLogicalSize();
 
     LayoutSize previousSize = size();
 
-    computeLogicalWidth();
-    computeLogicalHeight();
+    updateLogicalWidth();
+    updateLogicalHeight();
 
     m_overflow.clear();
 
@@ -258,17 +273,9 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
 
     setHeight(0);
 
-    m_flexingChildren = m_stretchingChildren = false;
+    m_stretchingChildren = false;
 
     initMaxMarginValues();
-
-    // For overflow:scroll blocks, ensure we have both scrollbars in place always.
-    if (scrollsOverflow()) {
-        if (style()->overflowX() == OSCROLL)
-            layer()->setHasHorizontalScrollbar(true);
-        if (style()->overflowY() == OSCROLL)
-            layer()->setHasVerticalScrollbar(true);
-    }
 
     if (isHorizontal())
         layoutHorizontalBox(relayoutChildren);
@@ -276,7 +283,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
         layoutVerticalBox(relayoutChildren);
 
     LayoutUnit oldClientAfterEdge = clientLogicalBottom();
-    computeLogicalHeight();
+    updateLogicalHeight();
 
     if (previousSize.height() != height())
         relayoutChildren = true;
@@ -285,7 +292,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
 
     computeRegionRangeForBlock();
 
-    if (!isFloatingOrPositioned() && height() == 0) {
+    if (!isFloatingOrOutOfFlowPositioned() && height() == 0) {
         // We are a block with no border and padding and a computed height
         // of 0.  The CSS spec states that zero-height blocks collapse their margins
         // together.
@@ -360,7 +367,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
     FlexBoxIterator iterator(this);
     unsigned int highestFlexGroup = 0;
     unsigned int lowestFlexGroup = 0;
-    bool haveFlex = false;
+    bool haveFlex = false, flexingChildren = false;
     gatherFlexChildrenInfo(iterator, relayoutChildren, highestFlexGroup, lowestFlexGroup, haveFlex);
 
     RenderBlock::startDelayUpdateScrollInfo();
@@ -382,11 +389,11 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent())))
                 child->setChildNeedsLayout(true, MarkOnlyThis);
 
-            if (child->isPositioned())
+            if (child->isOutOfFlowPositioned())
                 continue;
 
             // Compute the child's vertical margins.
-            child->computeBlockDirectionMargins(this);
+            child->computeAndSetBlockDirectionMargins(this);
 
             if (!child->needsLayout())
                 child->markForPaginationRelayoutIfNeeded();
@@ -421,7 +428,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         setHeight(height() + toAdd);
 
         oldHeight = height();
-        computeLogicalHeight();
+        updateLogicalHeight();
 
         relayoutChildren = false;
         if (oldHeight != height())
@@ -430,7 +437,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         // Now that our height is actually known, we can place our boxes.
         m_stretchingChildren = (style()->boxAlign() == BSTRETCH);
         for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
-            if (child->isPositioned()) {
+            if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
                 RenderLayer* childLayer = child->layer();
                 childLayer->setStaticInlinePosition(xPos); // FIXME: Not right for regions.
@@ -440,7 +447,9 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                         child->setChildNeedsLayout(true, MarkOnlyThis);
                 }
                 continue;
-            } else if (child->style()->visibility() == COLLAPSE) {
+            }
+            
+            if (child->style()->visibility() == COLLAPSE) {
                 // visibility: collapsed children do not participate in our positioning.
                 // But we need to lay them down.
                 child->layoutIfNeeded();
@@ -452,7 +461,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             // fill the height of a containing box by default.
             // Now do a layout.
             LayoutUnit oldChildHeight = child->height();
-            child->computeLogicalHeight();
+            child->updateLogicalHeight();
             if (oldChildHeight != child->height())
                 child->setChildNeedsLayout(true, MarkOnlyThis);
 
@@ -492,7 +501,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         remainingSpace = borderLeft() + paddingLeft() + contentWidth() - xPos;
 
         m_stretchingChildren = false;
-        if (m_flexingChildren)
+        if (flexingChildren)
             haveFlex = false; // We're done.
         else if (haveFlex) {
             // We have some flexible objects.  See if we need to grow/shrink them at all.
@@ -543,8 +552,8 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                         if (allowedChildFlex(child, expanding, i)) {
                             LayoutUnit spaceAdd = LayoutUnit(spaceAvailableThisPass * (child->style()->boxFlex() / totalFlex));
                             if (spaceAdd) {
-                                child->setOverrideLogicalContentWidth(child->overrideLogicalContentWidth() + spaceAdd);
-                                m_flexingChildren = true;
+                                child->setOverrideLogicalContentWidth(contentWidthForChild(child) + spaceAdd);
+                                flexingChildren = true;
                                 relayoutChildren = true;
                             }
 
@@ -560,8 +569,8 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                         LayoutUnit spaceAdd = groupRemainingSpace > 0 ? 1 : -1;
                         for (RenderBox* child = iterator.first(); child && groupRemainingSpace; child = iterator.next()) {
                             if (allowedChildFlex(child, expanding, i)) {
-                                child->setOverrideLogicalContentWidth(child->overrideLogicalContentWidth() + spaceAdd);
-                                m_flexingChildren = true;
+                                child->setOverrideLogicalContentWidth(contentWidthForChild(child) + spaceAdd);
+                                flexingChildren = true;
                                 relayoutChildren = true;
                                 remainingSpace -= spaceAdd;
                                 groupRemainingSpace -= spaceAdd;
@@ -572,12 +581,10 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             }
 
             // We didn't find any children that could grow.
-            if (haveFlex && !m_flexingChildren)
+            if (haveFlex && !flexingChildren)
                 haveFlex = false;
         }
     } while (haveFlex);
-
-    m_flexingChildren = false;
 
     RenderBlock::finishDelayUpdateScrollInfo();
 
@@ -647,7 +654,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
     FlexBoxIterator iterator(this);
     unsigned int highestFlexGroup = 0;
     unsigned int lowestFlexGroup = 0;
-    bool haveFlex = false;
+    bool haveFlex = false, flexingChildren = false;
     gatherFlexChildrenInfo(iterator, relayoutChildren, highestFlexGroup, lowestFlexGroup, haveFlex);
 
     // We confine the line clamp ugliness to vertical flexible boxes (thus keeping it out of
@@ -671,7 +678,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             if (!haveLineClamp && (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))))
                 child->setChildNeedsLayout(true, MarkOnlyThis);
 
-            if (child->isPositioned()) {
+            if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
                 RenderLayer* childLayer = child->layer();
                 childLayer->setStaticInlinePosition(borderStart() + paddingStart()); // FIXME: Not right for regions.
@@ -681,7 +688,9 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                         child->setChildNeedsLayout(true, MarkOnlyThis);
                 }
                 continue;
-            } else if (child->style()->visibility() == COLLAPSE) {
+            }
+            
+            if (child->style()->visibility() == COLLAPSE) {
                 // visibility: collapsed children do not participate in our positioning.
                 // But we need to lay them down.
                 child->layoutIfNeeded();
@@ -689,7 +698,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             }
 
             // Compute the child's vertical margins.
-            child->computeBlockDirectionMargins(this);
+            child->computeAndSetBlockDirectionMargins(this);
 
             // Add in the child's marginTop to our height.
             setHeight(height() + child->marginTop());
@@ -740,13 +749,13 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
 
         // Now we have to calc our height, so we know how much space we have remaining.
         oldHeight = height();
-        computeLogicalHeight();
+        updateLogicalHeight();
         if (oldHeight != height())
             heightSpecified = true;
 
         remainingSpace = borderTop() + paddingTop() + contentHeight() - yPos;
 
-        if (m_flexingChildren)
+        if (flexingChildren)
             haveFlex = false; // We're done.
         else if (haveFlex) {
             // We have some flexible objects.  See if we need to grow/shrink them at all.
@@ -794,8 +803,8 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                         if (allowedChildFlex(child, expanding, i)) {
                             LayoutUnit spaceAdd = static_cast<LayoutUnit>(spaceAvailableThisPass * (child->style()->boxFlex() / totalFlex));
                             if (spaceAdd) {
-                                child->setOverrideLogicalContentHeight(child->overrideLogicalContentHeight() + spaceAdd);
-                                m_flexingChildren = true;
+                                child->setOverrideLogicalContentHeight(contentHeightForChild(child) + spaceAdd);
+                                flexingChildren = true;
                                 relayoutChildren = true;
                             }
 
@@ -811,8 +820,8 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                         LayoutUnit spaceAdd = groupRemainingSpace > 0 ? 1 : -1;
                         for (RenderBox* child = iterator.first(); child && groupRemainingSpace; child = iterator.next()) {
                             if (allowedChildFlex(child, expanding, i)) {
-                                child->setOverrideLogicalContentHeight(child->overrideLogicalContentHeight() + spaceAdd);
-                                m_flexingChildren = true;
+                                child->setOverrideLogicalContentHeight(contentHeightForChild(child) + spaceAdd);
+                                flexingChildren = true;
                                 relayoutChildren = true;
                                 remainingSpace -= spaceAdd;
                                 groupRemainingSpace -= spaceAdd;
@@ -823,7 +832,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             }
 
             // We didn't find any children that could grow.
-            if (haveFlex && !m_flexingChildren)
+            if (haveFlex && !flexingChildren)
                 haveFlex = false;
         }
     } while (haveFlex);
@@ -889,6 +898,7 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         if (childDoesNotAffectWidthOrFlexing(child))
             continue;
 
+        child->clearOverrideSize();
         if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))
             || (child->style()->height().isAuto() && child->isBlockFlow())) {
             child->setChildNeedsLayout(true, MarkOnlyThis);
@@ -926,10 +936,7 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
 
         child->setChildNeedsLayout(true, MarkOnlyThis);
         child->setOverrideLogicalContentHeight(newHeight - child->borderAndPaddingHeight());
-        m_flexingChildren = true;
         child->layoutIfNeeded();
-        m_flexingChildren = false;
-        child->clearOverrideSize();
 
         // FIXME: For now don't support RTL.
         if (style()->direction() != LTR)
@@ -972,13 +979,12 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
             continue;
 
         LayoutUnit blockRightEdge = destBlock->logicalRightOffsetForLine(lastVisibleLine->y(), false);
-        LayoutUnit blockLeftEdge = destBlock->logicalLeftOffsetForLine(lastVisibleLine->y(), false);
-
-        LayoutUnit blockEdge = leftToRight ? blockRightEdge : blockLeftEdge;
-        if (!lastVisibleLine->lineCanAccommodateEllipsis(leftToRight, blockEdge, lastVisibleLine->x() + lastVisibleLine->logicalWidth(), totalWidth))
+        if (!lastVisibleLine->lineCanAccommodateEllipsis(leftToRight, blockRightEdge, lastVisibleLine->x() + lastVisibleLine->logicalWidth(), totalWidth))
             continue;
 
         // Let the truncation code kick in.
+        // FIXME: the text alignment should be recomputed after the width changes due to truncation.
+        LayoutUnit blockLeftEdge = destBlock->logicalLeftOffsetForLine(lastVisibleLine->y(), false);
         lastVisibleLine->placeEllipsis(anchorBox ? ellipsisAndSpaceStr : ellipsisStr, leftToRight, blockLeftEdge, blockRightEdge, totalWidth, anchorBox);
         destBlock->setHasMarkupTruncation(true);
     }
@@ -991,6 +997,7 @@ void RenderDeprecatedFlexibleBox::clearLineClamp()
         if (childDoesNotAffectWidthOrFlexing(child))
             continue;
 
+        child->clearOverrideSize();
         if ((child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent()))
             || (child->style()->height().isAuto() && child->isBlockFlow())) {
             child->setChildNeedsLayout(true);
@@ -1026,7 +1033,7 @@ LayoutUnit RenderDeprecatedFlexibleBox::allowedChildFlex(RenderBox* child, bool 
         if (isHorizontal()) {
             // FIXME: For now just handle fixed values.
             LayoutUnit maxWidth = MAX_LAYOUT_UNIT;
-            LayoutUnit width = child->overrideLogicalContentWidth();
+            LayoutUnit width = contentWidthForChild(child);
             if (!child->style()->maxWidth().isUndefined() && child->style()->maxWidth().isFixed())
                 maxWidth = child->style()->maxWidth().value();
             else if (child->style()->maxWidth().type() == Intrinsic)
@@ -1039,7 +1046,7 @@ LayoutUnit RenderDeprecatedFlexibleBox::allowedChildFlex(RenderBox* child, bool 
         } else {
             // FIXME: For now just handle fixed values.
             LayoutUnit maxHeight = MAX_LAYOUT_UNIT;
-            LayoutUnit height = child->overrideLogicalContentHeight();
+            LayoutUnit height = contentHeightForChild(child);
             if (!child->style()->maxHeight().isUndefined() && child->style()->maxHeight().isFixed())
                 maxHeight = child->style()->maxHeight().value();
             if (maxHeight == MAX_LAYOUT_UNIT)
@@ -1051,20 +1058,23 @@ LayoutUnit RenderDeprecatedFlexibleBox::allowedChildFlex(RenderBox* child, bool 
     // FIXME: For now just handle fixed values.
     if (isHorizontal()) {
         LayoutUnit minWidth = child->minPreferredLogicalWidth();
-        LayoutUnit width = child->overrideLogicalContentWidth();
+        LayoutUnit width = contentWidthForChild(child);
         if (child->style()->minWidth().isFixed())
             minWidth = child->style()->minWidth().value();
         else if (child->style()->minWidth().type() == Intrinsic)
             minWidth = child->maxPreferredLogicalWidth();
         else if (child->style()->minWidth().type() == MinIntrinsic)
             minWidth = child->minPreferredLogicalWidth();
+        else if (child->style()->minWidth().type() == Auto)
+            minWidth = 0;
 
         LayoutUnit allowedShrinkage = min<LayoutUnit>(0, minWidth - width);
         return allowedShrinkage;
     } else {
-        if (child->style()->minHeight().isFixed()) {
+        Length minHeight = child->style()->minHeight();
+        if (minHeight.isFixed() || minHeight.isAuto()) {
             LayoutUnit minHeight = child->style()->minHeight().value();
-            LayoutUnit height = child->overrideLogicalContentHeight();
+            LayoutUnit height = contentHeightForChild(child);
             LayoutUnit allowedShrinkage = min<LayoutUnit>(0, minHeight - height);
             return allowedShrinkage;
         }
@@ -1077,7 +1087,7 @@ const char *RenderDeprecatedFlexibleBox::renderName() const
 {
     if (isFloating())
         return "RenderDeprecatedFlexibleBox (floating)";
-    if (isPositioned())
+    if (isOutOfFlowPositioned())
         return "RenderDeprecatedFlexibleBox (positioned)";
     if (isAnonymous())
         return "RenderDeprecatedFlexibleBox (generated)";

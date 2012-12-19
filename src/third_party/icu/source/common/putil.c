@@ -623,20 +623,28 @@ uprv_timezone()
 #else
     time_t t, t1, t2;
     struct tm tmrec;
+#ifndef U_IOS
     UBool dst_checked;
+#endif
     int32_t tdiff = 0;
 
     time(&t);
     uprv_memcpy( &tmrec, localtime(&t), sizeof(tmrec) );
+#ifndef U_IOS
     dst_checked = (tmrec.tm_isdst != 0); /* daylight savings time is checked*/
+#endif
     t1 = mktime(&tmrec);                 /* local time in seconds*/
     uprv_memcpy( &tmrec, gmtime(&t), sizeof(tmrec) );
     t2 = mktime(&tmrec);                 /* GMT (or UTC) in seconds*/
     tdiff = t2 - t1;
+#ifndef U_IOS
+    /* On iOS the calculated tdiff is correct so and doesn't need this dst
+       shift applied. */
     /* imitate NT behaviour, which returns same timezone offset to GMT for
        winter and summer*/
     if (dst_checked)
         tdiff += 3600;
+#endif
     return tdiff;
 #endif
 }
@@ -649,7 +657,7 @@ uprv_timezone()
 extern U_IMPORT char *U_TZNAME[];
 #endif
 
-#if !UCONFIG_NO_FILE_IO && (defined(U_DARWIN) || defined(U_LINUX) || defined(U_BSD))
+#if !UCONFIG_NO_FILE_IO && ((defined(U_DARWIN) && !defined(U_IOS)) || defined(U_LINUX) || defined(U_BSD))
 /* These platforms are likely to use Olson timezone IDs. */
 #define CHECK_LOCALTIME_LINK 1
 #if defined(U_DARWIN)

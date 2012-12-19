@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <wtf/Assertions.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/StringBuilder.h>
 #include <wtf/unicode/CharacterNames.h>
 
 namespace WebCore {
@@ -410,28 +411,6 @@ void VisibleSelection::updateSelectionType()
         m_affinity = DOWNSTREAM;
 }
 
-Position VisibleSelection::adjustPositionBefore(TreeScope* treeScope, const Position& currentPosition)
-{
-    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.anchorNode()))
-        return positionBeforeNode(ancestor);
-
-    if (Node* lastChild = treeScope->rootNode()->lastChild())
-        return positionAfterNode(lastChild);
-
-    return Position();
-}
-
-Position VisibleSelection::adjustPositionAfter(TreeScope* treeScope, const Position& currentPosition)
-{
-    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.anchorNode()))
-        return positionAfterNode(ancestor);
-
-    if (Node* firstChild = treeScope->rootNode()->firstChild())
-        return positionBeforeNode(firstChild);
-
-    return Position();
-}
-
 void VisibleSelection::validate(TextGranularity granularity)
 {
     setBaseAndExtentToDeepEquivalents();
@@ -483,6 +462,42 @@ void VisibleSelection::setWithoutValidation(const Position& base, const Position
     m_selectionType = base == extent ? CaretSelection : RangeSelection;
 }
 
+static Position adjustPositionForEnd(const Position& currentPosition, Node* startContainerNode)
+{
+    TreeScope* treeScope = startContainerNode->treeScope();
+
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+
+    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.containerNode())) {
+        if (ancestor->contains(startContainerNode))
+            return positionAfterNode(ancestor);
+        return positionBeforeNode(ancestor);
+    }
+
+    if (Node* lastChild = treeScope->rootNode()->lastChild())
+        return positionAfterNode(lastChild);
+
+    return Position();
+}
+
+static Position adjustPositionForStart(const Position& currentPosition, Node* endContainerNode)
+{
+    TreeScope* treeScope = endContainerNode->treeScope();
+
+    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+    
+    if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.containerNode())) {
+        if (ancestor->contains(endContainerNode))
+            return positionBeforeNode(ancestor);
+        return positionAfterNode(ancestor);
+    }
+
+    if (Node* firstChild = treeScope->rootNode()->firstChild())
+        return positionBeforeNode(firstChild);
+
+    return Position();
+}
+
 void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
 {
     if (m_base.isNull() || m_start.isNull() || m_end.isNull())
@@ -492,10 +507,10 @@ void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
         return;
 
     if (m_baseIsFirst) {
-        m_extent = adjustPositionBefore(m_start.anchorNode()->treeScope(), m_end);
+        m_extent = adjustPositionForEnd(m_end, m_start.containerNode());
         m_end = m_extent;
     } else {
-        m_extent = adjustPositionAfter(m_end.anchorNode()->treeScope(), m_start);
+        m_extent = adjustPositionForStart(m_start, m_end.containerNode());
         m_start = m_extent;
     }
 
@@ -614,6 +629,11 @@ bool VisibleSelection::isContentEditable() const
     return isEditablePosition(start());
 }
 
+bool VisibleSelection::rendererIsEditable() const
+{
+    return isEditablePosition(start(), ContentIsEditable, DoNotUpdateStyle);
+}
+
 bool VisibleSelection::isContentRichlyEditable() const
 {
     return isRichlyEditablePosition(start());
@@ -652,23 +672,23 @@ void VisibleSelection::debugPosition() const
 
 void VisibleSelection::formatForDebugger(char* buffer, unsigned length) const
 {
-    String result;
+    StringBuilder result;
     String s;
-    
+
     if (isNone()) {
-        result = "<none>";
+        result.appendLiteral("<none>");
     } else {
         const int FormatBufferSize = 1024;
         char s[FormatBufferSize];
-        result += "from ";
+        result.appendLiteral("from ");
         start().formatForDebugger(s, FormatBufferSize);
-        result += s;
-        result += " to ";
+        result.append(s);
+        result.appendLiteral(" to ");
         end().formatForDebugger(s, FormatBufferSize);
-        result += s;
+        result.append(s);
     }
 
-    strncpy(buffer, result.utf8().data(), length - 1);
+    strncpy(buffer, result.toString().utf8().data(), length - 1);
 }
 
 void VisibleSelection::showTreeForThis() const

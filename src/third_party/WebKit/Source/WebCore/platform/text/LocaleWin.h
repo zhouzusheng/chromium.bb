@@ -31,16 +31,18 @@
 #ifndef LocaleWin_h
 #define LocaleWin_h
 
+#include "Localizer.h"
 #include <windows.h>
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class DateComponents;
 struct DateFormatToken;
 
-class LocaleWin {
+class LocaleWin : public Localizer {
 public:
     static PassOwnPtr<LocaleWin> create(LCID);
     static LocaleWin* currentLocale();
@@ -54,6 +56,12 @@ public:
     unsigned firstDayOfWeek() { return m_firstDayOfWeek; }
 #endif
 
+#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+    virtual String timeFormat() OVERRIDE;
+    virtual String shortTimeFormat() OVERRIDE;
+    virtual const Vector<String>& timeAMPMLabels() OVERRIDE;
+#endif
+
     // For testing.
     double parseDate(const String& format, int baseYear, const String& input);
     String formatDate(const String& format, int baseYear, int year, int month, int day);
@@ -62,15 +70,23 @@ public:
 private:
     explicit LocaleWin(LCID);
     String getLocaleInfoString(LCTYPE);
+    void getLocaleInfo(LCTYPE, DWORD&);
     void ensureShortMonthLabels();
     void ensureMonthLabels();
     void ensureShortDateTokens();
+    bool isLocalizedDigit(UChar);
+    int parseNumber(const String&, unsigned& index);
     int parseNumberOrMonth(const String&, unsigned& index);
     double parseDate(const Vector<DateFormatToken>&, int baseYear, const String&);
+    void appendNumber(int, StringBuilder&);
+    void appendTwoDigitsNumber(int, StringBuilder&);
+    void appendFourDigitsNumber(int, StringBuilder&);
     String formatDate(const Vector<DateFormatToken>&, int baseYear, int year, int month, int day);
 #if ENABLE(CALENDAR_PICKER)
     void ensureWeekDayShortLabels();
 #endif
+    // Localizer function:
+    virtual void initializeLocalizerData() OVERRIDE;
 
     LCID m_lcid;
     int m_baseYear;
@@ -81,8 +97,8 @@ private:
     Vector<String> m_weekDayShortLabels;
     unsigned m_firstDayOfWeek;
 #endif
-
+    bool m_didInitializeNumberData;
 };
 
-}
+} // namespace WebCore
 #endif

@@ -4,7 +4,6 @@
 
 #ifndef UI_SURFACE_ACCELERATED_SURFACE_WIN_H_
 #define UI_SURFACE_ACCELERATED_SURFACE_WIN_H_
-#pragma once
 
 #include <d3d9.h>
 
@@ -19,18 +18,24 @@
 
 class PresentThread;
 
+namespace gfx {
+class Rect;
+}
+
 class SURFACE_EXPORT AcceleratedPresenter
     : public base::RefCountedThreadSafe<AcceleratedPresenter> {
  public:
-  typedef base::Callback<void(bool)> CompletionTaskl;
+  typedef base::Callback<void(bool,
+                              base::TimeTicks,
+                              base::TimeDelta)> CompletionTask;
 
-  explicit AcceleratedPresenter(gfx::NativeWindow window);
+  explicit AcceleratedPresenter(gfx::PluginWindowHandle window);
 
   // Returns a thread safe reference to the presenter for the given window or
   // null is no such presenter exists. The thread safe refptr ensures the
   // presenter will not be destroyed. This can be called on any thread.
   static scoped_refptr<AcceleratedPresenter> GetForWindow(
-      gfx::NativeWindow window);
+      gfx::PluginWindowHandle window);
 
   // Schedule a frame to be presented. The completion callback will be invoked
   // when it is safe to write to the surface on another thread. The lock for
@@ -39,7 +44,7 @@ class SURFACE_EXPORT AcceleratedPresenter
   void AsyncPresentAndAcknowledge(
       const gfx::Size& size,
       int64 surface_handle,
-      const base::Callback<void(bool)>& completion_task);
+      const CompletionTask& completion_task);
 
   // Schedule the presenter to free all its resources. This can be called on any
   // thread.
@@ -53,7 +58,9 @@ class SURFACE_EXPORT AcceleratedPresenter
 
   // The public member functions are called on the main thread.
   bool Present(HDC dc);
-  bool CopyTo(const gfx::Size& size, void* buf);
+  bool CopyTo(const gfx::Rect& src_subrect,
+              const gfx::Size& dst_size,
+              void* buf);
   void Invalidate();
 
  private:
@@ -66,7 +73,7 @@ class SURFACE_EXPORT AcceleratedPresenter
   void DoPresentAndAcknowledge(
       const gfx::Size& size,
       int64 surface_handle,
-      const base::Callback<void(bool)>& completion_task);
+      const CompletionTask& completion_task);
   void DoSuspend();
   void DoPresent(HDC dc, bool* presented);
   bool DoRealPresent(HDC dc);
@@ -76,7 +83,7 @@ class SURFACE_EXPORT AcceleratedPresenter
   PresentThread* const present_thread_;
 
   // The window that is presented to.
-  gfx::NativeWindow window_;
+  gfx::PluginWindowHandle window_;
 
   // The lock is taken while any thread is calling the object, except those that
   // simply post from the main thread to the present thread via the immutable
@@ -103,9 +110,8 @@ class SURFACE_EXPORT AcceleratedPresenter
   // are used so it is possible to represent it to quickly validate the window.
   base::win::ScopedComPtr<IDirect3DSwapChain9> swap_chain_;
 
-  // Whether surfaces are flipped vertically prior to presentation.
-  bool reverse_rows_;
-
+  // Whether the window is hidden or has not been presented to since it was
+  // last hidden.
   bool hidden_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceleratedPresenter);
@@ -113,17 +119,20 @@ class SURFACE_EXPORT AcceleratedPresenter
 
 class SURFACE_EXPORT AcceleratedSurface {
  public:
-  AcceleratedSurface(gfx::NativeWindow window);
+  AcceleratedSurface(gfx::PluginWindowHandle window);
   ~AcceleratedSurface();
 
   // Synchronously present a frame with no acknowledgement.
   bool Present(HDC dc);
 
-  // Copies the surface data to |buf|. The image data is transformed so that it
-  // fits in |size|.
+  // Copies the surface data to |buf|. The copied region is specified with
+  // |src_subrect| and the image data is transformed so that it fits in
+  // |dst_size|.
   // Caller must ensure that |buf| is allocated with the size no less than
-  // |4 * size.width() * size.height()| bytes.
-  bool CopyTo(const gfx::Size& size, void* buf);
+  // |4 * dst_size.width() * dst_size.height()| bytes.
+  bool CopyTo(const gfx::Rect& src_subrect,
+              const gfx::Size& dst_size,
+              void* buf);
 
   // Temporarily release resources until a new surface is asynchronously
   // presented. Present will not be able to represent the last surface after

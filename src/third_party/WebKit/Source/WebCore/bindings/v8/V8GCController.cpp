@@ -42,12 +42,14 @@
 #include "PlatformSupport.h"
 #include "RetainedDOMInfo.h"
 #include "RetainedObjectInfo.h"
+#include "V8AbstractEventListener.h"
 #include "V8Binding.h"
 #include "V8CSSRule.h"
 #include "V8CSSRuleList.h"
 #include "V8CSSStyleDeclaration.h"
 #include "V8DOMImplementation.h"
 #include "V8MessagePort.h"
+#include "V8RecursionScope.h"
 #include "V8StyleSheet.h"
 #include "V8StyleSheetList.h"
 #include "WrapperTypeInfo.h"
@@ -64,63 +66,6 @@
 #endif
 
 namespace WebCore {
-
-#ifndef NDEBUG
-// Keeps track of global handles created (not JS wrappers
-// of DOM objects). Often these global handles are source
-// of leaks.
-//
-// If you want to let a C++ object hold a persistent handle
-// to a JS object, you should register the handle here to
-// keep track of leaks.
-//
-// When creating a persistent handle, call:
-//
-// #ifndef NDEBUG
-//    V8GCController::registerGlobalHandle(type, host, handle);
-// #endif
-//
-// When releasing the handle, call:
-//
-// #ifndef NDEBUG
-//    V8GCController::unregisterGlobalHandle(type, host, handle);
-// #endif
-//
-
-static GlobalHandleMap& currentGlobalHandleMap()
-{
-    return V8BindingPerIsolateData::current()->globalHandleMap();
-}
-
-// The function is the place to set the break point to inspect
-// live global handles. Leaks are often come from leaked global handles.
-static void enumerateGlobalHandles()
-{
-    GlobalHandleMap& globalHandleMap = currentGlobalHandleMap();
-    for (GlobalHandleMap::iterator it = globalHandleMap.begin(), end = globalHandleMap.end(); it != end; ++it) {
-        GlobalHandleInfo* info = it->second;
-        UNUSED_PARAM(info);
-        v8::Value* handle = it->first;
-        UNUSED_PARAM(handle);
-    }
-}
-
-void V8GCController::registerGlobalHandle(GlobalHandleType type, void* host, v8::Persistent<v8::Value> handle)
-{
-    GlobalHandleMap& globalHandleMap = currentGlobalHandleMap();
-    ASSERT(!globalHandleMap.contains(*handle));
-    globalHandleMap.set(*handle, new GlobalHandleInfo(host, type));
-}
-
-void V8GCController::unregisterGlobalHandle(void* host, v8::Persistent<v8::Value> handle)
-{
-    GlobalHandleMap& globalHandleMap = currentGlobalHandleMap();
-    ASSERT(globalHandleMap.contains(*handle));
-    GlobalHandleInfo* info = globalHandleMap.take(*handle);
-    ASSERT(info->m_host == host);
-    delete info;
-}
-#endif // ifndef NDEBUG
 
 typedef HashMap<Node*, v8::Object*> DOMNodeMap;
 typedef HashMap<void*, v8::Object*> DOMObjectMap;
@@ -296,7 +241,7 @@ typedef Vector<GrouperItem> GrouperList;
 // element of the tree to which it belongs.
 static GroupId calculateGroupId(Node* node)
 {
-    if (node->inDocument() || (node->hasTagName(HTMLNames::imgTag) && static_cast<HTMLImageElement*>(node)->hasPendingLoadEvent()))
+    if (node->inDocument() || (node->hasTagName(HTMLNames::imgTag) && static_cast<HTMLImageElement*>(node)->hasPendingActivity()))
         return GroupId(node->document());
 
     Node* root = node;
@@ -340,6 +285,8 @@ public:
 
     void visitDOMWrapper(DOMDataStore* store, void* object, v8::Persistent<v8::Object> wrapper)
     {
+        WrapperTypeInfo* info = V8DOMWrapper::domWrapperType(wrapper);
+        info->visitDOMWrapper(store, object, wrapper);
     }
 
     void applyGrouping()
@@ -416,7 +363,7 @@ void V8GCController::gcPrologue()
     grouperVisitor.applyGrouping();
 
     // Clean single element cache for string conversions.
-    V8BindingPerIsolateData* data = V8BindingPerIsolateData::current();
+    V8PerIsolateData* data = V8PerIsolateData::current();
     data->stringCache()->clearOnGC();
 }
 
@@ -469,29 +416,15 @@ public:
     }
 };
 
-int V8GCController::workingSetEstimateMB = 0;
-
-namespace {
-
-int getMemoryUsageInMB()
-{
 #if PLATFORM(CHROMIUM)
-    return MemoryUsageSupport::memoryUsageMB();
-#else
-    return 0;
-#endif
-}
+static int workingSetEstimateMB = 0;
 
-int getActualMemoryUsageInMB()
+static Mutex& workingSetEstimateMBMutex()
 {
-#if PLATFORM(CHROMIUM)
-    return MemoryUsageSupport::actualMemoryUsageMB();
-#else
-    return 0;
-#endif
+    AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
+    return mutex;
 }
-
-}  // anonymous namespace
+#endif
 
 void V8GCController::gcEpilogue()
 {
@@ -504,7 +437,13 @@ void V8GCController::gcEpilogue()
     GCEpilogueVisitor<Node, SpecialCaseEpilogueNodeHandler, &DOMDataStore::weakNodeCallback> epilogueNodeVisitor;
     visitActiveDOMNodes(&epilogueNodeVisitor);
 
-    workingSetEstimateMB = getActualMemoryUsageInMB();
+#if PLATFORM(CHROMIUM)
+    // The GC can happen on multiple threads in case of dedicated workers which run in-process.
+    {
+        MutexLocker locker(workingSetEstimateMBMutex());
+        workingSetEstimateMB = MemoryUsageSupport::actualMemoryUsageMB();
+    }
+#endif
 
 #ifndef NDEBUG
     // Check all survivals are weak.
@@ -513,8 +452,6 @@ void V8GCController::gcEpilogue()
 
     EnsureWeakDOMNodeVisitor weakDOMNodeVisitor;
     visitDOMNodes(&weakDOMNodeVisitor);
-
-    enumerateGlobalHandles();
 #endif
 
 #if PLATFORM(CHROMIUM)
@@ -524,15 +461,55 @@ void V8GCController::gcEpilogue()
 
 void V8GCController::checkMemoryUsage()
 {
-#if PLATFORM(CHROMIUM) || PLATFORM(QT)
+#if PLATFORM(CHROMIUM)
     const int lowMemoryUsageMB = MemoryUsageSupport::lowMemoryUsageMB();
     const int highMemoryUsageMB = MemoryUsageSupport::highMemoryUsageMB();
     const int highUsageDeltaMB = MemoryUsageSupport::highUsageDeltaMB();
-    int memoryUsageMB = getMemoryUsageInMB();
-    if ((memoryUsageMB > lowMemoryUsageMB && memoryUsageMB > 2 * workingSetEstimateMB) || (memoryUsageMB > highMemoryUsageMB && memoryUsageMB > workingSetEstimateMB + highUsageDeltaMB))
+    int memoryUsageMB = MemoryUsageSupport::memoryUsageMB();
+    int workingSetEstimateMBCopy;
+    {
+        MutexLocker locker(workingSetEstimateMBMutex());
+        workingSetEstimateMBCopy = workingSetEstimateMB;
+    }
+
+    if ((memoryUsageMB > lowMemoryUsageMB && memoryUsageMB > 2 * workingSetEstimateMBCopy) || (memoryUsageMB > highMemoryUsageMB && memoryUsageMB > workingSetEstimateMBCopy + highUsageDeltaMB))
         v8::V8::LowMemoryNotification();
 #endif
 }
 
+void V8GCController::hintForCollectGarbage()
+{
+    V8PerIsolateData* data = V8PerIsolateData::current();
+    if (!data->shouldCollectGarbageSoon())
+        return;
+    const int longIdlePauseInMS = 1000;
+    data->clearShouldCollectGarbageSoon();
+    v8::V8::ContextDisposedNotification();
+    v8::V8::IdleNotification(longIdlePauseInMS);
+}
+
+void V8GCController::collectGarbage()
+{
+    v8::HandleScope handleScope;
+
+    ScopedPersistent<v8::Context> context;
+
+    context.adopt(v8::Context::New());
+    if (context.isEmpty())
+        return;
+
+    {
+        v8::Context::Scope scope(context.get());
+        v8::Local<v8::String> source = v8::String::New("if (gc) gc();");
+        v8::Local<v8::String> name = v8::String::New("gc");
+        v8::Handle<v8::Script> script = v8::Script::Compile(source, name);
+        if (!script.IsEmpty()) {
+            V8RecursionScope::MicrotaskSuppression scope;
+            script->Run();
+        }
+    }
+
+    context.clear();
+}
 
 }  // namespace WebCore

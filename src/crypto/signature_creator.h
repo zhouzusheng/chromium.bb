@@ -4,7 +4,6 @@
 
 #ifndef CRYPTO_SIGNATURE_CREATOR_H_
 #define CRYPTO_SIGNATURE_CREATOR_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -14,7 +13,7 @@ typedef struct env_md_ctx_st EVP_MD_CTX;
 #elif defined(USE_NSS)
 // Forward declaration.
 struct SGNContextStr;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
 #include <Security/cssm.h>
 #endif
 
@@ -57,7 +56,7 @@ class CRYPTO_EXPORT SignatureCreator {
   EVP_MD_CTX* sign_context_;
 #elif defined(USE_NSS)
   SGNContextStr* sign_context_;
-#elif defined(OS_MACOSX)
+#elif defined(OS_MACOSX) && !defined(OS_IOS)
   CSSM_CC_HANDLE sig_handle_;
 #elif defined(OS_WIN)
   ScopedHCRYPTHASH hash_object_;

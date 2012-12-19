@@ -4,7 +4,6 @@
 
 #ifndef SKIA_EXT_VECTOR_PLATFORM_DEVICE_SKIA_H_
 #define SKIA_EXT_VECTOR_PLATFORM_DEVICE_SKIA_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -28,7 +27,7 @@ class VectorPlatformDeviceSkia : public SkPDFDevice, public PlatformDevice {
   virtual ~VectorPlatformDeviceSkia();
 
   // PlatformDevice methods.
-  virtual bool IsNativeFontRenderingAllowed() OVERRIDE;
+  virtual bool SupportsPlatformPaint() OVERRIDE;
 
   virtual PlatformSurface BeginPlatformPaint() OVERRIDE;
   virtual void EndPlatformPaint() OVERRIDE;

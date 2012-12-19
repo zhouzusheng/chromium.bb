@@ -34,8 +34,9 @@ module core {
         attribute SpeechGrammarList grammars;
         attribute DOMString lang;
         attribute boolean continuous;
+        attribute unsigned long maxAlternatives;
 
-        void start();
+        void start() raises (DOMException);
         [ImplementedAs=stopFunction] void stop();
         void abort();
 

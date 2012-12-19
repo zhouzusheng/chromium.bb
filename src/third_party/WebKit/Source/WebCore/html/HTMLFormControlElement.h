@@ -45,6 +45,8 @@ public:
 
     HTMLFormElement* form() const { return FormAssociatedElement::form(); }
 
+    void willAddAuthorShadowRoot() OVERRIDE;
+
     String formEnctype() const;
     void setFormEnctype(const String&);
     String formMethod() const;
@@ -79,7 +81,8 @@ public:
 
     virtual const AtomicString& formControlType() const OVERRIDE = 0;
     virtual bool isEnabledFormControl() const { return !disabled(); }
-    virtual bool isReadOnlyFormControl() const { return readOnly(); }
+    virtual bool shouldMatchReadOnlySelector() const OVERRIDE;
+    virtual bool shouldMatchReadWriteSelector() const OVERRIDE;
 
     virtual bool canTriggerImplicitSubmission() const { return false; }
 
@@ -145,7 +148,6 @@ private:
     virtual HTMLFormElement* virtualForm() const;
     virtual bool isDefaultButtonForForm() const;
     virtual bool isValidFormControlElement();
-    String visibleValidationMessage() const;
     void updateAncestorDisabledState() const;
 
     OwnPtr<ValidationMessage> m_validationMessage;

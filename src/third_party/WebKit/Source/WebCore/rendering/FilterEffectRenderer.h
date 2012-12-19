@@ -32,8 +32,10 @@
 #include "FilterEffect.h"
 #include "FilterOperations.h"
 #include "FloatRect.h"
+#include "FractionalLayoutRect.h"
 #include "GraphicsContext.h"
 #include "ImageBuffer.h"
+#include "LayoutTypesInlineMethods.h"
 #include "SVGFilterBuilder.h"
 #include "SourceGraphic.h"
 
@@ -100,6 +102,7 @@ public:
     ImageBuffer* output() const { return lastEffect()->asImageBuffer(); }
 
     bool build(Document*, const FilterOperations&);
+    PassRefPtr<FilterEffect> buildReferenceFilter(Document*, PassRefPtr<FilterEffect> previousEffect, ReferenceFilterOperation*);
     bool updateBackingStoreRect(const FloatRect& filterRect);
     void allocateBackingStoreIfNeeded();
     void clearIntermediateResults();
@@ -110,7 +113,7 @@ public:
     bool hasFilterThatMovesPixels() const { return m_hasFilterThatMovesPixels; }
     LayoutRect computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect);
 
-#if ENABLE(CSS_SHADERS)
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
     bool hasCustomShaderFilter() const { return m_hasCustomShaderFilter; }
 #endif
 private:

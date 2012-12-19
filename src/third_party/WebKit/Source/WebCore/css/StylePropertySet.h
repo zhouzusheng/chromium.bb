@@ -83,17 +83,14 @@ public:
     void removeBlockProperties();
     bool removePropertiesInSet(const CSSPropertyID* set, unsigned length);
 
-    void merge(const StylePropertySet*, bool argOverridesOnConflict = true);
+    void mergeAndOverrideOnConflict(const StylePropertySet*);
 
-    void setCSSParserMode(CSSParserMode);
     CSSParserMode cssParserMode() const { return static_cast<CSSParserMode>(m_cssParserMode); }
 
     void addSubresourceStyleURLs(ListHashSet<KURL>&, StyleSheetContents* contextStyleSheet) const;
 
     PassRefPtr<StylePropertySet> copy() const;
-
-    // Used by StyledElement::copyNonAttributeProperties().
-    void copyPropertiesFrom(const StylePropertySet&);
+    PassRefPtr<StylePropertySet> immutableCopyIfNeeded() const;
 
     void removeEquivalentProperties(const StylePropertySet*);
     void removeEquivalentProperties(const CSSStyleDeclaration*);
@@ -104,12 +101,15 @@ public:
     
     void clearParentElement(StyledElement*);
 
-    CSSStyleDeclaration* ensureCSSStyleDeclaration() const;
-    CSSStyleDeclaration* ensureInlineCSSStyleDeclaration(const StyledElement* parentElement) const;
+    CSSStyleDeclaration* ensureCSSStyleDeclaration();
+    CSSStyleDeclaration* ensureInlineCSSStyleDeclaration(const StyledElement* parentElement);
 
     bool isMutable() const { return m_isMutable; }
 
+    bool hasFailedOrCanceledSubresources() const;
+
     static unsigned averageSizeInBytes();
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 #ifndef NDEBUG
     void showStyle();

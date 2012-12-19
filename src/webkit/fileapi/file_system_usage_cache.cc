@@ -86,7 +86,10 @@ bool FileSystemUsageCache::Invalidate(const FilePath& usage_file_path) {
 bool FileSystemUsageCache::IsValid(const FilePath& usage_file_path) {
   bool is_valid = true;
   uint32 dirty = 0;
-  Read(usage_file_path, &is_valid, &dirty);
+  int64 result = Read(usage_file_path, &is_valid, &dirty);
+  if (result < 0)
+    return false;
+
   return is_valid;
 }
 
@@ -127,9 +130,9 @@ int64 FileSystemUsageCache::Read(const FilePath& usage_file_path,
                                  uint32* dirty) {
   char buffer[kUsageFileSize];
   const char *header;
-  DCHECK(!usage_file_path.empty());
-  if (kUsageFileSize !=
-      file_util::ReadFile(usage_file_path, buffer, kUsageFileSize))
+  if (usage_file_path.empty() ||
+      kUsageFileSize != file_util::ReadFile(usage_file_path,
+                                            buffer, kUsageFileSize))
     return -1;
   Pickle read_pickle(buffer, kUsageFileSize);
   PickleIterator iter(read_pickle);
@@ -161,10 +164,13 @@ int FileSystemUsageCache::Write(const FilePath& usage_file_path,
   write_pickle.WriteUInt32(dirty);
   write_pickle.WriteInt64(fs_usage);
 
-  DCHECK(!usage_file_path.empty());
   FilePath temporary_usage_file_path;
-  file_util::CreateTemporaryFileInDir(usage_file_path.DirName(),
-                                      &temporary_usage_file_path);
+  if (usage_file_path.empty() ||
+      !file_util::CreateTemporaryFileInDir(usage_file_path.DirName(),
+                                           &temporary_usage_file_path)) {
+    return -1;
+  }
+
   int bytes_written = file_util::WriteFile(temporary_usage_file_path,
                                            (const char *)write_pickle.data(),
                                            write_pickle.size());

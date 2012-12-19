@@ -33,19 +33,23 @@
 
 #include <wtf/PassOwnPtr.h>
 
-class KeyframeValueList;
-class Animation;
-class FloatSize;
-class CCActiveAnimation;
+namespace WebKit {
+class WebAnimation;
+}
 
 namespace WebCore {
 
-// Translates WebCore animation data into a CCActiveAnimation. If we are unable
+class KeyframeValueList;
+class Animation;
+class FloatSize;
+
+
+// Translates WebCore animation data into a WebAnimation. If we are unable
 // to perform this translation, we return nullptr. This can happen if
 //   - a steps timing function is used,
 //   - a property other than AnimatedPropertyWebkitTransform, or AnimatedPropertyOpacity is animated, or
 //   - a transform animation involves a non-invertable transform.
-PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList&, const Animation*, size_t animationId, size_t groupId, double timeOffset, const FloatSize& boxSize);
+PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList&, const Animation*, int animationId, double timeOffset, const FloatSize& boxSize);
 
 } // namespace WebCore
 

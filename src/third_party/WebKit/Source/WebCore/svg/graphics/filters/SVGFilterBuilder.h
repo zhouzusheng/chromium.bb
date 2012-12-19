@@ -23,21 +23,22 @@
 
 #if ENABLE(SVG) && ENABLE(FILTERS)
 #include "FilterEffect.h"
-#include "PlatformString.h"
-#include "RenderObject.h"
 
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/text/AtomicStringHash.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
+
+class RenderObject;
 
 class SVGFilterBuilder : public RefCounted<SVGFilterBuilder> {
 public:
     typedef HashSet<FilterEffect*> FilterEffectSet;
 
-    static PassRefPtr<SVGFilterBuilder> create(Filter* filter) { return adoptRef(new SVGFilterBuilder(filter)); }
+    static PassRefPtr<SVGFilterBuilder> create(PassRefPtr<FilterEffect> sourceGraphic, PassRefPtr<FilterEffect> sourceAlpha) { return adoptRef(new SVGFilterBuilder(sourceGraphic, sourceAlpha)); }
 
     void add(const AtomicString& id, PassRefPtr<FilterEffect>);
 
@@ -60,7 +61,7 @@ public:
     void clearResultsRecursive(FilterEffect*);
 
 private:
-    SVGFilterBuilder(Filter*);
+    SVGFilterBuilder(PassRefPtr<FilterEffect> sourceGraphic, PassRefPtr<FilterEffect> sourceAlpha);
 
     inline void addBuiltinEffects()
     {

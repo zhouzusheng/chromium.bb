@@ -24,8 +24,11 @@
 namespace appcache {
 
 AppCacheURLRequestJob::AppCacheURLRequestJob(
-    net::URLRequest* request, AppCacheStorage* storage)
-    : net::URLRequestJob(request), storage_(storage),
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    AppCacheStorage* storage)
+    : net::URLRequestJob(request, network_delegate),
+      storage_(storage),
       has_been_started_(false), has_been_killed_(false),
       delivery_type_(AWAITING_DELIVERY_ORDERS),
       group_id_(0), cache_id_(kNoCacheId), is_fallback_(false),

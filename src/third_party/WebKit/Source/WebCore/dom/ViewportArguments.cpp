@@ -34,18 +34,16 @@
 #include "Frame.h"
 #include "IntSize.h"
 #include "Page.h"
-#include "PlatformString.h"
 #include "ScriptableDocumentParser.h"
+#include <wtf/text/WTFString.h>
 
 using namespace std;
 
 namespace WebCore {
 
-// FIXME: We shouldn't hardcode the targetDPI to 160.
-// See https://bugs.webkit.org/show_bug.cgi?id=88114
-static float targetDPI = 160;
+const float ViewportArguments::deprecatedTargetDPI = 160;
 
-ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktopWidth, int deviceWidth, int deviceHeight, int deviceDPI, IntSize visibleViewport)
+ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktopWidth, int deviceWidth, int deviceHeight, float devicePixelRatio, IntSize visibleViewport)
 {
     ViewportAttributes result;
 
@@ -54,7 +52,7 @@ ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktop
 
     ASSERT(availableWidth > 0 && availableHeight > 0);
 
-    result.devicePixelRatio = deviceDPI / targetDPI;
+    result.devicePixelRatio = devicePixelRatio;
 
     // Resolve non-'auto' width and height to pixel values.
     if (result.devicePixelRatio != 1.0) {
@@ -365,7 +363,7 @@ void reportViewportWarning(Document* document, ViewportErrorCode errorCode, cons
     if (!replacement2.isNull())
         message.replace("%replacement2", replacement2);
 
-    frame->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, viewportErrorMessageLevel(errorCode), message, document->url().string(), parserLineNumber(document));
+    document->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, viewportErrorMessageLevel(errorCode), message, document->url().string(), parserLineNumber(document));
 }
 
 } // namespace WebCore

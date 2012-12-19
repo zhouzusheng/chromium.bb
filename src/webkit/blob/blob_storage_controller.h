@@ -20,9 +20,6 @@ class FilePath;
 namespace base {
 class Time;
 }
-namespace net {
-class UploadData;
-}
 
 namespace webkit_blob {
 
@@ -40,10 +37,6 @@ class BLOB_EXPORT BlobStorageController {
   void RemoveBlob(const GURL& url);
   BlobData* GetBlobDataFromUrl(const GURL& url);
 
-  // If there is any blob reference in the upload data, it will get resolved
-  // and updated in place.
-  void ResolveBlobReferencesInUploadData(net::UploadData* upload_data);
-
  private:
   friend class ViewBlobInternalsJob;
 
@@ -57,6 +50,10 @@ class BLOB_EXPORT BlobStorageController {
   void AppendFileItem(BlobData* target_blob_data,
                       const FilePath& file_path, uint64 offset, uint64 length,
                       const base::Time& expected_modification_time);
+  void AppendFileSystemFileItem(
+      BlobData* target_blob_data,
+      const GURL& url, uint64 offset, uint64 length,
+      const base::Time& expected_modification_time);
 
   bool RemoveFromMapHelper(BlobMap* map, const GURL& url);
 

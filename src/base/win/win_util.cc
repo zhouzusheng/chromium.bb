@@ -6,6 +6,7 @@
 
 #include <aclapi.h>
 #include <shobjidl.h>  // Must be before propkey.
+#include <initguid.h>
 #include <propkey.h>
 #include <propvarutil.h>
 #include <sddl.h>
@@ -22,28 +23,12 @@
 
 namespace {
 
-#if !defined(_WIN32_WINNT_WIN8)
 // TODO(gab): These definitions are temporary and should be removed once the
-// win8 SDK has been imported into third_party/
-
-// Using the same definition as in
-// third_party\platformsdk_win7\files\Include\propkeydef.h
-// without DECLSPEC_SELECTANY...
-#define DEFINE_WIN8_PROPERTYKEY(name, l, w1, w2, \
-                                b1, b2, b3, b4, b5, b6, b7, b8, \
-                                pid) \
-    const PROPERTYKEY name = { { l, w1, w2, \
-                                 { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } }, \
-                               pid }
-
-DEFINE_WIN8_PROPERTYKEY(PKEY_AppUserModel_DualMode, 0x9F4C2855, 0x9F79, 0x4B39,
-                        0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3, 11);
-DEFINE_WIN8_PROPERTYKEY(PKEY_AppUserModel_DualMode_UK, 0x9F4C2855, 0x9F79,
-                        0x4B39, 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3,
-                        18);
-
-#undef DEFINE_WIN8_PROPERTYKEY
-#endif
+// win8 SDK defines them.
+DEFINE_PROPERTYKEY(PKEY_AppUserModel_DualMode, 0x9F4C2855, 0x9F79,
+                   0x4B39, 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3, 11);
+DEFINE_PROPERTYKEY(PKEY_AppUserModel_DualMode_UK, 0x9F4C2855, 0x9F79,
+                   0x4B39, 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3, 18);
 
 // Sets the value of |property_key| to |property_value| in |property_store|.
 // Clears the PropVariant contained in |property_value|.
@@ -190,13 +175,17 @@ bool SetAppIdForPropertyStore(IPropertyStore* property_store,
                                         app_id);
 }
 
-bool SetDualModeForPropertyStore(IPropertyStore* property_store) {
+bool SetDualModeForPropertyStore(IPropertyStore* property_store,
+                                 bool is_dual_mode) {
   return SetBooleanValueForPropertyStore(property_store,
                                          PKEY_AppUserModel_DualMode,
-                                         true) &&
+                                         is_dual_mode) &&
+         // TODO (gab): This property no longer exists in the final Win8 release
+         // and should be deleted from all shortcuts as it could interfere with
+         // a future (Win9+) property.
          SetUInt32ValueForPropertyStore(property_store,
                                         PKEY_AppUserModel_DualMode_UK,
-                                        1U);
+                                        is_dual_mode ? 1U : 0U);
 }
 
 static const char16 kAutoRunKeyPath[] =
@@ -227,6 +216,21 @@ void SetShouldCrashOnProcessDetach(bool crash) {
 
 bool ShouldCrashOnProcessDetach() {
   return g_crash_on_process_detach;
+}
+
+bool IsMachineATablet() {
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return false;
+  const int kMultiTouch = NID_INTEGRATED_TOUCH | NID_MULTI_INPUT | NID_READY;
+  const int kMaxTabletScreenWidth = 1366;
+  const int kMaxTabletScreenHeight = 768;
+  int sm = GetSystemMetrics(SM_DIGITIZER);
+  if ((sm & kMultiTouch) == kMultiTouch) {
+    int cx = GetSystemMetrics(SM_CXSCREEN);
+    int cy = GetSystemMetrics(SM_CYSCREEN);
+    return cx <= kMaxTabletScreenWidth && cy <= kMaxTabletScreenHeight;
+  }
+  return false;
 }
 
 }  // namespace win

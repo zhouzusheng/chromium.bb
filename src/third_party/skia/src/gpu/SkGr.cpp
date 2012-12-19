@@ -56,15 +56,14 @@ static void build_compressed_data(void* buffer, const SkBitmap& bitmap) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
-                                                uint64_t key,
-                                                const GrSamplerState* sampler,
-                                                const SkBitmap& origBitmap) {
+static GrTexture* sk_gr_create_bitmap_texture(GrContext* ctx,
+                                              uint64_t key,
+                                              const GrTextureParams* params,
+                                              const SkBitmap& origBitmap) {
     SkAutoLockPixels alp(origBitmap);
-    GrContext::TextureCacheEntry entry;
 
     if (!origBitmap.readyToDraw()) {
-        return entry;
+        return NULL;
     }
 
     SkBitmap tmpBitmap;
@@ -74,13 +73,14 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
     GrTextureDesc desc;
     desc.fWidth = bitmap->width();
     desc.fHeight = bitmap->height();
-    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap->config());
-    desc.fClientCacheID = key;
+    desc.fConfig = SkBitmapConfig2GrPixelConfig(bitmap->config());
+
+    GrCacheData cacheData(key);
 
     if (SkBitmap::kIndex8_Config == bitmap->config()) {
         // build_compressed_data doesn't do npot->pot expansion
         // and paletted textures can't be sub-updated
-        if (ctx->supportsIndex8PixelConfig(sampler,
+        if (ctx->supportsIndex8PixelConfig(params,
                                            bitmap->width(), bitmap->height())) {
             size_t imagesize = bitmap->width() * bitmap->height() +
                                 kGrColorTableSize;
@@ -90,17 +90,18 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
 
             // our compressed data will be trimmed, so pass width() for its
             // "rowBytes", since they are the same now.
-            
-            if (kUncached_CacheID != key) {
-                return ctx->createAndLockTexture(sampler, desc, storage.get(),
-                                                 bitmap->width());
+
+            if (GrCacheData::kScratch_CacheID != key) {
+                return ctx->createTexture(params, desc, cacheData,
+                                          storage.get(),
+                                          bitmap->width());
             } else {
-                entry = ctx->lockScratchTexture(desc,
-                                        GrContext::kExact_ScratchTexMatch);
-                entry.texture()->writePixels(0, 0, bitmap->width(), 
-                                             bitmap->height(), desc.fConfig,
-                                             storage.get(), 0);
-                return entry;
+                GrTexture* result = ctx->lockScratchTexture(desc,
+                                          GrContext::kExact_ScratchTexMatch);
+                result->writePixels(0, 0, bitmap->width(),
+                                    bitmap->height(), desc.fConfig,
+                                    storage.get());
+                return result;
             }
 
         } else {
@@ -110,89 +111,73 @@ GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
         }
     }
 
-    desc.fConfig = SkGr::BitmapConfig2PixelConfig(bitmap->config());
-    if (kUncached_CacheID != key) {
-        return ctx->createAndLockTexture(sampler, desc,
-                                         bitmap->getPixels(),
-                                         bitmap->rowBytes());
+    desc.fConfig = SkBitmapConfig2GrPixelConfig(bitmap->config());
+    if (GrCacheData::kScratch_CacheID != key) {
+        // This texture is likely to be used again so leave it in the cache
+        // but locked.
+        return ctx->createTexture(params, desc, cacheData,
+                                  bitmap->getPixels(),
+                                  bitmap->rowBytes());
     } else {
-        entry = ctx->lockScratchTexture(desc,
-                                        GrContext::kExact_ScratchTexMatch);
-        entry.texture()->writePixels(0, 0,
-                                     bitmap->width(), bitmap->height(),
-                                     desc.fConfig,
-                                     bitmap->getPixels(),
-                                     bitmap->rowBytes());
-        return entry;
+        // This texture is unlikely to be used again (in its present form) so
+        // just use a scratch texture. This will remove the texture from the
+        // cache so no one else can find it. Additionally, once unlocked, the
+        // scratch texture will go to the end of the list for purging so will
+        // likely be available for this volatile bitmap the next time around.
+        GrTexture* result = ctx->lockScratchTexture(desc,
+                                         GrContext::kExact_ScratchTexMatch);
+        result->writePixels(0, 0,
+                            bitmap->width(), bitmap->height(),
+                            desc.fConfig,
+                            bitmap->getPixels(),
+                            bitmap->rowBytes());
+        return result;
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void SkGrClipIterator::reset(const SkClipStack& clipStack) {
-    fClipStack = &clipStack;
-    fIter.reset(clipStack);
-    // Gr has no notion of replace, skip to the
-    // last replace in the clip stack.
-    int lastReplace = 0;
-    int curr = 0;
-    while (NULL != (fCurr = fIter.next())) {
-        if (SkRegion::kReplace_Op == fCurr->fOp) {
-            lastReplace = curr;
+GrTexture* GrLockCachedBitmapTexture(GrContext* ctx,
+                                     const SkBitmap& bitmap,
+                                     const GrTextureParams* params) {
+    GrTexture* result = NULL;
+
+    if (!bitmap.isVolatile()) {
+        // If the bitmap isn't changing try to find a cached copy first
+        uint64_t key = bitmap.getGenerationID();
+        key |= ((uint64_t) bitmap.pixelRefOffset()) << 32;
+
+        GrTextureDesc desc;
+        desc.fWidth = bitmap.width();
+        desc.fHeight = bitmap.height();
+        desc.fConfig = SkBitmapConfig2GrPixelConfig(bitmap.config());
+
+        GrCacheData cacheData(key);
+
+        result = ctx->findTexture(desc, cacheData, params);
+        if (NULL == result) {
+            // didn't find a cached copy so create one
+            result = sk_gr_create_bitmap_texture(ctx, key, params, bitmap);
         }
-        ++curr;
-    }
-    fIter.reset(clipStack);
-    for (int i = 0; i < lastReplace+1; ++i) {
-        fCurr = fIter.next();
-    }
-}
-
-GrClipType SkGrClipIterator::getType() const {
-    GrAssert(!this->isDone());
-    if (NULL == fCurr->fPath) {
-        return kRect_ClipType;
     } else {
-        return kPath_ClipType;
+        result = sk_gr_create_bitmap_texture(ctx, GrCacheData::kScratch_CacheID, params, bitmap);
     }
+    if (NULL == result) {
+        GrPrintf("---- failed to create texture for cache [%d %d]\n",
+                    bitmap.width(), bitmap.height());
+    }
+    return result;
 }
 
-SkRegion::Op SkGrClipIterator::getOp() const {
-    // we skipped to the last "replace" op
-    // when this iter was reset.
-    // GrClip doesn't allow replace, so treat it as
-    // intersect.
-    if (SkRegion::kReplace_Op == fCurr->fOp) {
-        return SkRegion::kIntersect_Op;
-    }
+void GrUnlockCachedBitmapTexture(GrTexture* texture) {
+    GrAssert(NULL != texture->getContext());
 
-    return fCurr->fOp;
-
-}
-
-bool SkGrClipIterator::getDoAA() const {
-    return fCurr->fDoAA;
-}
-
-GrPathFill SkGrClipIterator::getPathFill() const {
-    switch (fCurr->fPath->getFillType()) {
-        case SkPath::kWinding_FillType:
-            return kWinding_GrPathFill;
-        case SkPath::kEvenOdd_FillType:
-            return  kEvenOdd_GrPathFill;
-        case SkPath::kInverseWinding_FillType:
-            return kInverseWinding_GrPathFill;
-        case SkPath::kInverseEvenOdd_FillType:
-            return kInverseEvenOdd_GrPathFill;
-        default:
-            GrCrash("Unsupported path fill in clip.");
-            return kWinding_GrPathFill; // suppress warning
-    }
+    texture->getContext()->unlockScratchTexture(texture);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrPixelConfig SkGr::BitmapConfig2PixelConfig(SkBitmap::Config config) {
+GrPixelConfig SkBitmapConfig2GrPixelConfig(SkBitmap::Config config) {
     switch (config) {
         case SkBitmap::kA8_Config:
             return kAlpha_8_GrPixelConfig;

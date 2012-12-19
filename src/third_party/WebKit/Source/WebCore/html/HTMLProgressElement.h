@@ -21,12 +21,13 @@
 #ifndef HTMLProgressElement_h
 #define HTMLProgressElement_h
 
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
 #include "LabelableElement.h"
 
 namespace WebCore {
 
 class ProgressValueElement;
+class RenderProgress;
 
 class HTMLProgressElement : public LabelableElement {
 public:
@@ -34,6 +35,8 @@ public:
     static const double InvalidPosition;
 
     static PassRefPtr<HTMLProgressElement> create(const QualifiedName&, Document*);
+
+    bool hasAuthorShadowRoot() const { return m_hasAuthorShadowRoot; }
 
     double value() const;
     void setValue(double, ExceptionCode&);
@@ -51,12 +54,16 @@ private:
     HTMLProgressElement(const QualifiedName&, Document*);
     virtual ~HTMLProgressElement();
 
+    virtual void willAddAuthorShadowRoot() OVERRIDE;
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual bool supportsFocus() const;
 
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const Attribute&) OVERRIDE;
 
@@ -65,8 +72,21 @@ private:
     void didElementStateChange();
     void createShadowSubtree();
 
-    RefPtr<ProgressValueElement> m_value;
+    ProgressValueElement* m_value;
+    bool m_hasAuthorShadowRoot;
 };
+
+inline bool isHTMLProgressElement(Node* node)
+{
+    ASSERT(node);
+    return node->hasTagName(HTMLNames::progressTag);
+}
+
+inline HTMLProgressElement* toHTMLProgressElement(Node* node)
+{
+    ASSERT(!node || isHTMLProgressElement(node));
+    return static_cast<HTMLProgressElement*>(node);
+}
 
 } // namespace
 

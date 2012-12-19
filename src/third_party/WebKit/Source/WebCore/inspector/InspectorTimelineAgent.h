@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2009 Google Inc. All rights reserved.
+* Copyright (C) 2012 Google Inc. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -37,6 +37,7 @@
 #include "InspectorFrontend.h"
 #include "InspectorValues.h"
 #include "LayoutTypes.h"
+#include "PlatformInstrumentation.h"
 #include "ScriptGCEvent.h"
 #include "ScriptGCEventListener.h"
 #include <wtf/PassOwnPtr.h>
@@ -51,12 +52,17 @@ class InspectorPageAgent;
 class InspectorState;
 class InstrumentingAgents;
 class IntRect;
+class RenderObject;
 class ResourceRequest;
 class ResourceResponse;
 
 typedef String ErrorString;
 
-class InspectorTimelineAgent : public InspectorBaseAgent<InspectorTimelineAgent>, ScriptGCEventListener, public InspectorBackendDispatcher::TimelineCommandHandler {
+class InspectorTimelineAgent
+    : public InspectorBaseAgent<InspectorTimelineAgent>,
+      public ScriptGCEventListener,
+      public InspectorBackendDispatcher::TimelineCommandHandler,
+      public PlatformInstrumentationClient {
     WTF_MAKE_NONCOPYABLE(InspectorTimelineAgent);
 public:
     enum InspectorType { PageInspector, WorkerInspector };
@@ -91,9 +97,11 @@ public:
     void didBeginFrame();
     void didCancelFrame();
 
+    void didInvalidateLayout(Frame*);
     void willLayout(Frame*);
-    void didLayout();
+    void didLayout(RenderObject*);
 
+    void didScheduleStyleRecalculation(Frame*);
     void willRecalculateStyle(Frame*);
     void didRecalculateStyle();
 
@@ -113,24 +121,27 @@ public:
     void willFireTimer(int timerId, Frame*);
     void didFireTimer();
 
-    void willChangeXHRReadyState(const String&, int, Frame*);
-    void didChangeXHRReadyState();
-    void willLoadXHR(const String&, Frame*);
-    void didLoadXHR();
+    void willDispatchXHRReadyStateChangeEvent(const String&, int, Frame*);
+    void didDispatchXHRReadyStateChangeEvent();
+    void willDispatchXHRLoadEvent(const String&, Frame*);
+    void didDispatchXHRLoadEvent();
 
     void willEvaluateScript(const String&, int, Frame*);
     void didEvaluateScript();
 
-    void didTimeStamp(const String&);
+    void didTimeStamp(Frame*, const String&);
     void didMarkDOMContentEvent(Frame*);
     void didMarkLoadEvent(Frame*);
+
+    void time(Frame*, const String&);
+    void timeEnd(Frame*, const String&);
 
     void didScheduleResourceRequest(const String& url, Frame*);
     void willSendResourceRequest(unsigned long, const ResourceRequest&, Frame*);
     void willReceiveResourceResponse(unsigned long, const ResourceResponse&, Frame*);
     void didReceiveResourceResponse();
     void didFinishLoadingResource(unsigned long, bool didFail, double finishTime, Frame*);
-    void willReceiveResourceData(unsigned long identifier, Frame*);
+    void willReceiveResourceData(unsigned long identifier, Frame*, int length);
     void didReceiveResourceData();
 
     void didRequestAnimationFrame(int callbackId, Frame*);
@@ -143,10 +154,16 @@ public:
     void willProcessTask();
     void didProcessTask();
 
+    // PlatformInstrumentationClient methods.
+    virtual void willDecodeImage(const String& imageType) OVERRIDE;
+    virtual void didDecodeImage() OVERRIDE;
+    virtual void willResizeImage(bool shouldCache) OVERRIDE;
+    virtual void didResizeImage() OVERRIDE;
+
 private:
     struct TimelineRecordEntry {
-        TimelineRecordEntry(PassRefPtr<InspectorObject> record, PassRefPtr<InspectorObject> data, PassRefPtr<InspectorArray> children, const String& type, const String& frameId, bool cancelable = false)
-            : record(record), data(data), children(children), type(type), frameId(frameId), cancelable(cancelable)
+        TimelineRecordEntry(PassRefPtr<InspectorObject> record, PassRefPtr<InspectorObject> data, PassRefPtr<InspectorArray> children, const String& type, const String& frameId, size_t usedHeapSizeAtStart)
+            : record(record), data(data), children(children), type(type), frameId(frameId), usedHeapSizeAtStart(usedHeapSizeAtStart)
         {
         }
         RefPtr<InspectorObject> record;
@@ -154,19 +171,17 @@ private:
         RefPtr<InspectorArray> children;
         String type;
         String frameId;
-        bool cancelable;
+        size_t usedHeapSizeAtStart;
     };
         
     InspectorTimelineAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorState*, InspectorType, InspectorClient*);
 
-    void pushCurrentRecord(PassRefPtr<InspectorObject>, const String& type, bool captureCallStack, Frame*);
-    void setHeapSizeStatistic(InspectorObject* record);
-        
+    void pushCurrentRecord(PassRefPtr<InspectorObject>, const String& type, bool captureCallStack, Frame*, bool hasLowLevelDetails = false);
+    void setHeapSizeStatistics(InspectorObject* record);
+
     void didCompleteCurrentRecord(const String& type);
+    void commitFrameRecord();
     void appendRecord(PassRefPtr<InspectorObject> data, const String& type, bool captureCallStack, Frame*);
-    void pushCancelableRecord(PassRefPtr<InspectorObject>, const String& type, Frame*);
-    void commitCancelableRecords();
-    void cancelRecord(const String& type);
     void addRecordToTimeline(PassRefPtr<InspectorObject>, const String& type, const String& frameId);
     void innerAddRecordToTimeline(PassRefPtr<InspectorObject>, const String& type, const String& frameId);
 
@@ -196,6 +211,8 @@ private:
     typedef Vector<GCEvent> GCEvents;
     GCEvents m_gcEvents;
     int m_maxCallStackDepth;
+    unsigned m_platformInstrumentationClientInstalledAtStackDepth;
+    RefPtr<InspectorObject> m_pendingFrameRecord;
     InspectorType m_inspectorType;
     InspectorClient* m_client;
 };

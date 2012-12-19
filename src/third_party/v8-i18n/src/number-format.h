@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,29 +26,25 @@ namespace v8_i18n {
 
 class NumberFormat {
  public:
-  // 3-letter ISO 4217 currency code plus \0.
-  static const int kCurrencyCodeLength;
-
-  static v8::Handle<v8::Value> JSNumberFormat(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSCreateNumberFormat(const v8::Arguments& args);
 
   // Helper methods for various bindings.
 
   // Unpacks date format object from corresponding JavaScript object.
-  static icu::DecimalFormat* UnpackNumberFormat(
-      v8::Handle<v8::Object> obj);
+  static icu::DecimalFormat* UnpackNumberFormat(v8::Handle<v8::Object> obj);
 
   // Release memory we allocated for the NumberFormat once the JS object that
   // holds the pointer gets garbage collected.
-  static void DeleteNumberFormat(v8::Persistent<v8::Value> object,
-                                 void* param);
+  static void DeleteNumberFormat(v8::Persistent<v8::Value> object, void* param);
 
   // Formats number and returns corresponding string.
-  static v8::Handle<v8::Value> Format(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSInternalFormat(const v8::Arguments& args);
+
+  // Parses a string and returns a number.
+  static v8::Handle<v8::Value> JSInternalParse(const v8::Arguments& args);
 
  private:
   NumberFormat();
-
-  static v8::Persistent<v8::FunctionTemplate> number_format_template_;
 };
 
 }  // namespace v8_i18n

@@ -14,6 +14,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
@@ -39,6 +40,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "ui/base/layout.h"
+#include "webkit/compositor_bindings/web_compositor_support_impl.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/webthread_impl.h"
@@ -47,6 +49,11 @@
 #include "webkit/media/audio_decoder.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/webplugininfo.h"
+#include "webkit/user_agent/user_agent.h"
+
+#if defined(OS_ANDROID)
+#include "webkit/glue/fling_animator_impl_android.h"
+#endif
 
 #if defined(OS_LINUX)
 #include "v8/include/v8.h"
@@ -120,12 +127,20 @@ namespace webkit_glue {
 
 static int ToMessageID(WebLocalizedString::Name name) {
   switch (name) {
+    case WebLocalizedString::AXAMPMFieldText:
+      return IDS_AX_AM_PM_FIELD_TEXT;
     case WebLocalizedString::AXButtonActionVerb:
       return IDS_AX_BUTTON_ACTION_VERB;
     case WebLocalizedString::AXCheckedCheckBoxActionVerb:
       return IDS_AX_CHECKED_CHECK_BOX_ACTION_VERB;
+    case WebLocalizedString::AXDateTimeFieldEmptyValueText:
+      return IDS_AX_DATE_TIME_FIELD_EMPTY_VALUE_TEXT;
+    case WebLocalizedString::AXDayOfMonthFieldText:
+      return IDS_AX_DAY_OF_MONTH_FIELD_TEXT;
     case WebLocalizedString::AXHeadingText:
       return IDS_AX_ROLE_HEADING;
+    case WebLocalizedString::AXHourFieldText:
+      return IDS_AX_HOUR_FIELD_TEXT;
     case WebLocalizedString::AXImageMapText:
       return IDS_AX_ROLE_IMAGE_MAP;
     case WebLocalizedString::AXLinkActionVerb:
@@ -134,14 +149,26 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_ROLE_LINK;
     case WebLocalizedString::AXListMarkerText:
       return IDS_AX_ROLE_LIST_MARKER;
+    case WebLocalizedString::AXMillisecondFieldText:
+      return IDS_AX_MILLISECOND_FIELD_TEXT;
+    case WebLocalizedString::AXMinuteFieldText:
+      return IDS_AX_MINUTE_FIELD_TEXT;
+    case WebLocalizedString::AXMonthFieldText:
+      return IDS_AX_MONTH_FIELD_TEXT;
     case WebLocalizedString::AXRadioButtonActionVerb:
       return IDS_AX_RADIO_BUTTON_ACTION_VERB;
+    case WebLocalizedString::AXSecondFieldText:
+      return IDS_AX_SECOND_FIELD_TEXT;
     case WebLocalizedString::AXTextFieldActionVerb:
       return IDS_AX_TEXT_FIELD_ACTION_VERB;
     case WebLocalizedString::AXUncheckedCheckBoxActionVerb:
       return IDS_AX_UNCHECKED_CHECK_BOX_ACTION_VERB;
     case WebLocalizedString::AXWebAreaText:
       return IDS_AX_ROLE_WEB_AREA;
+    case WebLocalizedString::AXWeekOfYearFieldText:
+      return IDS_AX_WEEK_OF_YEAR_FIELD_TEXT;
+    case WebLocalizedString::AXYearFieldText:
+      return IDS_AX_YEAR_FIELD_TEXT;
     case WebLocalizedString::CalendarClear:
       return IDS_FORM_CALENDAR_CLEAR;
     case WebLocalizedString::CalendarToday:
@@ -170,6 +197,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_PLUGIN_INITIALIZATION_ERROR;
     case WebLocalizedString::MultipleFileUploadText:
       return IDS_FORM_FILE_MULTIPLE_UPLOAD;
+    case WebLocalizedString::OtherColorLabel:
+      return IDS_FORM_OTHER_COLOR_LABEL;
     case WebLocalizedString::ResetButtonDefaultLabel:
       return IDS_FORM_RESET_LABEL;
     case WebLocalizedString::SearchableIndexIntroduction:
@@ -227,7 +256,8 @@ WebKitPlatformSupportImpl::WebKitPlatformSupportImpl()
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
       shared_timer_suspended_(0),
-      current_thread_slot_(&DestroyCurrentThread) {
+      current_thread_slot_(&DestroyCurrentThread),
+      compositor_support_(new webkit::WebCompositorSupportImpl) {
 }
 
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
@@ -390,9 +420,6 @@ struct DataResource {
 const DataResource kDataResources[] = {
   { "missingImage", IDR_BROKENIMAGE, ui::SCALE_FACTOR_100P },
   { "missingImage@2x", IDR_BROKENIMAGE, ui::SCALE_FACTOR_200P },
-#if defined(OS_ANDROID)
-  { "mediaFullscreen", IDR_MEDIA_FULLSCREEN_BUTTON, ui::SCALE_FACTOR_100P },
-#endif
   { "mediaPause", IDR_MEDIA_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaPlay", IDR_MEDIA_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaPlayDisabled",
@@ -455,6 +482,14 @@ const DataResource kDataResources[] = {
     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN, ui::SCALE_FACTOR_100P },
   { "mediaplayerVolumeSliderThumbDisabled",
     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED, ui::SCALE_FACTOR_100P },
+  { "mediaplayerClosedCaption",
+    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON, ui::SCALE_FACTOR_100P },
+  { "mediaplayerClosedCaptionHover",
+    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
+  { "mediaplayerClosedCaptionDown",
+    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
+  { "mediaplayerClosedCaptionDisabled",
+    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
   { "mediaplayerFullscreen",
     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON, ui::SCALE_FACTOR_100P },
   { "mediaplayerFullscreenHover",
@@ -463,6 +498,10 @@ const DataResource kDataResources[] = {
     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
   { "mediaplayerFullscreenDisabled",
     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
+#if defined(OS_ANDROID)
+  { "mediaplayerOverlayPlay",
+    IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
+#endif
 #if defined(OS_MACOSX)
   { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
 #endif
@@ -474,7 +513,6 @@ const DataResource kDataResources[] = {
     IDR_SEARCH_MAGNIFIER_RESULTS, ui::SCALE_FACTOR_100P },
   { "textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P },
   { "textAreaResizeCorner@2x", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_200P },
-  { "tickmarkDash", IDR_TICKMARK_DASH, ui::SCALE_FACTOR_100P },
   { "inputSpeech", IDR_INPUT_SPEECH, ui::SCALE_FACTOR_100P },
   { "inputSpeechRecording", IDR_INPUT_SPEECH_RECORDING, ui::SCALE_FACTOR_100P },
   { "inputSpeechWaiting", IDR_INPUT_SPEECH_WAITING, ui::SCALE_FACTOR_100P },
@@ -638,6 +676,10 @@ WebKit::WebThread* WebKitPlatformSupportImpl::currentThread() {
   return thread;
 }
 
+WebKit::WebCompositorSupport* WebKitPlatformSupportImpl::compositorSupport() {
+  return compositor_support_.get();
+}
+
 base::PlatformFile WebKitPlatformSupportImpl::databaseOpenFile(
     const WebKit::WebString& vfs_file_name, int desired_flags) {
   return base::kInvalidPlatformFileValue;
@@ -670,20 +712,18 @@ WebKit::WebString WebKitPlatformSupportImpl::signedPublicKeyAndChallengeString(
   return WebKit::WebString("");
 }
 
-static base::ProcessMetrics* CurrentProcessMetrics() {
+static scoped_ptr<base::ProcessMetrics> CurrentProcessMetrics() {
   using base::ProcessMetrics;
 #if defined(OS_MACOSX)
-  static ProcessMetrics* process_metrics =
+  return scoped_ptr<ProcessMetrics>(
       // The default port provider is sufficient to get data for the current
       // process.
       ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle(),
-                                           NULL);
+                                           NULL));
 #else
-  static ProcessMetrics* process_metrics =
-      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle());
+  return scoped_ptr<ProcessMetrics>(
+      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle()));
 #endif
-  DCHECK(process_metrics);
-  return process_metrics;
 }
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
@@ -786,5 +826,11 @@ void WebKitPlatformSupportImpl::didStopWorkerRunLoop(
   WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
   worker_task_runner->OnWorkerRunLoopStopped(runLoop);
 }
+
+#if defined(OS_ANDROID)
+WebKit::WebFlingAnimator* WebKitPlatformSupportImpl::createFlingAnimator() {
+  return new FlingAnimatorImpl();
+}
+#endif
 
 }  // namespace webkit_glue

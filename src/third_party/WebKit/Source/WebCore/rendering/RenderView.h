@@ -32,9 +32,14 @@ namespace WebCore {
 
 class FlowThreadController;
 class RenderWidget;
+class RenderQuote;
 
 #if USE(ACCELERATED_COMPOSITING)
 class RenderLayerCompositor;
+#endif
+
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+class CustomFilterGlobalContext;
 #endif
 
 class RenderView : public RenderBlock {
@@ -43,6 +48,7 @@ public:
     virtual ~RenderView();
 
     bool hitTest(const HitTestRequest&, HitTestResult&);
+    bool hitTest(const HitTestRequest&, const HitTestLocation&, HitTestResult&);
 
     virtual const char* renderName() const OVERRIDE { return "RenderView"; }
 
@@ -53,11 +59,13 @@ public:
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
 
     virtual void layout() OVERRIDE;
-    virtual void computeLogicalWidth() OVERRIDE;
-    virtual void computeLogicalHeight() OVERRIDE;
+    virtual void updateLogicalWidth() OVERRIDE;
+    virtual void updateLogicalHeight() OVERRIDE;
     // FIXME: This override is not needed and should be removed
     // it only exists to make computePreferredLogicalWidths public.
     virtual void computePreferredLogicalWidths() OVERRIDE;
+
+    virtual LayoutUnit availableLogicalHeight() const OVERRIDE;
 
     // The same as the FrameView's layoutHeight/layoutWidth but with null check guards.
     int viewHeight() const;
@@ -168,6 +176,10 @@ public:
     bool usesCompositing() const;
 #endif
 
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+    CustomFilterGlobalContext* customFilterGlobalContext();
+#endif
+
     IntRect unscaledDocumentRect() const;
     LayoutRect backgroundRect(RenderBox* backgroundRenderer) const;
 
@@ -182,10 +194,19 @@ public:
 
     IntSize viewportSize() const { return document()->viewportSize(); }
 
-    void setFixedPositionedObjectsNeedLayout();
+    void setRenderQuoteHead(RenderQuote* head) { m_renderQuoteHead = head; }
+    RenderQuote* renderQuoteHead() const { return m_renderQuoteHead; }
+
+    // FIXME: This is a work around because the current implementation of counters
+    // requires walking the entire tree repeatedly and most pages don't actually use either
+    // feature so we shouldn't take the performance hit when not needed. Long term we should
+    // rewrite the counter and quotes code.
+    void addRenderCounter() { m_renderCounterCount++; }
+    void removeRenderCounter() { ASSERT(m_renderCounterCount > 0); m_renderCounterCount--; }
+    bool hasRenderCounters() { return m_renderCounterCount; }
 
 protected:
-    virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&, ApplyContainerFlipOrNot = ApplyContainerFlip, bool* wasFixed = 0) const;
+    virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, TransformState&, MapLocalToContainerFlags mode = ApplyContainerFlip | SnapOffsetForTransforms, bool* wasFixed = 0) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap&) const;
     virtual void mapAbsoluteToLocalPoint(bool fixed, bool useTransforms, TransformState&) const;
     virtual bool requiresColumns(int desiredColumnCount) const OVERRIDE;
@@ -274,8 +295,14 @@ private:
 #if USE(ACCELERATED_COMPOSITING)
     OwnPtr<RenderLayerCompositor> m_compositor;
 #endif
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+    OwnPtr<CustomFilterGlobalContext> m_customFilterGlobalContext;
+#endif
     OwnPtr<FlowThreadController> m_flowThreadController;
     RefPtr<IntervalArena> m_intervalArena;
+
+    RenderQuote* m_renderQuoteHead;
+    unsigned m_renderCounterCount;
 };
 
 inline RenderView* toRenderView(RenderObject* object)
@@ -323,17 +350,7 @@ public:
         , m_didCreateLayoutState(false)
     {
     }
-    
-    LayoutStateMaintainer(RenderView* view, RenderFlowThread* flowThread, bool regionsChanged)
-        : m_view(view)
-        , m_disabled(false)
-        , m_didStart(false)
-        , m_didEnd(false)
-        , m_didCreateLayoutState(false)
-    {
-        push(flowThread, regionsChanged);
-    }
-    
+
     ~LayoutStateMaintainer()
     {
         ASSERT(m_didStart == m_didEnd);   // if this fires, it means that someone did a push(), but forgot to pop().
@@ -346,14 +363,6 @@ public:
         m_didCreateLayoutState = m_view->pushLayoutState(root, offset, pageHeight, pageHeightChanged, colInfo);
         if (m_disabled && m_didCreateLayoutState)
             m_view->disableLayoutState();
-        m_didStart = true;
-    }
-    
-    void push(RenderFlowThread* flowThread, bool regionsChanged)
-    {
-        ASSERT(!m_didStart);
-        m_view->pushLayoutState(flowThread, regionsChanged);
-        m_didCreateLayoutState = true;
         m_didStart = true;
     }
 

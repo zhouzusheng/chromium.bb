@@ -8,9 +8,9 @@
 #include <GLES2/gl2.h>
 
 #include <queue>
-#include "../../gpu_export.h"
 #include "../client/hash_tables.h"
 #include "../common/gles2_cmd_format.h"
+#include "gles2_impl_export.h"
 
 namespace gpu {
 
@@ -19,8 +19,10 @@ class MappedMemoryManager;
 
 namespace gles2 {
 
+class GLES2Implementation;
+
 // Manages buckets of QuerySync instances in mapped memory.
-class GPU_EXPORT QuerySyncManager {
+class GLES2_IMPL_EXPORT QuerySyncManager {
  public:
   static const size_t kSyncsPerBucket = 4096;
 
@@ -57,9 +59,9 @@ class GPU_EXPORT QuerySyncManager {
 };
 
 // Tracks queries for client side of command buffer.
-class GPU_EXPORT QueryTracker {
+class GLES2_IMPL_EXPORT QueryTracker {
  public:
-  class GPU_EXPORT Query {
+  class GLES2_IMPL_EXPORT Query {
    public:
     enum State {
       kUninitialized,  // never used
@@ -68,16 +70,7 @@ class GPU_EXPORT QueryTracker {
       kComplete        // completed
     };
 
-    Query(GLuint id, GLenum target, const QuerySyncManager::QueryInfo& info)
-        : id_(id),
-          target_(target),
-          info_(info),
-          state_(kUninitialized),
-          submit_count_(0),
-          token_(0),
-          flushed_(false),
-          result_(0) {
-    }
+    Query(GLuint id, GLenum target, const QuerySyncManager::QueryInfo& info);
 
     GLenum target() const {
       return target_;
@@ -126,6 +119,9 @@ class GPU_EXPORT QueryTracker {
 
     uint32 GetResult() const;
 
+    void Begin(GLES2Implementation* gl);
+    void End(GLES2Implementation* gl);
+
    private:
     friend class QueryTracker;
     friend class QueryTrackerTest;
@@ -145,7 +141,7 @@ class GPU_EXPORT QueryTracker {
 
   Query* CreateQuery(GLuint id, GLenum target);
   Query* GetQuery(GLuint id);
-  void RemoveQuery(GLuint id);
+  void RemoveQuery(GLuint id, bool context_lost);
 
  private:
   typedef gpu::hash_map<GLuint, Query*> QueryMap;

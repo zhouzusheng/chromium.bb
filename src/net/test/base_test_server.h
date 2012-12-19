@@ -4,7 +4,6 @@
 
 #ifndef NET_TEST_BASE_TEST_SERVER_H_
 #define NET_TEST_BASE_TEST_SERVER_H_
-#pragma once
 
 #include <string>
 #include <utility>
@@ -32,18 +31,21 @@ class BaseTestServer {
   typedef std::pair<std::string, std::string> StringPair;
 
   enum Type {
+    TYPE_BASIC_AUTH_PROXY,
     TYPE_FTP,
     TYPE_GDATA,
     TYPE_HTTP,
     TYPE_HTTPS,
+    TYPE_WS,
+    TYPE_WSS,
     TYPE_SYNC,
     TYPE_TCP_ECHO,
     TYPE_UDP_ECHO,
   };
 
-  // Container for various options to control how the HTTPS server is
+  // Container for various options to control how the HTTPS or WSS server is
   // initialized.
-  struct HTTPSOptions {
+  struct SSLOptions {
     enum ServerCertificate {
       CERT_OK,
 
@@ -66,6 +68,8 @@ class BaseTestServer {
       OCSP_OK,
       OCSP_REVOKED,
       OCSP_INVALID,
+      OCSP_UNAUTHORIZED,
+      OCSP_UNKNOWN,
     };
 
     // Bitmask of bulk encryption algorithms that the test server supports
@@ -94,12 +98,12 @@ class BaseTestServer {
       TLS_INTOLERANT_TLS1_2 = 3,  // Intolerant of TLS 1.2 or higher.
     };
 
-    // Initialize a new HTTPSOptions using CERT_OK as the certificate.
-    HTTPSOptions();
+    // Initialize a new SSLOptions using CERT_OK as the certificate.
+    SSLOptions();
 
-    // Initialize a new HTTPSOptions that will use the specified certificate.
-    explicit HTTPSOptions(ServerCertificate cert);
-    ~HTTPSOptions();
+    // Initialize a new SSLOptions that will use the specified certificate.
+    explicit SSLOptions(ServerCertificate cert);
+    ~SSLOptions();
 
     // Returns the relative filename of the file that contains the
     // |server_certificate|.
@@ -150,8 +154,8 @@ class BaseTestServer {
   // Initialize a TestServer listening on a specific host (IP or hostname).
   BaseTestServer(Type type,  const std::string& host);
 
-  // Initialize a HTTPS TestServer with a specific set of HTTPSOptions.
-  explicit BaseTestServer(const HTTPSOptions& https_options);
+  // Initialize a TestServer with a specific set of SSLOptions for HTTPS or WSS.
+  explicit BaseTestServer(Type type, const SSLOptions& ssl_options);
 
   // Returns the host port pair used by current Python based test server only
   // if the server is started.
@@ -224,8 +228,9 @@ class BaseTestServer {
   // Holds the data sent from the server (e.g., port number).
   scoped_ptr<base::DictionaryValue> server_data_;
 
-  // If |type_| is TYPE_HTTPS, the TLS settings to use for the test server.
-  HTTPSOptions https_options_;
+  // If |type_| is TYPE_HTTPS or TYPE_WSS, the TLS settings to use for the test
+  // server.
+  SSLOptions ssl_options_;
 
   Type type_;
 

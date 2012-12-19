@@ -32,6 +32,7 @@
 #include "SVGNames.h"
 #endif
 
+#include "StyleInheritedData.h"
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 
@@ -218,7 +219,7 @@ bool Text::rendererIsNeeded(const NodeRenderingContext& context)
             return false;
         
         RenderObject* first = parent->firstChild();
-        while (first && first->isFloatingOrPositioned())
+        while (first && first->isFloatingOrOutOfFlowPositioned())
             first = first->nextSibling();
         RenderObject* next = context.nextRenderer();
         if (!first || next == first)
@@ -300,23 +301,20 @@ void Text::willRecalcTextStyle(StyleChange)
 #ifndef NDEBUG
 void Text::formatForDebugger(char *buffer, unsigned length) const
 {
-    String result;
+    StringBuilder result;
     String s;
-    
-    s = nodeName();
-    if (s.length() > 0) {
-        result += s;
-    }
-          
+
+    result.append(nodeName());
+
     s = data();
     if (s.length() > 0) {
-        if (result.length() > 0)
-            result += "; ";
-        result += "value=";
-        result += s;
+        if (result.length())
+            result.appendLiteral("; ");
+        result.appendLiteral("value=");
+        result.append(s);
     }
-          
-    strncpy(buffer, result.utf8().data(), length - 1);
+
+    strncpy(buffer, result.toString().utf8().data(), length - 1);
 }
 #endif
 

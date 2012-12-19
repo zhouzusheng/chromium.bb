@@ -28,10 +28,12 @@
 class MessageLoop;
 
 namespace webkit {
+class WebCompositorSupportImpl;
 struct WebPluginInfo;
 }
 
 namespace WebKit {
+class WebFlingAnimator;
 class WebSocketStreamHandle;
 }
 
@@ -118,6 +120,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual void callOnMainThread(void (*func)(void*), void* context);
   virtual WebKit::WebThread* createThread(const char* name);
   virtual WebKit::WebThread* currentThread();
+  virtual WebKit::WebCompositorSupport* compositorSupport();
 
 
   // Embedder functions. The following are not implemented by the glue layer and
@@ -152,6 +155,10 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual void didStopWorkerRunLoop(
       const WebKit::WebWorkerRunLoop& runLoop) OVERRIDE;
 
+#if defined(OS_ANDROID)
+  virtual WebKit::WebFlingAnimator* createFlingAnimator();
+#endif
+
  private:
   void DoTimeout() {
     if (shared_timer_func_ && !shared_timer_suspended_)
@@ -166,6 +173,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   int shared_timer_suspended_;  // counter
   WebThemeEngineImpl theme_engine_;
   base::ThreadLocalStorage::Slot current_thread_slot_;
+  scoped_ptr<webkit::WebCompositorSupportImpl> compositor_support_;
 };
 
 }  // namespace webkit_glue

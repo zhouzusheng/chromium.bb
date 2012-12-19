@@ -31,6 +31,7 @@
 namespace WebCore {
 
 class WebGLExtension {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     // Extension names are needed to properly wrap instances in JavaScript objects.
     enum ExtensionName {
@@ -42,6 +43,7 @@ public:
         WebGLDebugRendererInfoName,
         WebGLDebugShadersName,
         WebKitWebGLCompressedTextureS3TCName, // WEBKIT_ prefix until extension is official
+        WebKitWebGLDepthTextureName, // WEBKIT_ prefix until extension is official
     };
 
     void ref() { m_context->ref(); }

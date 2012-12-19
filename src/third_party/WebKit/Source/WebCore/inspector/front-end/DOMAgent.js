@@ -736,6 +736,21 @@ WebInspector.DOMNode.prototype = {
     descendantUserPropertyCount: function(name)
     {
         return this._descendantUserPropertyCounters && this._descendantUserPropertyCounters[name] ? this._descendantUserPropertyCounters[name] : 0;
+    },
+
+    /**
+     * @param {string} url
+     * @return {?string}
+     */
+    resolveURL: function(url)
+    {
+        if (!url)
+            return url;
+        for (var frameOwnerCandidate = this; frameOwnerCandidate; frameOwnerCandidate = frameOwnerCandidate.parentNode) {
+            if (frameOwnerCandidate.documentURL)
+                return WebInspector.ParsedURL.completeURL(frameOwnerCandidate.documentURL, url);
+        }
+        return null;
     }
 }
 
@@ -779,7 +794,6 @@ WebInspector.DOMAgent.Events = {
     DocumentUpdated: "DocumentUpdated",
     ChildNodeCountUpdated: "ChildNodeCountUpdated",
     InspectElementRequested: "InspectElementRequested",
-    StyleInvalidated: "StyleInvalidated",
     UndoRedoRequested: "UndoRedoRequested",
     UndoRedoCompleted: "UndoRedoCompleted"
 }
@@ -822,6 +836,14 @@ WebInspector.DOMAgent.prototype = {
         }
 
         DOMAgent.getDocument(onDocumentAvailable.bind(this));
+    },
+
+    /**
+     * @return {WebInspector.DOMDocument?}
+     */
+    existingDocument: function()
+    {
+        return this._document;
     },
 
     /**
@@ -893,12 +915,9 @@ WebInspector.DOMAgent.prototype = {
         var node = this._idToDOMNode[nodeId];
         if (!node)
             return;
-        var issueStyleInvalidated = name === "style" && value !== node.getAttribute("style");
 
         node._setAttribute(name, value);
         this.dispatchEventToListeners(WebInspector.DOMAgent.Events.AttrModified, { node: node, name: name });
-        if (issueStyleInvalidated)
-          this.dispatchEventToListeners(WebInspector.DOMAgent.Events.StyleInvalidated, node)
     },
 
     /**
@@ -942,10 +961,8 @@ WebInspector.DOMAgent.prototype = {
             }
             var node = this._idToDOMNode[nodeId];
             if (node) {
-                if (node._setAttributesPayload(attributes)) {
+                if (node._setAttributesPayload(attributes))
                     this.dispatchEventToListeners(WebInspector.DOMAgent.Events.AttrModified, { node: node, name: "style" });
-                    this.dispatchEventToListeners(WebInspector.DOMAgent.Events.StyleInvalidated, node);
-                }
             }
         }
 
@@ -1057,7 +1074,7 @@ WebInspector.DOMAgent.prototype = {
         var node = this._idToDOMNode[nodeId];
         parent._removeChild(node);
         this._unbind(node);
-        this.dispatchEventToListeners(WebInspector.DOMAgent.Events.NodeRemoved, {node:node, parent:parent});
+        this.dispatchEventToListeners(WebInspector.DOMAgent.Events.NodeRemoved, {node: node, parent: parent});
     },
 
     /**
@@ -1068,7 +1085,7 @@ WebInspector.DOMAgent.prototype = {
     },
 
     /**
-     * @param {DOMAgent.Node} node
+     * @param {WebInspector.DOMNode} node
      */
     _unbind: function(node)
     {
@@ -1278,7 +1295,7 @@ WebInspector.DOMAgent.prototype = {
             this._addTouchEventsScriptId = scriptId;
         }
 
-        DOMAgent.setTouchEmulationEnabled(emulationEnabled);
+        PageAgent.setTouchEmulationEnabled(emulationEnabled);
     },
 
     markUndoableState: function()

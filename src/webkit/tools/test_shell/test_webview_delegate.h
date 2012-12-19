@@ -88,8 +88,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       const WebKit::WebPopupMenuInfo& info);
   virtual WebKit::WebStorageNamespace* createSessionStorageNamespace(
       unsigned quota);
-  virtual WebKit::WebGraphicsContext3D* createGraphicsContext3D(
-      const WebKit::WebGraphicsContext3D::Attributes& attributes);
   virtual void didAddMessageToConsole(
       const WebKit::WebConsoleMessage& message,
       const WebKit::WebString& source_name, unsigned source_line);
@@ -166,7 +164,7 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
   virtual WebKit::WebPlugin* createPlugin(
       WebKit::WebFrame*, const WebKit::WebPluginParams&);
   virtual WebKit::WebMediaPlayer* createMediaPlayer(
-      WebKit::WebFrame*, WebKit::WebMediaPlayerClient*);
+      WebKit::WebFrame*, const WebKit::WebURL&, WebKit::WebMediaPlayerClient*);
   virtual WebKit::WebApplicationCacheHost* createApplicationCacheHost(
       WebKit::WebFrame*, WebKit::WebApplicationCacheHostClient*);
   virtual bool allowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
@@ -200,7 +198,6 @@ class TestWebViewDelegate : public WebKit::WebViewClient,
       WebKit::WebFrame*, const WebKit::WebURLError&);
   virtual void didCommitProvisionalLoad(
       WebKit::WebFrame*, bool is_new_navigation);
-  virtual void didClearWindowObject(WebKit::WebFrame*);
   virtual void didReceiveTitle(
       WebKit::WebFrame*, const WebKit::WebString& title,
       WebKit::WebTextDirection direction);

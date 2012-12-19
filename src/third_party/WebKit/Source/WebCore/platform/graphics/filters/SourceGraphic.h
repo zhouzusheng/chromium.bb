@@ -23,9 +23,7 @@
 
 #if ENABLE(FILTERS)
 #include "FilterEffect.h"
-
 #include "Filter.h"
-#include "PlatformString.h"
 
 namespace WebCore {
 
@@ -48,6 +46,7 @@ private:
     SourceGraphic(Filter* filter)
         : FilterEffect(filter)
     {
+        setColorSpace(ColorSpaceDeviceRGB);
     }
 };
 

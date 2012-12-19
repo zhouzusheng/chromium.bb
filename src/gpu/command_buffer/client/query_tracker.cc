@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+
 #include "../client/query_tracker.h"
 
 #include "../client/atomicops.h"
-#include "../client/cmd_buffer_helper.h"
+#include "../client/gles2_cmd_helper.h"
+#include "../client/gles2_implementation.h"
 #include "../client/mapped_memory.h"
 
 namespace gpu {
@@ -51,10 +55,62 @@ void QuerySyncManager::Free(const QuerySyncManager::QueryInfo& info) {
   free_queries_.push(info);
 }
 
+QueryTracker::Query::Query(GLuint id, GLenum target,
+                           const QuerySyncManager::QueryInfo& info)
+    : id_(id),
+      target_(target),
+      info_(info),
+      state_(kUninitialized),
+      submit_count_(0),
+      token_(0),
+      flushed_(false),
+      result_(0) {
+    }
+
+
+void QueryTracker::Query::Begin(GLES2Implementation* gl) {
+  // init memory, inc count
+  MarkAsActive();
+
+  switch (target()) {
+    case GL_GET_ERROR_QUERY_CHROMIUM:
+      // To nothing on begin for error queries.
+      break;
+    default:
+      // tell service about id, shared memory and count
+      gl->helper()->BeginQueryEXT(target(), id(), shm_id(), shm_offset());
+      break;
+  }
+}
+
+void QueryTracker::Query::End(GLES2Implementation* gl) {
+  switch (target()) {
+    case GL_GET_ERROR_QUERY_CHROMIUM: {
+      GLenum error = gl->GetClientSideGLError();
+      if (error == GL_NO_ERROR) {
+        // There was no error so start the query on the serivce.
+        // it will end immediately.
+        gl->helper()->BeginQueryEXT(target(), id(), shm_id(), shm_offset());
+      } else {
+        // There's an error on the client, no need to bother the service. just
+        // set the query as completed and return the error.
+        if (error != GL_NO_ERROR) {
+          state_ = kComplete;
+          result_ = error;
+          return;
+        }
+      }
+    }
+  }
+  gl->helper()->EndQueryEXT(target(), submit_count());
+  MarkAsPending(gl->helper()->InsertToken());
+}
+
 bool QueryTracker::Query::CheckResultsAvailable(
     CommandBufferHelper* helper) {
   if (Pending()) {
-    if (info_.sync->process_count == submit_count_) {
+    if (info_.sync->process_count == submit_count_ ||
+        helper->IsContextLost()) {
       // Need a MemoryBarrier here so that sync->result read after
       // sync->process_count.
       gpu::MemoryBarrier();
@@ -109,11 +165,12 @@ QueryTracker::Query* QueryTracker::GetQuery(
   return it != queries_.end() ? it->second : NULL;
 }
 
-void QueryTracker::RemoveQuery(GLuint client_id) {
+void QueryTracker::RemoveQuery(GLuint client_id, bool context_lost) {
+  (void)context_lost;  // stop unused warning
   QueryMap::iterator it = queries_.find(client_id);
   if (it != queries_.end()) {
     Query* query = it->second;
-    GPU_DCHECK(!query->Pending());
+    GPU_DCHECK(context_lost || !query->Pending());
     query_sync_manager_.Free(query->info_);
     queries_.erase(it);
     delete query;
@@ -122,4 +179,3 @@ void QueryTracker::RemoveQuery(GLuint client_id) {
 
 }  // namespace gles2
 }  // namespace gpu
-

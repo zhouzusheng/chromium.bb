@@ -33,7 +33,7 @@ FilePath GetResourcesPakFilePath(const std::string& pak_name) {
   return FilePath(ASCIIToUTF16(pak_name));
 }
 
-}  // end anonymous namespace
+}  // namespace
 
 void ResourceBundle::LoadCommonResources() {
   // As a convenience, add the current resource module as a data packs.
@@ -48,22 +48,22 @@ void ResourceBundle::LoadCommonResources() {
 
   switch (ui::GetDisplayLayout()) {
     case ui::LAYOUT_TOUCH:
-      AddDataPack(GetResourcesPakFilePath("theme_resources_touch_1x.pak"),
-                  SCALE_FACTOR_100P);
-      AddDataPack(GetResourcesPakFilePath("ui_resources_standard.pak"),
-                  SCALE_FACTOR_100P);
+      AddDataPackFromPath(
+          GetResourcesPakFilePath("chrome_touch_100_percent.pak"),
+          SCALE_FACTOR_100P);
       break;
     default:
       if (use_hidpi) {
-        AddDataPack(GetResourcesPakFilePath("theme_resources_2x.pak"),
-                    SCALE_FACTOR_200P);
-        AddDataPack(GetResourcesPakFilePath("ui_resources_2x.pak"),
-                    SCALE_FACTOR_200P);
+        AddDataPackFromPath(GetResourcesPakFilePath(
+                            "chrome_200_percent.pak"),
+                            SCALE_FACTOR_200P);
+        AddDataPackFromPath(GetResourcesPakFilePath(
+                            "webkit_resources_200_percent.pak"),
+                            SCALE_FACTOR_200P);
       } else {
-        AddDataPack(GetResourcesPakFilePath("theme_resources_standard.pak"),
-                    SCALE_FACTOR_100P);
-        AddDataPack(GetResourcesPakFilePath("ui_resources_standard.pak"),
-                    SCALE_FACTOR_100P);
+        AddDataPackFromPath(
+            GetResourcesPakFilePath("chrome_100_percent.pak"),
+            SCALE_FACTOR_100P);
       }
       break;
   }

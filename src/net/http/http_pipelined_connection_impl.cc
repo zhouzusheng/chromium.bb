@@ -52,6 +52,22 @@ Value* NetLogHostPortPairCallback(const HostPortPair* host_port_pair,
 
 }  // anonymous namespace
 
+HttpPipelinedConnection*
+HttpPipelinedConnectionImpl::Factory::CreateNewPipeline(
+    ClientSocketHandle* connection,
+    HttpPipelinedConnection::Delegate* delegate,
+    const HostPortPair& origin,
+    const SSLConfig& used_ssl_config,
+    const ProxyInfo& used_proxy_info,
+    const BoundNetLog& net_log,
+    bool was_npn_negotiated,
+    NextProto protocol_negotiated) {
+  return new HttpPipelinedConnectionImpl(connection, delegate, origin,
+                                         used_ssl_config, used_proxy_info,
+                                         net_log, was_npn_negotiated,
+                                         protocol_negotiated);
+}
+
 HttpPipelinedConnectionImpl::HttpPipelinedConnectionImpl(
     ClientSocketHandle* connection,
     HttpPipelinedConnection::Delegate* delegate,
@@ -599,7 +615,8 @@ int HttpPipelinedConnectionImpl::ReadResponseBody(
       buf, buf_len, callback);
 }
 
-uint64 HttpPipelinedConnectionImpl::GetUploadProgress(int pipeline_id) const {
+UploadProgress HttpPipelinedConnectionImpl::GetUploadProgress(
+    int pipeline_id) const {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
   CHECK(stream_info_map_.find(pipeline_id)->second.parser.get());
   return stream_info_map_.find(pipeline_id)->second.parser->GetUploadProgress();

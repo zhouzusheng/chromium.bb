@@ -34,6 +34,7 @@
 #include "EmptyClients.h"
 #include "FrameView.h"
 #include "ImageBuffer.h"
+#include "ImageObserver.h"
 #include "RenderSVGRoot.h"
 #include "SVGDocument.h"
 #include "SVGSVGElement.h"
@@ -164,11 +165,12 @@ void SVGImage::drawSVGToImageBuffer(ImageBuffer* buffer, const IntSize& size, fl
 
     // Eventually clear image buffer.
     IntRect rect(IntPoint(), size);
-    if (shouldClear == ClearImageBuffer)
-        buffer->context()->clearRect(rect);
 
     FloatRect scaledRect(rect);
     scaledRect.scale(scale);
+
+    if (shouldClear == ClearImageBuffer)
+        buffer->context()->clearRect(enclosingIntRect(scaledRect));
 
     // Draw SVG on top of ImageBuffer.
     draw(buffer->context(), enclosingIntRect(scaledRect), rect, ColorSpaceDeviceRGB, CompositeSourceOver);
@@ -178,7 +180,11 @@ void SVGImage::drawSVGToImageBuffer(ImageBuffer* buffer, const IntSize& size, fl
     if (zoom != 1)
         frame->setPageZoomFactor(1);
 
-    renderer->setContainerSize(IntSize());
+    // Renderer may have been recreated by frame->setPageZoomFactor(zoom). So fetch it again.
+    renderer = toRenderSVGRoot(rootElement->renderer());
+    if (renderer)
+        renderer->setContainerSize(IntSize());
+
     frame->view()->resize(this->size());
     if (frame->view()->needsLayout())
         frame->view()->layout();
@@ -351,6 +357,15 @@ bool SVGImage::dataChanged(bool allDataReceived)
 String SVGImage::filenameExtension() const
 {
     return "svg";
+}
+
+void SVGImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceImage);
+    Image::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_chromeClient);
+    info.addMember(m_page);
+    info.addMember(m_frameCache);
 }
 
 }

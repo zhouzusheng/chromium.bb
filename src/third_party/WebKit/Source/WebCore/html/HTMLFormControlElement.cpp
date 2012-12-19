@@ -69,6 +69,11 @@ HTMLFormControlElement::~HTMLFormControlElement()
 {
 }
 
+void HTMLFormControlElement::willAddAuthorShadowRoot()
+{
+    ensureUserAgentShadowRoot();
+}
+
 String HTMLFormControlElement::formEnctype() const
 {
     return FormSubmission::Attributes::parseEncodingType(fastGetAttribute(formenctypeAttr));
@@ -312,7 +317,9 @@ bool HTMLFormControlElement::supportsFocus() const
 
 bool HTMLFormControlElement::isFocusable() const
 {
-    if (!renderer() || !renderer()->isBox() || toRenderBox(renderer())->size().isEmpty())
+    // If there's a renderer, make sure the size isn't empty, but if there's no renderer,
+    // it might still be focusable if it's in a canvas subtree (handled in Node::isFocusable).
+    if (renderer() && (!renderer()->isBox() || toRenderBox(renderer())->size().isEmpty()))
         return false;
     // HTMLElement::isFocusable handles visibility and calls suportsFocus which
     // will cover the disabled case.
@@ -395,40 +402,17 @@ void HTMLFormControlElement::updateVisibleValidationMessage()
     if (!page)
         return;
     String message;
-    if (renderer() && willValidate()) {
+    if (renderer() && willValidate())
         message = validationMessage().stripWhiteSpace();
-        // HTML5 specification doesn't ask UA to show the title attribute value
-        // with the validationMessage.  However, this behavior is same as Opera
-        // and the specification describes such behavior as an example.
-        const AtomicString& title = getAttribute(titleAttr);
-        if (!message.isEmpty() && !title.isEmpty()) {
-            message.append('\n');
-            message.append(title);
-        }
-    }
-    if (message.isEmpty()) {
-        hideVisibleValidationMessage();
-        return;
-    }
-    if (!m_validationMessage) {
+    if (!m_validationMessage)
         m_validationMessage = ValidationMessage::create(this);
-        m_validationMessage->setMessage(message);
-    } else {
-        // Call setMessage() even if m_validationMesage->message() == message
-        // because the existing message might be to be hidden.
-        m_validationMessage->setMessage(message);
-    }
+    m_validationMessage->updateValidationMessage(message);
 }
 
 void HTMLFormControlElement::hideVisibleValidationMessage()
 {
     if (m_validationMessage)
         m_validationMessage->requestToHideMessage();
-}
-
-String HTMLFormControlElement::visibleValidationMessage() const
-{
-    return m_validationMessage ? m_validationMessage->message() : String();
 }
 
 bool HTMLFormControlElement::checkValidity(Vector<RefPtr<FormAssociatedElement> >* unhandledInvalidControls)
@@ -462,7 +446,7 @@ void HTMLFormControlElement::setNeedsValidityCheck()
     m_isValid = newIsValid;
 
     // Updates only if this control already has a validtion message.
-    if (!visibleValidationMessage().isEmpty()) {
+    if (m_validationMessage && m_validationMessage->isVisible()) {
         // Calls updateVisibleValidationMessage() even if m_isValid is not
         // changed because a validation message can be chagned.
         updateVisibleValidationMessage();
@@ -473,6 +457,16 @@ void HTMLFormControlElement::setCustomValidity(const String& error)
 {
     FormAssociatedElement::setCustomValidity(error);
     setNeedsValidityCheck();
+}
+
+bool HTMLFormControlElement::shouldMatchReadOnlySelector() const
+{
+    return readOnly();
+}
+
+bool HTMLFormControlElement::shouldMatchReadWriteSelector() const
+{
+    return !readOnly();
 }
 
 bool HTMLFormControlElement::validationMessageShadowTreeContains(Node* node) const

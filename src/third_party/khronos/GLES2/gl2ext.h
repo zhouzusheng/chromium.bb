@@ -1960,6 +1960,9 @@ typedef void (GL_APIENTRYP PFNGLTEXIMAGEIOSURFACE2DCHROMIUM) (GLenum target, GLs
 #ifndef GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM
 #define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM 0x9241
 #endif
+#ifndef GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM
+#define GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM 0x9242
+#endif
 #ifndef GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM
 #define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM 0x9243
 #endif
@@ -1982,6 +1985,15 @@ typedef void (GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUM) (GLenum target, GLenum sour
 #define GL_COMMANDS_ISSUED_CHROMIUM 0x84F2
 #endif
 
+/* GL_CHROMIUM_get_error_query */
+/* Exposes GL_CHROMIUM_get_error_query.
+ */
+#ifndef GL_CHROMIUM_get_error_query
+#define GL_CHROMIUM_get_error_query 1
+// TODO(gman): Get official numbers for these constants.
+#define GL_GET_ERROR_QUERY_CHROMIUM 0x84F3
+#endif
+
 /* GL_CHROMIUM_texture_mailbox */
 #ifndef GL_CHROMIUM_texture_mailbox
 #define GL_CHROMIUM_texture_mailbox 1
@@ -2002,23 +2014,17 @@ typedef void (GL_APIENTRYP PFNGLCONSUMETEXTURECHROMIUM) (GLenum target, const  G
 #endif
 #endif
 
-/* GL_CHROMIUM_consistent_uniform_locations */
-#ifndef GL_CHROMIUM_consistent_uniform_locations
-#define GL_CHROMIUM_consistent_uniform_locations 1
-
-struct GLUniformDefinitionCHROMIUM {
-  GLenum type;
-  GLsizei size;
-  const GLchar* name;
-};
+/* GL_CHROMIUM_bind_uniform_location */
+#ifndef GL_CHROMIUM_bind_uniform_location
+#define GL_CHROMIUM_bind_uniform_location 1
 
 #ifdef GL_GLEXT_PROTOTYPES
-#define glGetUniformLocationsCHROMIUM GLES2_GET_FUN(GetUniformLocationsCHROMIUM)
+#define glBindUniformLocationCHROMIUM GLES2_GET_FUN(BindUniformLocationCHROMIUM)
 #if !defined(GLES2_USE_CPP_BINDINGS)
-GL_APICALL void GL_APIENTRY glGetUniformLocationsCHROMIUM (const GLUniformDefinitionCHROMIUM* uniforms, GLsizei count, GLsizei max_locations, GLint* locations);
+GL_APICALL void GL_APIENTRY glBindUniformLocationCHROMIUM (GLuint program, GLint location, const GLchar* name);
 #endif
 #else
-typedef void (GL_APIENTRYP PFNGLGETUNIFORMLOCATIONSCHROMIUM) (const GLUniformDefinitionCHROMIUM* uniforms, GLsizei count, GLsizei max_locations, GLint* locations);
+typedef void (GL_APIENTRYP PFNGLBINDUNIFORMLOCATIONCHROMIUM) (GLuint program, GLint location, const GLchar* name);
 #endif
 #endif
 

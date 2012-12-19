@@ -43,12 +43,14 @@ public:
     LayoutUnit columnWidth() const { return m_columnWidth; }
     unsigned columnCount() const { return m_columnCount; }
 
+    RenderMultiColumnFlowThread* flowThread() const { return m_flowThread; }
+
 private:
     virtual bool isRenderMultiColumnBlock() const { return true; }
     
     virtual const char* renderName() const;
 
-    virtual bool recomputeLogicalWidth() OVERRIDE;
+    virtual bool updateLogicalWidthAndColumnWidth() OVERRIDE;
     virtual void checkForPaginationLogicalHeightChange(LayoutUnit& pageLogicalHeight, bool& pageLogicalHeightChanged, bool& hasSpecifiedPageLogicalHeight) OVERRIDE;
     virtual bool relayoutForPagination(bool hasSpecifiedPageLogicalHeight, LayoutUnit pageLogicalHeight, LayoutStateMaintainer&) OVERRIDE;
 
@@ -57,8 +59,6 @@ private:
     void computeColumnCountAndWidth();
 
     void ensureColumnSets();
-
-    RenderMultiColumnFlowThread* flowThread() const { return m_flowThread; }
 
     RenderMultiColumnFlowThread* m_flowThread;
     unsigned m_columnCount;   // The default column count/width that are based off our containing block width. These values represent only the default,

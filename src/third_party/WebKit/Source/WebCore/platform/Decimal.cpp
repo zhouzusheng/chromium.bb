@@ -37,7 +37,6 @@
 #include <wtf/Assertions.h>
 #include <wtf/MathExtras.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/dtoa.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -246,7 +245,7 @@ Decimal::EncodedData::EncodedData(Sign sign, int exponent, uint64_t coefficient)
     , m_sign(sign)
 {
     if (exponent >= ExponentMin && exponent <= ExponentMax) {
-        while (coefficient >= MaxCoefficient) {
+        while (coefficient > MaxCoefficient) {
             coefficient /= 10;
             ++exponent;
         }
@@ -681,10 +680,8 @@ Decimal Decimal::floor() const
 
 Decimal Decimal::fromDouble(double doubleValue)
 {
-    if (isfinite(doubleValue)) {
-        NumberToStringBuffer buffer;
-        return fromString(numberToString(doubleValue, buffer));
-    }
+    if (isfinite(doubleValue))
+        return fromString(String::numberToStringECMAScript(doubleValue));
 
     if (isinf(doubleValue))
         return infinity(doubleValue < 0 ? Negative : Positive);
@@ -967,22 +964,24 @@ String Decimal::toString() const
         builder.append('-');
 
     int originalExponent = exponent();
-
-    const int maxDigits = DBL_DIG;
     uint64_t coefficient = m_data.coefficient();
-    uint64_t lastDigit = 0;
-    while (countDigits(coefficient) > maxDigits) {
-        lastDigit = coefficient % 10;
-        coefficient /= 10;
-        ++originalExponent;
-    }
 
-    if (lastDigit >= 5)
-        ++coefficient;
+    if (originalExponent < 0) {
+        const int maxDigits = DBL_DIG;
+        uint64_t lastDigit = 0;
+        while (countDigits(coefficient) > maxDigits) {
+            lastDigit = coefficient % 10;
+            coefficient /= 10;
+            ++originalExponent;
+        }
 
-    while (originalExponent < 0 && coefficient && !(coefficient % 10)) {
-        coefficient /= 10;
-        ++originalExponent;
+        if (lastDigit >= 5)
+            ++coefficient;
+
+        while (originalExponent < 0 && coefficient && !(coefficient % 10)) {
+            coefficient /= 10;
+            ++originalExponent;
+        }
     }
 
     const String digits = String::number(coefficient);
@@ -1003,7 +1002,7 @@ String Decimal::toString() const
             return builder.toString();
         }
 
-        builder.append("0.");
+        builder.appendLiteral("0.");
         for (int i = adjustedExponent + 1; i < 0; ++i)
             builder.append('0');
 
@@ -1021,7 +1020,7 @@ String Decimal::toString() const
 
         if (adjustedExponent) {
             builder.append(adjustedExponent < 0 ? "e" : "e+");
-            builder.append(String::number(adjustedExponent));
+            builder.appendNumber(adjustedExponent);
         }
     }
     return builder.toString();

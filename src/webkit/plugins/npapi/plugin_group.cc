@@ -7,6 +7,7 @@
 #include "webkit/plugins/npapi/plugin_group.h"
 
 #include "base/memory/linked_ptr.h"
+#include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
@@ -19,10 +20,10 @@ namespace webkit {
 namespace npapi {
 
 // static
-const char PluginGroup::kAdobeReaderGroupName[] = "Adobe Acrobat";
-const char PluginGroup::kJavaGroupName[] = "Java";
-const char PluginGroup::kQuickTimeGroupName[] = "QuickTime";
-const char PluginGroup::kShockwaveGroupName[] = "Shockwave";
+const char PluginGroup::kAdobeReaderGroupName[] = "Adobe Reader";
+const char PluginGroup::kJavaGroupName[] = "Java(TM)";
+const char PluginGroup::kQuickTimeGroupName[] = "QuickTime Player";
+const char PluginGroup::kShockwaveGroupName[] = "Adobe Shockwave Player";
 const char PluginGroup::kRealPlayerGroupName[] = "RealPlayer";
 const char PluginGroup::kSilverlightGroupName[] = "Silverlight";
 const char PluginGroup::kWindowsMediaPlayerGroupName[] = "Windows Media Player";
@@ -97,21 +98,6 @@ bool PluginGroup::Match(const WebPluginInfo& plugin) const {
   }
 
   return true;
-}
-
-/* static */
-Version* PluginGroup::CreateVersionFromString(const string16& version_string) {
-  // Remove spaces and ')' from the version string,
-  // Replace any instances of 'r', ',' or '(' with a dot.
-  std::string version = UTF16ToASCII(version_string);
-  RemoveChars(version, ") ", &version);
-  std::replace(version.begin(), version.end(), 'd', '.');
-  std::replace(version.begin(), version.end(), 'r', '.');
-  std::replace(version.begin(), version.end(), ',', '.');
-  std::replace(version.begin(), version.end(), '(', '.');
-  std::replace(version.begin(), version.end(), '_', '.');
-
-  return Version::GetVersionFromString(version);
 }
 
 void PluginGroup::AddPlugin(const WebPluginInfo& plugin) {

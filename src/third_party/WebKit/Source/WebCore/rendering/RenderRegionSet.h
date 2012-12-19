@@ -50,7 +50,13 @@ public:
     RenderRegionSet(Node*, RenderFlowThread*);
     
 private:
+    virtual void installFlowThread() OVERRIDE;
+
+    virtual void expandToEncompassFlowThreadContentsIfNeeded() OVERRIDE;
+
     virtual const char* renderName() const = 0;
+    
+    virtual bool isRenderRegionSet() const OVERRIDE { return true; }
 };
 
 } // namespace WebCore

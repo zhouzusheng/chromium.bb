@@ -339,8 +339,9 @@ def main():
     output_file.write("""
 #ifndef InspectorProtocolVersion_h
 #define InspectorProtocolVersion_h
-#include "PlatformString.h"
+
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -363,7 +364,7 @@ bool supportsInspectorProtocolVersion(const String& version)
         return false;
 
     int minor = tokens[1].toInt(&ok);
-    if (!ok || minor < %s)
+    if (!ok || minor > %s)
         return false;
 
     return true;

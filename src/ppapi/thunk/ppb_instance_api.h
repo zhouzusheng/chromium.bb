@@ -5,7 +5,8 @@
 #ifndef PPAPI_THUNK_INSTANCE_API_H_
 #define PPAPI_THUNK_INSTANCE_API_H_
 
-#include "ppapi/c/dev/pp_print_settings_dev.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/dev/ppb_console_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
@@ -25,13 +26,17 @@
 #undef PostMessage
 #endif
 
+struct PP_DecryptedBlockInfo;
+
 namespace ppapi {
 
+class TrackedCallback;
 struct ViewData;
 
 namespace thunk {
 
 class PPB_Flash_API;
+class PPB_Gamepad_API;
 
 class PPB_Instance_API {
  public:
@@ -85,8 +90,7 @@ class PPB_Instance_API {
   virtual PPB_Flash_API* GetFlashAPI() = 0;
 
   // Gamepad.
-  virtual void SampleGamepads(PP_Instance instance,
-                              PP_GamepadsSampleData* data) = 0;
+  virtual PPB_Gamepad_API* GetGamepadAPI(PP_Instance instance) = 0;
 
   // InputEvent.
   virtual int32_t RequestInputEvents(PP_Instance instance,
@@ -109,13 +113,8 @@ class PPB_Instance_API {
 
   // MouseLock.
   virtual int32_t LockMouse(PP_Instance instance,
-                            PP_CompletionCallback callback) = 0;
+                            scoped_refptr<TrackedCallback> callback) = 0;
   virtual void UnlockMouse(PP_Instance instance) = 0;
-
-  // Printing.
-  virtual PP_Bool GetDefaultPrintSettings(
-      PP_Instance instance,
-      PP_PrintSettings_Dev* print_settings) = 0;
 
   // TextInput.
   virtual void SetTextInputType(PP_Instance instance,
@@ -136,6 +135,34 @@ class PPB_Instance_API {
                                  double minimum_factor,
                                  double maximium_factor) = 0;
 #if !defined(OS_NACL)
+  // Content Decryptor.
+  virtual void NeedKey(PP_Instance instance,
+                       PP_Var key_system,
+                       PP_Var session_id,
+                       PP_Var init_data) = 0;
+  virtual void KeyAdded(PP_Instance instance,
+                        PP_Var key_system,
+                        PP_Var session_id) = 0;
+  virtual void KeyMessage(PP_Instance instance,
+                          PP_Var key_system,
+                          PP_Var session_id,
+                          PP_Resource message,
+                          PP_Var default_url) = 0;
+  virtual void KeyError(PP_Instance instance,
+                        PP_Var key_system,
+                        PP_Var session_id,
+                        int32_t media_error,
+                        int32_t system_error) = 0;
+  virtual void DeliverBlock(PP_Instance instance,
+                            PP_Resource decrypted_block,
+                            const PP_DecryptedBlockInfo* block_info) = 0;
+  virtual void DeliverFrame(PP_Instance instance,
+                            PP_Resource decrypted_frame,
+                            const PP_DecryptedBlockInfo* block_info) = 0;
+  virtual void DeliverSamples(PP_Instance instance,
+                              PP_Resource decrypted_samples,
+                              const PP_DecryptedBlockInfo* block_info) = 0;
+
   // URLUtil.
   virtual PP_Var ResolveRelativeToDocument(
       PP_Instance instance,

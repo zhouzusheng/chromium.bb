@@ -38,6 +38,7 @@
 #include "InspectorCounters.h"
 #include "IntRect.h"
 #include "LayoutTypes.h"
+#include "MutationObserver.h"
 #include "PageVisibilityState.h"
 #include "PlatformScreen.h"
 #include "QualifiedName.h"
@@ -47,7 +48,6 @@
 #include "Timer.h"
 #include "TreeScope.h"
 #include "ViewportArguments.h"
-#include "WebKitMutationObserver.h"
 #include <wtf/Deque.h>
 #include <wtf/FixedArray.h>
 #include <wtf/OwnPtr.h>
@@ -69,6 +69,7 @@ class CharacterData;
 class Comment;
 class ContextFeatures;
 class DOMImplementation;
+class DOMNamedFlowCollection;
 class DOMSelection;
 class DOMWindow;
 class Database;
@@ -79,8 +80,10 @@ class DocumentMarkerController;
 class DocumentParser;
 class DocumentType;
 class DocumentWeakReference;
+class DynamicNodeListCacheBase;
 class EditingText;
 class Element;
+class ElementAttributeData;
 class EntityReference;
 class Event;
 class EventListener;
@@ -105,12 +108,15 @@ class HitTestResult;
 class IntPoint;
 class DOMWrapperWorld;
 class JSNode;
+class Localizer;
 class MediaCanStartListener;
 class MediaQueryList;
 class MediaQueryMatcher;
 class MouseEventWithHitTestResults;
+class NamedFlowCollection;
 class NodeFilter;
 class NodeIterator;
+class NodeRareData;
 class Page;
 class PlatformMouseEvent;
 class ProcessingInstruction;
@@ -150,7 +156,7 @@ class SVGDocumentExtensions;
 class TransformSource;
 #endif
 
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
 struct DashboardRegionValue;
 #endif
 
@@ -172,6 +178,14 @@ class MicroDataItemList;
 class Prerenderer;
 #endif
 
+#if ENABLE(TEXT_AUTOSIZING)
+class TextAutosizer;
+#endif
+
+#if ENABLE(CSP_NEXT)
+class DOMSecurityPolicy;
+#endif
+
 typedef int ExceptionCode;
 
 enum PageshowEventPersistence {
@@ -180,6 +194,22 @@ enum PageshowEventPersistence {
 };
 
 enum StyleResolverUpdateFlag { RecalcStyleImmediately, DeferRecalcStyle, RecalcStyleIfNeeded };
+
+enum NodeListInvalidationType {
+    DoNotInvalidateOnAttributeChanges = 0,
+    InvalidateOnClassAttrChange,
+    InvalidateOnIdNameAttrChange,
+    InvalidateOnNameAttrChange,
+    InvalidateOnForAttrChange,
+    InvalidateForFormControls,
+    InvalidateOnHRefAttrChange,
+    InvalidateOnItemAttrChange,
+    InvalidateOnAnyAttrChange,
+};
+const int numNodeListInvalidationTypes = InvalidateOnAnyAttrChange + 1;
+
+struct ImmutableAttributeDataCacheEntry;
+typedef HashMap<unsigned, OwnPtr<ImmutableAttributeDataCacheEntry>, AlreadyHashed> ImmutableAttributeDataCache;
 
 class Document : public ContainerNode, public TreeScope, public ScriptExecutionContext {
 public:
@@ -325,15 +355,14 @@ public:
     virtual PassRefPtr<Element> createElementNS(const String& namespaceURI, const String& qualifiedName, ExceptionCode&);
     PassRefPtr<Element> createElement(const QualifiedName&, bool createdByParser);
 
+    bool cssStickyPositionEnabled() const;
     bool cssRegionsEnabled() const;
 #if ENABLE(CSS_REGIONS)
-    enum FlowNameCheck {
-        CheckFlowNameForInvalidValues,
-        DoNotCheckFlowNameForInvalidValues
-    };
     PassRefPtr<WebKitNamedFlow> webkitGetFlowByName(const String&);
-    PassRefPtr<WebKitNamedFlow> webkitGetFlowByName(const String&, FlowNameCheck);
+    PassRefPtr<DOMNamedFlowCollection> webkitGetNamedFlows();
 #endif
+
+    NamedFlowCollection* namedFlows();
 
     bool regionBasedColumnsEnabled() const;
 
@@ -399,21 +428,28 @@ public:
     void dispatchVisibilityStateChangeEvent();
 #endif
 
+#if ENABLE(CSP_NEXT)
+    DOMSecurityPolicy* securityPolicy();
+#endif
+
     PassRefPtr<Node> adoptNode(PassRefPtr<Node> source, ExceptionCode&);
 
-    HTMLCollection* images();
-    HTMLCollection* embeds();
-    HTMLCollection* plugins(); // an alias for embeds() required for the JS DOM bindings.
-    HTMLCollection* applets();
-    HTMLCollection* links();
-    HTMLCollection* forms();
-    HTMLCollection* anchors();
-    HTMLCollection* objects();
-    HTMLCollection* scripts();
-    HTMLCollection* windowNamedItems(const AtomicString& name);
-    HTMLCollection* documentNamedItems(const AtomicString& name);
+    PassRefPtr<HTMLCollection> images();
+    PassRefPtr<HTMLCollection> embeds();
+    PassRefPtr<HTMLCollection> plugins(); // an alias for embeds() required for the JS DOM bindings.
+    PassRefPtr<HTMLCollection> applets();
+    PassRefPtr<HTMLCollection> links();
+    PassRefPtr<HTMLCollection> forms();
+    PassRefPtr<HTMLCollection> anchors();
+    PassRefPtr<HTMLCollection> objects();
+    PassRefPtr<HTMLCollection> scripts();
+    PassRefPtr<HTMLCollection> all();
+    void removeCachedHTMLCollection(HTMLCollection*, CollectionType);
 
-    HTMLAllCollection* all();
+    PassRefPtr<HTMLCollection> windowNamedItems(const AtomicString& name);
+    PassRefPtr<HTMLCollection> documentNamedItems(const AtomicString& name);
+    void removeWindowNamedItemCache(HTMLCollection*, const AtomicString&);
+    void removeDocumentNamedItemCache(HTMLCollection*, const AtomicString&);
 
     // Other methods (not part of DOM)
     bool isHTMLDocument() const { return m_isHTML; }
@@ -432,6 +468,9 @@ public:
 
     bool isSrcdocDocument() const { return m_isSrcdocDocument; }
 
+    NodeRareData* documentRareData() const { return m_documentRareData; };
+    void setDocumentRareData(NodeRareData*);
+
     StyleResolver* styleResolverIfExists() const { return m_styleResolver.get(); }
 
     bool isViewSource() const { return m_isViewSource; }
@@ -449,7 +488,13 @@ public:
     /**
      * Updates the pending sheet count and then calls updateActiveStylesheets.
      */
-    void removePendingSheet();
+    enum RemovePendingSheetNotificationType {
+        RemovePendingSheetNotifyImmediately,
+        RemovePendingSheetNotifyLater
+    };
+
+    void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
+    void notifyRemovePendingSheetIfNeeded();
 
     /**
      * This method returns true if all top-level stylesheets have loaded (including
@@ -599,7 +644,7 @@ public:
 
     virtual String userAgent(const KURL&) const;
 
-    virtual void disableEval();
+    virtual void disableEval(const String& errorMessage);
 
     bool canNavigate(Frame* targetFrame);
     Frame* findUnsafeParentScrollPropagationBoundary();
@@ -702,6 +747,8 @@ public:
     void hoveredNodeDetached(Node*);
     void activeChainNodeDetached(Node*);
 
+    void updateHoverActiveState(const HitTestRequest&, HitTestResult&);
+
     // Updates for :target (CSS3 selector).
     void setCSSTarget(Element*);
     Element* cssTarget() const { return m_cssTarget; }
@@ -712,9 +759,10 @@ public:
     bool isPendingStyleRecalc() const;
     void styleRecalcTimerFired(Timer<Document>*);
 
-    void registerDynamicSubtreeNodeList(DynamicSubtreeNodeList*);
-    void unregisterDynamicSubtreeNodeList(DynamicSubtreeNodeList*);
-    void clearNodeListCaches();
+    void registerNodeListCache(DynamicNodeListCacheBase*);
+    void unregisterNodeListCache(DynamicNodeListCacheBase*);
+    bool shouldInvalidateNodeListCaches(const QualifiedName* attrName = 0) const;
+    void invalidateNodeListCaches(const QualifiedName* attrName);
 
     void attachNodeIterator(NodeIterator*);
     void detachNodeIterator(NodeIterator*);
@@ -734,8 +782,12 @@ public:
     void textNodesMerged(Text* oldNode, unsigned offset);
     void textNodeSplit(Text* oldNode);
 
+    void createDOMWindow();
+    void takeDOMWindowFrom(Document*);
+
+    DOMWindow* domWindow() const { return m_domWindow.get(); }
+    // In DOM Level 2, the Document's DOMWindow is called the defaultView.
     DOMWindow* defaultView() const { return domWindow(); } 
-    DOMWindow* domWindow() const;
 
     // Helper functions for forwarding DOMWindow event related tasks to the DOMWindow if it exists.
     void setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
@@ -761,17 +813,14 @@ public:
         ANIMATIONITERATION_LISTENER          = 0x400,
         TRANSITIONEND_LISTENER               = 0x800,
         BEFORELOAD_LISTENER                  = 0x1000,
-        TOUCH_LISTENER                       = 0x2000,
-        SCROLL_LISTENER                      = 0x4000,
-        REGIONLAYOUTUPDATE_LISTENER          = 0x8000
+        SCROLL_LISTENER                      = 0x2000
     };
 
     bool hasListenerType(ListenerType listenerType) const { return (m_listenerTypes & listenerType); }
-    void addListenerType(ListenerType listenerType) { m_listenerTypes = m_listenerTypes | listenerType; }
     void addListenerTypeIfNeeded(const AtomicString& eventType);
 
 #if ENABLE(MUTATION_OBSERVERS)
-    bool hasMutationObserversOfType(WebKitMutationObserver::MutationType type) const
+    bool hasMutationObserversOfType(MutationObserver::MutationType type) const
     {
         return m_mutationObserverTypes & type;
     }
@@ -928,7 +977,7 @@ public:
     
     void setHasNodesWithPlaceholderStyle() { m_hasNodesWithPlaceholderStyle = true; }
 
-    const Vector<IconURL>& iconURLs() const;
+    const Vector<IconURL>& iconURLs();
     void addIconURL(const String& url, const String& mimeType, const String& size, IconType);
 
     void setUseSecureKeyboardEntryWhenActive(bool);
@@ -971,6 +1020,7 @@ public:
 
     void registerForPrivateBrowsingStateChangedCallbacks(Element*);
     void unregisterForPrivateBrowsingStateChangedCallbacks(Element*);
+    void storageBlockingStateDidChange();
     void privateBrowsingStateDidChange();
 
     void setShouldCreateRenderers(bool);
@@ -987,7 +1037,7 @@ public:
     void setFrameElementsShouldIgnoreScrolling(bool ignore) { m_frameElementsShouldIgnoreScrolling = ignore; }
     bool frameElementsShouldIgnoreScrolling() const { return m_frameElementsShouldIgnoreScrolling; }
 
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
     void setDashboardRegionsDirty(bool f) { m_dashboardRegionsDirty = f; }
     bool dashboardRegionsDirty() const { return m_dashboardRegionsDirty; }
     bool hasDashboardRegions () const { return m_hasDashboardRegions; }
@@ -1037,8 +1087,8 @@ public:
     Element* webkitCurrentFullScreenElement() const { return m_fullScreenElement.get(); }
     
     enum FullScreenCheckType {
-        EnforceIFrameAllowFulScreenRequirement,
-        ExemptIFrameAllowFulScreenRequirement,
+        EnforceIFrameAllowFullScreenRequirement,
+        ExemptIFrameAllowFullScreenRequirement,
     };
 
     void requestFullScreenForElement(Element*, unsigned short flags, FullScreenCheckType);
@@ -1100,7 +1150,12 @@ public:
     void didAddWheelEventHandler();
     void didRemoveWheelEventHandler();
 
+#if ENABLE(TOUCH_EVENTS)
     unsigned touchEventHandlerCount() const { return m_touchEventHandlerCount; }
+#else
+    unsigned touchEventHandlerCount() const { return 0; }
+#endif
+
     void didAddTouchEventHandler();
     void didRemoveTouchEventHandler();
 
@@ -1125,11 +1180,21 @@ public:
     Prerenderer* prerenderer() { return m_prerenderer.get(); }
 #endif
 
+#if ENABLE(TEXT_AUTOSIZING)
+    TextAutosizer* textAutosizer() { return m_textAutosizer.get(); }
+#endif
+
     void adjustFloatQuadsForScrollAndAbsoluteZoomAndFrameScale(Vector<FloatQuad>&, RenderObject*);
     void adjustFloatRectForScrollAndAbsoluteZoomAndFrameScale(FloatRect&, RenderObject*);
 
     void setContextFeatures(PassRefPtr<ContextFeatures>);
     ContextFeatures* contextFeatures() { return m_contextFeatures.get(); }
+
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+    PassRefPtr<ElementAttributeData> cachedImmutableAttributeData(const Element*, const Vector<Attribute>&);
+
+    Localizer& getLocalizer(const AtomicString& locale);
 
 protected:
     Document(Frame*, const KURL&, bool isXHTML, bool isHTML);
@@ -1184,6 +1249,8 @@ private:
     void collectActiveStylesheets(Vector<RefPtr<StyleSheet> >&);
     bool testAddedStylesheetRequiresStyleRecalc(StyleSheetContents*);
     void analyzeStylesheetChange(StyleResolverUpdateFlag, const Vector<RefPtr<StyleSheet> >& newStylesheets, bool& requiresStyleResolverReset, bool& requiresFullStyleRecalc);
+    void didRemoveAllPendingStylesheet();
+    void setNeedsNotifyRemoveAllPendingStylesheet() { m_needsNotifyRemoveAllPendingStylesheet = true; }
 
     void seamlessParentUpdatedStylesheets();
     void notifySeamlessChildDocumentsOfStylesheetUpdate() const;
@@ -1202,7 +1269,7 @@ private:
     PageVisibilityState visibilityState() const;
 #endif
 
-    HTMLCollection* cachedCollection(CollectionType);
+    PassRefPtr<HTMLCollection> cachedCollection(CollectionType);
 
 #if ENABLE(FULLSCREEN_API)
     void clearFullscreenElementStack();
@@ -1215,6 +1282,9 @@ private:
     void setVisualUpdatesAllowed(bool);
     void visualUpdatesSuppressionTimerFired(Timer<Document>*);
 
+    void addListenerType(ListenerType listenerType) { m_listenerTypes |= listenerType; }
+    void addMutationEventListenerTypeIfEnabled(ListenerType);
+
     int m_guardRefCount;
 
     OwnPtr<StyleResolver> m_styleResolver;
@@ -1223,6 +1293,8 @@ private:
     Vector<OwnPtr<FontData> > m_customFonts;
 
     Frame* m_frame;
+    RefPtr<DOMWindow> m_domWindow;
+
     OwnPtr<CachedResourceLoader> m_cachedResourceLoader;
     RefPtr<DocumentParser> m_parser;
     RefPtr<ContextFeatures> m_contextFeatures;
@@ -1259,7 +1331,8 @@ private:
 
     // But sometimes you need to ignore pending stylesheet count to
     // force an immediate layout when requested by JS.
-    bool m_ignorePendingStylesheets;
+    bool m_ignorePendingStylesheets : 1;
+    bool m_needsNotifyRemoveAllPendingStylesheet : 1;
 
     // If we do ignore the pending stylesheet count, then we need to add a boolean
     // to track that this happened so that we can do a full repaint when the stylesheets
@@ -1390,12 +1463,12 @@ private:
     RefPtr<TextResourceDecoder> m_decoder;
 
     InheritedBool m_designMode;
-    
-    OwnPtr<HTMLCollection> m_collections[NumUnnamedDocumentCachedTypes];
-    OwnPtr<HTMLAllCollection> m_allCollection;
-    HashSet<DynamicSubtreeNodeList*> m_listsInvalidatedAtDocument;
 
-    typedef HashMap<AtomicStringImpl*, OwnPtr<HTMLNameCollection> > NamedCollectionMap;
+    HashSet<DynamicNodeListCacheBase*> m_listsInvalidatedAtDocument;
+    unsigned m_nodeListCounts[numNodeListInvalidationTypes];
+
+    HTMLCollection* m_collections[NumUnnamedDocumentCachedTypes];
+    typedef HashMap<AtomicString, HTMLNameCollection*> NamedCollectionMap;
     NamedCollectionMap m_documentNamedItemCollections;
     NamedCollectionMap m_windowNamedItemCollections;
 
@@ -1405,7 +1478,7 @@ private:
     OwnPtr<SVGDocumentExtensions> m_svgExtensions;
 #endif
 
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
     Vector<DashboardRegionValue> m_dashboardRegions;
     bool m_hasDashboardRegions;
     bool m_dashboardRegionsDirty;
@@ -1434,6 +1507,8 @@ private:
     bool m_isViewSource;
     bool m_sawElementsInKnownNamespaces;
     bool m_isSrcdocDocument;
+
+    NodeRareData* m_documentRareData;
 
     RefPtr<DocumentEventQueue> m_eventQueue;
 
@@ -1472,7 +1547,9 @@ private:
     unsigned m_writeRecursionDepth;
     
     unsigned m_wheelEventHandlerCount;
+#if ENABLE(TOUCH_EVENTS)
     unsigned m_touchEventHandlerCount;
+#endif
     
 #if ENABLE(UNDO_MANAGER)
     RefPtr<UndoManager> m_undoManager;
@@ -1489,15 +1566,36 @@ private:
     OwnPtr<Prerenderer> m_prerenderer;
 #endif
 
+#if ENABLE(TEXT_AUTOSIZING)
+    OwnPtr<TextAutosizer> m_textAutosizer;
+#endif
+
     bool m_scheduledTasksAreSuspended;
     
     bool m_visualUpdatesAllowed;
     Timer<Document> m_visualUpdatesSuppressionTimer;
 
+    RefPtr<NamedFlowCollection> m_namedFlows;
+
+#if ENABLE(CSP_NEXT)
+    RefPtr<DOMSecurityPolicy> m_domSecurityPolicy;
+#endif
+
+    ImmutableAttributeDataCache m_immutableAttributeDataCache;
+
 #ifndef NDEBUG
     bool m_didDispatchViewportPropertiesChanged;
 #endif
+
+    typedef HashMap<AtomicString, OwnPtr<Localizer> > LocaleToLocalizerMap;
+    LocaleToLocalizerMap m_localizerCache;
 };
+
+inline void Document::notifyRemovePendingSheetIfNeeded()
+{
+    if (m_needsNotifyRemoveAllPendingStylesheet)
+        didRemoveAllPendingStylesheet();
+}
 
 // Put these methods here, because they require the Document definition, but we really want to inline them.
 

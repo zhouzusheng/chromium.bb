@@ -50,12 +50,12 @@ bool RuntimeEnabledFeatures::isDataTransferItemsEnabled = true;
 bool RuntimeEnabledFeatures::isGeolocationEnabled = true;
 bool RuntimeEnabledFeatures::isIndexedDBEnabled = false;
 bool RuntimeEnabledFeatures::isWebAudioEnabled = false;
-bool RuntimeEnabledFeatures::isPushStateEnabled = false;
 bool RuntimeEnabledFeatures::isTouchEnabled = true;
 bool RuntimeEnabledFeatures::isDeviceMotionEnabled = true;
 bool RuntimeEnabledFeatures::isDeviceOrientationEnabled = true;
 bool RuntimeEnabledFeatures::isSpeechInputEnabled = true;
 bool RuntimeEnabledFeatures::isCSSExclusionsEnabled = false;
+bool RuntimeEnabledFeatures::isLangAttributeAwareFormControlUIEnabled = false;
 
 #if ENABLE(SCRIPTED_SPEECH)
 bool RuntimeEnabledFeatures::isScriptedSpeechEnabled = false;
@@ -64,6 +64,7 @@ bool RuntimeEnabledFeatures::isScriptedSpeechEnabled = false;
 #if ENABLE(MEDIA_STREAM)
 bool RuntimeEnabledFeatures::isMediaStreamEnabled = false;
 bool RuntimeEnabledFeatures::isPeerConnectionEnabled = true;
+bool RuntimeEnabledFeatures::isDeprecatedPeerConnectionEnabled = true;
 #endif
 
 #if ENABLE(GAMEPAD)
@@ -175,7 +176,7 @@ bool RuntimeEnabledFeatures::isMediaSourceEnabled = false;
 #endif
 
 #if ENABLE(VIDEO_TRACK)
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(EFL)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(EFL) || PLATFORM(CHROMIUM) || PLATFORM(BLACKBERRY)
     bool RuntimeEnabledFeatures::isVideoTrackEnabled = true;
 #else
     bool RuntimeEnabledFeatures::isVideoTrackEnabled = false;
@@ -188,6 +189,8 @@ bool RuntimeEnabledFeatures::isEncryptedMediaEnabled = false;
 
 #if ENABLE(SHADOW_DOM)
 bool RuntimeEnabledFeatures::isShadowDOMEnabled = false;
+
+bool RuntimeEnabledFeatures::isAuthorShadowDOMForAnyElementEnabled = false;
 #endif
 
 #if ENABLE(STYLE_SCOPED)
@@ -196,6 +199,46 @@ bool RuntimeEnabledFeatures::isStyleScopedEnabled = false;
 
 #if ENABLE(INPUT_TYPE_DATE)
 bool RuntimeEnabledFeatures::isInputTypeDateEnabled = true;
+#endif
+
+#if ENABLE(INPUT_TYPE_DATETIME)
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+bool RuntimeEnabledFeatures::isInputTypeDateTimeEnabled = false;
+#else
+bool RuntimeEnabledFeatures::isInputTypeDateTimeEnabled = true;
+#endif
+#endif
+
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+bool RuntimeEnabledFeatures::isInputTypeDateTimeLocalEnabled = false;
+#else
+bool RuntimeEnabledFeatures::isInputTypeDateTimeLocalEnabled = true;
+#endif
+#endif
+
+#if ENABLE(INPUT_TYPE_MONTH)
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+bool RuntimeEnabledFeatures::isInputTypeMonthEnabled = false;
+#else
+bool RuntimeEnabledFeatures::isInputTypeMonthEnabled = true;
+#endif
+#endif
+
+#if ENABLE(INPUT_TYPE_TIME)
+bool RuntimeEnabledFeatures::isInputTypeTimeEnabled = true;
+#endif
+
+#if ENABLE(INPUT_TYPE_WEEK)
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+bool RuntimeEnabledFeatures::isInputTypeWeekEnabled = false;
+#else
+bool RuntimeEnabledFeatures::isInputTypeWeekEnabled = true;
+#endif
+#endif
+
+#if ENABLE(DIALOG_ELEMENT)
+bool RuntimeEnabledFeatures::isDialogElementEnabled = false;
 #endif
 
 } // namespace WebCore

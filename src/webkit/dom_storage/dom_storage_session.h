@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_DOM_STORAGE_DOM_STORAGE_SESSION_H_
 #define WEBKIT_DOM_STORAGE_DOM_STORAGE_SESSION_H_
-#pragma once
 
 #include <string>
 
@@ -34,6 +33,8 @@ class DomStorageSession
   const std::string& persistent_namespace_id() const {
     return persistent_namespace_id_;
   }
+  void SetShouldPersist(bool should_persist);
+  bool IsFromContext(DomStorageContext* context);
   DomStorageSession* Clone();
 
   // Constructs a |DomStorageSession| by cloning
@@ -52,6 +53,7 @@ class DomStorageSession
   scoped_refptr<DomStorageContext> context_;
   int64 namespace_id_;
   std::string persistent_namespace_id_;
+  bool should_persist_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DomStorageSession);
 };

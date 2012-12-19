@@ -29,8 +29,6 @@
 
 namespace WebCore {
 
-class CCActiveGestureAnimation;
-class CCGestureCurveTarget;
 class IntPoint;
 class IntSize;
 
@@ -38,9 +36,9 @@ class IntSize;
 // the impl thread side of the compositor implementation.
 //
 // There is one CCInputHandler for every CCLayerTreeHost. It is
-// created and used only on the impl thread.
+// created on the main thread and used only on the impl thread.
 //
-// The CCInputHandler is constructed with an InputHandlerClient, which is the
+// The CCInputHandler is constructed with a CCInputHandlerClient, which is the
 // interface by which the handler can manipulate the LayerTree.
 class CCInputHandlerClient {
     WTF_MAKE_NONCOPYABLE(CCInputHandlerClient);
@@ -48,21 +46,21 @@ public:
     enum ScrollStatus { ScrollOnMainThread, ScrollStarted, ScrollIgnored };
     enum ScrollInputType { Gesture, Wheel };
 
-    // Attempt to start scrolling a layer at a given point in window
-    // coordinates. Returns ScrollStarted if the layer at the coordinates can
-    // be scrolled, ScrollOnMainThread if the scroll event should instead be
-    // delegated to the main thread, or ScrollIgnored if there is nothing to
-    // be scrolled at the given coordinates.
+    // Selects a layer to be scrolled at a given point in window coordinates.
+    // Returns ScrollStarted if the layer at the coordinates can be scrolled,
+    // ScrollOnMainThread if the scroll event should instead be delegated to the
+    // main thread, or ScrollIgnored if there is nothing to be scrolled at the
+    // given coordinates.
     virtual ScrollStatus scrollBegin(const IntPoint&, ScrollInputType) = 0;
 
-    // Scroll the layer selected with scrollBegin(). If there is no room to
-    // move the layer in the requested direction, its first ancestor layer that
-    // can be scrolled will be moved instead. Should only be called if
-    // scrollBegin() returned ScrollStarted.
-    virtual void scrollBy(const IntSize&) = 0;
-
-    // Stop scrolling the layer selected with scrollBegin(). Should only be
+    // Scroll the selected layer starting at the given window coordinate. If
+    // there is no room to move the layer in the requested direction, its first
+    // ancestor layer that can be scrolled will be moved instead. Should only be
     // called if scrollBegin() returned ScrollStarted.
+    virtual void scrollBy(const IntPoint&, const IntSize&) = 0;
+
+    // Stop scrolling the selected layer. Should only be called if scrollBegin()
+    // returned ScrollStarted.
     virtual void scrollEnd() = 0;
 
     virtual void pinchGestureBegin() = 0;
@@ -75,9 +73,6 @@ public:
                                          double startTime,
                                          double duration) = 0;
 
-    virtual CCActiveGestureAnimation* activeGestureAnimation() = 0;
-    virtual void setActiveGestureAnimation(PassOwnPtr<CCActiveGestureAnimation>) = 0;
-
     // Request another callback to CCInputHandler::animate().
     virtual void scheduleAnimation() = 0;
 
@@ -89,10 +84,9 @@ protected:
 class CCInputHandler {
     WTF_MAKE_NONCOPYABLE(CCInputHandler);
 public:
-    static PassOwnPtr<CCInputHandler> create(CCInputHandlerClient*);
     virtual ~CCInputHandler() { }
 
-    virtual int identifier() const = 0;
+    virtual void bindToClient(CCInputHandlerClient*) = 0;
     virtual void animate(double monotonicTime) = 0;
 
 protected:

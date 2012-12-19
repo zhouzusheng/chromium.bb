@@ -31,31 +31,22 @@
 /**
  * @constructor
  */
-WebInspector.DebuggerScriptMapping = function()
+WebInspector.DebuggerScriptMapping = function(workspace)
 {
     this._mappings = [];
   
-    this._resourceMapping = new WebInspector.ResourceScriptMapping();
+    this._resourceMapping = new WebInspector.ResourceScriptMapping(workspace);
     this._mappings.push(this._resourceMapping);
-    this._compilerMapping = new WebInspector.CompilerScriptMapping();
+    this._compilerMapping = new WebInspector.CompilerScriptMapping(workspace);
     this._mappings.push(this._compilerMapping);
     this._snippetMapping = WebInspector.scriptSnippetModel.scriptMapping;
     this._mappings.push(this._snippetMapping);
 
     WebInspector.debuggerModel.addEventListener(WebInspector.DebuggerModel.Events.ParsedScriptSource, this._parsedScriptSource, this);
     WebInspector.debuggerModel.addEventListener(WebInspector.DebuggerModel.Events.FailedToParseScriptSource, this._parsedScriptSource, this);
-    WebInspector.debuggerModel.addEventListener(WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._debuggerReset, this);
 }
 
 WebInspector.DebuggerScriptMapping.prototype = {
-    /**
-     * @return {Array.<WebInspector.UISourceCodeProvider>}
-     */
-    uiSourceCodeProviders: function()
-    {
-        return this._mappings;
-    },
-
     /**
      * @param {WebInspector.Event} event
      */
@@ -83,11 +74,5 @@ WebInspector.DebuggerScriptMapping.prototype = {
         }
 
         return this._resourceMapping;
-    },
-
-    _debuggerReset: function()
-    {
-        for (var i = 0; i < this._mappings.length; ++i)
-            this._mappings[i].reset();
     }
 }

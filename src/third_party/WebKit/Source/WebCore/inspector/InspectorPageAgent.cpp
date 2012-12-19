@@ -34,7 +34,6 @@
 
 #include "InspectorPageAgent.h"
 
-#include "Base64.h"
 #include "CachedCSSStyleSheet.h"
 #include "CachedFont.h"
 #include "CachedImage.h"
@@ -45,12 +44,14 @@
 #include "Cookie.h"
 #include "CookieJar.h"
 #include "DOMImplementation.h"
-#include "DOMNodeHighlighter.h"
 #include "DOMPatchSupport.h"
+#include "DeviceOrientationController.h"
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
 #include "FrameView.h"
+#include "GeolocationController.h"
+#include "GeolocationError.h"
 #include "HTMLFrameOwnerElement.h"
 #include "HTMLNames.h"
 #include "IdentifiersFactory.h"
@@ -59,6 +60,7 @@
 #include "InspectorClient.h"
 #include "InspectorFrontend.h"
 #include "InspectorInstrumentation.h"
+#include "InspectorOverlay.h"
 #include "InspectorState.h"
 #include "InspectorValues.h"
 #include "InstrumentingAgents.h"
@@ -72,10 +74,11 @@
 #include "TextEncoding.h"
 #include "TextResourceDecoder.h"
 #include "UserGestureIndicator.h"
-
 #include <wtf/CurrentTime.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/Vector.h>
+#include <wtf/text/Base64.h>
+#include <wtf/text/StringBuilder.h>
 
 using namespace std;
 
@@ -90,6 +93,9 @@ static const char pageAgentScreenHeightOverride[] = "pageAgentScreenHeightOverri
 static const char pageAgentFontScaleFactorOverride[] = "pageAgentFontScaleFactorOverride";
 static const char pageAgentFitWindow[] = "pageAgentFitWindow";
 static const char showPaintRects[] = "showPaintRects";
+#if ENABLE(TOUCH_EVENTS)
+static const char touchEventEmulationEnabled[] = "touchEventEmulationEnabled";
+#endif
 }
 
 static bool decodeSharedBuffer(PassRefPtr<SharedBuffer> buffer, const String& textEncodingName, String* result)
@@ -191,8 +197,7 @@ bool InspectorPageAgent::cachedResourceContent(CachedResource* cachedResource, S
             if (!decoder)
                 return false;
             String content = decoder->decode(buffer->data(), buffer->size());
-            content += decoder->flush();
-            *result = content;
+            *result = content + decoder->flush();
             return true;
         }
         default:
@@ -223,9 +228,9 @@ bool InspectorPageAgent::sharedBufferContent(PassRefPtr<SharedBuffer> buffer, co
     return decodeSharedBuffer(buffer, textEncodingName, result);
 }
 
-PassOwnPtr<InspectorPageAgent> InspectorPageAgent::create(InstrumentingAgents* instrumentingAgents, Page* page, InspectorAgent* inspectorAgent, InspectorState* state, InjectedScriptManager* injectedScriptManager, InspectorClient* client)
+PassOwnPtr<InspectorPageAgent> InspectorPageAgent::create(InstrumentingAgents* instrumentingAgents, Page* page, InspectorAgent* inspectorAgent, InspectorState* state, InjectedScriptManager* injectedScriptManager, InspectorClient* client, InspectorOverlay* overlay)
 {
-    return adoptPtr(new InspectorPageAgent(instrumentingAgents, page, inspectorAgent, state, injectedScriptManager, client));
+    return adoptPtr(new InspectorPageAgent(instrumentingAgents, page, inspectorAgent, state, injectedScriptManager, client, overlay));
 }
 
 // static
@@ -308,16 +313,18 @@ TypeBuilder::Page::ResourceType::Enum InspectorPageAgent::cachedResourceTypeJson
     return resourceTypeJson(cachedResourceType(cachedResource));
 }
 
-InspectorPageAgent::InspectorPageAgent(InstrumentingAgents* instrumentingAgents, Page* page, InspectorAgent* inspectorAgent, InspectorState* inspectorState, InjectedScriptManager* injectedScriptManager, InspectorClient* client)
+InspectorPageAgent::InspectorPageAgent(InstrumentingAgents* instrumentingAgents, Page* page, InspectorAgent* inspectorAgent, InspectorState* inspectorState, InjectedScriptManager* injectedScriptManager, InspectorClient* client, InspectorOverlay* overlay)
     : InspectorBaseAgent<InspectorPageAgent>("Page", instrumentingAgents, inspectorState)
     , m_page(page)
     , m_inspectorAgent(inspectorAgent)
     , m_injectedScriptManager(injectedScriptManager)
     , m_client(client)
     , m_frontend(0)
+    , m_overlay(overlay)
     , m_lastScriptIdentifier(0)
     , m_lastPaintContext(0)
     , m_didLoadEventFire(false)
+    , m_geolocationOverridden(false)
 {
 }
 
@@ -330,6 +337,9 @@ void InspectorPageAgent::clearFrontend()
 {
     ErrorString error;
     disable(&error);
+#if ENABLE(TOUCH_EVENTS)
+    updateTouchEventEmulationInPage(false);
+#endif
     m_frontend = 0;
 }
 
@@ -348,6 +358,9 @@ void InspectorPageAgent::restore()
 
         if (m_inspectorAgent->didCommitLoadFired())
             frameNavigated(m_page->mainFrame()->loader()->documentLoader());
+#if ENABLE(TOUCH_EVENTS)
+        updateTouchEventEmulationInPage(m_state->getBoolean(PageAgentState::touchEventEmulationEnabled));
+#endif
     }
 }
 
@@ -489,7 +502,7 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
     ListHashSet<Cookie> rawCookiesList;
 
     // If we can't get raw cookies - fall back to String representation
-    String stringCookiesList;
+    StringBuilder stringCookiesList;
 
     // Return value to getRawCookies should be the same for every call because
     // the return value is platform/network backend specific, and the call will
@@ -505,7 +518,7 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
             if (!rawCookiesImplemented) {
                 // FIXME: We need duplication checking for the String representation of cookies.
                 ExceptionCode ec = 0;
-                stringCookiesList += document->cookie(ec);
+                stringCookiesList.append(document->cookie(ec));
                 // Exceptions are thrown by cookie() in sandboxed frames. That won't happen here
                 // because "document" is the document of the main frame of the page.
                 ASSERT(!ec);
@@ -525,7 +538,7 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
         *cookiesString = "";
     } else {
         cookies = TypeBuilder::Array<TypeBuilder::Page::Cookie>::create();
-        *cookiesString = stringCookiesList;
+        *cookiesString = stringCookiesList.toString();
     }
 }
 
@@ -885,7 +898,7 @@ void InspectorPageAgent::didPaint()
         Color(0, 0, 0xFF, 0x3F),
     };
 
-    DOMNodeHighlighter::drawOutline(*m_lastPaintContext, m_lastPaintRect, colors[colorSelector++ % WTF_ARRAY_LENGTH(colors)]);
+    m_overlay->drawOutline(m_lastPaintContext, m_lastPaintRect, colors[colorSelector++ % WTF_ARRAY_LENGTH(colors)]);
 
     m_lastPaintContext = 0;
 }
@@ -901,6 +914,12 @@ void InspectorPageAgent::didLayout()
 
     if (currentWidth && currentHeight)
         m_client->autoZoomPageToFitWidth();
+    m_overlay->update();
+}
+
+void InspectorPageAgent::didScroll()
+{
+    m_overlay->update();
 }
 
 PassRefPtr<TypeBuilder::Page::Frame> InspectorPageAgent::buildObjectForFrame(Frame* frame)
@@ -963,8 +982,131 @@ void InspectorPageAgent::updateViewMetrics(int width, int height, double fontSca
     m_client->overrideDeviceMetrics(width, height, static_cast<float>(fontScaleFactor), fitWindow);
 
     Document* document = mainFrame()->document();
-    document->styleResolverChanged(RecalcStyleImmediately);
+    if (document)
+        document->styleResolverChanged(RecalcStyleImmediately);
     InspectorInstrumentation::mediaQueryResultChanged(document);
+}
+
+#if ENABLE(TOUCH_EVENTS)
+void InspectorPageAgent::updateTouchEventEmulationInPage(bool enabled)
+{
+    m_state->setBoolean(PageAgentState::touchEventEmulationEnabled, enabled);
+    if (mainFrame() && mainFrame()->settings())
+        mainFrame()->settings()->setTouchEventEmulationEnabled(enabled);
+}
+#endif
+
+void InspectorPageAgent::setGeolocationOverride(ErrorString* error, const double* latitude, const double* longitude, const double* accuracy)
+{
+#if ENABLE (GEOLOCATION)
+    GeolocationController* controller = GeolocationController::from(m_page);
+    GeolocationPosition* position = 0;
+    if (!controller) {
+        *error = "Internal error: unable to override geolocation.";
+        return;
+    }
+    position = controller->lastPosition();
+    if (!m_geolocationOverridden && position)
+        m_platformGeolocationPosition = position;
+
+    m_geolocationOverridden = true;
+    if (latitude && longitude && accuracy)
+        m_geolocationPosition = GeolocationPosition::create(currentTimeMS(), *latitude, *longitude, *accuracy);
+    else
+        m_geolocationPosition.clear();
+
+    controller->positionChanged(0); // Kick location update.
+#else
+    *error = "Geolocation is not available.";
+    UNUSED_PARAM(latitude);
+    UNUSED_PARAM(longitude);
+    UNUSED_PARAM(accuracy);
+#endif
+}
+
+void InspectorPageAgent::clearGeolocationOverride(ErrorString* error)
+{
+    if (!m_geolocationOverridden)
+        return;
+#if ENABLE(GEOLOCATION)
+    UNUSED_PARAM(error);
+    m_geolocationOverridden = false;
+    m_geolocationPosition.clear();
+
+    GeolocationController* controller = GeolocationController::from(m_page);
+    if (controller && m_platformGeolocationPosition.get())
+        controller->positionChanged(m_platformGeolocationPosition.get());
+#else
+    *error = "Geolocation is not available.";
+#endif
+}
+
+void InspectorPageAgent::canOverrideGeolocation(ErrorString*, bool* out_param)
+{
+#if ENABLE(GEOLOCATION)
+    *out_param = true;
+#else
+    *out_param = false;
+#endif
+}
+
+GeolocationPosition* InspectorPageAgent::overrideGeolocationPosition(GeolocationPosition* position)
+{
+    if (m_geolocationOverridden) {
+        if (position)
+            m_platformGeolocationPosition = position;
+        return m_geolocationPosition.get();
+    }
+    return position;
+}
+
+void InspectorPageAgent::setDeviceOrientationOverride(ErrorString* error, double alpha, double beta, double gamma)
+{
+    DeviceOrientationController* controller = DeviceOrientationController::from(m_page);
+    if (!controller) {
+        *error = "Internal error: unable to override device orientation.";
+        return;
+    }
+
+    ErrorString clearError;
+    clearDeviceOrientationOverride(&clearError);
+
+    m_deviceOrientation = DeviceOrientationData::create(true, alpha, true, beta, true, gamma);
+    controller->didChangeDeviceOrientation(m_deviceOrientation.get());
+}
+
+void InspectorPageAgent::clearDeviceOrientationOverride(ErrorString*)
+{
+    m_deviceOrientation.clear();
+}
+
+void InspectorPageAgent::canOverrideDeviceOrientation(ErrorString*, bool* outParam)
+{
+#if ENABLE(DEVICE_ORIENTATION)
+    *outParam = true;
+#else
+    *outParam = false;
+#endif
+}
+
+DeviceOrientationData* InspectorPageAgent::overrideDeviceOrientation(DeviceOrientationData* deviceOrientation)
+{
+    if (m_deviceOrientation)
+        deviceOrientation = m_deviceOrientation.get();
+    return deviceOrientation;
+}
+
+void InspectorPageAgent::setTouchEmulationEnabled(ErrorString* error, bool enabled)
+{
+#if ENABLE(TOUCH_EVENTS)
+    if (m_state->getBoolean(PageAgentState::touchEventEmulationEnabled) == enabled)
+        return;
+    UNUSED_PARAM(error);
+    updateTouchEventEmulationInPage(enabled);
+#else
+    *error = "Touch events emulation not supported";
+    UNUSED_PARAM(enabled);
+#endif
 }
 
 } // namespace WebCore

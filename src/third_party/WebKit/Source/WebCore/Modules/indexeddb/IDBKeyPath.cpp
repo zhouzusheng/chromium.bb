@@ -207,6 +207,8 @@ bool IDBKeyPath::isValid() const
         return IDBIsValidKeyPath(m_string);
 
     case ArrayType:
+        if (m_array.isEmpty())
+            return false;
         for (size_t i = 0; i < m_array.size(); ++i) {
             if (!IDBIsValidKeyPath(m_array[i]))
                 return false;
@@ -217,21 +219,21 @@ bool IDBKeyPath::isValid() const
     return false;
 }
 
-IDBKeyPath::operator PassRefPtr<IDBAny>() const
+bool IDBKeyPath::operator==(const IDBKeyPath& other) const
 {
+    if (m_type != other.m_type)
+        return false;
+
     switch (m_type) {
     case NullType:
-        return IDBAny::createNull();
+        return true;
     case StringType:
-        return IDBAny::createString(m_string);
+        return m_string == other.m_string;
     case ArrayType:
-        RefPtr<DOMStringList> keyPaths = DOMStringList::create();
-        for (Vector<String>::const_iterator it = m_array.begin(); it != m_array.end(); ++it)
-        keyPaths->append(*it);
-        return IDBAny::create(static_cast<PassRefPtr<DOMStringList> >(keyPaths));
+        return m_array == other.m_array;
     }
     ASSERT_NOT_REACHED();
-    return 0;
+    return false;
 }
 
 

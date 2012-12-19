@@ -31,28 +31,71 @@
 #ifndef ScriptGCEvent_h
 #define ScriptGCEvent_h
 
-#if ENABLE(INSPECTOR)
-
 #include "v8.h"
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
+struct HeapInfo {
+    HeapInfo()
+        : usedJSHeapSize(0)
+        , totalJSHeapSize(0)
+        , jsHeapSizeLimit(0)
+    {
+    }
+
+    size_t usedJSHeapSize;
+    size_t totalJSHeapSize;
+    size_t jsHeapSizeLimit;
+};
+
 class ScriptGCEventListener;
+
+class GCEventData {
+public:
+    typedef Vector<ScriptGCEventListener*> GCEventListeners;
+
+    GCEventData()
+        : m_startTime(0.0)
+        , m_usedHeapSize(0)
+    { }
+
+    void clear()
+    {
+        m_startTime = 0.0;
+        m_usedHeapSize = 0;
+    }
+
+    GCEventListeners& listeners() { return m_listeners; }
+
+    double startTime() { return m_startTime; }
+    void setStartTime(double startTime) { m_startTime = startTime; }
+    size_t usedHeapSize() { return m_usedHeapSize; }
+    void setUsedHeapSize(size_t usedHeapSize) { m_usedHeapSize = usedHeapSize; }
+
+private:
+    double m_startTime;
+    size_t m_usedHeapSize;
+    GCEventListeners m_listeners;
+};
+
+#if ENABLE(INSPECTOR)
 
 class ScriptGCEvent
 {
 public:
     static void addEventListener(ScriptGCEventListener*);
     static void removeEventListener(ScriptGCEventListener*);
-    static void getHeapSize(size_t&, size_t&, size_t&);
+    static void getHeapSize(HeapInfo&);
+
 private:
     static void gcEpilogueCallback(v8::GCType type, v8::GCCallbackFlags flags);
     static void gcPrologueCallback(v8::GCType type, v8::GCCallbackFlags flags);
     static size_t getUsedHeapSize();
 };
 
+#endif // ENABLE(INSPECTOR)
+
 } // namespace WebCore
 
-#endif // !ENABLE(INSPECTOR)
 #endif // !defined(ScriptGCEvent_h)

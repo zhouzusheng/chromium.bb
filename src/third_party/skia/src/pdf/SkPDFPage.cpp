@@ -24,6 +24,13 @@ void SkPDFPage::finalizePage(SkPDFCatalog* catalog, bool firstPage,
     if (fContentStream.get() == NULL) {
         insert("Resources", fDevice->getResourceDict());
         insert("MediaBox", fDevice->getMediaBox().get());
+        if (!SkToBool(catalog->getDocumentFlags() &
+                      SkPDFDocument::kNoLinks_Flags)) {
+            SkRefPtr<SkPDFArray> annots = fDevice->getAnnotations();
+            if (annots.get() && annots->size() > 0) {
+                insert("Annots", annots.get());
+            }
+        }
 
         SkRefPtr<SkStream> content = fDevice->content();
         content->unref();  // SkRefPtr and content() both took a reference.
@@ -37,7 +44,7 @@ void SkPDFPage::finalizePage(SkPDFCatalog* catalog, bool firstPage,
 
 off_t SkPDFPage::getPageSize(SkPDFCatalog* catalog, off_t fileOffset) {
     SkASSERT(fContentStream.get() != NULL);
-    catalog->setFileOffset(fContentStream.get(), (size_t) fileOffset);
+    catalog->setFileOffset(fContentStream.get(), fileOffset);
     return fContentStream->getOutputSize(catalog, true);
 }
 

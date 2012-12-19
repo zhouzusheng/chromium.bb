@@ -4,7 +4,6 @@
 
 #ifndef SKIA_EXT_VECTOR_PLATFORM_DEVICE_EMF_WIN_H_
 #define SKIA_EXT_VECTOR_PLATFORM_DEVICE_EMF_WIN_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -33,8 +32,6 @@ class VectorPlatformDeviceEmf : public SkDevice, public PlatformDevice {
   virtual PlatformSurface BeginPlatformPaint() OVERRIDE;
   virtual void DrawToNativeContext(HDC dc, int x, int y,
                                    const RECT* src_rect) OVERRIDE;
-  virtual bool AlphaBlendUsed() const OVERRIDE { return alpha_blend_used_; }
-
   // SkDevice methods.
   virtual uint32_t getDeviceCapabilities();
   virtual void drawPaint(const SkDraw& draw, const SkPaint& paint) OVERRIDE;
@@ -126,9 +123,6 @@ class VectorPlatformDeviceEmf : public SkDevice, public PlatformDevice {
 
   // Previously selected pen before the current drawing.
   HGDIOBJ previous_pen_;
-
-  // True if AlphaBlend() was called during this print.
-  bool alpha_blend_used_;
 
   DISALLOW_COPY_AND_ASSIGN(VectorPlatformDeviceEmf);
 };

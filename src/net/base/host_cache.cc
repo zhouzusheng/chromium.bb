@@ -46,7 +46,7 @@ void HostCache::Set(const Key& key,
   if (caching_is_disabled())
     return;
 
-  entries_.Put(key, Entry(error, addrlist), now, ttl);
+  entries_.Put(key, Entry(error, addrlist), now, now + ttl);
 }
 
 void HostCache::clear() {
@@ -72,7 +72,14 @@ const HostCache::EntryMap& HostCache::entries() const {
 
 // static
 HostCache* HostCache::CreateDefaultCache() {
+#if defined(OS_CHROMEOS)
+  // Increase HostCache size for the duration of the async DNS field trial.
+  // http://crbug.com/143454
+  // TODO(szym): Determine the best size. http://crbug.com/114277
+  static const size_t kMaxHostCacheEntries = 1000;
+#else
   static const size_t kMaxHostCacheEntries = 100;
+#endif
   return new HostCache(kMaxHostCacheEntries);
 }
 

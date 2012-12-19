@@ -29,18 +29,16 @@
 
 #if USE(ACCELERATED_COMPOSITING)
 
-#include "ManagedTexture.h"
+#include "CCPrioritizedTexture.h"
 #include "GraphicsTypes3D.h"
-#include "cc/CCGraphicsContext.h"
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
 
-class CCGraphicsContext;
 class IntRect;
 class IntSize;
-class TextureAllocator;
 class TextureManager;
+struct CCRenderingStats;
 
 class LayerTextureUpdater : public RefCounted<LayerTextureUpdater> {
 public:
@@ -49,14 +47,15 @@ public:
     public:
         virtual ~Texture() { }
 
-        ManagedTexture* texture() { return m_texture.get(); }
-        virtual void prepareRect(const IntRect& /* sourceRect */) { }
-        virtual void updateRect(CCGraphicsContext*, TextureAllocator*, const IntRect& sourceRect, const IntRect& destRect) = 0;
+        CCPrioritizedTexture* texture() { return m_texture.get(); }
+        void swapTextureWith(OwnPtr<CCPrioritizedTexture>& texture) { m_texture.swap(texture); }
+        virtual void prepareRect(const IntRect& /* sourceRect */, CCRenderingStats&) { }
+        virtual void updateRect(CCResourceProvider*, const IntRect& sourceRect, const IntSize& destOffset) = 0;
     protected:
-        explicit Texture(PassOwnPtr<ManagedTexture> texture) : m_texture(texture) { }
+        explicit Texture(PassOwnPtr<CCPrioritizedTexture> texture) : m_texture(texture) { }
 
     private:
-        OwnPtr<ManagedTexture> m_texture;
+        OwnPtr<CCPrioritizedTexture> m_texture;
     };
 
     virtual ~LayerTextureUpdater() { }
@@ -66,7 +65,7 @@ public:
         SampledTexelFormatBGRA,
         SampledTexelFormatInvalid,
     };
-    virtual PassOwnPtr<Texture> createTexture(TextureManager*) = 0;
+    virtual PassOwnPtr<Texture> createTexture(CCPrioritizedTextureManager*) = 0;
     // Returns the format of the texel uploaded by this interface.
     // This format should not be confused by texture internal format.
     // This format specifies the component order in the sampled texel.
@@ -74,7 +73,7 @@ public:
     virtual SampledTexelFormat sampledTexelFormat(GC3Denum textureFormat) = 0;
     // The |resultingOpaqueRect| gives back a region of the layer that was painted opaque. If the layer is marked opaque in the updater,
     // then this region should be ignored in preference for the entire layer's area.
-    virtual void prepareToUpdate(const IntRect& contentRect, const IntSize& tileSize, float contentsScale, IntRect& resultingOpaqueRect) { }
+    virtual void prepareToUpdate(const IntRect& contentRect, const IntSize& tileSize, float contentsWidthScale, float contentsHeightScale, IntRect& resultingOpaqueRect, CCRenderingStats&) { }
 
     // Set true by the layer when it is known that the entire output is going to be opaque.
     virtual void setOpaque(bool) { }

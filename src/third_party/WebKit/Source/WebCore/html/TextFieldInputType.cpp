@@ -63,6 +63,18 @@ TextFieldInputType::TextFieldInputType(HTMLInputElement* element)
 
 TextFieldInputType::~TextFieldInputType()
 {
+    if (m_innerSpinButton)
+        m_innerSpinButton->removeSpinButtonOwner();
+}
+
+bool TextFieldInputType::isKeyboardFocusable(KeyboardEvent*) const
+{
+    return element()->isTextFormControlFocusable();
+}
+
+bool TextFieldInputType::isMouseFocusable() const
+{
+    return element()->isTextFormControlFocusable();
 }
 
 bool TextFieldInputType::isTextField() const
@@ -91,7 +103,7 @@ void TextFieldInputType::setValue(const String& sanitizedValue, bool valueChange
     InputType::setValue(sanitizedValue, valueChanged, DispatchNoEvent);
 
     if (valueChanged)
-        input->updateInnerTextValue();
+        updateInnerTextValue();
 
     unsigned max = visibleValue().length();
     if (input->focused())
@@ -142,40 +154,31 @@ void TextFieldInputType::handleKeydownEventForSpinButton(KeyboardEvent* event)
     if (element()->disabled() || element()->readOnly())
         return;
     const String& key = event->keyIdentifier();
-    int step = 0;
     if (key == "Up")
-        step = 1;
+        spinButtonStepUp();
     else if (key == "Down")
-        step = -1;
+        spinButtonStepDown();
     else
         return;
-    element()->stepUpFromRenderer(step);
-    event->setDefaultHandled();
-}
-
-void TextFieldInputType::handleWheelEventForSpinButton(WheelEvent* event)
-{
-    if (element()->disabled() || element()->readOnly() || !element()->focused())
-        return;
-    int step = 0;
-    if (event->wheelDeltaY() > 0)
-        step = 1;
-    else if (event->wheelDeltaY() < 0)
-        step = -1;
-    else
-        return;
-    element()->stepUpFromRenderer(step);
     event->setDefaultHandled();
 }
 
 void TextFieldInputType::forwardEvent(Event* event)
 {
+    if (m_innerSpinButton) {
+        m_innerSpinButton->forwardEvent(event);
+        if (event->defaultHandled())
+            return;
+    }
+
     if (element()->renderer() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(eventNames().interfaceForWheelEvent) || event->type() == eventNames().blurEvent || event->type() == eventNames().focusEvent)) {
         RenderTextControlSingleLine* renderTextControl = toRenderTextControlSingleLine(element()->renderer());
         if (event->type() == eventNames().blurEvent) {
             if (RenderBox* innerTextRenderer = innerTextElement()->renderBox()) {
-                if (RenderLayer* innerLayer = innerTextRenderer->layer())
-                    innerLayer->scrollToOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerLayer->scrollWidth() : 0, 0, RenderLayer::ScrollOffsetClamped);
+                if (RenderLayer* innerLayer = innerTextRenderer->layer()) {
+                    IntSize scrollOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerLayer->scrollWidth() : 0, 0);
+                    innerLayer->scrollToOffset(scrollOffset, RenderLayer::ScrollOffsetClamped);
+                }
             }
 
             renderTextControl->capsLockStateMayHaveChanged();
@@ -236,11 +239,11 @@ void TextFieldInputType::createShadowSubtree()
     ExceptionCode ec = 0;
     m_innerText = TextControlInnerTextElement::create(document);
     if (!createsContainer) {
-        element()->shadow()->oldestShadowRoot()->appendChild(m_innerText, ec);
+        element()->userAgentShadowRoot()->appendChild(m_innerText, ec);
         return;
     }
 
-    ShadowRoot* shadowRoot = element()->shadow()->oldestShadowRoot();
+    ShadowRoot* shadowRoot = element()->userAgentShadowRoot();
     m_container = HTMLDivElement::create(document);
     m_container->setShadowPseudoId("-webkit-textfield-decoration-container");
     shadowRoot->appendChild(m_container, ec);
@@ -258,7 +261,7 @@ void TextFieldInputType::createShadowSubtree()
 #endif
 
     if (shouldHaveSpinButton) {
-        m_innerSpinButton = SpinButtonElement::create(document);
+        m_innerSpinButton = SpinButtonElement::create(document, *this);
         m_container->appendChild(m_innerSpinButton, ec);
     }
 
@@ -308,6 +311,8 @@ void TextFieldInputType::destroyShadowSubtree()
 #if ENABLE(INPUT_SPEECH)
     m_speechButton.clear();
 #endif
+    if (m_innerSpinButton)
+        m_innerSpinButton->removeSpinButtonOwner();
     m_innerSpinButton.clear();
     m_container.clear();
 }
@@ -405,7 +410,7 @@ void TextFieldInputType::updatePlaceholderText()
     if (!m_placeholder) {
         m_placeholder = HTMLDivElement::create(element()->document());
         m_placeholder->setShadowPseudoId("-webkit-input-placeholder");
-        element()->shadow()->oldestShadowRoot()->insertBefore(m_placeholder, m_container ? m_container->nextSibling() : innerTextElement()->nextSibling(), ec);
+        element()->userAgentShadowRoot()->insertBefore(m_placeholder, m_container ? m_container->nextSibling() : innerTextElement()->nextSibling(), ec);
         ASSERT(!ec);
     }
     m_placeholder->setInnerText(placeholderText, ec);
@@ -426,6 +431,46 @@ bool TextFieldInputType::appendFormData(FormDataList& list, bool multipart) cons
     if (!dirnameAttrValue.isNull())
         list.appendData(dirnameAttrValue, element()->directionForFormData());
     return true;
+}
+
+void TextFieldInputType::spinButtonStepDown()
+{
+    stepUpFromRenderer(-1);
+}
+
+void TextFieldInputType::spinButtonStepUp()
+{
+    stepUpFromRenderer(1);
+}
+
+void TextFieldInputType::updateInnerTextValue()
+{
+    if (!element()->suggestedValue().isNull()) {
+        element()->setInnerTextValue(element()->suggestedValue());
+        element()->updatePlaceholderVisibility(false);
+    } else if (!element()->formControlValueMatchesRenderer()) {
+        // Update the renderer value if the formControlValueMatchesRenderer() flag is false.
+        // It protects an unacceptable renderer value from being overwritten with the DOM value.
+        element()->setInnerTextValue(visibleValue());
+        element()->updatePlaceholderVisibility(false);
+    }
+}
+
+void TextFieldInputType::focusAndSelectSpinButtonOwner()
+{
+    RefPtr<HTMLInputElement> input(element());
+    input->focus();
+    input->select();
+}
+
+bool TextFieldInputType::shouldSpinButtonRespondToMouseEvents()
+{
+    return !element()->disabled() && !element()->readOnly();
+}
+
+bool TextFieldInputType::shouldSpinButtonRespondToWheelEvents()
+{
+    return shouldSpinButtonRespondToMouseEvents() && element()->focused();
 }
 
 } // namespace WebCore

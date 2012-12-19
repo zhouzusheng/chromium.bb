@@ -32,7 +32,8 @@
 
 #include "ContextMenuItem.h"
 #include "PlatformMenuDescription.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
+
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 #elif PLATFORM(WIN)
@@ -71,7 +72,7 @@ namespace WebCore {
 
         void appendItem(const ContextMenuItem& item) { m_items.append(item); } 
 #else
-        ContextMenu(const PlatformMenuDescription);
+        explicit ContextMenu(const PlatformMenuDescription);
         ~ContextMenu();
 
         void insertItem(unsigned position, ContextMenuItem&);

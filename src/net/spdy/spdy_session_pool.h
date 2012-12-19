@@ -4,7 +4,6 @@
 
 #ifndef NET_SPDY_SPDY_SESSION_POOL_H_
 #define NET_SPDY_SPDY_SESSION_POOL_H_
-#pragma once
 
 #include <map>
 #include <list>
@@ -135,7 +134,7 @@ class NET_EXPORT SpdySessionPool
   static void enable_ip_pooling(bool value) { g_enable_ip_pooling = value; }
 
   // CertDatabase::Observer methods:
-  virtual void OnUserCertAdded(const X509Certificate* cert) OVERRIDE;
+  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
   virtual void OnCertTrustChanged(const X509Certificate* cert) OVERRIDE;
 
  private:

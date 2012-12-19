@@ -28,17 +28,14 @@
 #define PlatformKeyboardEvent_h
 
 #include "PlatformEvent.h"
+#if OS(WINDOWS)
+#include "WindowsExtras.h"
+#endif
 #include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 OBJC_CLASS NSEvent;
-#endif
-
-#if PLATFORM(WIN)
-typedef struct HWND__ *HWND;
-typedef unsigned WPARAM;
-typedef long LPARAM;
 #endif
 
 #if PLATFORM(GTK)
@@ -72,6 +69,7 @@ typedef struct _Evas_Event_Key_Up Evas_Event_Key_Up;
 namespace WebCore {
 
     class PlatformKeyboardEvent : public PlatformEvent {
+        WTF_MAKE_FAST_ALLOCATED;
     public:
         PlatformKeyboardEvent()
             : PlatformEvent(PlatformEvent::KeyDown)
@@ -178,8 +176,8 @@ namespace WebCore {
 #endif
 
 #if PLATFORM(EFL)
-        PlatformKeyboardEvent(const Evas_Event_Key_Down*);
-        PlatformKeyboardEvent(const Evas_Event_Key_Up*);
+        explicit PlatformKeyboardEvent(const Evas_Event_Key_Down*);
+        explicit PlatformKeyboardEvent(const Evas_Event_Key_Up*);
 #endif
 
     protected:

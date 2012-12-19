@@ -288,27 +288,32 @@ void Frame::setView(PassRefPtr<FrameView> view)
 
 void Frame::setDocument(PassRefPtr<Document> newDoc)
 {
-    ASSERT(!newDoc || newDoc->frame());
+    ASSERT(!newDoc || newDoc->frame() == this);
     if (m_doc && m_doc->attached() && !m_doc->inPageCache()) {
         // FIXME: We don't call willRemove here. Why is that OK?
         m_doc->detach();
     }
 
     m_doc = newDoc;
+    ASSERT(!m_doc || m_doc->domWindow());
+    ASSERT(!m_doc || m_doc->domWindow()->frame() == this);
+
     selection()->updateSecureKeyboardEntryIfActive();
 
     if (m_doc && !m_doc->attached())
         m_doc->attach();
 
-    // Update the cached 'document' property, which is now stale.
-    m_script.updateDocument();
-
-    if (m_doc)
+    if (m_doc) {
+        m_script.updateDocument();
         m_doc->updateViewportArguments();
+    }
 
     if (m_page && m_page->mainFrame() == this) {
         notifyChromeClientWheelEventHandlerCountChanged();
-        notifyChromeClientTouchEventHandlerCountChanged();
+#if ENABLE(TOUCH_EVENTS)
+        if (m_doc && m_doc->touchEventHandlerCount())
+            m_page->chrome()->client()->needTouchEvents(true);
+#endif
     }
 
     // Suspend document if this frame was created in suspended state.
@@ -598,15 +603,6 @@ void Frame::injectUserScriptsForWorld(DOMWrapperWorld* world, const UserScriptVe
     }
 }
 
-void Frame::clearDOMWindow()
-{
-    if (m_domWindow) {
-        InspectorInstrumentation::frameWindowDiscarded(this, m_domWindow.get());
-        m_domWindow->clear();
-    }
-    m_domWindow = 0;
-}
-
 RenderView* Frame::contentRenderer() const
 {
     Document* doc = document();
@@ -666,31 +662,26 @@ void Frame::clearTimers()
     clearTimers(m_view.get(), document());
 }
 
-void Frame::setDOMWindow(DOMWindow* domWindow)
-{
-    if (m_domWindow) {
-        InspectorInstrumentation::frameWindowDiscarded(this, m_domWindow.get());
-        m_domWindow->clear();
-    }
-    m_domWindow = domWindow;
-}
-
 #if ENABLE(PAGE_VISIBILITY_API)
 void Frame::dispatchVisibilityStateChangeEvent()
 {
     if (m_doc)
         m_doc->dispatchVisibilityStateChangeEvent();
+
+    Vector<RefPtr<Frame> > childFrames;
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-        child->dispatchVisibilityStateChangeEvent();
+        childFrames.append(child);
+
+    for (size_t i = 0; i < childFrames.size(); ++i)
+        childFrames[i]->dispatchVisibilityStateChangeEvent();
 }
 #endif
 
-DOMWindow* Frame::domWindow() const
+void Frame::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
-    if (!m_domWindow)
-        m_domWindow = DOMWindow::create(const_cast<Frame*>(this));
-
-    return m_domWindow.get();
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
+    info.addMember(m_doc.get());
+    info.addMember(m_loader);
 }
 
 void Frame::willDetachPage()
@@ -864,7 +855,7 @@ void Frame::tiledBackingStorePaintEnd(const Vector<IntRect>& paintedArea)
         return;
     unsigned size = paintedArea.size();
     // Request repaint from the system
-    for (int n = 0; n < size; ++n)
+    for (unsigned n = 0; n < size; ++n)
         m_page->chrome()->invalidateContentsAndRootView(m_view->contentsToRootView(paintedArea[n]), false);
 }
 
@@ -900,6 +891,7 @@ String Frame::layerTreeAsText(bool showDebugInfo) const
 
     return contentRenderer()->compositor()->layerTreeAsText(showDebugInfo);
 #else
+    UNUSED_PARAM(showDebugInfo);
     return String();
 #endif
 }
@@ -1031,20 +1023,6 @@ void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
     m_page->chrome()->client()->numWheelEventHandlersChanged(count);
 }
 
-void Frame::notifyChromeClientTouchEventHandlerCountChanged() const
-{
-    // Ensure that this method is being called on the main frame of the page.
-    ASSERT(m_page && m_page->mainFrame() == this);
-
-    unsigned count = 0;
-    for (const Frame* frame = this; frame; frame = frame->tree()->traverseNext()) {
-        if (frame->document())
-            count += frame->document()->touchEventHandlerCount();
-    }
-
-    m_page->chrome()->client()->numTouchEventHandlersChanged(count);
-}
-
 #if !PLATFORM(MAC) && !PLATFORM(WIN)
 struct ScopedFramePaintingState {
     ScopedFramePaintingState(Frame* frame, Node* node)
@@ -1095,7 +1073,13 @@ DragImageRef Frame::nodeImage(Node* node)
     LayoutRect topLevelRect;
     IntRect paintingRect = pixelSnappedIntRect(renderer->paintingRootRect(topLevelRect));
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), 1, ColorSpaceDeviceRGB));
+    float deviceScaleFactor = 1;
+    if (m_page)
+        deviceScaleFactor = m_page->deviceScaleFactor();
+    paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
+    paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
+
+    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor, ColorSpaceDeviceRGB));
     if (!buffer)
         return 0;
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
@@ -1118,7 +1102,13 @@ DragImageRef Frame::dragImageForSelection()
 
     IntRect paintingRect = enclosingIntRect(selection()->bounds());
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), 1, ColorSpaceDeviceRGB));
+    float deviceScaleFactor = 1;
+    if (m_page)
+        deviceScaleFactor = m_page->deviceScaleFactor();
+    paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
+    paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
+
+    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor, ColorSpaceDeviceRGB));
     if (!buffer)
         return 0;
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());

@@ -31,7 +31,7 @@
 #include "Crypto.h"
 
 #include "ExceptionCode.h"
-#include <wtf/Uint8Array.h>
+#include <wtf/ArrayBufferView.h>
 #include <wtf/CryptographicallyRandomNumber.h>
 
 namespace WebCore {
@@ -40,13 +40,14 @@ namespace {
 
 bool isIntegerArray(ArrayBufferView* array)
 {
-    return array->isByteArray()
-        || array->isUnsignedByteArray()
-        || array->isUnsignedByteClampedArray()
-        || array->isShortArray()
-        || array->isUnsignedShortArray()
-        || array->isIntArray()
-        || array->isUnsignedIntArray();
+    ArrayBufferView::ViewType type = array->getType();
+    return type == ArrayBufferView::TypeInt8
+           || type == ArrayBufferView::TypeUint8
+           || type == ArrayBufferView::TypeUint8Clamped
+           || type == ArrayBufferView::TypeInt16
+           || type == ArrayBufferView::TypeUint16
+           || type == ArrayBufferView::TypeInt32
+           || type == ArrayBufferView::TypeUint32;
 }
 
 }
@@ -60,6 +61,10 @@ void Crypto::getRandomValues(ArrayBufferView* array, ExceptionCode& ec)
 #if USE(OS_RANDOMNESS)
     if (!array || !isIntegerArray(array)) {
         ec = TYPE_MISMATCH_ERR;
+        return;
+    }
+    if (array->byteLength() > 65536) {
+        ec = QUOTA_EXCEEDED_ERR;
         return;
     }
     cryptographicallyRandomValues(array->baseAddress(), array->byteLength());

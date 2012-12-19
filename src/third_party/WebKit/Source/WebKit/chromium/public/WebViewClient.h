@@ -32,6 +32,7 @@
 #define WebViewClient_h
 
 #include "WebAccessibilityNotification.h"
+#include "WebContentDetectionResult.h"
 #include "WebDragOperation.h"
 #include "WebEditingAction.h"
 #include "WebFileChooserCompletion.h"
@@ -51,6 +52,7 @@ class WebAccessibilityObject;
 class WebBatteryStatusClient;
 class WebColorChooser;
 class WebColorChooserClient;
+class WebCompositorOutputSurface;
 class WebDeviceOrientationClient;
 class WebDragData;
 class WebElement;
@@ -60,7 +62,9 @@ class WebFileChooserCompletion;
 class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationService;
+class WebGestureEvent;
 class WebHelperPlugin;
+class WebHitTestResult;
 class WebIconLoadingCompletion;
 class WebImage;
 class WebInputElement;
@@ -81,6 +85,7 @@ struct WebConsoleMessage;
 struct WebContextMenuData;
 struct WebPoint;
 struct WebPopupMenuInfo;
+struct WebRect;
 struct WebSize;
 struct WebWindowFeatures;
 
@@ -116,9 +121,11 @@ public:
     // Create a session storage namespace object associated with this WebView.
     virtual WebStorageNamespace* createSessionStorageNamespace(unsigned quota) { return 0; }
 
-    // Creates a graphics context that renders to the client's WebView.
+    // DEPRECATED: Creates a graphics context that renders to the client's WebView.
     virtual WebGraphicsContext3D* createGraphicsContext3D(const WebGraphicsContext3D::Attributes&) { return 0; }
 
+    // Creates the output surface that renders to the client's WebView.
+    virtual WebCompositorOutputSurface* createOutputSurface() { return 0; }
 
     // Misc ----------------------------------------------------------------
 
@@ -185,6 +192,7 @@ public:
     virtual void didChangeContents() { }
     virtual void didExecuteCommand(const WebString& commandName) { }
     virtual void didEndEditing() { }
+    virtual void didChangeFormState(const WebNode&) { }
 
     // This method is called in response to WebView's handleInputEvent()
     // when the default action for the current keyboard event is not
@@ -270,7 +278,7 @@ public:
     virtual void focusedNodeChanged(const WebNode&) { }
 
     virtual void numberOfWheelEventHandlersChanged(unsigned) { }
-    virtual void numberOfTouchEventHandlersChanged(unsigned) { }
+    virtual void hasTouchEventHandlers(bool) { }
 
     // Indicates two things:
     //   1) This view may have a new layout now.
@@ -278,6 +286,9 @@ public:
     // After calling WebWidget::layout(), expect to get this notification
     // unless the view did not need a layout.
     virtual void didUpdateLayout() { }
+
+    // Return true to swallow the input event if the embedder will start a disambiguation popup
+    virtual bool didTapMultipleTargets(const WebGestureEvent&, const WebVector<WebRect>& targetRects) { return false; }
 
     // Session history -----------------------------------------------------
 
@@ -362,6 +373,25 @@ public:
     // Media Streams -------------------------------------------------------
 
     virtual WebUserMediaClient* userMediaClient() { return 0; }
+
+
+    // Content detection ----------------------------------------------------
+
+    // Retrieves detectable content (e.g., email addresses, phone numbers)
+    // around a hit test result. The embedder should use platform-specific
+    // content detectors to analyze the region around the hit test result.
+    virtual WebContentDetectionResult detectContentAround(const WebHitTestResult&) { return WebContentDetectionResult(); }
+
+    // Schedules a new content intent with the provided url.
+    virtual void scheduleContentIntent(const WebURL&) { }
+
+    // Cancels any previously scheduled content intents that have not yet launched.
+    virtual void cancelScheduledContentIntents() { }
+
+    // Draggable regions ----------------------------------------------------
+
+    // Informs the browser that the draggable regions have been updated.
+    virtual void draggableRegionsChanged() { }
 
 protected:
     ~WebViewClient() { }

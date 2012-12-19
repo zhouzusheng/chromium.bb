@@ -30,10 +30,10 @@
 #define InspectorDOMStorageAgent_h
 
 #include "InspectorBaseAgent.h"
-#include "PlatformString.h"
 #include "StorageArea.h"
 #include <wtf/HashMap.h>
 #include <wtf/PassOwnPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -77,6 +77,9 @@ public:
     // Called from InspectorInstrumentation
     void didUseDOMStorage(StorageArea*, bool isLocalStorage, Frame*);
     void didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*, Page*);
+
+    // Called from InspectorMemoryAgent
+    size_t memoryBytesUsedByStorageCache() const;
 
 private:
     InspectorDOMStorageAgent(InstrumentingAgents*, InspectorState*);

@@ -99,6 +99,7 @@ namespace WebCore {
 #endif
 
     class Cursor {
+        WTF_MAKE_FAST_ALLOCATED;
     public:
         enum Type {
             Pointer,
@@ -163,13 +164,13 @@ namespace WebCore {
         Cursor& operator=(const Cursor&);
 
 #if USE(LAZY_NATIVE_CURSOR)
-        Cursor(Type);
+        explicit Cursor(Type);
         Type type() const { return m_type; }
         Image* image() const { return m_image.get(); }
         const IntPoint& hotSpot() const { return m_hotSpot; }
         PlatformCursor platformCursor() const;
 #else
-        Cursor(PlatformCursor);
+        explicit Cursor(PlatformCursor);
         PlatformCursor impl() const { return m_platformCursor; }
 #endif
 

@@ -8,7 +8,6 @@
 
 #ifndef BASE_THREADING_PLATFORM_THREAD_H_
 #define BASE_THREADING_PLATFORM_THREAD_H_
-#pragma once
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
@@ -54,8 +53,10 @@ class BASE_EXPORT PlatformThread {
   // ThreadMain method will be called on the newly created thread.
   class BASE_EXPORT Delegate {
    public:
-    virtual ~Delegate() {}
     virtual void ThreadMain() = 0;
+
+   protected:
+    virtual ~Delegate() {}
   };
 
   // Gets the current thread id, which may be useful for logging purposes.
@@ -63,9 +64,6 @@ class BASE_EXPORT PlatformThread {
 
   // Yield the current thread so another thread can be scheduled.
   static void YieldCurrentThread();
-
-  // Sleeps for the specified duration (units are milliseconds).
-  static void Sleep(int duration_ms);
 
   // Sleeps for the specified duration.
   static void Sleep(base::TimeDelta duration);

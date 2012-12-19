@@ -8,12 +8,22 @@
 #include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
+#include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_output_dispatcher_impl.h"
-#include "media/audio/audio_output_mixer.h"
 #include "media/audio/audio_output_proxy.h"
+#include "media/audio/audio_output_resampler.h"
+#include "media/audio/audio_util.h"
 #include "media/audio/fake_audio_input_stream.h"
 #include "media/audio/fake_audio_output_stream.h"
 #include "media/base/media_switches.h"
+
+// TODO(dalecurtis): Temporarily disabled while switching pipeline to use float,
+// http://crbug.com/114700
+#if defined(ENABLE_AUDIO_MIXER)
+#include "media/audio/audio_output_mixer.h"
+#endif
+
+using base::win::ScopedCOMInitializer;
 
 namespace media {
 
@@ -31,6 +41,36 @@ static const int kMaxInputChannels = 2;
 
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
+
+// Initializes the COM library for use by this thread and sets the thread's
+// COM threading model on Windows to MTA.
+class AudioThread : public base::Thread {
+ public:
+  AudioThread();
+  virtual ~AudioThread();
+
+ protected:
+  virtual void Init() OVERRIDE;
+  virtual void CleanUp() OVERRIDE;
+
+ private:
+  scoped_ptr<ScopedCOMInitializer> com_initializer_;
+  DISALLOW_COPY_AND_ASSIGN(AudioThread);
+};
+
+AudioThread::AudioThread() : base::Thread("AudioThread") {
+}
+
+AudioThread::~AudioThread() {}
+
+void AudioThread::Init() {
+  com_initializer_.reset(new ScopedCOMInitializer(ScopedCOMInitializer::kMTA));
+  CHECK(com_initializer_->succeeded());
+}
+
+void AudioThread::CleanUp() {
+  com_initializer_.reset();
+}
 
 AudioManagerBase::AudioManagerBase()
     : num_active_input_streams_(0),
@@ -56,7 +96,7 @@ AudioManagerBase::~AudioManagerBase() {
 void AudioManagerBase::Init() {
   base::AutoLock lock(audio_thread_lock_);
   DCHECK(!audio_thread_.get());
-  audio_thread_.reset(new base::Thread("AudioThread"));
+  audio_thread_.reset(new media::AudioThread());
   CHECK(audio_thread_->Start());
 }
 
@@ -135,26 +175,47 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
 
 AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
     const AudioParameters& params) {
+#if defined(OS_IOS)
+  // IOS implements audio input only.
+  NOTIMPLEMENTED();
+  return NULL;
+#else
   DCHECK(GetMessageLoop()->BelongsToCurrentThread());
 
-  scoped_refptr<AudioOutputDispatcher>& dispatcher =
-      output_dispatchers_[params];
-  if (!dispatcher) {
-    base::TimeDelta close_delay =
-        base::TimeDelta::FromSeconds(kStreamCloseDelaySeconds);
-// TODO(dalecurtis): Temporarily disable the mixer for non-Windows/Mac platforms
-// until a fix for http://crbug.com/138098 can be found.
-#if defined(OS_WIN) || defined(OS_MACOSX)
-    const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-    if (!cmd_line->HasSwitch(switches::kDisableAudioMixer)) {
-      dispatcher = new AudioOutputMixer(this, params, close_delay);
-    } else
-#endif
-    {
-      dispatcher = new AudioOutputDispatcherImpl(this, params, close_delay);
-    }
+  AudioOutputDispatchersMap::iterator it = output_dispatchers_.find(params);
+  if (it != output_dispatchers_.end())
+    return new AudioOutputProxy(it->second);
+
+  base::TimeDelta close_delay =
+      base::TimeDelta::FromSeconds(kStreamCloseDelaySeconds);
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (!cmd_line->HasSwitch(switches::kDisableAudioOutputResampler) &&
+      params.format() == AudioParameters::AUDIO_PCM_LOW_LATENCY) {
+    scoped_refptr<AudioOutputDispatcher> dispatcher = new AudioOutputResampler(
+        this, params, GetPreferredLowLatencyOutputStreamParameters(params),
+        close_delay);
+    output_dispatchers_[params] = dispatcher;
+    return new AudioOutputProxy(dispatcher);
   }
+
+#if defined(ENABLE_AUDIO_MIXER)
+  // TODO(dalecurtis): Browser side mixing has a couple issues that must be
+  // fixed before it can be turned on by default: http://crbug.com/138098 and
+  // http://crbug.com/140247
+  if (cmd_line->HasSwitch(switches::kEnableAudioMixer)) {
+    scoped_refptr<AudioOutputDispatcher> dispatcher =
+        new AudioOutputMixer(this, params, close_delay);
+    output_dispatchers_[params] = dispatcher;
+    return new AudioOutputProxy(dispatcher);
+  }
+#endif
+
+  scoped_refptr<AudioOutputDispatcher> dispatcher =
+      new AudioOutputDispatcherImpl(this, params, close_delay);
+  output_dispatchers_[params] = dispatcher;
   return new AudioOutputProxy(dispatcher);
+#endif  // defined(OS_IOS)
 }
 
 bool AudioManagerBase::CanShowAudioInputSettings() {
@@ -200,7 +261,7 @@ bool AudioManagerBase::IsRecordingInProcess() {
 void AudioManagerBase::Shutdown() {
   // To avoid running into deadlocks while we stop the thread, shut it down
   // via a local variable while not holding the audio thread lock.
-  scoped_ptr<base::Thread> audio_thread;
+  scoped_ptr<media::AudioThread> audio_thread;
   {
     base::AutoLock lock(audio_thread_lock_);
     audio_thread_.swap(audio_thread);
@@ -222,6 +283,10 @@ void AudioManagerBase::Shutdown() {
 }
 
 void AudioManagerBase::ShutdownOnAudioThread() {
+// IOS implements audio input only.
+#if defined(OS_IOS)
+  return;
+#else
   // This should always be running on the audio thread, but since we've cleared
   // the audio_thread_ member pointer when we get here, we can't verify exactly
   // what thread we're running on.  The method is not public though and only
@@ -242,6 +307,22 @@ void AudioManagerBase::ShutdownOnAudioThread() {
   }
 
   output_dispatchers_.clear();
+#endif  // defined(OS_IOS)
+}
+
+AudioParameters AudioManagerBase::GetPreferredLowLatencyOutputStreamParameters(
+    const AudioParameters& input_params) {
+#if defined(OS_IOS)
+  // IOS implements audio input only.
+  NOTIMPLEMENTED();
+  return AudioParameters();
+#else
+  // TODO(dalecurtis): This should include bits per channel and channel layout
+  // eventually.
+  return AudioParameters(
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, input_params.channel_layout(),
+      GetAudioHardwareSampleRate(), 16, GetAudioHardwareBufferSize());
+#endif  // defined(OS_IOS)
 }
 
 }  // namespace media

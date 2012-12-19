@@ -52,6 +52,7 @@ class WebNode;
 class WebPageOverlay;
 class WebPermissionClient;
 class WebPrerendererClient;
+class WebViewBenchmarkSupport;
 class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
@@ -191,6 +192,13 @@ public:
     // window space.
     virtual void scrollFocusedNodeIntoRect(const WebRect&) { }
 
+    // Advance the focus of the WebView forward to the next element or to the
+    // previous element in the tab sequence (if reverse is true).
+    virtual void advanceFocus(bool reverse) { }
+
+    // Animate a scale into the specified find-in-page rect.
+    virtual void zoomToFindInPageRect(const WebRect&) = 0;
+
 
     // Zoom ----------------------------------------------------------------
 
@@ -244,6 +252,23 @@ public:
 
     virtual float minimumPageScaleFactor() const = 0;
     virtual float maximumPageScaleFactor() const = 0;
+
+    // Save the WebView's current scroll and scale state. Each call to this function
+    // overwrites the previously saved scroll and scale state.
+    virtual void saveScrollAndScaleState() = 0;
+
+    // Restore the previously saved scroll and scale state. After restoring the
+    // state, this function deletes any saved scroll and scale state.
+    virtual void restoreScrollAndScaleState() = 0;
+
+    // Reset the scroll and scale state and clobber any previously saved values for
+    // these parameters.
+    virtual void resetScrollAndScaleState() = 0;
+
+    // Prevent the web page from setting a maximum scale via the viewport meta
+    // tag. This is an accessibility feature that lets folks zoom in to web
+    // pages even if the web page tries to block scaling.
+    virtual void setIgnoreViewportTagMaximumScale(bool) = 0;
 
     // The ratio of the current device's screen DPI to the target device's screen DPI.
     virtual float deviceScaleFactor() const = 0;
@@ -307,28 +332,16 @@ public:
 
     // Callback methods when a drag-and-drop operation is trying to drop
     // something on the WebView.
-    // FIXME: Remove this method after chromium changes catch up.
-    virtual WebDragOperation dragTargetDragEnter(
-        const WebDragData&,
-        const WebPoint& clientPoint, const WebPoint& screenPoint,
-        WebDragOperationsMask operationsAllowed) = 0;
     virtual WebDragOperation dragTargetDragEnter(
         const WebDragData&,
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperationsMask operationsAllowed,
         int keyModifiers) = 0;
-    // FIXME: Remove this method after chromium changes catch up.
-    virtual WebDragOperation dragTargetDragOver(
-        const WebPoint& clientPoint, const WebPoint& screenPoint,
-        WebDragOperationsMask operationsAllowed) = 0;
     virtual WebDragOperation dragTargetDragOver(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperationsMask operationsAllowed,
         int keyModifiers) = 0;
     virtual void dragTargetDragLeave() = 0;
-    // FIXME: Remove this method after chromium changes catch up.
-    virtual void dragTargetDrop(
-        const WebPoint& clientPoint, const WebPoint& screenPoint) = 0;
     virtual void dragTargetDrop(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         int keyModifiers) = 0;
@@ -384,6 +397,8 @@ public:
     // Hides any popup (suggestions, selects...) that might be showing.
     virtual void hidePopups() = 0;
 
+    virtual void selectAutofillSuggestionAtIndex(unsigned listIndex) = 0;
+
 
     // Context menu --------------------------------------------------------
 
@@ -438,13 +453,6 @@ public:
 
     // GPU acceleration support --------------------------------------------
 
-    // Returns the (on-screen) WebGraphicsContext3D associated with
-    // this WebView. One will be created if it doesn't already exist.
-    // This is used to set up sharing between this context (which is
-    // that used by the compositor) and contexts for WebGL and other
-    // APIs.
-    virtual WebGraphicsContext3D* graphicsContext3D() = 0;
-
     // Context that's in the compositor's share group, but is not the compositor context itself.
     // Can be used for allocating resources that the compositor will later access.
     virtual WebGraphicsContext3D* sharedGraphicsContext3D() = 0;
@@ -452,6 +460,16 @@ public:
     // Called to inform the WebView that a wheel fling animation was started externally (for instance
     // by the compositor) but must be completed by the WebView.
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) = 0;
+
+    virtual bool setEditableSelectionOffsets(int start, int end) = 0;
+    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
+    virtual void extendSelectionAndDelete(int before, int after) = 0;
+
+    virtual bool isSelectionEditable() const = 0;
+
+    // Benchmarking support -------------------------------------------------
+
+    virtual WebViewBenchmarkSupport* benchmarkSupport() { return 0; }
 
     // Visibility -----------------------------------------------------------
 
@@ -479,7 +497,7 @@ public:
     // level is changed in this update from the previous update).
     virtual void updateBatteryStatus(const WebBatteryStatus&) { }
 
-    // Testing functionality for LayoutTestController -----------------------
+    // Testing functionality for TestRunner ---------------------------------
 
     // Simulates a compositor lost context.
     virtual void loseCompositorContext(int numTimes) = 0;

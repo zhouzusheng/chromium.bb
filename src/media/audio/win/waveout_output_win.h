@@ -4,7 +4,6 @@
 
 #ifndef MEDIA_AUDIO_WIN_WAVEOUT_OUTPUT_WIN_H_
 #define MEDIA_AUDIO_WIN_WAVEOUT_OUTPUT_WIN_H_
-#pragma once
 
 #include <windows.h>
 #include <mmsystem.h>
@@ -130,6 +129,9 @@ class PCMWaveOutAudioOutputStream : public AudioOutputStream {
 
   // Lock used to avoid the conflict when callbacks are called simultaneously.
   base::Lock lock_;
+
+  // Container for retrieving data from AudioSourceCallback::OnMoreData().
+  scoped_ptr<AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(PCMWaveOutAudioOutputStream);
 };

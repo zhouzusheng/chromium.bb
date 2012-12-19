@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_POINT_H_
 #define UI_GFX_POINT_H_
-#pragma once
 
 #include "ui/base/ui_export.h"
 #include "ui/gfx/point_base.h"
@@ -12,6 +11,8 @@
 #if defined(OS_WIN)
 typedef unsigned long DWORD;
 typedef struct tagPOINT POINT;
+#elif defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
 #elif defined(OS_MACOSX)
 #include <ApplicationServices/ApplicationServices.h>
 #endif

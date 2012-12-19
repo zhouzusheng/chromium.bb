@@ -39,20 +39,17 @@
 #include "InspectorBackendDispatcher.h"
 #include "InspectorController.h"
 #include "InspectorFrontend.h"
-#include "InspectorInstrumentation.h"
 #include "InspectorProtocolVersion.h"
 #include "MemoryCache.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "PageScriptDebugServer.h"
 #include "painting/GraphicsContextBuilder.h"
-#include "PlatformString.h"
 #include "RenderView.h"
 #include "ResourceError.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
 #include "V8Binding.h"
-#include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "WebDataSource.h"
 #include "WebDevToolsAgentClient.h"
@@ -65,11 +62,11 @@
 #include "platform/WebURLResponse.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
-#include <public/Platform.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/MathExtras.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
+#include <wtf/text/WTFString.h>
 
 using namespace WebCore;
 using namespace std;
@@ -234,10 +231,12 @@ public:
 
         frame->setTextZoomFactor(m_webView->emulatedTextZoomFactor());
         ensureOriginalZoomFactor(frame->view());
-        frame->setPageAndTextZoomFactors(m_originalZoomFactor, m_webView->emulatedTextZoomFactor());
-        Document* doc = frame->document();
-        doc->styleResolverChanged(RecalcStyleImmediately);
-        doc->updateLayout();
+        Document* document = frame->document();
+        float numerator = document->renderView() ? document->renderView()->viewWidth() : frame->view()->contentsWidth();
+        float factor = m_originalZoomFactor * (numerator / m_emulatedFrameSize.width);
+        frame->setPageAndTextZoomFactors(factor, m_webView->emulatedTextZoomFactor());
+        document->styleResolverChanged(RecalcStyleImmediately);
+        document->updateLayout();
     }
 
     void webViewResized()
@@ -389,7 +388,7 @@ void WebDevToolsAgentImpl::attach()
         return;
 
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
-    inspectorController()->connectFrontend();
+    inspectorController()->connectFrontend(this);
     m_attached = true;
 }
 
@@ -399,7 +398,7 @@ void WebDevToolsAgentImpl::reattach(const WebString& savedState)
         return;
 
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
-    inspectorController()->restoreInspectorStateFromCookie(savedState);
+    inspectorController()->reconnectFrontend(this, savedState);
     m_attached = true;
 }
 
@@ -423,8 +422,8 @@ void WebDevToolsAgentImpl::didCreateScriptContext(WebFrameImpl* webframe, int wo
     // Skip non main world contexts.
     if (worldId)
         return;
-    if (WebCore::V8Proxy* proxy = WebCore::V8Proxy::retrieve(webframe->frame()))
-        proxy->setContextDebugId(m_hostId);
+    if (WebCore::Frame* frame = webframe->frame())
+        frame->script()->setContextDebugId(m_hostId);
 }
 
 void WebDevToolsAgentImpl::mainFrameViewCreated(WebFrameImpl* webFrame)
@@ -492,8 +491,9 @@ void WebDevToolsAgentImpl::inspectorDestroyed()
     // Our lifetime is bound to the WebViewImpl.
 }
 
-void WebDevToolsAgentImpl::openInspectorFrontend(InspectorController*)
+InspectorFrontendChannel* WebDevToolsAgentImpl::openInspectorFrontend(InspectorController*)
 {
+    return 0;
 }
 
 void WebDevToolsAgentImpl::closeInspectorFrontend()
@@ -545,28 +545,6 @@ void WebDevToolsAgentImpl::clearBrowserCache()
 void WebDevToolsAgentImpl::clearBrowserCookies()
 {
     m_client->clearBrowserCookies();
-}
-
-void WebDevToolsAgentImpl::startMainThreadMonitoring()
-{
-    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
-}
-
-void WebDevToolsAgentImpl::stopMainThreadMonitoring()
-{
-    WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
-}
-
-void WebDevToolsAgentImpl::willProcessTask()
-{
-    if (Page* page = m_webViewImpl->page())
-        InspectorInstrumentation::willProcessTask(page);
-}
-
-void WebDevToolsAgentImpl::didProcessTask()
-{
-    if (Page* page = m_webViewImpl->page())
-        InspectorInstrumentation::didProcessTask(page);
 }
 
 void WebDevToolsAgentImpl::setProcessId(long processId)

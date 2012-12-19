@@ -79,7 +79,6 @@
 #include "MainResourceLoader.h"
 #include "Page.h"
 #include "PageCache.h"
-#include "PageGroup.h"
 #include "PageTransitionEvent.h"
 #include "PluginData.h"
 #include "PluginDatabase.h"
@@ -99,6 +98,7 @@
 #include "SerializedScriptValue.h"
 #include "Settings.h"
 #include "TextResourceDecoder.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include "WindowFeatures.h"
 #include "XMLDocumentParser.h"
 #include <wtf/CurrentTime.h>
@@ -123,6 +123,7 @@
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
 #include "Archive.h"
 #endif
+
 
 namespace WebCore {
 
@@ -164,6 +165,43 @@ static bool isDocumentSandboxed(Frame* frame, SandboxFlags mask)
 {
     return frame->document() && frame->document()->isSandboxed(mask);
 }
+
+class FrameLoader::FrameProgressTracker {
+public:
+    static PassOwnPtr<FrameProgressTracker> create(Frame* frame) { return adoptPtr(new FrameProgressTracker(frame)); }
+    ~FrameProgressTracker()
+    {
+        ASSERT(!m_inProgress || m_frame->page());
+        if (m_inProgress)
+            m_frame->page()->progress()->progressCompleted(m_frame);
+    }
+
+    void progressStarted()
+    {
+        ASSERT(m_frame->page());
+        if (!m_inProgress)
+            m_frame->page()->progress()->progressStarted(m_frame);
+        m_inProgress = true;
+    }
+
+    void progressCompleted()
+    {
+        ASSERT(m_inProgress);
+        ASSERT(m_frame->page());
+        m_inProgress = false;
+        m_frame->page()->progress()->progressCompleted(m_frame);
+    }
+
+private:
+    FrameProgressTracker(Frame* frame)
+        : m_frame(frame)
+        , m_inProgress(false)
+    {
+    }
+
+    Frame* m_frame;
+    bool m_inProgress;
+};
 
 FrameLoader::FrameLoader(Frame* frame, FrameLoaderClient* client)
     : m_frame(frame)
@@ -228,6 +266,7 @@ void FrameLoader::init()
     m_didCallImplicitClose = true;
 
     m_networkingContext = m_client->createNetworkingContext();
+    m_progressTracker = FrameProgressTracker::create(m_frame);
 }
 
 void FrameLoader::setDefersLoading(bool defers)
@@ -303,6 +342,8 @@ void FrameLoader::submitForm(PassRefPtr<FormSubmission> submission)
         return;
 
     if (protocolIsJavaScript(submission->action())) {
+        if (!m_frame->document()->contentSecurityPolicy()->allowFormAction(KURL(submission->action())))
+            return;
         m_isExecutingJavaScriptFormAction = true;
         m_frame->script()->executeIfJavaScriptURL(submission->action(), DoNotReplaceDocumentIfJavaScriptURL);
         m_isExecutingJavaScriptFormAction = false;
@@ -334,9 +375,9 @@ void FrameLoader::submitForm(PassRefPtr<FormSubmission> submission)
     // needed any more now that we reset m_submittedFormURL on each mouse or key down event.
 
     if (m_frame->tree()->isDescendantOf(targetFrame)) {
-        if (m_submittedFormURL == submission->action())
+        if (m_submittedFormURL == submission->requestURL())
             return;
-        m_submittedFormURL = submission->action();
+        m_submittedFormURL = submission->requestURL();
     }
 
     submission->data()->generateFiles(m_frame->document());
@@ -357,10 +398,10 @@ void FrameLoader::stopLoading(UnloadEventPolicy unloadEventPolicy)
                 Node* currentFocusedNode = m_frame->document()->focusedNode();
                 if (currentFocusedNode)
                     currentFocusedNode->aboutToUnload();
-                if (m_frame->domWindow() && m_pageDismissalEventBeingDispatched == NoDismissal) {
+                if (m_pageDismissalEventBeingDispatched == NoDismissal) {
                     if (unloadEventPolicy == UnloadEventPolicyUnloadAndPageHide) {
                         m_pageDismissalEventBeingDispatched = PageHideDismissal;
-                        m_frame->domWindow()->dispatchEvent(PageTransitionEvent::create(eventNames().pagehideEvent, m_frame->document()->inPageCache()), m_frame->document());
+                        m_frame->document()->domWindow()->dispatchEvent(PageTransitionEvent::create(eventNames().pagehideEvent, m_frame->document()->inPageCache()), m_frame->document());
                     }
                     if (!m_frame->document()->inPageCache()) {
                         RefPtr<Event> unloadEvent(Event::create(eventNames().unloadEvent, false, false));
@@ -373,10 +414,10 @@ void FrameLoader::stopLoading(UnloadEventPolicy unloadEventPolicy)
                             DocumentLoadTiming* timing = documentLoader->timing();
                             ASSERT(timing->navigationStart());
                             timing->markUnloadEventStart();
-                            m_frame->domWindow()->dispatchEvent(unloadEvent, m_frame->domWindow()->document());
+                            m_frame->document()->domWindow()->dispatchEvent(unloadEvent, m_frame->document());
                             timing->markUnloadEventEnd();
                         } else
-                            m_frame->domWindow()->dispatchEvent(unloadEvent, m_frame->domWindow()->document());
+                            m_frame->document()->domWindow()->dispatchEvent(unloadEvent, m_frame->document());
                     }
                 }
                 m_pageDismissalEventBeingDispatched = NoDismissal;
@@ -464,10 +505,9 @@ bool FrameLoader::didOpenURL()
     // its frame is not in a consistent state for rendering, so avoid setJSStatusBarText
     // since it may cause clients to attempt to render the frame.
     if (!m_stateMachine.creatingInitialEmptyDocument()) {
-        if (DOMWindow* window = m_frame->existingDOMWindow()) {
-            window->setStatus(String());
-            window->setDefaultStatus(String());
-        }
+        DOMWindow* window = m_frame->document()->domWindow();
+        window->setStatus(String());
+        window->setDefaultStatus(String());
     }
 
     started();
@@ -499,11 +539,11 @@ void FrameLoader::cancelAndClear()
     if (!m_isComplete)
         closeURL();
 
-    clear(false);
+    clear(m_frame->document(), false);
     m_frame->script()->updatePlatformScriptObjects();
 }
 
-void FrameLoader::clear(bool clearWindowProperties, bool clearScriptObjects, bool clearFrameView)
+void FrameLoader::clear(Document* newDocument, bool clearWindowProperties, bool clearScriptObjects, bool clearFrameView)
 {
     m_frame->editor()->clear();
 
@@ -522,8 +562,9 @@ void FrameLoader::clear(bool clearWindowProperties, bool clearScriptObjects, boo
 
     // Do this after detaching the document so that the unload event works.
     if (clearWindowProperties) {
-        m_frame->clearDOMWindow();
-        m_frame->script()->clearWindowShell(m_frame->document()->inPageCache());
+        InspectorInstrumentation::frameWindowDiscarded(m_frame, m_frame->document()->domWindow());
+        m_frame->document()->domWindow()->resetUnlessSuspendedForPageCache();
+        m_frame->script()->clearWindowShell(newDocument->domWindow(), m_frame->document()->inPageCache());
     }
 
     m_frame->selection()->clear();
@@ -678,7 +719,7 @@ void FrameLoader::checkCompleted()
     m_shouldCallCheckCompleted = false;
 
     if (m_frame->view())
-        m_frame->view()->checkStopDelayingDeferredRepaints();
+        m_frame->view()->checkFlushDeferredRepaintsAfterLoadComplete();
 
     // Have we completed before?
     if (m_isComplete)
@@ -713,6 +754,9 @@ void FrameLoader::checkCompleted()
     completed();
     if (m_frame->page())
         checkLoadComplete();
+
+    if (m_frame->view())
+        m_frame->view()->checkFlushDeferredRepaintsAfterLoadComplete();
 }
 
 void FrameLoader::checkTimerFired(Timer<FrameLoader>*)
@@ -885,7 +929,7 @@ bool FrameLoader::checkIfDisplayInsecureContent(SecurityOrigin* context, const K
     String message = (allowed ? emptyString() : "[blocked] ") + "The page at " +
         m_frame->document()->url().string() + " displayed insecure content from " + url.string() + ".\n";
         
-    m_frame->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, WarningMessageLevel, message);
+    m_frame->document()->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, WarningMessageLevel, message);
 
     if (allowed)
         m_client->didDisplayInsecureContent();
@@ -903,12 +947,20 @@ bool FrameLoader::checkIfRunInsecureContent(SecurityOrigin* context, const KURL&
     String message = (allowed ? emptyString() : "[blocked] ") + "The page at " +
         m_frame->document()->url().string() + " ran insecure content from " + url.string() + ".\n";
        
-    m_frame->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, WarningMessageLevel, message);
+    m_frame->document()->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, WarningMessageLevel, message);
 
     if (allowed)
         m_client->didRunInsecureContent(context, url);
 
     return allowed;
+}
+
+bool FrameLoader::checkIfFormActionAllowedByCSP(const KURL& url) const
+{
+    if (m_submittedFormURL.isEmpty())
+        return true;
+
+    return m_frame->document()->contentSecurityPolicy()->allowFormAction(url);
 }
 
 Frame* FrameLoader::opener()
@@ -924,10 +976,8 @@ void FrameLoader::setOpener(Frame* opener)
         opener->loader()->m_openedFrames.add(m_frame);
     m_opener = opener;
 
-    if (m_frame->document()) {
+    if (m_frame->document())
         m_frame->document()->initSecurityContext();
-        m_frame->domWindow()->setSecurityOrigin(m_frame->document()->securityOrigin());
-    }
 }
 
 // FIXME: This does not belong in FrameLoader!
@@ -1079,8 +1129,7 @@ void FrameLoader::prepareForHistoryNavigation()
 
 void FrameLoader::prepareForLoadStart()
 {
-    if (Page* page = m_frame->page())
-        page->progress()->progressStarted(m_frame);
+    m_progressTracker->progressStarted();
     m_client->dispatchDidStartProvisionalLoad();
 
     // Notify accessibility.
@@ -1234,8 +1283,6 @@ void FrameLoader::load(const ResourceRequest& request, const SubstituteData& sub
     if (m_inStopAllLoaders)
         return;
         
-    // FIXME: is this the right place to reset loadType? Perhaps this should be done after loading is finished or aborted.
-    m_loadType = FrameLoadTypeStandard;
     RefPtr<DocumentLoader> loader = m_client->createDocumentLoader(request, substituteData);
     if (lockHistory && m_documentLoader)
         loader->setClientRedirectSourceForHistory(m_documentLoader->didCreateGlobalHistoryEntry() ? m_documentLoader->urlForHistory().string() : m_documentLoader->clientRedirectSourceForHistory());
@@ -1280,7 +1327,9 @@ void FrameLoader::load(DocumentLoader* newDocumentLoader)
     if (shouldTreatURLAsSameAsCurrent(newDocumentLoader->originalRequest().url())) {
         r.setCachePolicy(ReloadIgnoringCacheData);
         type = FrameLoadTypeSame;
-    } else
+    } else if (shouldTreatURLAsSameAsCurrent(newDocumentLoader->unreachableURL()) && m_loadType == FrameLoadTypeReload)
+        type = FrameLoadTypeReload;
+    else
         type = FrameLoadTypeStandard;
 
     if (m_documentLoader)
@@ -1372,7 +1421,7 @@ void FrameLoader::reportLocalLoadFailed(Frame* frame, const String& url)
     if (!frame)
         return;
 
-    frame->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Not allowed to load local resource: " + url);
+    frame->document()->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Not allowed to load local resource: " + url);
 }
 
 const ResourceRequest& FrameLoader::initialRequest() const
@@ -1438,6 +1487,19 @@ void FrameLoader::reloadWithOverrideEncoding(const String& encoding)
     loadWithDocumentLoader(loader.get(), FrameLoadTypeReload, 0);
 }
 
+void FrameLoader::reloadWithOverrideURL(const KURL& overrideUrl, bool endToEndReload)
+{
+    if (!m_documentLoader)
+        return;
+
+    if (overrideUrl.isEmpty())
+        return;
+
+    ResourceRequest request = m_documentLoader->request();
+    request.setURL(overrideUrl);
+    reloadWithRequest(request, endToEndReload);
+}
+
 void FrameLoader::reload(bool endToEndReload)
 {
     if (!m_documentLoader)
@@ -1448,13 +1510,19 @@ void FrameLoader::reload(bool endToEndReload)
     if (m_documentLoader->request().url().isEmpty())
         return;
 
-    ResourceRequest initialRequest = m_documentLoader->request();
-
     // Replace error-page URL with the URL we were trying to reach.
+    ResourceRequest initialRequest = m_documentLoader->request();
     KURL unreachableURL = m_documentLoader->unreachableURL();
     if (!unreachableURL.isEmpty())
         initialRequest.setURL(unreachableURL);
-    
+
+    reloadWithRequest(initialRequest, endToEndReload);
+}
+
+void FrameLoader::reloadWithRequest(const ResourceRequest& initialRequest, bool endToEndReload)
+{
+    ASSERT(m_documentLoader);
+
     // Create a new document loader for the reload, this will become m_documentLoader eventually,
     // but first it has to be the "policy" document loader, and then the "provisional" document loader.
     RefPtr<DocumentLoader> loader = m_client->createDocumentLoader(initialRequest, defaultSubstituteDataForURL(initialRequest.url()));
@@ -1482,6 +1550,10 @@ void FrameLoader::stopAllLoaders(ClearProvisionalItemPolicy clearProvisionalItem
     // If this method is called from within this method, infinite recursion can occur (3442218). Avoid this.
     if (m_inStopAllLoaders)
         return;
+    
+    // Calling stopLoading() on the provisional document loader can blow away
+    // the frame from underneath.
+    RefPtr<Frame> protect(m_frame);
 
     m_inStopAllLoaders = true;
 
@@ -1546,24 +1618,21 @@ void FrameLoader::setDocumentLoader(DocumentLoader* loader)
 
     m_client->prepareForDataSourceReplacement();
     detachChildren();
+
+    // detachChildren() can trigger this frame's unload event, and therefore
+    // script can run and do just about anything. For example, an unload event that calls
+    // document.write("") on its parent frame can lead to a recursive detachChildren()
+    // invocation for this frame. In that case, we can end up at this point with a
+    // loader that hasn't been deleted but has been detached from its frame. Such a
+    // DocumentLoader has been sufficiently detached that we'll end up in an inconsistent
+    // state if we try to use it.
+    if (loader && !loader->frame())
+        return;
+
     if (m_documentLoader)
         m_documentLoader->detachFromFrame();
 
     m_documentLoader = loader;
-
-    // The following abomination is brought to you by the unload event.
-    // The detachChildren() call above may trigger a child frame's unload event,
-    // which could do something obnoxious like call document.write("") on
-    // the main frame, which results in detaching children while detaching children.
-    // This can cause the new m_documentLoader to be detached from its Frame*, but still
-    // be alive. To make matters worse, DocumentLoaders with a null Frame* aren't supposed
-    // to happen when they're still alive (and many places below us on the stack think the
-    // DocumentLoader is still usable). Ergo, we reattach loader to its Frame, and pretend
-    // like nothing ever happened.
-    if (m_documentLoader && !m_documentLoader->frame()) {
-        ASSERT(!m_documentLoader->isLoading());
-        m_documentLoader->setFrame(m_frame);
-    }
 }
 
 void FrameLoader::setPolicyDocumentLoader(DocumentLoader* loader)
@@ -1615,8 +1684,7 @@ void FrameLoader::setState(FrameState newState)
 void FrameLoader::clearProvisionalLoad()
 {
     setProvisionalDocumentLoader(0);
-    if (Page* page = m_frame->page())
-        page->progress()->progressCompleted(m_frame);
+    m_progressTracker->progressCompleted();
     setState(FrameStateComplete);
 }
 
@@ -1624,6 +1692,7 @@ void FrameLoader::commitProvisionalLoad()
 {
     RefPtr<CachedPage> cachedPage = m_loadingFromCachedPage ? pageCache()->get(history()->provisionalItem()) : 0;
     RefPtr<DocumentLoader> pdl = m_provisionalDocumentLoader;
+    RefPtr<Frame> protect(m_frame);
 
     LOG(PageCache, "WebCoreLoading %s: About to commit provisional load from previous URL '%s' to new URL '%s'", m_frame->tree()->uniqueName().string().utf8().data(),
         m_frame->document() ? m_frame->document()->url().string().utf8().data() : "", 
@@ -1643,7 +1712,7 @@ void FrameLoader::commitProvisionalLoad()
 
     transitionToCommitted(cachedPage);
 
-    if (pdl) {
+    if (pdl && m_documentLoader) {
         // Check if the destination page is allowed to access the previous page's timing information.
         RefPtr<SecurityOrigin> securityOrigin = SecurityOrigin::create(pdl->request().url());
         m_documentLoader->timing()->setHasSameOriginAsPreviousDocument(securityOrigin->canRequest(m_previousUrl));
@@ -1738,6 +1807,12 @@ void FrameLoader::transitionToCommitted(PassRefPtr<CachedPage> cachedPage)
 
     setDocumentLoader(m_provisionalDocumentLoader.get());
     setProvisionalDocumentLoader(0);
+
+    if (pdl != m_documentLoader) {
+        ASSERT(m_state == FrameStateComplete);
+        return;
+    }
+
     setState(FrameStateCommittedPage);
 
 #if ENABLE(TOUCH_EVENTS)
@@ -1880,10 +1955,9 @@ void FrameLoader::prepareForCachedPageRestore()
     
     // Delete old status bar messages (if it _was_ activated on last URL).
     if (m_frame->script()->canExecuteScripts(NotAboutToExecuteScript)) {
-        if (DOMWindow* window = m_frame->existingDOMWindow()) {
-            window->setStatus(String());
-            window->setDefaultStatus(String());
-        }
+        DOMWindow* window = m_frame->document()->domWindow();
+        window->setStatus(String());
+        window->setDefaultStatus(String());
     }
 }
 
@@ -1901,10 +1975,12 @@ void FrameLoader::open(CachedFrameBase& cachedFrame)
         url.setPath("/");
 
     started();
-    clear(true, true, cachedFrame.isMainFrame());
-
     Document* document = cachedFrame.document();
     ASSERT(document);
+    ASSERT(document->domWindow());
+
+    clear(document, true, true, cachedFrame.isMainFrame());
+
     document->setInPageCache(false);
 
     m_needsClear = true;
@@ -1924,10 +2000,7 @@ void FrameLoader::open(CachedFrameBase& cachedFrame)
     m_frame->setView(view);
     
     m_frame->setDocument(document);
-    m_frame->setDOMWindow(cachedFrame.domWindow());
-    m_frame->domWindow()->resumeFromPageCache();
-    m_frame->domWindow()->setURL(document->url());
-    m_frame->domWindow()->setSecurityOrigin(document->securityOrigin());
+    document->domWindow()->resumeFromPageCache();
 
     updateFirstPartyForCookies();
 
@@ -2094,9 +2167,8 @@ void FrameLoader::checkLoadCompleteForThisFrame()
                 return;
 
             if (!settings->needsDidFinishLoadOrderQuirk()) {
+                m_progressTracker->progressCompleted();
                 if (Page* page = m_frame->page()) {
-                    page->progress()->progressCompleted(m_frame);
-
                     if (m_frame == page->mainFrame())
                         page->resetRelevantPaintedObjectCounter();
                 }
@@ -2114,9 +2186,8 @@ void FrameLoader::checkLoadCompleteForThisFrame()
             }
 
             if (settings->needsDidFinishLoadOrderQuirk()) {
+                m_progressTracker->progressCompleted();
                 if (Page* page = m_frame->page()) {
-                    page->progress()->progressCompleted(m_frame);
-
                     if (m_frame == page->mainFrame())
                         page->resetRelevantPaintedObjectCounter();
                 }
@@ -2339,6 +2410,8 @@ void FrameLoader::detachFromParent()
     InspectorInstrumentation::frameDetachedFromParent(m_frame);
 
     detachViewsAndDocumentLoader();
+
+    m_progressTracker.clear();
 
     if (Frame* parent = m_frame->tree()->parent()) {
         parent->loader()->closeAndRemoveChild(m_frame);
@@ -2671,7 +2744,7 @@ bool FrameLoader::shouldClose()
 
 bool FrameLoader::fireBeforeUnloadEvent(Chrome* chrome)
 {
-    DOMWindow* domWindow = m_frame->existingDOMWindow();
+    DOMWindow* domWindow = m_frame->document()->domWindow();
     if (!domWindow)
         return true;
 
@@ -3166,6 +3239,9 @@ void FrameLoader::dispatchDidCommitLoad()
 
     m_client->dispatchDidCommitLoad();
 
+    if (isLoadingMainFrame())
+        m_frame->page()->resetSeenPlugins();
+
     InspectorInstrumentation::didCommitLoad(m_frame, m_documentLoader.get());
 }
 
@@ -3199,6 +3275,16 @@ void FrameLoader::tellClientAboutPastMemoryCacheLoads()
 NetworkingContext* FrameLoader::networkingContext() const
 {
     return m_networkingContext.get();
+}
+
+void FrameLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
+    info.addMember(m_documentLoader);
+    info.addMember(m_provisionalDocumentLoader);
+    info.addMember(m_policyDocumentLoader);
+    info.addMember(m_outgoingReferrer);
+    info.addInstrumentedHashSet(m_openedFrames);
 }
 
 bool FrameLoaderClient::hasHTMLView() const

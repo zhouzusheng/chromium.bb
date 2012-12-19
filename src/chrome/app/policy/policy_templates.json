@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 148
+#   For your editing convenience: highest ID currently used: 160
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -139,6 +139,7 @@
         {
           'name': 'HomepageLocation',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {
             'dynamic_refresh': True,
@@ -149,9 +150,9 @@
           'caption': '''Configure the home page URL''',
           'desc': '''Configures the default home page URL in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing it.
 
-          The home page type can either be set to a URL you specify here or set to the New Tab Page.
+          The home page is the page opened by the Home button. The pages that open on startup are controlled by the RestoreOnStartup policies.
 
-          If you select the New Tab Page, then this policy is ignored.
+          The home page type can either be set to a URL you specify here or set to the New Tab Page. If you select the New Tab Page, then this policy is ignored.
 
           If you enable this setting, users cannot change their home page URL in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>, but they can still can choose the New Tab Page as their home page.
 
@@ -161,6 +162,7 @@
         {
           'name': 'HomepageIsNewTabPage',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {
             'dynamic_refresh': True,
@@ -184,6 +186,7 @@
     {
       'name': 'DefaultBrowserSettingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -201,6 +204,7 @@
     {
       'name': 'ApplicationLocaleValue',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.win:8-'],
       'features': {
         'dynamic_refresh': False,
@@ -219,6 +223,7 @@
     {
       'name': 'AlternateErrorPagesEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -240,6 +245,7 @@
     {
       'name': 'SearchSuggestEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -261,6 +267,7 @@
     {
       'name': 'DnsPrefetchingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -278,6 +285,7 @@
     {
       'name': 'DisableSpdy',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -294,6 +302,10 @@
     {
       'name': 'DisabledSchemes',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['file', 'mailto'],
@@ -309,6 +321,7 @@
     {
       'name': 'JavascriptEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'deprecated': True,
@@ -330,6 +343,7 @@
     {
       'name': 'IncognitoEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'deprecated': True,
@@ -348,28 +362,32 @@
     {
       'name': 'IncognitoModeAvailability',
       'type': 'int-enum',
+      'schema': {
+        'type': 'integer',
+        'enum': [ 0, 1, 2 ],
+      },
       'items': [
         {
           'name': 'Enabled',
           'value': 0,
-          'caption': '''Incognito mode available.'''
+          'caption': '''Incognito mode available.''',
         },
         {
           'name': 'Disabled',
           'value': 1,
-          'caption': '''Incognito mode disabled.'''
+          'caption': '''Incognito mode disabled.''',
         },
         {
           'name': 'Forced',
           'value': 2,
-          'caption': '''Incognito mode forced.'''
+          'caption': '''Incognito mode forced.''',
         },
       ],
       'supported_on': ['chrome.*:14-', 'chrome_os:0.14-'],
       'features': {'dynamic_refresh': True},
       'example_value': 1,
       'id': 93,
-      'caption': '''Incognito mode availability.''',
+      'caption': '''Incognito mode availability''',
       'desc': '''Specifies whether the user may open pages in Incognito mode in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If 'Enabled' is selected or the policy is left unset, pages may be opened in Incognito mode.
@@ -381,6 +399,7 @@
     {
       'name': 'SavingBrowserHistoryDisabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -403,6 +422,7 @@
         {
           'name': 'RemoteAccessClientFirewallTraversal',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:14-', 'chrome_os:0.14-'],
           'features': {'dynamic_refresh': True},
           # Mark this 'removed' when http://crbug.com/100216 is resolved.
@@ -420,6 +440,7 @@
         {
           'name': 'RemoteAccessHostFirewallTraversal',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:14-', 'chrome_os:0.14-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
@@ -433,11 +454,76 @@
 
           If this policy is left not set the setting will be enabled.''',
         },
+        {
+          'name': 'RemoteAccessHostDomain',
+          'type': 'string',
+          'schema': { 'type': 'string' },
+          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': 'my-awesome-domain.com',
+          'id': 154,
+          'caption': '''Configure the required domain name for remote access hosts''',
+          'desc': '''Configures the required host domain name that will be imposed on remote access hosts and prevents users from changing it.
+
+          If this setting is enabled, then hosts can be shared only using accounts registered on the specified domain name.
+
+          If this setting is disabled or not set, then hosts can be shared using any account.''',
+        },
+        {
+          'name': 'RemoteAccessHostRequireTwoFactor',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': False,
+          'id': 155,
+          'caption': '''Enable two-factor authentication for remote access hosts''',
+          'desc': '''Enables two-factor authentication for remote access hosts instead of a user-specified PIN.
+
+          If this setting is enabled, then users must provide a valid two-factor code when accessing a host.
+
+          If this setting is disabled or not set, then two-factor will not be enabled and the default behavior of having a user-defined PIN will be used.''',
+        },
+        {
+          'name': 'RemoteAccessHostTalkGadgetPrefix',
+          'type': 'string',
+          'schema': { 'type': 'string' },
+          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': 'chromoting-host',
+          'id': 156,
+          'caption': '''Configure the TalkGadget prefix for remote access hosts''',
+          'desc': '''Configures the TalkGadget prefix that will be used by remote access hosts and prevents users from changing it.
+
+          If specified, this prefix is prepended to the base TalkGadget name to create a full domain name for the TalkGadget. The base TalkGadget domain name is '.talkgadget.google.com'.
+
+          If this setting is enabled, then hosts will use the custom domain name when accessing the TalkGadget instead of the default domain name.
+
+          If this setting is disabled or not set, then the default TalkGadget domain name ('chromoting-host.talkgadget.google.com') will be used for all hosts.
+
+          Remote access clients are not affected by this policy setting. They will always use 'chromoting-client.talkgadget.google.com' to access the TalkGadget.''',
+        },
+        {
+          'name': 'RemoteAccessHostRequireCurtain',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome.*:23-', 'chrome_os:0.23-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': False,
+          'id': 157,
+          'caption': '''Enable curtaining of remote access hosts.''',
+          'desc': '''Enables curtaining of remote access hosts while a connection is in progress.
+
+          If this setting is enabled, then hosts' physical input and output devices are disabled while a remote connection is in progress.
+
+          If this setting is disabled or not set, then both local and remote users can interact with the host when it is being shared.''',
+        },
       ],
     },
     {
       'name': 'PrintingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -454,6 +540,7 @@
     {
       'name': 'CloudPrintProxyEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -470,6 +557,7 @@
     {
       'name': 'SafeBrowsingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': False,
@@ -491,6 +579,7 @@
     {
       'name': 'MetricsReportingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-'],
       'features': {
         'dynamic_refresh': False,
@@ -518,6 +607,7 @@
         {
           'name': 'PasswordManagerEnabled',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {
             'dynamic_refresh': True,
@@ -539,6 +629,7 @@
         {
           'name': 'PasswordManagerAllowShowPasswords',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
@@ -555,6 +646,7 @@
     {
       'name': 'AutoFillEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -572,6 +664,10 @@
     {
       'name': 'DisabledPlugins',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['Java', 'Shockwave Flash', 'Chrome PDF Viewer'],
@@ -583,7 +679,7 @@
 
       If you enable this setting, the specified list of plugins is never used in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. The plugins are marked as disabled in 'about:plugins' and users cannot enable them.
 
-      Note that this policy can be overriden by EnabledPlugins and DisabledPluginsExceptions.
+      Note that this policy can be overridden by EnabledPlugins and DisabledPluginsExceptions.
 
       If this policy is left not set the user can use any plugin installed on the system except for hard-coded incompatible, outdated or dangerous plugins.''',
       'label': '''List of disabled plugins''',
@@ -591,6 +687,10 @@
     {
       'name': 'EnabledPlugins',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['Java', 'Shockwave Flash', 'Chrome PDF Viewer'],
@@ -610,6 +710,10 @@
     {
       'name': 'DisabledPluginsExceptions',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['Java', 'Shockwave Flash', 'Chrome PDF Viewer'],
@@ -621,7 +725,7 @@
 
       If you enable this setting, the specified list of plugins can be used in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. Users can enable or disable them in 'about:plugins', even if the plugin also matches a pattern in DisabledPlugins. Users can also enable and disable plugins that don't match any patterns in DisabledPlugins, DisabledPluginsExceptions and EnabledPlugins.
 
-      This policy is meant to allow for strict plugin balcklisting where the 'DisabledPlugins' list contains wildcarded entries like disable all plugins '*' or disable all Java plugins '*Java*' but the administrator wishes to enable some particular version like 'IcedTea Java 2.3'. This particular versions can be specified in this policy.
+      This policy is meant to allow for strict plugin blacklisting where the 'DisabledPlugins' list contains wildcarded entries like disable all plugins '*' or disable all Java plugins '*Java*' but the administrator wishes to enable some particular version like 'IcedTea Java 2.3'. This particular versions can be specified in this policy.
 
       If this policy is left not set any plugin that matches the patterns in the 'DisabledPlugins' will be locked disabled and the user won't be able to enable them.''',
       'label': '''List of exceptions to the list of disabled plugins''',
@@ -629,6 +733,7 @@
     {
       'name': 'DisablePluginFinder',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -642,6 +747,7 @@
     {
       'name': 'SyncDisabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -656,6 +762,7 @@
     {
       'name': 'UserDataDir',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.win:11-', 'chrome.mac:11-'],
       'features': {'dynamic_refresh': False},
       'example_value': '${users}/${user_name}/Chrome',
@@ -671,6 +778,7 @@
     {
       'name': 'DiskCacheDir',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.*:13-'],
       'features': {'dynamic_refresh': False},
       'example_value': '${user_home}/Chrome_cache',
@@ -686,6 +794,7 @@
     {
       'name': 'DiskCacheSize',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': False},
       'example_value': 104857600,
@@ -703,12 +812,13 @@
     {
       'name': 'MediaCacheSize',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': False},
       'example_value': 104857600,
       'id': 111,
       'caption': '''Set media disk cache size in bytes''',
-      'desc': '''Configures the chache size that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached media files on the disk.
+      'desc': '''Configures the cache size that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached media files on the disk.
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided cache size regardless whether the user has specified the '--media-cache-size' flag or not.
 
@@ -720,6 +830,7 @@
     {
       'name': 'DownloadDirectory',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.*:11-'],
       'features': {
         'dynamic_refresh': True,
@@ -738,6 +849,7 @@
     {
       'name': 'ClearSiteDataOnExit',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -776,31 +888,41 @@
         {
           'name': 'ProxyMode',
           'type': 'string-enum',
+          'schema': {
+            'type': 'string',
+            'enum': [
+              'direct',
+              'auto_detect',
+              'pac_script',
+              'fixed_servers',
+              'system'
+            ],
+          },
           'items': [
             {
               'name': 'ProxyDisabled',
               'value': 'direct',
-              'caption': '''Never use a proxy'''
+              'caption': '''Never use a proxy''',
             },
             {
               'name': 'ProxyAutoDetect',
               'value': 'auto_detect',
-              'caption': '''Auto detect proxy settings'''
+              'caption': '''Auto detect proxy settings''',
             },
             {
               'name': 'ProxyPacScript',
               'value': 'pac_script',
-              'caption': '''Use a .pac proxy script'''
+              'caption': '''Use a .pac proxy script''',
             },
             {
               'name': 'ProxyFixedServers',
               'value': 'fixed_servers',
-              'caption': '''Use fixed proxy servers'''
+              'caption': '''Use fixed proxy servers''',
             },
             {
               'name': 'ProxyUseSystem',
               'value': 'system',
-              'caption': '''Use system proxy settings'''
+              'caption': '''Use system proxy settings''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -828,26 +950,30 @@
         {
           'name': 'ProxyServerMode',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 0, 1, 2, 3 ],
+          },
           'items': [
             {
               'name': 'ProxyServerDisabled',
               'value': 0,
-              'caption': '''Never use a proxy'''
+              'caption': '''Never use a proxy''',
             },
             {
               'name': 'ProxyServerAutoDetect',
               'value': 1,
-              'caption': '''Auto detect proxy settings'''
+              'caption': '''Auto detect proxy settings''',
             },
             {
               'name': 'ProxyServerManual',
               'value': 2,
-              'caption': '''Manually specify proxy settings'''
+              'caption': '''Manually specify proxy settings''',
             },
             {
               'name': 'ProxyServerUseSystem',
               'value': 3,
-              'caption': '''Use system proxy settings'''
+              'caption': '''Use system proxy settings''',
             },
           ],
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
@@ -876,6 +1002,7 @@
         {
           'name': 'ProxyServer',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': '123.123.123.123:8080',
@@ -893,6 +1020,7 @@
         {
           'name': 'ProxyPacUrl',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://internal.site/example.pac',
@@ -910,6 +1038,7 @@
         {
           'name': 'ProxyBypassList',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://www.example1.com,http://www.example2.com,http://internalsite/',
@@ -934,6 +1063,16 @@
       # http://crbug.com/108992, http://crbug.com/108996
       'name': 'ProxySettings',
       'type': 'dict',
+      'schema': {
+        'type': 'object',
+        'properties': {
+          'ProxyMode': { 'type': 'string' },
+          'ProxyPacUrl': { 'type': 'string' },
+          'ProxyServer': { 'type': 'string' },
+          'ProxyBypassList': { 'type': 'string' },
+          'ProxyServerMode': { 'type': 'string' },
+        },
+      },
       'supported_on': ['chrome.*:18-', 'chrome_os:0.18-'],
       'future': True,
       'features': {'dynamic_refresh': True},
@@ -953,6 +1092,7 @@
         {
           'name': 'AuthSchemes',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': False},
           'example_value': 'basic,digest,ntlm,negotiate',
@@ -967,6 +1107,7 @@
         {
           'name': 'DisableAuthNegotiateCnameLookup',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': False},
           'example_value': False,
@@ -981,6 +1122,7 @@
         {
           'name': 'EnableAuthNegotiatePort',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': False},
           'example_value': False,
@@ -995,6 +1137,7 @@
         {
           'name': 'AuthServerWhitelist',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': False},
           'example_value': '*example.com,foobar.com,*baz',
@@ -1009,6 +1152,7 @@
         {
           'name': 'AuthNegotiateDelegateWhitelist',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': False},
           'example_value': 'foobar.example.com',
@@ -1023,6 +1167,7 @@
         {
           'name': 'GSSAPILibraryName',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.linux:9-', 'chrome.mac:9-'],
           'features': {'dynamic_refresh': False},
           'example_value': 'libgssapi_krb5.so.2',
@@ -1035,6 +1180,7 @@
         {
           'name': 'AllowCrossOriginAuthPrompt',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:13-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
@@ -1055,6 +1201,10 @@
         {
           'name': 'ExtensionInstallBlacklist',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['extension_id1', 'extension_id2'],
@@ -1070,6 +1220,10 @@
         {
           'name': 'ExtensionInstallWhitelist',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['extension_id1', 'extension_id2'],
@@ -1085,6 +1239,10 @@
         {
           'name': 'ExtensionInstallForcelist',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx'],
@@ -1092,7 +1250,7 @@
           'caption': '''Configure the list of force-installed extensions''',
           'desc': '''Allows you to specify a list of extensions that will be installed silently, without user interaction.
 
-          Each item of the list is a string that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). The extension ID is the 32-letter string found e.g. on <ph name="CHROME_EXTENSIONS_LINK">chrome://extensions</ph> when in developer mode. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">http://code.google.com/chrome/extensions/autoupdate.html</ph>.
+          Each item of the list is a string that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). The extension ID is the 32-letter string found e.g. on <ph name="CHROME_EXTENSIONS_LINK">chrome://extensions</ph> when in developer mode. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">http://code.google.com/chrome/extensions/autoupdate.html</ph>. Note that the update URL set in this policy is only used for the initial installation; subsequent updates of the extension will use the update URL indicated in the extension's manifest.
 
           For each item, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retrieve the extension specified by the extension ID from the update service at the specified update URL and silently install it.
 
@@ -1106,6 +1264,10 @@
         {
           'name': 'ExtensionInstallSources',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:21-', 'chrome_os:21-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['https://corp.mycompany.com/*'],
@@ -1113,9 +1275,9 @@
           'caption': '''Configure extension, app, and user script install sources''',
           'desc': '''Allows you to specify which URLs are allowed to install extensions, apps, and themes.
 
-          Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store. Previously, users could click on a link to a *.crx file, and Chrome would offer to install the file after a few warnings. After Chrome 21, such files must be downloaded an dragged onto the Chrome settings page. This setting allows specific URLs to have the old, easier installation flow.
+          Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store. Previously, users could click on a link to a *.crx file, and Chrome would offer to install the file after a few warnings. After Chrome 21, such files must be downloaded and dragged onto the Chrome settings page. This setting allows specific URLs to have the old, easier installation flow.
 
-          Each item in this list is an extension-style match pattern (see http://code.google.com/chrome/extensions/match_patterns.html). Users will be able to easily install items from any URL that matches an item in this list.
+          Each item in this list is an extension-style match pattern (see http://code.google.com/chrome/extensions/match_patterns.html). Users will be able to easily install items from any URL that matches an item in this list. Both the location of the *.crx file and the page where the download is started from (i.e. the referrer) must be allowed by these patterns.
 
           ExtensionInstallBlacklist takes precedence over this policy. That is, an extension on the blacklist won't be installed, even if it happens from a site on this list.''',
           'label': '''URL patterns to allow extension, app, and user script installs from''',
@@ -1125,6 +1287,7 @@
     {
       'name': 'ShowHomeButton',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -1146,6 +1309,7 @@
     {
       'name': 'DeveloperToolsDisabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': False,
@@ -1168,21 +1332,25 @@
         {
           'name': 'RestoreOnStartup',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 4, 5 ],
+          },
           'items': [
             {
               'name': 'RestoreOnStartupIsNewTabPage',
               'value': 5,
-              'caption': '''Open New Tab Page'''
+              'caption': '''Open New Tab Page''',
             },
             {
               'name': 'RestoreOnStartupIsLastSession',
               'value': 1,
-              'caption': '''Restore the last session'''
+              'caption': '''Restore the last session''',
             },
             {
               'name': 'RestoreOnStartupIsURLs',
               'value': 4,
-              'caption': '''Open a list of URLs'''
+              'caption': '''Open a list of URLs''',
             },
           ],
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
@@ -1211,6 +1379,10 @@
           # after fixing http://crbug.com/106684
           'name': 'RestoreOnStartupURLs',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://example.com', 'http://chromium.org'],
@@ -1225,6 +1397,7 @@
     {
       'name': 'BlockThirdPartyCookies',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -1252,6 +1425,7 @@
         {
           'name': 'DefaultSearchProviderEnabled',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': True,
@@ -1272,6 +1446,7 @@
         {
           'name': 'DefaultSearchProviderName',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'My Intranet Search',
@@ -1284,6 +1459,7 @@
         {
           'name': 'DefaultSearchProviderKeyword',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'mis',
@@ -1298,6 +1474,7 @@
         {
           'name': 'DefaultSearchProviderSearchURL',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://search.my.company/search?q={searchTerms}',
@@ -1310,6 +1487,7 @@
         {
           'name': 'DefaultSearchProviderSuggestURL',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://search.my.company/suggest?q={searchTerms}',
@@ -1324,6 +1502,7 @@
         {
           'name': 'DefaultSearchProviderInstantURL',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://search.my.company/suggest?q={searchTerms}',
@@ -1338,6 +1517,7 @@
         {
           'name': 'DefaultSearchProviderIconURL',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'http://search.my.company/favicon.ico',
@@ -1352,6 +1532,10 @@
         {
           'name': 'DefaultSearchProviderEncodings',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['UTF-8', 'UTF-16', 'GB2312', 'ISO-8859-1'],
@@ -1376,21 +1560,25 @@
         {
           'name': 'DefaultCookiesSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2, 4 ],
+          },
           'items': [
             {
               'name': 'AllowCookies',
               'value': 1,
-              'caption': '''Allow all sites to set local data.'''
+              'caption': '''Allow all sites to set local data.''',
             },
             {
               'name': 'BlockCookies',
               'value': 2,
-              'caption': '''Do not allow any site to set local data'''
+              'caption': '''Do not allow any site to set local data''',
             },
             {
               'name': 'SessionOnly',
               'value': 4,
-              'caption': '''Keep cookies for the duration of the session.'''
+              'caption': '''Keep cookies for the duration of the session.''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1405,16 +1593,20 @@
         {
           'name': 'DefaultImagesSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2 ],
+          },
           'items': [
             {
               'name': 'AllowImages',
               'value': 1,
-              'caption': '''Allow all sites to show all images'''
+              'caption': '''Allow all sites to show all images''',
             },
             {
               'name': 'BlockImages',
               'value': 2,
-              'caption': '''Do not allow any site to show images'''
+              'caption': '''Do not allow any site to show images''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1429,16 +1621,20 @@
         {
           'name': 'DefaultJavaScriptSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2 ],
+          },
           'items': [
             {
               'name': 'AllowJavaScript',
               'value': 1,
-              'caption': '''Allow all sites to run JavaScript'''
+              'caption': '''Allow all sites to run JavaScript''',
             },
             {
               'name': 'BlockJavaScript',
               'value': 2,
-              'caption': '''Do not allow any site to run JavaScript'''
+              'caption': '''Do not allow any site to run JavaScript''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1453,16 +1649,25 @@
         {
           'name': 'DefaultPluginsSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2, 3 ],
+          },
           'items': [
             {
               'name': 'AllowPlugins',
               'value': 1,
-              'caption': '''Allow all sites to automatically run plugins'''
+              'caption': '''Allow all sites to automatically run plugins''',
             },
             {
               'name': 'BlockPlugins',
               'value': 2,
-              'caption': '''Block all plugins'''
+              'caption': '''Block all plugins''',
+            },
+            {
+              'name': 'ClickToPlay',
+              'value': 3,
+              'caption': '''Click to play''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1472,21 +1677,27 @@
           'caption': '''Default plugins setting''',
           'desc': '''Allows you to set whether websites are allowed to automatically run plugins. Automatically running plugins can be either allowed for all websites or denied for all websites.
 
+          Click to play allows plugins to run but the user must click them to start their execution.
+
           If this policy is left not set, 'AllowPlugins' will be used and the user will be able to change it.''',
         },
         {
           'name': 'DefaultPopupsSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2 ],
+          },
           'items': [
             {
               'name': 'AllowPopups',
               'value': 1,
-              'caption': '''Allow all sites to show pop-ups'''
+              'caption': '''Allow all sites to show pop-ups''',
             },
             {
               'name': 'BlockPopups',
               'value': 2,
-              'caption': '''Do not allow any site to show popups'''
+              'caption': '''Do not allow any site to show popups''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1501,21 +1712,25 @@
         {
           'name': 'DefaultNotificationsSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2, 3 ],
+          },
           'items': [
             {
               'name': 'AllowNotifications',
               'value': 1,
-              'caption': '''Allow sites to show desktop notifications'''
+              'caption': '''Allow sites to show desktop notifications''',
             },
             {
               'name': 'BlockNotifications',
               'value': 2,
-              'caption': '''Do not allow any site to show desktop notifications'''
+              'caption': '''Do not allow any site to show desktop notifications''',
             },
             {
               'name': 'AskNotifications',
               'value': 3,
-              'caption': '''Ask every time a site wants to show desktop notifications'''
+              'caption': '''Ask every time a site wants to show desktop notifications''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1530,21 +1745,25 @@
         {
           'name': 'DefaultGeolocationSetting',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2, 3 ],
+          },
           'items': [
             {
               'name': 'AllowGeolocation',
               'value': 1,
-              'caption': '''Allow sites to track the users' physical location'''
+              'caption': '''Allow sites to track the users' physical location''',
             },
             {
               'name': 'BlockGeolocation',
               'value': 2,
-              'caption': '''Do not allow any site to track the users' physical location'''
+              'caption': '''Do not allow any site to track the users' physical location''',
             },
             {
               'name': 'AskGeolocation',
               'value': 3,
-              'caption': '''Ask whenever a site wants to track the users' physical location'''
+              'caption': '''Ask whenever a site wants to track the users' physical location''',
             },
           ],
           'supported_on': ['chrome.*:10-', 'chrome_os:0.11-'],
@@ -1557,8 +1776,40 @@
           If this policy is left not set, 'AskGeolocation' will be used and the user will be able to change it.''',
         },
         {
+          'name': 'DefaultMediaStreamSetting',
+          'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 1, 2 ],
+          },
+          'items': [
+            {
+              'name': 'PromptOnAccess',
+              'value': 1,
+              'caption': '''Ask every time a site wants to access my camera and/or microphone''',
+            },
+            {
+              'name': 'BlockAccess',
+              'value': 2,
+              'caption': '''Do not allow any site to access my camera and microphone''',
+            },
+          ],
+          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': 2,
+          'id': 149,
+          'caption': '''Default mediastream setting''',
+          'desc': '''Allows you to set whether websites are allowed to get access to media capture devices. Access to media capture devices can be allowed by default, or the user can be asked every time a website wants to get access to media capture devices.
+
+          If this policy is left not set, 'PromptOnAccess' will be used and the user will be able to change it.''',
+        },
+        {
           'name': 'AutoSelectCertificateForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
           'features': {'dynamic_refresh': True},
           'example_value': ["{\\\"pattern\\\":\\\"https://www.example.com\\\",\\\"filter\\\":{\\\"ISSUER\\\":{\\\"CN\\\":\\\"certificate issuer name\\\"}}}"],
@@ -1571,6 +1822,10 @@
         {
           'name': 'CookiesAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1583,6 +1838,10 @@
         {
           'name': 'CookiesBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1595,6 +1854,10 @@
         {
           'name': 'CookiesSessionOnlyForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1609,6 +1872,10 @@
         {
           'name': 'ImagesAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1621,6 +1888,10 @@
         {
           'name': 'ImagesBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1633,6 +1904,10 @@
         {
           'name': 'JavaScriptAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1645,6 +1920,10 @@
         {
           'name': 'JavaScriptBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1657,6 +1936,10 @@
         {
           'name': 'PluginsAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1669,6 +1952,10 @@
         {
           'name': 'PluginsBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1681,6 +1968,10 @@
         {
           'name': 'PopupsAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1693,6 +1984,10 @@
         {
           'name': 'PopupsBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1705,6 +2000,10 @@
         {
           'name': 'NotificationsAllowedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:16-', 'chrome_os:0.16-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1717,6 +2016,10 @@
         {
           'name': 'NotificationsBlockedForUrls',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome.*:16-', 'chrome_os:0.16-'],
           'features': {'dynamic_refresh': True},
           'example_value': ['http://www.example.com', '[*.]example.edu'],
@@ -1725,12 +2028,13 @@
           'desc': '''Allows you to set a list of url patterns that specify sites which are not allowed to display notifications.
 
           If this policy is left not set the global default value will be used for all sites either from the 'DefaultNotificationsSetting' policy if it is set, or the user's personal configuration otherwise.''',
-        }
+        },
       ],
     },
     {
       'name': 'Disable3DAPIs',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
       'features': {'dynamic_refresh': False},
       'example_value': False,
@@ -1745,6 +2049,7 @@
     {
       'name': 'PolicyRefreshRate',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:0.11-'],
       'features': {'dynamic_refresh': True},
       'example_value': 3600000,
@@ -1768,16 +2073,20 @@
         {
           'name': 'ChromeFrameRendererSettings',
           'type': 'int-enum',
+          'schema': {
+            'type': 'integer',
+            'enum': [ 0, 1 ],
+          },
           'items': [
             {
               'name': 'RenderInHost',
               'value': 0,
-              'caption': '''Use the host browser by default'''
+              'caption': '''Use the host browser by default''',
             },
             {
               'name': 'RenderInChromeFrame',
               'value': 1,
-              'caption': '''Use <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> by default'''
+              'caption': '''Use <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> by default''',
             },
           ],
           'supported_on': ['chrome_frame:8-'],
@@ -1791,6 +2100,10 @@
         {
           'name': 'RenderInChromeFrameList',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome_frame:8-'],
           'features': {'dynamic_refresh': False},
           'example_value': ['http://www.example.com', 'http://www.example.edu'],
@@ -1805,6 +2118,10 @@
         {
           'name': 'RenderInHostList',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome_frame:8-'],
           'features': {'dynamic_refresh': False},
           'example_value': ['http://www.example.com', 'http://www.example.edu'],
@@ -1819,6 +2136,7 @@
         {
           'name': 'AdditionalLaunchParameters',
           'type': 'string',
+          'schema': { 'type': 'string' },
           'supported_on': ['chrome_frame:19-'],
           'features': {'dynamic_refresh': False},
           'example_value': '--enable-media-stream --enable-media-source',
@@ -1833,17 +2151,21 @@
     {
       'name': 'ChromeFrameContentTypes',
       'type': 'group',
-      'caption': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the following content types.''',
+      'caption': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the following content types''',
       'desc': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the following content types.''',
       'policies': [
         {
           'name': 'ChromeFrameContentTypes',
           'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
           'supported_on': ['chrome_frame:8-'],
           'features': {'dynamic_refresh': False},
           'example_value': ['text/xml', 'application/xml'],
           'id': 60,
-          'caption': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the listed content types.''',
+          'caption': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the listed content types''',
           'desc': '''Allow <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> to handle the listed content types.
 
           If this policy is not set the default renderer will be used for all sites as specified by the 'ChromeFrameRendererSettings' policy.''',
@@ -1853,6 +2175,7 @@
     {
       'name': 'ChromeOsLockOnIdleSuspend',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:0.9-'],
       'features': {
         'dynamic_refresh': True,
@@ -1860,7 +2183,7 @@
       },
       'example_value': True,
       'id': 61,
-      'caption': '''Enable lock when the device become idle or suspended.''',
+      'caption': '''Enable lock when the device become idle or suspended''',
       'desc': '''Enable lock when <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices become idle or suspended.
 
       If you enable this setting, users will be asked for a password to unlock the device from sleep.
@@ -1874,6 +2197,7 @@
     {
       'name': 'InstantEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:11-', 'chrome_os:0.11-'],
       'features': {
         'dynamic_refresh': True,
@@ -1895,6 +2219,7 @@
     {
       'name': 'TranslateEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
       'features': {
         'dynamic_refresh': True,
@@ -1916,6 +2241,7 @@
     {
       'name': 'AllowOutdatedPlugins',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -1932,6 +2258,7 @@
     {
       'name': 'AlwaysAuthorizePlugins',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:13-', 'chrome_os:0.13-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -1946,6 +2273,7 @@
     {
       'name': 'BookmarkBarEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
       'features': {
         'dynamic_refresh': True,
@@ -1967,6 +2295,7 @@
     {
       'name': 'EditBookmarksEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:12-', 'chrome_os:0.12-'],
       'features': {'dynamic_refresh': True},
       'example_value': False,
@@ -1981,6 +2310,7 @@
     {
       'name': 'AllowFileSelectionDialogs',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:12-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -1997,6 +2327,7 @@
     {
       'name': 'GCFUserDataDir',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome_frame:12-'],
       'features': {'dynamic_refresh': False},
       'example_value': '${user_home}/Chrome Frame',
@@ -2012,6 +2343,7 @@
     {
       'name': 'DevicePolicyRefreshRate',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:0.11-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2027,6 +2359,7 @@
     {
       'name': 'ImportBookmarks',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
       'features': {
         'dynamic_refresh': True,
@@ -2045,6 +2378,7 @@
     {
       'name': 'ImportHistory',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
       'features': {
         'dynamic_refresh': True,
@@ -2063,6 +2397,7 @@
     {
       'name': 'ImportHomepage',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
       'features': {
         'dynamic_refresh': True,
@@ -2081,6 +2416,7 @@
     {
       'name': 'ImportSearchEngine',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
       'features': {
         'dynamic_refresh': True,
@@ -2099,6 +2435,7 @@
     {
       'name': 'ImportSavedPasswords',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
       'features': {
         'dynamic_refresh': True,
@@ -2117,12 +2454,13 @@
     {
       'name': 'MaxConnectionsPerProxy',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome.*:14-', 'chrome_os:0.14-'],
       'features': {'dynamic_refresh': False},
       'example_value': 32,
       'id': 92,
       'caption': '''Maximal number of concurrent connections to the proxy server''',
-      'desc': '''Specifies the maximal number of simultanious connections to the proxy server.
+      'desc': '''Specifies the maximal number of simultaneous connections to the proxy server.
 
       Some proxy servers can not handle high number of concurrent connections per client and this can be solved by setting this policy to a lower value.
 
@@ -2135,7 +2473,9 @@
     {
       'name': 'HideWebStorePromo',
       'type': 'main',
-      'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:15-21', 'chrome_os:0.15-21'],
+      'deprecated': True,
       'features': {'dynamic_refresh': False},
       'example_value': False,
       'id': 96,
@@ -2147,6 +2487,10 @@
     {
       'name': 'URLBlacklist',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['example.com', 'https://ssl.server.com', 'hosting.com/bad_path', 'http://server:8080/path', '.exact.hostname.com', '*'],
@@ -2169,6 +2513,10 @@
     {
       'name': 'URLWhitelist',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome.*:15-', 'chrome_os:0.15-'],
       'features': {'dynamic_refresh': True},
       'example_value': ['example.com', 'https://ssl.server.com', 'hosting.com/bad_path', 'http://server:8080/path', '.exact.hostname.com'],
@@ -2189,6 +2537,7 @@
     {
       'name': 'OpenNetworkConfiguration',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome_os:0.16-'],
       'features': {'dynamic_refresh': True},
       'example_value': '{ "NetworkConfigurations": [ { "GUID": "{4b224dfd-6849-7a63-5e394343244ae9c9}", "Name": "my WiFi", "Type": "WiFi", "WiFi": { "SSID": "my WiFi", "HiddenSSID": false, "Security": "None", "AutoConnect": true } } ] }',
@@ -2199,6 +2548,7 @@
     {
       'name': 'DeviceOpenNetworkConfiguration',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome_os:0.16-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2206,11 +2556,12 @@
       'example_value': '{ "NetworkConfigurations": [ { "GUID": "{4b224dfd-6849-7a63-5e394343244ae9c9}", "Name": "my WiFi", "Type": "WiFi", "WiFi": { "SSID": "my WiFi", "HiddenSSID": false, "Security": "None", "AutoConnect": true } } ] }',
       'id': 108,
       'caption': '''Device-level network configuration''',
-      'desc': '''Allows pushing network configuration to be applied for all useers of a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at <ph name="ONC_SPEC_URL">https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration</ph>''',
+      'desc': '''Allows pushing network configuration to be applied for all users of a <ph name="PRODUCT_OS_NAME">$2<ex>Chromium OS</ex></ph> device. The network configuration is a JSON-formatted string as defined by the Open Network Configuration format described at <ph name="ONC_SPEC_URL">https://sites.google.com/a/chromium.org/dev/chromium-os/chromiumos-design-docs/open-network-configuration</ph>''',
     },
     {
       'name': 'CloudPrintSubmitEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -2225,6 +2576,7 @@
     {
       'name': 'EnterpriseWebStoreURL',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.*:17-', 'chrome_os:0.17-'],
       'features': {'dynamic_refresh': True},
       'example_value': 'http://company-intranet/chromeapps',
@@ -2237,6 +2589,7 @@
     {
       'name': 'EnterpriseWebStoreName',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.*:17-', 'chrome_os:0.17-'],
       'features': {'dynamic_refresh': True},
       'example_value': 'WidgCo Chrome Apps',
@@ -2249,6 +2602,7 @@
     {
       'name': 'EnableOriginBoundCerts',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:17-'],
       'features': {'dynamic_refresh': True},
       'future': True,
@@ -2262,6 +2616,7 @@
     {
       'name': 'EnableMemoryInfo',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:17-', 'chrome_os:0.18-'],
       'features': {'dynamic_refresh': True},
       'future': True,
@@ -2275,18 +2630,18 @@
     {
       'name': 'DisablePrintPreview',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:18-'],
       'features': {'dynamic_refresh': False},
       'example_value': False,
       'id': 117,
       'caption': '''Disable Print Preview''',
-      'desc': '''Disable print preview.
-
-      This setting is used to force the use of the system print dialog instead of print preview.''',
+      'desc': '''This setting is used to force the use of the system print dialog instead of print preview.''',
     },
     {
       'name': 'DisableSSLRecordSplitting',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:18-', 'chrome_os:0.18-'],
       'features': {'dynamic_refresh': True},
       'example_value': True,
@@ -2299,6 +2654,7 @@
     {
       'name': 'EnableOnlineRevocationChecks',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:19-', 'chrome_os:0.19-'],
       'features': {'dynamic_refresh': True},
       'example_value': False,
@@ -2311,12 +2667,13 @@
     {
       'name': 'ReportDeviceVersionInfo',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:0.18-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
       'example_value': False,
       'id': 119,
-      'caption': '''Report OS and firmware version.''',
+      'caption': '''Report OS and firmware version''',
       'desc': '''Report OS and firmware version of enrolled devices.
 
       If this setting is set to True, enrolled devices will report the OS and firmware version periodically. If this setting is not set or set to False, version info will not be reported.''',
@@ -2324,6 +2681,7 @@
     {
       'name': 'ReportDeviceActivityTimes',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:18-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2337,6 +2695,7 @@
     {
       'name': 'ReportDeviceBootMode',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:18-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2350,6 +2709,7 @@
     {
       'name': 'ReportDeviceLocation',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:20-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2364,6 +2724,10 @@
     {
       'name': 'DeviceUserWhitelist',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome_os:12-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2372,11 +2736,12 @@
       'caption': '''Login user white list''',
       'desc': '''Defines the list of users that are allowed to login to the device. Entries are of the form <ph name="USER_WHITELIST_ENTRY_FORMAT">user@domain</ph>, such as <ph name="USER_WHITELIST_ENTRY_EXAMPLE">madmax@managedchrome.com</ph>. To allow arbitrary users on a domain, use entries of the form <ph name="USER_WHITELIST_ENTRY_WILDCARD">*@domain</ph>.
 
-      If this policy is not configured, there are no restrictions on the what users are allowed to sign in. Note that creating new users still requires the <ph name="DEVICEALLOWNEWUSERS_POLICY_NAME">DeviceAllowNewUsers</ph> policy to be configured appropriately.''',
+      If this policy is not configured, there are no restrictions on which users are allowed to sign in. Note that creating new users still requires the <ph name="DEVICEALLOWNEWUSERS_POLICY_NAME">DeviceAllowNewUsers</ph> policy to be configured appropriately.''',
     },
     {
       'name': 'DeviceAllowNewUsers',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:12-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2390,6 +2755,7 @@
     {
       'name': 'DeviceGuestModeEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:12-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2403,6 +2769,7 @@
     {
       'name': 'DeviceShowUserNamesOnSignin',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:12-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2414,6 +2781,7 @@
     {
       'name': 'DeviceDataRoamingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:12-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2425,6 +2793,7 @@
     {
       'name': 'DeviceMetricsReportingEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:14-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2436,22 +2805,26 @@
     {
       'name': 'ChromeOsReleaseChannel',
       'type': 'string-enum',
+      'schema': {
+        'type': 'string',
+        'enum': [ 'stable-channel', 'beta-channel', 'dev-channel' ],
+      },
       'items': [
         {
           'name': 'StableChannel',
           'value': 'stable-channel',
-          'caption': '''Stable channel'''
+          'caption': '''Stable channel''',
         },
         {
           'name': 'BetaChannel',
           'value': 'beta-channel',
-          'caption': '''Beta channel'''
+          'caption': '''Beta channel''',
         },
         {
           'name': 'DevChannel',
           'value': 'dev-channel',
-          'caption': '''Dev channel (may be unstable)'''
-        }
+          'caption': '''Dev channel (may be unstable)''',
+        },
       ],
       'supported_on': ['chrome_os:0.11-'],
       'device_only': True,
@@ -2459,24 +2832,26 @@
       'example_value': 'stable-channel',
       'id': 91,
       'caption': '''Release channel''',
-      'desc': '''Specifies the release channel that this device should be locked to.'''
+      'desc': '''Specifies the release channel that this device should be locked to.''',
     },
     {
       'name': 'ChromeOsReleaseChannelDelegated',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:0.19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
       'example_value': False,
       'id': 134,
-      'caption': '''Wether the release channel should be settable by the user or locked.''',
-      'desc': '''If this policy is set to True and the ChromeOsReleaseChannel policy is not specified the users of the enrolling domain will be allowed to change the release channel of the device. If this policy is set to false the device will be locked in whatever channel it was last set.
+      'caption': '''Whether the release channel should be configurable by the user''',
+      'desc': '''If this policy is set to True and the ChromeOsReleaseChannel policy is not specified then users of the enrolling domain will be allowed to change the release channel of the device. If this policy is set to false the device will be locked in whatever channel it was last set.
 
-      The user selected channel will be overriden by the ChromeOsReleaseChannel policy but if the policy channel is more stable than the one that was installed on the device, channel switch might will only after the version of the more stable channel reaches number higher than the one installed on the device.''',
+      The user selected channel will be overridden by the ChromeOsReleaseChannel policy, but if the policy channel is more stable than the one that was installed on the device, then the channel will only switch after the version of the more stable channel reaches a higher version number than the one installed on the device.''',
     },
     {
       'name': 'DeviceEphemeralUsersEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2488,6 +2863,10 @@
     {
       'name': 'DeviceStartUpUrls',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2501,6 +2880,7 @@
     {
       'name': 'DeviceIdleLogoutTimeout',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2509,13 +2889,14 @@
       'caption': '''Timeout until idle user log-out is executed''',
       'desc': '''This policy is active in retail mode only.
 
-      When the value of this policy is set and is not 0 the currently logged in demo user will be logged out automatically after the specified time.
+      When the value of this policy is set and is not 0 then the currently logged in demo user will be logged out automatically after an inactivity time of the specified duration has elapsed.
 
       The policy value should be specified in milliseconds.''',
     },
     {
       'name': 'DeviceIdleLogoutWarningDuration',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2531,6 +2912,7 @@
     {
       'name': 'DeviceLoginScreenSaverId',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2539,11 +2921,12 @@
       'caption': '''Screen saver to be used on the sign-in screen in retail mode''',
       'desc': '''This policy is active in retail mode only.
 
-      Determines the id of the extension to be used as a screen saver on the sign-in screen. The extension must be part of the AppPack that is configured for this domain through the AppPacks policy.''',
+      Determines the id of the extension to be used as a screen saver on the sign-in screen. The extension must be part of the AppPack that is configured for this domain through the DeviceAppPack policy.''',
     },
     {
       'name': 'DeviceLoginScreenSaverTimeout',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2559,21 +2942,26 @@
     {
       'name': 'DeviceAppPack',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
-      'example_value': [ { "extension-id": "khgabmflimjjbclkmljlpmgaleanedem", "update-url": "http://clients2.google.com/service/update2/crx", "online-only": True, } ],
+      'example_value': [ { "extension-id": "khgabmflimjjbclkmljlpmgaleanedem", "update-url": "http://clients2.google.com/service/update2/crx" } ],
       'id': 135,
       'caption': '''List of AppPack extensions''',
       'desc': '''This policy is active in retail mode only.
 
       Lists extensions that are automatically installed for the Demo user, for devices in retail mode. These extensions are saved in the device and can be installed while offline, after the installation.
 
-      Each list entry contains a dictionary that must include the extension ID in the 'extension-id' field, and its update URL in the 'update-url' field. The optional 'online-only' field can be set to True to indicate that this extension should be installed only when the device is online at sign-in time.''',
+      Each list entry contains a dictionary that must include the extension ID in the 'extension-id' field, and its update URL in the 'update-url' field.''',
     },
     {
       'name': 'DeviceAutoUpdateDisabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2587,6 +2975,7 @@
     {
       'name': 'DeviceTargetVersionPrefix',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome_os:19-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
@@ -2600,37 +2989,41 @@
       "" (or not configured): update to latest version available.
       "1412.": update to any minor version of 1412 (e.g. 1412.24.34 or 1412.60.2)
       "1412.2.": update to any minor version of 1412.2 (e.g. 1412.2.34 or 1412.2.2)
-      "1412.24.34": update to this specific version only
-      '''
+      "1412.24.34": update to this specific version only''',
     },
     {
       'name': 'DeviceUpdateScatterFactor',
       'type': 'int',
+      'schema': { 'type': 'integer' },
       'supported_on': ['chrome_os:20-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
       'example_value': 7200,
       'id': 145,
       'caption': '''Auto update scatter factor''',
-      'desc': '''Specifies the number of seconds up to which a device may randomly delay its download of an update from the time the update was first pushed out to the server. The device may wait a portion of this time in terms of wall-clock-time and the remaining portion in terms of the number of update checks. In any case, the scatter is upper bounded to a constant amount of time so that a device does not ever get stuck waiting to download an update forever.'''
+      'desc': '''Specifies the number of seconds up to which a device may randomly delay its download of an update from the time the update was first pushed out to the server. The device may wait a portion of this time in terms of wall-clock-time and the remaining portion in terms of the number of update checks. In any case, the scatter is upper bounded to a constant amount of time so that a device does not ever get stuck waiting to download an update forever.''',
     },
     {
       'name': 'DeviceUpdateAllowedConnectionTypes',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome_os:21-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
       'example_value': [ 'ethernet' ],
       'id': 146,
       'caption': '''Connection types allowed for updates''',
-      'desc': ''' The types of connections that are OK to use for OS updates. OS updates potentially put heavy strain on the connection due to their size and may incur additional cost. Therefore, they are by default not enabled for connection types that are considered expensive, which include WiMax, Bluetooth and Cellular at the moment.
+      'desc': ''' The types of connections that are allowed to use for OS updates. OS updates potentially put heavy strain on the connection due to their size and may incur additional cost. Therefore, they are by default not enabled for connection types that are considered expensive, which include WiMax, Bluetooth and Cellular at the moment.
 
-      The recognized connection type identifiers are ethernet, wifi, wimax, bluetooth, cellular.
-      '''
+      The recognized connection type identifiers are "ethernet", "wifi", "wimax", "bluetooth" and "cellular".''',
     },
     {
       'name': 'BackgroundModeEnabled',
       'type': 'main',
+      'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.win:19-', 'chrome.linux:19-'],
       'features': {
         'dynamic_refresh': True,
@@ -2656,36 +3049,38 @@
         {
           'name': 'GDataDisabled',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome_os:19-'],
           'features': {'dynamic_refresh': True},
           'example_value': True,
           'id': 139,
           'caption': '''Disables GData''',
-          'desc': '''Disables Google Docs syncing when set to True.
+          'desc': '''Disables Google Docs syncing when set to True. In that case, no data is uploaded to Google Docs.
 
-          - i.e. no data is uploaded to Google Docs.
-
-          - if not set or false, users will be able to transfer files to Google Docs.''',
+          If not set or set to False, then users will be able to transfer files to Google Docs.''',
         },
         {
           'name': 'GDataDisabledOverCellular',
           'type': 'main',
+          'schema': { 'type': 'boolean' },
           'supported_on': ['chrome_os:19-'],
           'features': {'dynamic_refresh': True},
           'example_value': True,
           'id': 140,
           'caption': '''Disables GData over Cellular connections''',
-          'desc': '''Disables Google Docs syncing when using a cellular connection when set to True.
+          'desc': '''Disables Google Docs syncing when using a cellular connection when set to True. In that case, data is only synced to Google Docs when connected via WiFi or Ethernet.
 
-          - i.e. data is only synced to Google Docs when connected via WiFi or Ethernet.
-
-          - if not set or false, users will be able to transfer files to Google Docs via cellular connections.''',
+          If not set or set to False, then users will be able to transfer files to Google Docs via cellular connections.''',
         },
       ],
     },
     {
       'name': 'PinnedLauncherApps',
       'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
       'supported_on': ['chrome_os:20-' ],
       'features': {
         'dynamic_refresh': True,
@@ -2703,18 +3098,131 @@
     {
       'name': 'RestrictSigninToPattern',
       'type': 'string',
+      'schema': { 'type': 'string' },
       'supported_on': ['chrome.*:21-'],
-      'features': {
-        'dynamic_refresh': True,
-      },
+      'features': {'dynamic_refresh': True},
       'example_value': '*@domain.com',
       'id': 147,
-      'caption': '''Restrict which users are allowed to sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
+      'caption': '''Restrict which users are allowed to sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>''',
       'desc': '''Contains a regular expression which is used to determine which users can sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       An appropriate error is displayed if a user tries to log in with a username that does not match this pattern.
 
       If this policy is left not set or blank, then any user can sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
+    },
+    {
+      'name': 'DisableSafeBrowsingProceedAnyway',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 150,
+      'caption': '''Disable proceeding from the Safe Browsing warning page''',
+      'desc': '''The Safe Browsing service shows a warning page when users navigate to sites that are flagged as potentially mallicious. Enabling this setting prevents users from proceeding anyway from the warning page to the malicious site.
+
+      If this setting is disabled or not configured then users can choose to proceed to the flagged site after being shown the warning.''',
+    },
+    {
+      'name': 'SpellCheckServiceEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': False,
+      'id': 151,
+      'caption': '''Enable or disable spell checking web service''',
+      'desc': '''<ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> can use a Google web service to help resolve spelling errors. If this setting is enabled, then this service is always used. If this setting is disabled, then this service is never used.
+
+      Spell checking can still be performed using a downloaded dictionary; this policy only controls the usage of the online service.
+
+      If this setting is not configured then users can choose whether the spell checking service should be used or not.''',
+    },
+    {
+      'name': 'ExternalStorageDisabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:0.22-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': True,
+      'id': 152,
+      'caption': '''Disable mounting of external storage''',
+      'desc': '''Disable mounting of external storage.
+
+      When this policy is set to true, external storage will not be available in the file browser.
+
+      This policy affects all types of storage media. For example: USB flash drives, external hard drives, SD and other memory cards, optical storage etc. Internal storage is not affected, therefore files saved in the Download folder can still be accessed. Google Drive is also not affected by this policy.
+
+      If this setting is disabled or not configured then users can use all supported types of external storage on their device.''',
+    },
+    {
+      'name': 'AudioOutputAllowed',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:0.23-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': False,
+      'id': 159,
+      'caption': '''Allow playing audio''',
+      'desc': '''Allow playing audio.
+
+      When this policy is set to false, audio output will not be available on the device while the user is logged in.
+
+      This policy affects all types of audio output and not only the built-in speakers. Audio accessability features are also inhibited by this policy. Do not enable this policy if a screen reader is required for the user.
+
+      If this setting is set to true or not configured then users can use all supported audio outputs on their device.''',
+    },
+    {
+      'name': 'AudioCaptureAllowed',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:0.23-'],
+      'features': {'dynamic_refresh': True},
+      'example_value': False,
+      'id': 160,
+      'caption': '''Allow capturing audio''',
+      'desc': '''Allow capturing audio.
+
+      When this policy is set to false, audio capturing will not be available on the device while the user is logged in.
+
+      This policy affects all types of audio inputs and not only the built-in microphone.
+
+      If this setting is set to true or not configured then users can use all supported audio inputs on their device.''',
+    },
+    {
+      'name': 'DisableScreenshots',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:22-', 'chrome.*:22-'],
+      'features': {
+        'dynamic_refresh': True,
+      },
+      'example_value': True,
+      'id': 153,
+      'caption': '''Disable taking screenshots''',
+      'desc': '''Disables taking screenshots.
+
+      If enabled screenshots cannot be taken using keyboard shortcuts or extension APIs.
+
+      If disabled or not specified, taking screenshots is allowed.'''
+    },
+    {
+      'name': 'SystemTimezone',
+      'type': 'string',
+      'schema': { 'type': 'string' },
+      'supported_on': ['chrome_os:22-'],
+      'device_only': True,
+      'features': {'dynamic_refresh': True},
+      'example_value': 'America/Los_Angeles',
+      'id': 158,
+      'caption': '''Timezone''',
+      'desc': '''Specifies the timezone to be used for the device. Users can override the specified timezone for the current session. However, on logout it is set back to the specified timezone. If an invalid value is provided, the policy is still activated using "GMT" instead.
+
+      If this policy is not used, the currently active timezone will remain in use however users can change the timezone and the change is persistent. Thus a change by one user affects the login-screen and all other users.
+
+      New devices start out with the timezone set to "US/Pacific".
+
+      The format of the value follows the names of timezones in the "IANA Time Zone Database" (see "http://en.wikipedia.org/wiki/List_of_tz_database_time"). In particular, most timezones can be referred to by "continent/large_city" or "ocean/large_city".''',
     },
   ],
   'messages': {

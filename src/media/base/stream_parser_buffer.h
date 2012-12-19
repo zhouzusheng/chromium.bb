@@ -12,19 +12,31 @@ namespace media {
 
 class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
  public:
+  // Value used to signal an invalid decoder config ID.
+  enum { kInvalidConfigId = -1 };
+
   static scoped_refptr<StreamParserBuffer> CreateEOSBuffer();
   static scoped_refptr<StreamParserBuffer> CopyFrom(
       const uint8* data, int data_size, bool is_keyframe);
   bool IsKeyframe() const { return is_keyframe_; }
 
-  // Returns this buffer's timestamp + duration, assuming both are valid.
-  base::TimeDelta GetEndTimestamp() const;
+  // Decode timestamp. If not explicitly set, or set to kNoTimestamp(), the
+  // value will be taken from the normal timestamp.
+  base::TimeDelta GetDecodeTimestamp() const;
+  void SetDecodeTimestamp(const base::TimeDelta& timestamp);
+
+  // Gets/sets the ID of the decoder config associated with this
+  // buffer.
+  int GetConfigId() const;
+  void SetConfigId(int config_id);
 
  private:
   StreamParserBuffer(const uint8* data, int data_size, bool is_keyframe);
   virtual ~StreamParserBuffer();
 
   bool is_keyframe_;
+  base::TimeDelta decode_timestamp_;
+  int config_id_;
   DISALLOW_COPY_AND_ASSIGN(StreamParserBuffer);
 };
 

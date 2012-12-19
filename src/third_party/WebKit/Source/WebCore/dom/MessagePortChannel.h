@@ -31,16 +31,14 @@
 #ifndef MessagePortChannel_h
 #define MessagePortChannel_h
 
-#include "PlatformString.h"
-
 #include "SerializedScriptValue.h"
-
 #include <wtf/OwnPtr.h>
 #include <wtf/Forward.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -107,7 +105,7 @@ namespace WebCore {
         PlatformMessagePortChannel* channel() const { return m_channel.get(); }
 
     private:
-        MessagePortChannel(PassRefPtr<PlatformMessagePortChannel>);
+        explicit MessagePortChannel(PassRefPtr<PlatformMessagePortChannel>);
         RefPtr<PlatformMessagePortChannel> m_channel;
     };
 

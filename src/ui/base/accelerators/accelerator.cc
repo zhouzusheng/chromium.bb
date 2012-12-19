@@ -17,7 +17,7 @@
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if !defined(OS_WIN) && defined(USE_AURA)
+#if !defined(OS_WIN) && (defined(USE_AURA) || defined(OS_MACOSX))
 #include "ui/base/keycodes/keyboard_code_conversion.h"
 #endif
 
@@ -71,15 +71,19 @@ bool Accelerator::operator !=(const Accelerator& rhs) const {
 }
 
 bool Accelerator::IsShiftDown() const {
-  return (modifiers_ & EF_SHIFT_DOWN) == EF_SHIFT_DOWN;
+  return (modifiers_ & EF_SHIFT_DOWN) != 0;
 }
 
 bool Accelerator::IsCtrlDown() const {
-  return (modifiers_ & EF_CONTROL_DOWN) == EF_CONTROL_DOWN;
+  return (modifiers_ & EF_CONTROL_DOWN) != 0;
 }
 
 bool Accelerator::IsAltDown() const {
-  return (modifiers_ & EF_ALT_DOWN) == EF_ALT_DOWN;
+  return (modifiers_ & EF_ALT_DOWN) != 0;
+}
+
+bool Accelerator::IsCmdDown() const {
+  return (modifiers_ & EF_COMMAND_DOWN) != 0;
 }
 
 string16 Accelerator::GetShortcutText() const {
@@ -146,11 +150,10 @@ string16 Accelerator::GetShortcutText() const {
     else
       key = LOWORD(::MapVirtualKeyW(key_code_, MAPVK_VK_TO_CHAR));
     shortcut += key;
-#elif defined(USE_AURA)
+#elif defined(USE_AURA) || defined(OS_MACOSX)
     const uint16 c = GetCharacterFromKeyCode(key_code_, false);
-    if (c != 0) {
+    if (c != 0)
       shortcut += static_cast<string16::value_type>(base::ToUpperASCII(c));
-    }
 #elif defined(TOOLKIT_GTK)
     const gchar* name = NULL;
     switch (key_code_) {
@@ -194,6 +197,9 @@ string16 Accelerator::GetShortcutText() const {
     shortcut = l10n_util::GetStringFUTF16(IDS_APP_CONTROL_MODIFIER, shortcut);
   else if (IsAltDown())
     shortcut = l10n_util::GetStringFUTF16(IDS_APP_ALT_MODIFIER, shortcut);
+
+  if (IsCmdDown())
+    shortcut = l10n_util::GetStringFUTF16(IDS_APP_COMMAND_MODIFIER, shortcut);
 
   // For some reason, menus in Windows ignore standard Unicode directionality
   // marks (such as LRE, PDF, etc.). On RTL locales, we use RTL menus and

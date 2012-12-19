@@ -33,6 +33,7 @@
 #include "PaintInfo.h"
 #include "RenderTableCol.h"
 #include "RenderView.h"
+#include "StyleInheritedData.h"
 #include "TransformState.h"
 
 using namespace std;
@@ -51,16 +52,12 @@ RenderTableCell::RenderTableCell(Node* node)
 {
 }
 
-void RenderTableCell::willBeDestroyed()
+void RenderTableCell::willBeRemovedFromTree()
 {
-    RenderTableSection* recalcSection = parent() ? section() : 0;
+    RenderBlock::willBeRemovedFromTree();
 
-    RenderBlock::willBeDestroyed();
-
-    if (recalcSection) {
-        recalcSection->setNeedsCellRecalc();
-        recalcSection->removeCachedCollapsedBorders(this);
-    }
+    section()->setNeedsCellRecalc();
+    section()->removeCachedCollapsedBorders(this);
 }
 
 unsigned RenderTableCell::colSpan() const
@@ -171,11 +168,11 @@ void RenderTableCell::computePreferredLogicalWidths()
     }
 }
 
-void RenderTableCell::computeLogicalWidth()
+void RenderTableCell::updateLogicalWidth()
 {
 }
 
-void RenderTableCell::updateLogicalWidth(LayoutUnit w)
+void RenderTableCell::setCellLogicalWidth(LayoutUnit w)
 {
     if (w == logicalWidth())
         return;
@@ -245,7 +242,7 @@ LayoutSize RenderTableCell::offsetFromContainer(RenderObject* o, const LayoutPoi
 
     LayoutSize offset = RenderBlock::offsetFromContainer(o, point, offsetDependsOnPoint);
     if (parent())
-        offset.expand(-parentBox()->x(), -parentBox()->y());
+        offset -= parentBox()->locationOffset();
 
     return offset;
 }

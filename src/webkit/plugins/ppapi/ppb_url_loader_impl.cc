@@ -84,6 +84,12 @@ PPB_URLLoader_Impl::PPB_URLLoader_Impl(PP_Instance instance,
 }
 
 PPB_URLLoader_Impl::~PPB_URLLoader_Impl() {
+  // There is a path whereby the destructor for the loader_ member can
+  // invoke InstanceWasDeleted() upon this PPB_URLLoader_Impl, thereby
+  // re-entering the scoped_ptr destructor with the same scoped_ptr object
+  // via loader_.reset(). Be sure that loader_ is first NULL then destroy
+  // the scoped_ptr. See http://crbug.com/159429.
+  scoped_ptr<WebKit::WebURLLoader> for_destruction_only(loader_.release());
 }
 
 PPB_URLLoader_API* PPB_URLLoader_Impl::AsPPB_URLLoader_API() {
@@ -96,7 +102,7 @@ void PPB_URLLoader_Impl::InstanceWasDeleted() {
 }
 
 int32_t PPB_URLLoader_Impl::Open(PP_Resource request_id,
-                                 PP_CompletionCallback callback) {
+                                 scoped_refptr<TrackedCallback> callback) {
   // Main document loads are already open, so don't allow people to open them
   // again.
   if (main_document_loader_)
@@ -172,7 +178,8 @@ int32_t PPB_URLLoader_Impl::Open(PP_Resource request_id,
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_URLLoader_Impl::FollowRedirect(PP_CompletionCallback callback) {
+int32_t PPB_URLLoader_Impl::FollowRedirect(
+    scoped_refptr<TrackedCallback> callback) {
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
@@ -215,9 +222,10 @@ PP_Resource PPB_URLLoader_Impl::GetResponseInfo() {
   return response_info_->GetReference();
 }
 
-int32_t PPB_URLLoader_Impl::ReadResponseBody(void* buffer,
-                                             int32_t bytes_to_read,
-                                             PP_CompletionCallback callback) {
+int32_t PPB_URLLoader_Impl::ReadResponseBody(
+    void* buffer,
+    int32_t bytes_to_read,
+    scoped_refptr<TrackedCallback> callback) {
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
@@ -244,7 +252,7 @@ int32_t PPB_URLLoader_Impl::ReadResponseBody(void* buffer,
 }
 
 int32_t PPB_URLLoader_Impl::FinishStreamingToFile(
-    PP_CompletionCallback callback) {
+    scoped_refptr<TrackedCallback> callback) {
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
@@ -388,6 +396,8 @@ void PPB_URLLoader_Impl::SetDefersLoading(bool defers_loading) {
 
 void PPB_URLLoader_Impl::FinishLoading(int32_t done_status) {
   done_status_ = done_status;
+  user_buffer_ = NULL;
+  user_buffer_size_ = 0;
   // If the client hasn't called any function that takes a callback since
   // the initial call to Open, or called ReadResponseBody and got a
   // synchronous return, then the callback will be NULL.
@@ -395,10 +405,9 @@ void PPB_URLLoader_Impl::FinishLoading(int32_t done_status) {
     RunCallback(done_status_);
 }
 
-int32_t PPB_URLLoader_Impl::ValidateCallback(PP_CompletionCallback callback) {
-  // We only support non-blocking calls.
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
+int32_t PPB_URLLoader_Impl::ValidateCallback(
+    scoped_refptr<TrackedCallback> callback) {
+  DCHECK(callback);
 
   if (TrackedCallback::IsPending(pending_callback_))
     return PP_ERROR_INPROGRESS;
@@ -406,15 +415,15 @@ int32_t PPB_URLLoader_Impl::ValidateCallback(PP_CompletionCallback callback) {
   return PP_OK;
 }
 
-void PPB_URLLoader_Impl::RegisterCallback(PP_CompletionCallback callback) {
-  DCHECK(callback.func);
+void PPB_URLLoader_Impl::RegisterCallback(
+    scoped_refptr<TrackedCallback> callback) {
   DCHECK(!TrackedCallback::IsPending(pending_callback_));
 
   PluginModule* plugin_module = ResourceHelper::GetPluginModule(this);
   if (!plugin_module)
     return;
 
-  pending_callback_ = new TrackedCallback(this, callback);
+  pending_callback_ = callback;
 }
 
 void PPB_URLLoader_Impl::RunCallback(int32_t result) {
@@ -423,6 +432,10 @@ void PPB_URLLoader_Impl::RunCallback(int32_t result) {
     CHECK(main_document_loader_);
     return;
   }
+
+  // If |user_buffer_| was set as part of registering the callback, ensure
+  // it got cleared since the callback is now free to delete it.
+  DCHECK(!user_buffer_);
   TrackedCallback::ClearAndRun(&pending_callback_, result);
 }
 

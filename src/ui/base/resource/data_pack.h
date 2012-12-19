@@ -8,12 +8,12 @@
 
 #ifndef UI_BASE_RESOURCE_DATA_PACK_H_
 #define UI_BASE_RESOURCE_DATA_PACK_H_
-#pragma once
 
 #include <map>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/platform_file.h"
 #include "base/string_piece.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_handle.h"
@@ -37,7 +37,10 @@ class UI_EXPORT DataPack : public ResourceHandle {
   virtual ~DataPack();
 
   // Load a pack file from |path|, returning false on error.
-  bool Load(const FilePath& path);
+  bool LoadFromPath(const FilePath& path);
+
+  // Loads a pack file from |file|, returning false on error.
+  bool LoadFromFile(base::PlatformFile file);
 
   // Writes a pack file containing |resources| to |path|. If there are any
   // text resources to be written, their encoding must already agree to the
@@ -57,6 +60,9 @@ class UI_EXPORT DataPack : public ResourceHandle {
   virtual ui::ScaleFactor GetScaleFactor() const OVERRIDE;
 
  private:
+  // Does the actual loading of a pack file. Called by Load and LoadFromFile.
+  bool LoadImpl();
+
   // The memory-mapped data.
   scoped_ptr<file_util::MemoryMappedFile> mmap_;
 

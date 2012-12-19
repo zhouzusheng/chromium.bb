@@ -4,7 +4,9 @@
 
 #ifndef NET_DNS_DNS_TEST_UTIL_H_
 #define NET_DNS_DNS_TEST_UTIL_H_
-#pragma once
+
+#include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -167,21 +169,25 @@ static const int kT3TTL = 0x00000015;
 static const unsigned kT3RecordCount = arraysize(kT3IpAddresses) + 2;
 
 class DnsClient;
-// Creates mock DnsClient for testing HostResolverImpl.
-scoped_ptr<DnsClient> CreateMockDnsClient(const DnsConfig& config);
 
-class MockDnsConfigService : public DnsConfigService {
- public:
-  virtual ~MockDnsConfigService();
+struct MockDnsClientRule {
+  enum Result {
+    FAIL_SYNC,   // Fail synchronously with ERR_NAME_NOT_RESOLVED.
+    FAIL_ASYNC,  // Fail asynchronously with ERR_NAME_NOT_RESOLVED.
+    EMPTY,       // Return an empty response.
+    OK,          // Return a response with loopback address.
+  };
 
-  // NetworkChangeNotifier::DNSObserver:
-  virtual void OnDNSChanged(unsigned detail) OVERRIDE;
-
-  // Expose the protected methods for tests.
-  void ChangeConfig(const DnsConfig& config);
-  void ChangeHosts(const DnsHosts& hosts);
+  std::string prefix;
+  uint16 qtype;
+  Result result;
 };
 
+typedef std::vector<MockDnsClientRule> MockDnsClientRuleList;
+
+// Creates mock DnsClient for testing HostResolverImpl.
+scoped_ptr<DnsClient> CreateMockDnsClient(const DnsConfig& config,
+                                          const MockDnsClientRuleList& rules);
 
 }  // namespace net
 

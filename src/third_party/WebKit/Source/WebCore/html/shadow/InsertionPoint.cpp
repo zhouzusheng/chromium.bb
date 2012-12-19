@@ -118,8 +118,10 @@ Node::InsertionNotificationRequest InsertionPoint::insertedInto(ContainerNode* i
 {
     HTMLElement::insertedInto(insertionPoint);
     if (insertionPoint->inDocument()) {
-        if (ShadowRoot* root = shadowRoot())
+        if (ShadowRoot* root = shadowRoot()) {
+            root->owner()->setValidityUndetermined();
             root->owner()->invalidateDistribution();
+        }
     }
 
     return InsertionDone;
@@ -128,14 +130,13 @@ Node::InsertionNotificationRequest InsertionPoint::insertedInto(ContainerNode* i
 void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
 {
     if (insertionPoint->inDocument()) {
-        Node* parent = parentNode();
-        if (!parent)
-            parent = insertionPoint;
-        if (ShadowRoot* root = parent->shadowRoot()) {
-            // host can be null when removedFrom() is called from ElementShadow destructor.
-            if (root->host())
-                root->owner()->invalidateDistribution();
-        }
+        ShadowRoot* root = shadowRoot();
+        if (!root)
+            root = insertionPoint->shadowRoot();
+
+        // host can be null when removedFrom() is called from ElementShadow destructor.
+        if (root && root->host())
+            root->owner()->invalidateDistribution();
 
         // Since this insertion point is no longer visible from the shadow subtree, it need to clean itself up.
         clearDistribution();
@@ -143,6 +144,5 @@ void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
 
     HTMLElement::removedFrom(insertionPoint);
 }
-
 
 } // namespace WebCore

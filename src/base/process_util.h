@@ -7,7 +7,6 @@
 
 #ifndef BASE_PROCESS_UTIL_H_
 #define BASE_PROCESS_UTIL_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/time.h"
@@ -139,6 +138,12 @@ enum TerminationStatus {
 BASE_EXPORT extern size_t g_oom_size;
 #endif
 
+#if defined(OS_WIN)
+// Output multi-process printf, cout, cerr, etc to the cmd.exe console that ran
+// chrome. This is not thread-safe: only call from main thread.
+BASE_EXPORT void RouteStdioToConsole();
+#endif
+
 // Returns the id of the current process.
 BASE_EXPORT ProcessId GetCurrentProcId();
 
@@ -200,6 +205,9 @@ const int kMaxOomScore = 1000;
 // translate the given value into [0, 15].  Some aliasing of values
 // may occur in that case, of course.
 BASE_EXPORT bool AdjustOOMScore(ProcessId process, int score);
+
+// /proc/self/exe refers to the current executable.
+BASE_EXPORT extern const char kProcSelfExe[];
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 #if defined(OS_POSIX)
@@ -228,7 +236,8 @@ struct LaunchOptions {
   LaunchOptions() : wait(false),
 #if defined(OS_WIN)
                     start_hidden(false), inherit_handles(false), as_user(NULL),
-                    empty_desktop_name(false), job_handle(NULL)
+                    empty_desktop_name(false), job_handle(NULL),
+                    force_breakaway_from_job_(false)
 #else
                     environ(NULL), fds_to_remap(NULL), maximize_rlimits(NULL),
                     new_process_group(false)
@@ -269,6 +278,11 @@ struct LaunchOptions {
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
+
+  // If set to true, ensures that the child process is launched with the
+  // CREATE_BREAKAWAY_FROM_JOB flag which allows it to breakout of the parent
+  // job if any.
+  bool force_breakaway_from_job_;
 #else
   // If non-NULL, set/unset environment variables.
   // See documentation of AlterEnvironment().
@@ -509,7 +523,7 @@ BASE_EXPORT bool WaitForExitCode(ProcessHandle handle, int* exit_code);
 // The caller is always responsible for closing the |handle|.
 BASE_EXPORT bool WaitForExitCodeWithTimeout(ProcessHandle handle,
                                             int* exit_code,
-                                            int64 timeout_milliseconds);
+                                            base::TimeDelta timeout);
 
 // Wait for all the processes based on the named executable to exit.  If filter
 // is non-null, then only processes selected by the filter are waited on.
@@ -517,14 +531,12 @@ BASE_EXPORT bool WaitForExitCodeWithTimeout(ProcessHandle handle,
 // Returns true if all the processes exited, false otherwise.
 BASE_EXPORT bool WaitForProcessesToExit(
     const FilePath::StringType& executable_name,
-    int64 wait_milliseconds,
+    base::TimeDelta wait,
     const ProcessFilter* filter);
 
 // Wait for a single process to exit. Return true if it exited cleanly within
 // the given time limit. On Linux |handle| must be a child process, however
 // on Mac and Windows it can be any process.
-BASE_EXPORT bool WaitForSingleProcess(ProcessHandle handle,
-                                      int64 wait_milliseconds);
 BASE_EXPORT bool WaitForSingleProcess(ProcessHandle handle,
                                       base::TimeDelta wait);
 
@@ -535,7 +547,7 @@ BASE_EXPORT bool WaitForSingleProcess(ProcessHandle handle,
 // any processes needed to be killed, true if they all exited cleanly within
 // the wait_milliseconds delay.
 BASE_EXPORT bool CleanupProcesses(const FilePath::StringType& executable_name,
-                                  int64 wait_milliseconds,
+                                  base::TimeDelta wait,
                                   int exit_code,
                                   const ProcessFilter* filter);
 
@@ -692,11 +704,13 @@ class BASE_EXPORT ProcessMetrics {
 
   // Creates a ProcessMetrics for the specified process.
   // The caller owns the returned object.
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(OS_IOS)
   static ProcessMetrics* CreateProcessMetrics(ProcessHandle process);
 #else
   class PortProvider {
    public:
+    virtual ~PortProvider() {}
+
     // Should return the mach task for |process| if possible, or else
     // |MACH_PORT_NULL|. Only processes that this returns tasks for will have
     // metrics on OS X (except for the current process, which always gets
@@ -709,7 +723,7 @@ class BASE_EXPORT ProcessMetrics {
   // only returns valid metrics if |process| is the current process.
   static ProcessMetrics* CreateProcessMetrics(ProcessHandle process,
                                               PortProvider* port_provider);
-#endif  // !defined(OS_MACOSX)
+#endif  // !defined(OS_MACOSX) || defined(OS_IOS)
 
   // Returns the current space allocated for the pagefile, in bytes (these pages
   // may or may not be in memory).  On Linux, this returns the total virtual
@@ -757,11 +771,11 @@ class BASE_EXPORT ProcessMetrics {
   bool GetIOCounters(IoCounters* io_counters) const;
 
  private:
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(OS_IOS)
   explicit ProcessMetrics(ProcessHandle process);
 #else
   ProcessMetrics(ProcessHandle process, PortProvider* port_provider);
-#endif  // defined(OS_MACOSX)
+#endif  // !defined(OS_MACOSX) || defined(OS_IOS)
 
   ProcessHandle process_;
 
@@ -772,6 +786,7 @@ class BASE_EXPORT ProcessMetrics {
   int64 last_time_;
   int64 last_system_time_;
 
+#if !defined(OS_IOS)
 #if defined(OS_MACOSX)
   // Queries the port provider if it's set.
   mach_port_t TaskForPid(ProcessHandle process) const;
@@ -781,6 +796,7 @@ class BASE_EXPORT ProcessMetrics {
   // Jiffie count at the last_time_ we updated.
   int last_cpu_;
 #endif  // defined(OS_POSIX)
+#endif  // !defined(OS_IOS)
 
   DISALLOW_COPY_AND_ASSIGN(ProcessMetrics);
 };
@@ -833,7 +849,7 @@ BASE_EXPORT malloc_zone_t* GetPurgeableZone();
 
 // Enables stack dump to console output on exception and signals.
 // When enabled, the process will quit immediately. This is meant to be used in
-// unit_tests only!
+// unit_tests only! This is not thread-safe: only call from main thread.
 BASE_EXPORT bool EnableInProcessStackDumping();
 
 // If supported on the platform, and the user has sufficent rights, increase

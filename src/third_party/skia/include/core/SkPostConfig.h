@@ -55,6 +55,10 @@
     #endif
 #endif
 
+#if !defined(SK_SUPPORT_GPU)
+    #define SK_SUPPORT_GPU 1
+#endif
+
 /**
  * The clang static analyzer likes to know that when the program is not
  * expected to continue (crash, assertion failure, etc). It will notice that
@@ -66,7 +70,7 @@
     #if SK_HAS_COMPILER_FEATURE(attribute_analyzer_noreturn)
         namespace {
             inline void SkNO_RETURN_HINT() __attribute__((analyzer_noreturn));
-            void SkNO_RETURN_HINT() {}
+            inline void SkNO_RETURN_HINT() {}
         }
     #else
         #define SkNO_RETURN_HINT() do {} while (false)
@@ -85,6 +89,9 @@
     #define SkNEW(type_name)                new type_name
     #define SkNEW_ARGS(type_name, args)     new type_name args
     #define SkNEW_ARRAY(type_name, count)   new type_name[count]
+    #define SkNEW_PLACEMENT(buf, type_name) new (buf) type_name
+    #define SkNEW_PLACEMENT_ARGS(buf, type_name, args) \
+                                            new (buf) type_name args
     #define SkDELETE(obj)                   delete obj
     #define SkDELETE_ARRAY(array)           delete[] array
 #endif
@@ -276,15 +283,41 @@
 //////////////////////////////////////////////////////////////////////
 
 #ifndef SK_OVERRIDE
-#if defined(_MSC_VER)
-#define SK_OVERRIDE override
-#elif defined(__clang__)
-// Some documentation suggests we should be using __attribute__((override)),
-// but it doesn't work.
-#define SK_OVERRIDE override
+    #if defined(_MSC_VER)
+        #define SK_OVERRIDE override
+    #elif defined(__clang__)
+        #if __has_feature(cxx_override_control)
+            // Some documentation suggests we should be using __attribute__((override)),
+            // but it doesn't work.
+            #define SK_OVERRIDE override
+        #elif defined(__has_extension)
+            #if __has_extension(cxx_override_control)
+                #define SK_OVERRIDE override
+            #endif
+        #endif
+    #else
+        // Linux GCC ignores "__attribute__((override))" and rejects "override".
+        #define SK_OVERRIDE
+    #endif
+#endif
+
+//////////////////////////////////////////////////////////////////////
+
+#ifndef SK_PRINTF_LIKE
+#if defined(__clang__) || defined(__GNUC__)
+#define SK_PRINTF_LIKE(A, B) __attribute__((format(printf, (A), (B))))
 #else
-// Linux GCC ignores "__attribute__((override))" and rejects "override".
-#define SK_OVERRIDE
+#define SK_PRINTF_LIKE(A, B)
+#endif
+#endif
+
+//////////////////////////////////////////////////////////////////////
+
+#ifndef SK_SIZE_T_SPECIFIER
+#if defined(_MSC_VER)
+#define SK_SIZE_T_SPECIFIER "%Iu"
+#else
+#define SK_SIZE_T_SPECIFIER "%zu"
 #endif
 #endif
 
@@ -292,4 +325,49 @@
 
 #ifndef SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 #define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 1
+#endif
+
+//////////////////////////////////////////////////////////////////////
+// ARM defines
+
+#if defined(__GNUC__) && defined(__arm__)
+
+#  define SK_ARM_ARCH 3
+
+#  if defined(__ARM_ARCH_4__) || defined(__ARM_ARCH_4T__) \
+   || defined(_ARM_ARCH_4)
+#    undef SK_ARM_ARCH
+#    define SK_ARM_ARCH 4
+#  endif
+
+#  if defined(__ARM_ARCH_5__) || defined(__ARM_ARCH_5T__) \
+   || defined(__ARM_ARCH_5E__) || defined(__ARM_ARCH_5TE__) \
+   || defined(__ARM_ARCH_5TEJ__) || defined(_ARM_ARCH_5)
+#    undef SK_ARM_ARCH
+#    define SK_ARM_ARCH 5
+#  endif
+
+#  if defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) \
+   || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) \
+   || defined(__ARM_ARCH_6ZK__) || defined(__ARM_ARCH_6T2__) \
+   || defined(__ARM_ARCH_6M__) || defined(_ARM_ARCH_6)
+#    undef SK_ARM_ARCH
+#    define SK_ARM_ARCH 6
+#  endif
+
+#  if defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) \
+   || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) \
+   || defined(__ARM_ARCH_7EM__) || defined(_ARM_ARCH_7)
+#    undef SK_ARM_ARCH
+#    define SK_ARM_ARCH 7
+#  endif
+
+#  undef SK_ARM_HAS_EDSP
+#  if defined(__thumb2__) && (SK_ARM_ARCH >= 6) \
+   || !defined(__thumb__) \
+   && ((SK_ARM_ARCH > 5) || defined(__ARM_ARCH_5E__) \
+       || defined(__ARM_ARCH_5TE__) || defined(__ARM_ARCH_5TEJ__))
+#    define SK_ARM_HAS_EDSP 1
+#  endif
+
 #endif

@@ -27,7 +27,9 @@ URLRequestContext::URLRequestContext()
       network_delegate_(NULL),
       http_server_properties_(NULL),
       transport_security_state_(NULL),
+#if !defined(DISABLE_FTP_SUPPORT)
       ftp_auth_cache_(new FtpAuthCache),
+#endif
       http_transaction_factory_(NULL),
       ftp_transaction_factory_(NULL),
       job_factory_(NULL),
@@ -63,6 +65,22 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_throttler_manager(other->throttler_manager_);
 }
 
+const HttpNetworkSession::Params* URLRequestContext::GetNetworkSessionParams(
+    ) const {
+  HttpTransactionFactory* transaction_factory = http_transaction_factory();
+  if (!transaction_factory)
+    return NULL;
+  HttpNetworkSession* network_session = transaction_factory->GetSession();
+  if (!network_session)
+    return NULL;
+  return &network_session->params();
+}
+
+URLRequest* URLRequestContext::CreateRequest(
+    const GURL& url, URLRequest::Delegate* delegate) const {
+  return new URLRequest(url, delegate, this, network_delegate_);
+}
+
 void URLRequestContext::set_cookie_store(CookieStore* cookie_store) {
   cookie_store_ = cookie_store;
 }
@@ -89,7 +107,8 @@ void URLRequestContext::AssertNoURLRequests() const {
     base::debug::Alias(&has_delegate);
     base::debug::Alias(&load_flags);
     base::debug::Alias(&stack_trace);
-    CHECK(false);
+    CHECK(false) << "Leaked " << num_requests << " URLRequest(s). First URL: "
+                 << request->url().spec().c_str() << ".";
   }
 }
 

@@ -32,6 +32,7 @@ class HTMLCollection;
 class HTMLFormElement;
 
 #if ENABLE(MICRODATA)
+class HTMLPropertiesCollection;
 class MicroDataItemValue;
 #endif
 
@@ -45,7 +46,7 @@ class HTMLElement : public StyledElement {
 public:
     static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document*);
 
-    HTMLCollection* children();
+    PassRefPtr<HTMLCollection> children();
 
     virtual String title() const;
 
@@ -63,6 +64,7 @@ public:
     void insertAdjacentHTML(const String& where, const String& html, ExceptionCode&);
     void insertAdjacentText(const String& where, const String& text, ExceptionCode&);
 
+    virtual bool hasCustomFocusLogic() const;
     virtual bool supportsFocus() const;
 
     String contentEditable() const;
@@ -96,6 +98,8 @@ public:
 #if ENABLE(MICRODATA)
     void setItemValue(const String&, ExceptionCode&);
     PassRefPtr<MicroDataItemValue> itemValue() const;
+    PassRefPtr<HTMLPropertiesCollection> properties();
+    void getItemRefElements(Vector<HTMLElement*>&);
 #endif
 
 #ifndef NDEBUG

@@ -37,6 +37,8 @@
 #include "SecurityOrigin.h"
 #include "StyleRule.h"
 #include "StyleSheetContents.h"
+#include "WebCoreMemoryInstrumentation.h"
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -52,6 +54,12 @@ private:
     virtual CSSRule* item(unsigned index) const { return m_styleSheet->item(index); }
     
     virtual CSSStyleSheet* styleSheet() const { return m_styleSheet; }
+
+    virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const OVERRIDE
+    {
+        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+        info.addMember(m_styleSheet);
+    }
     
     CSSStyleSheet* m_styleSheet;
 };
@@ -78,18 +86,19 @@ PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> s
 
 PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> sheet, Node* ownerNode)
 { 
-    return adoptRef(new CSSStyleSheet(sheet, ownerNode));
+    return adoptRef(new CSSStyleSheet(sheet, ownerNode, false));
 }
 
 PassRefPtr<CSSStyleSheet> CSSStyleSheet::createInline(Node* ownerNode, const KURL& baseURL, const String& encoding)
 {
     CSSParserContext parserContext(ownerNode->document(), baseURL, encoding);
-    RefPtr<StyleSheetContents> sheet = StyleSheetContents::create(baseURL.string(), baseURL, parserContext);
-    return adoptRef(new CSSStyleSheet(sheet.release(), ownerNode));
+    RefPtr<StyleSheetContents> sheet = StyleSheetContents::create(baseURL.string(), parserContext);
+    return adoptRef(new CSSStyleSheet(sheet.release(), ownerNode, true));
 }
 
 CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, CSSImportRule* ownerRule)
     : m_contents(contents)
+    , m_isInlineStylesheet(false)
     , m_isDisabled(false)
     , m_ownerNode(0)
     , m_ownerRule(ownerRule)
@@ -97,8 +106,9 @@ CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, CSSImportR
     m_contents->registerClient(this);
 }
 
-CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, Node* ownerNode)
+CSSStyleSheet::CSSStyleSheet(PassRefPtr<StyleSheetContents> contents, Node* ownerNode, bool isInlineStylesheet)
     : m_contents(contents)
+    , m_isInlineStylesheet(isInlineStylesheet)
     , m_isDisabled(false)
     , m_ownerNode(ownerNode)
     , m_ownerRule(0)
@@ -168,6 +178,18 @@ void CSSStyleSheet::reattachChildRuleCSSOMWrappers()
     }
 }
 
+void CSSStyleSheet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    info.addMember(m_contents);
+    info.addMember(m_title);
+    info.addMember(m_mediaQueries);
+    info.addMember(m_ownerNode);
+    info.addMember(m_ownerRule);
+    info.addMember(m_mediaCSSOMWrapper);
+    info.addInstrumentedVector(m_childRuleCSSOMWrappers);
+}
+
 void CSSStyleSheet::setDisabled(bool disabled)
 { 
     if (disabled == m_isDisabled)
@@ -208,11 +230,24 @@ CSSRule* CSSStyleSheet::item(unsigned index)
     return cssRule.get();
 }
 
+bool CSSStyleSheet::canAccessRules() const
+{
+    if (m_isInlineStylesheet)
+        return true;
+    KURL baseURL = m_contents->baseURL();
+    if (baseURL.isEmpty())
+        return true;
+    Document* document = ownerDocument();
+    if (!document)
+        return true;
+    if (document->securityOrigin()->canRequest(baseURL))
+        return true;
+    return false;
+}
+
 PassRefPtr<CSSRuleList> CSSStyleSheet::rules()
 {
-    KURL url = m_contents->finalURL();
-    Document* document = ownerDocument();
-    if (!url.isEmpty() && document && !document->securityOrigin()->canRequest(url))
+    if (!canAccessRules())
         return 0;
     // IE behavior.
     RefPtr<StaticCSSRuleList> nonCharsetRules = StaticCSSRuleList::create();
@@ -277,7 +312,14 @@ void CSSStyleSheet::deleteRule(unsigned index, ExceptionCode& ec)
 
 int CSSStyleSheet::addRule(const String& selector, const String& style, int index, ExceptionCode& ec)
 {
-    insertRule(selector + " { " + style + " }", index, ec);
+    StringBuilder text;
+    text.append(selector);
+    text.appendLiteral(" { ");
+    text.append(style);
+    if (!style.isEmpty())
+        text.append(' ');
+    text.append('}');
+    insertRule(text.toString(), index, ec);
     
     // As per Microsoft documentation, always return -1.
     return -1;
@@ -291,9 +333,7 @@ int CSSStyleSheet::addRule(const String& selector, const String& style, Exceptio
 
 PassRefPtr<CSSRuleList> CSSStyleSheet::cssRules()
 {
-    KURL url = m_contents->finalURL();
-    Document* document = ownerDocument();
-    if (!url.isEmpty() && document && !document->securityOrigin()->canRequest(url))
+    if (!canAccessRules())
         return 0;
     if (!m_ruleListCSSOMWrapper)
         m_ruleListCSSOMWrapper = adoptPtr(new StyleSheetCSSRuleList(this));

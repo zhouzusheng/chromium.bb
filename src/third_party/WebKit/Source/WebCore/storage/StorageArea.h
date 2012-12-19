@@ -26,10 +26,10 @@
 #ifndef StorageArea_h
 #define StorageArea_h
 
-#include "PlatformString.h"
-
+#include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -55,6 +55,11 @@ namespace WebCore {
         virtual bool contains(const String& key, Frame* sourceFrame) const = 0;
 
         virtual bool disabledByPrivateBrowsingInFrame(const Frame* sourceFrame) const = 0;
+
+        virtual size_t memoryBytesUsedByCache() const = 0;
+
+        virtual void incrementAccessCount() { }
+        virtual void decrementAccessCount() { }
     };
 
 } // namespace WebCore

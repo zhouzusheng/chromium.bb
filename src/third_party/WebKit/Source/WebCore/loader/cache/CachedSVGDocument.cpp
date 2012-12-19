@@ -71,6 +71,14 @@ void CachedSVGDocument::data(PassRefPtr<SharedBuffer> data, bool allDataReceived
     checkNotify();
 }
 
+void CachedSVGDocument::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceSVG);
+    CachedResource::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_document);
+    info.addMember(m_decoder);
+}
+
 }
 
 #endif

@@ -13,6 +13,7 @@
 #include "webkit/glue/resource_type.h"
 
 namespace net {
+class NetworkDelegate;
 class URLRequest;
 class URLRequestJob;
 }  // namespace net
@@ -34,10 +35,14 @@ class APPCACHE_EXPORT AppCacheRequestHandler
   virtual ~AppCacheRequestHandler();
 
   // These are called on each request intercept opportunity.
-  AppCacheURLRequestJob* MaybeLoadResource(net::URLRequest* request);
-  AppCacheURLRequestJob* MaybeLoadFallbackForRedirect(net::URLRequest* request,
-                                                      const GURL& location);
-  AppCacheURLRequestJob* MaybeLoadFallbackForResponse(net::URLRequest* request);
+  AppCacheURLRequestJob* MaybeLoadResource(
+      net::URLRequest* request, net::NetworkDelegate* network_delegate);
+  AppCacheURLRequestJob* MaybeLoadFallbackForRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location);
+  AppCacheURLRequestJob* MaybeLoadFallbackForResponse(
+      net::URLRequest* request, net::NetworkDelegate* network_delegate);
 
   void GetExtraResponseInfo(int64* cache_id, GURL* manifest_url);
 
@@ -74,7 +79,8 @@ class APPCACHE_EXPORT AppCacheRequestHandler
   // Main-resource loading -------------------------------------
   // Frame and SharedWorker main resources are handled here.
 
-  void MaybeLoadMainResource(net::URLRequest* request);
+  void MaybeLoadMainResource(net::URLRequest* request,
+                             net::NetworkDelegate* network_delegate);
 
   // AppCacheStorage::Delegate methods
   virtual void OnMainResponseFound(
@@ -85,7 +91,8 @@ class APPCACHE_EXPORT AppCacheRequestHandler
   // Sub-resource loading -------------------------------------
   // Dedicated worker and all manner of sub-resources are handled here.
 
-  void MaybeLoadSubResource(net::URLRequest* request);
+  void MaybeLoadSubResource(net::URLRequest* request,
+                            net::NetworkDelegate* network_delegate);
   void ContinueMaybeLoadSubResource();
 
   // AppCacheHost::Observer override
@@ -117,6 +124,9 @@ class APPCACHE_EXPORT AppCacheRequestHandler
   // no action on all subsequent intercept opportunities, so the
   // request and any redirects will be handled by the network library.
   bool cache_entry_not_found_;
+
+  // True if this->MaybeLoadResource(...) has been called in the past.
+  bool maybe_load_resource_executed_;
 
   // The job we use to deliver a response.
   scoped_refptr<AppCacheURLRequestJob> job_;

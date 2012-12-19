@@ -135,6 +135,12 @@ RenderObject* HTMLCanvasElement::createRenderer(RenderArena* arena, RenderStyle*
     return HTMLElement::createRenderer(arena, style);
 }
 
+void HTMLCanvasElement::attach()
+{
+    setIsInCanvasSubtree(true);
+    HTMLElement::attach();
+}
+
 void HTMLCanvasElement::addObserver(CanvasObserver* observer)
 {
     m_observers.add(observer);
@@ -551,7 +557,7 @@ void HTMLCanvasElement::createImageBuffer() const
     m_contextStateSaver = adoptPtr(new GraphicsContextStateSaver(*m_imageBuffer->context()));
 
 #if USE(JSC)
-    JSC::JSLock lock(JSC::SilenceAssertionsOnly);
+    JSC::JSLockHolder lock(scriptExecutionContext()->globalData());
     size_t numBytes = 4 * m_imageBuffer->internalSize().width() * m_imageBuffer->internalSize().height();
     scriptExecutionContext()->globalData()->heap.reportExtraMemoryCost(numBytes);
 #endif

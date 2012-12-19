@@ -6,7 +6,6 @@
 
 #ifndef BASE_STRING_UTIL_H_
 #define BASE_STRING_UTIL_H_
-#pragma once
 
 #include <ctype.h>
 #include <stdarg.h>   // va_list
@@ -508,6 +507,14 @@ BASE_EXPORT size_t Tokenize(const base::StringPiece& str,
 BASE_EXPORT string16 JoinString(const std::vector<string16>& parts, char16 s);
 BASE_EXPORT std::string JoinString(
     const std::vector<std::string>& parts, char s);
+
+// Join |parts| using |separator|.
+BASE_EXPORT std::string JoinString(
+    const std::vector<std::string>& parts,
+    const std::string& separator);
+BASE_EXPORT string16 JoinString(
+    const std::vector<string16>& parts,
+    const string16& separator);
 
 // Replace $1-$2-$3..$9 in the format string with |a|-|b|-|c|..|i| respectively.
 // Additionally, any number of consecutive '$' characters is replaced by that

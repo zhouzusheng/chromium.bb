@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_FTP_JOB_H_
 #define NET_URL_REQUEST_URL_REQUEST_FTP_JOB_H_
-#pragma once
 
 #include <string>
 
@@ -17,15 +16,22 @@
 
 namespace net {
 
-class URLRequestContext;
+class NetworkDelegate;
+class FtpTransactionFactory;
+class FtpAuthCache;
 
 // A URLRequestJob subclass that is built on top of FtpTransaction. It
 // provides an implementation for FTP.
 class URLRequestFtpJob : public URLRequestJob {
  public:
-  explicit URLRequestFtpJob(URLRequest* request);
+  URLRequestFtpJob(URLRequest* request,
+                   NetworkDelegate* network_delegate,
+                   FtpTransactionFactory* ftp_transaction_factory,
+                   FtpAuthCache* ftp_auth_cache);
 
+  // TODO(shalev): get rid of this function in favor of FtpProtocolHandler.
   static URLRequestJob* Factory(URLRequest* request,
+                                NetworkDelegate* network_delegate,
                                 const std::string& scheme);
 
   // Overridden from URLRequestJob:
@@ -55,7 +61,7 @@ class URLRequestFtpJob : public URLRequestJob {
   virtual void CancelAuth() OVERRIDE;
 
   // TODO(ibrar):  Yet to give another look at this function.
-  virtual uint64 GetUploadProgress() const OVERRIDE;
+  virtual UploadProgress GetUploadProgress() const OVERRIDE;
   virtual bool ReadRawData(IOBuffer* buf,
                            int buf_size,
                            int *bytes_read) OVERRIDE;
@@ -68,6 +74,9 @@ class URLRequestFtpJob : public URLRequestJob {
   scoped_refptr<AuthData> server_auth_;
 
   base::WeakPtrFactory<URLRequestFtpJob> weak_factory_;
+
+  FtpTransactionFactory* ftp_transaction_factory_;
+  FtpAuthCache* ftp_auth_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestFtpJob);
 };

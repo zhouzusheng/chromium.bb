@@ -138,6 +138,21 @@ inline double trunc(double num) { return num > 0 ? floor(num) : ceil(num); }
 inline long long abs(long num) { return labs(num); }
 #endif
 
+#if OS(ANDROID) || COMPILER(MSVC)
+// ANDROID and MSVC's math.h does not currently supply log2 or log2f.
+inline double log2(double num)
+{
+    // This constant is roughly M_LN2, which is not provided by default on Windows and Android.
+    return log(num) / 0.693147180559945309417232121458176568;
+}
+
+inline float log2f(float num)
+{
+    // This constant is roughly M_LN2, which is not provided by default on Windows and Android.
+    return logf(num) / 0.693147180559945309417232121458176568f;
+}
+#endif
+
 #if COMPILER(MSVC)
 // The 64bit version of abs() is already defined in stdlib.h which comes with VC10
 #if COMPILER(MSVC9_OR_LOWER)
@@ -153,19 +168,6 @@ inline float nextafterf(float x, float y) { return x > y ? x - FLT_EPSILON : x +
 
 inline double copysign(double x, double y) { return _copysign(x, y); }
 inline int isfinite(double x) { return _finite(x); }
-
-// MSVC's math.h does not currently supply log2 or log2f.
-inline double log2(double num)
-{
-    // This constant is roughly M_LN2, which is not provided by default on Windows.
-    return log(num) / 0.693147180559945309417232121458176568;
-}
-
-inline float log2f(float num)
-{
-    // This constant is roughly M_LN2, which is not provided by default on Windows.
-    return logf(num) / 0.693147180559945309417232121458176568f;
-}
 
 // Work around a bug in Win, where atan2(+-infinity, +-infinity) yields NaN instead of specific values.
 inline double wtf_atan2(double x, double y)
@@ -199,6 +201,28 @@ inline double wtf_pow(double x, double y) { return y == 0 ? 1 : pow(x, y); }
 #define atan2(x, y) wtf_atan2(x, y)
 #define fmod(x, y) wtf_fmod(x, y)
 #define pow(x, y) wtf_pow(x, y)
+
+// MSVC's math functions do not bring lrint.
+inline long int lrint(double flt)
+{
+    int64_t intgr;
+#if CPU(X86)
+    __asm {
+        fld flt
+        fistp intgr
+    };
+#else
+    ASSERT(isfinite(flt));
+    double rounded = round(flt);
+    intgr = static_cast<int64_t>(rounded);
+    // If the fractional part is exactly 0.5, we need to check whether
+    // the rounded result is even. If it is not we need to add 1 to
+    // negative values and subtract one from positive values.
+    if ((fabs(intgr - flt) == 0.5) & intgr)
+        intgr -= ((intgr >> 62) | 1); // 1 with the sign of result, i.e. -1 or 1.
+#endif
+    return static_cast<long int>(intgr);
+}
 
 #endif // COMPILER(MSVC)
 
@@ -270,6 +294,16 @@ inline bool isWithinIntRange(float x)
     return x > static_cast<float>(std::numeric_limits<int>::min()) && x < static_cast<float>(std::numeric_limits<int>::max());
 }
 
+template<typename T> inline bool hasZeroOrOneBitsSet(T value)
+{
+    return !((value - 1) & value);
+}
+
+template<typename T> inline bool hasTwoOrMoreBitsSet(T value)
+{
+    return !hasZeroOrOneBitsSet(value);
+}
+
 #if !COMPILER(MSVC) && !COMPILER(RVCT) && !OS(SOLARIS)
 using std::isfinite;
 #if !COMPILER_QUIRK(GCC11_GLOBAL_ISINF_ISNAN)
@@ -282,10 +316,10 @@ using std::signbit;
 #if COMPILER_QUIRK(GCC11_GLOBAL_ISINF_ISNAN)
 // A workaround to avoid conflicting declarations of isinf and isnan when compiling with GCC in C++11 mode.
 namespace std {
-    constexpr bool wtf_isinf(float f) { return std::isinf(f); }
-    constexpr bool wtf_isinf(double d) { return std::isinf(d); }
-    constexpr bool wtf_isnan(float f) { return std::isnan(f); }
-    constexpr bool wtf_isnan(double d) { return std::isnan(d); }
+    inline bool wtf_isinf(float f) { return std::isinf(f); }
+    inline bool wtf_isinf(double d) { return std::isinf(d); }
+    inline bool wtf_isnan(float f) { return std::isnan(f); }
+    inline bool wtf_isnan(double d) { return std::isnan(d); }
 };
 
 using std::wtf_isinf;

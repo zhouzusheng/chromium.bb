@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,11 @@ class Size;
 }
 
 namespace printing {
+
+// http://msdn2.microsoft.com/en-us/library/ms535522.aspx
+// Windows 2000/XP: When a page in a spooled file exceeds approximately 350
+// MB, it can fail to print and not send an error message.
+const size_t kMetafileMaxSize = 350*1024*1024;
 
 // Simple wrapper class that manage an EMF data stream and its virtual HDC.
 class PRINTING_EXPORT Emf : public Metafile {
@@ -86,6 +91,17 @@ class PRINTING_EXPORT Emf : public Metafile {
     return emf_;
   }
 
+  // Returns true if metafile contains alpha blend.
+  bool IsAlphaBlendUsed() const;
+
+  // Returns new metafile with only bitmap created by playback of the current
+  // metafile. Returns NULL if fails.
+  Emf* RasterizeMetafile(int raster_area_in_pixels) const;
+
+  // Returns new metafile where AlphaBlend replaced by bitmaps. Returns NULL
+  // if fails.
+  Emf* RasterizeAlphaBlend() const;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(EmfTest, DC);
   FRIEND_TEST_ALL_PREFIXES(EmfPrintingTest, PageBreak);
@@ -113,9 +129,13 @@ class PRINTING_EXPORT Emf : public Metafile {
 };
 
 struct Emf::EnumerationContext {
+  EnumerationContext();
+
   HANDLETABLE* handle_table;
   int objects_count;
   HDC hdc;
+  const XFORM* base_matrix;
+  int dc_on_page_start;
 };
 
 // One EMF record. It keeps pointers to the EMF buffer held by Emf::emf_.
@@ -123,24 +143,22 @@ struct Emf::EnumerationContext {
 class PRINTING_EXPORT Emf::Record {
  public:
   // Plays the record.
-  bool Play() const;
+  bool Play(EnumerationContext* context) const;
 
   // Plays the record working around quirks with SetLayout,
   // SetWorldTransform and ModifyWorldTransform. See implementation for details.
-  bool SafePlayback(const XFORM* base_matrix) const;
+  bool SafePlayback(EnumerationContext* context) const;
 
   // Access the underlying EMF record.
   const ENHMETARECORD* record() const { return record_; }
 
  protected:
-  Record(const EnumerationContext* context,
-         const ENHMETARECORD* record);
+  explicit Record(const ENHMETARECORD* record);
 
  private:
   friend class Emf;
   friend class Enumerator;
   const ENHMETARECORD* record_;
-  const EnumerationContext* context_;
 };
 
 // Retrieves individual records out of a Emf buffer. The main use is to skip
@@ -163,6 +181,8 @@ class PRINTING_EXPORT Emf::Enumerator {
   const_iterator end() const;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(EmfPrintingTest, Enumerate);
+
   // Processes one EMF record and saves it in the items_ array.
   static int CALLBACK EnhMetaFileProc(HDC hdc,
                                       HANDLETABLE* handle_table,

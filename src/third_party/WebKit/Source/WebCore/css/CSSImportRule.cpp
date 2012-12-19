@@ -30,6 +30,7 @@
 #include "SecurityOrigin.h"
 #include "StyleRuleImport.h"
 #include "StyleSheetContents.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -74,6 +75,15 @@ String CSSImportRule::cssText() const
     result.append(';');
     
     return result.toString();
+}
+
+void CSSImportRule::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    CSSRule::reportBaseClassMemoryUsage(memoryObjectInfo);
+    info.addMember(m_importRule);
+    info.addMember(m_mediaCSSOMWrapper);
+    info.addMember(m_styleSheetCSSOMWrapper);
 }
 
 CSSStyleSheet* CSSImportRule::styleSheet() const

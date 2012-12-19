@@ -30,11 +30,16 @@
 #include "EditingBehaviorTypes.h"
 #include "FontRenderingMode.h"
 #include "KURL.h"
+#include "SecurityOrigin.h"
 #include "Timer.h"
 #include <wtf/HashMap.h>
 #include <wtf/text/AtomicString.h>
 #include <wtf/text/AtomicStringHash.h>
 #include <wtf/unicode/Unicode.h>
+
+#if ENABLE(TEXT_AUTOSIZING)
+#include "IntSize.h"
+#endif
 
 namespace WebCore {
 
@@ -103,8 +108,17 @@ namespace WebCore {
         void setDefaultFixedFontSize(int);
         int defaultFixedFontSize() const { return m_defaultFixedFontSize; }
 
-        void setFontBoostingEnabled(bool);
-        bool fontBoostingEnabled() const { return m_fontBoostingEnabled; }
+#if ENABLE(TEXT_AUTOSIZING)
+        void setTextAutosizingEnabled(bool);
+        bool textAutosizingEnabled() const { return m_textAutosizingEnabled; }
+
+        void setTextAutosizingFontScaleFactor(float);
+        float textAutosizingFontScaleFactor() const { return m_textAutosizingFontScaleFactor; }
+
+        // Only set by Layout Tests, and only used if textAutosizingEnabled() returns true.
+        void setTextAutosizingWindowSizeOverride(const IntSize&);
+        const IntSize& textAutosizingWindowSizeOverride() const { return m_textAutosizingWindowSizeOverride; }
+#endif
 
         // Unlike areImagesEnabled, this only suppresses the network load of
         // the image URL.  A cached image will still be rendered if requested.
@@ -323,12 +337,28 @@ namespace WebCore {
         void setCSSCustomFilterEnabled(bool enabled) { m_isCSSCustomFilterEnabled = enabled; }
         bool isCSSCustomFilterEnabled() const { return m_isCSSCustomFilterEnabled; }
 
+#if ENABLE(CSS_STICKY_POSITION)
+        void setCSSStickyPositionEnabled(bool enabled) { m_cssStickyPositionEnabled = enabled; }
+        bool cssStickyPositionEnabled() const { return m_cssStickyPositionEnabled; }
+#else
+        void setCSSStickyPositionEnabled(bool) { }
+        bool cssStickyPositionEnabled() const { return false; }
+#endif
+
 #if ENABLE(CSS_REGIONS)
         void setCSSRegionsEnabled(bool enabled) { m_cssRegionsEnabled = enabled; }
         bool cssRegionsEnabled() const { return m_cssRegionsEnabled; }
 #else
         void setCSSRegionsEnabled(bool) { }
         bool cssRegionsEnabled() const { return false; }
+#endif
+
+#if ENABLE(CSS_VARIABLES)
+        void setCSSVariablesEnabled(bool enabled) { m_cssVariablesEnabled = enabled; }
+        bool cssVariablesEnabled() const { return m_cssVariablesEnabled; }
+#else
+        void setCSSVariablesEnabled(bool) { }
+        bool cssVariablesEnabled() const { return false; }
 #endif
 
         void setRegionBasedColumnsEnabled(bool enabled) { m_regionBasedColumnsEnabled = enabled; }
@@ -360,6 +390,9 @@ namespace WebCore {
 
         void setAcceleratedCompositingForScrollableFramesEnabled(bool enabled) { m_acceleratedCompositingForScrollableFramesEnabled = enabled; }
         bool acceleratedCompositingForScrollableFramesEnabled() const { return m_acceleratedCompositingForScrollableFramesEnabled; }
+
+        void setAcceleratedCompositingForOverflowScrollEnabled(bool enabled) { m_acceleratedCompositingForOverflowScrollEnabled = enabled; }
+        bool acceleratedCompositingForOverflowScrollEnabled() const { return m_acceleratedCompositingForOverflowScrollEnabled; };
 
         void setShowDebugBorders(bool);
         bool showDebugBorders() const { return m_showDebugBorders; }
@@ -435,10 +468,10 @@ namespace WebCore {
         void setMemoryInfoEnabled(bool flag) { m_memoryInfoEnabled = flag; }
         bool memoryInfoEnabled() const { return m_memoryInfoEnabled; }
 
-        // This setting will be removed when an HTML5 compatibility issue is
-        // resolved and WebKit implementation of interactive validation is
-        // completed. See http://webkit.org/b/40520, http://webkit.org/b/40747,
-        // and http://webkit.org/b/40908
+        void setQuantizedMemoryInfoEnabled(bool flag) { m_quantizedMemoryInfoEnabled = flag; }
+        bool quantizedMemoryInfoEnabled() const { return m_quantizedMemoryInfoEnabled; }
+
+        // This feature requires an implementation of ValidationMessageClient.
         void setInteractiveFormValidationEnabled(bool flag) { m_interactiveFormValidation = flag; }
         bool interactiveFormValidationEnabled() const { return m_interactiveFormValidation; }
 
@@ -486,10 +519,6 @@ namespace WebCore {
 #if ENABLE(SMOOTH_SCROLLING)
         void setEnableScrollAnimator(bool flag) { m_scrollAnimatorEnabled = flag; }
         bool scrollAnimatorEnabled() const { return m_scrollAnimatorEnabled; }
-#endif
-#if ENABLE(WEB_SOCKETS)
-        void setUseHixie76WebSocketProtocol(bool flag) { m_useHixie76WebSocketProtocol = flag; }
-        bool useHixie76WebSocketProtocol() { return m_useHixie76WebSocketProtocol; }
 #endif
 
         void setMediaPlaybackRequiresUserGesture(bool flag) { m_mediaPlaybackRequiresUserGesture = flag; };
@@ -581,13 +610,25 @@ namespace WebCore {
         void setWindowFocusRestricted(bool restricted) { m_windowFocusRestricted = restricted; }
         bool windowFocusRestricted() const { return m_windowFocusRestricted; }
 
+        void setStorageBlockingPolicy(SecurityOrigin::StorageBlockingPolicy);
+        SecurityOrigin::StorageBlockingPolicy storageBlockingPolicy() const { return m_storageBlockingPolicy; }
+
+        void setScrollingPerformanceLoggingEnabled(bool);
+        bool scrollingPerformanceLoggingEnabled() { return m_scrollingPerformanceLoggingEnabled; }
+
 #if USE(JSC)
         static void setShouldRespectPriorityInCSSAttributeSetters(bool);
         static bool shouldRespectPriorityInCSSAttributeSetters();
 #endif
 
+        void setCookieEnabled(bool enabled) { m_cookieEnabled = enabled; }
+        bool cookieEnabled() const { return m_cookieEnabled; }
+
+        void setDiagnosticLoggingEnabled(bool enabled) { m_diagnosticLoggingEnabled = enabled; }
+        bool diagnosticLoggingEnabled() const { return m_diagnosticLoggingEnabled; }
+
     private:
-        Settings(Page*);
+        explicit Settings(Page*);
 
         void initializeDefaultFontFamilies();
 
@@ -620,7 +661,12 @@ namespace WebCore {
         unsigned m_sessionStorageQuota;
         unsigned m_editingBehaviorType;
         unsigned m_maximumHTMLParserDOMTreeDepth;
-        bool m_fontBoostingEnabled : 1;
+        SecurityOrigin::StorageBlockingPolicy m_storageBlockingPolicy;
+#if ENABLE(TEXT_AUTOSIZING)
+        float m_textAutosizingFontScaleFactor;
+        IntSize m_textAutosizingWindowSizeOverride;
+        bool m_textAutosizingEnabled : 1;
+#endif
         bool m_isSpatialNavigationEnabled : 1;
         bool m_isJavaEnabled : 1;
         bool m_isJavaEnabledForLocalFiles : 1;
@@ -660,7 +706,9 @@ namespace WebCore {
         bool m_needsSiteSpecificQuirks : 1;
         unsigned m_fontRenderingMode : 1;
         bool m_frameFlatteningEnabled : 1;
+#if ENABLE(WEB_ARCHIVE)
         bool m_webArchiveDebugModeEnabled : 1;
+#endif
         bool m_localFileContentSniffingEnabled : 1;
         bool m_inApplicationChromeMode : 1;
         bool m_offlineWebApplicationCacheEnabled : 1;
@@ -671,14 +719,21 @@ namespace WebCore {
         bool m_acceleratedDrawingEnabled : 1;
         bool m_acceleratedFiltersEnabled : 1;
         bool m_isCSSCustomFilterEnabled : 1;
+#if ENABLE(CSS_STICKY_POSITION)
+        bool m_cssStickyPositionEnabled : 1;
+#endif        
 #if ENABLE(CSS_REGIONS)
         bool m_cssRegionsEnabled : 1;
+#endif
+#if ENABLE(CSS_VARIABLES)
+        bool m_cssVariablesEnabled : 1;
 #endif
         bool m_regionBasedColumnsEnabled : 1;
         bool m_cssGridLayoutEnabled : 1;
         bool m_downloadableBinaryFontsEnabled : 1;
         bool m_xssAuditorEnabled : 1;
         bool m_acceleratedCompositingEnabled : 1;
+        bool m_acceleratedCompositingForOverflowScrollEnabled : 1;
         bool m_acceleratedCompositingFor3DTransformsEnabled : 1;
         bool m_acceleratedCompositingForVideoEnabled : 1;
         bool m_acceleratedCompositingForPluginsEnabled : 1;
@@ -703,11 +758,12 @@ namespace WebCore {
 #if ENABLE(FULLSCREEN_API)
         bool m_fullScreenAPIEnabled : 1;
 #endif
-        bool m_asynchronousSpellCheckingEnabled: 1;
-        bool m_unifiedTextCheckerEnabled: 1;
-        bool m_memoryInfoEnabled: 1;
-        bool m_interactiveFormValidation: 1;
-        bool m_usePreHTML5ParserQuirks: 1;
+        bool m_asynchronousSpellCheckingEnabled : 1;
+        bool m_unifiedTextCheckerEnabled : 1;
+        bool m_memoryInfoEnabled : 1;
+        bool m_quantizedMemoryInfoEnabled : 1;
+        bool m_interactiveFormValidation : 1;
+        bool m_usePreHTML5ParserQuirks : 1;
         bool m_hyperlinkAuditingEnabled : 1;
         bool m_crossOriginCheckInGetMatchedCSSRulesDisabled : 1;
         bool m_forceCompositingMode : 1;
@@ -717,9 +773,6 @@ namespace WebCore {
         bool m_allowRunningOfInsecureContent : 1;
 #if ENABLE(SMOOTH_SCROLLING)
         bool m_scrollAnimatorEnabled : 1;
-#endif
-#if ENABLE(WEB_SOCKETS)
-        bool m_useHixie76WebSocketProtocol : 1;
 #endif
         bool m_mediaPlaybackRequiresUserGesture : 1;
         bool m_mediaPlaybackAllowsInline : 1;
@@ -750,8 +803,13 @@ namespace WebCore {
 
         bool m_fixedPositionCreatesStackingContext : 1;
         bool m_syncXHRInDocumentsEnabled : 1;
+        bool m_cookieEnabled : 1;
 
         bool m_windowFocusRestricted : 1;
+
+        bool m_diagnosticLoggingEnabled : 1;
+
+        bool m_scrollingPerformanceLoggingEnabled : 1;
 
         Timer<Settings> m_loadsImagesAutomaticallyTimer;
         void loadsImagesAutomaticallyTimerFired(Timer<Settings>*);

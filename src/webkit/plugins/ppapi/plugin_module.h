@@ -21,6 +21,7 @@
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/ppb.h"
 #include "ppapi/c/ppb_core.h"
+#include "ppapi/shared_impl/ppapi_permissions.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
@@ -60,6 +61,14 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
     PPP_ShutdownModuleFunc shutdown_module;  // Optional, may be NULL.
   };
 
+  // Allows the embedder to associate a class with this module. This is opaque
+  // from the PluginModule's perspective (see Set/GetEmbedderState below) but
+  // the module is in charge of deleting the class.
+  class EmbedderState {
+   public:
+    virtual ~EmbedderState() {}
+  };
+
   typedef std::set<PluginInstance*> PluginInstanceSet;
 
   // You must call one of the Init functions after the constructor to create a
@@ -70,9 +79,18 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // tracks which modules are alive.
   PluginModule(const std::string& name,
                const FilePath& path,
-               PluginDelegate::ModuleLifetime* lifetime_delegate);
+               PluginDelegate::ModuleLifetime* lifetime_delegate,
+               const ::ppapi::PpapiPermissions& perms);
 
   ~PluginModule();
+
+  // Sets the given class as being associated with this module. It will be
+  // deleted when the module is destroyed. You can only set it once, subsequent
+  // sets will assert.
+  //
+  // See EmbedderState above for more.
+  void SetEmbedderState(scoped_ptr<EmbedderState> state);
+  EmbedderState* GetEmbedderState();
 
   // Initializes this module as an internal plugin with the given entrypoints.
   // This is used for "plugins" compiled into Chrome. Returns true on success.
@@ -87,11 +105,29 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // ownership of the given pointer, even in the failure case.
   void InitAsProxied(PluginDelegate::OutOfProcessProxy* out_of_process_proxy);
 
+  // Creates a new module for a NaCl instance that will be using the IPC proxy.
+  // We can't use the existing module, or new instances of the plugin can't
+  // be created.
+  scoped_refptr<PluginModule> CreateModuleForNaClInstance();
+
+  // Initializes the NaCl module for the given out of process proxy. This takes
+  // ownership of the given pointer, even in the failure case.
+  void InitAsProxiedNaCl(
+      scoped_ptr<PluginDelegate::OutOfProcessProxy> out_of_process_proxy,
+      PP_Instance instance);
+
   static const PPB_Core* GetCore();
 
   // Returns a pointer to the local GetInterface function for retrieving
   // PPB interfaces.
   static GetInterfaceFunc GetLocalGetInterfaceFunc();
+
+  // Returns whether an interface is supported. This method can be called from
+  // the browser process and used for interface matching before plugin
+  // registration.
+  // NOTE: those custom interfaces provided by PpapiInterfaceFactoryManager
+  // will not be considered when called on the browser process.
+  static bool SupportsInterface(const char* name);
 
   // Returns the module handle. This may be used before Init() is called (the
   // proxy needs this information to set itself up properly).
@@ -99,6 +135,7 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
 
   const std::string& name() const { return name_; }
   const FilePath& path() const { return path_; }
+  const ::ppapi::PpapiPermissions permissions() const { return permissions_; }
 
   PluginInstance* CreateInstance(PluginDelegate* delegate);
 
@@ -154,6 +191,9 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // Note: This may be null.
   PluginDelegate::ModuleLifetime* lifetime_delegate_;
 
+  // See EmbedderState above.
+  scoped_ptr<EmbedderState> embedder_state_;
+
   // Tracker for completion callbacks, used mainly to ensure that all callbacks
   // are properly aborted on module shutdown.
   scoped_refptr< ::ppapi::CallbackTracker> callback_tracker_;
@@ -190,6 +230,8 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   // The name and file location of the module.
   const std::string name_;
   const FilePath path_;
+
+  ::ppapi::PpapiPermissions permissions_;
 
   // Non-owning pointers to all instances associated with this module. When
   // there are no more instances, this object should be deleted.

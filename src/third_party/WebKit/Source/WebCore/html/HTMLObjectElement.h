@@ -25,6 +25,7 @@
 
 #include "FormAssociatedElement.h"
 #include "HTMLPlugInImageElement.h"
+#include "ImageLoaderClient.h"
 
 namespace WebCore {
 
@@ -81,7 +82,7 @@ private:
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const QualifiedName& imageSourceAttributeName() const;
 
-    virtual RenderWidget* renderWidgetForJSBindings();
+    virtual RenderWidget* renderWidgetForJSBindings() const;
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 

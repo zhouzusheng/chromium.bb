@@ -26,14 +26,16 @@
 #include "config.h"
 #include "DeviceOrientationController.h"
 
-#include "DeviceOrientation.h"
 #include "DeviceOrientationClient.h"
+#include "DeviceOrientationData.h"
 #include "DeviceOrientationEvent.h"
+#include "InspectorInstrumentation.h"
 
 namespace WebCore {
 
-DeviceOrientationController::DeviceOrientationController(DeviceOrientationClient* client)
+DeviceOrientationController::DeviceOrientationController(Page* page, DeviceOrientationClient* client)
     : m_client(client)
+    , m_page(page)
     , m_timer(this, &DeviceOrientationController::timerFired)
 {
     ASSERT(m_client);
@@ -45,9 +47,9 @@ DeviceOrientationController::~DeviceOrientationController()
     m_client->deviceOrientationControllerDestroyed();
 }
 
-PassOwnPtr<DeviceOrientationController> DeviceOrientationController::create(DeviceOrientationClient* client)
+PassOwnPtr<DeviceOrientationController> DeviceOrientationController::create(Page* page, DeviceOrientationClient* client)
 {
-    return adoptPtr(new DeviceOrientationController(client));
+    return adoptPtr(new DeviceOrientationController(page, client));
 }
 
 void DeviceOrientationController::timerFired(Timer<DeviceOrientationController>* timer)
@@ -55,7 +57,7 @@ void DeviceOrientationController::timerFired(Timer<DeviceOrientationController>*
     ASSERT_UNUSED(timer, timer == &m_timer);
     ASSERT(m_client->lastOrientation());
 
-    RefPtr<DeviceOrientation> orientation = m_client->lastOrientation();
+    RefPtr<DeviceOrientationData> orientation = m_client->lastOrientation();
     RefPtr<DeviceOrientationEvent> event = DeviceOrientationEvent::create(eventNames().deviceorientationEvent, orientation.get());
 
     Vector<RefPtr<DOMWindow> > listenersVector;
@@ -127,8 +129,9 @@ void DeviceOrientationController::resumeEventsForAllListeners(DOMWindow* window)
         addListener(window);
 }
 
-void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientation* orientation)
+void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientationData* orientation)
 {
+    orientation = InspectorInstrumentation::overrideDeviceOrientation(m_page, orientation);
     RefPtr<DeviceOrientationEvent> event = DeviceOrientationEvent::create(eventNames().deviceorientationEvent, orientation);
     Vector<RefPtr<DOMWindow> > listenersVector;
     copyToVector(m_listeners, listenersVector);
@@ -151,7 +154,7 @@ bool DeviceOrientationController::isActiveAt(Page* page)
 
 void provideDeviceOrientationTo(Page* page, DeviceOrientationClient* client)
 {
-    DeviceOrientationController::provideTo(page, DeviceOrientationController::supplementName(), DeviceOrientationController::create(client));
+    DeviceOrientationController::provideTo(page, DeviceOrientationController::supplementName(), DeviceOrientationController::create(page, client));
 }
 
 } // namespace WebCore

@@ -58,6 +58,8 @@ public:
 
     PassRefPtr<StyleRuleKeyframes> copy() const { return adoptRef(new StyleRuleKeyframes(*this)); }
 
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
+
 private:
     StyleRuleKeyframes();
     StyleRuleKeyframes(const StyleRuleKeyframes&);
@@ -88,6 +90,8 @@ public:
     WebKitCSSKeyframeRule* item(unsigned index) const;
 
     void reattach(StyleRuleKeyframes*);
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     WebKitCSSKeyframesRule(StyleRuleKeyframes*, CSSStyleSheet* parent);

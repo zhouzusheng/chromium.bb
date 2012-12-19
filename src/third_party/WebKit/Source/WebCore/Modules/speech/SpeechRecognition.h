@@ -30,11 +30,11 @@
 
 #include "ActiveDOMObject.h"
 #include "EventTarget.h"
-#include "PlatformString.h"
 #include "SpeechGrammarList.h"
 #include <wtf/Compiler.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -49,17 +49,18 @@ public:
     static PassRefPtr<SpeechRecognition> create(ScriptExecutionContext*);
     ~SpeechRecognition();
 
+    // Attributes.
     PassRefPtr<SpeechGrammarList> grammars() { return m_grammars; }
     void setGrammars(PassRefPtr<SpeechGrammarList> grammars) { m_grammars = grammars; }
-
     String lang() { return m_lang; }
     void setLang(const String& lang) { m_lang = lang; }
-
     bool continuous() { return m_continuous; }
     void setContinuous(bool continuous) { m_continuous = continuous; }
+    unsigned long maxAlternatives() { return m_maxAlternatives; }
+    void setMaxAlternatives(unsigned long maxAlternatives) { m_maxAlternatives = maxAlternatives; }
 
     // Callable by the user.
-    void start();
+    void start(ExceptionCode&);
     void stopFunction();
     void abort();
 
@@ -77,9 +78,12 @@ public:
     void didStart();
     void didEnd();
 
-    // EventTarget
+    // EventTarget.
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+
+    // ActiveDOMObject.
+    virtual void stop() OVERRIDE;
 
     using RefCounted<SpeechRecognition>::ref;
     using RefCounted<SpeechRecognition>::deref;
@@ -100,7 +104,7 @@ public:
 private:
     friend class RefCounted<SpeechRecognition>;
 
-    SpeechRecognition(ScriptExecutionContext*);
+    explicit SpeechRecognition(ScriptExecutionContext*);
 
 
     // EventTarget
@@ -112,10 +116,13 @@ private:
     RefPtr<SpeechGrammarList> m_grammars;
     String m_lang;
     bool m_continuous;
+    unsigned long m_maxAlternatives;
 
     EventTargetData m_eventTargetData;
 
     SpeechRecognitionController* m_controller;
+    bool m_stoppedByActiveDOMObject;
+    bool m_started;
 };
 
 } // namespace WebCore

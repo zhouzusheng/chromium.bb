@@ -10,9 +10,9 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "webkit/blob/local_file_stream_reader.h"
+#include "webkit/fileapi/file_observers.h"
 #include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation_interface.h"
-#include "webkit/fileapi/file_system_quota_util.h"
+#include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/local_file_stream_writer.h"
 #include "webkit/quota/quota_manager.h"
@@ -20,11 +20,6 @@
 namespace fileapi {
 
 namespace {
-
-int PlatformFileErrorToNetError(base::PlatformFileError error) {
-  // TODO(kinuko): Move this static method to more convenient place.
-  return webkit_blob::LocalFileStreamReader::PlatformFileErrorToNetError(error);
-}
 
 // Adjust the |quota| value in overwriting case (i.e. |file_size| > 0 and
 // |file_offset| < |file_size|) to make the remaining quota calculation easier.
@@ -46,26 +41,23 @@ int64 AdjustQuotaForOverlap(int64 quota,
 
 SandboxFileStreamWriter::SandboxFileStreamWriter(
     FileSystemContext* file_system_context,
-    const GURL& url,
-    int64 initial_offset)
+    const FileSystemURL& url,
+    int64 initial_offset,
+    const UpdateObserverList& observers)
     : file_system_context_(file_system_context),
       url_(url),
       initial_offset_(initial_offset),
+      observers_(observers),
       file_size_(0),
       total_bytes_written_(0),
       allowed_bytes_to_write_(0),
       has_pending_operation_(false),
       default_quota_(kint64max),
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  const bool result = CrackFileSystemURL(
-      url_, &origin_, &file_system_type_, &virtual_path_);
-  DCHECK(result);
+  DCHECK(url_.is_valid());
 }
 
-SandboxFileStreamWriter::~SandboxFileStreamWriter() {
-  if (quota_util())
-    quota_util()->proxy()->EndUpdateOrigin(origin_, file_system_type_);
-}
+SandboxFileStreamWriter::~SandboxFileStreamWriter() {}
 
 int SandboxFileStreamWriter::Write(
     net::IOBuffer* buf, int buf_len,
@@ -74,8 +66,12 @@ int SandboxFileStreamWriter::Write(
   if (local_file_writer_.get())
     return WriteInternal(buf, buf_len, callback);
 
-  FileSystemOperationInterface* operation =
-      file_system_context_->CreateFileSystemOperation(url_);
+  base::PlatformFileError error_code;
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url_, &error_code);
+  if (error_code != base::PLATFORM_FILE_OK)
+    return net::PlatformFileErrorToNetError(error_code);
+
   DCHECK(operation);
   net::CompletionCallback write_task =
       base::Bind(&SandboxFileStreamWriter::DidInitializeForWrite,
@@ -129,7 +125,7 @@ void SandboxFileStreamWriter::DidGetFileInfo(
   if (CancelIfRequested())
     return;
   if (file_error != base::PLATFORM_FILE_OK) {
-    callback.Run(PlatformFileErrorToNetError(file_error));
+    callback.Run(net::PlatformFileErrorToNetError(file_error));
     return;
   }
   if (file_info.is_directory) {
@@ -150,7 +146,7 @@ void SandboxFileStreamWriter::DidGetFileInfo(
 
   quota::QuotaManagerProxy* quota_manager_proxy =
       file_system_context_->quota_manager_proxy();
-  if (!quota_manager_proxy || !quota_util()) {
+  if (!quota_manager_proxy) {
     // If we don't have the quota manager or the requested filesystem type
     // does not support quota, we should be able to let it go.
     allowed_bytes_to_write_ = default_quota_;
@@ -158,11 +154,10 @@ void SandboxFileStreamWriter::DidGetFileInfo(
     return;
   }
 
-  quota_util()->proxy()->StartUpdateOrigin(origin_, file_system_type_);
   DCHECK(quota_manager_proxy->quota_manager());
   quota_manager_proxy->quota_manager()->GetUsageAndQuota(
-      origin_,
-      FileSystemTypeToQuotaStorageType(file_system_type_),
+      url_.origin(),
+      FileSystemTypeToQuotaStorageType(url_.type()),
       base::Bind(&SandboxFileStreamWriter::DidGetUsageAndQuota,
                  weak_factory_.GetWeakPtr(), callback));
 }
@@ -214,14 +209,12 @@ void SandboxFileStreamWriter::DidWrite(
     return;
   }
 
-  if (quota_util() &&
-      total_bytes_written_ + write_response + initial_offset_ > file_size_) {
+  if (total_bytes_written_ + write_response + initial_offset_ > file_size_) {
     int overlapped = file_size_ - total_bytes_written_ - initial_offset_;
     if (overlapped < 0)
       overlapped = 0;
-    quota_util()->proxy()->UpdateOriginUsage(
-        file_system_context_->quota_manager_proxy(),
-        origin_, file_system_type_, write_response - overlapped);
+    observers_.Notify(&FileUpdateObserver::OnUpdate,
+                      MakeTuple(url_, write_response - overlapped));
   }
   total_bytes_written_ += write_response;
 
@@ -241,9 +234,10 @@ bool SandboxFileStreamWriter::CancelIfRequested() {
   return true;
 }
 
-FileSystemQuotaUtil* SandboxFileStreamWriter::quota_util() const {
-  DCHECK(file_system_context_.get());
-  return file_system_context_->GetQuotaUtil(file_system_type_);
+int SandboxFileStreamWriter::Flush(const net::CompletionCallback& callback) {
+  // For now, Flush is meaningful only for local native file access. It is no-op
+  // for sandboxed filesystem files (see the discussion in crbug.com/144790).
+  return net::OK;
 }
 
 }  // namespace fileapi

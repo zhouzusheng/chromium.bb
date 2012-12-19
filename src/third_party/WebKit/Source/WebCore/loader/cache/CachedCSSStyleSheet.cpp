@@ -35,6 +35,7 @@
 #include "SharedBuffer.h"
 #include "StyleSheetContents.h"
 #include "TextResourceDecoder.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/Vector.h>
 
@@ -58,14 +59,13 @@ CachedCSSStyleSheet::~CachedCSSStyleSheet()
 void CachedCSSStyleSheet::didAddClient(CachedResourceClient* c)
 {
     ASSERT(c->resourceClientType() == CachedStyleSheetClient::expectedType());
+    // CachedResource::didAddClient() must be before setCSSStyleSheet(),
+    // because setCSSStyleSheet() may cause scripts to be executed, which could destroy 'c' if it is an instance of HTMLLinkElement.
+    // see the comment of HTMLLinkElement::setCSSStyleSheet.
+    CachedResource::didAddClient(c);
+
     if (!isLoading())
         static_cast<CachedStyleSheetClient*>(c)->setCSSStyleSheet(m_resourceRequest.url(), m_response.url(), m_decoder->encoding().name(), this);
-}
-
-void CachedCSSStyleSheet::allClientsRemoved()
-{
-    if (!MemoryCache::shouldMakeResourcePurgeableOnEviction() && isSafeToMakePurgeable())
-        makePurgeable(true);
 }
 
 void CachedCSSStyleSheet::setEncoding(const String& chs)
@@ -90,7 +90,7 @@ const String CachedCSSStyleSheet::sheetText(bool enforceMIMEType, bool* hasValid
     
     // Don't cache the decoded text, regenerating is cheap and it can use quite a bit of memory
     String sheetText = m_decoder->decode(m_data->data(), m_data->size());
-    sheetText += m_decoder->flush();
+    sheetText.append(m_decoder->flush());
     return sheetText;
 }
 
@@ -104,7 +104,7 @@ void CachedCSSStyleSheet::data(PassRefPtr<SharedBuffer> data, bool allDataReceiv
     // Decode the data to find out the encoding and keep the sheet text around during checkNotify()
     if (m_data) {
         m_decodedSheetText = m_decoder->decode(m_data->data(), m_data->size());
-        m_decodedSheetText += m_decoder->flush();
+        m_decodedSheetText.append(m_decoder->flush());
     }
     setLoading(false);
     checkNotify();
@@ -120,14 +120,6 @@ void CachedCSSStyleSheet::checkNotify()
     CachedResourceClientWalker<CachedStyleSheetClient> w(m_clients);
     while (CachedStyleSheetClient* c = w.next())
         c->setCSSStyleSheet(m_resourceRequest.url(), m_response.url(), m_decoder->encoding().name(), this);
-}
-
-void CachedCSSStyleSheet::error(CachedResource::Status status)
-{
-    setStatus(status);
-    ASSERT(errorOccurred());
-    setLoading(false);
-    checkNotify();
 }
 
 bool CachedCSSStyleSheet::canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const
@@ -163,12 +155,21 @@ void CachedCSSStyleSheet::destroyDecodedData()
     m_parsedStyleSheetCache.clear();
 
     setDecodedSize(0);
+
+    if (!MemoryCache::shouldMakeResourcePurgeableOnEviction() && isSafeToMakePurgeable())
+        makePurgeable(true);
 }
 
 PassRefPtr<StyleSheetContents> CachedCSSStyleSheet::restoreParsedStyleSheet(const CSSParserContext& context)
 {
     if (!m_parsedStyleSheetCache)
         return 0;
+    if (m_parsedStyleSheetCache->hasFailedOrCanceledSubresources()) {
+        m_parsedStyleSheetCache->removedFromMemoryCache();
+        m_parsedStyleSheetCache.clear();
+        return 0;
+    }
+
     ASSERT(m_parsedStyleSheetCache->isCacheable());
     ASSERT(m_parsedStyleSheetCache->isInMemoryCache());
 
@@ -191,6 +192,15 @@ void CachedCSSStyleSheet::saveParsedStyleSheet(PassRefPtr<StyleSheetContents> sh
     m_parsedStyleSheetCache->addedToMemoryCache();
 
     setDecodedSize(m_parsedStyleSheetCache->estimatedSizeInBytes());
+}
+
+void CachedCSSStyleSheet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceCSS);
+    CachedResource::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_decoder);
+    info.addMember(m_parsedStyleSheetCache);
+    info.addMember(m_decodedSheetText);
 }
 
 }

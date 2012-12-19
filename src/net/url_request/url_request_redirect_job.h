@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_REDIRECT_JOB_H_
 #define NET_URL_REQUEST_URL_REQUEST_REDIRECT_JOB_H_
-#pragma once
 
 #include "base/memory/weak_ptr.h"
 #include "net/base/net_export.h"
@@ -27,7 +26,9 @@ class NET_EXPORT URLRequestRedirectJob : public URLRequestJob {
   };
 
   // Constructs a job that redirects to the specified URL.
-  URLRequestRedirectJob(URLRequest* request, const GURL& redirect_destination);
+  URLRequestRedirectJob(URLRequest* request,
+                        NetworkDelegate* network_delegate,
+                        const GURL& redirect_destination);
 
   // Change the HTTP status code to use for the redirect. Default is
   // REDIRECT_302_FOUND.

@@ -28,7 +28,6 @@
 
 #include "KURL.h"
 #include "SharedBuffer.h"
-#include "PlatformString.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -54,6 +53,8 @@ namespace WebCore {
         const String& textEncoding() const { return m_textEncoding; }
         const KURL& failingURL() const { return m_failingURL; }
         const KURL& responseURL() const { return m_responseURL; }
+
+        void reportMemoryUsage(MemoryObjectInfo*) const;
         
     private:
         RefPtr<SharedBuffer> m_content;

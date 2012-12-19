@@ -21,12 +21,14 @@
 #ifndef Page_h
 #define Page_h
 
+#include "FeatureObserver.h"
 #include "FrameLoaderTypes.h"
 #include "FindOptions.h"
 #include "LayoutTypes.h"
 #include "PageVisibilityState.h"
+#include "Pagination.h"
 #include "PlatformScreen.h"
-#include "PlatformString.h"
+#include "PluginViewBase.h"
 #include "Region.h"
 #include "Supplementable.h"
 #include "ViewportArguments.h"
@@ -34,6 +36,7 @@
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/text/WTFString.h>
 
 #if OS(SOLARIS)
 #include <sys/time.h> // For time_t structure.
@@ -84,6 +87,7 @@ namespace WebCore {
     class ScrollingCoordinator;
     class Settings;
     class StorageNamespace;
+    class ValidationMessageClient;
 
     typedef uint64_t LinkHash;
 
@@ -123,9 +127,10 @@ namespace WebCore {
             DragClient* dragClient;
             InspectorClient* inspectorClient;
             RefPtr<BackForwardList> backForwardClient;
+            ValidationMessageClient* validationMessageClient;
         };
 
-        Page(PageClients&);
+        explicit Page(PageClients&);
         ~Page();
 
         ArenaSize renderTreeSize() const;
@@ -185,12 +190,15 @@ namespace WebCore {
 #if ENABLE(POINTER_LOCK)
         PointerLockController* pointerLockController() const { return m_pointerLockController.get(); }
 #endif
+        ValidationMessageClient* validationMessageClient() const { return m_validationMessageClient; }
 
         ScrollingCoordinator* scrollingCoordinator();
 
         Settings* settings() const { return m_settings.get(); }
         ProgressTracker* progress() const { return m_progress.get(); }
         BackForwardController* backForward() const { return m_backForwardController.get(); }
+
+        FeatureObserver* featureObserver() { return &m_featureObserver; }
 
         enum ViewMode {
             ViewModeInvalid,
@@ -237,9 +245,6 @@ namespace WebCore {
         bool inLowQualityImageInterpolationMode() const;
         void setInLowQualityImageInterpolationMode(bool = true);
 
-        bool cookieEnabled() const { return m_cookieEnabled; }
-        void setCookieEnabled(bool enabled) { m_cookieEnabled = enabled; }
-
         float mediaVolume() const { return m_mediaVolume; }
         void setMediaVolume(float volume);
 
@@ -249,28 +254,13 @@ namespace WebCore {
         float deviceScaleFactor() const { return m_deviceScaleFactor; }
         void setDeviceScaleFactor(float);
 
-        struct Pagination {
-            enum Mode { Unpaginated, HorizontallyPaginated, VerticallyPaginated };
+        bool shouldSuppressScrollbarAnimations() const { return m_suppressScrollbarAnimations; }
+        void setShouldSuppressScrollbarAnimations(bool suppressAnimations);
 
-            Pagination()
-                : mode(Unpaginated)
-                , behavesLikeColumns(false)
-                , pageLength(0)
-                , gap(0)
-            {
-            };
-
-            bool operator==(const Pagination& other) const
-            {
-                return mode == other.mode && behavesLikeColumns == other.behavesLikeColumns && pageLength == other.pageLength && gap == other.gap;
-            }
-
-            Mode mode;
-            bool behavesLikeColumns;
-            unsigned pageLength;
-            unsigned gap;
-        };
-
+        // Page and FrameView both store a Pagination value. Page::pagination() is set only by API,
+        // and FrameView::pagination() is set only by CSS. Page::pagination() will affect all
+        // FrameViews in the page cache, but FrameView::pagination() only affects the current
+        // FrameView. 
         const Pagination& pagination() const { return m_pagination; }
         void setPagination(const Pagination&);
 
@@ -291,6 +281,7 @@ namespace WebCore {
         const String& userStyleSheet() const;
 
         void dnsPrefetchingStateChanged();
+        void storageBlockingStateChanged();
         void privateBrowsingStateChanged();
 
         static void setDebuggerForAllPages(JSC::Debugger*);
@@ -351,6 +342,11 @@ namespace WebCore {
 
         AlternativeTextClient* alternativeTextClient() const { return m_alternativeTextClient; }
 
+        bool hasSeenPlugin(const String& serviceType) const;
+        bool hasSeenAnyPlugin() const;
+        void sawPlugin(const String& serviceType);
+        void resetSeenPlugins();
+
     private:
         void initGroup();
 
@@ -364,6 +360,8 @@ namespace WebCore {
 
         void setMinimumTimerInterval(double);
         double minimumTimerInterval() const;
+
+        void collectPluginViews(Vector<RefPtr<PluginViewBase>, 32>& pluginViewBases);
 
         OwnPtr<Chrome> m_chrome;
         OwnPtr<DragCaretController> m_dragCaretController;
@@ -394,6 +392,9 @@ namespace WebCore {
         RefPtr<RenderTheme> m_theme;
 
         EditorClient* m_editorClient;
+        ValidationMessageClient* m_validationMessageClient;
+
+        FeatureObserver m_featureObserver;
 
         int m_frameCount;
         String m_groupName;
@@ -410,6 +411,8 @@ namespace WebCore {
 
         float m_pageScaleFactor;
         float m_deviceScaleFactor;
+
+        bool m_suppressScrollbarAnimations;
 
         Pagination m_pagination;
 
@@ -454,6 +457,8 @@ namespace WebCore {
         AlternativeTextClient* m_alternativeTextClient;
 
         bool m_scriptedAnimationsSuspended;
+
+        HashSet<String> m_seenPlugins;
     };
 
 } // namespace WebCore

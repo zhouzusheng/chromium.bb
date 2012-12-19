@@ -339,12 +339,6 @@ WebStorageNamespace* TestWebViewDelegate::createSessionStorageNamespace(
   return SimpleDomStorageSystem::instance().CreateSessionStorageNamespace();
 }
 
-WebGraphicsContext3D* TestWebViewDelegate::createGraphicsContext3D(
-    const WebGraphicsContext3D::Attributes& attributes) {
-  return webkit::gpu::WebGraphicsContext3DInProcessImpl::CreateForWebView(
-      attributes, true);
-}
-
 void TestWebViewDelegate::didAddMessageToConsole(
     const WebConsoleMessage& message, const WebString& source_name,
     unsigned source_line) {
@@ -636,7 +630,7 @@ WebPlugin* TestWebViewDelegate::createPlugin(WebFrame* frame,
 }
 
 WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
-    WebFrame* frame, WebMediaPlayerClient* client) {
+    WebFrame* frame, const WebKit::WebURL& url, WebMediaPlayerClient* client) {
   scoped_ptr<media::MessageLoopFactory> message_loop_factory(
       new media::MessageLoopFactory());
 
@@ -699,8 +693,6 @@ WebNavigationPolicy TestWebViewDelegate::decidePolicyForNavigation(
     } else {
       result = WebKit::WebNavigationPolicyIgnore;
     }
-    if (policy_delegate_should_notify_done_)
-      shell_->layout_test_controller()->PolicyDelegateDone();
   } else {
     result = default_policy;
   }
@@ -740,7 +732,7 @@ void TestWebViewDelegate::unableToImplementPolicyWithError(
   std::string domain = error.domain.utf8();
   printf("Policy delegate: unable to implement policy with error domain '%s', "
       "error code %d, in frame '%s'\n",
-      domain.data(), error.reason, frame->name().utf8().data());
+      domain.data(), error.reason, frame->uniqueName().utf8().data());
 }
 
 void TestWebViewDelegate::willPerformClientRedirect(
@@ -761,11 +753,6 @@ void TestWebViewDelegate::didStartProvisionalLoad(WebFrame* frame) {
     top_loading_frame_ = frame;
   }
 
-  if (shell_->layout_test_controller()->StopProvisionalFrameLoads()) {
-    printf("%s - stopping load in didStartProvisionalLoadForFrame callback\n",
-           UTF16ToUTF8(GetFrameDescription(frame)).c_str());
-    frame->stopLoading();
-  }
   UpdateAddressBar(frame->view());
 }
 
@@ -816,10 +803,6 @@ void TestWebViewDelegate::didFailProvisionalLoad(
 void TestWebViewDelegate::didCommitProvisionalLoad(
     WebFrame* frame, bool is_new_navigation) {
   UpdateForCommittedLoad(frame, is_new_navigation);
-}
-
-void TestWebViewDelegate::didClearWindowObject(WebFrame* frame) {
-  shell_->BindJSObjectsToWindow(frame);
 }
 
 void TestWebViewDelegate::didReceiveTitle(
@@ -1048,9 +1031,7 @@ void TestWebViewDelegate::UpdateAddressBar(WebView* webView) {
 void TestWebViewDelegate::LocationChangeDone(WebFrame* frame) {
   if (frame == top_loading_frame_) {
     top_loading_frame_ = NULL;
-
-    if (shell_->layout_test_mode())
-      shell_->layout_test_controller()->LocationChangeDone();
+    shell_->TestFinished();
   }
 }
 
@@ -1136,7 +1117,7 @@ void TestWebViewDelegate::UpdateSessionHistory(WebFrame* frame) {
 }
 
 string16 TestWebViewDelegate::GetFrameDescription(WebFrame* webframe) {
-  std::string name = UTF16ToUTF8(webframe->name());
+  std::string name = UTF16ToUTF8(webframe->uniqueName());
 
   if (webframe == shell_->webView()->mainFrame()) {
     if (name.length())

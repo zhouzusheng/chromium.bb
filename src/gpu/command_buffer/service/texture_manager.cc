@@ -4,11 +4,11 @@
 
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "base/bits.h"
-#include "base/debug/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/texture_definition.h"
 
 namespace gpu {
@@ -123,6 +123,34 @@ TextureManager::TextureInfo::~TextureInfo() {
     manager_->StopTracking(this);
     manager_ = NULL;
   }
+}
+
+TextureManager::TextureInfo::LevelInfo::LevelInfo()
+    : cleared(true),
+      target(0),
+      level(-1),
+      internal_format(0),
+      width(0),
+      height(0),
+      depth(0),
+      border(0),
+      format(0),
+      type(0),
+      estimated_size(0) {
+}
+
+TextureManager::TextureInfo::LevelInfo::LevelInfo(const LevelInfo& rhs)
+    : cleared(rhs.cleared),
+      target(rhs.target),
+      level(rhs.level),
+      internal_format(rhs.internal_format),
+      width(rhs.width),
+      height(rhs.height),
+      depth(rhs.depth),
+      border(rhs.border),
+      format(rhs.format),
+      type(rhs.type),
+      estimated_size(rhs.estimated_size) {
 }
 
 bool TextureManager::TextureInfo::CanRender(
@@ -331,10 +359,10 @@ bool TextureManager::TextureInfo::ValidForTexture(
   if (level >= 0 && face_index < level_infos_.size() &&
       static_cast<size_t>(level) < level_infos_[face_index].size()) {
     const LevelInfo& info = level_infos_[GLTargetToFaceIndex(face)][level];
-    GLint right;
-    GLint top;
-    return SafeAdd(xoffset, width, &right) &&
-           SafeAdd(yoffset, height, &top) &&
+    int32 right;
+    int32 top;
+    return SafeAddInt32(xoffset, width, &right) &&
+           SafeAddInt32(yoffset, height, &top) &&
            xoffset >= 0 &&
            yoffset >= 0 &&
            right <= info.width &&
@@ -589,10 +617,12 @@ bool TextureManager::TextureInfo::ClearLevel(
 }
 
 TextureManager::TextureManager(
+    MemoryTracker* memory_tracker,
     FeatureInfo* feature_info,
     GLint max_texture_size,
     GLint max_cube_map_texture_size)
-    : feature_info_(feature_info),
+    : texture_memory_tracker_(new MemoryTypeTracker(memory_tracker)),
+      feature_info_(feature_info),
       max_texture_size_(max_texture_size),
       max_cube_map_texture_size_(max_cube_map_texture_size),
       max_levels_(ComputeMipMapCount(max_texture_size,
@@ -606,7 +636,6 @@ TextureManager::TextureManager(
       num_uncleared_mips_(0),
       texture_info_count_(0),
       mem_represented_(0),
-      last_reported_mem_represented_(1),
       have_context_(true) {
   for (int ii = 0; ii < kNumDefaultTextures; ++ii) {
     black_texture_ids_[ii] = 0;
@@ -614,11 +643,7 @@ TextureManager::TextureManager(
 }
 
 void TextureManager::UpdateMemRepresented() {
-  if (mem_represented_ != last_reported_mem_represented_) {
-    last_reported_mem_represented_ = mem_represented_;
-    TRACE_COUNTER_ID1(
-        "TextureManager", "TextureMemory", this, mem_represented_);
-  }
+  texture_memory_tracker_->UpdateMemRepresented(mem_represented_);
 }
 
 bool TextureManager::Initialize() {
@@ -705,7 +730,7 @@ TextureManager::TextureInfo::Ref TextureManager::CreateDefaultAndBlackTextures(
 
 bool TextureManager::ValidForTarget(
     GLenum target, GLint level, GLsizei width, GLsizei height, GLsizei depth) {
-  GLsizei max_size = MaxSizeForTarget(target);
+  GLsizei max_size = MaxSizeForTarget(target) >> level;
   return level >= 0 &&
          width >= 0 &&
          height >= 0 &&
@@ -1049,5 +1074,3 @@ GLsizei TextureManager::ComputeMipMapCount(
 
 }  // namespace gles2
 }  // namespace gpu
-
-

@@ -10,7 +10,7 @@ GRIT tools.
 import os
 import sys
 if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(sys.argv[0]), '..'))
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '..'))
 
 import getopt
 
@@ -74,6 +74,10 @@ def ToolFactoryXmb():
   import grit.tool.xmb
   return grit.tool.xmb.OutputXmb()
 
+def ToolAndroid2Grd():
+  import grit.tool.android2grd
+  return grit.tool.android2grd.Android2Grd()
+
 # Keys for the following map
 _FACTORY = 1
 _REQUIRES_INPUT = 2
@@ -101,6 +105,9 @@ _TOOLS = [
                   _REQUIRES_INPUT : False }],
   ['unit', { _FACTORY : ToolFactoryUnit, _REQUIRES_INPUT : False }],
   ['xmb', { _FACTORY : ToolFactoryXmb, _REQUIRES_INPUT : True }],
+  ['android2grd', {
+      _FACTORY: ToolAndroid2Grd,
+      _REQUIRES_INPUT : False }],
 ]
 
 
@@ -163,7 +170,7 @@ class Options(object):
 
   def ReadOptions(self, args):
     """Reads options from the start of args and returns the remainder."""
-    (opts, args) = getopt.getopt(args, 'g:dvxc:i:p:h:', ('psyco',))
+    (opts, args) = getopt.getopt(args, 'g:qdvxc:i:p:h:', ('psyco',))
     for (key, val) in opts:
       if key == '-d': self.disconnected = True
       elif key == '-c': self.client = val
@@ -269,4 +276,3 @@ def Main(args):
 
 if __name__ == '__main__':
   sys.exit(Main(sys.argv[1:]))
-

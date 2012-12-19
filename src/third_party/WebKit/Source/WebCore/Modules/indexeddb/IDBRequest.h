@@ -40,6 +40,8 @@
 #include "EventTarget.h"
 #include "IDBAny.h"
 #include "IDBCallbacks.h"
+#include "IDBCursor.h"
+#include "IDBCursorBackendInterface.h"
 
 namespace WebCore {
 
@@ -50,6 +52,7 @@ typedef int ExceptionCode;
 class IDBRequest : public IDBCallbacks, public EventTarget, public ActiveDOMObject {
 public:
     static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
+    static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransactionBackendInterface::TaskType, IDBTransaction*);
     virtual ~IDBRequest();
 
     PassRefPtr<IDBAny> result(ExceptionCode&) const;
@@ -72,24 +75,21 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
     void markEarlyDeath();
-    bool resetReadyState(IDBTransaction*);
-    void setCursorType(IDBCursorBackendInterface::CursorType);
-    void setCursor(PassRefPtr<IDBCursor>);
+    void setCursorDetails(IDBCursorBackendInterface::CursorType, IDBCursor::Direction);
+    void setPendingCursor(PassRefPtr<IDBCursor>);
     void finishCursor();
-    IDBAny* source();
     void abort();
 
     // IDBCallbacks
     virtual void onError(PassRefPtr<IDBDatabaseError>);
     virtual void onSuccess(PassRefPtr<DOMStringList>);
-    virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>);
-    virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>);
+    virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
     virtual void onSuccess(PassRefPtr<IDBKey>);
     virtual void onSuccess(PassRefPtr<IDBTransactionBackendInterface>);
     virtual void onSuccess(PassRefPtr<SerializedScriptValue>);
-    virtual void onSuccessWithContinuation();
+    virtual void onSuccess(PassRefPtr<SerializedScriptValue>, PassRefPtr<IDBKey>, const IDBKeyPath&);
+    virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
     virtual void onSuccessWithPrefetch(const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<SerializedScriptValue> >&) { ASSERT_NOT_REACHED(); } // Not implemented. Callback should not reach the renderer side.
-    virtual void onBlocked();
 
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
@@ -102,16 +102,26 @@ public:
     bool dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec) { return EventTarget::dispatchEvent(event, ec); }
     virtual void uncaughtExceptionInEventHandler();
 
+    void transactionDidFinishAndDispatch();
+
     using ThreadSafeRefCounted<IDBCallbacks>::ref;
     using ThreadSafeRefCounted<IDBCallbacks>::deref;
 
+    IDBTransactionBackendInterface::TaskType taskType() { return m_taskType; }
+
 protected:
-    IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
+    IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransactionBackendInterface::TaskType, IDBTransaction*);
     void enqueueEvent(PassRefPtr<Event>);
+    virtual bool shouldEnqueueEvent() const;
+
     RefPtr<IDBAny> m_result;
     unsigned short m_errorCode;
     String m_errorMessage;
     RefPtr<DOMError> m_error;
+    bool m_contextStopped;
+    RefPtr<IDBTransaction> m_transaction;
+    ReadyState m_readyState;
+    bool m_requestAborted; // May be aborted by transaction then receive async onsuccess; ignore vs. assert.
 
 private:
     // EventTarget
@@ -120,20 +130,24 @@ private:
     virtual EventTargetData* eventTargetData();
     virtual EventTargetData* ensureEventTargetData();
 
-    void setResultCursor(PassRefPtr<IDBCursor>, IDBCursorBackendInterface::CursorType);
+    PassRefPtr<IDBCursor> getResultCursor();
+    void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
 
     RefPtr<IDBAny> m_source;
-    RefPtr<IDBTransaction> m_transaction;
+    const IDBTransactionBackendInterface::TaskType m_taskType;
 
-    ReadyState m_readyState;
-    bool m_requestFinished; // Is it possible that we'll fire any more events? If not, we're finished.
-    bool m_cursorFinished;
-    bool m_contextStopped;
+    bool m_hasPendingActivity;
     Vector<RefPtr<Event> > m_enqueuedEvents;
 
     // Only used if the result type will be a cursor.
     IDBCursorBackendInterface::CursorType m_cursorType;
-    RefPtr<IDBCursor> m_cursor;
+    IDBCursor::Direction m_cursorDirection;
+    bool m_cursorFinished;
+    RefPtr<IDBCursor> m_pendingCursor;
+    RefPtr<IDBKey> m_cursorKey;
+    RefPtr<IDBKey> m_cursorPrimaryKey;
+    RefPtr<SerializedScriptValue> m_cursorValue;
+    bool m_didFireUpgradeNeededEvent;
 
     EventTargetData m_eventTargetData;
 };

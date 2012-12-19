@@ -11,9 +11,12 @@
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "base/win/metro.h"
+#include "printing/backend/print_backend.h"
 #include "printing/backend/win_helper.h"
 #include "printing/print_job_constants.h"
 #include "printing/print_settings_initializer_win.h"
@@ -219,6 +222,25 @@ void PrintingContextWin::AskUserForSettings(
     const PrintSettingsCallback& callback) {
 #if !defined(USE_AURA)
   DCHECK(!in_print_job_);
+
+  if (base::win::IsMetroProcess()) {
+    // The system dialog can not be opened while running in Metro.
+    // But we can programatically launch the Metro print device charm though.
+    HMODULE metro_module = base::win::GetMetroModule();
+    if (metro_module != NULL) {
+      typedef void (*MetroShowPrintUI)();
+      MetroShowPrintUI metro_show_print_ui =
+          reinterpret_cast<MetroShowPrintUI>(
+              ::GetProcAddress(metro_module, "MetroShowPrintUI"));
+      if (metro_show_print_ui) {
+        // TODO(mad): Remove this once we can send user metrics from the metro
+        // driver. crbug.com/142330
+        UMA_HISTOGRAM_ENUMERATION("Metro.Print", 1, 2);
+        metro_show_print_ui();
+      }
+    }
+    return callback.Run(CANCEL);
+  }
   dialog_box_dismissed_ = false;
 
   HWND window;
@@ -483,6 +505,7 @@ PrintingContext::Result PrintingContextWin::NewDocument(
   if (SP_ERROR == SetAbortProc(context_, &AbortProc))
     return OnError();
 
+  DCHECK(PrintBackend::SimplifyDocumentTitle(document_name) == document_name);
   DOCINFO di = { sizeof(DOCINFO) };
   const std::wstring& document_name_wide = UTF16ToWide(document_name);
   di.lpszDocName = document_name_wide.c_str();

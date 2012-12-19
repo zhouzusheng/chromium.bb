@@ -69,6 +69,8 @@ public:
     virtual bool cssPropertyMatches(const CSSProperty*) const = 0;
     virtual CSSStyleSheet* parentStyleSheet() const { return 0; }
 
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const = 0;
+
 protected:
     CSSStyleDeclaration() { }
 };

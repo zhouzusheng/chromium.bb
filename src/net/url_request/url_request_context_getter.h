@@ -4,10 +4,9 @@
 
 #ifndef CHROME_COMMON_NET_URL_REQUEST_CONTEXT_GETTER_H_
 #define CHROME_COMMON_NET_URL_REQUEST_CONTEXT_GETTER_H_
-#pragma once
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_helpers.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "net/base/net_export.h"
 
 namespace base {

@@ -30,7 +30,10 @@
 #include "Document.h"
 #include "FontCustomPlatformData.h"
 #include "Node.h"
+#include "SVGFontFaceElement.h"
 #include "StyleSheetContents.h"
+#include "WebCoreMemoryInstrumentation.h"
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -61,22 +64,32 @@ bool CSSFontFaceSrcValue::isSupportedFormat() const
 
 String CSSFontFaceSrcValue::customCssText() const
 {
-    String result;
+    StringBuilder result;
     if (isLocal())
-        result += "local(";
+        result.appendLiteral("local(");
     else
-        result += "url(";
-    result += m_resource;
-    result += ")";
-    if (!m_format.isEmpty())
-        result += " format(" + m_format + ")";
-    return result;
+        result.appendLiteral("url(");
+    result.append(m_resource);
+    result.append(')');
+    if (!m_format.isEmpty()) {
+        result.appendLiteral(" format(");
+        result.append(m_format);
+        result.append(')');
+    }
+    return result.toString();
 }
 
 void CSSFontFaceSrcValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
 {
     if (!isLocal())
         addSubresourceURL(urls, styleSheet->completeURL(m_resource));
+}
+
+bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
+{
+    if (!m_cachedFont)
+        return false;
+    return m_cachedFont->loadFailedOrCanceled();
 }
 
 CachedFont* CSSFontFaceSrcValue::cachedFont(Document* document)
@@ -86,6 +99,17 @@ CachedFont* CSSFontFaceSrcValue::cachedFont(Document* document)
         m_cachedFont = document->cachedResourceLoader()->requestFont(request);
     }
     return m_cachedFont.get();
+}
+
+void CSSFontFaceSrcValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    info.addMember(m_resource);
+    info.addMember(m_format);
+    // FIXME: add m_cachedFont when MemoryCache is instrumented.
+#if ENABLE(SVG_FONTS)
+    info.addMember(m_svgFontFaceElement);
+#endif
 }
 
 }

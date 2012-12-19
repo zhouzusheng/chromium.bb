@@ -44,7 +44,7 @@ WebInspector.FileSystemModel = function()
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameNavigated, this._frameNavigated, this);
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameDetached, this);
 
-    this._agentWrapper = new WebInspector.FileSystemRequestManager();
+    FileSystemAgent.enable();
 
     if (WebInspector.resourceTreeModel.mainFrame)
         this._attachFrameRecursively(WebInspector.resourceTreeModel.mainFrame);
@@ -147,12 +147,33 @@ WebInspector.FileSystemModel.prototype = {
         this._fileSystemsForOrigin[origin] = {};
 
         var types = ["persistent", "temporary"];
-        for (var i = 0; i < types.length; ++i) {
-            // FIXME(88602): Check if the filesystem is initialized, and show it only if it was.
-            var fileSystem = new WebInspector.FileSystemModel.FileSystem(this, origin, types[i]);
-            this._fileSystemsForOrigin[origin][types[i]] = fileSystem;
-            this._fileSystemAdded(fileSystem);
+        for (var i = 0; i < types.length; ++i)
+            this._requestFileSystemRoot(origin, types[i], this._fileSystemRootReceived.bind(this, origin, types[i], this._fileSystemsForOrigin[origin]));
+    },
+
+    /**
+     * @param {string} origin
+     * @param {string} type
+     * @param {function(number, FileSystemAgent.Entry=)} callback
+     */
+    _requestFileSystemRoot: function(origin, type, callback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {number} errorCode
+         * @param {FileSystemAgent.Entry=} backendRootEntry
+         */
+        function innerCallback(error, errorCode, backendRootEntry)
+        {
+            if (error) {
+                callback(FileError.SECURITY_ERR);
+                return;
+            }
+            
+            callback(errorCode, backendRootEntry);
         }
+
+        FileSystemAgent.requestFileSystemRoot(origin, type, innerCallback.bind(this));
     },
 
     /**
@@ -186,13 +207,211 @@ WebInspector.FileSystemModel.prototype = {
 
     refreshFileSystemList: function()
     {
-        for (var origin in this._fileSystemsForOrigin)
-            for (var type in this._fileSystemsForOrigin[origin])
-                this._fileSystemRemoved(this._fileSystemsForOrigin[origin][type]);
+        if (WebInspector.resourceTreeModel.mainFrame) {
+            this._detachFrameRecursively(WebInspector.resourceTreeModel.mainFrame);
+            this._attachFrameRecursively(WebInspector.resourceTreeModel.mainFrame);
+        }
+    },
 
-        for (var origin in this._fileSystemsForOrigin)
-            for (var type in this._fileSystemsForOrigin[origin])
-                this._fileSystemAdded(this._fileSystemsForOrigin[origin][type]);
+    /**
+     * @param {string} origin
+     * @param {string} type
+     * @param {Object.<WebInspector.FileSystemModel.FileSystem>} store
+     * @param {number} errorCode
+     * @param {FileSystemAgent.Entry=} backendRootEntry
+     */
+    _fileSystemRootReceived: function(origin, type, store, errorCode, backendRootEntry)
+    {
+        if (!errorCode && backendRootEntry && this._fileSystemsForOrigin[origin] === store) {
+            var fileSystem = new WebInspector.FileSystemModel.FileSystem(this, origin, type, backendRootEntry);
+            store[type] = fileSystem;
+            this._fileSystemAdded(fileSystem);
+        }
+    },
+
+    /**
+     * @param {WebInspector.FileSystemModel.Directory} directory
+     * @param {function(number, Array.<WebInspector.FileSystemModel.Entry>=)} callback
+     */
+    requestDirectoryContent: function(directory, callback)
+    {
+        this._requestDirectoryContent(directory.url, this._directoryContentReceived.bind(this, directory, callback));
+    },
+
+    /**
+     * @param {string} url
+     * @param {function(number, Array.<FileSystemAgent.Entry>=)} callback
+     */
+    _requestDirectoryContent: function(url, callback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {number} errorCode
+         * @param {Array.<FileSystemAgent.Entry>=} backendEntries
+         */
+        function innerCallback(error, errorCode, backendEntries)
+        {
+            if (error) {
+                callback(FileError.SECURITY_ERR);
+                return;
+            }
+            
+            if (errorCode !== 0) {
+                callback(errorCode, null);
+                return;
+            }
+
+            callback(errorCode, backendEntries);
+        }
+
+        FileSystemAgent.requestDirectoryContent(url, innerCallback.bind(this));
+    },
+
+    /**
+     * @param {WebInspector.FileSystemModel.Directory} parentDirectory
+     * @param {function(number, Array.<WebInspector.FileSystemModel.Entry>=)} callback
+     * @param {number} errorCode
+     * @param {Array.<FileSystemAgent.Entry>=} backendEntries
+     */
+    _directoryContentReceived: function(parentDirectory, callback, errorCode, backendEntries)
+    {
+        var entries = [];
+        for (var i = 0; i < backendEntries.length; ++i) {
+            if (backendEntries[i].isDirectory)
+                entries.push(new WebInspector.FileSystemModel.Directory(this, parentDirectory.fileSystem, backendEntries[i]));
+            else
+                entries.push(new WebInspector.FileSystemModel.File(this, parentDirectory.fileSystem, backendEntries[i]));
+        }
+
+        callback(errorCode, entries);
+    },
+
+    /**
+     * @param {WebInspector.FileSystemModel.Entry} entry
+     * @param {function(number, FileSystemAgent.Metadata=)} callback
+     */
+    requestMetadata: function(entry, callback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {number} errorCode
+         * @param {FileSystemAgent.Metadata=} metadata
+         */
+        function innerCallback(error, errorCode, metadata)
+        {
+            if (error) {
+                callback(FileError.SECURITY_ERR);
+                return;
+            }
+            
+            callback(errorCode, metadata);
+        }
+
+        FileSystemAgent.requestMetadata(entry.url, innerCallback.bind(this));
+    },
+
+    /**
+     * @param {WebInspector.FileSystemModel.File} file
+     * @param {boolean} readAsText
+     * @param {number=} start
+     * @param {number=} end
+     * @param {string=} charset
+     * @param {function(number, string=, string=)=} callback
+     */
+    requestFileContent: function(file, readAsText, start, end, charset, callback)
+    {
+        this._requestFileContent(file.url, readAsText, start, end, charset, callback);
+    },
+
+    /**
+     * @param {string} url
+     * @param {boolean} readAsText
+     * @param {number=} start
+     * @param {number=} end
+     * @param {string=} charset
+     * @param {function(number, string=, string=)=} callback
+     */
+    _requestFileContent: function(url, readAsText, start, end, charset, callback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {number} errorCode
+         * @param {string=} content
+         * @param {string=} charset
+         */
+        function innerCallback(error, errorCode, content, charset)
+        {
+            if (error) {
+                if (callback)
+                    callback(FileError.SECURITY_ERR);
+                return;
+            }
+            
+            if (callback)
+                callback(errorCode, content, charset);
+        }
+
+        FileSystemAgent.requestFileContent(url, readAsText, start, end, charset, innerCallback.bind(this));
+    },
+    /**
+     * @param {WebInspector.FileSystemModel.Entry} entry
+     * @param {function(number)=} callback
+     */
+    deleteEntry: function(entry, callback)
+    {
+        var fileSystemModel = this;
+        if (entry === entry.fileSystem.root)
+            this._deleteEntry(entry.url, hookFileSystemDeletion);
+        else
+            this._deleteEntry(entry.url, callback);
+
+        function hookFileSystemDeletion(errorCode)
+        {
+            callback(errorCode);
+            if (!errorCode)
+                fileSystemModel._removeFileSystem(entry.fileSystem);
+        }
+    },
+
+    /**
+     * @param {string} url
+     * @param {function(number)=} callback
+     */
+    _deleteEntry: function(url, callback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {number} errorCode
+         */
+        function innerCallback(error, errorCode)
+        {
+            if (error) {
+                if (callback)
+                    callback(FileError.SECURITY_ERR);
+                return;
+            }
+            
+            if (callback)
+                callback(errorCode);
+        }
+
+        FileSystemAgent.deleteEntry(url, innerCallback.bind(this));
+    },
+
+    /**
+     * @param {WebInspector.FileSystemModel.FileSystem} fileSystem
+     */
+    _removeFileSystem: function(fileSystem)
+    {
+        var origin = fileSystem.origin;
+        var type = fileSystem.type;
+        if (this._fileSystemsForOrigin[origin] && this._fileSystemsForOrigin[origin][type]) {
+            delete this._fileSystemsForOrigin[origin][type];
+            this._fileSystemRemoved(fileSystem);
+
+            if (Object.isEmpty(this._fileSystemsForOrigin[origin]))
+                delete this._fileSystemsForOrigin[origin];
+        }
     }
 }
 
@@ -208,14 +427,20 @@ WebInspector.FileSystemModel.prototype.__proto__ = WebInspector.Object.prototype
  * @param {WebInspector.FileSystemModel} fileSystemModel
  * @param {string} origin
  * @param {string} type
+ * @param {FileSystemAgent.Entry} backendRootEntry
  */
-WebInspector.FileSystemModel.FileSystem = function(fileSystemModel, origin, type)
+WebInspector.FileSystemModel.FileSystem = function(fileSystemModel, origin, type, backendRootEntry)
 {
     this.origin = origin;
     this.type = type;
+
+    this.root = new WebInspector.FileSystemModel.Directory(fileSystemModel, this, backendRootEntry);
 }
 
 WebInspector.FileSystemModel.FileSystem.prototype = {
+    /**
+     * @type {string}
+     */
     get name()
     {
         return "filesystem:" + this.origin + "/" + this.type;
@@ -224,70 +449,166 @@ WebInspector.FileSystemModel.FileSystem.prototype = {
 
 /**
  * @constructor
+ * @param {WebInspector.FileSystemModel} fileSystemModel
+ * @param {WebInspector.FileSystemModel.FileSystem} fileSystem
+ * @param {FileSystemAgent.Entry} backendEntry
  */
-WebInspector.FileSystemRequestManager = function()
+WebInspector.FileSystemModel.Entry = function(fileSystemModel, fileSystem, backendEntry)
 {
-    this._pendingReadDirectoryRequests = {};
+    this._fileSystemModel = fileSystemModel;
+    this._fileSystem = fileSystem;
 
-    InspectorBackend.registerFileSystemDispatcher(new WebInspector.FileSystemDispatcher(this));
-    FileSystemAgent.enable();
+    this._url = backendEntry.url;
+    this._name = backendEntry.name;
+    this._isDirectory = backendEntry.isDirectory;
 }
 
-WebInspector.FileSystemRequestManager.nextRequestId = 1;
+/**
+ * @param {WebInspector.FileSystemModel.Entry} x
+ * @param {WebInspector.FileSystemModel.Entry} y
+ * @return {number}
+ */
+WebInspector.FileSystemModel.Entry.compare = function(x, y)
+{
+    if (x.isDirectory != y.isDirectory)
+        return y.isDirectory ? 1 : -1;
+    return x.name.localeCompare(y.name);
+}
 
-WebInspector.FileSystemRequestManager.prototype = {
+WebInspector.FileSystemModel.Entry.prototype = {
     /**
-     * @return {number}
+     * @type {WebInspector.FileSystemModel}
      */
-    _requestId: function()
+    get fileSystemModel()
     {
-        return WebInspector.FileSystemRequestManager.nextRequestId++;
+        return this._fileSystemModel;
     },
 
     /**
-     * @param {string} url
-     * @param {function(number, Array.<FileSystemAgent.Entry>=)} callback
+     * @type {WebInspector.FileSystemModel.FileSystem}
      */
-    readDirectory: function(url, callback)
+    get fileSystem()
     {
-        var requestId = this.requestId();
-        this._pendingReadDirectoryRequests[requestId] = callback;
-        FileSystemAgent.readDirectory(requestId, url);
+        return this._fileSystem;
     },
 
     /**
-     * @param {number} requestId
-     * @param {number} errorCode
-     * @param {Array.<FileSystemAgent.Entry>=} backendEntries
+     * @type {string}
      */
-    _didReadDirectory: function(requestId, errorCode, backendEntries)
+    get url()
     {
-        var callback = /** @type {function(number, Array.<FileSystemAgent.Entry>=)} */ this._pendingReadDirectoryRequests[requestId];
-        if (!callback)
-            return;
-        delete this._pendingReadDirectoryRequests[requestId];
-        callback(errorCode, backendEntries);
+        return this._url;
+    },
+
+    /**
+     * @type {string}
+     */
+    get name()
+    {
+        return this._name;
+    },
+
+    /**
+     * @type {boolean}
+     */
+    get isDirectory()
+    {
+        return this._isDirectory;
+    },
+
+    /**
+     * @param {function(number, FileSystemAgent.Metadata)} callback
+     */
+    requestMetadata: function(callback)
+    {
+        this.fileSystemModel.requestMetadata(this, callback);
+    },
+
+    /**
+     * @param {function(number)} callback
+     */
+    deleteEntry: function(callback)
+    {
+        this.fileSystemModel.deleteEntry(this, callback);
     }
 }
 
 /**
  * @constructor
- * @implements {FileSystemAgent.Dispatcher}
- * @param {WebInspector.FileSystemRequestManager} agentWrapper
+ * @extends {WebInspector.FileSystemModel.Entry}
+ * @param {WebInspector.FileSystemModel} fileSystemModel
+ * @param {WebInspector.FileSystemModel.FileSystem} fileSystem
+ * @param {FileSystemAgent.Entry} backendEntry
  */
-WebInspector.FileSystemDispatcher = function(agentWrapper)
+WebInspector.FileSystemModel.Directory = function(fileSystemModel, fileSystem, backendEntry)
 {
-    this._agentWrapper = agentWrapper;
+    WebInspector.FileSystemModel.Entry.call(this, fileSystemModel, fileSystem, backendEntry);
 }
 
-WebInspector.FileSystemDispatcher.prototype = {
+WebInspector.FileSystemModel.Directory.prototype = {
     /**
-     * @param {number} requestId
-     * @param {number} errorCode
-     * @param {Array.<FileSystemAgent.Entry>=} backendEntries
+     * @param {function(number, Array.<WebInspector.FileSystemModel.Directory>)} callback
      */
-    didReadDirectory: function(requestId, errorCode, backendEntries)
+    requestDirectoryContent: function(callback)
     {
-        this._agentWrapper._didReadDirectory(requestId, errorCode, backendEntries);
+        this.fileSystemModel.requestDirectoryContent(this, callback);
     }
 }
+
+WebInspector.FileSystemModel.Directory.prototype.__proto__ = WebInspector.FileSystemModel.Entry.prototype;
+
+/**
+ * @constructor
+ * @extends {WebInspector.FileSystemModel.Entry}
+ * @param {WebInspector.FileSystemModel} fileSystemModel
+ * @param {WebInspector.FileSystemModel.FileSystem} fileSystem
+ * @param {FileSystemAgent.Entry} backendEntry
+ */
+WebInspector.FileSystemModel.File = function(fileSystemModel, fileSystem, backendEntry)
+{
+    WebInspector.FileSystemModel.Entry.call(this, fileSystemModel, fileSystem, backendEntry);
+
+    this._mimeType = backendEntry.mimeType;
+    this._resourceType = WebInspector.resourceTypes[backendEntry.resourceType];
+    this._isTextFile = backendEntry.isTextFile;
+}
+
+WebInspector.FileSystemModel.File.prototype = {
+    /**
+     * @type {string}
+     */
+    get mimeType()
+    {
+        return this._mimeType;
+    },
+
+    /**
+     * @type {WebInspector.ResourceType}
+     */
+    get resourceType()
+    {
+        return this._resourceType;
+    },
+
+    /**
+     * @type {boolean}
+     */
+    get isTextFile()
+    {
+        return this._isTextFile;
+    },
+
+    /**
+     * @param {boolean} readAsText
+     * @param {number=} start
+     * @param {number=} end
+     * @param {string=} charset
+     * @param {function(number, string=)=} callback
+     */
+    requestFileContent: function(readAsText, start, end, charset, callback)
+    {
+        this.fileSystemModel.requestFileContent(this, readAsText, start, end, charset, callback);
+    }
+}
+
+WebInspector.FileSystemModel.File.prototype.__proto__ = WebInspector.FileSystemModel.Entry.prototype;

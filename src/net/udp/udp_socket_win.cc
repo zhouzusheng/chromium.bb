@@ -31,34 +31,145 @@ static const int kPortEnd = 65535;
 
 namespace net {
 
-void UDPSocketWin::ReadDelegate::OnObjectSignaled(HANDLE object) {
-  DCHECK_EQ(object, socket_->read_overlapped_.hEvent);
-  socket_->DidCompleteRead();
+// This class encapsulates all the state that has to be preserved as long as
+// there is a network IO operation in progress. If the owner UDPSocketWin
+// is destroyed while an operation is in progress, the Core is detached and it
+// lives until the operation completes and the OS doesn't reference any resource
+// declared on this class anymore.
+class UDPSocketWin::Core : public base::RefCounted<Core> {
+ public:
+  explicit Core(UDPSocketWin* socket);
+
+  // Start watching for the end of a read or write operation.
+  void WatchForRead();
+  void WatchForWrite();
+
+  // The UDPSocketWin is going away.
+  void Detach() { socket_ = NULL; }
+
+  // The separate OVERLAPPED variables for asynchronous operation.
+  OVERLAPPED read_overlapped_;
+  OVERLAPPED write_overlapped_;
+
+  // The buffers used in Read() and Write().
+  scoped_refptr<IOBuffer> read_iobuffer_;
+  scoped_refptr<IOBuffer> write_iobuffer_;
+
+  // The address storage passed to WSARecvFrom().
+  SockaddrStorage recv_addr_storage_;
+
+ private:
+  friend class base::RefCounted<Core>;
+
+  class ReadDelegate : public base::win::ObjectWatcher::Delegate {
+   public:
+    explicit ReadDelegate(Core* core) : core_(core) {}
+    virtual ~ReadDelegate() {}
+
+    // base::ObjectWatcher::Delegate methods:
+    virtual void OnObjectSignaled(HANDLE object);
+
+   private:
+    Core* const core_;
+  };
+
+  class WriteDelegate : public base::win::ObjectWatcher::Delegate {
+   public:
+    explicit WriteDelegate(Core* core) : core_(core) {}
+    virtual ~WriteDelegate() {}
+
+    // base::ObjectWatcher::Delegate methods:
+    virtual void OnObjectSignaled(HANDLE object);
+
+   private:
+    Core* const core_;
+  };
+
+  ~Core();
+
+  // The socket that created this object.
+  UDPSocketWin* socket_;
+
+  // |reader_| handles the signals from |read_watcher_|.
+  ReadDelegate reader_;
+  // |writer_| handles the signals from |write_watcher_|.
+  WriteDelegate writer_;
+
+  // |read_watcher_| watches for events from Read().
+  base::win::ObjectWatcher read_watcher_;
+  // |write_watcher_| watches for events from Write();
+  base::win::ObjectWatcher write_watcher_;
+
+  DISALLOW_COPY_AND_ASSIGN(Core);
+};
+
+UDPSocketWin::Core::Core(UDPSocketWin* socket)
+    : socket_(socket),
+      ALLOW_THIS_IN_INITIALIZER_LIST(reader_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(writer_(this)) {
+  memset(&read_overlapped_, 0, sizeof(read_overlapped_));
+  memset(&write_overlapped_, 0, sizeof(write_overlapped_));
+
+  read_overlapped_.hEvent = WSACreateEvent();
+  write_overlapped_.hEvent = WSACreateEvent();
 }
 
-void UDPSocketWin::WriteDelegate::OnObjectSignaled(HANDLE object) {
-  DCHECK_EQ(object, socket_->write_overlapped_.hEvent);
-  socket_->DidCompleteWrite();
+UDPSocketWin::Core::~Core() {
+  // Make sure the message loop is not watching this object anymore.
+  read_watcher_.StopWatching();
+  write_watcher_.StopWatching();
+
+  WSACloseEvent(read_overlapped_.hEvent);
+  memset(&read_overlapped_, 0xaf, sizeof(read_overlapped_));
+  WSACloseEvent(write_overlapped_.hEvent);
+  memset(&write_overlapped_, 0xaf, sizeof(write_overlapped_));
 }
+
+void UDPSocketWin::Core::WatchForRead() {
+  // We grab an extra reference because there is an IO operation in progress.
+  // Balanced in ReadDelegate::OnObjectSignaled().
+  AddRef();
+  read_watcher_.StartWatching(read_overlapped_.hEvent, &reader_);
+}
+
+void UDPSocketWin::Core::WatchForWrite() {
+  // We grab an extra reference because there is an IO operation in progress.
+  // Balanced in WriteDelegate::OnObjectSignaled().
+  AddRef();
+  write_watcher_.StartWatching(write_overlapped_.hEvent, &writer_);
+}
+
+void UDPSocketWin::Core::ReadDelegate::OnObjectSignaled(HANDLE object) {
+  DCHECK_EQ(object, core_->read_overlapped_.hEvent);
+  if (core_->socket_)
+    core_->socket_->DidCompleteRead();
+
+  core_->Release();
+}
+
+void UDPSocketWin::Core::WriteDelegate::OnObjectSignaled(HANDLE object) {
+  DCHECK_EQ(object, core_->write_overlapped_.hEvent);
+  if (core_->socket_)
+    core_->socket_->DidCompleteWrite();
+
+  core_->Release();
+}
+
+//-----------------------------------------------------------------------------
 
 UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
                            const RandIntCallback& rand_int_cb,
                            net::NetLog* net_log,
                            const net::NetLog::Source& source)
     : socket_(INVALID_SOCKET),
+      socket_options_(0),
       bind_type_(bind_type),
       rand_int_cb_(rand_int_cb),
-      ALLOW_THIS_IN_INITIALIZER_LIST(read_delegate_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(write_delegate_(this)),
       recv_from_address_(NULL),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_UDP_SOCKET)) {
   EnsureWinsockInit();
   net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE,
                       source.ToEventParametersCallback());
-  memset(&read_overlapped_, 0, sizeof(read_overlapped_));
-  read_overlapped_.hEvent = WSACreateEvent();
-  memset(&write_overlapped_, 0, sizeof(write_overlapped_));
-  write_overlapped_.hEvent = WSACreateEvent();
   if (bind_type == DatagramSocket::RANDOM_BIND)
     DCHECK(!rand_int_cb.is_null());
 }
@@ -79,11 +190,11 @@ void UDPSocketWin::Close() {
   recv_from_address_ = NULL;
   write_callback_.Reset();
 
-  read_watcher_.StopWatching();
-  write_watcher_.StopWatching();
-
   closesocket(socket_);
   socket_ = INVALID_SOCKET;
+
+  core_->Detach();
+  core_ = NULL;
 }
 
 int UDPSocketWin::GetPeerAddress(IPEndPoint* address) const {
@@ -149,7 +260,6 @@ int UDPSocketWin::RecvFrom(IOBuffer* buf,
   if (nread != ERR_IO_PENDING)
     return nread;
 
-  read_iobuffer_ = buf;
   read_callback_ = callback;
   recv_from_address_ = address;
   return ERR_IO_PENDING;
@@ -185,7 +295,6 @@ int UDPSocketWin::SendToOrWrite(IOBuffer* buf,
 
   if (address)
     send_to_address_.reset(new IPEndPoint(*address));
-  write_iobuffer_ = buf;
   write_callback_ = callback;
   return ERR_IO_PENDING;
 }
@@ -229,6 +338,9 @@ int UDPSocketWin::Bind(const IPEndPoint& address) {
   int rv = CreateSocket(address);
   if (rv < 0)
     return rv;
+  rv = SetSocketOptions();
+  if (rv < 0)
+    return rv;
   rv = DoBind(address);
   if (rv < 0)
     return rv;
@@ -241,6 +353,7 @@ int UDPSocketWin::CreateSocket(const IPEndPoint& address) {
                       WSA_FLAG_OVERLAPPED);
   if (socket_ == INVALID_SOCKET)
     return MapSystemError(WSAGetLastError());
+  core_ = new Core(this);
   return OK;
 }
 
@@ -258,6 +371,20 @@ bool UDPSocketWin::SetSendBufferSize(int32 size) {
                       reinterpret_cast<const char*>(&size), sizeof(size));
   DCHECK(!rv) << "Could not set socket send buffer size: " << errno;
   return rv == 0;
+}
+
+void UDPSocketWin::AllowAddressReuse() {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!is_connected());
+
+  socket_options_ |= SOCKET_OPTION_REUSE_ADDRESS;
+}
+
+void UDPSocketWin::AllowBroadcast() {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!is_connected());
+
+  socket_options_ |= SOCKET_OPTION_BROADCAST;
 }
 
 void UDPSocketWin::DoReadCallback(int rv) {
@@ -282,17 +409,17 @@ void UDPSocketWin::DoWriteCallback(int rv) {
 
 void UDPSocketWin::DidCompleteRead() {
   DWORD num_bytes, flags;
-  BOOL ok = WSAGetOverlappedResult(socket_, &read_overlapped_,
+  BOOL ok = WSAGetOverlappedResult(socket_, &core_->read_overlapped_,
                                    &num_bytes, FALSE, &flags);
-  WSAResetEvent(read_overlapped_.hEvent);
+  WSAResetEvent(core_->read_overlapped_.hEvent);
   int result = ok ? num_bytes : MapSystemError(WSAGetLastError());
   // Convert address.
   if (recv_from_address_ && result >= 0) {
     if (!ReceiveAddressToIPEndpoint(recv_from_address_))
       result = ERR_FAILED;
   }
-  LogRead(result, read_iobuffer_->data());
-  read_iobuffer_ = NULL;
+  LogRead(result, core_->read_iobuffer_->data());
+  core_->read_iobuffer_ = NULL;
   recv_from_address_ = NULL;
   DoReadCallback(result);
 }
@@ -320,14 +447,14 @@ void UDPSocketWin::LogRead(int result, const char* bytes) const {
 
 void UDPSocketWin::DidCompleteWrite() {
   DWORD num_bytes, flags;
-  BOOL ok = WSAGetOverlappedResult(socket_, &write_overlapped_,
+  BOOL ok = WSAGetOverlappedResult(socket_, &core_->write_overlapped_,
                                    &num_bytes, FALSE, &flags);
-  WSAResetEvent(write_overlapped_.hEvent);
+  WSAResetEvent(core_->write_overlapped_.hEvent);
   int result = ok ? num_bytes : MapSystemError(WSAGetLastError());
-  LogWrite(result, write_iobuffer_->data(), send_to_address_.get());
+  LogWrite(result, core_->write_iobuffer_->data(), send_to_address_.get());
 
   send_to_address_.reset();
-  write_iobuffer_ = NULL;
+  core_->write_iobuffer_ = NULL;
   DoWriteCallback(result);
 }
 
@@ -351,9 +478,9 @@ void UDPSocketWin::LogWrite(int result,
 
 int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
                                    IPEndPoint* address) {
-  recv_addr_len_ = sizeof(recv_addr_storage_);
-  struct sockaddr* addr =
-      reinterpret_cast<struct sockaddr*>(&recv_addr_storage_);
+  DCHECK(!core_->read_iobuffer_);
+  SockaddrStorage& storage = core_->recv_addr_storage_;
+  storage.addr_len = sizeof(storage.addr_storage);
 
   WSABUF read_buffer;
   read_buffer.buf = buf->data();
@@ -361,11 +488,12 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
 
   DWORD flags = 0;
   DWORD num;
-  AssertEventNotSignaled(read_overlapped_.hEvent);
-  int rv = WSARecvFrom(socket_, &read_buffer, 1, &num, &flags, addr,
-                       &recv_addr_len_, &read_overlapped_, NULL);
+  CHECK_NE(INVALID_SOCKET, socket_);
+  AssertEventNotSignaled(core_->read_overlapped_.hEvent);
+  int rv = WSARecvFrom(socket_, &read_buffer, 1, &num, &flags, storage.addr,
+                       &storage.addr_len, &core_->read_overlapped_, NULL);
   if (rv == 0) {
-    if (ResetEventIfSignaled(read_overlapped_.hEvent)) {
+    if (ResetEventIfSignaled(core_->read_overlapped_.hEvent)) {
       int result = num;
       // Convert address.
       if (address && result >= 0) {
@@ -383,12 +511,14 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
       return result;
     }
   }
-  read_watcher_.StartWatching(read_overlapped_.hEvent, &read_delegate_);
+  core_->WatchForRead();
+  core_->read_iobuffer_ = buf;
   return ERR_IO_PENDING;
 }
 
 int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
                                  const IPEndPoint* address) {
+  DCHECK(!core_->write_iobuffer_);
   SockaddrStorage storage;
   struct sockaddr* addr = storage.addr;
   // Convert address.
@@ -409,11 +539,11 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
 
   DWORD flags = 0;
   DWORD num;
-  AssertEventNotSignaled(write_overlapped_.hEvent);
+  AssertEventNotSignaled(core_->write_overlapped_.hEvent);
   int rv = WSASendTo(socket_, &write_buffer, 1, &num, flags,
-                     addr, storage.addr_len, &write_overlapped_, NULL);
+                     addr, storage.addr_len, &core_->write_overlapped_, NULL);
   if (rv == 0) {
-    if (ResetEventIfSignaled(write_overlapped_.hEvent)) {
+    if (ResetEventIfSignaled(core_->write_overlapped_.hEvent)) {
       int result = num;
       LogWrite(result, buf->data(), address);
       return result;
@@ -427,8 +557,28 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
     }
   }
 
-  write_watcher_.StartWatching(write_overlapped_.hEvent, &write_delegate_);
+  core_->WatchForWrite();
+  core_->write_iobuffer_ = buf;
   return ERR_IO_PENDING;
+}
+
+int UDPSocketWin::SetSocketOptions() {
+  BOOL true_value = 1;
+  if (socket_options_ & SOCKET_OPTION_REUSE_ADDRESS) {
+    int rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR,
+                        reinterpret_cast<const char*>(&true_value),
+                        sizeof(true_value));
+    if (rv < 0)
+      return MapSystemError(errno);
+  }
+  if (socket_options_ & SOCKET_OPTION_BROADCAST) {
+    int rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST,
+                        reinterpret_cast<const char*>(&true_value),
+                        sizeof(true_value));
+    if (rv < 0)
+      return MapSystemError(errno);
+  }
+  return OK;
 }
 
 int UDPSocketWin::DoBind(const IPEndPoint& address) {
@@ -454,9 +604,8 @@ int UDPSocketWin::RandomBind(const IPEndPoint& address) {
 }
 
 bool UDPSocketWin::ReceiveAddressToIPEndpoint(IPEndPoint* address) const {
-  const struct sockaddr* addr =
-      reinterpret_cast<const struct sockaddr*>(&recv_addr_storage_);
-  return address->FromSockAddr(addr, recv_addr_len_);
+  SockaddrStorage& storage = core_->recv_addr_storage_;
+  return address->FromSockAddr(storage.addr, storage.addr_len);
 }
 
 }  // namespace net

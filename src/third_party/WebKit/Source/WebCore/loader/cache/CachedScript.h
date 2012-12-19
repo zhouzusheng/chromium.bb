@@ -27,7 +27,6 @@
 #define CachedScript_h
 
 #include "CachedResource.h"
-#include "Timer.h"
 
 #if USE(JSC)
 namespace JSC {
@@ -47,13 +46,9 @@ namespace WebCore {
 
         const String& script();
 
-        virtual void didAddClient(CachedResourceClient*);
-        virtual void allClientsRemoved();
-
         virtual void setEncoding(const String&);
         virtual String encoding() const;
         virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-        virtual void error(Status);
 
         virtual void destroyDecodedData();
 #if USE(JSC)        
@@ -61,13 +56,14 @@ namespace WebCore {
         JSC::SourceProviderCache* sourceProviderCache() const;
         void sourceProviderCacheSizeChanged(int delta);
 #endif
+
+        virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
     private:
-        void decodedDataDeletionTimerFired(Timer<CachedScript>*);
         virtual PurgePriority purgePriority() const { return PurgeLast; }
 
         String m_script;
         RefPtr<TextResourceDecoder> m_decoder;
-        Timer<CachedScript> m_decodedDataDeletionTimer;
 #if USE(JSC)        
         mutable OwnPtr<JSC::SourceProviderCache> m_sourceProviderCache;
 #endif

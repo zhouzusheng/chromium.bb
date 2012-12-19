@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_WIN_WINDOW_IMPL_H_
 #define UI_BASE_WIN_WINDOW_IMPL_H_
-#pragma once
 
 #include <atlbase.h>
 #include <atlapp.h>
@@ -75,6 +74,12 @@ class UI_EXPORT WindowImpl : public MessageMapInterface {
  protected:
   // Handles the WndProc callback for this object.
   virtual LRESULT OnWndProc(UINT message, WPARAM w_param, LPARAM l_param);
+
+  // Subclasses must call this method from their destructors to ensure that
+  // this object is properly disassociated from the HWND during destruction,
+  // otherwise it's possible this object may still exist while a subclass is
+  // destroyed.
+  void ClearUserData();
 
  private:
   friend class ClassRegistrar;

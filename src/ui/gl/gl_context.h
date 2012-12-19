@@ -4,7 +4,6 @@
 
 #ifndef UI_GL_GL_CONTEXT_H_
 #define UI_GL_GL_CONTEXT_H_
-#pragma once
 
 #include <string>
 
@@ -71,7 +70,7 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
 
   static GLContext* GetCurrent();
 
-  virtual bool WasAllocatedUsingARBRobustness();
+  virtual bool WasAllocatedUsingRobustnessExtension();
 
  protected:
   virtual ~GLContext();

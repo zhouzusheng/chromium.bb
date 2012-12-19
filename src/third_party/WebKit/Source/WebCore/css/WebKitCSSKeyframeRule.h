@@ -38,6 +38,7 @@ class StyleRuleCSSStyleDeclaration;
 class WebKitCSSKeyframesRule;
 
 class StyleKeyframe : public RefCounted<StyleKeyframe> {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassRefPtr<StyleKeyframe> create()
     {
@@ -49,10 +50,13 @@ public:
 
     void getKeys(Vector<float>& keys) const   { parseKeyString(m_key, keys); }
     
-    StylePropertySet* properties() const { return m_properties.get(); }
+    const StylePropertySet* properties() const { return m_properties.get(); }
+    StylePropertySet* mutableProperties();
     void setProperties(PassRefPtr<StylePropertySet>);
     
     String cssText() const;
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:    
     StyleKeyframe() { }
@@ -75,6 +79,8 @@ public:
     CSSStyleDeclaration* style() const;
 
     String cssText() const { return m_keyframe->cssText(); }
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     WebKitCSSKeyframeRule(StyleKeyframe*, WebKitCSSKeyframesRule* parent);

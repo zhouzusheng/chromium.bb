@@ -21,12 +21,13 @@
 #ifndef HTMLMeterElement_h
 #define HTMLMeterElement_h
 
-#if ENABLE(METER_TAG)
+#if ENABLE(METER_ELEMENT)
 #include "LabelableElement.h"
 
 namespace WebCore {
 
 class MeterValueElement;
+class RenderMeter;
 
 class HTMLMeterElement : public LabelableElement {
 public:
@@ -37,6 +38,8 @@ public:
         GaugeRegionSuboptimal,
         GaugeRegionEvenLessGood
     };
+
+    bool hasAuthorShadowRoot() const { return m_hasAuthorShadowRoot; }
 
     double min() const;
     void setMin(double, ExceptionCode&);
@@ -65,6 +68,10 @@ private:
     HTMLMeterElement(const QualifiedName&, Document*);
     virtual ~HTMLMeterElement();
 
+    virtual void willAddAuthorShadowRoot() OVERRIDE;
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    RenderMeter* renderMeter() const;
+
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual bool supportsFocus() const;
@@ -74,11 +81,25 @@ private:
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
     virtual void parseAttribute(const Attribute&) OVERRIDE;
 
+    virtual void attach() OVERRIDE;
+
     void didElementStateChange();
     void createShadowSubtree();
 
     RefPtr<MeterValueElement> m_value;
+    bool m_hasAuthorShadowRoot;
 };
+
+inline bool isHTMLMeterElement(Node* node)
+{
+    return node->hasTagName(HTMLNames::meterTag);
+}
+
+inline HTMLMeterElement* toHTMLMeterElement(Node* node)
+{
+    ASSERT(!node || isHTMLMeterElement(node));
+    return static_cast<HTMLMeterElement*>(node);
+}
 
 } // namespace
 

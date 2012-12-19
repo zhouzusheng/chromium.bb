@@ -40,10 +40,12 @@
 #include "FileError.h"
 #include "FileException.h"
 #include "ProgressEvent.h"
+#include <wtf/CurrentTime.h>
 
 namespace WebCore {
 
 static const int kMaxRecursionDepth = 3;
+static const double progressNotificationIntervalMS = 50;
 
 PassRefPtr<FileWriter> FileWriter::create(ScriptExecutionContext* context)
 {
@@ -62,6 +64,7 @@ FileWriter::FileWriter(ScriptExecutionContext* context)
     , m_truncateLength(-1)
     , m_numAborts(0)
     , m_recursionDepth(0)
+    , m_lastProgressNotificationTimeMS(0)
 {
 }
 
@@ -185,7 +188,7 @@ void FileWriter::didWrite(long long bytes, bool complete)
     ASSERT(m_readyState == WRITING);
     ASSERT(m_truncateLength == -1);
     ASSERT(m_operationInProgress == OperationWrite);
-    ASSERT(bytes + m_bytesWritten > 0);
+    ASSERT(!m_bytesToWrite || bytes + m_bytesWritten > 0);
     ASSERT(bytes + m_bytesWritten <= m_bytesToWrite);
     m_bytesWritten += bytes;
     ASSERT((m_bytesWritten == m_bytesToWrite) || !complete);
@@ -196,11 +199,16 @@ void FileWriter::didWrite(long long bytes, bool complete)
         m_blobBeingWritten.clear();
         m_operationInProgress = OperationNone;
     }
-    // TODO: Throttle to no more frequently than every 50ms.
+
     int numAborts = m_numAborts;
-    fireEvent(eventNames().progressEvent);
     // We could get an abort in the handler for this event. If we do, it's
     // already handled the cleanup and signalCompletion call.
+    double now = currentTimeMS();
+    if (complete || !m_lastProgressNotificationTimeMS || (now - m_lastProgressNotificationTimeMS > progressNotificationIntervalMS)) {
+        m_lastProgressNotificationTimeMS = now;
+        fireEvent(eventNames().progressEvent);
+    }
+
     if (complete) {
       if (numAborts == m_numAborts)
           signalCompletion(FileError::OK);

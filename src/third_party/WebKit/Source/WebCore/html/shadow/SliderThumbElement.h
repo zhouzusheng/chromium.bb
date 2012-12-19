@@ -54,20 +54,23 @@ public:
 
     void dragFrom(const LayoutPoint&);
     virtual void defaultEventHandler(Event*);
+    virtual bool willRespondToMouseMoveEvents() OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
     virtual void detach();
     virtual const AtomicString& shadowPseudoId() const;
     HTMLInputElement* hostInput() const;
+    void setPositionFromPoint(const LayoutPoint&);
 
 private:
     SliderThumbElement(Document*);
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
     virtual bool isEnabledFormControl() const;
-    virtual bool isReadOnlyFormControl() const;
+    virtual bool shouldMatchReadOnlySelector() const OVERRIDE;
+    virtual bool shouldMatchReadWriteSelector() const OVERRIDE;
     virtual Node* focusDelegate();
     void startDragging();
     void stopDragging();
-    void setPositionFromPoint(const LayoutPoint&);
 
     bool m_inDragMode;
 };
@@ -97,6 +100,7 @@ inline SliderThumbElement* toSliderThumbElement(Node* node)
 // This always return a valid pointer.
 // An assertion fails if the specified node is not a range input.
 SliderThumbElement* sliderThumbElementOf(Node*);
+HTMLElement* sliderTrackElementOf(Node*);
 
 // --------------------------------
 

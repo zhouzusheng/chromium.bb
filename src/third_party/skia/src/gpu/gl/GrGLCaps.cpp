@@ -35,6 +35,7 @@ void GrGLCaps::reset() {
     fTexStorageSupport = false;
     fTextureRedSupport = false;
     fImagingSupport = false;
+    fTwoFormatLimit = false;
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) {
@@ -63,6 +64,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fTexStorageSupport = caps.fTexStorageSupport;
     fTextureRedSupport = caps.fTextureRedSupport;
     fImagingSupport = caps.fImagingSupport;
+    fTwoFormatLimit = caps.fTwoFormatLimit;
 
     return *this;
 }
@@ -107,7 +109,7 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo) {
             fBGRAIsInternalFormat = true;
         }
         GrAssert(fBGRAFormatSupport ||
-                 kSkia8888_PM_GrPixelConfig != kBGRA_8888_PM_GrPixelConfig);
+                 kSkia8888_GrPixelConfig != kBGRA_8888_GrPixelConfig);
     }
 
     if (kDesktop_GrGLBinding == binding) {
@@ -151,8 +153,42 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo) {
     fImagingSupport = kDesktop_GrGLBinding == binding &&
                       ctxInfo.hasExtension("GL_ARB_imaging");
 
+    // ES 2 only guarantees RGBA/uchar + one other format/type combo for
+    // ReadPixels. The other format has to checked at run-time since it
+    // can change based on which render target is bound
+    fTwoFormatLimit = kES2_GrGLBinding == binding;
+
     this->initFSAASupport(ctxInfo);
     this->initStencilFormats(ctxInfo);
+}
+
+bool GrGLCaps::readPixelsSupported(const GrGLInterface* intf,
+                                   GrGLenum format,
+                                   GrGLenum type) const {
+    if (GR_GL_RGBA == format && GR_GL_UNSIGNED_BYTE == type) {
+        // ES 2 guarantees this format is supported
+        return true;
+    }
+
+    if (!fTwoFormatLimit) {
+        // not limited by ES 2's constraints
+        return true;
+    }
+
+    GrGLint otherFormat = GR_GL_RGBA;
+    GrGLint otherType = GR_GL_UNSIGNED_BYTE;
+
+    // The other supported format/type combo supported for ReadPixels
+    // can change based on which render target is bound
+    GR_GL_GetIntegerv(intf,
+                      GR_GL_IMPLEMENTATION_COLOR_READ_FORMAT,
+                      &otherFormat);
+
+    GR_GL_GetIntegerv(intf,
+                      GR_GL_IMPLEMENTATION_COLOR_READ_TYPE,
+                      &otherType);
+
+    return (GrGLenum)otherFormat == format && (GrGLenum)otherType == type;
 }
 
 namespace {
@@ -265,7 +301,7 @@ void GrGLCaps::initStencilFormats(const GrGLContextInfo& ctxInfo) {
 
     if (kDesktop_GrGLBinding == ctxInfo.binding()) {
         bool supportsPackedDS =
-            ctxInfo.version() >= GR_GL_VER(3,0) || 
+            ctxInfo.version() >= GR_GL_VER(3,0) ||
             ctxInfo.hasExtension("GL_EXT_packed_depth_stencil") ||
             ctxInfo.hasExtension("GL_ARB_framebuffer_object");
 
@@ -378,5 +414,6 @@ void GrGLCaps::print() const {
              (fPackRowLengthSupport ? "YES": "NO"));
     GrPrintf("Pack Flip Y support: %s\n",
              (fPackFlipYSupport ? "YES": "NO"));
+    GrPrintf("Two Format Limit: %s\n", (fTwoFormatLimit ? "YES": "NO"));
 }
 

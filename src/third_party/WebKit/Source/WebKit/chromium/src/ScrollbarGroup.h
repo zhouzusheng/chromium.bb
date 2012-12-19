@@ -36,51 +36,51 @@ class FrameView;
 
 namespace WebKit {
 
-class WebScrollbarImpl;
+class WebPluginScrollbarImpl;
 
 class ScrollbarGroup : public WebCore::ScrollableArea {
 public:
     ScrollbarGroup(WebCore::FrameView*, const WebCore::IntRect& frameRect);
     ~ScrollbarGroup();
 
-    void scrollbarCreated(WebScrollbarImpl*);
-    void scrollbarDestroyed(WebScrollbarImpl*);
+    void scrollbarCreated(WebPluginScrollbarImpl*);
+    void scrollbarDestroyed(WebPluginScrollbarImpl*);
     void setLastMousePosition(const WebCore::IntPoint&);
     void setFrameRect(const WebCore::IntRect&);
 
     // WebCore::ScrollableArea methods
-    virtual int scrollSize(WebCore::ScrollbarOrientation) const;
-    virtual int scrollPosition(WebCore::Scrollbar*) const;
-    virtual void setScrollOffset(const WebCore::IntPoint&);
-    virtual void invalidateScrollbarRect(WebCore::Scrollbar*, const WebCore::IntRect&);
-    virtual void invalidateScrollCornerRect(const WebCore::IntRect&);
-    virtual bool isActive() const;
-    virtual ScrollableArea* enclosingScrollableArea() const;
-    virtual WebCore::IntRect scrollCornerRect() const { return WebCore::IntRect(); }
-    virtual bool isScrollCornerVisible() const;
-    virtual void getTickmarks(Vector<WebCore::IntRect>&) const;
-    virtual WebCore::IntPoint convertFromContainingViewToScrollbar(const WebCore::Scrollbar*, const WebCore::IntPoint& parentPoint) const;
-    virtual WebCore::Scrollbar* horizontalScrollbar() const;
-    virtual WebCore::Scrollbar* verticalScrollbar() const;
-    virtual WebCore::IntPoint scrollPosition() const;
-    virtual WebCore::IntPoint minimumScrollPosition() const;
-    virtual WebCore::IntPoint maximumScrollPosition() const;
-    virtual int visibleHeight() const;
-    virtual int visibleWidth() const;
-    virtual WebCore::IntSize contentsSize() const;
-    virtual WebCore::IntSize overhangAmount() const;
-    virtual WebCore::IntPoint currentMousePosition() const;
-    virtual bool shouldSuspendScrollAnimations() const;
-    virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate);
-    virtual bool isOnActivePage() const;
-    virtual WebCore::IntRect scrollableAreaBoundingBox() const;
+    virtual int scrollSize(WebCore::ScrollbarOrientation) const OVERRIDE;
+    virtual int scrollPosition(WebCore::Scrollbar*) const OVERRIDE;
+    virtual void setScrollOffset(const WebCore::IntPoint&) OVERRIDE;
+    virtual void invalidateScrollbarRect(WebCore::Scrollbar*, const WebCore::IntRect&) OVERRIDE;
+    virtual void invalidateScrollCornerRect(const WebCore::IntRect&) OVERRIDE;
+    virtual bool isActive() const OVERRIDE;
+    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
+    virtual WebCore::IntRect scrollCornerRect() const OVERRIDE { return WebCore::IntRect(); }
+    virtual bool isScrollCornerVisible() const OVERRIDE;
+    virtual void getTickmarks(Vector<WebCore::IntRect>&) const OVERRIDE;
+    virtual WebCore::IntPoint convertFromContainingViewToScrollbar(const WebCore::Scrollbar*, const WebCore::IntPoint& parentPoint) const OVERRIDE;
+    virtual WebCore::Scrollbar* horizontalScrollbar() const OVERRIDE;
+    virtual WebCore::Scrollbar* verticalScrollbar() const OVERRIDE;
+    virtual WebCore::IntPoint scrollPosition() const OVERRIDE;
+    virtual WebCore::IntPoint minimumScrollPosition() const OVERRIDE;
+    virtual WebCore::IntPoint maximumScrollPosition() const OVERRIDE;
+    virtual int visibleHeight() const OVERRIDE;
+    virtual int visibleWidth() const OVERRIDE;
+    virtual WebCore::IntSize contentsSize() const OVERRIDE;
+    virtual WebCore::IntSize overhangAmount() const OVERRIDE;
+    virtual WebCore::IntPoint currentMousePosition() const OVERRIDE;
+    virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
+    virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate) OVERRIDE;
+    virtual bool scrollbarsCanBeActive() const OVERRIDE;
+    virtual WebCore::IntRect scrollableAreaBoundingBox() const OVERRIDE;
 
 private:
     WebCore::FrameView* m_frameView;
     WebCore::IntPoint m_lastMousePosition;
     WebCore::IntRect m_frameRect;
-    WebScrollbarImpl* m_horizontalScrollbar;
-    WebScrollbarImpl* m_verticalScrollbar;
+    WebPluginScrollbarImpl* m_horizontalScrollbar;
+    WebPluginScrollbarImpl* m_verticalScrollbar;
 };
 
 } // namespace WebKit

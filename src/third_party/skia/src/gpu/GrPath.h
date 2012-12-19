@@ -14,12 +14,14 @@
 
 class GrPath : public GrResource {
 public:
+    SK_DECLARE_INST_COUNT(GrPath);
+
     GrPath(GrGpu* gpu) : INHERITED(gpu) {}
 
-    const GrIRect& getBounds() const { return fBounds; }
+    const GrRect& getBounds() const { return fBounds; }
 
 protected:
-    GrIRect fBounds;
+    GrRect fBounds;
 
 private:
     typedef GrResource INHERITED;

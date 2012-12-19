@@ -8,16 +8,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "build/build_config.h"
-#if !defined(OS_ANDROID)
 #include "third_party/angle/include/EGL/egl.h"
 #include "third_party/angle/include/EGL/eglext.h"
-#endif
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
-
-#if defined(OS_ANDROID)
-#include <EGL/egl.h>
-#endif
 
 // This header must come after the above third-party include, as
 // it brings in #defines that cause conflicts.
@@ -32,12 +26,17 @@ extern "C" {
 namespace gfx {
 
 namespace {
+
 EGLConfig g_config;
 EGLDisplay g_display;
 EGLNativeDisplayType g_native_display;
 EGLConfig g_software_config;
 EGLDisplay g_software_display;
 EGLNativeDisplayType g_software_native_display;
+
+const char* g_egl_extensions = NULL;
+bool g_egl_create_context_robustness_supported = false;
+
 }
 
 GLSurfaceEGL::GLSurfaceEGL() : software_(false) {}
@@ -102,6 +101,10 @@ bool GLSurfaceEGL::InitializeOneOff() {
     return false;
   }
 
+  g_egl_extensions = eglQueryString(g_display, EGL_EXTENSIONS);
+  g_egl_create_context_robustness_supported =
+      HasEGLExtension("EGL_EXT_create_context_robustness");
+
   initialized = true;
 
 #if defined(USE_X11) || defined(OS_ANDROID)
@@ -160,6 +163,18 @@ EGLNativeDisplayType GLSurfaceEGL::GetNativeDisplay() {
   return g_native_display;
 }
 
+const char* GLSurfaceEGL::GetEGLExtensions() {
+  return g_egl_extensions;
+}
+
+bool GLSurfaceEGL::HasEGLExtension(const char* name) {
+  return ExtensionsContain(GetEGLExtensions(), name);
+}
+
+bool GLSurfaceEGL::IsCreateContextRobustnessSupported() {
+  return g_egl_create_context_robustness_supported;
+}
+
 GLSurfaceEGL::~GLSurfaceEGL() {}
 
 NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(bool software,
@@ -172,10 +187,6 @@ NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(bool software,
 }
 
 bool NativeViewGLSurfaceEGL::Initialize() {
-#if defined(OS_ANDROID)
-  NOTREACHED();
-  return false;
-#else
   DCHECK(!surface_);
 
   if (!GetDisplay()) {
@@ -211,7 +222,6 @@ bool NativeViewGLSurfaceEGL::Initialize() {
   supports_post_sub_buffer_ = (surfaceVal && retVal) == EGL_TRUE;
 
   return true;
-#endif
 }
 
 void NativeViewGLSurfaceEGL::Destroy() {
@@ -328,6 +338,10 @@ gfx::Size NativeViewGLSurfaceEGL::GetSize() {
   return gfx::Size(width, height);
 }
 
+bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size) {
+  return size == GetSize();
+}
+
 EGLSurface NativeViewGLSurfaceEGL::GetHandle() {
   return surface_;
 }
@@ -371,6 +385,12 @@ bool PbufferGLSurfaceEGL::Initialize() {
 
   if (!GetDisplay()) {
     LOG(ERROR) << "Trying to create surface with invalid display.";
+    return false;
+  }
+
+  if (size_.GetArea() == 0) {
+    LOG(ERROR) << "Error: surface has zero area "
+               << size_.width() << " x " << size_.height();
     return false;
   }
 
@@ -433,8 +453,10 @@ bool PbufferGLSurfaceEGL::Resize(const gfx::Size& size) {
 
   size_ = size;
 
-  if (!Initialize())
+  if (!Initialize()) {
+    LOG(ERROR) << "Failed to resize pbuffer.";
     return false;
+  }
 
   if (was_current)
     return current_context->MakeCurrent(this);
@@ -451,8 +473,10 @@ void* PbufferGLSurfaceEGL::GetShareHandle() {
   NOTREACHED();
   return NULL;
 #else
-  const char* extensions = eglQueryString(g_display, EGL_EXTENSIONS);
-  if (!strstr(extensions, "EGL_ANGLE_query_surface_pointer"))
+  if (!g_EGL_ANGLE_query_surface_pointer)
+    return NULL;
+
+  if (!g_EGL_ANGLE_surface_d3d_texture_2d_share_handle)
     return NULL;
 
   void* handle;

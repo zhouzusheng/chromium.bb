@@ -26,9 +26,9 @@
 #ifndef IDBIndexBackendInterface_h
 #define IDBIndexBackendInterface_h
 
-#include "PlatformString.h"
 #include <wtf/Forward.h>
 #include <wtf/ThreadSafeRefCounted.h>
+#include <wtf/text/WTFString.h>
 
 #if ENABLE(INDEXED_DATABASE)
 
@@ -45,11 +45,6 @@ typedef int ExceptionCode;
 class IDBIndexBackendInterface : public ThreadSafeRefCounted<IDBIndexBackendInterface> {
 public:
     virtual ~IDBIndexBackendInterface() { }
-
-    virtual String name() = 0;
-    virtual IDBKeyPath keyPath() = 0;
-    virtual bool unique() = 0;
-    virtual bool multiEntry() = 0;
 
     virtual void openCursor(PassRefPtr<IDBKeyRange>, unsigned short direction, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;
     virtual void count(PassRefPtr<IDBKeyRange>, PassRefPtr<IDBCallbacks>, IDBTransactionBackendInterface*, ExceptionCode&) = 0;

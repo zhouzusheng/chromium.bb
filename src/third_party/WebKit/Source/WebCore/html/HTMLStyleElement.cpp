@@ -123,6 +123,42 @@ void HTMLStyleElement::finishParsingChildren()
 }
 
 #if ENABLE(STYLE_SCOPED)
+inline bool HTMLStyleElement::isRegisteredAsScoped() const
+{
+    // Note: We cannot rely on the 'scoped' attribute still being present when this method is invoked.
+    // Therefore we cannot rely on scoped()!
+    if (m_scopedStyleRegistrationState == NotRegistered)
+        return false;
+    if (!ContextFeatures::styleScopedEnabled(document()))
+        return false;
+    return true;
+}
+
+// These three Node methods are placed here to
+// make the header inclusion dependency sane.
+
+inline void Node::registerScopedHTMLStyleChild()
+{
+    setHasScopedHTMLStyleChild(true);
+}
+
+inline void Node::unregisterScopedHTMLStyleChild()
+{
+    ASSERT(hasScopedHTMLStyleChild());
+    setHasScopedHTMLStyleChild(numberOfScopedHTMLStyleChildren());
+}
+
+size_t Node::numberOfScopedHTMLStyleChildren() const
+{
+    size_t count = 0;
+    for (Node* child = firstChild(); child; child = child->nextSibling()) {
+        if (child->hasTagName(styleTag) && static_cast<HTMLStyleElement*>(child)->isRegisteredAsScoped())
+            count++;
+    }
+
+    return count;
+}
+
 void HTMLStyleElement::registerWithScopingNode(bool scoped)
 {
     // Note: We cannot rely on the 'scoped' element already being present when this method is invoked.
@@ -154,12 +190,8 @@ void HTMLStyleElement::registerWithScopingNode(bool scoped)
 
 void HTMLStyleElement::unregisterWithScopingNode(ContainerNode* scope)
 {
-    // Note: We cannot rely on the 'scoped' element still being present when this method is invoked.
-    // Therefore we cannot rely on scoped()!
     ASSERT(m_scopedStyleRegistrationState != NotRegistered || !ContextFeatures::styleScopedEnabled(document()));
-    if (m_scopedStyleRegistrationState == NotRegistered)
-        return;
-    if (!ContextFeatures::styleScopedEnabled(document()))
+    if (!isRegisteredAsScoped())
         return;
 
     ASSERT(scope);
@@ -172,6 +204,11 @@ void HTMLStyleElement::unregisterWithScopingNode(ContainerNode* scope)
         document()->styleResolverChanged(DeferRecalcStyle);
 
     m_scopedStyleRegistrationState = NotRegistered;
+}
+#else
+size_t Node::numberOfScopedHTMLStyleChildren() const
+{
+    return 0;
 }
 #endif
 
@@ -199,9 +236,13 @@ void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint)
     // Now, if we want to register <style scoped> even if it's not inDocument,
     // we'd need to find a way to discern whether that is the case, or whether <style scoped> itself is about to be removed.
     if (m_scopedStyleRegistrationState != NotRegistered) {
-        ContainerNode* scope = parentNode()? parentNode() : insertionPoint;
-        if (m_scopedStyleRegistrationState == RegisteredInShadowRoot)
-            scope = scope->shadowRoot();
+        ContainerNode* scope;
+        if (m_scopedStyleRegistrationState == RegisteredInShadowRoot) {
+            scope = shadowRoot();
+            if (!scope)
+                scope = insertionPoint->shadowRoot();
+        } else
+            scope = parentNode() ? parentNode() : insertionPoint;
         unregisterWithScopingNode(scope);
     }
 #endif

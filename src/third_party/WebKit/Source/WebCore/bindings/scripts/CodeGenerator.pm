@@ -38,6 +38,7 @@ my $useLayerOnTop = 0;
 my $preprocessor;
 my $writeDependencies = 0;
 my $defines = "";
+my $targetIdlFilePath = "";
 
 my $codeGenerator = 0;
 
@@ -107,6 +108,7 @@ sub new
     $preprocessor = shift;
     $writeDependencies = shift;
     $verbose = shift;
+    $targetIdlFilePath = shift;
 
     bless($reference, $object);
     return $reference;
@@ -130,7 +132,7 @@ sub ProcessDocument
     require $ifaceName . ".pm";
 
     # Dynamically load external code generation perl module
-    $codeGenerator = $ifaceName->new($object, $useOutputDir, $useOutputHeadersDir, $useLayerOnTop, $preprocessor, $writeDependencies, $verbose);
+    $codeGenerator = $ifaceName->new($object, $useOutputDir, $useOutputHeadersDir, $useLayerOnTop, $preprocessor, $writeDependencies, $verbose, $targetIdlFilePath);
     unless (defined($codeGenerator)) {
         my $classes = $useDocument->classes;
         foreach my $class (@$classes) {
@@ -354,6 +356,23 @@ sub SkipIncludeHeader
     return 0;
 }
 
+sub IsArrayType
+{
+    my $object = shift;
+    my $type = shift;
+    # FIXME: Add proper support for T[], T[]?, sequence<T>.
+    return $type =~ m/\[\]$/;
+}
+
+sub IsConstructorTemplate
+{
+    my $object = shift;
+    my $dataNode = shift;
+    my $template = shift;
+
+    return $dataNode->extendedAttributes->{"ConstructorTemplate"} && $dataNode->extendedAttributes->{"ConstructorTemplate"} eq $template;
+}
+
 sub IsNumericType
 {
     my $object = shift;
@@ -406,6 +425,17 @@ sub IsSVGTypeWithWritablePropertiesNeedingTearOff
     my $type = shift;
 
     return 1 if $svgTypeWithWritablePropertiesNeedingTearOff{$type};
+    return 0;
+}
+
+sub IsTypedArrayType
+{
+    my $object = shift;
+    my $type = shift;
+    return 1 if (($type eq "ArrayBuffer") or ($type eq "ArrayBufferView"));
+    return 1 if (($type eq "Uint8Array") or ($type eq "Uint8ClampedArray") or ($type eq "Uint16Array") or ($type eq "Uint32Array"));
+    return 1 if (($type eq "Int8Array") or ($type eq "Int16Array") or ($type eq "Int32Array"));
+    return 1 if (($type eq "Float32Array") or ($type eq "Float64Array"));
     return 0;
 }
 
@@ -706,6 +736,24 @@ sub GetVisibleInterfaceName
     my $dataNode = shift;
     my $interfaceName = $dataNode->extendedAttributes->{"InterfaceName"};
     return $interfaceName ? $interfaceName : $dataNode->name;
+}
+
+sub IsStrictSubtype
+{
+    my $object = shift;
+    my $dataNode = shift;
+    my $interfaceName = shift;
+    my $found = 0;
+
+    $object->ForAllParents($dataNode, sub {
+        my $interface = shift;
+        if ($object->StripModule($interface->name) eq $interfaceName) {
+            $found = 1;
+        }
+        return "prune" if $found;
+    }, 0, 1);
+
+    return $found;
 }
 
 1;

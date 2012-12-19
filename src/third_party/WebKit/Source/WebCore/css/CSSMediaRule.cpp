@@ -28,6 +28,7 @@
 #include "CSSStyleSheet.h"
 #include "ExceptionCode.h"
 #include "StyleRule.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -166,12 +167,21 @@ void CSSMediaRule::reattach(StyleRuleMedia* rule)
 {
     ASSERT(rule);
     m_mediaRule = rule;
-    if (m_mediaCSSOMWrapper)
+    if (m_mediaCSSOMWrapper && m_mediaRule->mediaQueries())
         m_mediaCSSOMWrapper->reattach(m_mediaRule->mediaQueries());
     for (unsigned i = 0; i < m_childRuleCSSOMWrappers.size(); ++i) {
         if (m_childRuleCSSOMWrappers[i])
             m_childRuleCSSOMWrappers[i]->reattach(m_mediaRule->childRules()[i].get());
     }
+}
+
+void CSSMediaRule::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    CSSRule::reportBaseClassMemoryUsage(memoryObjectInfo);
+    info.addMember(m_mediaCSSOMWrapper);
+    info.addInstrumentedVector(m_childRuleCSSOMWrappers);
+    info.addMember(m_ruleListCSSOMWrapper);
 }
 
 } // namespace WebCore

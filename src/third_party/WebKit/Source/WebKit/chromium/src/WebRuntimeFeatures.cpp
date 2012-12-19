@@ -204,14 +204,13 @@ bool WebRuntimeFeatures::isWebAudioEnabled()
 #endif
 }
 
-void WebRuntimeFeatures::enablePushState(bool enable)
+void WebRuntimeFeatures::enablePushState(bool)
 {
-    RuntimeEnabledFeatures::setPushStateEnabled(enable);
 }
 
 bool WebRuntimeFeatures::isPushStateEnabled(bool enable)
 {
-    return RuntimeEnabledFeatures::pushStateEnabled();
+    return true;
 }
 
 void WebRuntimeFeatures::enableTouch(bool enable)
@@ -369,6 +368,24 @@ bool WebRuntimeFeatures::isPeerConnectionEnabled()
 #endif
 }
 
+void WebRuntimeFeatures::enableDeprecatedPeerConnection(bool enable)
+{
+#if ENABLE(MEDIA_STREAM)
+    RuntimeEnabledFeatures::setDeprecatedPeerConnectionEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isDeprecatedPeerConnectionEnabled()
+{
+#if ENABLE(MEDIA_STREAM)
+    return RuntimeEnabledFeatures::deprecatedPeerConnectionEnabled();
+#else
+    return false;
+#endif
+}
+
 void WebRuntimeFeatures::enableFullScreenAPI(bool enable)
 {
 #if ENABLE(FULLSCREEN_API)
@@ -462,7 +479,7 @@ bool WebRuntimeFeatures::isVideoTrackEnabled()
 void WebRuntimeFeatures::enableGamepad(bool enable)
 {
 #if ENABLE(GAMEPAD)
-    RuntimeEnabledFeatures::setWebkitGamepadsEnabled(enable);
+    RuntimeEnabledFeatures::setWebkitGetGamepadsEnabled(enable);
 #else
     UNUSED_PARAM(enable);
 #endif
@@ -471,7 +488,7 @@ void WebRuntimeFeatures::enableGamepad(bool enable)
 bool WebRuntimeFeatures::isGamepadEnabled()
 {
 #if ENABLE(GAMEPAD)
-    return RuntimeEnabledFeatures::webkitGamepadsEnabled();
+    return RuntimeEnabledFeatures::webkitGetGamepadsEnabled();
 #else
     return false;
 #endif
@@ -529,6 +546,124 @@ bool WebRuntimeFeatures::isInputTypeDateEnabled()
 #else
     return false;
 #endif
+}
+
+void WebRuntimeFeatures::enableInputTypeDateTime(bool enable)
+{
+#if ENABLE(INPUT_TYPE_DATETIME)
+    RuntimeEnabledFeatures::setInputTypeDateTimeEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isInputTypeDateTimeEnabled()
+{
+#if ENABLE(INPUT_TYPE_DATETIME)
+    return RuntimeEnabledFeatures::inputTypeDateTimeEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableInputTypeDateTimeLocal(bool enable)
+{
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+    RuntimeEnabledFeatures::setInputTypeDateTimeLocalEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isInputTypeDateTimeLocalEnabled()
+{
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+    return RuntimeEnabledFeatures::inputTypeDateTimeLocalEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableInputTypeMonth(bool enable)
+{
+#if ENABLE(INPUT_TYPE_MONTH)
+    RuntimeEnabledFeatures::setInputTypeMonthEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isInputTypeMonthEnabled()
+{
+#if ENABLE(INPUT_TYPE_MONTH)
+    return RuntimeEnabledFeatures::inputTypeMonthEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableInputTypeTime(bool enable)
+{
+#if ENABLE(INPUT_TYPE_TIME)
+    RuntimeEnabledFeatures::setInputTypeTimeEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isInputTypeTimeEnabled()
+{
+#if ENABLE(INPUT_TYPE_TIME)
+    return RuntimeEnabledFeatures::inputTypeTimeEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableInputTypeWeek(bool enable)
+{
+#if ENABLE(INPUT_TYPE_WEEK)
+    RuntimeEnabledFeatures::setInputTypeWeekEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isInputTypeWeekEnabled()
+{
+#if ENABLE(INPUT_TYPE_WEEK)
+    return RuntimeEnabledFeatures::inputTypeWeekEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableDialogElement(bool enable)
+{
+#if ENABLE(DIALOG_ELEMENT)
+    RuntimeEnabledFeatures::setDialogElementEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isDialogElementEnabled()
+{
+#if ENABLE(DIALOG_ELEMENT)
+    return RuntimeEnabledFeatures::dialogElementEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableCSSExclusions(bool enable)
+{
+    RuntimeEnabledFeatures::setCSSExclusionsEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isCSSExclusionsEnabled()
+{
+    return RuntimeEnabledFeatures::cssExclusionsEnabled();
 }
 
 } // namespace WebKit

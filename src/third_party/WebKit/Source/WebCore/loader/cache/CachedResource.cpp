@@ -34,6 +34,7 @@
 #include "Document.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
+#include "InspectorInstrumentation.h"
 #include "KURL.h"
 #include "Logging.h"
 #include "PurgeableBuffer.h"
@@ -41,6 +42,7 @@
 #include "ResourceLoadScheduler.h"
 #include "SharedBuffer.h"
 #include "SubresourceLoader.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/MathExtras.h>
 #include <wtf/RefCountedLeakCounter.h>
@@ -56,20 +58,21 @@ static ResourceLoadPriority defaultPriorityForResourceType(CachedResource::Type 
 {
     switch (type) {
         case CachedResource::CSSStyleSheet:
-#if ENABLE(XSLT)
-        case CachedResource::XSLStyleSheet:
-#endif
             return ResourceLoadPriorityHigh;
         case CachedResource::Script:
-#if ENABLE(SVG)
-        case CachedResource::SVGDocumentResource:
-            return ResourceLoadPriorityLow;
-#endif
         case CachedResource::FontResource:
         case CachedResource::RawResource:
             return ResourceLoadPriorityMedium;
         case CachedResource::ImageResource:
             return ResourceLoadPriorityLow;
+#if ENABLE(XSLT)
+        case CachedResource::XSLStyleSheet:
+            return ResourceLoadPriorityHigh;
+#endif
+#if ENABLE(SVG)
+        case CachedResource::SVGDocumentResource:
+            return ResourceLoadPriorityLow;
+#endif
 #if ENABLE(LINK_PREFETCH)
         case CachedResource::LinkPrefetch:
             return ResourceLoadPriorityVeryLow;
@@ -135,6 +138,7 @@ CachedResource::CachedResource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
     , m_loadPriority(defaultPriorityForResourceType(type))
     , m_responseTimestamp(currentTime())
+    , m_decodedDataDeletionTimer(this, &CachedResource::decodedDataDeletionTimerFired)
     , m_lastDecodedAccessTime(0)
     , m_loadFinishTime(0)
     , m_encodedSize(0)
@@ -175,7 +179,7 @@ CachedResource::~CachedResource()
     ASSERT(!inCache());
     ASSERT(!m_deleted);
     ASSERT(url().isNull() || memoryCache()->resourceForURL(KURL(ParsedURLString, url())) != this);
-    
+
 #ifndef NDEBUG
     m_deleted = true;
     cachedResourceLeakCounter.decrement();
@@ -379,6 +383,9 @@ void CachedResource::addClient(CachedResourceClient* client)
 
 void CachedResource::didAddClient(CachedResourceClient* c)
 {
+    if (m_decodedDataDeletionTimer.isActive())
+        m_decodedDataDeletionTimer.stop();
+
     if (m_clientsAwaitingCallback.contains(c)) {
         m_clients.add(c);
         m_clientsAwaitingCallback.remove(c);
@@ -429,12 +436,12 @@ void CachedResource::removeClient(CachedResourceClient* client)
         didRemoveClient(client);
     }
 
-    if (canDelete() && !inCache())
-        delete this;
-    else if (!hasClients() && inCache()) {
+    bool deleted = deleteIfPossible();
+    if (!deleted && !hasClients() && inCache()) {
         memoryCache()->removeFromLiveResourcesSize(this);
         memoryCache()->removeFromLiveDecodedResourcesList(this);
         allClientsRemoved();
+        destroyDecodedDataIfNeeded();
         if (response().cacheControlContainsNoStore()) {
             // RFC2616 14.9.2:
             // "no-store: ... MUST make a best-effort attempt to remove the information from volatile storage as promptly as possible"
@@ -448,12 +455,30 @@ void CachedResource::removeClient(CachedResourceClient* client)
     // This object may be dead here.
 }
 
-void CachedResource::deleteIfPossible()
+void CachedResource::destroyDecodedDataIfNeeded()
 {
-    if (canDelete() && !inCache())
-        delete this;
+    if (!m_decodedSize)
+        return;
+
+    if (double interval = memoryCache()->deadDecodedDataDeletionInterval())
+        m_decodedDataDeletionTimer.startOneShot(interval);
 }
-    
+
+void CachedResource::decodedDataDeletionTimerFired(Timer<CachedResource>*)
+{
+    destroyDecodedData();
+}
+
+bool CachedResource::deleteIfPossible()
+{
+    if (canDelete() && !inCache()) {
+        InspectorInstrumentation::willDestroyCachedResource(this);
+        delete this;
+        return true;
+    }
+    return false;
+}
+
 void CachedResource::setDecodedSize(unsigned size)
 {
     if (size == m_decodedSize)
@@ -774,6 +799,29 @@ void CachedResource::CachedResourceCallback::cancel()
 void CachedResource::CachedResourceCallback::timerFired(Timer<CachedResourceCallback>*)
 {
     m_resource->didAddClient(m_client);
+}
+
+void CachedResource::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResource);
+    info.addMember(m_resourceRequest);
+    info.addHashSet(m_clients);
+    info.addMember(m_accept);
+    info.addMember(m_loader);
+    info.addMember(m_response);
+    info.addMember(m_data);
+    info.addMember(m_cachedMetadata);
+    info.addMember(m_nextInAllResourcesList);
+    info.addMember(m_prevInAllResourcesList);
+    info.addMember(m_nextInLiveResourcesList);
+    info.addMember(m_prevInLiveResourcesList);
+    info.addMember(m_owningCachedResourceLoader);
+    info.addMember(m_resourceToRevalidate);
+    info.addMember(m_proxyResource);
+    info.addInstrumentedHashSet(m_handlesToRevalidate);
+
+    if (m_purgeableData && !m_purgeableData->wasPurged())
+        info.addRawBuffer(m_purgeableData.get(), m_purgeableData->size());
 }
 
 }

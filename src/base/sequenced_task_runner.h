@@ -4,7 +4,6 @@
 
 #ifndef BASE_SEQUENCED_TASKRUNNER_H_
 #define BASE_SEQUENCED_TASKRUNNER_H_
-#pragma once
 
 #include "base/base_export.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -110,11 +109,6 @@ class BASE_EXPORT SequencedTaskRunner : public TaskRunner {
 
   bool PostNonNestableTask(const tracked_objects::Location& from_here,
                            const Closure& task);
-
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const Closure& task,
-      int64 delay_ms) = 0;
 
   virtual bool PostNonNestableDelayedTask(
       const tracked_objects::Location& from_here,

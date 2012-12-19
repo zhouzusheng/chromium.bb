@@ -65,12 +65,16 @@ enum DrawOps {
     kTranslate_DrawOp,
 
     kPaintOp_DrawOp,
+    kSetTypeface_DrawOp,
 
     kDef_Typeface_DrawOp,
     kDef_Flattenable_DrawOp,
     kDef_Bitmap_DrawOp,
+    kDef_Factory_DrawOp,
 
     // these are signals to playback, not drawing verbs
+    kReportFlags_DrawOp,
+    kShareBitmapHeap_DrawOp,
     kDone_DrawOp,
 };
 
@@ -135,12 +139,80 @@ enum {
     kDrawVertices_HasColors_DrawOpFlag   = 1 << 1,
     kDrawVertices_HasIndices_DrawOpFlag  = 1 << 2,
 };
+enum {
+    kDrawBitmap_HasPaint_DrawOpFlag   = 1 << 0,
+    // Specific to drawBitmapRect, but needs to be different from HasPaint,
+    // which is used for all drawBitmap calls, so include it here.
+    kDrawBitmap_HasSrcRect_DrawOpFlag = 1 << 1,
+};
+enum {
+    kClip_HasAntiAlias_DrawOpFlag = 1 << 0,
+};
+///////////////////////////////////////////////////////////////////////////////
+
+class BitmapInfo : SkNoncopyable {
+public:
+    BitmapInfo(SkBitmap* bitmap, uint32_t genID, int toBeDrawnCount)
+        : fBitmap(bitmap)
+        , fGenID(genID)
+        , fBytesAllocated(0)
+        , fMoreRecentlyUsed(NULL)
+        , fLessRecentlyUsed(NULL)
+        , fToBeDrawnCount(toBeDrawnCount)
+    {}
+
+    ~BitmapInfo() {
+        SkASSERT(0 == fToBeDrawnCount);
+        SkDELETE(fBitmap);
+    }
+
+    void addDraws(int drawsToAdd) {
+        if (0 == fToBeDrawnCount) {
+            // The readers will only ever decrement the count, so once the
+            // count is zero, the writer will be the only one modifying it,
+            // so it does not need to be an atomic operation.
+            fToBeDrawnCount = drawsToAdd;
+        } else {
+            sk_atomic_add(&fToBeDrawnCount, drawsToAdd);
+        }
+    }
+
+    void decDraws() {
+        sk_atomic_dec(&fToBeDrawnCount);
+    }
+
+    int drawCount() const {
+        return fToBeDrawnCount;
+    }
+
+    SkBitmap* fBitmap;
+    // Store the generation ID of the original bitmap, since copying does
+    // not copy this field, so fBitmap's generation ID will not be useful
+    // for comparing.
+    // FIXME: Is it reasonable to make copying a bitmap/pixelref copy the
+    // generation ID?
+    uint32_t fGenID;
+    // Keep track of the bytes allocated for this bitmap. When replacing the
+    // bitmap or removing this BitmapInfo we know how much memory has been
+    // reclaimed.
+    size_t fBytesAllocated;
+    // TODO: Generalize the LRU caching mechanism
+    BitmapInfo* fMoreRecentlyUsed;
+    BitmapInfo* fLessRecentlyUsed;
+private:
+    int      fToBeDrawnCount;
+};
+
+static inline bool shouldFlattenBitmaps(uint32_t flags) {
+    return SkToBool(flags & SkGPipeWriter::kCrossProcess_Flag
+            && !(flags & SkGPipeWriter::kSharedAddressSpace_Flag));
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
 enum PaintOps {
     kReset_PaintOp,     // no arg
-    
+
     kFlags_PaintOp,     // arg inline
     kColor_PaintOp,     // arg 32
     kStyle_PaintOp,     // arg inline
@@ -148,7 +220,7 @@ enum PaintOps {
     kCap_PaintOp,       // arg inline
     kWidth_PaintOp,     // arg scalar
     kMiter_PaintOp,// arg scalar
-    
+
     kEncoding_PaintOp,  // arg inline - text
     kHinting_PaintOp,   // arg inline - text
     kAlign_PaintOp,     // arg inline - text
@@ -182,14 +254,14 @@ static inline unsigned PaintOp_unpackData(uint32_t op32) {
 
 static inline uint32_t PaintOp_packOp(PaintOps op) {
     SkASSERT(0 == (op & ~PAINTOPS_OP_MASK));
-    
+
     return op << (PAINTOPS_FLAG_BITS + PAINTOPS_DATA_BITS);
 }
 
 static inline uint32_t PaintOp_packOpData(PaintOps op, unsigned data) {
     SkASSERT(0 == (op & ~PAINTOPS_OP_MASK));
     SkASSERT(0 == (data & ~PAINTOPS_DATA_MASK));
-    
+
     return (op << (PAINTOPS_FLAG_BITS + PAINTOPS_DATA_BITS)) | data;
 }
 
@@ -197,7 +269,7 @@ static inline uint32_t PaintOp_packOpFlagData(PaintOps op, unsigned flags, unsig
     SkASSERT(0 == (op & ~PAINTOPS_OP_MASK));
     SkASSERT(0 == (flags & ~PAINTOPS_FLAG_MASK));
     SkASSERT(0 == (data & ~PAINTOPS_DATA_MASK));
-    
+
     return (op << (PAINTOPS_FLAG_BITS + PAINTOPS_DATA_BITS)) |
     (flags << PAINTOPS_DATA_BITS) |
     data;

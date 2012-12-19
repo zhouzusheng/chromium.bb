@@ -43,8 +43,8 @@ struct AVStream;
 
 namespace media {
 
-class BitstreamConverter;
 class FFmpegDemuxer;
+class FFmpegH264ToAnnexBBitstreamConverter;
 class ScopedPtrAVFreePacket;
 
 class FFmpegDemuxerStream : public DemuxerStream {
@@ -84,7 +84,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
   virtual void EnableBitstreamConverter() OVERRIDE;
   virtual const AudioDecoderConfig& audio_decoder_config() OVERRIDE;
   virtual const VideoDecoderConfig& video_decoder_config() OVERRIDE;
-  virtual Ranges<base::TimeDelta> GetBufferedRanges() OVERRIDE;
+
+  // Returns the range of buffered data in this stream.
+  Ranges<base::TimeDelta> GetBufferedRanges() const;
 
   // Returns elapsed time based on the already queued packets.
   // Used to determine stream duration when it's not known ahead of time.
@@ -114,7 +116,6 @@ class FFmpegDemuxerStream : public DemuxerStream {
   VideoDecoderConfig video_config_;
   Type type_;
   base::TimeDelta duration_;
-  bool discontinuous_;
   bool stopped_;
   base::TimeDelta last_packet_timestamp_;
   Ranges<base::TimeDelta> buffered_ranges_;
@@ -125,8 +126,8 @@ class FFmpegDemuxerStream : public DemuxerStream {
   typedef std::deque<ReadCB> ReadQueue;
   ReadQueue read_queue_;
 
-  // Used to translate bitstream formats.
-  scoped_ptr<BitstreamConverter> bitstream_converter_;
+  scoped_ptr<FFmpegH264ToAnnexBBitstreamConverter> bitstream_converter_;
+  bool bitstream_converter_enabled_;
 
   // Used to synchronize access to |buffer_queue_|, |read_queue_|, and
   // |stopped_|. This is so other threads can get access to buffers that have
@@ -140,7 +141,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
 class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
  public:
-  FFmpegDemuxer(MessageLoop* message_loop,
+  FFmpegDemuxer(const scoped_refptr<base::MessageLoopProxy>& message_loop,
                 const scoped_refptr<DataSource>& data_source);
 
   // Posts a task to perform additional demuxing.
@@ -156,7 +157,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   virtual scoped_refptr<DemuxerStream> GetStream(
       DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
-  virtual int GetBitrate() OVERRIDE;
 
   // FFmpegURLProtocol implementation.
   virtual size_t Read(size_t size, uint8* data) OVERRIDE;
@@ -166,7 +166,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   virtual bool IsStreaming() OVERRIDE;
 
   // Provide access to FFmpegDemuxerStream.
-  MessageLoop* message_loop();
+  scoped_refptr<base::MessageLoopProxy> message_loop();
 
   // Allow FFmpegDemuxerStream to notify us when there is updated information
   // about what buffered data is available.
@@ -212,9 +212,14 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer, public FFmpegURLProtocol {
   // read or kReadError in case of error.
   virtual void SignalReadCompleted(int size);
 
+  // Returns the stream from |streams_| that matches |type| as an
+  // FFmpegDemuxerStream.
+  scoped_refptr<FFmpegDemuxerStream> GetFFmpegStream(
+      DemuxerStream::Type type) const;
+
   DemuxerHost* host_;
 
-  MessageLoop* message_loop_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
 
   // FFmpeg context handle.
   AVFormatContext* format_context_;

@@ -466,6 +466,12 @@ EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
 //   }
 EVENT_TYPE(SSL_GET_DOMAIN_BOUND_CERT)
 
+// The SSL server requested a channel id.
+EVENT_TYPE(SSL_CHANNEL_ID_REQUESTED)
+
+// A channel ID was provided to the SSL library to be sent to the SSL server.
+EVENT_TYPE(SSL_CHANNEL_ID_PROVIDED)
+
 // A client certificate (or none) was provided to the SSL library to be sent
 // to the SSL server.
 // The following parameters are attached to the event:
@@ -499,7 +505,7 @@ EVENT_TYPE(SSL_WRITE_ERROR)
 EVENT_TYPE(SSL_VERSION_FALLBACK)
 
 // We found that our prediction of the server's certificates was correct and
-// we merged the verification with the SSLHostInfo.
+// we merged the verification with the SSLHostInfo. (Note: now obsolete.)
 EVENT_TYPE(SSL_VERIFICATION_MERGED)
 
 // An SSL error occurred while calling an NSS function not directly related to
@@ -908,6 +914,13 @@ EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST)
 //   }
 EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST_HEADERS)
 
+// This event is sent for a HTTP request over a SPDY stream.
+// The following parameters are attached:
+//   {
+//     "headers": <The list of header:value pairs>,
+//   }
+EVENT_TYPE(HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS)
+
 // Measures the time to read HTTP response headers from the server.
 EVENT_TYPE(HTTP_TRANSACTION_READ_HEADERS)
 
@@ -963,14 +976,23 @@ EVENT_TYPE(SPDY_SESSION_SYN_STREAM)
 //   }
 EVENT_TYPE(SPDY_SESSION_PUSHED_SYN_STREAM)
 
-// This event is sent for a SPDY HEADERS frame.
+// This event is sent for a sending SPDY HEADERS frame.
 // The following parameters are attached:
 //   {
 //     "flags": <The control frame flags>,
 //     "headers": <The list of header:value pairs>,
 //     "id": <The stream id>,
 //   }
-EVENT_TYPE(SPDY_SESSION_HEADERS)
+EVENT_TYPE(SPDY_SESSION_SEND_HEADERS)
+
+// This event is sent for a receiving SPDY HEADERS frame.
+// The following parameters are attached:
+//   {
+//     "flags": <The control frame flags>,
+//     "headers": <The list of header:value pairs>,
+//     "id": <The stream id>,
+//   }
+EVENT_TYPE(SPDY_SESSION_RECV_HEADERS)
 
 // This event is sent for a SPDY SYN_REPLY.
 // The following parameters are attached:
@@ -1028,6 +1050,7 @@ EVENT_TYPE(SPDY_SESSION_PING)
 //     "last_accepted_stream_id": <Last stream id accepted by the server, duh>,
 //     "active_streams":          <Number of active streams>,
 //     "unclaimed_streams":       <Number of unclaimed push streams>,
+//     "status":                  <The reason for the GOAWAY>,
 //   }
 EVENT_TYPE(SPDY_SESSION_GOAWAY)
 
@@ -1064,8 +1087,8 @@ EVENT_TYPE(SPDY_SESSION_SEND_DATA)
 // Receiving a data frame
 //   {
 //     "stream_id": <The stream ID for the window update>,
-//     "length"   : <The size of data sent>,
-//     "flags"    : <Send data flags>,
+//     "length"   : <The size of data received>,
+//     "flags"    : <Receive data flags>,
 //   }
 EVENT_TYPE(SPDY_SESSION_RECV_DATA)
 
@@ -1620,6 +1643,10 @@ EVENT_TYPE(DOWNLOAD_FILE_DELETED)
 //   }
 EVENT_TYPE(DOWNLOAD_FILE_ERROR)
 
+// This event is created when a download file is annotating with source
+// information (for Mark Of The Web and anti-virus integration).
+EVENT_TYPE(DOWNLOAD_FILE_ANNOTATED)
+
 // ------------------------------------------------------------------------
 // FileStream events.
 // ------------------------------------------------------------------------
@@ -1659,3 +1686,19 @@ EVENT_TYPE(FILE_STREAM_CLOSE)
 //     "net_error": <net::Error code>,
 //   }
 EVENT_TYPE(FILE_STREAM_ERROR)
+
+// ------------------------------------------------------------------------
+// IPv6 Probe events.
+// ------------------------------------------------------------------------
+
+// This event lasts from the point an IPv6ProbeJob is created until completion.
+//
+// The END contains the following parameters:
+//   {
+//     "ipv6_supported": <Boolean indicating whether or not the probe determined
+//                        IPv6 may be supported>,
+//     "ipv6_support_status": <String indicating the reason for that result>,
+//     "os_error": <Platform dependent error code, associated with the result,
+//                  if any>
+//   }
+EVENT_TYPE(IPV6_PROBE_RUNNING)

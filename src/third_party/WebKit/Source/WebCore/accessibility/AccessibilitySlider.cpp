@@ -47,7 +47,9 @@ AccessibilitySlider::AccessibilitySlider(RenderObject* renderer)
 
 PassRefPtr<AccessibilitySlider> AccessibilitySlider::create(RenderObject* renderer)
 {
-    return adoptRef(new AccessibilitySlider(renderer));
+    AccessibilitySlider* obj = new AccessibilitySlider(renderer);
+    obj->init();
+    return adoptRef(obj);
 }
 
 AccessibilityOrientation AccessibilitySlider::orientation() const
@@ -175,7 +177,7 @@ LayoutRect AccessibilitySliderThumb::elementRect() const
     RenderObject* sliderRenderer = m_parent->renderer();
     if (!sliderRenderer || !sliderRenderer->isSlider())
         return LayoutRect();
-    return sliderThumbElementOf(sliderRenderer->node())->getRect();
+    return sliderThumbElementOf(sliderRenderer->node())->boundingBox();
 }
 
 bool AccessibilitySliderThumb::accessibilityIsIgnored() const

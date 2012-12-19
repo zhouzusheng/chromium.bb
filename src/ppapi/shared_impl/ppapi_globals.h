@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/threading/thread_local.h"  // For testing purposes only.
 #include "ppapi/c/dev/ppb_console_dev.h"
 #include "ppapi/c/pp_instance.h"
@@ -17,6 +18,7 @@
 
 namespace base {
 class Lock;
+class MessageLoopProxy;
 }
 
 namespace ppapi {
@@ -101,6 +103,11 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   // failure.
   virtual PP_Module GetModuleForInstance(PP_Instance instance) = 0;
 
+  // Returns the base::MessageLoopProxy for the main thread. Note that this must
+  // be called on the main thread the first time so that it can initialize
+  // its static data.
+  base::MessageLoopProxy* GetMainThreadMessageLoop();
+
   // Returns the command line for the process.
   virtual std::string GetCmdLine() = 0;
 
@@ -119,6 +126,8 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   static PpapiGlobals* GetThreadLocalPointer();
 
   static PpapiGlobals* ppapi_globals_;
+
+  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(PpapiGlobals);
 };

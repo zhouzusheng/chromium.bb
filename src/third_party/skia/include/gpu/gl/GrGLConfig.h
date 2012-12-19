@@ -49,7 +49,7 @@
  * GR_GL_NO_CONSTANT_ATTRIBUTES: if this evaluates to true then the GL backend
  * will use uniforms instead of attributes in all cases when there is not
  * per-vertex data. This is important when the underlying GL implementation
- * doesn't actually support immediate style attribute values (e.g. when 
+ * doesn't actually support immediate style attribute values (e.g. when
  * the GL stream is converted to DX as in ANGLE on Chrome). Defaults to 0.
  *
  * GR_GL_USE_BUFFER_DATA_NULL_HINT: When specifing new data for a vertex/index
@@ -92,6 +92,10 @@
  * check the first time we use a color format or a combination of color /
  * stencil formats as attachments. If the FBO is complete we will assume
  * subsequent attachments with the same formats are complete as well.
+ *
+ * GR_GL_USE_NV_PATH_RENDERING: Enable experimental support for
+ * GL_NV_path_rendering. There are known issues with clipping, non-AA paths, and
+ * perspective.
  */
 
 #if !defined(GR_GL_LOG_CALLS)
@@ -136,6 +140,10 @@
 
 #if !defined(GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT)
     #define GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT      0
+#endif
+
+#if !defined(GR_GL_USE_NV_PATH_RENDERING)
+    #define GR_GL_USE_NV_PATH_RENDERING                 0
 #endif
 
 /**

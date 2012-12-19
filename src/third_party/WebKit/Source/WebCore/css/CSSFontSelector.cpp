@@ -578,6 +578,9 @@ void CSSFontSelector::beginLoadTimerFired(Timer<WebCore::CSSFontSelector>*)
     Vector<CachedResourceHandle<CachedFont> > fontsToBeginLoading;
     fontsToBeginLoading.swap(m_fontsToBeginLoading);
 
+    // CSSFontSelector could get deleted via beginLoadIfNeeded() or loadDone() unless protected.
+    RefPtr<CSSFontSelector> protect(this);
+
     CachedResourceLoader* cachedResourceLoader = m_document->cachedResourceLoader();
     for (size_t i = 0; i < fontsToBeginLoading.size(); ++i) {
         fontsToBeginLoading[i]->beginLoadIfNeeded(cachedResourceLoader);
@@ -586,6 +589,10 @@ void CSSFontSelector::beginLoadTimerFired(Timer<WebCore::CSSFontSelector>*)
     }
     // Ensure that if the request count reaches zero, the frame loader will know about it.
     cachedResourceLoader->loadDone();
+    // New font loads may be triggered by layout after the document load is complete but before we have dispatched
+    // didFinishLoading for the frame. Make sure the delegate is always dispatched by checking explicitly.
+    if (m_document && m_document->frame())
+        m_document->frame()->loader()->checkLoadComplete();
 }
 
 }

@@ -34,6 +34,7 @@
 #include "CachedShader.h"
 #include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -65,6 +66,14 @@ void CachedShader::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     if (allDataReceived)
         m_data = data;
     CachedResource::data(data, allDataReceived);
+}
+
+void CachedShader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceShader);
+    CachedResource::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_decoder);
+    info.addMember(m_shaderString);
 }
 
 } // namespace WebCore

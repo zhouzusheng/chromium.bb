@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_SHADOW_VALUE_H_
 #define UI_GFX_SHADOW_VALUE_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -33,6 +32,8 @@ class UI_EXPORT ShadowValue {
   const gfx::Point& offset() const { return offset_; }
   double blur() const { return blur_; }
   SkColor color() const { return color_; }
+
+  ShadowValue Scale(float scale) const;
 
   std::string ToString() const;
 

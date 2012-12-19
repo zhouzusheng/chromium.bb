@@ -9,7 +9,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_CONTEXT_H_
 #define NET_URL_REQUEST_URL_REQUEST_CONTEXT_H_
-#pragma once
 
 #include <set>
 
@@ -21,8 +20,10 @@
 #include "net/base/net_log.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/transport_security_state.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/ftp/ftp_auth_cache.h"
+#include "net/url_request/url_request.h"
 
 namespace net {
 class CertVerifier;
@@ -51,6 +52,12 @@ class NET_EXPORT URLRequestContext
 
   // Copies the state from |other| into this context.
   void CopyFrom(const URLRequestContext* other);
+
+  // May return NULL if this context doesn't have an associated network session.
+  const HttpNetworkSession::Params* GetNetworkSessionParams() const;
+
+  URLRequest* CreateRequest(
+      const GURL& url, URLRequest::Delegate* delegate) const;
 
   NetLog* net_log() const {
     return net_log_;
@@ -157,7 +164,13 @@ class NET_EXPORT URLRequestContext
   }
 
   // Gets the FTP authentication cache for this context.
-  FtpAuthCache* ftp_auth_cache() const { return ftp_auth_cache_.get(); }
+  FtpAuthCache* ftp_auth_cache() const {
+#if !defined(DISABLE_FTP_SUPPORT)
+    return ftp_auth_cache_.get();
+#else
+    return NULL;
+#endif
+  }
 
   // Gets the value of 'Accept-Charset' header field.
   const std::string& accept_charset() const { return accept_charset_; }
@@ -224,7 +237,9 @@ class NET_EXPORT URLRequestContext
   HttpServerProperties* http_server_properties_;
   scoped_refptr<CookieStore> cookie_store_;
   TransportSecurityState* transport_security_state_;
+#if !defined(DISABLE_FTP_SUPPORT)
   scoped_ptr<FtpAuthCache> ftp_auth_cache_;
+#endif
   std::string accept_language_;
   std::string accept_charset_;
   // The charset of the referrer where this request comes from. It's not

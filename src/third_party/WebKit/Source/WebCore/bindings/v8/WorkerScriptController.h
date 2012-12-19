@@ -58,7 +58,7 @@ namespace WebCore {
         void evaluate(const ScriptSourceCode&);
         void evaluate(const ScriptSourceCode&, ScriptValue* exception);
 
-        void setException(ScriptValue);
+        void setException(const ScriptValue&);
 
         // Async request to terminate a future JS execution. Eventually causes termination
         // exception raised during JS execution, if the worker thread happens to run JS.
@@ -73,7 +73,7 @@ namespace WebCore {
         void forbidExecution();
         bool isExecutionForbidden() const;
 
-        void disableEval();
+        void disableEval(const String&);
 
         // Returns WorkerScriptController for the currently executing context. 0 will be returned if the current executing context is not the worker context.
         static WorkerScriptController* controllerForContext();

@@ -83,6 +83,55 @@ MultiThreadedCertVerifier::CachedResult::CachedResult() : error(ERR_FAILED) {}
 
 MultiThreadedCertVerifier::CachedResult::~CachedResult() {}
 
+MultiThreadedCertVerifier::CacheValidityPeriod::CacheValidityPeriod(
+    const base::Time& now)
+    : verification_time(now),
+      expiration_time(now) {
+}
+
+MultiThreadedCertVerifier::CacheValidityPeriod::CacheValidityPeriod(
+    const base::Time& now,
+    const base::Time& expiration)
+    : verification_time(now),
+      expiration_time(expiration) {
+}
+
+bool MultiThreadedCertVerifier::CacheExpirationFunctor::operator()(
+    const CacheValidityPeriod& now,
+    const CacheValidityPeriod& expiration) const {
+  // Ensure this functor is being used for expiration only, and not strict
+  // weak ordering/sorting. |now| should only ever contain a single
+  // base::Time.
+  // Note: DCHECK_EQ is not used due to operator<< overloading requirements.
+  DCHECK(now.verification_time == now.expiration_time);
+
+  // |now| contains only a single time (verification_time), while |expiration|
+  // contains the validity range - both when the certificate was verified and
+  // when the verification result should expire.
+  //
+  // If the user receives a "not yet valid" message, and adjusts their clock
+  // foward to the correct time, this will (typically) cause
+  // now.verification_time to advance past expiration.expiration_time, thus
+  // treating the cached result as an expired entry and re-verifying.
+  // If the user receives a "expired" message, and adjusts their clock
+  // backwards to the correct time, this will cause now.verification_time to
+  // be less than expiration_verification_time, thus treating the cached
+  // result as an expired entry and re-verifying.
+  // If the user receives either of those messages, and does not adjust their
+  // clock, then the result will be (typically) be cached until the expiration
+  // TTL.
+  //
+  // This algorithm is only problematic if the user consistently keeps
+  // adjusting their clock backwards in increments smaller than the expiration
+  // TTL, in which case, cached elements continue to be added. However,
+  // because the cache has a fixed upper bound, if no entries are expired, a
+  // 'random' entry will be, thus keeping the memory constraints bounded over
+  // time.
+  return now.verification_time >= expiration.verification_time &&
+         now.verification_time < expiration.expiration_time;
+};
+
+
 // Represents the output and result callback of a request.
 class CertVerifierRequest {
  public:
@@ -327,19 +376,19 @@ class CertVerifierJob {
   const BoundNetLog net_log_;
 };
 
-MultiThreadedCertVerifier::MultiThreadedCertVerifier()
+MultiThreadedCertVerifier::MultiThreadedCertVerifier(
+    CertVerifyProc* verify_proc)
     : cache_(kMaxCacheEntries),
       requests_(0),
       cache_hits_(0),
       inflight_joins_(0),
-      verify_proc_(CertVerifyProc::CreateDefault()) {
-  CertDatabase::AddObserver(this);
+      verify_proc_(verify_proc) {
+  CertDatabase::GetInstance()->AddObserver(this);
 }
 
 MultiThreadedCertVerifier::~MultiThreadedCertVerifier() {
   STLDeleteValues(&inflight_);
-
-  CertDatabase::RemoveObserver(this);
+  CertDatabase::GetInstance()->RemoveObserver(this);
 }
 
 int MultiThreadedCertVerifier::Verify(X509Certificate* cert,
@@ -362,7 +411,7 @@ int MultiThreadedCertVerifier::Verify(X509Certificate* cert,
   const RequestParams key(cert->fingerprint(), cert->ca_fingerprint(),
                           hostname, flags);
   const CertVerifierCache::value_type* cached_entry =
-      cache_.Get(key, base::TimeTicks::Now());
+      cache_.Get(key, CacheValidityPeriod(base::Time::Now()));
   if (cached_entry) {
     ++cache_hits_;
     *out_req = NULL;
@@ -411,6 +460,16 @@ void MultiThreadedCertVerifier::CancelRequest(RequestHandle req) {
   request->Cancel();
 }
 
+MultiThreadedCertVerifier::RequestParams::RequestParams(
+    const SHA1HashValue& cert_fingerprint_arg,
+    const SHA1HashValue& ca_fingerprint_arg,
+    const std::string& hostname_arg,
+    int flags_arg)
+    : cert_fingerprint(cert_fingerprint_arg),
+      ca_fingerprint(ca_fingerprint_arg),
+      hostname(hostname_arg),
+      flags(flags_arg) {}
+
 // HandleResult is called by CertVerifierWorker on the origin message loop.
 // It deletes CertVerifierJob.
 void MultiThreadedCertVerifier::HandleResult(
@@ -427,8 +486,10 @@ void MultiThreadedCertVerifier::HandleResult(
   CachedResult cached_result;
   cached_result.error = error;
   cached_result.result = verify_result;
-  cache_.Put(key, cached_result, base::TimeTicks::Now(),
-             base::TimeDelta::FromSeconds(kTTLSecs));
+  base::Time now = base::Time::Now();
+  cache_.Put(
+      key, cached_result, CacheValidityPeriod(now),
+      CacheValidityPeriod(now, now + base::TimeDelta::FromSeconds(kTTLSecs)));
 
   std::map<RequestParams, CertVerifierJob*>::iterator j;
   j = inflight_.find(key);
@@ -448,10 +509,6 @@ void MultiThreadedCertVerifier::OnCertTrustChanged(
   DCHECK(CalledOnValidThread());
 
   ClearCache();
-}
-
-void MultiThreadedCertVerifier::SetCertVerifyProc(CertVerifyProc* verify_proc) {
-  verify_proc_ = verify_proc;
 }
 
 }  // namespace net

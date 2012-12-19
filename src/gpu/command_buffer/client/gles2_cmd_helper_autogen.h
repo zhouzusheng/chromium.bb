@@ -1574,6 +1574,28 @@
     }
   }
 
+  void InsertEventMarkerEXT(GLuint bucket_id) {
+    gles2::InsertEventMarkerEXT* c =
+        GetCmdSpace<gles2::InsertEventMarkerEXT>();
+    if (c) {
+      c->Init(bucket_id);
+    }
+  }
+
+  void PushGroupMarkerEXT(GLuint bucket_id) {
+    gles2::PushGroupMarkerEXT* c = GetCmdSpace<gles2::PushGroupMarkerEXT>();
+    if (c) {
+      c->Init(bucket_id);
+    }
+  }
+
+  void PopGroupMarkerEXT() {
+    gles2::PopGroupMarkerEXT* c = GetCmdSpace<gles2::PopGroupMarkerEXT>();
+    if (c) {
+      c->Init();
+    }
+  }
+
   void SwapBuffers() {
     gles2::SwapBuffers* c = GetCmdSpace<gles2::SwapBuffers>();
     if (c) {
@@ -1795,6 +1817,36 @@
             size);
     if (c) {
       c->Init(target, mailbox);
+    }
+  }
+
+  void BindUniformLocationCHROMIUM(
+      GLuint program, GLint location, uint32 name_shm_id,
+      uint32 name_shm_offset, uint32 data_size) {
+    gles2::BindUniformLocationCHROMIUM* c =
+        GetCmdSpace<gles2::BindUniformLocationCHROMIUM>();
+    if (c) {
+      c->Init(program, location, name_shm_id, name_shm_offset, data_size);
+    }
+  }
+
+  void BindUniformLocationCHROMIUMImmediate(
+      GLuint program, GLint location, const char* name) {
+    const uint32 data_size = strlen(name);
+    gles2::BindUniformLocationCHROMIUMImmediate* c =
+        GetImmediateCmdSpace<gles2::BindUniformLocationCHROMIUMImmediate>(
+            data_size);
+    if (c) {
+      c->Init(program, location, name, data_size);
+    }
+  }
+
+  void BindUniformLocationCHROMIUMBucket(
+      GLuint program, GLint location, uint32 name_bucket_id) {
+    gles2::BindUniformLocationCHROMIUMBucket* c =
+        GetCmdSpace<gles2::BindUniformLocationCHROMIUMBucket>();
+    if (c) {
+      c->Init(program, location, name_bucket_id);
     }
   }
 

@@ -7,6 +7,9 @@
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/win/scoped_gdi_object.h"
+#include "base/win/scoped_hdc.h"
+#include "base/win/scoped_select_object.h"
 #include "skia/ext/vector_platform_device_emf_win.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/jpeg_codec.h"
@@ -16,6 +19,7 @@
 #include "ui/gfx/size.h"
 
 namespace {
+
 const int kCustomGdiCommentSignature = 0xdeadbabe;
 struct PageBreakRecord {
   int signature;
@@ -31,7 +35,121 @@ struct PageBreakRecord {
            (type >= START_PAGE) && (type <= END_PAGE);
   }
 };
+
+int CALLBACK IsAlphaBlendUsedEnumProc(HDC,
+                                      HANDLETABLE*,
+                                      const ENHMETARECORD *record,
+                                      int,
+                                      LPARAM data) {
+  bool* result = reinterpret_cast<bool*>(data);
+  if (!result)
+    return 0;
+  switch (record->iType) {
+    case EMR_ALPHABLEND: {
+      *result = true;
+      return 0;
+      break;
+    }
+  }
+  return 1;
 }
+
+int CALLBACK RasterizeAlphaBlendProc(HDC metafile_dc,
+                                     HANDLETABLE* handle_table,
+                                     const ENHMETARECORD *record,
+                                     int num_objects,
+                                     LPARAM data) {
+    HDC bitmap_dc = *reinterpret_cast<HDC*>(data);
+    // Play this command to the bitmap DC.
+    ::PlayEnhMetaFileRecord(bitmap_dc, handle_table, record, num_objects);
+    switch (record->iType) {
+    case EMR_ALPHABLEND: {
+      const EMRALPHABLEND* alpha_blend =
+          reinterpret_cast<const EMRALPHABLEND*>(record);
+      // Don't modify transformation here.
+      // Old implementation did reset transformations for DC to identity matrix.
+      // That was not correct and cause some bugs, like unexpected cropping.
+      // EMRALPHABLEND is rendered into bitmap and metafile contexts with
+      // current transformation. If we don't touch them here BitBlt will copy
+      // same areas.
+      ::BitBlt(metafile_dc,
+               alpha_blend->xDest,
+               alpha_blend->yDest,
+               alpha_blend->cxDest,
+               alpha_blend->cyDest,
+               bitmap_dc,
+               alpha_blend->xDest,
+               alpha_blend->yDest,
+               SRCCOPY);
+      break;
+    }
+    case EMR_CREATEBRUSHINDIRECT:
+    case EMR_CREATECOLORSPACE:
+    case EMR_CREATECOLORSPACEW:
+    case EMR_CREATEDIBPATTERNBRUSHPT:
+    case EMR_CREATEMONOBRUSH:
+    case EMR_CREATEPALETTE:
+    case EMR_CREATEPEN:
+    case EMR_DELETECOLORSPACE:
+    case EMR_DELETEOBJECT:
+    case EMR_EXTCREATEFONTINDIRECTW:
+      // Play object creation command only once.
+      break;
+
+    default:
+      // Play this command to the metafile DC.
+      ::PlayEnhMetaFileRecord(metafile_dc, handle_table, record, num_objects);
+      break;
+    }
+    return 1;  // Continue enumeration
+}
+
+// Bitmapt for rasterization.
+class RasterBitmap {
+ public:
+  explicit RasterBitmap(const gfx::Size& raster_size)
+      : saved_object_(NULL) {
+    context_.Set(::CreateCompatibleDC(NULL));
+    if (!context_) {
+      NOTREACHED() << "Bitmap DC creation failed";
+      return;
+    }
+    ::SetGraphicsMode(context_, GM_ADVANCED);
+    void* bits = NULL;
+    gfx::Rect bitmap_rect(raster_size);
+    gfx::CreateBitmapHeader(raster_size.width(), raster_size.height(),
+                            &header_.bmiHeader);
+    bitmap_.Set(::CreateDIBSection(context_, &header_, DIB_RGB_COLORS, &bits,
+                                   NULL, 0));
+    if (!bitmap_)
+      NOTREACHED() << "Raster bitmap creation for printing failed";
+
+    saved_object_ = ::SelectObject(context_, bitmap_);
+    ::FillRect(context_, &bitmap_rect.ToRECT(),
+               static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
+
+  }
+
+  ~RasterBitmap() {
+    ::SelectObject(context_, saved_object_);
+  }
+
+  HDC context() const {
+    return context_;
+  }
+
+  base::win::ScopedCreateDC context_;
+  BITMAPINFO header_;
+  base::win::ScopedBitmap bitmap_;
+  HGDIOBJ saved_object_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RasterBitmap);
+};
+
+
+
+}  // namespace
 
 namespace printing {
 
@@ -109,10 +227,12 @@ bool Emf::SafePlayback(HDC context) const {
     NOTREACHED();
     return false;
   }
+  Emf::EnumerationContext playback_context;
+  playback_context.base_matrix = &base_matrix;
   return EnumEnhMetaFile(context,
                          emf_,
                          &Emf::SafePlaybackProc,
-                         reinterpret_cast<void*>(&base_matrix),
+                         reinterpret_cast<void*>(&playback_context),
                          &GetPageBounds(1).ToRECT()) != 0;
 }
 
@@ -124,19 +244,12 @@ gfx::Rect Emf::GetPageBounds(unsigned int page_number) const {
     NOTREACHED();
     return gfx::Rect();
   }
-  if (header.rclBounds.left == 0 &&
-      header.rclBounds.top == 0 &&
-      header.rclBounds.right == -1 &&
-      header.rclBounds.bottom == -1) {
-    // A freshly created EMF buffer that has no drawing operation has invalid
-    // bounds. Instead of having an (0,0) size, it has a (-1,-1) size. Detect
-    // this special case and returns an empty Rect instead of an invalid one.
-    return gfx::Rect();
-  }
+  // Add 1 to right and bottom because it's inclusive rectangle.
+  // See ENHMETAHEADER.
   return gfx::Rect(header.rclBounds.left,
                    header.rclBounds.top,
-                   header.rclBounds.right - header.rclBounds.left,
-                   header.rclBounds.bottom - header.rclBounds.top);
+                   header.rclBounds.right - header.rclBounds.left + 1,
+                   header.rclBounds.bottom - header.rclBounds.top + 1);
 }
 
 uint32 Emf::GetDataSize() const {
@@ -190,32 +303,34 @@ int CALLBACK Emf::SafePlaybackProc(HDC hdc,
                                    const ENHMETARECORD* record,
                                    int objects_count,
                                    LPARAM param) {
-  const XFORM* base_matrix = reinterpret_cast<const XFORM*>(param);
-  EnumerationContext context;
-  context.handle_table = handle_table;
-  context.objects_count = objects_count;
-  context.hdc = hdc;
-  Record record_instance(&context, record);
-  bool success = record_instance.SafePlayback(base_matrix);
+  Emf::EnumerationContext* context =
+      reinterpret_cast<Emf::EnumerationContext*>(param);
+  context->handle_table = handle_table;
+  context->objects_count = objects_count;
+  context->hdc = hdc;
+  Record record_instance(record);
+  bool success = record_instance.SafePlayback(context);
   DCHECK(success);
   return 1;
 }
 
-Emf::Record::Record(const EnumerationContext* context,
-                    const ENHMETARECORD* record)
-    : record_(record),
-      context_(context) {
+Emf::EnumerationContext::EnumerationContext() {
+  memset(this, 0, sizeof(*this));
+}
+
+Emf::Record::Record(const ENHMETARECORD* record)
+    : record_(record) {
   DCHECK(record_);
 }
 
-bool Emf::Record::Play() const {
-  return 0 != PlayEnhMetaFileRecord(context_->hdc,
-                                    context_->handle_table,
+bool Emf::Record::Play(Emf::EnumerationContext* context) const {
+  return 0 != PlayEnhMetaFileRecord(context->hdc,
+                                    context->handle_table,
                                     record_,
-                                    context_->objects_count);
+                                    context->objects_count);
 }
 
-bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
+bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
   // For EMF field description, see [MS-EMF] Enhanced Metafile Format
   // Specification.
   //
@@ -259,7 +374,8 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
   // We also process any custom EMR_GDICOMMENT records which are our
   // placeholders for StartPage and EndPage.
   // Note: I should probably care about view ports and clipping, eventually.
-  bool res;
+  bool res = false;
+  const XFORM* base_matrix = context->base_matrix;
   switch (record()->iType) {
     case EMR_STRETCHDIBITS: {
       const EMRSTRETCHDIBITS * sdib_record =
@@ -271,7 +387,7 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
       const BYTE* bits = record_start + sdib_record->offBitsSrc;
       bool play_normally = true;
       res = false;
-      HDC hdc = context_->hdc;
+      HDC hdc = context->hdc;
       scoped_ptr<SkBitmap> bitmap;
       if (bmih->biCompression == BI_JPEG) {
         if (!DIBFormatNativelySupported(hdc, CHECKJPEGFORMAT, bits,
@@ -311,14 +427,14 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
                                     sdib_record->dwRop));
         }
       } else {
-        res = Play();
+        res = Play(context);
       }
       break;
     }
     case EMR_SETWORLDTRANSFORM: {
       DCHECK_EQ(record()->nSize, sizeof(DWORD) * 2 + sizeof(XFORM));
       const XFORM* xform = reinterpret_cast<const XFORM*>(record()->dParm);
-      HDC hdc = context_->hdc;
+      HDC hdc = context->hdc;
       if (base_matrix) {
         res = 0 != SetWorldTransform(hdc, base_matrix) &&
                    ModifyWorldTransform(hdc, xform, MWT_LEFTMULTIPLY);
@@ -332,7 +448,7 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
                 sizeof(DWORD) * 2 + sizeof(XFORM) + sizeof(DWORD));
       const XFORM* xform = reinterpret_cast<const XFORM*>(record()->dParm);
       const DWORD* option = reinterpret_cast<const DWORD*>(xform + 1);
-      HDC hdc = context_->hdc;
+      HDC hdc = context->hdc;
       switch (*option) {
         case MWT_IDENTITY:
           if (base_matrix) {
@@ -371,15 +487,20 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
             reinterpret_cast<const PageBreakRecord*>(comment_record->Data);
         if (page_break_record && page_break_record->IsValid()) {
           if (page_break_record->type == PageBreakRecord::START_PAGE) {
-            res = !!::StartPage(context_->hdc);
+            res = !!::StartPage(context->hdc);
+            DCHECK_EQ(0, context->dc_on_page_start);
+            context->dc_on_page_start = ::SaveDC(context->hdc);
           } else if (page_break_record->type == PageBreakRecord::END_PAGE) {
-            res = !!::EndPage(context_->hdc);
+            DCHECK_NE(0, context->dc_on_page_start);
+            ::RestoreDC(context->hdc, context->dc_on_page_start);
+            context->dc_on_page_start = 0;
+            res = !!::EndPage(context->hdc);
           } else {
             res = false;
             NOTREACHED();
           }
         } else {
-          res = Play();
+          res = Play(context);
         }
       } else {
         res = true;
@@ -387,7 +508,7 @@ bool Emf::Record::SafePlayback(const XFORM* base_matrix) const {
       break;
     }
     default: {
-      res = Play();
+      res = Play(context);
       break;
     }
   }
@@ -427,9 +548,6 @@ bool Emf::FinishPage() {
 }
 
 Emf::Enumerator::Enumerator(const Emf& emf, HDC context, const RECT* rect) {
-  context_.handle_table = NULL;
-  context_.objects_count = 0;
-  context_.hdc = NULL;
   items_.clear();
   if (!EnumEnhMetaFile(context,
                        emf.emf(),
@@ -467,8 +585,91 @@ int CALLBACK Emf::Enumerator::EnhMetaFileProc(HDC hdc,
     DCHECK_EQ(emf.context_.objects_count, objects_count);
     DCHECK_EQ(emf.context_.hdc, hdc);
   }
-  emf.items_.push_back(Record(&emf.context_, record));
+  emf.items_.push_back(Record(record));
   return 1;
 }
+
+bool Emf::IsAlphaBlendUsed() const {
+  bool result = false;
+  ::EnumEnhMetaFile(NULL,
+                    emf(),
+                    &IsAlphaBlendUsedEnumProc,
+                    &result,
+                    NULL);
+  return result;
+}
+
+Emf* Emf::RasterizeMetafile(int raster_area_in_pixels) const {
+  gfx::Rect page_bounds = GetPageBounds(1);
+  gfx::Size page_size(page_bounds.size());
+  if (page_size.GetArea() <= 0) {
+    NOTREACHED() << "Metafile is empty";
+    page_bounds = gfx::Rect(1, 1);
+  }
+
+  float scale = sqrt(float(raster_area_in_pixels) / page_size.GetArea());
+  page_size.set_width(std::max<int>(1, page_size.width() * scale));
+  page_size.set_height(std::max<int>(1, page_size.height() * scale));
+
+
+  RasterBitmap bitmap(page_size);
+
+  gfx::Rect bitmap_rect(page_size);
+  Playback(bitmap.context(), &bitmap_rect.ToRECT());
+
+  scoped_ptr<Emf> result(new Emf);
+  result->Init();
+  HDC hdc = result->context();
+  DCHECK(hdc);
+  skia::InitializeDC(hdc);
+
+  // Params are ignored.
+  result->StartPage(page_bounds.size(), page_bounds, 1);
+
+  ::ModifyWorldTransform(hdc, NULL, MWT_IDENTITY);
+  XFORM xform = {
+    float(page_bounds.width()) / bitmap_rect.width(), 0,
+    0, float(page_bounds.height()) / bitmap_rect.height(),
+    page_bounds.x(),
+    page_bounds.y(),
+  };
+  ::SetWorldTransform(hdc, &xform);
+  ::BitBlt(hdc, 0, 0, bitmap_rect.width(), bitmap_rect.height(),
+           bitmap.context(), bitmap_rect.x(), bitmap_rect.y(), SRCCOPY);
+
+  result->FinishPage();
+  result->FinishDocument();
+
+  return result.release();
+}
+
+Emf* Emf::RasterizeAlphaBlend() const {
+  gfx::Rect page_bounds = GetPageBounds(1);
+  if (page_bounds.size().GetArea() <= 0) {
+    NOTREACHED() << "Metafile is empty";
+    page_bounds = gfx::Rect(1, 1);
+  }
+
+  RasterBitmap bitmap(page_bounds.size());
+
+  // Map metafile page_bounds.x(), page_bounds.y() to bitmap 0, 0.
+  XFORM xform = { 1, 0, 0, 1, -page_bounds.x(), -page_bounds.y()};
+  ::SetWorldTransform(bitmap.context(), &xform);
+
+  scoped_ptr<Emf> result(new Emf);
+  result->Init();
+  HDC hdc = result->context();
+  DCHECK(hdc);
+  skia::InitializeDC(hdc);
+
+  HDC bitmap_dc = bitmap.context();
+  ::EnumEnhMetaFile(hdc, emf(), &RasterizeAlphaBlendProc, &bitmap_dc,
+                    &page_bounds.ToRECT());
+
+  result->FinishDocument();
+
+  return result.release();
+}
+
 
 }  // namespace printing

@@ -4,12 +4,13 @@
 
 #ifndef NET_HTTP_PROXY_CLIENT_SOCKET_H_
 #define NET_HTTP_PROXY_CLIENT_SOCKET_H_
-#pragma once
 
 #include <string>
 
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
+
+class GURL;
 
 namespace net {
 
@@ -67,6 +68,19 @@ class NET_EXPORT_PRIVATE ProxyClientSocket : public StreamSocket {
   static int HandleProxyAuthChallenge(HttpAuthController* auth,
                                       HttpResponseInfo* response,
                                       const BoundNetLog& net_log);
+
+  // Logs (to the log and in a histogram) a blocked CONNECT response.
+  static void LogBlockedTunnelResponse(int http_response_code,
+                                       const GURL& url,
+                                       bool is_https_proxy);
+
+  // When a redirect (e.g. 302 response) is received during tunnel
+  // construction, this method should be called to strip everything
+  // but the Location header from the redirect response.  If it returns
+  // false, the response should be discarded and tunnel construction should
+  // fail.  |url| is for logging purposes.
+  static bool SanitizeProxyRedirect(HttpResponseInfo* response,
+                                    const GURL& url);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProxyClientSocket);

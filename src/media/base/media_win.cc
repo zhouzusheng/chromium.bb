@@ -5,6 +5,10 @@
 #include "media/base/media.h"
 
 #include <windows.h>
+#if defined(_WIN32_WINNT_WIN8)
+// The Windows 8 SDK defines FACILITY_VISUALCPP in winerror.h.
+#undef FACILITY_VISUALCPP
+#endif
 #include <delayimp.h>
 
 #include "base/file_path.h"
@@ -118,11 +122,6 @@ void InitializeMediaLibraryForTesting() {
 
 bool IsMediaLibraryInitialized() {
   return g_media_library_is_initialized;
-}
-
-bool InitializeOpenMaxLibrary(const FilePath& module_dir) {
-  NOTIMPLEMENTED() << "OpenMAX is not used in Windows.";
-  return false;
 }
 
 }  // namespace media

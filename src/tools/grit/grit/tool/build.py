@@ -221,7 +221,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
       if output.GetType() in ('rc_header', 'resource_map_header',
           'resource_map_source', 'resource_file_map_source'):
         encoding = 'cp1252'
-      elif output.GetType() in ('c_format', 'js_map_format', 'plist',
+      elif output.GetType() in ('android', 'c_format', 'js_map_format', 'plist',
                                 'plist_strings', 'doc', 'json'):
         encoding = 'utf_8'
       else:

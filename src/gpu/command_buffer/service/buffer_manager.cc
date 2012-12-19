@@ -3,18 +3,20 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/buffer_manager.h"
+#include <limits>
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 
 namespace gpu {
 namespace gles2 {
 
-BufferManager::BufferManager()
-    : allow_buffers_on_multiple_targets_(false),
+BufferManager::BufferManager(MemoryTracker* memory_tracker)
+    : buffer_memory_tracker_(new MemoryTypeTracker(memory_tracker)),
+      allow_buffers_on_multiple_targets_(false),
       mem_represented_(0),
-      last_reported_mem_represented_(1),
       buffer_info_count_(0),
       have_context_(true) {
   UpdateMemRepresented();
@@ -33,11 +35,7 @@ void BufferManager::Destroy(bool have_context) {
 }
 
 void BufferManager::UpdateMemRepresented() {
-  if (mem_represented_ != last_reported_mem_represented_) {
-    last_reported_mem_represented_ = mem_represented_;
-    TRACE_COUNTER_ID1(
-        "BufferManager", "BufferMemory", this, mem_represented_);
-  }
+  buffer_memory_tracker_->UpdateMemRepresented(mem_represented_);
 }
 
 void BufferManager::CreateBufferInfo(GLuint client_id, GLuint service_id) {
@@ -108,9 +106,18 @@ void BufferManager::BufferInfo::SetInfo(
   }
 }
 
+bool BufferManager::BufferInfo::CheckRange(
+    GLintptr offset, GLsizeiptr size) const {
+  int32 end = 0;
+  return offset >= 0 && size >= 0 &&
+         offset <= std::numeric_limits<int32>::max() &&
+         size <= std::numeric_limits<int32>::max() &&
+         SafeAddInt32(offset, size, &end) && end <= size_;
+}
+
 bool BufferManager::BufferInfo::SetRange(
     GLintptr offset, GLsizeiptr size, const GLvoid * data) {
-  if (offset < 0 || offset + size < offset || offset + size > size_) {
+  if (!CheckRange(offset, size)) {
     return false;
   }
   if (shadowed_) {
@@ -125,7 +132,7 @@ const void* BufferManager::BufferInfo::GetRange(
   if (!shadowed_) {
     return NULL;
   }
-  if (offset < 0 || offset + size < offset || offset + size > size_) {
+  if (!CheckRange(offset, size)) {
     return NULL;
   }
   return shadow_.get() + offset;

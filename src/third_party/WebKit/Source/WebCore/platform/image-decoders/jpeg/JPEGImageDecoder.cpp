@@ -39,12 +39,9 @@
 
 #include "config.h"
 #include "JPEGImageDecoder.h"
+#include "PlatformInstrumentation.h"
 #include <stdio.h>  // Needed by jpeglib.h for FILE.
 #include <wtf/PassOwnPtr.h>
-
-#if PLATFORM(CHROMIUM)
-#include "TraceEvent.h"
-#endif
 
 #if OS(WINCE)
 // Remove warning: 'FAR' macro redefinition
@@ -59,6 +56,9 @@ extern "C" {
 #include "jpeglib.h"
 #if USE(ICCJPEG)
 #include "iccjpeg.h"
+#endif
+#if USE(QCMSLIB)
+#include "qcms.h"
 #endif
 #include <setjmp.h>
 }
@@ -76,18 +76,24 @@ inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_EXT_RGBA; }
 #else
 inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_EXT_BGRA; }
 #endif
-inline bool turboSwizzled(J_COLOR_SPACE colorSpace) { return colorSpace == rgbOutputColorSpace(); }
+inline bool turboSwizzled(J_COLOR_SPACE colorSpace) { return colorSpace == JCS_EXT_RGBA || colorSpace == JCS_EXT_BGRA; }
+inline bool colorSpaceHasAlpha(J_COLOR_SPACE colorSpace) { return turboSwizzled(colorSpace); }
 #else
 inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_RGB; }
+inline bool colorSpaceHasAlpha(J_COLOR_SPACE) { return false; }
 #endif
 
-#if OS(ANDROID)
+#if USE(LOW_QUALITY_IMAGE_NO_JPEG_DITHERING)
 inline J_DCT_METHOD dctMethod() { return JDCT_IFAST; }
 inline J_DITHER_MODE ditherMode() { return JDITHER_NONE; }
-inline bool doFancyUpsampling() { return false; }
 #else
 inline J_DCT_METHOD dctMethod() { return JDCT_ISLOW; }
 inline J_DITHER_MODE ditherMode() { return JDITHER_FS; }
+#endif
+
+#if USE(LOW_QUALITY_IMAGE_NO_JPEG_FANCY_UPSAMPLING)
+inline bool doFancyUpsampling() { return false; }
+#else
 inline bool doFancyUpsampling() { return true; }
 #endif
 
@@ -150,12 +156,13 @@ static ColorProfile readColorProfile(jpeg_decompress_struct* info)
     free(profile);
     return colorProfile;
 #else
+    UNUSED_PARAM(info);
     return ColorProfile();
 #endif
 }
 
-class JPEGImageReader
-{
+class JPEGImageReader {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     JPEGImageReader(JPEGImageDecoder* decoder)
         : m_decoder(decoder)
@@ -163,6 +170,9 @@ public:
         , m_bytesToSkip(0)
         , m_state(JPEG_HEADER)
         , m_samples(0)
+#if USE(QCMSLIB)
+        , m_transform(0)
+#endif
     {
         memset(&m_info, 0, sizeof(jpeg_decompress_struct));
 
@@ -210,6 +220,11 @@ public:
             fastFree(src);
         m_info.src = 0;
 
+#if USE(QCMSLIB)
+        if (m_transform)
+            qcms_transform_release(m_transform);
+        m_transform = 0;
+#endif
         jpeg_destroy_decompress(&m_info);
     }
 
@@ -298,6 +313,14 @@ public:
                 ColorProfile rgbInputDeviceColorProfile = readColorProfile(info());
                 if (!rgbInputDeviceColorProfile.isEmpty())
                     m_decoder->setColorProfile(rgbInputDeviceColorProfile);
+#if USE(QCMSLIB)
+                createColorTransform(rgbInputDeviceColorProfile, colorSpaceHasAlpha(m_info.out_color_space));
+#if defined(TURBO_JPEG_RGB_SWIZZLE)
+                // Input RGBA data to qcms. Note: restored to BGRA on output.
+                if (m_transform && m_info.out_color_space == JCS_EXT_BGRA)
+                    m_info.out_color_space = JCS_EXT_RGBA;
+#endif
+#endif
             }
 
             if (m_decodingSizeOnly) {
@@ -402,6 +425,31 @@ public:
     jpeg_decompress_struct* info() { return &m_info; }
     JSAMPARRAY samples() const { return m_samples; }
     JPEGImageDecoder* decoder() { return m_decoder; }
+#if USE(QCMSLIB)
+    qcms_transform* colorTransform() const { return m_transform; }
+
+    void createColorTransform(const ColorProfile& colorProfile, bool hasAlpha)
+    {
+        if (m_transform)
+            qcms_transform_release(m_transform);
+        m_transform = 0;
+
+        if (colorProfile.isEmpty())
+            return;
+        qcms_profile* deviceProfile = ImageDecoder::qcmsOutputDeviceProfile();
+        if (!deviceProfile)
+            return;
+        qcms_profile* inputProfile = qcms_profile_from_memory(colorProfile.data(), colorProfile.size());
+        if (!inputProfile)
+            return;
+        // We currently only support color profiles for RGB profiled images.
+        ASSERT(icSigRgbData == qcms_profile_get_color_space(inputProfile));
+        qcms_data_type dataFormat = hasAlpha ? QCMS_DATA_RGBA_8 : QCMS_DATA_RGB_8;
+        // FIXME: Don't force perceptual intent if the image profile contains an intent.
+        m_transform = qcms_transform_create(inputProfile, dataFormat, deviceProfile, dataFormat, QCMS_INTENT_PERCEPTUAL);
+        qcms_profile_release(inputProfile);
+    }
+#endif
 
 private:
     JPEGImageDecoder* m_decoder;
@@ -414,6 +462,10 @@ private:
     jstate m_state;
 
     JSAMPARRAY m_samples;
+
+#if USE(QCMSLIB)
+    qcms_transform* m_transform;
+#endif
 };
 
 // Override the standard error method in the IJG JPEG decoder code.
@@ -424,7 +476,7 @@ void error_exit(j_common_ptr cinfo)
     longjmp(err->setjmp_buffer, -1);
 }
 
-void init_source(j_decompress_ptr jd)
+void init_source(j_decompress_ptr)
 {
 }
 
@@ -434,7 +486,7 @@ void skip_input_data(j_decompress_ptr jd, long num_bytes)
     src->decoder->skipBytes(num_bytes);
 }
 
-boolean fill_input_buffer(j_decompress_ptr jd)
+boolean fill_input_buffer(j_decompress_ptr)
 {
     // Our decode step always sets things up properly, so if this method is ever
     // called, then we have hit the end of the buffer.  A return value of false
@@ -486,8 +538,11 @@ ImageFrame* JPEGImageDecoder::frameBufferAtIndex(size_t index)
     }
 
     ImageFrame& frame = m_frameBufferCache[0];
-    if (frame.status() != ImageFrame::FrameComplete)
+    if (frame.status() != ImageFrame::FrameComplete) {
+        PlatformInstrumentation::willDecodeImage("JPEG");
         decode(false);
+        PlatformInstrumentation::didDecodeImage();
+    }
     return &frame;
 }
 
@@ -521,11 +576,15 @@ bool JPEGImageDecoder::outputScanlines()
 
 #if !ENABLE(IMAGE_DECODER_DOWN_SAMPLING) && defined(TURBO_JPEG_RGB_SWIZZLE)
     if (turboSwizzled(info->out_color_space)) {
-         ASSERT(!m_scaled);
-         while (info->output_scanline < info->output_height) {
-             unsigned char* row = reinterpret_cast<unsigned char*>(buffer.getAddr(0, info->output_scanline));
-             if (jpeg_read_scanlines(info, &row, 1) != 1)
-                  return false;
+        ASSERT(!m_scaled);
+        while (info->output_scanline < info->output_height) {
+            unsigned char* row = reinterpret_cast<unsigned char*>(buffer.getAddr(0, info->output_scanline));
+            if (jpeg_read_scanlines(info, &row, 1) != 1)
+                return false;
+#if USE(QCMSLIB)
+            if (qcms_transform* transform = m_reader->colorTransform())
+                qcms_transform_data_type(transform, row, row, info->output_width, rgbOutputColorSpace() == JCS_EXT_BGRA ? QCMS_OUTPUT_BGRX : QCMS_OUTPUT_RGBX);
+#endif
          }
          return true;
      }
@@ -544,6 +603,10 @@ bool JPEGImageDecoder::outputScanlines()
         int destY = scaledY(sourceY);
         if (destY < 0)
             continue;
+#if USE(QCMSLIB)
+        if (m_reader->colorTransform() && info->out_color_space == JCS_RGB)
+            qcms_transform_data(m_reader->colorTransform(), *samples, *samples, info->output_width);
+#endif
         int width = m_scaled ? m_scaledColumns.size() : info->output_width;
         for (int x = 0; x < width; ++x) {
             JSAMPLE* jsample = *samples + (m_scaled ? m_scaledColumns[x] : x) * ((info->out_color_space == JCS_RGB) ? 3 : 4);
@@ -585,9 +648,6 @@ void JPEGImageDecoder::jpegComplete()
 
 void JPEGImageDecoder::decode(bool onlySize)
 {
-#if PLATFORM(CHROMIUM)
-    TRACE_EVENT("JPEGImageDecoder::decode", this, 0);
-#endif
     if (failed())
         return;
 

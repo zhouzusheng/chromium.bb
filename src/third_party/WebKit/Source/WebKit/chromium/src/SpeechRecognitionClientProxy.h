@@ -26,11 +26,11 @@
 #ifndef SpeechRecognitionClientProxy_h
 #define SpeechRecognitionClientProxy_h
 
-#include "PlatformString.h"
 #include "SpeechRecognitionClient.h"
 #include "WebSpeechRecognizerClient.h"
 #include <wtf/Compiler.h>
 #include <wtf/PassOwnPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebKit {
 
@@ -46,15 +46,13 @@ public:
     static PassOwnPtr<SpeechRecognitionClientProxy> create(WebSpeechRecognizer*);
 
     // WebCore::SpeechRecognitionClient:
-    virtual void start(WebCore::SpeechRecognition*, const WebCore::SpeechGrammarList*, const String& lang, bool continuous) OVERRIDE;
+    virtual void start(WebCore::SpeechRecognition*, const WebCore::SpeechGrammarList*, const String& lang, bool continuous, unsigned long maxAlternatives) OVERRIDE;
     virtual void stop(WebCore::SpeechRecognition*) OVERRIDE;
     virtual void abort(WebCore::SpeechRecognition*) OVERRIDE;
 
     // WebSpeechRecognizerClient:
     virtual void didStartAudio(const WebSpeechRecognitionHandle&) OVERRIDE;
     virtual void didStartSound(const WebSpeechRecognitionHandle&) OVERRIDE;
-    virtual void didStartSpeech(const WebSpeechRecognitionHandle&) OVERRIDE;
-    virtual void didEndSpeech(const WebSpeechRecognitionHandle&) OVERRIDE;
     virtual void didEndSound(const WebSpeechRecognitionHandle&) OVERRIDE;
     virtual void didEndAudio(const WebSpeechRecognitionHandle&) OVERRIDE;
     virtual void didReceiveResult(const WebSpeechRecognitionHandle&, const WebSpeechRecognitionResult&, unsigned long resultIndex, const WebVector<WebSpeechRecognitionResult>& resultHistory) OVERRIDE;

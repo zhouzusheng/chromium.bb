@@ -21,7 +21,6 @@
 //
 #ifndef NET_SOCKET_CLIENT_SOCKET_POOL_BASE_H_
 #define NET_SOCKET_CLIENT_SOCKET_POOL_BASE_H_
-#pragma once
 
 #include <deque>
 #include <list>
@@ -443,9 +442,8 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   typedef std::set<ConnectJob*> ConnectJobSet;
 
   struct CallbackResultPair {
-    CallbackResultPair() : result(OK) {}
-    CallbackResultPair(const CompletionCallback& callback_in, int result_in)
-        : callback(callback_in), result(result_in) {}
+    CallbackResultPair();
+    CallbackResultPair(const CompletionCallback& callback_in, int result_in);
     ~CallbackResultPair();
 
     CompletionCallback callback;

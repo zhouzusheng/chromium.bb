@@ -67,16 +67,14 @@ bool AtomicMarkupTokenBase<HTMLToken>::usesAttributes() const
     return m_type == HTMLTokenTypes::StartTag || m_type == HTMLTokenTypes::EndTag;
 }
 
-namespace {
-
-inline UChar toLowerCase(UChar cc)
+static inline UChar toLowerCase(UChar cc)
 {
     ASSERT(isASCIIUpper(cc));
     const int lowerCaseOffset = 0x20;
     return cc + lowerCaseOffset;
 }
 
-inline bool vectorEqualsString(const Vector<UChar, 32>& vector, const String& string)
+static inline bool vectorEqualsString(const Vector<UChar, 32>& vector, const String& string)
 {
     if (vector.size() != string.length())
         return false;
@@ -86,7 +84,7 @@ inline bool vectorEqualsString(const Vector<UChar, 32>& vector, const String& st
     return !memcmp(stringData, vectorData, vector.size() * sizeof(UChar));
 }
 
-inline bool isEndTagBufferingState(HTMLTokenizerState::State state)
+static inline bool isEndTagBufferingState(HTMLTokenizerState::State state)
 {
     switch (state) {
     case HTMLTokenizerState::RCDATAEndTagOpenState:
@@ -103,8 +101,6 @@ inline bool isEndTagBufferingState(HTMLTokenizerState::State state)
     }
 }
 
-}
-    
 #define HTML_BEGIN_STATE(stateName) BEGIN_STATE(HTMLTokenizerState, stateName)
 #define HTML_RECONSUME_IN(stateName) RECONSUME_IN(HTMLTokenizerState, stateName)
 #define HTML_ADVANCE_TO(stateName) ADVANCE_TO(HTMLTokenizerState, stateName)
@@ -134,7 +130,6 @@ void HTMLTokenizer::reset()
 {
     m_state = HTMLTokenizerState::DataState;
     m_token = 0;
-    m_lineNumber = 0;
     m_forceNullCharacterReplacement = false;
     m_shouldAllowCDATA = false;
     m_additionalAllowedCharacter = '\0';
@@ -160,7 +155,7 @@ inline bool HTMLTokenizer::processEntity(SegmentedString& source)
 bool HTMLTokenizer::flushBufferedEndTag(SegmentedString& source)
 {
     ASSERT(m_token->type() == HTMLTokenTypes::Character || m_token->type() == HTMLTokenTypes::Uninitialized);
-    source.advance(m_lineNumber);
+    source.advanceAndUpdateLineNumber();
     if (m_token->type() == HTMLTokenTypes::Character)
         return true;
     m_token->beginEndTag(m_bufferedEndTagName);
@@ -175,7 +170,7 @@ bool HTMLTokenizer::flushBufferedEndTag(SegmentedString& source)
         if (flushBufferedEndTag(source))                                   \
             return true;                                                   \
         if (source.isEmpty()                                               \
-            || !m_inputStreamPreprocessor.peek(source, m_lineNumber))      \
+            || !m_inputStreamPreprocessor.peek(source))                    \
             return haveBufferedCharacterToken();                           \
         cc = m_inputStreamPreprocessor.nextInputCharacter();               \
         goto stateName;                                                    \
@@ -207,7 +202,7 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
         }
     }
 
-    if (source.isEmpty() || !m_inputStreamPreprocessor.peek(source, m_lineNumber))
+    if (source.isEmpty() || !m_inputStreamPreprocessor.peek(source))
         return haveBufferedCharacterToken();
     UChar cc = m_inputStreamPreprocessor.nextInputCharacter();
 
@@ -479,6 +474,7 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
             } else if (cc == '>') {
                 if (isAppropriateEndTag()) {
                     m_temporaryBuffer.append(cc);
+                    m_token->setConvertTo8BitIfPossible();
                     return flushEmitAndResumeIn(source, HTMLTokenizerState::DataState);
                 }
             }
@@ -548,6 +544,7 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
             } else if (cc == '>') {
                 if (isAppropriateEndTag()) {
                     m_temporaryBuffer.append(cc);
+                    m_token->setConvertTo8BitIfPossible();
                     return flushEmitAndResumeIn(source, HTMLTokenizerState::DataState);
                 }
             }
@@ -1068,9 +1065,9 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
     END_STATE()
 
     HTML_BEGIN_STATE(MarkupDeclarationOpenState) {
-        DEFINE_STATIC_LOCAL(String, dashDashString, ("--"));
-        DEFINE_STATIC_LOCAL(String, doctypeString, ("doctype"));
-        DEFINE_STATIC_LOCAL(String, cdataString, ("[CDATA["));
+        DEFINE_STATIC_LOCAL(String, dashDashString, (ASCIILiteral("--")));
+        DEFINE_STATIC_LOCAL(String, doctypeString, (ASCIILiteral("doctype")));
+        DEFINE_STATIC_LOCAL(String, cdataString, (ASCIILiteral("[CDATA[")));
         if (cc == '-') {
             SegmentedString::LookAheadResult result = source.lookAhead(dashDashString);
             if (result == SegmentedString::DidMatch) {
@@ -1271,8 +1268,8 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
             m_token->setForceQuirks();
             return emitAndReconsumeIn(source, HTMLTokenizerState::DataState);
         } else {
-            DEFINE_STATIC_LOCAL(String, publicString, ("public"));
-            DEFINE_STATIC_LOCAL(String, systemString, ("system"));
+            DEFINE_STATIC_LOCAL(String, publicString, (ASCIILiteral("public")));
+            DEFINE_STATIC_LOCAL(String, systemString, (ASCIILiteral("system")));
             if (cc == 'P' || cc == 'p') {
                 SegmentedString::LookAheadResult result = source.lookAheadIgnoringCase(publicString);
                 if (result == SegmentedString::DidMatch) {

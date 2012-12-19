@@ -32,6 +32,7 @@
 #include "CachedResourceClientWalker.h"
 #include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/Vector.h>
 
 #if USE(JSC)  
@@ -43,7 +44,6 @@ namespace WebCore {
 CachedScript::CachedScript(const ResourceRequest& resourceRequest, const String& charset)
     : CachedResource(resourceRequest, Script)
     , m_decoder(TextResourceDecoder::create("application/javascript", charset))
-    , m_decodedDataDeletionTimer(this, &CachedScript::decodedDataDeletionTimerFired)
 {
     // It's javascript we want.
     // But some websites think their scripts are <some wrong mimetype here>
@@ -53,20 +53,6 @@ CachedScript::CachedScript(const ResourceRequest& resourceRequest, const String&
 
 CachedScript::~CachedScript()
 {
-}
-
-void CachedScript::didAddClient(CachedResourceClient* c)
-{
-    if (m_decodedDataDeletionTimer.isActive())
-        m_decodedDataDeletionTimer.stop();
-
-    CachedResource::didAddClient(c);
-}
-
-void CachedScript::allClientsRemoved()
-{
-    if (double interval = memoryCache()->deadDecodedDataDeletionInterval())
-        m_decodedDataDeletionTimer.startOneShot(interval);
 }
 
 void CachedScript::setEncoding(const String& chs)
@@ -85,8 +71,8 @@ const String& CachedScript::script()
 
     if (!m_script && m_data) {
         m_script = m_decoder->decode(m_data->data(), encodedSize());
-        m_script += m_decoder->flush();
-        setDecodedSize(m_script.length() * sizeof(UChar));
+        m_script.append(m_decoder->flush());
+        setDecodedSize(m_script.sizeInBytes());
     }
     m_decodedDataDeletionTimer.startOneShot(0);
     
@@ -100,14 +86,6 @@ void CachedScript::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 
     m_data = data;
     setEncodedSize(m_data.get() ? m_data->size() : 0);
-    setLoading(false);
-    checkNotify();
-}
-
-void CachedScript::error(CachedResource::Status status)
-{
-    setStatus(status);
-    ASSERT(errorOccurred());
     setLoading(false);
     checkNotify();
 }
@@ -127,11 +105,6 @@ void CachedScript::destroyDecodedData()
         makePurgeable(true);
 }
 
-void CachedScript::decodedDataDeletionTimerFired(Timer<CachedScript>*)
-{
-    destroyDecodedData();
-}
-
 #if USE(JSC)
 JSC::SourceProviderCache* CachedScript::sourceProviderCache() const
 {   
@@ -145,5 +118,16 @@ void CachedScript::sourceProviderCacheSizeChanged(int delta)
     setDecodedSize(decodedSize() + delta);
 }
 #endif
+
+void CachedScript::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceScript);
+    CachedResource::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_script);
+    info.addMember(m_decoder);
+#if USE(JSC)
+    info.addMember(m_sourceProviderCache);
+#endif
+}
 
 } // namespace WebCore

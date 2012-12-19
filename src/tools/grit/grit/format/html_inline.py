@@ -55,7 +55,8 @@ def SrcInlineAsDataURL(
   it with distribution.
 
   Args:
-    src_match: regex match object with 'filename' named capturing group
+    src_match: regex match object with 'filename' and 'quote' named capturing
+               groups
     base_path: path that to look for files in
     distribution: string that should replace DIST_SUBSTR
     inlined_files: The name of the opened file is appended to this list.
@@ -66,6 +67,7 @@ def SrcInlineAsDataURL(
     string
   """
   filename = src_match.group('filename')
+  quote = src_match.group('quote')
 
   if filename.find(':') != -1:
     # filename is probably a URL, which we don't want to bother inlining
@@ -81,8 +83,9 @@ def SrcInlineAsDataURL(
   mimetype = mimetypes.guess_type(filename)[0] or 'text/plain'
   inline_data = base64.standard_b64encode(util.ReadFile(filepath, util.BINARY))
 
-  prefix = src_match.string[src_match.start():src_match.start('filename')-1]
-  return "%s\"data:%s;base64,%s\"" % (prefix, mimetype, inline_data)
+  prefix = src_match.string[src_match.start():src_match.start('filename')]
+  suffix = src_match.string[src_match.end('filename'):src_match.end()]
+  return '%sdata:%s;base64,%s%s' % (prefix, mimetype, inline_data, suffix)
 
 
 class InlinedData:
@@ -237,24 +240,30 @@ def DoInline(
     """Helper function that inlines external images in CSS backgrounds."""
     # Replace contents of url() for css attributes: content, background,
     # or *-image.
-    return re.sub('(?:content|background|[\w-]*-image):[^;]*' +
-                  '(?:url\((?:\'|\")([^"\'\)\(]*)(?:\'|\")\)|' +
+    return re.sub('(content|background|[\w-]*-image):[^;]*' +
+                  '(url\((?P<quote1>"|\'|)[^"\'()]*(?P=quote1)\)|' +
                       'image-set\(' +
-                          '([ ]*url\((?:\'|\")([^"\'\)\(]*)(?:\'|\")\)' +
-                              '[ ]*[0-9.]*x[ ]*(,[ ]*)?)*\))',
+                          '([ ]*url\((?P<quote2>"|\'|)[^"\'()]*(?P=quote2)\)' +
+                              '[ ]*[0-9.]*x[ ]*(,[ ]*)?)+\))',
                   lambda m: InlineCSSUrls(m, filepath),
                   text)
 
   def InlineCSSUrls(src_match, filepath=input_filepath):
     """Helper function that inlines each url on a CSS image rule match."""
     # Replace contents of url() references in matches.
-    return re.sub('url\((?:\'|\")(?P<filename>[^"\'\)\(]*)(?:\'|\")',
+    return re.sub('url\((?P<quote>"|\'|)(?P<filename>[^"\'()]*)(?P=quote)\)',
                   lambda m: SrcReplace(m, filepath),
                   src_match.group(0))
 
 
 
   flat_text = util.ReadFile(input_filename, util.BINARY)
+
+  # Check conditional elements, remove unsatisfied ones from the file. We do
+  # this twice. The first pass is so that we don't even bother calling
+  # InlineScript, InlineCSSFile and InlineIncludeFiles on text we're eventually
+  # going to throw out anyway.
+  flat_text = CheckConditionalElements(flat_text)
 
   if not allow_external_script:
     # We need to inline css and js before we inline images so that image
@@ -274,23 +283,24 @@ def DoInline(
       InlineIncludeFiles,
       flat_text)
 
-  # Check conditional elements, remove unsatisfied ones from the file.
+  # Check conditional elements, second pass. This catches conditionals in any
+  # of the text we just inlined.
   flat_text = CheckConditionalElements(flat_text)
-
-  flat_text = re.sub('<(?!script)[^>]+?src="(?P<filename>[^"\']*)"',
-                     SrcReplace,
-                     flat_text)
 
   # Allow custom modifications before inlining images.
   if rewrite_function:
     flat_text = rewrite_function(input_filepath, flat_text, distribution)
 
+  flat_text = re.sub(
+      '<(?!script)[^>]+?src=(?P<quote>")(?P<filename>[^"\']*)\\1',
+      SrcReplace, flat_text)
+
   # TODO(arv): Only do this inside <style> tags.
   flat_text = InlineCSSImages(flat_text)
 
-  flat_text = re.sub('<link rel="icon".+?href="(?P<filename>[^"\']*)"',
-                     SrcReplace,
-                     flat_text)
+  flat_text = re.sub(
+      '<link rel="icon".+?href=(?P<quote>")(?P<filename>[^"\']*)\\1',
+      SrcReplace, flat_text)
 
   if names_only:
     flat_text = None  # Will contains garbage if the flag is set anyway.

@@ -27,6 +27,7 @@
 #include "SVGParsingError.h"
 #include "SVGPropertyInfo.h"
 #include "StyledElement.h"
+#include "Timer.h"
 #include <wtf/HashMap.h>
 
 namespace WebCore {
@@ -72,6 +73,9 @@ public:
     virtual void animatedPropertyTypeForAttribute(const QualifiedName&, Vector<AnimatedPropertyType>&);
 
     void sendSVGLoadEventIfPossible(bool sendParentLoadEvents = false);
+    void sendSVGLoadEventIfPossibleAsynchronously();
+    void svgLoadEventTimerFired(Timer<SVGElement>*);
+    virtual Timer<SVGElement>* svgLoadEventTimer();
 
     virtual AffineTransform* supplementalTransform() { return 0; }
 
@@ -79,7 +83,7 @@ public:
 
     const HashSet<SVGElementInstance*>& instancesForElement() const;
 
-    bool boundingBox(FloatRect&, SVGLocatable::StyleUpdateStrategy = SVGLocatable::AllowStyleUpdate);
+    bool getBoundingBox(FloatRect&, SVGLocatable::StyleUpdateStrategy = SVGLocatable::AllowStyleUpdate);
 
     void setCursorElement(SVGCursorElement*);
     void cursorElementRemoved();
@@ -127,10 +131,14 @@ protected:
     
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    SVGElementRareData* rareSVGData() const;
-    SVGElementRareData* ensureRareSVGData();
+    SVGElementRareData* svgRareData() const;
+    SVGElementRareData* ensureSVGRareData();
 
     void reportAttributeParsingError(SVGParsingError, const Attribute&);
+
+    // FIXME: Author shadows should be allowed
+    // https://bugs.webkit.org/show_bug.cgi?id=77938
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
 private:
     friend class SVGElementInstance;

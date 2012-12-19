@@ -4,7 +4,6 @@
 
 #ifndef NET_HTTP_HTTP_UTIL_H_
 #define NET_HTTP_HTTP_UTIL_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -195,6 +194,15 @@ class NET_EXPORT HttpUtil {
                                   const std::string& last_modified_header,
                                   const std::string& date_header);
 
+  // Gets a vector of common HTTP status codes for histograms of status
+  // codes.  Currently returns everything in the range [100, 600), plus 0
+  // (for invalid responses/status codes).
+  static std::vector<int> GetStatusCodesForHistogram();
+
+  // Maps an HTTP status code to one of the status codes in the vector
+  // returned by GetStatusCodesForHistogram.
+  static int MapStatusCodeForHistogram(int code);
+
   // Used to iterate over the name/value pairs of HTTP headers.  To iterate
   // over the values in a multi-value header, use ValuesIterator.
   // See AssembleRawHeaders for joining line continuations (this iterator
@@ -335,9 +343,6 @@ class NET_EXPORT HttpUtil {
    private:
     HttpUtil::ValuesIterator props_;
     bool valid_;
-
-    std::string::const_iterator begin_;
-    std::string::const_iterator end_;
 
     std::string::const_iterator name_begin_;
     std::string::const_iterator name_end_;

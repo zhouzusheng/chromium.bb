@@ -13,7 +13,7 @@
 class GrGLConvolutionEffect;
 
 /**
- * A convolution effect. The kernel is specified as an array of 2 * half-width 
+ * A convolution effect. The kernel is specified as an array of 2 * half-width
  * + 1 weights. Each texel is multiplied by it's weight and summed to determine
  * the output color. The output color is modulated by the input color.
  */
@@ -21,17 +21,14 @@ class GrConvolutionEffect : public Gr1DKernelEffect {
 
 public:
 
-    GrConvolutionEffect(Direction, int halfWidth, const float* kernel = NULL);
+    /// Convolve with an arbitrary user-specified kernel
+    GrConvolutionEffect(GrTexture*, Direction,
+                        int halfWidth, const float* kernel = NULL);
+
+    /// Convolve with a gaussian kernel
+    GrConvolutionEffect(GrTexture*, Direction,
+                        int halfWidth, float gaussianSigma);
     virtual ~GrConvolutionEffect();
-
-    void setKernel(const float* kernel) {
-        memcpy(fKernel, kernel, this->width());
-    }
-
-    /**
-     * Helper to set the kernel to a Gaussian. Replaces the existing kernel.
-     */
-    void setGaussianKernel(float sigma);
 
     const float* kernel() const { return fKernel; }
 
@@ -58,6 +55,7 @@ protected:
     float fKernel[kMaxKernelWidth];
 
 private:
+    GR_DECLARE_CUSTOM_STAGE_TEST;
 
     typedef Gr1DKernelEffect INHERITED;
 };

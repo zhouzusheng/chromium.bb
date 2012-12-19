@@ -30,7 +30,8 @@ namespace ppapi {
 
 PPB_Audio_Impl::PPB_Audio_Impl(PP_Instance instance)
     : Resource(::ppapi::OBJECT_IS_IMPL, instance),
-      audio_(NULL) {
+      audio_(NULL),
+      sample_frame_count_(0) {
 }
 
 PPB_Audio_Impl::~PPB_Audio_Impl() {
@@ -53,8 +54,6 @@ PP_Resource PPB_Audio_Impl::Create(PP_Instance instance,
   scoped_refptr<PPB_Audio_Impl> audio(new PPB_Audio_Impl(instance));
   if (!audio->Init(config, audio_callback, user_data))
     return 0;
-  CHECK(media::AudioOutputController::kPauseMark ==
-      ::ppapi::PPB_Audio_Shared::kPauseMark);
   return audio->GetReference();
 }
 
@@ -83,6 +82,7 @@ bool PPB_Audio_Impl::Init(PP_Resource config,
   audio_ = plugin_delegate->CreateAudioOutput(
       enter.object()->GetSampleRate(), enter.object()->GetSampleFrameCount(),
       this);
+  sample_frame_count_ = enter.object()->GetSampleFrameCount();
   return audio_ != NULL;
 }
 
@@ -112,8 +112,9 @@ PP_Bool PPB_Audio_Impl::StopPlayback() {
   return PP_TRUE;
 }
 
-int32_t PPB_Audio_Impl::OpenTrusted(PP_Resource config,
-                                    PP_CompletionCallback create_callback) {
+int32_t PPB_Audio_Impl::OpenTrusted(
+    PP_Resource config,
+    scoped_refptr<TrackedCallback> create_callback) {
   // Validate the config and keep a reference to it.
   EnterResourceNoLock<PPB_AudioConfig_API> enter(config, true);
   if (enter.failed())
@@ -135,7 +136,7 @@ int32_t PPB_Audio_Impl::OpenTrusted(PP_Resource config,
   // At this point, we are guaranteeing ownership of the completion
   // callback.  Audio promises to fire the completion callback
   // once and only once.
-  SetCreateCallback(new TrackedCallback(this, create_callback));
+  SetCreateCallback(create_callback);
 
   return PP_OK_COMPLETIONPENDING;
 }
@@ -154,7 +155,7 @@ void PPB_Audio_Impl::OnSetStreamInfo(
     size_t shared_memory_size,
     base::SyncSocket::Handle socket_handle) {
   SetStreamInfo(pp_instance(), shared_memory_handle, shared_memory_size,
-                socket_handle);
+                socket_handle, sample_frame_count_);
 }
 
 }  // namespace ppapi

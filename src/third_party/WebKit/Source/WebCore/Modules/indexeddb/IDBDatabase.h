@@ -32,7 +32,8 @@
 #include "Event.h"
 #include "EventTarget.h"
 #include "IDBDatabaseBackendInterface.h"
-#include "IDBDatabaseCallbacksImpl.h"
+#include "IDBDatabaseCallbacks.h"
+#include "IDBMetadata.h"
 #include "IDBObjectStore.h"
 #include "IDBTransaction.h"
 #include <wtf/PassRefPtr.h>
@@ -50,16 +51,16 @@ typedef int ExceptionCode;
 
 class IDBDatabase : public RefCounted<IDBDatabase>, public EventTarget, public ActiveDOMObject {
 public:
-    static PassRefPtr<IDBDatabase> create(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>);
+    static PassRefPtr<IDBDatabase> create(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>, PassRefPtr<IDBDatabaseCallbacks>);
     ~IDBDatabase();
 
     void transactionCreated(IDBTransaction*);
     void transactionFinished(IDBTransaction*);
 
     // Implement the IDL
-    String name() const { return m_backend->name(); }
-    String version() const { return m_backend->version(); }
-    PassRefPtr<DOMStringList> objectStoreNames() const { return m_backend->objectStoreNames(); }
+    const String name() const { return m_metadata.name; }
+    PassRefPtr<IDBAny> version() const;
+    PassRefPtr<DOMStringList> objectStoreNames() const;
 
     // FIXME: Try to modify the code generator so this is unneeded.
     PassRefPtr<IDBObjectStore> createObjectStore(const String& name, ExceptionCode& ec) { return createObjectStore(name, Dictionary(), ec); }
@@ -77,6 +78,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(versionchange);
 
     // IDBDatabaseCallbacks
+    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion);
     virtual void onVersionChange(const String& requestedVersion);
 
     // ActiveDOMObject
@@ -86,7 +88,9 @@ public:
     virtual const AtomicString& interfaceName() const;
     virtual ScriptExecutionContext* scriptExecutionContext() const;
 
-    void registerFrontendCallbacks();
+    bool isClosePending() const { return m_closePending; }
+    void forceClose();
+    const IDBDatabaseMetadata metadata() const { return m_metadata; }
     void enqueueEvent(PassRefPtr<Event>);
     bool dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec) { return EventTarget::dispatchEvent(event, ec); }
     virtual bool dispatchEvent(PassRefPtr<Event>);
@@ -95,7 +99,7 @@ public:
     using RefCounted<IDBDatabase>::deref;
 
 private:
-    IDBDatabase(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>);
+    IDBDatabase(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendInterface>, PassRefPtr<IDBDatabaseCallbacks>);
 
     // EventTarget
     virtual void refEventTarget() { ref(); }
@@ -105,6 +109,7 @@ private:
 
     void closeConnection();
 
+    IDBDatabaseMetadata m_metadata;
     RefPtr<IDBDatabaseBackendInterface> m_backend;
     RefPtr<IDBTransaction> m_versionChangeTransaction;
     HashSet<IDBTransaction*> m_transactions;
@@ -118,7 +123,7 @@ private:
     // database so that we can cancel them if the database closes.
     Vector<RefPtr<Event> > m_enqueuedEvents;
 
-    RefPtr<IDBDatabaseCallbacksImpl> m_databaseCallbacks;
+    RefPtr<IDBDatabaseCallbacks> m_databaseCallbacks;
 };
 
 } // namespace WebCore

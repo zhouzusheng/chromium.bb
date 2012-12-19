@@ -51,11 +51,11 @@ public:
     // if a shadow root is dynamically created. So we prohibit multiple shadow subtrees
     // in several elements for a while.
     // See https://bugs.webkit.org/show_bug.cgi?id=77503 and related bugs.
-    enum ShadowRootCreationPurpose {
-        CreatingUserAgentShadowRoot,
-        CreatingAuthorShadowRoot,
+    enum ShadowRootType {
+        UserAgentShadowRoot,
+        AuthorShadowRoot
     };
-    static PassRefPtr<ShadowRoot> create(Element*, ShadowRootCreationPurpose, ExceptionCode& = ASSERT_NO_EXCEPTION);
+    static PassRefPtr<ShadowRoot> create(Element*, ShadowRootType, ExceptionCode& = ASSERT_NO_EXCEPTION);
 
     void recalcShadowTreeStyle(StyleChange);
 
@@ -89,8 +89,14 @@ public:
     InsertionPoint* assignedTo() const;
     void setAssignedTo(InsertionPoint*);
 
+#ifndef NDEBUG
+    ShadowRootType type() const { return m_type; }
+#endif
+
+    PassRefPtr<Node> cloneNode(bool, ExceptionCode&);
+
 private:
-    ShadowRoot(Document*);
+    explicit ShadowRoot(Document*);
     virtual ~ShadowRoot();
     virtual String nodeName() const;
     virtual PassRefPtr<Node> cloneNode(bool deep);
@@ -102,6 +108,10 @@ private:
     bool m_applyAuthorStyles : 1;
     bool m_resetStyleInheritance : 1;
     InsertionPoint* m_insertionPointAssignedTo;
+
+#ifndef NDEBUG
+    ShadowRootType m_type;
+#endif
 };
 
 inline Element* ShadowRoot::host() const

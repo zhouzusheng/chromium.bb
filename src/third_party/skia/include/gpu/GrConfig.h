@@ -11,6 +11,8 @@
 #ifndef GrConfig_DEFINED
 #define GrConfig_DEFINED
 
+#include "SkTypes.h"
+
 ///////////////////////////////////////////////////////////////////////////////
 // preconfig section:
 //
@@ -47,6 +49,9 @@
 #endif
 #if !defined(GR_QNX_BUILD)
     #define GR_QNX_BUILD        0
+#endif
+#if !defined(GR_CACHE_STATS)
+    #define GR_CACHE_STATS      0
 #endif
 
 /**
@@ -118,7 +123,7 @@ typedef unsigned __int64 uint64_t;
 #else
 /*
  *  Include stdint.h with defines that trigger declaration of C99 limit/const
- *  macros here before anyone else has a chance to include stdint.h without 
+ *  macros here before anyone else has a chance to include stdint.h without
  *  these.
  */
 #define __STDC_LIMIT_MACROS
@@ -334,6 +339,14 @@ inline void GrCrash(const char* msg) { GrPrintf(msg); GrAlwaysAssert(false); }
  */
 #if !defined(GR_STATIC_RECT_VB)
     #define GR_STATIC_RECT_VB 0
+#endif
+
+/**
+ *  GR_DISABLE_DRAW_BUFFERING prevents GrContext from queueing draws in a
+ *  GrInOrderDrawBuffer.
+ */
+#if !defined(GR_DISABLE_DRAW_BUFFERING)
+    #define GR_DISABLE_DRAW_BUFFERING 0
 #endif
 
 /**

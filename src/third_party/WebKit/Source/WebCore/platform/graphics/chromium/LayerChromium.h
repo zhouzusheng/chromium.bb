@@ -34,15 +34,13 @@
 
 #if USE(ACCELERATED_COMPOSITING)
 
+#include "CCLayerAnimationController.h"
+#include "CCOcclusionTracker.h"
+#include "CCPrioritizedTexture.h"
 #include "FloatPoint.h"
-#include "GraphicsContext.h"
-#include "PlatformString.h"
-#include "ProgramBinding.h"
 #include "Region.h"
 #include "RenderSurfaceChromium.h"
-#include "ShaderChromium.h"
-#include "cc/CCLayerAnimationController.h"
-#include "cc/CCOcclusionTracker.h"
+#include "SkColor.h"
 
 #include <public/WebFilterOperations.h>
 #include <public/WebTransformationMatrix.h>
@@ -54,6 +52,10 @@
 #include <wtf/text/StringHash.h>
 #include <wtf/text/WTFString.h>
 
+namespace WebKit {
+class WebAnimationDelegate;
+class WebLayerScrollClient;
+}
 
 namespace WebCore {
 
@@ -62,17 +64,10 @@ struct CCAnimationEvent;
 class CCLayerAnimationDelegate;
 class CCLayerImpl;
 class CCLayerTreeHost;
-class CCTextureUpdater;
+class CCTextureUpdateQueue;
 class ScrollbarLayerChromium;
-
-// Delegate for handling scroll input for a LayerChromium.
-class LayerChromiumScrollDelegate {
-public:
-    virtual void didScroll(const IntSize&) = 0;
-
-protected:
-    virtual ~LayerChromiumScrollDelegate() { }
-};
+struct CCAnimationEvent;
+struct CCRenderingStats;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
@@ -87,9 +82,12 @@ public:
     virtual void setOpacityFromAnimation(float) OVERRIDE;
     virtual float opacity() const OVERRIDE { return m_opacity; }
     virtual void setTransformFromAnimation(const WebKit::WebTransformationMatrix&) OVERRIDE;
+    // A layer's transform operates layer space. That is, entirely in logical,
+    // non-page-scaled pixels (that is, they have page zoom baked in, but not page scale).
+    // The root layer is a special case -- it operates in physical pixels.
     virtual const WebKit::WebTransformationMatrix& transform() const OVERRIDE { return m_transform; }
 
-    const LayerChromium* rootLayer() const;
+    LayerChromium* rootLayer();
     LayerChromium* parent() const;
     void addChild(PassRefPtr<LayerChromium>);
     void insertChild(PassRefPtr<LayerChromium>, size_t index);
@@ -105,9 +103,11 @@ public:
     void setAnchorPointZ(float);
     float anchorPointZ() const { return m_anchorPointZ; }
 
-    void setBackgroundColor(const Color&);
-    Color backgroundColor() const { return m_backgroundColor; }
+    void setBackgroundColor(SkColor);
+    SkColor backgroundColor() const { return m_backgroundColor; }
 
+    // A layer's bounds are in logical, non-page-scaled pixels (however, the
+    // root layer's bounds are in physical pixels).
     void setBounds(const IntSize&);
     const IntSize& bounds() const { return m_bounds; }
     virtual IntSize contentBounds() const { return bounds(); }
@@ -126,12 +126,12 @@ public:
     bool opacityIsAnimating() const;
 
     void setFilters(const WebKit::WebFilterOperations&);
-    const WebKit::WebFilterOperations& filters() { return m_filters; }
+    const WebKit::WebFilterOperations& filters() const { return m_filters; }
 
     // Background filters are filters applied to what is behind this layer, when they are viewed through non-opaque
     // regions in this layer. They are used through the WebLayer interface, and are not exposed to HTML.
     void setBackgroundFilters(const WebKit::WebFilterOperations&);
-    const WebKit::WebFilterOperations& backgroundFilters() { return m_backgroundFilters; }
+    const WebKit::WebFilterOperations& backgroundFilters() const { return m_backgroundFilters; }
 
     virtual void setOpaque(bool);
     bool opaque() const { return m_opaque; }
@@ -151,11 +151,8 @@ public:
     void setTransform(const WebKit::WebTransformationMatrix&);
     bool transformIsAnimating() const;
 
-    const IntRect& visibleLayerRect() const { return m_visibleLayerRect; }
-    void setVisibleLayerRect(const IntRect& visibleLayerRect) { m_visibleLayerRect = visibleLayerRect; }
-
-    const IntRect& scissorRect() const { return m_scissorRect; }
-    void setScissorRect(const IntRect& scissorRect) { m_scissorRect = scissorRect; }
+    const IntRect& visibleContentRect() const { return m_visibleContentRect; }
+    void setVisibleContentRect(const IntRect& visibleContentRect) { m_visibleContentRect = visibleContentRect; }
 
     void setScrollPosition(const IntPoint&);
     const IntPoint& scrollPosition() const { return m_scrollPosition; }
@@ -170,8 +167,7 @@ public:
     const Region& nonFastScrollableRegion() { return m_nonFastScrollableRegion; }
     void setNonFastScrollableRegion(const Region&);
     void setNonFastScrollableRegionChanged() { m_nonFastScrollableRegionChanged = true; }
-    void setLayerScrollDelegate(LayerChromiumScrollDelegate* layerScrollDelegate) { m_layerScrollDelegate = layerScrollDelegate; }
-    void scrollBy(const IntSize&);
+    void setLayerScrollClient(WebKit::WebLayerScrollClient* layerScrollClient) { m_layerScrollClient = layerScrollClient; }
 
     void setDrawCheckerboardForMissingTiles(bool);
     bool drawCheckerboardForMissingTiles() const { return m_drawCheckerboardForMissingTiles; }
@@ -189,11 +185,11 @@ public:
     void setPreserves3D(bool preserve3D) { m_preserves3D = preserve3D; }
     bool preserves3D() const { return m_preserves3D; }
 
-    void setUsesLayerClipping(bool usesLayerClipping) { m_usesLayerClipping = usesLayerClipping; }
-    bool usesLayerClipping() const { return m_usesLayerClipping; }
+    void setUseParentBackfaceVisibility(bool useParentBackfaceVisibility) { m_useParentBackfaceVisibility = useParentBackfaceVisibility; }
+    bool useParentBackfaceVisibility() const { return m_useParentBackfaceVisibility; }
 
-    virtual void setIsNonCompositedContent(bool);
-    bool isNonCompositedContent() const { return m_isNonCompositedContent; }
+    virtual void setUseLCDText(bool);
+    bool useLCDText() const { return m_useLCDText; }
 
     virtual void setLayerTreeHost(CCLayerTreeHost*);
 
@@ -202,15 +198,19 @@ public:
     void setReplicaLayer(LayerChromium*);
     LayerChromium* replicaLayer() const { return m_replicaLayer.get(); }
 
+    bool hasMask() const { return m_maskLayer; }
+    bool hasReplica() const { return m_replicaLayer; }
+    bool replicaHasMask() const { return m_replicaLayer && (m_maskLayer || m_replicaLayer->m_maskLayer); }
+
     // These methods typically need to be overwritten by derived classes.
     virtual bool drawsContent() const { return m_isDrawable; }
-    virtual void update(CCTextureUpdater&, const CCOcclusionTracker*) { }
-    virtual void idleUpdate(CCTextureUpdater&, const CCOcclusionTracker*) { }
+    virtual void update(CCTextureUpdateQueue&, const CCOcclusionTracker*, CCRenderingStats&) { }
+    virtual bool needMoreUpdates() { return false; }
     virtual void setIsMask(bool) { }
     virtual void bindContentsTexture() { }
     virtual bool needsContentsScale() const { return false; }
 
-    void setDebugBorderColor(const Color&);
+    void setDebugBorderColor(SkColor);
     void setDebugBorderWidth(float);
     void setDebugName(const String&);
 
@@ -226,37 +226,41 @@ public:
     bool drawOpacityIsAnimating() const { return m_drawOpacityIsAnimating; }
     void setDrawOpacityIsAnimating(bool drawOpacityIsAnimating) { m_drawOpacityIsAnimating = drawOpacityIsAnimating; }
 
-    const IntRect& clipRect() const { return m_clipRect; }
-    void setClipRect(const IntRect& clipRect) { m_clipRect = clipRect; }
-    RenderSurfaceChromium* targetRenderSurface() const { return m_targetRenderSurface; }
-    void setTargetRenderSurface(RenderSurfaceChromium* surface) { m_targetRenderSurface = surface; }
+    LayerChromium* renderTarget() const { ASSERT(!m_renderTarget || m_renderTarget->renderSurface()); return m_renderTarget; }
+    void setRenderTarget(LayerChromium* target) { m_renderTarget = target; }
 
     bool drawTransformIsAnimating() const { return m_drawTransformIsAnimating; }
     void setDrawTransformIsAnimating(bool animating) { m_drawTransformIsAnimating = animating; }
     bool screenSpaceTransformIsAnimating() const { return m_screenSpaceTransformIsAnimating; }
     void setScreenSpaceTransformIsAnimating(bool animating) { m_screenSpaceTransformIsAnimating = animating; }
 
-    // This moves from layer space, with origin in the center to target space with origin in the top left
+    // This moves from layer space, with origin in the center to target space with origin in the top left.
+    // That is, it converts from logical, non-page-scaled, to target pixels (and if the target is the
+    // root render surface, then this converts to physical pixels).
     const WebKit::WebTransformationMatrix& drawTransform() const { return m_drawTransform; }
     void setDrawTransform(const WebKit::WebTransformationMatrix& matrix) { m_drawTransform = matrix; }
-    // This moves from layer space, with origin the top left to screen space with origin in the top left
+    // This moves from content space, with origin the top left to screen space with origin in the top left.
+    // It converts logical, non-page-scaled pixels to physical pixels.
     const WebKit::WebTransformationMatrix& screenSpaceTransform() const { return m_screenSpaceTransform; }
     void setScreenSpaceTransform(const WebKit::WebTransformationMatrix& matrix) { m_screenSpaceTransform = matrix; }
     const IntRect& drawableContentRect() const { return m_drawableContentRect; }
     void setDrawableContentRect(const IntRect& rect) { m_drawableContentRect = rect; }
+    // The contentsScale converts from logical, non-page-scaled pixels to target pixels.
+    // The contentsScale is 1 for the root layer as it is already in physical pixels.
     float contentsScale() const { return m_contentsScale; }
     void setContentsScale(float);
+
+    // When true, the layer's contents are not scaled by the current page scale factor.
+    void setBoundsContainPageScale(bool);
+    bool boundsContainPageScale() const { return m_boundsContainPageScale; }
 
     // Returns true if any of the layer's descendants has content to draw.
     bool descendantDrawsContent();
 
     CCLayerTreeHost* layerTreeHost() const { return m_layerTreeHost; }
 
-    // Reserve any textures needed for this layer.
-    virtual void reserveTextures() { }
-
-    void setAlwaysReserveTextures(bool alwaysReserveTextures) { m_alwaysReserveTextures = alwaysReserveTextures; }
-    bool alwaysReserveTextures() const { return m_alwaysReserveTextures; }
+    // Set the priority of all desired textures in this layer.
+    virtual void setTexturePriorities(const CCPriorityCalculator&) { }
 
     bool addAnimation(PassOwnPtr<CCActiveAnimation>);
     void pauseAnimation(int animationId, double timeOffset);
@@ -269,7 +273,7 @@ public:
     void setLayerAnimationController(PassOwnPtr<CCLayerAnimationController>);
     PassOwnPtr<CCLayerAnimationController> releaseLayerAnimationController();
 
-    void setLayerAnimationDelegate(CCLayerAnimationDelegate* layerAnimationDelegate) { m_layerAnimationDelegate = layerAnimationDelegate; }
+    void setLayerAnimationDelegate(WebKit::WebAnimationDelegate* layerAnimationDelegate) { m_layerAnimationDelegate = layerAnimationDelegate; }
 
     bool hasActiveAnimation() const;
 
@@ -333,13 +337,8 @@ private:
     IntSize m_bounds;
 
     // Uses layer's content space.
-    IntRect m_visibleLayerRect;
+    IntRect m_visibleContentRect;
 
-    // During drawing, identifies the region outside of which nothing should be drawn.
-    // Currently this is set to layer's clipRect if usesLayerClipping is true, otherwise
-    // it's targetRenderSurface's contentRect.
-    // Uses target surface's space.
-    IntRect m_scissorRect;
     IntPoint m_scrollPosition;
     IntSize m_maxScrollPosition;
     bool m_scrollable;
@@ -349,8 +348,8 @@ private:
     bool m_nonFastScrollableRegionChanged;
     FloatPoint m_position;
     FloatPoint m_anchorPoint;
-    Color m_backgroundColor;
-    Color m_debugBorderColor;
+    SkColor m_backgroundColor;
+    SkColor m_debugBorderColor;
     float m_debugBorderWidth;
     String m_debugName;
     float m_opacity;
@@ -363,10 +362,9 @@ private:
     bool m_masksToBounds;
     bool m_opaque;
     bool m_doubleSided;
-    bool m_usesLayerClipping;
-    bool m_isNonCompositedContent;
+    bool m_useLCDText;
     bool m_preserves3D;
-    bool m_alwaysReserveTextures;
+    bool m_useParentBackfaceVisibility;
     bool m_drawCheckerboardForMissingTiles;
     bool m_forceRenderSurface;
 
@@ -381,9 +379,8 @@ private:
     float m_drawOpacity;
     bool m_drawOpacityIsAnimating;
 
-    // Uses target surface space.
-    IntRect m_clipRect;
-    RenderSurfaceChromium* m_targetRenderSurface;
+    LayerChromium* m_renderTarget;
+
     WebKit::WebTransformationMatrix m_drawTransform;
     WebKit::WebTransformationMatrix m_screenSpaceTransform;
     bool m_drawTransformIsAnimating;
@@ -392,9 +389,10 @@ private:
     // Uses target surface space.
     IntRect m_drawableContentRect;
     float m_contentsScale;
+    bool m_boundsContainPageScale;
 
-    CCLayerAnimationDelegate* m_layerAnimationDelegate;
-    LayerChromiumScrollDelegate* m_layerScrollDelegate;
+    WebKit::WebAnimationDelegate* m_layerAnimationDelegate;
+    WebKit::WebLayerScrollClient* m_layerScrollClient;
 };
 
 void sortLayers(Vector<RefPtr<LayerChromium> >::iterator, Vector<RefPtr<LayerChromium> >::iterator, void*);

@@ -39,14 +39,7 @@
 #include "WebElement.h"
 #include "WebInputEvent.h"
 #include "WebInputEventConversion.h"
-#include "WebKit.h"
 #include "WebPlugin.h"
-#include "platform/WebRect.h"
-#include "platform/WebString.h"
-#include "platform/WebURL.h"
-#include "platform/WebURLError.h"
-#include "platform/WebURLRequest.h"
-#include "platform/WebVector.h"
 #include "WebViewImpl.h"
 #include "WrappedResourceResponse.h"
 
@@ -56,7 +49,9 @@
 #include "Frame.h"
 #include "FrameLoadRequest.h"
 #include "FrameView.h"
+#include "GestureEvent.h"
 #include "GraphicsContext.h"
+#include "GraphicsLayerChromium.h"
 #include "HitTestResult.h"
 #include "HostWindow.h"
 #include "HTMLFormElement.h"
@@ -71,11 +66,20 @@
 #include "ScrollAnimator.h"
 #include "ScrollView.h"
 #include "ScrollbarTheme.h"
+#include "TouchEvent.h"
 #include "UserGestureIndicator.h"
 #include "WebPrintParams.h"
 #include "WheelEvent.h"
 #include <public/Platform.h>
 #include <public/WebClipboard.h>
+#include <public/WebCompositorSupport.h>
+#include <public/WebExternalTextureLayer.h>
+#include <public/WebRect.h>
+#include <public/WebString.h>
+#include <public/WebURL.h>
+#include <public/WebURLError.h>
+#include <public/WebURLRequest.h>
+#include <public/WebVector.h>
 
 #if ENABLE(GESTURE_EVENTS)
 #include "PlatformGestureEvent.h"
@@ -185,6 +189,10 @@ void WebPluginContainerImpl::handleEvent(Event* event)
         handleWheelEvent(static_cast<WheelEvent*>(event));
     else if (event->isKeyboardEvent())
         handleKeyboardEvent(static_cast<KeyboardEvent*>(event));
+    else if (eventNames().isTouchEventType(event->type()))
+        handleTouchEvent(static_cast<TouchEvent*>(event));
+    else if (eventNames().isGestureEventType(event->type()))
+        handleGestureEvent(static_cast<GestureEvent*>(event));
 
     // FIXME: it would be cleaner if Widget::handleEvent returned true/false and
     // HTMLPluginElement called setDefaultHandled or defaultEventHandler.
@@ -240,6 +248,30 @@ void WebPluginContainerImpl::setPlugin(WebPlugin* plugin)
         m_element->resetInstance();
         m_webPlugin = plugin;
     }
+}
+
+float WebPluginContainerImpl::deviceScaleFactor()
+{
+    Page* page = m_element->document()->page();
+    if (!page)
+        return 1.0;
+    return page->deviceScaleFactor();
+}
+
+float WebPluginContainerImpl::pageScaleFactor()
+{
+    Page* page = m_element->document()->page();
+    if (!page)
+        return 1.0;
+    return page->pageScaleFactor();
+}
+
+float WebPluginContainerImpl::pageZoomFactor()
+{
+    Frame* frame = m_element->document()->frame();
+    if (!frame)
+        return 1.0;
+    return frame->pageZoomFactor();
 }
 
 bool WebPluginContainerImpl::supportsPaginatedPrint() const
@@ -337,11 +369,13 @@ void WebPluginContainerImpl::setBackingTextureId(unsigned textureId)
     if (m_textureId == textureId)
         return;
 
-    ASSERT(m_ioSurfaceLayer.isNull());
+    ASSERT(!m_ioSurfaceLayer);
 
-    if (m_textureLayer.isNull())
-        m_textureLayer = WebExternalTextureLayer::create();
-    m_textureLayer.setTextureId(textureId);
+    if (!m_textureLayer) {
+        m_textureLayer = adoptPtr(Platform::current()->compositorSupport()->createExternalTextureLayer());
+        GraphicsLayerChromium::registerContentsLayer(m_textureLayer->layer());
+    }
+    m_textureLayer->setTextureId(textureId);
 
     // If anyone of the IDs is zero we need to switch between hardware
     // and software compositing. This is done by triggering a style recalc
@@ -361,11 +395,13 @@ void WebPluginContainerImpl::setBackingIOSurfaceId(int width,
     if (ioSurfaceId == m_ioSurfaceId)
         return;
 
-    ASSERT(m_textureLayer.isNull());
+    ASSERT(!m_textureLayer);
 
-    if (m_ioSurfaceLayer.isNull())
-        m_ioSurfaceLayer = WebIOSurfaceLayer::create();
-    m_ioSurfaceLayer.setIOSurfaceProperties(ioSurfaceId, WebSize(width, height));
+    if (!m_ioSurfaceLayer) {
+        m_ioSurfaceLayer = adoptPtr(Platform::current()->compositorSupport()->createIOSurfaceLayer());
+        GraphicsLayerChromium::registerContentsLayer(m_ioSurfaceLayer->layer());
+    }
+    m_ioSurfaceLayer->setIOSurfaceProperties(ioSurfaceId, WebSize(width, height));
 
     // If anyone of the IDs is zero we need to switch between hardware
     // and software compositing. This is done by triggering a style recalc
@@ -380,11 +416,11 @@ void WebPluginContainerImpl::setBackingIOSurfaceId(int width,
 void WebPluginContainerImpl::commitBackingTexture()
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (!m_textureLayer.isNull())
-        m_textureLayer.invalidate();
+    if (m_textureLayer)
+        m_textureLayer->layer()->invalidate();
 
-    if (!m_ioSurfaceLayer.isNull())
-        m_ioSurfaceLayer.invalidate();
+    if (m_ioSurfaceLayer)
+        m_ioSurfaceLayer->layer()->invalidate();
 #endif
 }
 
@@ -451,11 +487,11 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 void WebPluginContainerImpl::setOpaque(bool opaque)
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (!m_textureLayer.isNull())
-        m_textureLayer.setOpaque(opaque);
+    if (m_textureLayer)
+        m_textureLayer->layer()->setOpaque(opaque);
 
-    if (!m_ioSurfaceLayer.isNull())
-        m_ioSurfaceLayer.setOpaque(opaque);
+    if (m_ioSurfaceLayer)
+        m_ioSurfaceLayer->layer()->setOpaque(opaque);
 #endif
 }
 
@@ -476,6 +512,17 @@ bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
     if (nodes.size() != 1)
         return false;
     return (nodes.first().get() == m_element);
+}
+
+void WebPluginContainerImpl::setIsAcceptingTouchEvents(bool acceptingTouchEvents)
+{
+    if (m_isAcceptingTouchEvents == acceptingTouchEvents)
+        return;
+    m_isAcceptingTouchEvents = acceptingTouchEvents;
+    if (m_isAcceptingTouchEvents)
+        m_element->document()->didAddTouchEventHandler();
+    else
+        m_element->document()->didRemoveTouchEventHandler();
 }
 
 void WebPluginContainerImpl::didReceiveResponse(const ResourceResponse& response)
@@ -518,6 +565,11 @@ bool WebPluginContainerImpl::getFormValue(String& value)
     return false;
 }
 
+bool WebPluginContainerImpl::supportsKeyboardFocus() const
+{
+    return m_webPlugin->supportsKeyboardFocus();
+}
+
 void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver* observer)
 {
     size_t pos = m_pluginLoadObservers.find(observer);
@@ -527,12 +579,12 @@ void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver
 }
 
 #if USE(ACCELERATED_COMPOSITING)
-WebCore::LayerChromium* WebPluginContainerImpl::platformLayer() const
+WebLayer* WebPluginContainerImpl::platformLayer() const
 {
     if (m_textureId)
-        return m_textureLayer.unwrap<LayerChromium>();
+        return m_textureLayer->layer();
     if (m_ioSurfaceId)
-        return m_ioSurfaceLayer.unwrap<LayerChromium>();
+        return m_ioSurfaceLayer->layer();
     return 0;
 }
 #endif
@@ -576,11 +628,22 @@ WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* eleme
     , m_textureId(0)
     , m_ioSurfaceId(0)
 #endif
+    , m_isAcceptingTouchEvents(false)
 {
 }
 
 WebPluginContainerImpl::~WebPluginContainerImpl()
 {
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_textureLayer)
+        GraphicsLayerChromium::unregisterContentsLayer(m_textureLayer->layer());
+    if (m_ioSurfaceLayer)
+        GraphicsLayerChromium::unregisterContentsLayer(m_ioSurfaceLayer->layer());
+#endif
+
+    if (m_isAcceptingTouchEvents)
+        m_element->document()->didRemoveTouchEventHandler();
+
     for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
         m_pluginLoadObservers[i]->clearPluginContainer();
     m_webPlugin->destroy();
@@ -680,6 +743,28 @@ void WebPluginContainerImpl::handleKeyboardEvent(KeyboardEvent* event)
     WebCursorInfo cursorInfo;
     if (m_webPlugin->handleInputEvent(webEvent, cursorInfo))
         event->setDefaultHandled();
+}
+
+void WebPluginContainerImpl::handleTouchEvent(TouchEvent* event)
+{
+    WebTouchEventBuilder webEvent(this, *event);
+    if (webEvent.type == WebInputEvent::Undefined)
+        return;
+    WebCursorInfo cursorInfo;
+    if (m_webPlugin->handleInputEvent(webEvent, cursorInfo))
+        event->setDefaultHandled();
+    // FIXME: Can a plugin change the cursor from a touch-event callback?
+}
+
+void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
+{
+    WebGestureEventBuilder webEvent(this, *event);
+    if (webEvent.type == WebInputEvent::Undefined)
+        return;
+    WebCursorInfo cursorInfo;
+    if (m_webPlugin->handleInputEvent(webEvent, cursorInfo))
+        event->setDefaultHandled();
+    // FIXME: Can a plugin change the cursor from a touch-event callback?
 }
 
 void WebPluginContainerImpl::calculateGeometry(const IntRect& frameRect,

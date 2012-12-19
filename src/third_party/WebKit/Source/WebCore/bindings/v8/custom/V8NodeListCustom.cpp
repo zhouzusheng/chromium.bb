@@ -31,10 +31,10 @@
 #include "config.h"
 #include "V8NodeList.h" 
 
+#include "DynamicNodeList.h"
 #include "NodeList.h"
 #include "V8Binding.h"
 #include "V8Node.h"
-#include "V8Proxy.h"
 
 #include <wtf/RefPtr.h>
 #include <wtf/StdLibExtras.h>
@@ -45,18 +45,33 @@ v8::Handle<v8::Value> V8NodeList::namedPropertyGetter(v8::Local<v8::String> name
 {
     INC_STATS("DOM.NodeList.NamedPropertyGetter");
     NodeList* list = V8NodeList::toNative(info.Holder());
-    AtomicString key = v8ValueToAtomicWebCoreString(name);
+    AtomicString key = toWebCoreAtomicString(name);
 
     // Length property cannot be overridden.
     DEFINE_STATIC_LOCAL(const AtomicString, length, ("length"));
     if (key == length)
-        return v8::Integer::New(list->length());
+        return v8Integer(list->length(), info.GetIsolate());
 
     RefPtr<Node> result = list->itemWithName(key);
     if (!result)
-        return v8::Handle<v8::Value>();
+        return v8Undefined();
 
-    return toV8(result.release(), info.GetIsolate());
+    return toV8(result.release(), info.Holder(), info.GetIsolate());
+}
+
+void V8NodeList::visitDOMWrapper(DOMDataStore* store, void* object, v8::Persistent<v8::Object> wrapper)
+{
+    NodeList* impl = static_cast<NodeList*>(object);
+    if (impl->isDynamicNodeList()) {
+        Node* owner = static_cast<DynamicNodeList*>(impl)->ownerNode();
+        if (owner) {
+            v8::Persistent<v8::Object> ownerWrapper = store->domNodeMap().get(owner);
+            if (!ownerWrapper.IsEmpty()) {
+                v8::Persistent<v8::Value> value = wrapper;
+                v8::V8::AddImplicitReferences(ownerWrapper, &value, 1);
+            }
+        }
+    }
 }
 
 } // namespace WebCore

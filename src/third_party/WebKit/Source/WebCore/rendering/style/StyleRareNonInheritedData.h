@@ -25,7 +25,8 @@
 #ifndef StyleRareNonInheritedData_h
 #define StyleRareNonInheritedData_h
 
-#include "CSSWrapShapes.h"
+#include "BasicShapes.h"
+#include "ClipPathOperation.h"
 #include "CounterDirectives.h"
 #include "CursorData.h"
 #include "DataRef.h"
@@ -56,7 +57,7 @@ class StyleTransformData;
 class ContentData;
 struct LengthSize;
 
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
 struct StyleDashboardRegion;
 #endif
 
@@ -89,20 +90,19 @@ public:
     bool animationDataEquivalent(const StyleRareNonInheritedData&) const;
     bool transitionDataEquivalent(const StyleRareNonInheritedData&) const;
 
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
     float opacity; // Whether or not we're transparent.
 
     float m_aspectRatioDenominator;
     float m_aspectRatioNumerator;
-
-    short m_counterIncrement;
-    short m_counterReset;
 
     float m_perspective;
     Length m_perspectiveOriginX;
     Length m_perspectiveOriginY;
 
     LineClampValue lineClamp; // An Apple extension.
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
     Vector<StyleDashboardRegion> m_dashboardRegions;
 #endif
 
@@ -134,11 +134,13 @@ public:
 
     LengthSize m_pageSize;
 
-    RefPtr<CSSWrapShape> m_wrapShapeInside;
-    RefPtr<CSSWrapShape> m_wrapShapeOutside;
+    RefPtr<BasicShape> m_wrapShapeInside;
+    RefPtr<BasicShape> m_wrapShapeOutside;
     Length m_wrapMargin;
     Length m_wrapPadding;
-    
+
+    RefPtr<ClipPathOperation> m_clipPath;
+
     Color m_visitedLinkBackgroundColor;
     Color m_visitedLinkOutlineColor;
     Color m_visitedLinkBorderLeftColor;
@@ -146,7 +148,7 @@ public:
     Color m_visitedLinkBorderTopColor;
     Color m_visitedLinkBorderBottomColor;
 
-    float m_order;
+    int m_order;
 
     AtomicString m_flowThread;
     AtomicString m_regionThread;
@@ -169,18 +171,25 @@ public:
     unsigned textOverflow : 1; // Whether or not lines that spill out should be truncated with "..."
     unsigned marginBeforeCollapse : 2; // EMarginCollapse
     unsigned marginAfterCollapse : 2; // EMarginCollapse
-    unsigned matchNearestMailBlockquoteColor : 1; // EMatchNearestMailBlockquoteColor, FIXME: This property needs to be eliminated. It should never have been added.
     unsigned m_appearance : 6; // EAppearance
     unsigned m_borderFit : 1; // EBorderFit
     unsigned m_textCombine : 1; // CSS3 text-combine properties
 
+#if ENABLE(CSS3_TEXT_DECORATION)
+    unsigned m_textDecorationStyle : 3; // TextDecorationStyle
+#endif // CSS3_TEXT_DECORATION
     unsigned m_wrapFlow: 3; // WrapFlow
     unsigned m_wrapThrough: 1; // WrapThrough
 
 #if USE(ACCELERATED_COMPOSITING)
     unsigned m_runningAcceleratedAnimation : 1;
 #endif
+
     unsigned m_hasAspectRatio : 1; // Whether or not an aspect ratio has been specified.
+
+#if ENABLE(CSS_COMPOSITING)
+    unsigned m_effectiveBlendMode: 5; // EBlendMode
+#endif
 
 private:
     StyleRareNonInheritedData();

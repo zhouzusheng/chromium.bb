@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 #define UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -16,6 +15,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/platform_file.h"
 #include "base/string16.h"
 #include "base/string_piece.h"
 #include "ui/base/layout.h"
@@ -118,8 +118,15 @@ class UI_EXPORT ResourceBundle {
   static std::string InitSharedInstanceWithLocale(
       const std::string& pref_locale, Delegate* delegate);
 
+  // Initialize the ResourceBundle using given file. The second argument
+  // controls whether or not ResourceBundle::LoadCommonResources is called.
+  // This allows the use of this function in a sandbox without local file
+  // access (as on Android).
+  static void InitSharedInstanceWithPakFile(
+      base::PlatformFile file, bool should_load_common_resources);
+
   // Initialize the ResourceBundle using given data pack path for testing.
-  static void InitSharedInstanceWithPakFile(const FilePath& path);
+  static void InitSharedInstanceWithPakPath(const FilePath& path);
 
   // Delete the ResourceBundle for this process if it exists.
   static void CleanupSharedInstance();
@@ -140,7 +147,15 @@ class UI_EXPORT ResourceBundle {
   // this value). |scale_factor| is the scale of images in this resource pak
   // relative to the images in the 1x resource pak. This method is not thread
   // safe! You should call it immediately after calling InitSharedInstance.
-  void AddDataPack(const FilePath& path, ScaleFactor scale_factor);
+  void AddDataPackFromPath(const FilePath& path, ScaleFactor scale_factor);
+
+  // Same as above but using an already open file.
+  void AddDataPackFromFile(base::PlatformFile file, ScaleFactor scale_factor);
+
+  // Same as AddDataPackFromPath but does not log an error if the pack fails to
+  // load.
+  void AddOptionalDataPackFromPath(const FilePath& path,
+                                   ScaleFactor scale_factor);
 
   // Changes the locale for an already-initialized ResourceBundle, returning the
   // name of the newly-loaded locale.  Future calls to get strings will return
@@ -213,6 +228,13 @@ class UI_EXPORT ResourceBundle {
   // loaded. Pass an empty path to undo.
   void OverrideLocalePakForTest(const FilePath& pak_path);
 
+  // Returns the full pathname of the locale file to load.  May return an empty
+  // string if no locale data files are found and |test_file_exists| is true.
+  // Used on Android to load the local file in the browser process and pass it
+  // to the sandboxed renderer process.
+  FilePath GetLocaleFilePath(const std::string& app_locale,
+                             bool test_file_exists);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForResourcePack);
   FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForLocalePack);
@@ -226,6 +248,9 @@ class UI_EXPORT ResourceBundle {
   FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LoadDataResourceBytes);
   FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LocaleDataPakExists);
 
+  class ResourceBundleImageSource;
+  friend class ResourceBundleImageSource;
+
   // Ctor/dtor are private, since we're a singleton.
   explicit ResourceBundle(Delegate* delegate);
   ~ResourceBundle();
@@ -235,6 +260,12 @@ class UI_EXPORT ResourceBundle {
 
   // Load the main resources.
   void LoadCommonResources();
+
+  // Implementation for AddDataPackFromPath and AddOptionalDataPackFromPath, if
+  // the pack is not |optional| logs an error on failure to load.
+  void AddDataPackFromPathInternal(const FilePath& path,
+                                   ScaleFactor scale_factor,
+                                   bool optional);
 
   // Try to load the locale specific strings from an external data module.
   // Returns the locale that is loaded.
@@ -251,14 +282,14 @@ class UI_EXPORT ResourceBundle {
   // Initialize all the gfx::Font members if they haven't yet been initialized.
   void LoadFontsIfNecessary();
 
-  // Returns the full pathname of the locale file to load.  May return an empty
-  // string if no locale data files are found.
-  FilePath GetLocaleFilePath(const std::string& app_locale);
-
   // Creates and returns a new SkBitmap given the data file to look in and the
-  // resource id.  It's up to the caller to free the returned bitmap when
+  // |resource_id|.  It's up to the caller to free the returned bitmap when
   // done.
-  SkBitmap* LoadBitmap(const ResourceHandle& dll_inst, int resource_id);
+  SkBitmap* LoadBitmap(const ResourceHandle& dll_inst, int resource_id) const;
+
+  // Creates and returns a new SkBitmap for |resource_id| and |scale_factor|.
+  // Returns NULL if the resource does not exist.
+  SkBitmap* LoadBitmap(int resource_id, ScaleFactor scale_factor) const;
 
   // Returns an empty image for when a resource cannot be loaded. This is a
   // bright red bitmap.
@@ -296,8 +327,6 @@ class UI_EXPORT ResourceBundle {
   scoped_ptr<gfx::Font> large_font_;
   scoped_ptr<gfx::Font> large_bold_font_;
   scoped_ptr<gfx::Font> web_font_;
-
-  static ResourceBundle* g_shared_instance_;
 
   FilePath overridden_pak_path_;
 

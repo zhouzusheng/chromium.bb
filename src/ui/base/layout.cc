@@ -4,15 +4,24 @@
 
 #include "ui/base/layout.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "ui/base/ui_base_switches.h"
 
-#if defined(USE_AURA) && defined(USE_X11)
-#include "ui/base/touch/touch_factory.h"
-#endif // defined(USE_AURA) && defined(USE_X11)
+#if defined(USE_AURA) && !defined(OS_WIN)
+#include "ui/aura/root_window.h"
+#include "ui/compositor/compositor.h"
+#endif  // defined(USE_AURA) && !defined(OS_WIN)
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "base/mac/mac_util.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -46,30 +55,40 @@ bool UseTouchOptimizedUI() {
   // On Windows, we use the touch layout only when we are running in
   // Metro mode.
   return base::win::IsMetroProcess() && base::win::IsTouchEnabled();
-#elif defined(USE_AURA) && defined(USE_X11)
-  // Determine whether touch-screen hardware is currently available.
-  // For now we must ensure this won't change over the life of the process,
-  // since we don't yet support updating the UI.  crbug.com/124399
-  static bool has_touch_device =
-      ui::TouchFactory::GetInstance()->IsTouchDevicePresent();
-
-  // Work-around for late device detection in some cases.  If we've asked for
-  // touch calibration then we're certainly expecting a touch screen, it must
-  // just not be ready yet.  Force-enable touch-ui mode in this case.
-  static bool enable_touch_calibration = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kEnableTouchCalibration);
-  if (!has_touch_device && enable_touch_calibration)
-    has_touch_device = true;
-
-  return has_touch_device;
 #else
   return false;
 #endif
 }
 
-const float kScaleFactorScales[] = {1.0, 2.0};
+const float kScaleFactorScales[] = {1.0f, 1.4f, 1.8f, 2.0f};
+COMPILE_ASSERT(ui::NUM_SCALE_FACTORS == arraysize(kScaleFactorScales),
+               kScaleFactorScales_incorrect_size);
+const size_t kScaleFactorScalesLength = arraysize(kScaleFactorScales);
 
+std::vector<ui::ScaleFactor>& GetSupportedScaleFactorsInternal() {
+  static std::vector<ui::ScaleFactor>* supported_scale_factors =
+      new std::vector<ui::ScaleFactor>();
+  if (supported_scale_factors->empty()) {
+      supported_scale_factors->push_back(ui::SCALE_FACTOR_100P);
+// TODO(rohitrao): Set the appropriate scale factors for iOS.  Ideally set
+// either 100P or 200P but not both, since a given device will only ever use one
+// scale factor.
+#if defined(OS_MACOSX) && !defined(OS_IOS) && defined(ENABLE_HIDPI)
+      if (base::mac::IsOSLionOrLater())
+        supported_scale_factors->push_back(ui::SCALE_FACTOR_200P);
+#elif defined(OS_WIN) && defined(ENABLE_HIDPI)
+      if (base::win::IsMetroProcess() && base::win::IsTouchEnabled()) {
+        supported_scale_factors->push_back(ui::SCALE_FACTOR_140P);
+        supported_scale_factors->push_back(ui::SCALE_FACTOR_180P);
+      }
+#elif defined(USE_ASH)
+      supported_scale_factors->push_back(ui::SCALE_FACTOR_200P);
+#endif
+  }
+  return *supported_scale_factors;
 }
+
+}  // namespace
 
 namespace ui {
 
@@ -90,8 +109,58 @@ DisplayLayout GetDisplayLayout() {
 #endif
 }
 
+ScaleFactor GetScaleFactorFromScale(float scale) {
+  size_t closest_match = 0;
+  float smallest_diff =  std::numeric_limits<float>::max();
+  for (size_t i = 0; i < kScaleFactorScalesLength; ++i) {
+    float diff = std::abs(kScaleFactorScales[i] - scale);
+    if (diff < smallest_diff) {
+      closest_match = i;
+      smallest_diff = diff;
+    }
+  }
+  return static_cast<ui::ScaleFactor>(closest_match);
+}
+
 float GetScaleFactorScale(ScaleFactor scale_factor) {
   return kScaleFactorScales[scale_factor];
 }
+
+std::vector<ScaleFactor> GetSupportedScaleFactors() {
+  return GetSupportedScaleFactorsInternal();
+}
+
+bool IsScaleFactorSupported(ScaleFactor scale_factor) {
+  const std::vector<ScaleFactor>& supported =
+      GetSupportedScaleFactorsInternal();
+  return std::find(supported.begin(), supported.end(), scale_factor) !=
+      supported.end();
+}
+
+namespace test {
+
+void SetSupportedScaleFactors(
+    const std::vector<ui::ScaleFactor>& scale_factors) {
+  std::vector<ui::ScaleFactor>& supported_scale_factors =
+      GetSupportedScaleFactorsInternal();
+  supported_scale_factors = scale_factors;
+}
+
+}  // namespace test
+
+#if !defined(OS_MACOSX)
+ScaleFactor GetScaleFactorForNativeView(gfx::NativeView view) {
+#if defined(USE_AURA) && !defined(OS_WIN)
+  aura::RootWindow* root_window = view->GetRootWindow();
+  if (!root_window)
+    return SCALE_FACTOR_NONE;
+  return GetScaleFactorFromScale(
+      root_window->compositor()->device_scale_factor());
+#else
+  NOTIMPLEMENTED();
+  return SCALE_FACTOR_NONE;
+#endif
+}
+#endif  // !defined(OS_MACOSX)
 
 }  // namespace ui

@@ -74,6 +74,7 @@ namespace WebCore {
         virtual void addData(const char*, int, bool allAtOnce);
         virtual PassRefPtr<SharedBuffer> resourceData();
         void clearResourceData();
+        virtual bool isSubresourceLoader();
         
         virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse);
         virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
@@ -143,6 +144,8 @@ namespace WebCore {
         bool reachedTerminalState() const { return m_reachedTerminalState; }
 
         void setShouldBufferData(DataBufferingPolicy);
+
+        virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     protected:
         ResourceLoader(Frame*, ResourceLoaderOptions);

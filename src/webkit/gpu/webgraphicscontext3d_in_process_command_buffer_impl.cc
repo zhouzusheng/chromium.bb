@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -413,7 +414,7 @@ bool GLInProcessContext::Initialize(const gfx::Size& size,
   bool bind_generates_resource = false;
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group ?
       context_group->decoder_->GetContextGroup() :
-          new ::gpu::gles2::ContextGroup(NULL, bind_generates_resource)));
+          new ::gpu::gles2::ContextGroup(NULL, NULL, bind_generates_resource)));
 
   gpu_scheduler_.reset(new GpuScheduler(command_buffer_.get(),
                                         decoder_.get(),
@@ -1621,8 +1622,20 @@ DELEGATE_TO_GL_3(getQueryivEXT, GetQueryivEXT, WGC3Denum, WGC3Denum, WGC3Dint*)
 DELEGATE_TO_GL_3(getQueryObjectuivEXT, GetQueryObjectuivEXT,
                  WebGLId, WGC3Denum, WGC3Duint*)
 
-DELEGATE_TO_GL_5(copyTextureCHROMIUM, CopyTextureCHROMIUM, WGC3Denum,
-                 WebGLId, WebGLId, WGC3Dint, WGC3Denum)
+DELEGATE_TO_GL_5(copyTextureCHROMIUM, CopyTextureCHROMIUM, WGC3Denum, WGC3Duint,
+                 WGC3Duint, WGC3Dint, WGC3Denum)
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::insertEventMarkerEXT(
+    const WGC3Dchar* marker) {
+  gl_->InsertEventMarkerEXT(0, marker);
+}
+
+void WebGraphicsContext3DInProcessCommandBufferImpl::pushGroupMarkerEXT(
+    const WGC3Dchar* marker) {
+  gl_->PushGroupMarkerEXT(0, marker);
+}
+
+DELEGATE_TO_GL(popGroupMarkerEXT, PopGroupMarkerEXT);
 
 GrGLInterface* WebGraphicsContext3DInProcessCommandBufferImpl::
     onCreateGrGLInterface() {
@@ -1636,6 +1649,17 @@ void WebGraphicsContext3DInProcessCommandBufferImpl::OnContextLost() {
     context_lost_callback_->onContextLost();
   }
 }
+
+DELEGATE_TO_GL_3(bindUniformLocationCHROMIUM, BindUniformLocationCHROMIUM,
+                 WebGLId, WGC3Dint, const WGC3Dchar*)
+
+DELEGATE_TO_GL(shallowFlushCHROMIUM, ShallowFlushCHROMIUM)
+
+DELEGATE_TO_GL_1(genMailboxCHROMIUM, GenMailboxCHROMIUM, WGC3Dbyte*)
+DELEGATE_TO_GL_2(produceTextureCHROMIUM, ProduceTextureCHROMIUM,
+                 WGC3Denum, const WGC3Dbyte*)
+DELEGATE_TO_GL_2(consumeTextureCHROMIUM, ConsumeTextureCHROMIUM,
+                 WGC3Denum, const WGC3Dbyte*)
 
 }  // namespace gpu
 }  // namespace webkit

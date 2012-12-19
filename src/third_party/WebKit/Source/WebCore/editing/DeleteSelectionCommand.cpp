@@ -297,18 +297,26 @@ void DeleteSelectionCommand::saveTypingStyleState()
 
 bool DeleteSelectionCommand::handleSpecialCaseBRDelete()
 {
+    Node* nodeAfterUpstreamStart = m_upstreamStart.computeNodeAfterPosition();
+    Node* nodeAfterDownstreamStart = m_downstreamStart.computeNodeAfterPosition();
+    // Upstream end will appear before BR due to canonicalization
+    Node* nodeAfterUpstreamEnd = m_upstreamEnd.computeNodeAfterPosition();
+
+    if (!nodeAfterUpstreamStart || !nodeAfterDownstreamStart)
+        return false;
+
     // Check for special-case where the selection contains only a BR on a line by itself after another BR.
-    bool upstreamStartIsBR = m_upstreamStart.deprecatedNode()->hasTagName(brTag);
-    bool downstreamStartIsBR = m_downstreamStart.deprecatedNode()->hasTagName(brTag);
-    bool isBROnLineByItself = upstreamStartIsBR && downstreamStartIsBR && m_downstreamStart.deprecatedNode() == m_upstreamEnd.deprecatedNode();
+    bool upstreamStartIsBR = nodeAfterUpstreamStart->hasTagName(brTag);
+    bool downstreamStartIsBR = nodeAfterDownstreamStart->hasTagName(brTag);
+    bool isBROnLineByItself = upstreamStartIsBR && downstreamStartIsBR && nodeAfterDownstreamStart == nodeAfterUpstreamEnd;
     if (isBROnLineByItself) {
-        removeNode(m_downstreamStart.deprecatedNode());
+        removeNode(nodeAfterDownstreamStart);
         return true;
     }
 
-    // Not a special-case delete per se, but we can detect that the merging of content between blocks
-    // should not be done.
-    if (upstreamStartIsBR && downstreamStartIsBR) {
+    // FIXME: This code doesn't belong in here.
+    // We detect the case where the start is an empty line consisting of BR not wrapped in a block element.
+    if (upstreamStartIsBR && downstreamStartIsBR && !(isStartOfBlock(positionBeforeNode(nodeAfterUpstreamStart)) && isEndOfBlock(positionAfterNode(nodeAfterUpstreamStart)))) {
         m_startsAtEmptyLine = true;
         m_endingPosition = m_downstreamEnd;
     }
@@ -408,6 +416,22 @@ void DeleteSelectionCommand::deleteTextFromNode(PassRefPtr<Text> node, unsigned 
     CompositeEditCommand::deleteTextFromNode(node, offset, count);
 }
 
+void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss()
+{
+    RefPtr<Range> range = m_selectionToDelete.toNormalizedRange();
+    RefPtr<Node> node = range->firstNode();
+    while (node && node != range->pastLastNode()) {
+        RefPtr<Node> nextNode = node->traverseNextNode();
+        if ((node->hasTagName(styleTag) && !(toElement(node.get())->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
+            nextNode = node->traverseNextSibling();
+            RefPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
+            removeNode(node);
+            appendNode(node, rootEditableElement);
+        }
+        node = nextNode;
+    }
+}
+
 void DeleteSelectionCommand::handleGeneralDelete()
 {
     if (m_upstreamStart.isNull())
@@ -415,6 +439,8 @@ void DeleteSelectionCommand::handleGeneralDelete()
 
     int startOffset = m_upstreamStart.deprecatedEditingOffset();
     Node* startNode = m_upstreamStart.deprecatedNode();
+    
+    makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
 
     // Never remove the start block unless it's a table, in which case we won't merge content in.
     if (startNode == m_startBlock && startOffset == 0 && canHaveChildrenForEditing(startNode) && !startNode->hasTagName(tableTag)) {

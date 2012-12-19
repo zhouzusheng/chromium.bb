@@ -7,10 +7,12 @@
 
 #if ENABLE(VIDEO)
 
+#include "AudioBus.h"
 #include "AudioSourceProvider.h"
 #include "AudioSourceProviderClient.h"
 #include "Frame.h"
 #include "GraphicsContext.h"
+#include "GraphicsLayerChromium.h"
 #include "HTMLMediaElement.h"
 #include "IntSize.h"
 #include "KURL.h"
@@ -23,18 +25,18 @@
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebHelperPluginImpl.h"
-#include "WebKit.h"
 #include "WebMediaPlayer.h"
 #include "WebViewImpl.h"
-#include "cc/CCProxy.h"
-#include "platform/WebCString.h"
-#include "platform/WebCanvas.h"
-#include "platform/WebKitPlatformSupport.h"
-#include "platform/WebRect.h"
-#include "platform/WebSize.h"
-#include "platform/WebString.h"
-#include "platform/WebURL.h"
+#include <public/Platform.h>
+#include <public/WebCString.h>
+#include <public/WebCanvas.h>
+#include <public/WebCompositorSupport.h>
 #include <public/WebMimeRegistry.h>
+#include <public/WebRect.h>
+#include <public/WebSize.h>
+#include <public/WebString.h>
+#include <public/WebURL.h>
+#include <public/WebVideoLayer.h>
 
 #if USE(ACCELERATED_COMPOSITING)
 #include "RenderLayerCompositor.h"
@@ -47,13 +49,13 @@ using namespace WebCore;
 
 namespace WebKit {
 
-static PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(WebMediaPlayerClient* client, Frame* frame)
+static PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(WebMediaPlayerClient* client, const WebURL& url, Frame* frame)
 {
     WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
 
     if (!webFrame->client())
         return nullptr;
-    return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, client));
+    return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url, client));
 }
 
 bool WebMediaPlayerClientImpl::m_isEnabled = false;
@@ -90,14 +92,20 @@ WebMediaPlayer* WebMediaPlayerClientImpl::mediaPlayer() const
 WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
 {
 #if USE(ACCELERATED_COMPOSITING)
-    MutexLocker locker(m_compositingMutex);
     if (m_videoFrameProviderClient)
         m_videoFrameProviderClient->stopUsingProvider();
+    // No need for a lock here, as getCurrentFrame/putCurrentFrame can't be
+    // called now that the client is no longer using this provider. Also, load()
+    // and this destructor are called from the same thread.
     if (m_webMediaPlayer)
         m_webMediaPlayer->setStreamTextureClient(0);
 #endif
     if (m_helperPlugin)
         closeHelperPlugin();
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_videoLayer)
+        GraphicsLayerChromium::unregisterContentsLayer(m_videoLayer->layer());
+#endif
 }
 
 void WebMediaPlayerClientImpl::networkStateChanged()
@@ -111,9 +119,11 @@ void WebMediaPlayerClientImpl::readyStateChanged()
     ASSERT(m_mediaPlayer);
     m_mediaPlayer->readyStateChanged();
 #if USE(ACCELERATED_COMPOSITING)
-    if (hasVideo() && supportsAcceleratedRendering() && m_videoLayer.isNull()) {
-        m_videoLayer = WebVideoLayer::create(this);
-        m_videoLayer.setOpaque(m_opaque);
+    if (hasVideo() && supportsAcceleratedRendering() && !m_videoLayer) {
+        m_videoLayer = adoptPtr(Platform::current()->compositorSupport()->createVideoLayer(this));
+
+        m_videoLayer->layer()->setOpaque(m_opaque);
+        GraphicsLayerChromium::registerContentsLayer(m_videoLayer->layer());
     }
 #endif
 }
@@ -140,8 +150,8 @@ void WebMediaPlayerClientImpl::repaint()
 {
     ASSERT(m_mediaPlayer);
 #if USE(ACCELERATED_COMPOSITING)
-    if (!m_videoLayer.isNull() && supportsAcceleratedRendering())
-        m_videoLayer.invalidate();
+    if (m_videoLayer && supportsAcceleratedRendering())
+        m_videoLayer->layer()->invalidate();
 #endif
     m_mediaPlayer->repaint();
 }
@@ -168,8 +178,8 @@ void WebMediaPlayerClientImpl::setOpaque(bool opaque)
 {
 #if USE(ACCELERATED_COMPOSITING)
     m_opaque = opaque;
-    if (!m_videoLayer.isNull())
-        m_videoLayer.setOpaque(m_opaque);
+    if (m_videoLayer)
+        m_videoLayer->layer()->setOpaque(m_opaque);
 #endif
 }
 
@@ -304,8 +314,8 @@ void WebMediaPlayerClientImpl::load(const String& url)
 {
     m_url = url;
 
+    MutexLocker locker(m_webMediaPlayerMutex);
     if (m_preload == MediaPlayer::None) {
-        MutexLocker locker(m_compositingMutex);
 #if ENABLE(WEB_AUDIO)
         m_audioSourceProvider.wrap(0); // Clear weak reference to m_webMediaPlayer's WebAudioSourceProvider.
 #endif
@@ -317,13 +327,12 @@ void WebMediaPlayerClientImpl::load(const String& url)
 
 void WebMediaPlayerClientImpl::loadInternal()
 {
-    MutexLocker locker(m_compositingMutex);
 #if ENABLE(WEB_AUDIO)
     m_audioSourceProvider.wrap(0); // Clear weak reference to m_webMediaPlayer's WebAudioSourceProvider.
 #endif
 
     Frame* frame = static_cast<HTMLMediaElement*>(m_mediaPlayer->mediaPlayerClient())->document()->frame();
-    m_webMediaPlayer = createWebMediaPlayer(this, frame);
+    m_webMediaPlayer = createWebMediaPlayer(this, KURL(ParsedURLString, m_url), frame);
     if (m_webMediaPlayer) {
 #if ENABLE(WEB_AUDIO)
         // Make sure if we create/re-create the WebMediaPlayer that we update our wrapper.
@@ -342,10 +351,10 @@ void WebMediaPlayerClientImpl::cancelLoad()
 }
 
 #if USE(ACCELERATED_COMPOSITING)
-LayerChromium* WebMediaPlayerClientImpl::platformLayer() const
+WebLayer* WebMediaPlayerClientImpl::platformLayer() const
 {
     ASSERT(m_supportsAcceleratedCompositing);
-    return m_videoLayer.unwrap<LayerChromium>();
+    return m_videoLayer ? m_videoLayer->layer() : 0;
 }
 #endif
 
@@ -432,10 +441,23 @@ bool WebMediaPlayerClientImpl::sourceAbort(const String& id)
     return m_webMediaPlayer->sourceAbort(id);
 }
 
+void WebMediaPlayerClientImpl::sourceSetDuration(double duration)
+{
+    if (m_webMediaPlayer)
+        m_webMediaPlayer->sourceSetDuration(duration);
+}
+
 void WebMediaPlayerClientImpl::sourceEndOfStream(WebCore::MediaPlayer::EndOfStreamStatus status)
 {
     if (m_webMediaPlayer)
         m_webMediaPlayer->sourceEndOfStream(static_cast<WebMediaPlayer::EndOfStreamStatus>(status));
+}
+
+bool WebMediaPlayerClientImpl::sourceSetTimestampOffset(const String& id, double offset)
+{
+    if (!m_webMediaPlayer)
+        return false;
+    return m_webMediaPlayer->sourceSetTimestampOffset(id, offset);
 }
 #endif
 
@@ -740,12 +762,12 @@ bool WebMediaPlayerClientImpl::supportsAcceleratedRendering() const
 
 bool WebMediaPlayerClientImpl::acceleratedRenderingInUse()
 {
-    return !m_videoLayer.isNull() && m_videoLayer.active();
+    return m_videoLayer && m_videoLayer->active();
 }
 
 void WebMediaPlayerClientImpl::setVideoFrameProviderClient(WebVideoFrameProvider::Client* client)
 {
-    MutexLocker locker(m_compositingMutex);
+    MutexLocker locker(m_webMediaPlayerMutex);
     if (m_videoFrameProviderClient)
         m_videoFrameProviderClient->stopUsingProvider();
     m_videoFrameProviderClient = client;
@@ -755,8 +777,10 @@ void WebMediaPlayerClientImpl::setVideoFrameProviderClient(WebVideoFrameProvider
 
 WebVideoFrame* WebMediaPlayerClientImpl::getCurrentFrame()
 {
-    MutexLocker locker(m_compositingMutex);
+    // This function is called only by the client.
+    MutexLocker locker(m_webMediaPlayerMutex);
     ASSERT(!m_currentVideoFrame);
+    ASSERT(m_videoFrameProviderClient);
     if (m_webMediaPlayer)
         m_currentVideoFrame = m_webMediaPlayer->getCurrentFrame();
     return m_currentVideoFrame;
@@ -764,8 +788,10 @@ WebVideoFrame* WebMediaPlayerClientImpl::getCurrentFrame()
 
 void WebMediaPlayerClientImpl::putCurrentFrame(WebVideoFrame* videoFrame)
 {
-    MutexLocker locker(m_compositingMutex);
+    // This function is called only by the client.
+    MutexLocker locker(m_webMediaPlayerMutex);
     ASSERT(videoFrame == m_currentVideoFrame);
+    ASSERT(m_videoFrameProviderClient);
     if (!videoFrame)
         return;
     if (m_webMediaPlayer)
@@ -803,11 +829,13 @@ void WebMediaPlayerClientImpl::getSupportedTypes(HashSet<String>& supportedTypes
 #if ENABLE(ENCRYPTED_MEDIA)
 MediaPlayer::SupportsType WebMediaPlayerClientImpl::supportsType(const String& type,
                                                                  const String& codecs,
-                                                                 const String& keySystem)
+                                                                 const String& keySystem,
+                                                                 const KURL&)
 {
 #else
 MediaPlayer::SupportsType WebMediaPlayerClientImpl::supportsType(const String& type,
-                                                                 const String& codecs)
+                                                                 const String& codecs,
+                                                                 const KURL&)
 {
     String keySystem;
 #endif
@@ -839,14 +867,12 @@ void WebMediaPlayerClientImpl::startDelayedLoad()
 void WebMediaPlayerClientImpl::didReceiveFrame()
 {
     // No lock since this gets called on the client's thread.
-    ASSERT(CCProxy::isImplThread());
     m_videoFrameProviderClient->didReceiveFrame();
 }
 
 void WebMediaPlayerClientImpl::didUpdateMatrix(const float* matrix)
 {
     // No lock since this gets called on the client's thread.
-    ASSERT(CCProxy::isImplThread());
     m_videoFrameProviderClient->didUpdateMatrix(matrix);
 }
 

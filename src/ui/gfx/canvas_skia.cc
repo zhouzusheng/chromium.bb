@@ -22,9 +22,10 @@ namespace {
 // If necessary, wraps |text| with RTL/LTR directionality characters based on
 // |flags| and |text| content.
 // Returns true if the text will be rendered right-to-left.
-// TODO(asvitkine): Support setting directionality directly on RenderText, so
-//                  that wrapping the text is not needed.
+// TODO(msw): Nix this, now that RenderTextWin supports directionality directly.
 bool AdjustStringDirection(int flags, string16* text) {
+  // TODO(msw): FORCE_LTR_DIRECTIONALITY does not work for RTL text now.
+
   // If the string is empty or LTR was forced, simply return false since the
   // default RenderText directionality is already LTR.
   if (text->empty() || (flags & gfx::Canvas::FORCE_LTR_DIRECTIONALITY))
@@ -130,7 +131,7 @@ void UpdateRenderText(const gfx::Rect& rect,
                       int flags,
                       SkColor color,
                       gfx::RenderText* render_text) {
-  render_text->SetFontList(gfx::FontList(font));
+  render_text->SetFont(font);
   render_text->SetText(text);
   render_text->SetCursorEnabled(false);
 
@@ -178,11 +179,6 @@ void ApplyUnderlineStyle(const ui::Range& range, gfx::RenderText* render_text) {
 // Returns updated |flags| to match platform-specific expected behavior.
 int AdjustPlatformSpecificFlags(const string16& text, int flags) {
 #if defined(OS_LINUX)
-  // TODO(asvitkine): On Linux, NO_ELLIPSIS really means MULTI_LINE.
-  //                  http://crbug.com/107357
-  if (flags & gfx::Canvas::NO_ELLIPSIS)
-    flags |= gfx::Canvas::MULTI_LINE;
-
   // TODO(asvitkine): ash/tooltips/tooltip_controller.cc adds \n's to the string
   //                  without passing MULTI_LINE.
   if (text.find('\n') != string16::npos)
@@ -192,7 +188,7 @@ int AdjustPlatformSpecificFlags(const string16& text, int flags) {
   return flags;
 }
 
-}  // anonymous namespace
+}  // namespace
 
 namespace gfx {
 
@@ -222,7 +218,7 @@ void Canvas::SizeStringInt(const string16& text,
     std::vector<string16> strings;
     ui::ElideRectangleText(adjusted_text, font, rect.width(), rect.height(),
                            wrap_behavior, &strings);
-    scoped_ptr<RenderText> render_text(RenderText::CreateRenderText());
+    scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
     UpdateRenderText(rect, string16(), font, flags, 0, render_text.get());
 
     int h = 0;
@@ -244,7 +240,7 @@ void Canvas::SizeStringInt(const string16& text,
       *width = adjusted_text.length() * font.GetAverageCharacterWidth();
       *height = font.GetHeight();
     } else {
-      scoped_ptr<RenderText> render_text(RenderText::CreateRenderText());
+      scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
       gfx::Rect rect(*width, *height);
       StripAcceleratorChars(flags, &adjusted_text);
       UpdateRenderText(rect, adjusted_text, font, flags, 0, render_text.get());
@@ -288,7 +284,7 @@ void Canvas::DrawStringWithShadows(const string16& text,
   AdjustStringDirection(flags, &adjusted_text);
 #endif
 
-  scoped_ptr<RenderText> render_text(RenderText::CreateRenderText());
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetTextShadows(shadows);
 
   if (flags & MULTI_LINE) {
@@ -376,7 +372,7 @@ void Canvas::DrawStringWithHalo(const string16& text,
   // Create a temporary buffer filled with the halo color. It must leave room
   // for the 1-pixel border around the text.
   Size size(w + 2, h + 2);
-  Canvas text_canvas(size, true);
+  Canvas text_canvas(size, scale_factor(), true);
   SkPaint bkgnd_paint;
   bkgnd_paint.setColor(halo_color);
   text_canvas.DrawRect(gfx::Rect(size), bkgnd_paint);
@@ -389,9 +385,9 @@ void Canvas::DrawStringWithHalo(const string16& text,
   SkBitmap& text_bitmap = const_cast<SkBitmap&>(
       skia::GetTopDevice(*text_canvas.sk_canvas())->accessBitmap(true));
 
-  for (int cur_y = 0; cur_y < h + 2; cur_y++) {
+  for (int cur_y = 0; cur_y < text_bitmap.height(); cur_y++) {
     uint32_t* text_row = text_bitmap.getAddr32(0, cur_y);
-    for (int cur_x = 0; cur_x < w + 2; cur_x++) {
+    for (int cur_x = 0; cur_x < text_bitmap.width(); cur_x++) {
       if (text_row[cur_x] == halo_premul) {
         // This pixel was not touched by the text routines. See if it borders
         // a touched pixel in any of the 4 directions (not diagonally).
@@ -404,11 +400,11 @@ void Canvas::DrawStringWithHalo(const string16& text,
   }
 
   // Draw the halo bitmap with blur.
-  DrawImageInt(text_bitmap, x - 1, y - 1);
+  gfx::ImageSkia text_image = gfx::ImageSkia(gfx::ImageSkiaRep(text_bitmap,
+      text_canvas.scale_factor()));
+  DrawImageInt(text_image, x - 1, y - 1);
 }
 
-// TODO(asvitkine): Remove the ifdef once all platforms use canvas_skia.cc.
-#if defined(OS_WIN)
 void Canvas::DrawFadeTruncatingString(
       const string16& text,
       TruncateFadeMode truncate_mode,
@@ -425,7 +421,7 @@ void Canvas::DrawFadeTruncatingString(
     return;
   }
 
-  scoped_ptr<RenderText> render_text(RenderText::CreateRenderText());
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   string16 clipped_text = text;
   const bool is_rtl = AdjustStringDirection(flags, &clipped_text);
 
@@ -479,6 +475,5 @@ void Canvas::DrawFadeTruncatingString(
   render_text->Draw(this);
   canvas_->restore();
 }
-#endif
 
 }  // namespace gfx

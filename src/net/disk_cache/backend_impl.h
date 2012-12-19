@@ -6,7 +6,6 @@
 
 #ifndef NET_DISK_CACHE_BACKEND_IMPL_H_
 #define NET_DISK_CACHE_BACKEND_IMPL_H_
-#pragma once
 
 #include "base/file_path.h"
 #include "base/hash_tables.h"
@@ -187,6 +186,10 @@ class NET_EXPORT_PRIVATE BackendImpl : public Backend {
     return cache_type_;
   }
 
+  bool read_only() const {
+    return read_only_;
+  }
+
   // Returns a weak pointer to this object.
   base::WeakPtr<BackendImpl> GetWeakPtr();
 
@@ -253,7 +256,11 @@ class NET_EXPORT_PRIVATE BackendImpl : public Backend {
   // or an error code (negative value).
   int SelfCheck();
 
+  // Ensures the index is flushed to disk (a no-op on platforms with mmap).
+  void FlushIndex();
+
   // Backend implementation.
+  virtual net::CacheType GetCacheType() const OVERRIDE;
   virtual int32 GetEntryCount() const OVERRIDE;
   virtual int OpenEntry(const std::string& key, Entry** entry,
                         const CompletionCallback& callback) OVERRIDE;

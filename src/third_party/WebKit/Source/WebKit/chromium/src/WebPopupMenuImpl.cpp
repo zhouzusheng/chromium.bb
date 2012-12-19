@@ -193,7 +193,7 @@ void WebPopupMenuImpl::layout()
 {
 }
 
-void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect)
+void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect, PaintOptions)
 {
     if (!m_widget)
         return;
@@ -277,6 +277,7 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GestureFlingCancel:
     case WebInputEvent::GestureTap:
     case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureDoubleTap:
     case WebInputEvent::GestureTwoFingerTap:
     case WebInputEvent::GestureLongPress:

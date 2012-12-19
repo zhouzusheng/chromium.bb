@@ -51,7 +51,6 @@ typedef NPP_t* NPP;
 
 #if OS(DARWIN)
 typedef struct CGFont* CGFontRef;
-typedef uintptr_t ATSFontContainerRef;
 #ifdef __OBJC__
 @class NSFont;
 #else
@@ -74,8 +73,6 @@ class GeolocationServiceChromium;
 class GraphicsContext;
 class Image;
 class IDBFactoryBackendInterface;
-class IDBKey;
-class IDBKeyPath;
 class IntRect;
 class KURL;
 class SerializedScriptValue;
@@ -105,7 +102,6 @@ public:
 #if OS(DARWIN)
     static bool loadFont(NSFont* srcFont, CGFontRef*, uint32_t* fontID);
 #elif OS(UNIX)
-    static void getRenderStyleForStrike(const char* family, int sizeAndStyle, FontRenderStyle* result);
     struct FontFamily {
         String name;
         bool isBold;
@@ -114,44 +110,16 @@ public:
     static void getFontFamilyForCharacters(const UChar*, size_t numCharacters, const char* preferredLocale, FontFamily*);
 #endif
 
-    // Forms --------------------------------------------------------------
-    static void notifyFormStateChanged(const Document*);
-
-    // Databases ----------------------------------------------------------
-    // Returns a handle to the DB file and ooptionally a handle to its containing directory
-    static PlatformFileHandle databaseOpenFile(const String& vfsFleName, int desiredFlags);
-    // Returns a SQLite code (SQLITE_OK = 0, on success)
-    static int databaseDeleteFile(const String& vfsFileName, bool syncDir = false);
-    // Returns the attributes of the DB file
-    static long databaseGetFileAttributes(const String& vfsFileName);
-    // Returns the size of the DB file
-    static long long databaseGetFileSize(const String& vfsFileName);
-    // Returns the space available for the origin
-    static long long databaseGetSpaceAvailableForOrigin(const String& originIdentifier);
-
     // IndexedDB ----------------------------------------------------------
     static PassRefPtr<IDBFactoryBackendInterface> idbFactory();
-    // Extracts keyPath from values and returns the corresponding keys.
-    static void createIDBKeysFromSerializedValuesAndKeyPath(const Vector<RefPtr<SerializedScriptValue> >& values, const IDBKeyPath&, Vector<RefPtr<IDBKey> >& keys);
-    // Injects key via keyPath into value. Returns true on success.
-    static PassRefPtr<SerializedScriptValue> injectIDBKeyIntoSerializedValue(PassRefPtr<IDBKey>, PassRefPtr<SerializedScriptValue>, const IDBKeyPath&);
 
     // JavaScript ---------------------------------------------------------
     static void notifyJSOutOfMemory(Frame*);
-    static bool allowScriptDespiteSettings(const KURL& documentURL);
-
-    // LayoutTestMode -----------------------------------------------------
-    static bool layoutTestMode();
 
     // Plugin -------------------------------------------------------------
     static bool plugins(bool refresh, Vector<PluginInfo>*);
     static NPObject* pluginScriptableObject(Widget*);
     static bool popupsAllowed(NPP);
-
-    // Resources ----------------------------------------------------------
-#if ENABLE(WEB_AUDIO)
-    static PassOwnPtr<AudioBus> decodeAudioFileData(const char* data, size_t, double sampleRate);
-#endif
 
     // Screen -------------------------------------------------------------
     static int screenHorizontalDPI(Widget*);
@@ -162,10 +130,6 @@ public:
     static IntRect screenRect(Widget*);
     static IntRect screenAvailableRect(Widget*);
 
-    // Returns private and shared usage, in bytes. Private bytes is the amount of
-    // memory currently allocated to this process that cannot be shared. Returns
-    // false on platform specific error conditions.
-    static bool getProcessMemorySize(size_t* privateBytes, size_t* sharedBytes);
     // Theming ------------------------------------------------------------
 #if OS(WINDOWS)
     static void paintButton(
@@ -317,10 +281,6 @@ public:
     // Paint the given the given theme part.
     static void paintThemePart(GraphicsContext*, ThemePart, ThemePaintState, const IntRect&, const ThemePaintExtraParams*);
 #endif
-
-    // Visited links ------------------------------------------------------
-    static LinkHash visitedLinkHash(const UChar* url, unsigned length);
-    static LinkHash visitedLinkHash(const KURL& base, const AtomicString& attributeURL);
 };
 
 } // namespace WebCore

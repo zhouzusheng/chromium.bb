@@ -110,8 +110,8 @@ static void completeURLs(Node* node, const String& baseURL)
                 continue;
             unsigned length = e->attributeCount();
             for (unsigned i = 0; i < length; i++) {
-                Attribute* attribute = e->attributeItem(i);
-                if (e->isURLAttribute(*attribute))
+                const Attribute* attribute = e->attributeItem(i);
+                if (e->isURLAttribute(*attribute) && !attribute->value().isEmpty())
                     changes.append(AttributeChange(e, attribute->name(), KURL(parsedBaseURL, attribute->value()).string()));
             }
         }
@@ -135,7 +135,7 @@ public:
 
 private:
     void appendStyleNodeOpenTag(StringBuilder&, StylePropertySet*, Document*, bool isBlock = false);
-    const String styleNodeCloseTag(bool isBlock = false);
+    const String& styleNodeCloseTag(bool isBlock = false);
     virtual void appendText(StringBuilder& out, Text*);
     String renderedText(const Node*, const Range*);
     String stringValueForRange(const Node*, const Range*);
@@ -191,18 +191,19 @@ void StyledMarkupAccumulator::appendStyleNodeOpenTag(StringBuilder& out, StylePr
 {
     // wrappingStyleForSerialization should have removed -webkit-text-decorations-in-effect
     ASSERT(propertyMissingOrEqualToNone(style, CSSPropertyWebkitTextDecorationsInEffect));
-    DEFINE_STATIC_LOCAL(const String, divStyle, ("<div style=\""));
-    DEFINE_STATIC_LOCAL(const String, styleSpanOpen, ("<span style=\""));
-    out.append(isBlock ? divStyle : styleSpanOpen);
+    if (isBlock)
+        out.appendLiteral("<div style=\"");
+    else
+        out.appendLiteral("<span style=\"");
     appendAttributeValue(out, style->asText(), document->isHTMLDocument());
     out.append('\"');
     out.append('>');
 }
 
-const String StyledMarkupAccumulator::styleNodeCloseTag(bool isBlock)
+const String& StyledMarkupAccumulator::styleNodeCloseTag(bool isBlock)
 {
-    DEFINE_STATIC_LOCAL(const String, divClose, ("</div>"));
-    DEFINE_STATIC_LOCAL(const String, styleSpanClose, ("</span>"));
+    DEFINE_STATIC_LOCAL(const String, divClose, (ASCIILiteral("</div>")));
+    DEFINE_STATIC_LOCAL(const String, styleSpanClose, (ASCIILiteral("</span>")));
     return isBlock ? divClose : styleSpanClose;
 }
 
@@ -294,7 +295,7 @@ void StyledMarkupAccumulator::appendElement(StringBuilder& out, Element* element
     const bool shouldAnnotateOrForceInline = element->isHTMLElement() && (shouldAnnotate() || addDisplayInline);
     const bool shouldOverrideStyleAttr = shouldAnnotateOrForceInline || shouldApplyWrappingStyle(element);
     for (unsigned int i = 0; i < length; i++) {
-        Attribute* attribute = element->attributeItem(i);
+        const Attribute* attribute = element->attributeItem(i);
         // We'll handle the style attribute separately, below.
         if (attribute->name() == styleAttr && shouldOverrideStyleAttr)
             continue;
@@ -328,8 +329,7 @@ void StyledMarkupAccumulator::appendElement(StringBuilder& out, Element* element
         }
 
         if (!newInlineStyle->isEmpty()) {
-            DEFINE_STATIC_LOCAL(const String, stylePrefix, (" style=\""));
-            out.append(stylePrefix);
+            out.appendLiteral(" style=\"");
             appendAttributeValue(out, newInlineStyle->style()->asText(), documentIsHTML);
             out.append('\"');
         }
@@ -549,7 +549,7 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
 // FIXME: At least, annotation and style info should probably not be included in range.markupString()
 String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs)
 {
-    DEFINE_STATIC_LOCAL(const String, interchangeNewlineString, ("<br class=\"" AppleInterchangeNewline "\">"));
+    DEFINE_STATIC_LOCAL(const String, interchangeNewlineString, (ASCIILiteral("<br class=\"" AppleInterchangeNewline "\">")));
 
     if (!range)
         return "";
@@ -794,7 +794,7 @@ static void fillContainerFromString(ContainerNode* paragraph, const String& stri
 
     Vector<String> tabList;
     string.split('\t', true, tabList);
-    String tabText = "";
+    String tabText = emptyString();
     bool first = true;
     size_t numEntries = tabList.size();
     for (size_t i = 0; i < numEntries; ++i) {
@@ -805,7 +805,7 @@ static void fillContainerFromString(ContainerNode* paragraph, const String& stri
             if (!tabText.isEmpty()) {
                 paragraph->appendChild(createTabSpanElement(document, tabText), ec);
                 ASSERT(!ec);
-                tabText = "";
+                tabText = emptyString();
             }
             RefPtr<Node> textNode = document->createTextNode(stringWithRebalancedWhitespace(s, first, i + 1 == numEntries));
             paragraph->appendChild(textNode.release(), ec);

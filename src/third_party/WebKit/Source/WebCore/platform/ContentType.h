@@ -27,13 +27,13 @@
 #ifndef ContentType_h
 #define ContentType_h
 
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
     class ContentType {
     public:
-        ContentType(const String& type);
+        explicit ContentType(const String& type);
 
         String parameter (const String& parameterName) const;
         String type() const;

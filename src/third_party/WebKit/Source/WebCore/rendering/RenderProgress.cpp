@@ -19,11 +19,9 @@
  */
 
 #include "config.h"
-
-#if ENABLE(PROGRESS_TAG)
-
 #include "RenderProgress.h"
 
+#if ENABLE(PROGRESS_ELEMENT)
 #include "HTMLNames.h"
 #include "HTMLProgressElement.h"
 #include "PaintInfo.h"
@@ -35,7 +33,7 @@ using namespace std;
 
 namespace WebCore {
 
-RenderProgress::RenderProgress(HTMLProgressElement* element)
+RenderProgress::RenderProgress(HTMLElement* element)
     : RenderBlock(element)
     , m_position(HTMLProgressElement::InvalidPosition)
     , m_animationStartTime(0)
@@ -59,6 +57,11 @@ void RenderProgress::updateFromElement()
 
     updateAnimationState();
     RenderBlock::updateFromElement();
+}
+
+bool RenderProgress::canBeReplacedWithInlineRunIn() const
+{
+    return false;
 }
 
 double RenderProgress::animationProgress() const
@@ -99,7 +102,14 @@ void RenderProgress::updateAnimationState()
 
 HTMLProgressElement* RenderProgress::progressElement() const
 {
-    return static_cast<HTMLProgressElement*>(node());
+    if (!node())
+        return 0;
+
+    if (isHTMLProgressElement(node()))
+        return toHTMLProgressElement(node());
+
+    ASSERT(node()->shadowHost());
+    return toHTMLProgressElement(node()->shadowHost());
 }    
 
 } // namespace WebCore

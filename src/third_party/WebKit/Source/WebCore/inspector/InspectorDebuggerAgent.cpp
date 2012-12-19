@@ -47,6 +47,7 @@
 
 using WebCore::TypeBuilder::Array;
 using WebCore::TypeBuilder::Debugger::FunctionDetails;
+using WebCore::TypeBuilder::Debugger::ScriptId;
 using WebCore::TypeBuilder::Runtime::RemoteObject;
 
 namespace WebCore {
@@ -97,6 +98,7 @@ void InspectorDebuggerAgent::disable()
 
     stopListeningScriptDebugServer();
     scriptDebugServer().clearBreakpoints();
+    scriptDebugServer().clearCompiledScripts();
     clear();
 
     if (m_listener)
@@ -118,9 +120,9 @@ void InspectorDebuggerAgent::canSetScriptSource(ErrorString*, bool* result)
     *result = scriptDebugServer().canSetScriptSource();
 }
 
-void InspectorDebuggerAgent::supportsNativeBreakpoints(ErrorString*, bool* result)
+void InspectorDebuggerAgent::supportsSeparateScriptCompilationAndExecution(ErrorString*, bool* result)
 {
-    *result = scriptDebugServer().supportsNativeBreakpoints();
+    *result = scriptDebugServer().supportsSeparateScriptCompilationAndExecution();
 }
 
 void InspectorDebuggerAgent::enable(ErrorString*)
@@ -193,6 +195,12 @@ void InspectorDebuggerAgent::didClearMainFrameWindowObject()
 bool InspectorDebuggerAgent::isPaused()
 {
     return scriptDebugServer().isPaused();
+}
+
+void InspectorDebuggerAgent::addMessageToConsole(MessageSource source, MessageType type)
+{
+    if (scriptDebugServer().pauseOnExceptionsState() != ScriptDebugServer::DontPauseOnExceptions && source == ConsoleAPIMessageSource && type == AssertMessageType)
+        breakProgram(InspectorFrontend::Debugger::Reason::Assert, 0);
 }
 
 static PassRefPtr<InspectorObject> buildObjectForBreakpointCookie(const String& url, int lineNumber, int columnNumber, const String& condition, bool isRegex)
@@ -378,6 +386,18 @@ void InspectorDebuggerAgent::setScriptSource(ErrorString* error, const String& s
     if (object)
         result = object;
 }
+void InspectorDebuggerAgent::restartFrame(ErrorString* errorString, const String& callFrameId, RefPtr<Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<InspectorObject>& result)
+{
+    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(callFrameId);
+    if (injectedScript.hasNoValue()) {
+        *errorString = "Inspected frame has gone";
+        return;
+    }
+
+    injectedScript.restartFrame(errorString, m_currentCallStack, callFrameId, &result);
+    scriptDebugServer().updateCallStack(&m_currentCallStack);
+    newCallFrames = currentCallFrames();
+}
 
 void InspectorDebuggerAgent::getScriptSource(ErrorString* error, const String& scriptId, String* scriptSource)
 {
@@ -502,6 +522,73 @@ void InspectorDebuggerAgent::evaluateOnCallFrame(ErrorString* errorString, const
     }
 }
 
+void InspectorDebuggerAgent::compileScript(ErrorString* errorString, const String& expression, const String& sourceURL, TypeBuilder::OptOutput<ScriptId>* scriptId, TypeBuilder::OptOutput<String>* syntaxErrorMessage)
+{
+    InjectedScript injectedScript = injectedScriptForEval(errorString, 0);
+    if (injectedScript.hasNoValue()) {
+        *errorString = "Inspected frame has gone";
+        return;
+    }
+
+    String scriptIdValue;
+    String exceptionMessage;
+    scriptDebugServer().compileScript(injectedScript.scriptState(), expression, sourceURL, &scriptIdValue, &exceptionMessage);
+    if (!scriptIdValue && !exceptionMessage) {
+        *errorString = "Script compilation failed";
+        return;
+    }
+    *syntaxErrorMessage = exceptionMessage;
+    *scriptId = scriptIdValue;
+}
+
+void InspectorDebuggerAgent::runScript(ErrorString* errorString, const ScriptId& scriptId, const int* executionContextId, const String* const objectGroup, const bool* const doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+{
+    InjectedScript injectedScript = injectedScriptForEval(errorString, executionContextId);
+    if (injectedScript.hasNoValue()) {
+        *errorString = "Inspected frame has gone";
+        return;
+    }
+
+    ScriptDebugServer::PauseOnExceptionsState previousPauseOnExceptionsState = scriptDebugServer().pauseOnExceptionsState();
+    if (doNotPauseOnExceptionsAndMuteConsole && *doNotPauseOnExceptionsAndMuteConsole) {
+        if (previousPauseOnExceptionsState != ScriptDebugServer::DontPauseOnExceptions)
+            scriptDebugServer().setPauseOnExceptionsState(ScriptDebugServer::DontPauseOnExceptions);
+        muteConsole();
+    }
+
+    ScriptValue value;
+    bool wasThrownValue;
+    String exceptionMessage;
+    scriptDebugServer().runScript(injectedScript.scriptState(), scriptId, &value, &wasThrownValue, &exceptionMessage);
+    *wasThrown = wasThrownValue;
+    if (value.hasNoValue()) {
+        *errorString = "Script execution failed";
+        return;
+    }
+    result = injectedScript.wrapObject(value, objectGroup ? *objectGroup : "");
+    if (wasThrownValue)
+        result->setDescription(exceptionMessage);
+
+    if (doNotPauseOnExceptionsAndMuteConsole && *doNotPauseOnExceptionsAndMuteConsole) {
+        unmuteConsole();
+        if (scriptDebugServer().pauseOnExceptionsState() != previousPauseOnExceptionsState)
+            scriptDebugServer().setPauseOnExceptionsState(previousPauseOnExceptionsState);
+    }
+}
+
+void InspectorDebuggerAgent::setOverlayMessage(ErrorString*, const String*)
+{
+}
+
+void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directiveText)
+{
+    if (scriptDebugServer().pauseOnExceptionsState() != ScriptDebugServer::DontPauseOnExceptions) {
+        RefPtr<InspectorObject> directive = InspectorObject::create();
+        directive->setString("directiveText", directiveText);
+        breakProgram(InspectorFrontend::Debugger::Reason::CSPViolation, directive.release());
+    }
+}
+
 PassRefPtr<Array<TypeBuilder::Debugger::CallFrame> > InspectorDebuggerAgent::currentCallFrames()
 {
     if (!m_pausedScriptState)
@@ -516,7 +603,7 @@ PassRefPtr<Array<TypeBuilder::Debugger::CallFrame> > InspectorDebuggerAgent::cur
 
 String InspectorDebuggerAgent::sourceMapURLForScript(const Script& script)
 {
-    DEFINE_STATIC_LOCAL(String, sourceMapHttpHeader, ("X-SourceMap"));
+    DEFINE_STATIC_LOCAL(String, sourceMapHttpHeader, (ASCIILiteral("X-SourceMap")));
 
     String sourceMapURL = ContentSearchUtils::findSourceMapURL(script.source);
     if (!sourceMapURL.isEmpty())
@@ -622,6 +709,8 @@ void InspectorDebuggerAgent::clear()
     m_continueToLocationBreakpointId = String();
     clearBreakDetails();
     m_javaScriptPauseScheduled = false;
+    ErrorString error;
+    setOverlayMessage(&error, 0);
 }
 
 bool InspectorDebuggerAgent::assertPaused(ErrorString* errorString)

@@ -25,6 +25,7 @@
 #include "Frame.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "KeyboardEvent.h"
 #include "LocalizedStrings.h"
 #include "MouseEvent.h"
@@ -114,8 +115,11 @@ void RadioInputType::handleKeyupEvent(KeyboardEvent* event)
     dispatchSimulatedClickIfActive(event);
 }
 
-bool RadioInputType::isKeyboardFocusable() const
+bool RadioInputType::isKeyboardFocusable(KeyboardEvent* event) const
 {
+    if (!InputType::isKeyboardFocusable(event))
+        return false;
+
     // When using Spatial Navigation, every radio button should be focusable.
     if (isSpatialNavigationEnabled(element()->document()->frame()))
         return true;

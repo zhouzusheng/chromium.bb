@@ -21,18 +21,19 @@ namespace webkit_media {
 static void AddDefaultDecodersToCollection(
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::AesDecryptor* decryptor,
-    scoped_refptr<media::FFmpegVideoDecoder>* ffmpeg_video_decoder) {
+    media::Decryptor* decryptor) {
   filter_collection->AddAudioDecoder(new media::FFmpegAudioDecoder(
       base::Bind(&media::MessageLoopFactory::GetMessageLoop,
                  base::Unretained(message_loop_factory),
-                 "AudioDecoderThread")));
-  *ffmpeg_video_decoder = new media::FFmpegVideoDecoder(
-      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
-                 base::Unretained(message_loop_factory),
-                 "VideoDecoderThread"));
-  (*ffmpeg_video_decoder)->set_decryptor(decryptor);
-  filter_collection->AddVideoDecoder(*ffmpeg_video_decoder);
+                 media::MessageLoopFactory::kDecoder)));
+
+  scoped_refptr<media::FFmpegVideoDecoder> ffmpeg_video_decoder =
+      new media::FFmpegVideoDecoder(
+          base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                     base::Unretained(message_loop_factory),
+                     media::MessageLoopFactory::kDecoder),
+          decryptor);
+  filter_collection->GetVideoDecoders()->push_back(ffmpeg_video_decoder);
 }
 
 bool BuildMediaStreamCollection(const WebKit::WebURL& url,
@@ -47,52 +48,46 @@ bool BuildMediaStreamCollection(const WebKit::WebURL& url,
   if (!video_decoder)
     return false;
 
-  // Remove any "traditional" decoders (e.g. GpuVideoDecoder) from the
-  // collection.
+  // Remove all other decoders and just use the MediaStream one.
   // NOTE: http://crbug.com/110800 is about replacing this ad-hockery with
   // something more designed.
-  scoped_refptr<media::VideoDecoder> old_videodecoder;
-  do {
-    filter_collection->SelectVideoDecoder(&old_videodecoder);
-  } while (old_videodecoder);
-
-  filter_collection->AddVideoDecoder(video_decoder);
+  filter_collection->GetVideoDecoders()->clear();
+  filter_collection->GetVideoDecoders()->push_back(video_decoder);
 
   filter_collection->SetDemuxer(new media::DummyDemuxer(true, false));
 
   return true;
 }
 
-bool BuildMediaSourceCollection(
-    const WebKit::WebURL& url,
-    const WebKit::WebURL& media_source_url,
-    media::ChunkDemuxerClient* client,
+void BuildMediaSourceCollection(
+    const scoped_refptr<media::ChunkDemuxer>& demuxer,
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::AesDecryptor* decryptor,
-    scoped_refptr<media::FFmpegVideoDecoder>* video_decoder) {
-  if (media_source_url.isEmpty() || url != media_source_url)
-    return false;
+    media::Decryptor* decryptor) {
+  DCHECK(demuxer);
+  filter_collection->SetDemuxer(demuxer);
 
-  filter_collection->SetDemuxer(new media::ChunkDemuxer(client));
+  // Remove GPUVideoDecoder until it supports codec config changes.
+  // TODO(acolwell): Remove this once http://crbug.com/151045 is fixed.
+  DCHECK_LE(filter_collection->GetVideoDecoders()->size(), 1u);
+  filter_collection->GetVideoDecoders()->clear();
 
   AddDefaultDecodersToCollection(message_loop_factory, filter_collection,
-                                 decryptor, video_decoder);
-  return true;
+                                 decryptor);
 }
 
 void BuildDefaultCollection(
     const scoped_refptr<media::DataSource>& data_source,
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::AesDecryptor* decryptor,
-    scoped_refptr<media::FFmpegVideoDecoder>* video_decoder) {
+    media::Decryptor* decryptor) {
   filter_collection->SetDemuxer(new media::FFmpegDemuxer(
-      message_loop_factory->GetMessageLoop("PipelineThread"),
+      message_loop_factory->GetMessageLoop(
+          media::MessageLoopFactory::kPipeline),
       data_source));
 
   AddDefaultDecodersToCollection(message_loop_factory, filter_collection,
-                                 decryptor, video_decoder);
+                                 decryptor);
 }
 
 }  // webkit_media

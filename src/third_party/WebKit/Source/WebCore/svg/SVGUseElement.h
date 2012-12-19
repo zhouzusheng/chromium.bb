@@ -56,6 +56,8 @@ public:
 private:
     SVGUseElement(const QualifiedName&, Document*, bool wasInsertedByParser);
 
+    void createShadowSubtree();
+
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool supportsFocus() const { return true; }
 
@@ -82,7 +84,7 @@ private:
     virtual bool selfHasRelativeLengths() const;
 
     // Instance tree handling
-    void buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundCycle);
+    void buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundCycle, bool foundUse);
     bool hasCycleUseReferencing(SVGUseElement*, SVGElementInstance* targetInstance, SVGElement*& newTarget);
 
     // Shadow tree handling
@@ -122,12 +124,14 @@ private:
     virtual void setHaveFiredLoadEvent(bool haveFiredLoadEvent) { m_haveFiredLoadEvent = haveFiredLoadEvent; }
     virtual bool isParserInserted() const { return m_wasInsertedByParser; }
     virtual bool haveFiredLoadEvent() const { return m_haveFiredLoadEvent; }
+    virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
 
     bool m_wasInsertedByParser;
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
     RefPtr<SVGElementInstance> m_targetElementInstance;
     CachedResourceHandle<CachedSVGDocument> m_cachedDocument;
+    Timer<SVGElement> m_svgLoadEventTimer;
 };
 
 }

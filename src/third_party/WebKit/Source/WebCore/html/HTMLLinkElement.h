@@ -55,6 +55,11 @@ public:
 
     String type() const;
 
+    IconType iconType() const;
+
+    // the icon size string as parsed from the HTML attribute
+    String iconSizes() const;
+
     CSSStyleSheet* sheet() const { return m_sheet.get(); }
 
     bool styleSheetIsLoading() const;
@@ -100,7 +105,13 @@ private:
     
     enum PendingSheetType { None, NonBlocking, Blocking };
     void addPendingSheet(PendingSheetType);
-    void removePendingSheet();
+
+    enum RemovePendingSheetNotificationType {
+        RemovePendingSheetNotifyImmediately,
+        RemovePendingSheetNotifyLater
+    };
+
+    void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
 
 #if ENABLE(MICRODATA)
     virtual String itemValueText() const OVERRIDE;

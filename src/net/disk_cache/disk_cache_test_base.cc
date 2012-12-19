@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,8 @@
 #include "net/disk_cache/mem_backend_impl.h"
 
 DiskCacheTest::DiskCacheTest() {
-  cache_path_ = GetCacheFilePath();
+  CHECK(temp_dir_.CreateUniqueTempDir());
+  cache_path_ = temp_dir_.path();
   if (!MessageLoop::current())
     message_loop_.reset(new MessageLoopForIO());
 }
@@ -211,6 +212,13 @@ void DiskCacheTestWithCache::TrimDeletedListForTest(bool empty) {
   RunTaskForTest(base::Bind(&disk_cache::BackendImpl::TrimDeletedListForTest,
                             base::Unretained(cache_impl_),
                             empty));
+}
+
+void DiskCacheTestWithCache::AddDelay() {
+  base::Time initial = base::Time::Now();
+  while (base::Time::Now() <= initial) {
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(1));
+  };
 }
 
 void DiskCacheTestWithCache::TearDown() {

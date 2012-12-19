@@ -4,7 +4,6 @@
 
 #ifndef NET_BASE_CERT_VERIFY_PROC_H_
 #define NET_BASE_CERT_VERIFY_PROC_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -76,9 +75,8 @@ class NET_EXPORT CertVerifyProc
   static bool IsBlacklisted(X509Certificate* cert);
 
   // IsPublicKeyBlacklisted returns true iff one of |public_key_hashes| (which
-  // are SHA1 hashes of SubjectPublicKeyInfo structures) is explicitly blocked.
-  static bool IsPublicKeyBlacklisted(
-      const std::vector<SHA1Fingerprint>& public_key_hashes);
+  // are hashes of SubjectPublicKeyInfo structures) is explicitly blocked.
+  static bool IsPublicKeyBlacklisted(const HashValueVector& public_key_hashes);
 };
 
 }  // namespace net

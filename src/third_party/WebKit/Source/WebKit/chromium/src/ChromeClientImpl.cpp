@@ -37,11 +37,12 @@
 #if ENABLE(INPUT_TYPE_COLOR)
 #include "ColorChooser.h"
 #include "ColorChooserClient.h"
-#include "ColorChooserProxy.h"
+#include "ColorChooserUIController.h"
 #endif
 #include "Console.h"
 #include "Cursor.h"
 #include "DatabaseTracker.h"
+#include "DateTimeChooserImpl.h"
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "ExternalPopupMenu.h"
@@ -60,6 +61,7 @@
 #include "NavigationAction.h"
 #include "Node.h"
 #include "Page.h"
+#include "PagePopupDriver.h"
 #include "PlatformScreen.h"
 #include "PlatformSupport.h"
 #include "PopupContainer.h"
@@ -70,13 +72,9 @@
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "TextFieldDecorationElement.h"
-#if USE(V8)
-#include "V8Proxy.h"
-#endif
 #include "WebAccessibilityObject.h"
 #if ENABLE(INPUT_TYPE_COLOR)
 #include "WebColorChooser.h"
-#include "WebColorChooserClientImpl.h"
 #endif
 #include "WebConsoleMessage.h"
 #include "WebCursorInfo.h"
@@ -102,6 +100,7 @@
 #include "WindowFeatures.h"
 #include "WrappedResourceRequest.h"
 #include <public/Platform.h>
+#include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/StringConcatenate.h>
 #include <wtf/unicode/CharacterNames.h>
@@ -139,6 +138,9 @@ ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     , m_menubarVisible(true)
     , m_resizable(true)
     , m_nextNewWindowNavigationPolicy(WebNavigationPolicyIgnore)
+#if ENABLE(PAGE_POPUP)
+    , m_pagePopupDriver(webView)
+#endif
 {
 }
 
@@ -492,13 +494,6 @@ IntRect ChromeClientImpl::windowResizerRect() const
     return result;
 }
 
-#if ENABLE(REGISTER_PROTOCOL_HANDLER)
-void ChromeClientImpl::registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title)
-{
-    m_webView->client()->registerProtocolHandler(scheme, baseURL, url, title);
-}
-#endif
-
 void ChromeClientImpl::invalidateRootView(const IntRect&, bool)
 {
     notImplemented();
@@ -578,6 +573,7 @@ void ChromeClientImpl::contentsSizeChanged(Frame* frame, const IntSize& size) co
     m_webView->didChangeContentsSize();
 
     WebFrameImpl* webframe = WebFrameImpl::fromFrame(frame);
+    webframe->didChangeContentsSize(size);
     if (webframe->client())
         webframe->client()->didChangeContentsSize(webframe, size);
 }
@@ -655,7 +651,14 @@ void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportArgumen
     // Call the common viewport computing logic in ViewportArguments.cpp.
     ViewportAttributes computed = computeViewportAttributes(
         args, settings->layoutFallbackWidth(), deviceRect.width, deviceRect.height,
-        dpi, IntSize(deviceRect.width, deviceRect.height));
+        dpi / ViewportArguments::deprecatedTargetDPI, IntSize(deviceRect.width, deviceRect.height));
+
+    restrictScaleFactorToInitialScaleIfNotUserScalable(computed);
+
+    if (m_webView->ignoreViewportTagMaximumScale()) {
+        computed.maximumScale = max(computed.maximumScale, m_webView->maxPageScaleFactor);
+        computed.userScalable = true;
+    }
 
     int layoutWidth = computed.layoutSize.width();
     int layoutHeight = computed.layoutSize.height();
@@ -691,17 +694,23 @@ void ChromeClientImpl::reachedApplicationCacheOriginQuota(SecurityOrigin*, int64
 }
 
 #if ENABLE(INPUT_TYPE_COLOR)
-PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(ColorChooserClient* chooserClient, const Color& initialColor)
+PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(ColorChooserClient* chooserClient, const Color&)
+{
+    return adoptPtr(new ColorChooserUIController(this, chooserClient));
+}
+PassOwnPtr<WebColorChooser> ChromeClientImpl::createWebColorChooser(WebColorChooserClient* chooserClient, const WebColor& initialColor)
 {
     WebViewClient* client = m_webView->client();
     if (!client)
         return nullptr;
-    WebColorChooserClientImpl* chooserClientProxy = new WebColorChooserClientImpl(chooserClient);
-    WebColor webColor = static_cast<WebColor>(initialColor.rgb());
-    WebColorChooser* chooser = client->createColorChooser(chooserClientProxy, webColor);
-    if (!chooser)
-        return nullptr;
-    return adoptPtr(new ColorChooserProxy(adoptPtr(chooser)));
+    return adoptPtr(client->createColorChooser(chooserClient, initialColor));
+}
+#endif
+
+#if ENABLE(CALENDAR_PICKER)
+PassOwnPtr<WebCore::DateTimeChooser> ChromeClientImpl::openDateTimeChooser(WebCore::DateTimeChooserClient* pickerClient, const WebCore::DateTimeChooserParameters& parameters)
+{
+    return adoptPtr(new DateTimeChooserImpl(this, pickerClient, parameters));
 }
 #endif
 
@@ -836,6 +845,9 @@ void ChromeClientImpl::setNewWindowNavigationPolicy(WebNavigationPolicy policy)
 
 void ChromeClientImpl::formStateDidChange(const Node* node)
 {
+    if (m_webView->client())
+        m_webView->client()->didChangeFormState(WebNode(const_cast<Node*>(node)));
+
     // The current history item is not updated yet.  That happens lazily when
     // WebFrame::currentHistoryItem is requested.
     WebFrameImpl* webframe = WebFrameImpl::fromFrame(node->document()->frame());
@@ -1001,12 +1013,25 @@ PassRefPtr<SearchPopupMenu> ChromeClientImpl::createSearchPopupMenu(PopupMenuCli
 #if ENABLE(PAGE_POPUP)
 PagePopup* ChromeClientImpl::openPagePopup(PagePopupClient* client, const IntRect& originBoundsInRootView)
 {
-    return m_webView->openPagePopup(client, originBoundsInRootView);
+    ASSERT(m_pagePopupDriver);
+    return m_pagePopupDriver->openPagePopup(client, originBoundsInRootView);
 }
 
 void ChromeClientImpl::closePagePopup(PagePopup* popup)
 {
-    m_webView->closePagePopup(popup);
+    ASSERT(m_pagePopupDriver);
+    m_pagePopupDriver->closePagePopup(popup);
+}
+
+void ChromeClientImpl::setPagePopupDriver(PagePopupDriver* driver)
+{
+    ASSERT(driver);
+    m_pagePopupDriver = driver;
+}
+
+void ChromeClientImpl::resetPagePopupDriver()
+{
+    m_pagePopupDriver = m_webView;
 }
 #endif
 
@@ -1071,10 +1096,12 @@ void ChromeClientImpl::numWheelEventHandlersChanged(unsigned numberOfWheelHandle
     m_webView->numberOfWheelEventHandlersChanged(numberOfWheelHandlers);
 }
 
-void ChromeClientImpl::numTouchEventHandlersChanged(unsigned numberOfTouchHandlers)
+#if ENABLE(TOUCH_EVENTS)
+void ChromeClientImpl::needTouchEvents(bool needsTouchEvents)
 {
-    m_webView->numberOfTouchEventHandlersChanged(numberOfTouchHandlers);
+    m_webView->hasTouchEventHandlers(needsTouchEvents);
 }
+#endif // ENABLE(TOUCH_EVENTS)
 
 #if ENABLE(POINTER_LOCK)
 bool ChromeClientImpl::requestPointerLock()
@@ -1091,6 +1118,32 @@ bool ChromeClientImpl::isPointerLocked()
 {
     return m_webView->isPointerLocked();
 }
+#endif
+
+#if ENABLE(WIDGET_REGION)
+void ChromeClientImpl::dashboardRegionsChanged()
+{
+    WebViewClient* client = m_webView->client();
+    if (client)
+        client->draggableRegionsChanged();
+}
+#endif
+
+#if ENABLE(NAVIGATOR_CONTENT_UTILS)
+PassOwnPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebViewImpl* webView)
+{
+    return adoptPtr(new NavigatorContentUtilsClientImpl(webView));
+}
+
+NavigatorContentUtilsClientImpl::NavigatorContentUtilsClientImpl(WebViewImpl* webView)
+    : m_webView(webView)
+{
+}
+
+void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title)
+{ 
+    m_webView->client()->registerProtocolHandler(scheme, baseURL, url, title);
+} 
 #endif
 
 } // namespace WebKit

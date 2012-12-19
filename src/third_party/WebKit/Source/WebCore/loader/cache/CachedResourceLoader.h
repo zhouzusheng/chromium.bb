@@ -105,6 +105,7 @@ public:
 
     void removeCachedResource(CachedResource*) const;
     void loadDone();
+    void garbageCollectDocumentResources();
     
     void incrementRequestCount(const CachedResource*);
     void decrementRequestCount(const CachedResource*);
@@ -118,6 +119,8 @@ public:
     void printPreloadStats();
     bool canRequest(CachedResource::Type, const KURL&, bool forPreload = false);
     
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
 private:
     CachedResourceHandle<CachedResource> requestResource(CachedResource::Type, ResourceRequest&, const String& charset, const ResourceLoaderOptions&, ResourceLoadPriority = ResourceLoadPriorityUnresolved, bool isPreload = false);
     CachedResourceHandle<CachedResource> revalidateResource(CachedResource*, ResourceLoadPriority, const ResourceLoaderOptions&);

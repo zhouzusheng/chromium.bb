@@ -1564,7 +1564,7 @@ void TCMalloc_PageHeap::initializeScavenger()
 
 ALWAYS_INLINE bool TCMalloc_PageHeap::isScavengerSuspended()
 {
-    ASSERT(IsHeld(pageheap_lock));
+    ASSERT(pageheap_lock.IsHeld());
     return !m_scavengeQueueTimer;
 }
 
@@ -1572,7 +1572,7 @@ ALWAYS_INLINE void TCMalloc_PageHeap::scheduleScavenger()
 {
     // We need to use WT_EXECUTEONLYONCE here and reschedule the timer, because
     // Windows will fire the timer event even when the function is already running.
-    ASSERT(IsHeld(pageheap_lock));
+    ASSERT(pageheap_lock.IsHeld());
     CreateTimerQueueTimer(&m_scavengeQueueTimer, 0, scavengerTimerFired, this, kScavengeDelayInSeconds * 1000, 0, WT_EXECUTEONLYONCE);
 }
 
@@ -1585,7 +1585,7 @@ ALWAYS_INLINE void TCMalloc_PageHeap::rescheduleScavenger()
 
 ALWAYS_INLINE void TCMalloc_PageHeap::suspendScavenger()
 {
-    ASSERT(IsHeld(pageheap_lock));
+    ASSERT(pageheap_lock.IsHeld());
     HANDLE scavengeQueueTimer = m_scavengeQueueTimer;
     m_scavengeQueueTimer = 0;
     DeleteTimerQueueTimer(0, scavengeQueueTimer, 0);
@@ -2469,11 +2469,22 @@ class TCMalloc_Central_FreeList {
   int32_t cache_size_;
 };
 
+#if COMPILER(CLANG) && defined(__has_warning)
+#pragma clang diagnostic push
+#if __has_warning("-Wunused-private-field")
+#pragma clang diagnostic ignored "-Wunused-private-field"
+#endif
+#endif
+
 // Pad each CentralCache object to multiple of 64 bytes
 class TCMalloc_Central_FreeListPadded : public TCMalloc_Central_FreeList {
  private:
   char pad_[(64 - (sizeof(TCMalloc_Central_FreeList) % 64)) % 64];
 };
+
+#if COMPILER(CLANG) && defined(__has_warning)
+#pragma clang diagnostic pop
+#endif
 
 //-------------------------------------------------------------------
 // Global variables
@@ -4539,17 +4550,15 @@ class AdminRegionRecorder {
     void* m_context;
     unsigned m_typeMask;
     vm_range_recorder_t* m_recorder;
-    const RemoteMemoryReader& m_reader;
 
     Vector<vm_range_t, 1024> m_pendingRegions;
 
 public:
-    AdminRegionRecorder(task_t task, void* context, unsigned typeMask, vm_range_recorder_t* recorder, const RemoteMemoryReader& reader)
+    AdminRegionRecorder(task_t task, void* context, unsigned typeMask, vm_range_recorder_t* recorder)
         : m_task(task)
         , m_context(context)
         , m_typeMask(typeMask)
         , m_recorder(recorder)
-        , m_reader(reader)
     { }
 
     void recordRegion(vm_address_t ptr, size_t size)
@@ -4602,7 +4611,7 @@ kern_return_t FastMallocZone::enumerate(task_t task, void* context, unsigned typ
     pageMap->visitValues(usageRecorder, memoryReader);
     usageRecorder.recordPendingRegions();
 
-    AdminRegionRecorder adminRegionRecorder(task, context, typeMask, recorder, memoryReader);
+    AdminRegionRecorder adminRegionRecorder(task, context, typeMask, recorder);
     pageMap->visitAllocations(adminRegionRecorder, memoryReader);
 
     PageHeapAllocator<Span>* spanAllocator = memoryReader(mzone->m_spanAllocator);
@@ -4654,10 +4663,10 @@ extern "C" {
 malloc_introspection_t jscore_fastmalloc_introspection = { &FastMallocZone::enumerate, &FastMallocZone::goodSize, &FastMallocZone::check, &FastMallocZone::print,
     &FastMallocZone::log, &FastMallocZone::forceLock, &FastMallocZone::forceUnlock, &FastMallocZone::statistics
 
-#if !defined(BUILDING_ON_LEOPARD) || OS(IOS)
+#if OS(IOS) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
     , 0 // zone_locked will not be called on the zone unless it advertises itself as version five or higher.
 #endif
-#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD) || OS(IOS)
+#if OS(IOS) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     , 0, 0, 0, 0 // These members will not be used unless the zone advertises itself as version seven or higher.
 #endif
 

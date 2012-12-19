@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,9 @@
 namespace net {
 
 URLRequestRedirectJob::URLRequestRedirectJob(URLRequest* request,
+                                             NetworkDelegate* network_delegate,
                                              const GURL& redirect_destination)
-    : URLRequestJob(request),
+    : URLRequestJob(request, network_delegate),
       redirect_destination_(redirect_destination),
       http_status_code_(302),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}

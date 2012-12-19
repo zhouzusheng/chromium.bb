@@ -59,14 +59,14 @@ public:
     PassRefPtr<HTMLElement> insertRow(int index, ExceptionCode&);
     void deleteRow(int index, ExceptionCode&);
 
-    HTMLCollection* rows();
-    HTMLCollection* tBodies();
+    PassRefPtr<HTMLCollection> rows();
+    PassRefPtr<HTMLCollection> tBodies();
 
     String rules() const;
     String summary() const;
 
-    StylePropertySet* additionalCellStyle();
-    StylePropertySet* additionalGroupStyle(bool rows);
+    const StylePropertySet* additionalCellStyle();
+    const StylePropertySet* additionalGroupStyle(bool rows);
 
 private:
     HTMLTableElement(const QualifiedName&, Document*);
@@ -77,7 +77,7 @@ private:
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 
     // Used to obtain either a solid or outset border decl and to deal with the frame and rules attributes.
-    virtual StylePropertySet* additionalAttributeStyle() OVERRIDE;
+    virtual const StylePropertySet* additionalAttributeStyle() OVERRIDE;
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
@@ -97,7 +97,6 @@ private:
                                 // are present, to none otherwise).
 
     unsigned short m_padding;
-    OwnPtr<HTMLTableRowsCollection> m_rowsCollection;
     RefPtr<StylePropertySet> m_sharedCellStyle;
 };
 

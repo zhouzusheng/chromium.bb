@@ -43,6 +43,7 @@ class RegularExpression;
 typedef int ExceptionCode;
 
 class DOMImplementation {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<DOMImplementation> create(Document* document) { return adoptPtr(new DOMImplementation(document)); }
     
@@ -70,18 +71,17 @@ public:
     static bool isTextMIMEType(const String& MIMEType);
 
 private:
-    DOMImplementation(Document*);
+    explicit DOMImplementation(Document*);
 
     Document* m_document;
 };
 
 class XMLMIMETypeRegExp {
+    WTF_MAKE_NONCOPYABLE(XMLMIMETypeRegExp); WTF_MAKE_FAST_ALLOCATED;
 public:
     XMLMIMETypeRegExp();
     ~XMLMIMETypeRegExp();
     bool isXMLMIMEType(const String& mimeType);
-
-    WTF_MAKE_NONCOPYABLE(XMLMIMETypeRegExp);
 private:
     OwnPtr<RegularExpression> m_regex;
 };

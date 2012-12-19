@@ -175,6 +175,9 @@ class HttpStreamFactoryImpl::Job {
 
   HostPortProxyPair GetSpdySessionKey() const;
 
+  // Returns true if the current request can use an existing spdy session.
+  bool CanUseExistingSpdySession() const;
+
   // Called when we encounter a network error that could be resolved by trying
   // a new proxy configuration.  If there is another proxy configuration to try
   // then this method sets next_state_ appropriately and returns either OK or
@@ -210,7 +213,7 @@ class HttpStreamFactoryImpl::Job {
   // be found.  Will return ERR_SPDY_SESSION_ALREADY_EXISTS if such a
   // session is found, and OK otherwise.
   static int OnHostResolution(SpdySessionPool* spdy_session_pool,
-                              const HostPortProxyPair spdy_session_key,
+                              const HostPortProxyPair& spdy_session_key,
                               const AddressList& addresses,
                               const BoundNetLog& net_log);
 

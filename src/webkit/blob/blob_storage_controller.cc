@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/upload_data.h"
 #include "webkit/blob/blob_data.h"
 
 namespace webkit_blob {
@@ -65,35 +64,43 @@ void BlobStorageController::AppendBlobDataItem(
   // 1) The Data item is denoted by the raw data and the range.
   // 2) The File item is denoted by the file path, the range and the expected
   //    modification time.
+  // 3) The FileSystem File item is denoted by the FileSystem URL, the range
+  //    and the expected modification time.
   // All the Blob items in the passing blob data are resolved and expanded into
   // a set of Data and File items.
 
-  DCHECK(item.length > 0);
-  switch (item.type) {
-    case BlobData::TYPE_DATA:
-      // WebBlobData does not allow partial data.
-      DCHECK(!(item.offset) && item.length == item.data.size());
-      target_blob_data->AppendData(item.data.c_str(), item.data.size());
+  DCHECK(item.length() > 0);
+  switch (item.type()) {
+    case BlobData::Item::TYPE_BYTES:
+      DCHECK(!item.offset());
+      target_blob_data->AppendData(item.bytes(), item.length());
       break;
-    case BlobData::TYPE_DATA_EXTERNAL:
-      DCHECK(!item.offset);
-      target_blob_data->AppendData(item.data_external, item.length);
-      break;
-    case BlobData::TYPE_FILE:
+    case BlobData::Item::TYPE_FILE:
       AppendFileItem(target_blob_data,
-                     item.file_path,
-                     item.offset,
-                     item.length,
-                     item.expected_modification_time);
+                     item.path(),
+                     item.offset(),
+                     item.length(),
+                     item.expected_modification_time());
       break;
-    case BlobData::TYPE_BLOB:
-      BlobData* src_blob_data = GetBlobDataFromUrl(item.blob_url);
+    case BlobData::Item::TYPE_FILE_FILESYSTEM:
+      AppendFileSystemFileItem(target_blob_data,
+                               item.url(),
+                               item.offset(),
+                               item.length(),
+                               item.expected_modification_time());
+      break;
+    case BlobData::Item::TYPE_BLOB: {
+      BlobData* src_blob_data = GetBlobDataFromUrl(item.url());
       DCHECK(src_blob_data);
       if (src_blob_data)
         AppendStorageItems(target_blob_data,
                            src_blob_data,
-                           item.offset,
-                           item.length);
+                           item.offset(),
+                           item.length());
+      break;
+    }
+    default:
+      NOTREACHED();
       break;
   }
 
@@ -169,72 +176,6 @@ BlobData* BlobStorageController::GetBlobDataFromUrl(const GURL& url) {
   return (found != blob_map_.end()) ? found->second : NULL;
 }
 
-void BlobStorageController::ResolveBlobReferencesInUploadData(
-    net::UploadData* upload_data) {
-  DCHECK(upload_data);
-
-  std::vector<net::UploadData::Element>* uploads = upload_data->elements();
-  std::vector<net::UploadData::Element>::iterator iter;
-  for (iter = uploads->begin(); iter != uploads->end();) {
-    if (iter->type() != net::UploadData::TYPE_BLOB) {
-      iter++;
-      continue;
-    }
-
-    // Find the referred blob data.
-    BlobData* blob_data = GetBlobDataFromUrl(iter->blob_url());
-    DCHECK(blob_data);
-    if (!blob_data) {
-      // TODO(jianli): We should probably fail uploading the data
-      iter++;
-      continue;
-    }
-
-    // Remove this element.
-    iter = uploads->erase(iter);
-
-    // If there is no element in the referred blob data, continue the loop.
-    // Note that we should not increase iter since it already points to the one
-    // after the removed element.
-    if (blob_data->items().empty())
-      continue;
-
-    // Ensure the blob and any attached shareable files survive until
-    // upload completion.
-    upload_data->SetUserData(blob_data,
-                             new base::UserDataAdapter<BlobData>(blob_data));
-
-    // Insert the elements in the referred blob data.
-    // Note that we traverse from the bottom so that the elements can be
-    // inserted in the original order.
-    for (size_t i = blob_data->items().size(); i > 0; --i) {
-      iter = uploads->insert(iter, net::UploadData::Element());
-
-      const BlobData::Item& item = blob_data->items().at(i - 1);
-      switch (item.type) {
-        case BlobData::TYPE_DATA:
-          // TODO(jianli): Figure out how to avoid copying the data.
-          // TODO(michaeln): Now that blob_data surives for the duration,
-          // maybe UploadData could take a raw ptr without having to copy.
-          iter->SetToBytes(
-              &item.data.at(0) + static_cast<int>(item.offset),
-              static_cast<int>(item.length));
-          break;
-        case BlobData::TYPE_FILE:
-          iter->SetToFilePathRange(
-              item.file_path,
-              item.offset,
-              item.length,
-              item.expected_modification_time);
-          break;
-        default:
-          NOTREACHED();
-          break;
-      }
-    }
-  }
-}
-
 void BlobStorageController::AppendStorageItems(
     BlobData* target_blob_data, BlobData* src_blob_data,
     uint64 offset, uint64 length) {
@@ -245,27 +186,27 @@ void BlobStorageController::AppendStorageItems(
       src_blob_data->items().begin();
   if (offset) {
     for (; iter != src_blob_data->items().end(); ++iter) {
-      if (offset >= iter->length)
-        offset -= iter->length;
+      if (offset >= iter->length())
+        offset -= iter->length();
       else
         break;
     }
   }
 
   for (; iter != src_blob_data->items().end() && length > 0; ++iter) {
-    uint64 current_length = iter->length - offset;
+    uint64 current_length = iter->length() - offset;
     uint64 new_length = current_length > length ? length : current_length;
-    if (iter->type == BlobData::TYPE_DATA) {
+    if (iter->type() == BlobData::Item::TYPE_BYTES) {
       target_blob_data->AppendData(
-          iter->data.c_str() + static_cast<size_t>(iter->offset + offset),
+          iter->bytes() + static_cast<size_t>(iter->offset() + offset),
           static_cast<uint32>(new_length));
     } else {
-      DCHECK(iter->type == BlobData::TYPE_FILE);
+      DCHECK(iter->type() == BlobData::Item::TYPE_FILE);
       AppendFileItem(target_blob_data,
-                     iter->file_path,
-                     iter->offset + offset,
+                     iter->path(),
+                     iter->offset() + offset,
                      new_length,
-                     iter->expected_modification_time);
+                     iter->expected_modification_time());
     }
     length -= new_length;
     offset = 0;
@@ -284,6 +225,14 @@ void BlobStorageController::AppendFileItem(
       ShareableFileReference::Get(file_path);
   if (shareable_file)
     target_blob_data->AttachShareableFileReference(shareable_file);
+}
+
+void BlobStorageController::AppendFileSystemFileItem(
+    BlobData* target_blob_data,
+    const GURL& url, uint64 offset, uint64 length,
+    const base::Time& expected_modification_time) {
+  target_blob_data->AppendFileSystemFile(url, offset, length,
+                                         expected_modification_time);
 }
 
 void BlobStorageController::IncrementBlobDataUsage(BlobData* blob_data) {

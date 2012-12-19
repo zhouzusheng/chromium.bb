@@ -422,7 +422,8 @@ size_t SpdyFramer::ProcessCommonHeader(const char* data, size_t len) {
       } else {
         // Empty data frame.
         if (current_frame.flags() & DATA_FLAG_FIN) {
-          visitor_->OnStreamFrameData(data_frame.stream_id(), NULL, 0);
+          visitor_->OnStreamFrameData(data_frame.stream_id(),
+                                      NULL, 0, DATA_FLAG_FIN);
         }
         CHANGE_STATE(SPDY_AUTO_RESET);
       }
@@ -546,7 +547,6 @@ void SpdyFramer::ProcessControlFrameHeader() {
   }
 
   if (current_control_frame.type() == CREDENTIAL) {
-    visitor_->OnControl(&current_control_frame);
     CHANGE_STATE(SPDY_CREDENTIAL_FRAME_PAYLOAD);
     return;
   }
@@ -661,6 +661,164 @@ void SpdyFramer::WriteHeaderBlock(SpdyFrameBuilder* frame,
   }
 }
 
+// These constants are used by zlib to differentiate between normal data and
+// cookie data. Cookie data is handled specially by zlib when compressing.
+enum ZDataClass {
+  // kZStandardData is compressed normally, save that it will never match
+  // against any other class of data in the window.
+  kZStandardData = Z_CLASS_STANDARD,
+  // kZCookieData is compressed in its own Huffman blocks and only matches in
+  // its entirety and only against other kZCookieData blocks. Any matches must
+  // be preceeded by a kZStandardData byte, or a semicolon to prevent matching
+  // a suffix. It's assumed that kZCookieData ends in a semicolon to prevent
+  // prefix matches.
+  kZCookieData = Z_CLASS_COOKIE,
+  // kZHuffmanOnlyData is only Huffman compressed - no matches are performed
+  // against the window.
+  kZHuffmanOnlyData = Z_CLASS_HUFFMAN_ONLY,
+};
+
+// WriteZ writes |data| to the deflate context |out|. WriteZ will flush as
+// needed when switching between classes of data.
+static void WriteZ(const base::StringPiece& data,
+                   ZDataClass clas,
+                   z_stream* out) {
+  int rv;
+
+  // If we are switching from standard to non-standard data then we need to end
+  // the current Huffman context to avoid it leaking between them.
+  if (out->clas == kZStandardData &&
+      clas != kZStandardData) {
+    out->avail_in = 0;
+    rv = deflate(out, Z_PARTIAL_FLUSH);
+    DCHECK_EQ(Z_OK, rv);
+    DCHECK_EQ(0u, out->avail_in);
+    DCHECK_LT(0u, out->avail_out);
+  }
+
+  out->next_in = reinterpret_cast<Bytef*>(const_cast<char*>(data.data()));
+  out->avail_in = data.size();
+  out->clas = clas;
+  if (clas == kZStandardData) {
+    rv = deflate(out, Z_NO_FLUSH);
+  } else {
+    rv = deflate(out, Z_PARTIAL_FLUSH);
+  }
+  DCHECK_EQ(Z_OK, rv);
+  DCHECK_EQ(0u, out->avail_in);
+  DCHECK_LT(0u, out->avail_out);
+}
+
+// WriteLengthZ writes |n| as a |length|-byte, big-endian number to |out|.
+static void WriteLengthZ(size_t n,
+                         unsigned length,
+                         ZDataClass clas,
+                         z_stream* out) {
+  char buf[4];
+  DCHECK_LE(length, sizeof(buf));
+  for (unsigned i = 1; i <= length; i++) {
+    buf[length - i] = n;
+    n >>= 8;
+  }
+  WriteZ(base::StringPiece(buf, length), clas, out);
+}
+
+// WriteHeaderBlockToZ serialises |headers| to the deflate context |z| in a
+// manner that resists the length of the compressed data from compromising
+// cookie data.
+void SpdyFramer::WriteHeaderBlockToZ(const SpdyHeaderBlock* headers,
+                                     z_stream* z) const {
+  unsigned length_length = 4;
+  if (spdy_version_ < 3)
+    length_length = 2;
+
+  WriteLengthZ(headers->size(), length_length, kZStandardData, z);
+
+  std::map<std::string, std::string>::const_iterator it;
+  for (it = headers->begin(); it != headers->end(); ++it) {
+    WriteLengthZ(it->first.size(), length_length, kZStandardData, z);
+    WriteZ(it->first, kZStandardData, z);
+
+    if (it->first == "cookie") {
+      // We require the cookie values (save for the last) to end with a
+      // semicolon and (save for the first) to start with a space. This is
+      // typically the format that we are given them in but we reserialize them
+      // to be sure.
+
+      std::vector<base::StringPiece> cookie_values;
+      size_t cookie_length = 0;
+      base::StringPiece cookie_data(it->second);
+
+      for (;;) {
+        while (!cookie_data.empty() &&
+               (cookie_data[0] == ' ' || cookie_data[0] == '\t')) {
+          cookie_data.remove_prefix(1);
+        }
+        if (cookie_data.empty())
+          break;
+
+        size_t i;
+        for (i = 0; i < cookie_data.size(); i++) {
+          if (cookie_data[i] == ';')
+            break;
+        }
+        if (i < cookie_data.size()) {
+          cookie_values.push_back(cookie_data.substr(0, i));
+          cookie_length += i + 2 /* semicolon and space */;
+          cookie_data.remove_prefix(i + 1);
+        } else {
+          cookie_values.push_back(cookie_data);
+          cookie_length += cookie_data.size();
+          cookie_data.remove_prefix(i);
+        }
+      }
+
+      WriteLengthZ(cookie_length, length_length, kZStandardData, z);
+      for (size_t i = 0; i < cookie_values.size(); i++) {
+        std::string cookie;
+        // Since zlib will only back-reference complete cookies, a cookie that
+        // is currently last (and so doesn't have a trailing semicolon) won't
+        // match if it's later in a non-final position. The same is true of
+        // the first cookie.
+        if (i == 0 && cookie_values.size() == 1) {
+          cookie = cookie_values[i].as_string();
+        } else if (i == 0) {
+          cookie = cookie_values[i].as_string() + ";";
+        } else if (i < cookie_values.size() - 1) {
+          cookie = " " + cookie_values[i].as_string() + ";";
+        } else {
+          cookie = " " + cookie_values[i].as_string();
+        }
+        WriteZ(cookie, kZCookieData, z);
+      }
+    } else if (it->first == "accept" ||
+               it->first == "accept-charset" ||
+               it->first == "accept-encoding" ||
+               it->first == "accept-language" ||
+               it->first == "host" ||
+               it->first == "version" ||
+               it->first == "method" ||
+               it->first == "scheme" ||
+               it->first == ":host" ||
+               it->first == ":version" ||
+               it->first == ":method" ||
+               it->first == ":scheme" ||
+               it->first == "user-agent") {
+      WriteLengthZ(it->second.size(), length_length, kZStandardData, z);
+      WriteZ(it->second, kZStandardData, z);
+    } else {
+      // Non-whitelisted headers are Huffman compressed in their own block, but
+      // don't match against the window.
+      WriteLengthZ(it->second.size(), length_length, kZStandardData, z);
+      WriteZ(it->second, kZHuffmanOnlyData, z);
+    }
+  }
+
+  z->avail_in = 0;
+  int rv = deflate(z, Z_SYNC_FLUSH);
+  DCHECK_EQ(Z_OK, rv);
+  z->clas = kZStandardData;
+}
 
 size_t SpdyFramer::ProcessControlFrameBeforeHeaderBlock(const char* data,
                                                         size_t len) {
@@ -675,16 +833,47 @@ size_t SpdyFramer::ProcessControlFrameBeforeHeaderBlock(const char* data,
 
   if (remaining_control_header_ == 0) {
     SpdyControlFrame control_frame(current_frame_buffer_.get(), false);
-    DCHECK(control_frame.type() == SYN_STREAM ||
-           control_frame.type() == SYN_REPLY ||
-           control_frame.type() == HEADERS ||
-           control_frame.type() == SETTINGS);
-    visitor_->OnControl(&control_frame);
-
-    if (control_frame.type() == SETTINGS) {
-      CHANGE_STATE(SPDY_SETTINGS_FRAME_PAYLOAD);
-    } else {
-      CHANGE_STATE(SPDY_CONTROL_FRAME_HEADER_BLOCK);
+    switch (control_frame.type()) {
+      case SYN_STREAM:
+        {
+          SpdySynStreamControlFrame* syn_stream_frame =
+              reinterpret_cast<SpdySynStreamControlFrame*>(&control_frame);
+          // TODO(hkhalil): Check that invalid flag bits are unset?
+          visitor_->OnSynStream(
+              syn_stream_frame->stream_id(),
+              syn_stream_frame->associated_stream_id(),
+              syn_stream_frame->priority(),
+              syn_stream_frame->credential_slot(),
+              (syn_stream_frame->flags() & CONTROL_FLAG_FIN) != 0,
+              (syn_stream_frame->flags() & CONTROL_FLAG_UNIDIRECTIONAL) != 0);
+        }
+        CHANGE_STATE(SPDY_CONTROL_FRAME_HEADER_BLOCK);
+        break;
+      case SYN_REPLY:
+        {
+          SpdySynReplyControlFrame* syn_reply_frame =
+              reinterpret_cast<SpdySynReplyControlFrame*>(&control_frame);
+          visitor_->OnSynReply(
+              syn_reply_frame->stream_id(),
+              (syn_reply_frame->flags() & CONTROL_FLAG_FIN) != 0);
+        }
+        CHANGE_STATE(SPDY_CONTROL_FRAME_HEADER_BLOCK);
+        break;
+      case HEADERS:
+        {
+          SpdyHeadersControlFrame* headers_frame =
+              reinterpret_cast<SpdyHeadersControlFrame*>(&control_frame);
+          visitor_->OnHeaders(
+              headers_frame->stream_id(),
+              (headers_frame->flags() & CONTROL_FLAG_FIN) != 0);
+        }
+        CHANGE_STATE(SPDY_CONTROL_FRAME_HEADER_BLOCK);
+        break;
+      case SETTINGS:
+        CHANGE_STATE(SPDY_SETTINGS_FRAME_PAYLOAD);
+        break;
+      default:
+        DCHECK(false);
     }
   }
   return original_len - len;
@@ -727,7 +916,7 @@ size_t SpdyFramer::ProcessControlFrameHeaderBlock(const char* data,
     // If this is a FIN, tell the caller.
     if (control_frame.flags() & CONTROL_FLAG_FIN) {
       visitor_->OnStreamFrameData(GetControlFrameStreamId(&control_frame),
-                                  NULL, 0);
+                                  NULL, 0, DATA_FLAG_FIN);
     }
 
     CHANGE_STATE(SPDY_AUTO_RESET);
@@ -855,7 +1044,44 @@ size_t SpdyFramer::ProcessControlFramePayload(const char* data, size_t len) {
     if (remaining_control_payload_ == 0) {
       SpdyControlFrame control_frame(current_frame_buffer_.get(), false);
       DCHECK(!control_frame.has_header_block());
-      visitor_->OnControl(&control_frame);
+      // Use frame-specific handlers.
+      switch (control_frame.type()) {
+        case PING: {
+            SpdyPingControlFrame* ping_frame =
+                reinterpret_cast<SpdyPingControlFrame*>(&control_frame);
+            visitor_->OnPing(ping_frame->unique_id());
+          }
+          break;
+        case WINDOW_UPDATE: {
+            SpdyWindowUpdateControlFrame *window_update_frame =
+                reinterpret_cast<SpdyWindowUpdateControlFrame*>(&control_frame);
+            visitor_->OnWindowUpdate(window_update_frame->stream_id(),
+                                     window_update_frame->delta_window_size());
+          }
+          break;
+        case RST_STREAM: {
+            SpdyRstStreamControlFrame* rst_stream_frame =
+                reinterpret_cast<SpdyRstStreamControlFrame*>(&control_frame);
+            visitor_->OnRstStream(rst_stream_frame->stream_id(),
+                                  rst_stream_frame->status());
+          }
+          break;
+        case GOAWAY: {
+            SpdyGoAwayControlFrame* go_away_frame =
+                reinterpret_cast<SpdyGoAwayControlFrame*>(&control_frame);
+            if (spdy_version_ < 3) {
+              visitor_->OnGoAway(go_away_frame->last_accepted_stream_id(),
+                                 GOAWAY_OK);
+            } else {
+              visitor_->OnGoAway(go_away_frame->last_accepted_stream_id(),
+                                 go_away_frame->status());
+            }
+          }
+          break;
+        default:
+          // Unreachable.
+          LOG(FATAL) << "Unhandled control frame " << control_frame.type();
+      }
 
       CHANGE_STATE(SPDY_IGNORE_REMAINING_PAYLOAD);
     }
@@ -890,7 +1116,7 @@ size_t SpdyFramer::ProcessDataFramePayload(const char* data, size_t len) {
       // Only inform the visitor if there is data.
       if (amount_to_forward) {
         visitor_->OnStreamFrameData(current_data_frame.stream_id(),
-                                    data, amount_to_forward);
+                                    data, amount_to_forward, SpdyDataFlags());
       }
     }
     data += amount_to_forward;
@@ -901,7 +1127,8 @@ size_t SpdyFramer::ProcessDataFramePayload(const char* data, size_t len) {
     // frame, inform the visitor of EOF via a 0-length data frame.
     if (!remaining_data_ &&
         current_data_frame.flags() & DATA_FLAG_FIN) {
-      visitor_->OnStreamFrameData(current_data_frame.stream_id(), NULL, 0);
+      visitor_->OnStreamFrameData(current_data_frame.stream_id(),
+                                  NULL, 0, DATA_FLAG_FIN);
     }
   }
 
@@ -1053,7 +1280,7 @@ SpdySynStreamControlFrame* SpdyFramer::CreateSynStream(
       reinterpret_cast<SpdySynStreamControlFrame*>(frame.take()));
   if (compressed) {
     return reinterpret_cast<SpdySynStreamControlFrame*>(
-        CompressControlFrame(*syn_frame.get()));
+        CompressControlFrame(*syn_frame.get(), headers));
   }
   return syn_frame.release();
 }
@@ -1086,7 +1313,7 @@ SpdySynReplyControlFrame* SpdyFramer::CreateSynReply(
       reinterpret_cast<SpdySynReplyControlFrame*>(frame.take()));
   if (compressed) {
     return reinterpret_cast<SpdySynReplyControlFrame*>(
-        CompressControlFrame(*reply_frame.get()));
+        CompressControlFrame(*reply_frame.get(), headers));
   }
   return reply_frame.release();
 }
@@ -1182,7 +1409,7 @@ SpdyHeadersControlFrame* SpdyFramer::CreateHeaders(
       reinterpret_cast<SpdyHeadersControlFrame*>(frame.take()));
   if (compressed) {
     return reinterpret_cast<SpdyHeadersControlFrame*>(
-        CompressControlFrame(*headers_frame.get()));
+        CompressControlFrame(*headers_frame.get(), headers));
   }
   return headers_frame.release();
 }
@@ -1362,7 +1589,8 @@ bool SpdyFramer::GetFrameBoundaries(const SpdyFrame& frame,
 }
 
 SpdyControlFrame* SpdyFramer::CompressControlFrame(
-    const SpdyControlFrame& frame) {
+    const SpdyControlFrame& frame,
+    const SpdyHeaderBlock* headers) {
   z_stream* compressor = GetHeaderCompressor();
   if (!compressor)
     return NULL;
@@ -1383,6 +1611,10 @@ SpdyControlFrame* SpdyFramer::CompressControlFrame(
 
   // Create an output frame.
   int compressed_max_size = deflateBound(compressor, payload_length);
+  // Since we'll be performing lots of flushes when compressing the data,
+  // zlib's lower bounds may be insufficient.
+  compressed_max_size *= 2;
+
   size_t new_frame_size = header_length + compressed_max_size;
   if ((frame.type() == SYN_REPLY || frame.type() == HEADERS) &&
       spdy_version_ < 3) {
@@ -1393,24 +1625,10 @@ SpdyControlFrame* SpdyFramer::CompressControlFrame(
   memcpy(new_frame->data(), frame.data(),
          frame.length() + SpdyFrame::kHeaderSize);
 
-  compressor->next_in = reinterpret_cast<Bytef*>(const_cast<char*>(payload));
-  compressor->avail_in = payload_length;
   compressor->next_out = reinterpret_cast<Bytef*>(new_frame->data()) +
                           header_length;
   compressor->avail_out = compressed_max_size;
-
-  // Make sure that all the data we pass to zlib is defined.
-  // This way, all Valgrind reports on the compressed data are zlib's fault.
-  (void)VALGRIND_CHECK_MEM_IS_DEFINED(compressor->next_in,
-                                      compressor->avail_in);
-
-  int rv = deflate(compressor, Z_SYNC_FLUSH);
-  if (rv != Z_OK) {  // How can we know that it compressed everything?
-    // This shouldn't happen, right?
-    LOG(WARNING) << "deflate failure: " << rv;
-    return NULL;
-  }
-
+  WriteHeaderBlockToZ(headers, compressor);
   int compressed_size = compressed_max_size - compressor->avail_out;
 
   // We trust zlib. Also, we can't do anything about it.
@@ -1425,6 +1643,9 @@ SpdyControlFrame* SpdyFramer::CompressControlFrame(
   post_compress_bytes.Add(new_frame->length());
 
   compressed_frames.Increment();
+
+  if (visitor_)
+    visitor_->OnControlFrameCompressed(frame, *new_frame);
 
   return new_frame.release();
 }

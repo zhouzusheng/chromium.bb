@@ -71,7 +71,7 @@ namespace WTF {
 
 // Number of 100 nanosecond between January 1, 1601 and January 1, 1970.
 static const ULONGLONG epochBias = 116444736000000000ULL;
-static const double nsPerSecond = 1000000000.0;
+static const double hundredsOfNanosecondsPerMillisecond = 10000;
 
 static double lowResUTCTime()
 {
@@ -91,7 +91,7 @@ static double lowResUTCTime()
     memcpy(&dateTime, &fileTime, sizeof(dateTime));
 
     // Windows file times are in 100s of nanoseconds.
-    return (dateTime.QuadPart - epochBias) / (100 * nsPerSecond);
+    return (dateTime.QuadPart - epochBias) / hundredsOfNanosecondsPerMillisecond;
 }
 
 #if USE(QUERY_PERFORMANCE_COUNTER)
@@ -252,6 +252,16 @@ double currentTime()
     return ecore_time_unix_get();
 }
 
+#elif OS(QNX)
+
+double currentTime()
+{
+    struct timespec time;
+    if (clock_gettime(CLOCK_REALTIME, &time))
+        CRASH();
+    return time.tv_sec + time.tv_nsec / 1.0e9;
+}
+
 #else
 
 double currentTime()
@@ -299,6 +309,16 @@ double monotonicallyIncreasingTime()
     return timer.nsecsElapsed() / 1.0e9;
 }
 
+#elif OS(QNX)
+
+double monotonicallyIncreasingTime()
+{
+    struct timespec time;
+    if (clock_gettime(CLOCK_MONOTONIC, &time))
+        CRASH();
+    return time.tv_sec + time.tv_nsec / 1.0e9;
+}
+
 #else
 
 double monotonicallyIncreasingTime()
@@ -314,22 +334,5 @@ double monotonicallyIncreasingTime()
 #endif
 
 #endif // !PLATFORM(CHROMIUM)
-
-void getLocalTime(const time_t* localTime, struct tm* localTM)
-{
-#if COMPILER(MSVC7_OR_LOWER) || COMPILER(MINGW) || OS(WINCE)
-    *localTM = *localtime(localTime);
-#elif COMPILER(MSVC)
-    localtime_s(localTM, localTime);
-#else
-    localtime_r(localTime, localTM);
-#endif
-}
-
-void getCurrentLocalTime(struct tm* localTM)
-{
-    time_t localTime = time(0);
-    getLocalTime(&localTime, localTM);
-}
 
 } // namespace WTF

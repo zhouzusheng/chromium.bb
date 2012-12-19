@@ -30,11 +30,11 @@
 #ifndef FileSystem_h
 #define FileSystem_h
 
-#include "PlatformString.h"
 #include <time.h>
 #include <wtf/Forward.h>
 #include <wtf/MathExtras.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 #if USE(CF)
 #include <wtf/RetainPtr.h>
@@ -71,13 +71,19 @@ typedef struct _GFileIOStream GFileIOStream;
 typedef struct _GModule GModule;
 #endif
 
+#if PLATFORM(EFL)
+typedef struct _Eina_Module Eina_Module;
+#endif
+
 namespace WebCore {
 
 // PlatformModule
-#if PLATFORM(GTK)
-typedef GModule* PlatformModule;
-#elif OS(WINDOWS)
+#if OS(WINDOWS)
 typedef HMODULE PlatformModule;
+#elif PLATFORM(GTK)
+typedef GModule* PlatformModule;
+#elif PLATFORM(EFL)
+typedef Eina_Module* PlatformModule;
 #elif PLATFORM(QT)
 #if defined(Q_WS_MAC)
 typedef CFBundleRef PlatformModule;
@@ -210,7 +216,7 @@ String filenameForDisplay(const String&);
 CString applicationDirectoryPath();
 CString sharedResourcesPath();
 #endif
-#if PLATFORM(GTK) || PLATFORM(QT)
+#if USE(SOUP) || PLATFORM(QT)
 uint64_t getVolumeFreeSizeForPath(const char*);
 #endif
 

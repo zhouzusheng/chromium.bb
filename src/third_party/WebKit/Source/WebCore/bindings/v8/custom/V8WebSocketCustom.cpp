@@ -38,9 +38,9 @@
 #include "Frame.h"
 #include "Settings.h"
 #include "V8ArrayBuffer.h"
+#include "V8ArrayBufferView.h"
 #include "V8Binding.h"
 #include "V8Blob.h"
-#include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "WebSocket.h"
 #include "WebSocketChannel.h"
@@ -56,26 +56,22 @@ v8::Handle<v8::Value> V8WebSocket::constructorCallback(const v8::Arguments& args
     INC_STATS("DOM.WebSocket.Constructor");
 
     if (!args.IsConstructCall())
-        return V8Proxy::throwTypeError("DOM object constructor cannot be called as a function.", args.GetIsolate());
+        return throwTypeError("DOM object constructor cannot be called as a function.", args.GetIsolate());
 
     if (ConstructorMode::current() == ConstructorMode::WrapExistingObject)
         return args.Holder();
 
     if (args.Length() == 0)
-        return V8Proxy::throwNotEnoughArgumentsError(args.GetIsolate());
+        return throwNotEnoughArgumentsError(args.GetIsolate());
 
     v8::TryCatch tryCatch;
     v8::Handle<v8::String> urlstring = args[0]->ToString();
     if (tryCatch.HasCaught())
         return throwError(tryCatch.Exception(), args.GetIsolate());
     if (urlstring.IsEmpty())
-        return V8Proxy::throwError(V8Proxy::SyntaxError, "Empty URL", args.GetIsolate());
+        return throwError(SyntaxError, "Empty URL", args.GetIsolate());
 
-    // Get the script execution context.
     ScriptExecutionContext* context = getScriptExecutionContext();
-    if (!context)
-        return V8Proxy::throwError(V8Proxy::ReferenceError, "WebSocket constructor's associated frame is not available", args.GetIsolate());
-
     const KURL& url = context->completeURL(toWebCoreString(urlstring));
 
     RefPtr<WebSocket> webSocket = WebSocket::create(context);
@@ -105,11 +101,12 @@ v8::Handle<v8::Value> V8WebSocket::constructorCallback(const v8::Arguments& args
         }
     }
     if (ec)
-        return throwError(ec, args.GetIsolate());
+        return setDOMException(ec, args.GetIsolate());
 
-    V8DOMWrapper::setDOMWrapper(args.Holder(), &info, webSocket.get());
-    V8DOMWrapper::setJSWrapperForActiveDOMObject(webSocket.release(), v8::Persistent<v8::Object>::New(args.Holder()));
-    return args.Holder();
+    v8::Handle<v8::Object> wrapper = args.Holder();
+    V8DOMWrapper::setDOMWrapper(wrapper, &info, webSocket.get());
+    V8DOMWrapper::setJSWrapperForActiveDOMObject(webSocket.release(), wrapper);
+    return wrapper;
 }
 
 v8::Handle<v8::Value> V8WebSocket::sendCallback(const v8::Arguments& args)
@@ -117,7 +114,7 @@ v8::Handle<v8::Value> V8WebSocket::sendCallback(const v8::Arguments& args)
     INC_STATS("DOM.WebSocket.send()");
 
     if (!args.Length())
-        return V8Proxy::throwNotEnoughArgumentsError(args.GetIsolate());
+        return throwNotEnoughArgumentsError(args.GetIsolate());
 
     WebSocket* webSocket = V8WebSocket::toNative(args.Holder());
     v8::Handle<v8::Value> message = args[0];
@@ -127,6 +124,10 @@ v8::Handle<v8::Value> V8WebSocket::sendCallback(const v8::Arguments& args)
         ArrayBuffer* arrayBuffer = V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(message));
         ASSERT(arrayBuffer);
         result = webSocket->send(arrayBuffer, ec);
+    } else if (V8ArrayBufferView::HasInstance(message)) {
+        ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(message));
+        ASSERT(arrayBufferView);
+        result = webSocket->send(arrayBufferView, ec);
     } else if (V8Blob::HasInstance(message)) {
         Blob* blob = V8Blob::toNative(v8::Handle<v8::Object>::Cast(message));
         ASSERT(blob);
@@ -139,41 +140,9 @@ v8::Handle<v8::Value> V8WebSocket::sendCallback(const v8::Arguments& args)
         result = webSocket->send(toWebCoreString(stringMessage), ec);
     }
     if (ec)
-        return throwError(ec, args.GetIsolate());
+        return setDOMException(ec, args.GetIsolate());
 
     return v8Boolean(result, args.GetIsolate());
-}
-
-v8::Handle<v8::Value> V8WebSocket::closeCallback(const v8::Arguments& args)
-{
-    // FIXME: We should implement [Clamp] for IDL binding code generator, and
-    // remove this custom method.
-    WebSocket* webSocket = toNative(args.Holder());
-    int argumentCount = args.Length();
-    int code = WebSocketChannel::CloseEventCodeNotSpecified;
-    String reason = "";
-    if (argumentCount >= 1) {
-        double x = args[0]->NumberValue();
-        double maxValue = static_cast<double>(std::numeric_limits<uint16_t>::max());
-        double minValue = static_cast<double>(std::numeric_limits<uint16_t>::min());
-        if (isnan(x))
-            x = 0.0;
-        else
-            x = clampTo(x, minValue, maxValue);
-        code = clampToInteger(x);
-        if (argumentCount >= 2) {
-            v8::TryCatch tryCatch;
-            v8::Handle<v8::String> reasonValue = args[1]->ToString();
-            if (tryCatch.HasCaught())
-                return throwError(tryCatch.Exception(), args.GetIsolate());
-            reason = toWebCoreString(reasonValue);
-        }
-    }
-    ExceptionCode ec = 0;
-    webSocket->close(code, reason, ec);
-    if (ec)
-        return throwError(ec, args.GetIsolate());
-    return v8::Undefined();
 }
 
 }  // namespace WebCore

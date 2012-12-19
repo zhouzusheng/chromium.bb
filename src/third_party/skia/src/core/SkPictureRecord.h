@@ -16,10 +16,15 @@
 #include "SkTemplates.h"
 #include "SkWriter32.h"
 
+class SkPictureStateTree;
+class SkBBoxHierarchy;
+
 class SkPictureRecord : public SkCanvas {
 public:
     SkPictureRecord(uint32_t recordFlags);
     virtual ~SkPictureRecord();
+
+    virtual SkDevice* setDevice(SkDevice* device) SK_OVERRIDE;
 
     virtual int save(SaveFlags) SK_OVERRIDE;
     virtual int saveLayer(const SkRect* bounds, const SkPaint*, SaveFlags) SK_OVERRIDE;
@@ -69,23 +74,10 @@ public:
 
     void addFontMetricsTopBottom(const SkPaint& paint, SkScalar minY, SkScalar maxY);
 
-    const SkBitmapDictionary& getBitmaps() const {
-        return fBitmaps;
-    }
-    const SkMatrixDictionary& getMatrices() const {
-        return fMatrices;
-    }
-    const SkPaintDictionary& getPaints() const {
-        return fPaints;
-    }
     const SkTDArray<SkPicture* >& getPictureRefs() const {
         return fPictureRefs;
     }
-    const SkRegionDictionary& getRegions() const {
-        return fRegions;
-    }
 
-    void reset();
     void setFlags(uint32_t recordFlags) {
         fRecordFlags = recordFlags;
     }
@@ -94,26 +86,21 @@ public:
         return fWriter;
     }
 
-    bool shouldFlattenPixels(const SkBitmap&) const;
+    void endRecording();
 private:
-    struct PixelRefDictionaryEntry {
-        uint32_t fKey; // SkPixelRef GenerationID.
-        uint32_t fIndex; // Index of corresponding flattened bitmap in fBitmaps.
-        bool operator < (const PixelRefDictionaryEntry& other) const {
-            return this->fKey < other.fKey;
-        } 
-        bool operator != (const PixelRefDictionaryEntry& other) const {
-            return this->fKey != other.fKey;
-        } 
-    };
+    void recordRestoreOffsetPlaceholder(SkRegion::Op);
+    void fillRestoreOffsetPlaceholdersForCurrentStackLevel(
+        uint32_t restoreOffset);
 
-    SkTDArray<uint32_t> fRestoreOffsetStack;
+    SkTDArray<int32_t> fRestoreOffsetStack;
     int fFirstSavedLayerIndex;
     enum {
         kNoSavedLayerIndex = -1
     };
 
     void addDraw(DrawType drawType) {
+        this->predrawNotify();
+
 #ifdef SK_DEBUG_TRACE
         SkDebugf("add %s\n", DrawTypeToString(drawType));
 #endif
@@ -178,11 +165,17 @@ public:
     void validate() const {}
 #endif
 
-private:
-    SkChunkAlloc fHeap;
+protected:
 
-    SkTDArray<PixelRefDictionaryEntry> fPixelRefDictionary;
-    SkBitmapDictionary fBitmaps;
+    // These are set to NULL in our constructor, but may be changed by
+    // subclasses, in which case they will be SkSafeUnref'd in our destructor.
+    SkBBoxHierarchy* fBoundingHierarchy;
+    SkPictureStateTree* fStateTree;
+
+private:
+    SkBitmapHeap* fBitmapHeap;
+    SkChunkFlatController fFlattenableHeap;
+
     SkMatrixDictionary fMatrices;
     SkPaintDictionary fPaints;
     SkRegionDictionary fRegions;
@@ -193,13 +186,8 @@ private:
     // we ref each item in these arrays
     SkTDArray<SkPicture*> fPictureRefs;
 
-    SkRefCntSet fRCSet;
-    SkRefCntSet fTFSet;
-
     uint32_t fRecordFlags;
-
-    // helper function to handle save/restore culling offsets
-    void recordOffsetForRestore(SkRegion::Op op);
+    int fInitialSaveCount;
 
     friend class SkPicturePlayback;
     friend class SkPictureTester; // for unit testing

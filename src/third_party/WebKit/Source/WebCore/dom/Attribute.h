@@ -26,6 +26,7 @@
 #define Attribute_h
 
 #include "QualifiedName.h"
+#include "WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -66,6 +67,13 @@ public:
     // name of an attribute once parseAttribute has been called as DOM
     // elements may have placed the Attribute in a hash by name.
     void parserSetName(const QualifiedName& name) { m_name = name; }
+
+    void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+    {
+        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
+        info.addMember(m_name);
+        info.addMember(m_value);
+    }
 
 private:
     QualifiedName m_name;

@@ -54,6 +54,9 @@ class RenderThemeChromiumSkia : public RenderTheme {
 
         virtual bool supportsDataListUI(const AtomicString& type) const OVERRIDE;
 
+#if ENABLE(VIDEO_TRACK)
+        virtual bool supportsClosedCaptioning() const OVERRIDE;
+#endif
         // The platform selection color.
         virtual Color platformActiveSelectionBackgroundColor() const;
         virtual Color platformInactiveSelectionBackgroundColor() const;
@@ -95,6 +98,7 @@ class RenderThemeChromiumSkia : public RenderTheme {
         virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
         virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
         virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
+        virtual bool paintMediaToggleClosedCaptionsButton(RenderObject*, const PaintInfo&, const IntRect&);
         virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
         virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&);
         virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&);
@@ -116,7 +120,7 @@ class RenderThemeChromiumSkia : public RenderTheme {
         virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
         virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
 
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
         virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const;
         virtual double animationDurationForProgressBar(RenderProgress*) const;
 #endif
@@ -154,15 +158,29 @@ class RenderThemeChromiumSkia : public RenderTheme {
 
         static void setSizeIfAuto(RenderStyle*, const IntSize&);
 
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
         IntRect determinateProgressValueRectFor(RenderProgress*, const IntRect&) const;
         IntRect indeterminateProgressValueRectFor(RenderProgress*, const IntRect&) const;
         IntRect progressValueRectFor(RenderProgress*, const IntRect&) const;
+
+        class DirectionFlippingScope {
+        public:
+            DirectionFlippingScope(RenderObject*, const PaintInfo&, const IntRect&);
+            ~DirectionFlippingScope();
+
+        private:
+            bool m_needsFlipping;
+            const PaintInfo& m_paintInfo;
+        };
 #endif
 
 private:
     virtual Color disabledTextColor(const Color& textColor, const Color&) const OVERRIDE { return textColor; }
     virtual bool shouldShowPlaceholderWhenFocused() const OVERRIDE;
+
+#if ENABLE(DATALIST_ELEMENT)
+    virtual LayoutUnit sliderTickSnappingThreshold() const OVERRIDE;
+#endif
 
     int menuListInternalPadding(RenderStyle*, int paddingType) const;
     bool paintMediaButtonInternal(GraphicsContext*, const IntRect&, Image*);

@@ -26,34 +26,43 @@
 #ifndef CCRenderPassDrawQuad_h
 #define CCRenderPassDrawQuad_h
 
-#include "cc/CCDrawQuad.h"
-#include <public/WebFilterOperations.h>
+#include "CCDrawQuad.h"
+#include "CCRenderPass.h"
+#include "CCResourceProvider.h"
+#include "IntRect.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
-class CCRenderPass;
-
 class CCRenderPassDrawQuad : public CCDrawQuad {
     WTF_MAKE_NONCOPYABLE(CCRenderPassDrawQuad);
 public:
-    static PassOwnPtr<CCRenderPassDrawQuad> create(const CCSharedQuadState*, const IntRect&, const CCRenderPass*, bool isReplica, const WebKit::WebFilterOperations& filters, const WebKit::WebFilterOperations& backgroundFilters, unsigned maskTextureId);
+    static PassOwnPtr<CCRenderPassDrawQuad> create(const CCSharedQuadState*, const IntRect&, CCRenderPass::Id renderPassId, bool isReplica, CCResourceProvider::ResourceId maskResourceId, const IntRect& contentsChangedSinceLastFrame, float maskTexCoordScaleX, float maskTexCoordScaleY, float maskTexCoordOffsetX, float maskTexCoordOffsetY);
 
-    const CCRenderPass* renderPass() const { return m_renderPass; }
+    CCRenderPass::Id renderPassId() const { return m_renderPassId; }
     bool isReplica() const { return m_isReplica; }
-    unsigned maskTextureId() const { return m_maskTextureId; }
+    CCResourceProvider::ResourceId maskResourceId() const { return m_maskResourceId; }
+    const IntRect& contentsChangedSinceLastFrame() const { return m_contentsChangedSinceLastFrame; }
 
-    const WebKit::WebFilterOperations& filters() const { return m_filters; }
-    const WebKit::WebFilterOperations& backgroundFilters() const { return m_backgroundFilters; }
+    static const CCRenderPassDrawQuad* materialCast(const CCDrawQuad*);
+    float maskTexCoordScaleX() const { return m_maskTexCoordScaleX; }
+    float maskTexCoordScaleY() const { return m_maskTexCoordScaleY; }
+    float maskTexCoordOffsetX() const { return m_maskTexCoordOffsetX; }
+    float maskTexCoordOffsetY() const { return m_maskTexCoordOffsetY; }
+
+    PassOwnPtr<CCRenderPassDrawQuad> copy(const CCSharedQuadState* copiedSharedQuadState, CCRenderPass::Id copiedRenderPassId) const;
 
 private:
-    CCRenderPassDrawQuad(const CCSharedQuadState*, const IntRect&, const CCRenderPass*, bool isReplica, const WebKit::WebFilterOperations& filters, const WebKit::WebFilterOperations& backgroundFilters, unsigned maskTextureId);
+    CCRenderPassDrawQuad(const CCSharedQuadState*, const IntRect&, CCRenderPass::Id renderPassId, bool isReplica, CCResourceProvider::ResourceId maskResourceId, const IntRect& contentsChangedSinceLastFrame, float maskTexCoordScaleX, float maskTexCoordScaleY, float maskTexCoordOffsetX, float maskTexCoordOffsetY);
 
-    const CCRenderPass* m_renderPass;
+    CCRenderPass::Id m_renderPassId;
     bool m_isReplica;
-    WebKit::WebFilterOperations m_filters;
-    WebKit::WebFilterOperations m_backgroundFilters;
-    unsigned m_maskTextureId;
+    CCResourceProvider::ResourceId m_maskResourceId;
+    IntRect m_contentsChangedSinceLastFrame;
+    float m_maskTexCoordScaleX;
+    float m_maskTexCoordScaleY;
+    float m_maskTexCoordOffsetX;
+    float m_maskTexCoordOffsetY;
 };
 
 }

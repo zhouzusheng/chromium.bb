@@ -43,32 +43,62 @@ WebInspector.InspectorView = function()
     document.addEventListener("keydown", this._keyDown.bind(this), false);
     document.addEventListener("keypress", this._keyPress.bind(this), false);
     this._panelOrder = [];
+    this._panelDescriptors = {};
 
-    // Windows and Mac have two different definitions of '[', so accept both.
+    // Windows and Mac have two different definitions of '[' and ']', so accept both of each.
     this._openBracketIdentifiers = ["U+005B", "U+00DB"].keySet();
-    this._openBracketCharCode = "[".charCodeAt(0);
-
-    // Windows and Mac have two different definitions of ']', so accept both.
     this._closeBracketIdentifiers = ["U+005D", "U+00DD"].keySet();
-    this._closeBracketCharCode = "]".charCodeAt(0);
+    this._footerElementContainer = this.element.createChild("div", "inspector-footer status-bar hidden");
+    this._panelsElement = this.element.createChild("div", "fill");
 }
 
 WebInspector.InspectorView.Events = {
-    PanelSelected: "panel-selected"
+    PanelSelected: "PanelSelected"
 }
 
 WebInspector.InspectorView.prototype = {
-    addPanel: function(panel)
+    /**
+     * @param {WebInspector.PanelDescriptor} panelDescriptor
+     */
+    addPanel: function(panelDescriptor)
     {
-        this._panelOrder.push(panel);
-        WebInspector.toolbar.addPanel(panel);
+        this._panelOrder.push(panelDescriptor.name());
+        this._panelDescriptors[panelDescriptor.name()] = panelDescriptor;
+        WebInspector.toolbar.addPanel(panelDescriptor);
+    },
+
+    /**
+     * @param {string} panelName
+     * @return {?WebInspector.Panel}
+     */
+    panel: function(panelName)
+    {
+        var panelDescriptor = this._panelDescriptors[panelName];
+        if (!panelDescriptor && this._panelOrder.length)
+            panelDescriptor = this._panelDescriptors[this._panelOrder[0]];
+        return panelDescriptor ? panelDescriptor.panel() : null;
+    },
+
+    /**
+     * @param {string} panelName
+     * @return {?WebInspector.Panel}
+     */
+    showPanel: function(panelName)
+    {
+        var panel = this.panel(panelName);
+        if (panel)
+            this.setCurrentPanel(panel);
+        return panel;
     },
 
     currentPanel: function()
     {
         return this._currentPanel;
     },
-
+    
+    /**
+     * @param {WebInspector.Panel} x
+     */
     setCurrentPanel: function(x)
     {
         if (this._currentPanel === x)
@@ -83,7 +113,7 @@ WebInspector.InspectorView.prototype = {
             x.show();
             this.dispatchEventToListeners(WebInspector.InspectorView.Events.PanelSelected);
             // FIXME: remove search controller.
-            WebInspector.searchController.activePanelChanged();
+            WebInspector.searchController.cancelSearch();
         }
         for (var panelName in WebInspector.panels) {
             if (WebInspector.panels[panelName] === x) {
@@ -96,13 +126,8 @@ WebInspector.InspectorView.prototype = {
 
     _keyPress: function(event)
     {
-        if (!this._keyDownTimer)
-            return;
-
-        if (event.charCode === this._openBracketCharCode || event.charCode === this._closeBracketCharCode) {
-            clearTimeout(this._keyDownTimer);
-            delete this._keyDownTimer;
-        }
+        clearTimeout(this._keyDownTimer);
+        delete this._keyDownTimer;
     },
 
     _keyDown: function(event)
@@ -123,9 +148,9 @@ WebInspector.InspectorView.prototype = {
         if (this._openBracketIdentifiers.hasOwnProperty(event.keyIdentifier)) {
             var isRotateLeft = WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && !event.shiftKey && !event.altKey;
             if (isRotateLeft) {
-                var index = this._panelOrder.indexOf(this.currentPanel());
+                var index = this._panelOrder.indexOf(this.currentPanel().name);
                 index = (index === 0) ? this._panelOrder.length - 1 : index - 1;
-                this._panelOrder[index].toolbarItem.click();
+                this.showPanel(this._panelOrder[index]);
                 event.consume(true);
                 return;
             }
@@ -141,9 +166,9 @@ WebInspector.InspectorView.prototype = {
         if (this._closeBracketIdentifiers.hasOwnProperty(event.keyIdentifier)) {
             var isRotateRight = WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && !event.shiftKey && !event.altKey;
             if (isRotateRight) {
-                var index = this._panelOrder.indexOf(this.currentPanel());
+                var index = this._panelOrder.indexOf(this.currentPanel().name);
                 index = (index + 1) % this._panelOrder.length;
-                this._panelOrder[index].toolbarItem.click();
+                this.showPanel(this._panelOrder[index]);
                 event.consume(true);
                 return;
             }
@@ -190,6 +215,37 @@ WebInspector.InspectorView.prototype = {
         if (!this._history.length || this._history[this._history.length - 1] !== panelName)
             this._history.push(panelName);
         this._historyIterator = this._history.length - 1;
+    },
+
+    panelsElement: function()
+    {
+        return this._panelsElement;
+    },
+
+    /**
+     * @param {Element?} element
+     */
+    setFooterElement: function(element)
+    {
+        if (element) {
+            this._footerElementContainer.removeStyleClass("hidden");
+            this._footerElementContainer.appendChild(element);
+            this._panelsElement.style.bottom = this._footerElementContainer.offsetHeight + "px";
+        } else {
+            this._footerElementContainer.addStyleClass("hidden");
+            this._footerElementContainer.removeChildren();
+            this._panelsElement.style.bottom = 0;
+        }
+        this.doResize();
+    },
+
+    /**
+     * @param {WebInspector.Panel} panel
+     */
+    showPanelForAnchorNavigation: function(panel)
+    {
+        WebInspector.searchController.disableSearchUntilExplicitAction();
+        this.setCurrentPanel(panel);
     }
 }
 

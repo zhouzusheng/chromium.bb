@@ -35,17 +35,16 @@
 #include "CanvasContextAttributes.h"
 #include "CanvasRenderingContext.h"
 #include "HTMLCanvasElement.h"
-#include "PlatformString.h"
 #include "WebGLContextAttributes.h"
 #include "V8Binding.h"
 #include "V8CanvasRenderingContext2D.h"
 #include "V8Node.h"
-#include "V8Proxy.h"
 #if ENABLE(WEBGL)
 #include "InspectorWebGLInstrumentation.h"
 #include "V8WebGLRenderingContext.h"
 #endif
 #include <wtf/MathExtras.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -86,11 +85,18 @@ v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Argument
     CanvasRenderingContext* result = imp->getContext(contextId, attrs.get());
     if (!result)
         return v8::Null(args.GetIsolate());
+
     if (result->is2d())
-        return toV8(static_cast<CanvasRenderingContext2D*>(result), args.GetIsolate());
+        return toV8(static_cast<CanvasRenderingContext2D*>(result), args.Holder(), args.GetIsolate());
 #if ENABLE(WEBGL)
     else if (result->is3d()) {
-        v8::Handle<v8::Value> v8Result = toV8(static_cast<WebGLRenderingContext*>(result), args.GetIsolate());
+        // 3D canvas contexts can hold on to lots of GPU resources, and we want to take an
+        // opportunity to get rid of them as soon as possible when we navigate away from pages using
+        // them.
+        V8PerIsolateData* perIsolateData = V8PerIsolateData::current(args.GetIsolate());
+        perIsolateData->setShouldCollectGarbageSoon();
+
+        v8::Handle<v8::Value> v8Result = toV8(static_cast<WebGLRenderingContext*>(result), args.Holder(), args.GetIsolate());
         if (InspectorInstrumentation::hasFrontends()) {
             ScriptState* scriptState = ScriptState::forContext(v8::Context::GetCurrent());
             ScriptObject glContext(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
@@ -120,7 +126,7 @@ v8::Handle<v8::Value> V8HTMLCanvasElement::toDataURLCallback(const v8::Arguments
     }
 
     String result = canvas->toDataURL(type, qualityPtr, ec);
-    V8Proxy::setDOMException(ec, args.GetIsolate());
+    setDOMException(ec, args.GetIsolate());
     return v8StringOrUndefined(result, args.GetIsolate());
 }
 

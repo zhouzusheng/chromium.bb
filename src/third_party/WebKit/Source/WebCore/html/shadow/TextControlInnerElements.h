@@ -29,7 +29,6 @@
 
 #include "HTMLDivElement.h"
 #include "SpeechInputListener.h"
-#include "Timer.h"
 #include <wtf/Forward.h>
 
 namespace WebCore {
@@ -66,6 +65,7 @@ public:
     static PassRefPtr<SearchFieldResultsButtonElement> create(Document*);
 
     virtual void defaultEventHandler(Event*);
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
     SearchFieldResultsButtonElement(Document*);
@@ -78,6 +78,7 @@ public:
     static PassRefPtr<SearchFieldCancelButtonElement> create(Document*);
 
     virtual void defaultEventHandler(Event*);
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
     SearchFieldCancelButtonElement(Document*);
@@ -86,41 +87,6 @@ private:
     virtual bool isMouseFocusable() const { return false; }
 
     bool m_capturing;
-};
-
-class SpinButtonElement : public HTMLDivElement {
-public:
-    enum UpDownState {
-        Indeterminate, // Hovered, but the event is not handled.
-        Down,
-        Up,
-    };
-
-    static PassRefPtr<SpinButtonElement> create(Document*);
-    UpDownState upDownState() const { return m_upDownState; }
-    virtual void releaseCapture();
-
-    void step(int amount);
-    
-private:
-    SpinButtonElement(Document*);
-
-    virtual const AtomicString& shadowPseudoId() const;
-    virtual void detach();
-    virtual bool isSpinButtonElement() const { return true; }
-    virtual bool isEnabledFormControl() const { return static_cast<Element*>(shadowAncestorNode())->isEnabledFormControl(); }
-    virtual bool isReadOnlyFormControl() const { return static_cast<Element*>(shadowAncestorNode())->isReadOnlyFormControl(); }
-    virtual void defaultEventHandler(Event*);
-    void startRepeatingTimer();
-    void stopRepeatingTimer();
-    void repeatingTimerFired(Timer<SpinButtonElement>*);
-    virtual void setHovered(bool = true);
-    virtual bool isMouseFocusable() const { return false; }
-
-    bool m_capturing;
-    UpDownState m_upDownState;
-    UpDownState m_pressStartingState;
-    Timer<SpinButtonElement> m_repeatingTimer;
 };
 
 #if ENABLE(INPUT_SPEECH)
@@ -140,6 +106,7 @@ public:
 
     virtual void detach();
     virtual void defaultEventHandler(Event*);
+    virtual bool willRespondToMouseClickEvents();
     virtual bool isInputFieldSpeechButtonElement() const { return true; }
     SpeechInputState state() const { return m_state; }
     void startSpeechInput();

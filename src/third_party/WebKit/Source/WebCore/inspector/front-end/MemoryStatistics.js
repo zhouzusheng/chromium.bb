@@ -257,15 +257,20 @@ WebInspector.MemoryStatistics.prototype = {
 
     _onRecordAdded: function(event)
     {
-        var counters = event.data["counters"];
-        if (!counters)
-            return;
-        this._counters.push({
-            time: event.data.endTime || event.data.startTime,
-            documentCount: counters["documents"],
-            nodeCount: counters["nodes"],
-            listenerCount: counters["jsEventListeners"]
-        });
+        var statistics = this._counters;
+        function addStatistics(record)
+        {
+            var counters = record["counters"];
+            if (!counters)
+                return;
+            statistics.push({
+                time: record.endTime || record.startTime,
+                documentCount: counters["documents"],
+                nodeCount: counters["nodes"],
+                listenerCount: counters["jsEventListeners"]
+            });
+        }
+        WebInspector.TimelinePresentationModel.forAllRecords([event.data], null, addStatistics);
     },
 
     _draw: function()
@@ -282,8 +287,8 @@ WebInspector.MemoryStatistics.prototype = {
     _calculateVisibleIndexes: function()
     {
         var calculator = this._timelinePanel.calculator;
-        var start = calculator.minimumBoundary * 1000;
-        var end = calculator.maximumBoundary * 1000;
+        var start = calculator.minimumBoundary() * 1000;
+        var end = calculator.maximumBoundary() * 1000;
         var firstIndex = 0;
         var lastIndex = this._counters.length - 1;
         for (var i = 0; i < this._counters.length; i++) {

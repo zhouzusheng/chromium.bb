@@ -11,8 +11,9 @@ import exceptions
 import os
 import struct
 import sys
+if __name__ == '__main__':
+  sys.path[0] = os.path.abspath(os.path.join(sys.path[0], '../..'))
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from grit import util
 from grit.format import interface
 from grit.node import include
@@ -158,7 +159,7 @@ class DataPack(interface.ItemFormatter):
     DataPack.WriteDataPack(resources, output_file, encoding)
 
 def main():
-  if len(sys.argv):
+  if len(sys.argv) > 1:
     # When an argument is given, read and explode the file to text
     # format, for easier diffing.
     data = DataPack.ReadDataPack(sys.argv[1])

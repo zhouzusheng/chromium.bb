@@ -29,8 +29,8 @@
 #ifndef WindowFeatures_h
 #define WindowFeatures_h
 
-#include "PlatformString.h"
 #include <wtf/HashMap.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -54,7 +54,7 @@ namespace WebCore {
         {
         }
 
-        WindowFeatures(const String& windowFeaturesString);
+        explicit WindowFeatures(const String& windowFeaturesString);
         WindowFeatures(const String& dialogFeaturesString, const FloatRect& screenAvailableRect);
 
         float x;

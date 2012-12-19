@@ -42,6 +42,7 @@
 #include "ExceptionCode.h"
 #include "FileInputType.h"
 #include "FileList.h"
+#include "FormController.h"
 #include "FormDataList.h"
 #include "HTMLFormElement.h"
 #include "HTMLInputElement.h"
@@ -50,6 +51,7 @@
 #include "HTMLShadowElement.h"
 #include "HiddenInputType.h"
 #include "ImageInputType.h"
+#include "InputTypeNames.h"
 #include "KeyboardEvent.h"
 #include "LocalizedStrings.h"
 #include "MonthInputType.h"
@@ -67,6 +69,7 @@
 #include "ShadowRoot.h"
 #include "SubmitInputType.h"
 #include "TelephoneInputType.h"
+#include "TextBreakIterator.h"
 #include "TextInputType.h"
 #include "TimeInputType.h"
 #include "URLInputType.h"
@@ -97,17 +100,20 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
         map->add(InputTypeNames::date(), DateInputType::create);
 #endif
 #if ENABLE(INPUT_TYPE_DATETIME)
-    map->add(InputTypeNames::datetime(), DateTimeInputType::create);
+    if (RuntimeEnabledFeatures::inputTypeDateTimeEnabled())
+        map->add(InputTypeNames::datetime(), DateTimeInputType::create);
 #endif
 #if ENABLE(INPUT_TYPE_DATETIMELOCAL)
-    map->add(InputTypeNames::datetimelocal(), DateTimeLocalInputType::create);
+    if (RuntimeEnabledFeatures::inputTypeDateTimeLocalEnabled())
+        map->add(InputTypeNames::datetimelocal(), DateTimeLocalInputType::create);
 #endif
     map->add(InputTypeNames::email(), EmailInputType::create);
     map->add(InputTypeNames::file(), FileInputType::create);
     map->add(InputTypeNames::hidden(), HiddenInputType::create);
     map->add(InputTypeNames::image(), ImageInputType::create);
 #if ENABLE(INPUT_TYPE_MONTH)
-    map->add(InputTypeNames::month(), MonthInputType::create);
+    if (RuntimeEnabledFeatures::inputTypeMonthEnabled())
+        map->add(InputTypeNames::month(), MonthInputType::create);
 #endif
     map->add(InputTypeNames::number(), NumberInputType::create);
     map->add(InputTypeNames::password(), PasswordInputType::create);
@@ -118,11 +124,13 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     map->add(InputTypeNames::submit(), SubmitInputType::create);
     map->add(InputTypeNames::telephone(), TelephoneInputType::create);
 #if ENABLE(INPUT_TYPE_TIME)
-    map->add(InputTypeNames::time(), TimeInputType::create);
+    if (RuntimeEnabledFeatures::inputTypeTimeEnabled())
+        map->add(InputTypeNames::time(), TimeInputType::create);
 #endif
     map->add(InputTypeNames::url(), URLInputType::create);
 #if ENABLE(INPUT_TYPE_WEEK)
-    map->add(InputTypeNames::week(), WeekInputType::create);
+    if (RuntimeEnabledFeatures::inputTypeWeekEnabled())
+        map->add(InputTypeNames::week(), WeekInputType::create);
 #endif
     // No need to register "text" because it is the default type.
     return map.release();
@@ -168,18 +176,22 @@ bool InputType::isRangeControl() const
     return false;
 }
 
-bool InputType::saveFormControlState(String& result) const
+bool InputType::shouldSaveAndRestoreFormControlState() const
 {
-    String currentValue = element()->value();
-    if (currentValue == element()->defaultValue())
-        return false;
-    result = currentValue;
     return true;
 }
 
-void InputType::restoreFormControlState(const String& state)
+FormControlState InputType::saveFormControlState() const
 {
-    element()->setValue(state);
+    String currentValue = element()->value();
+    if (currentValue == element()->defaultValue())
+        return FormControlState();
+    return FormControlState(currentValue);
+}
+
+void InputType::restoreFormControlState(const FormControlState& state)
+{
+    element()->setValue(state[0]);
 }
 
 bool InputType::isFormDataAppendable() const
@@ -413,9 +425,11 @@ void InputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*)
 {
 }
 
-void InputType::handleWheelEvent(WheelEvent*)
+#if ENABLE(TOUCH_EVENTS)
+void InputType::handleTouchEvent(TouchEvent*)
 {
 }
+#endif
 
 void InputType::forwardEvent(Event*)
 {
@@ -436,17 +450,26 @@ RenderObject* InputType::createRenderer(RenderArena*, RenderStyle* style) const
     return RenderObject::createObject(element(), style);
 }
 
+void InputType::blur()
+{
+    element()->defaultBlur();
+}
+
+void InputType::focus(bool restorePreviousSelection)
+{
+    element()->defaultFocus(restorePreviousSelection);
+}
+
 void InputType::createShadowSubtree()
 {
 }
 
 void InputType::destroyShadowSubtree()
 {
-    ElementShadow* shadow = element()->shadow();
-    if (!shadow)
+    ShadowRoot* root = element()->userAgentShadowRoot();
+    if (!root)
         return;
 
-    ShadowRoot* root = shadow->oldestShadowRoot();
     root->removeAllChildren();
 
     // It's ok to clear contents of all other ShadowRoots because they must have
@@ -500,9 +523,19 @@ bool InputType::canSetStringValue() const
     return true;
 }
 
-bool InputType::isKeyboardFocusable() const
+bool InputType::hasCustomFocusLogic() const
 {
     return true;
+}
+
+bool InputType::isKeyboardFocusable(KeyboardEvent* event) const
+{
+    return element()->isTextFormControlKeyboardFocusable(event);
+}
+
+bool InputType::isMouseFocusable() const
+{
+    return element()->isTextFormControlMouseFocusable();
 }
 
 bool InputType::shouldUseInputMethod() const
@@ -677,6 +710,14 @@ bool InputType::receiveDroppedFiles(const DragData*)
     return false;
 }
 
+#if ENABLE(FILE_SYSTEM)
+String InputType::droppedFileSystemId()
+{
+    ASSERT_NOT_REACHED();
+    return String();
+}
+#endif
+
 Icon* InputType::icon() const
 {
     ASSERT_NOT_REACHED();
@@ -840,6 +881,10 @@ String InputType::fixedPlaceholder()
     return String();
 }
 
+void InputType::updateInnerTextValue()
+{
+}
+
 void InputType::updatePlaceholderText()
 {
 }
@@ -860,10 +905,29 @@ void InputType::subtreeHasChanged()
 {
 }
 
+#if ENABLE(TOUCH_EVENTS)
+bool InputType::hasTouchEventHandler() const
+{
+    return false;
+}
+#endif
+
 String InputType::defaultToolTip() const
 {
     return String();
 }
+
+#if ENABLE(DATALIST_ELEMENT)
+void InputType::listAttributeTargetChanged()
+{
+}
+
+Decimal InputType::findClosestTickMarkValue(const Decimal&)
+{
+    ASSERT_NOT_REACHED();
+    return Decimal::nan();
+}
+#endif
 
 bool InputType::supportsIndeterminateAppearance() const
 {
@@ -921,7 +985,7 @@ void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldE
     setValueAsDecimal(newValue, eventBehavior, ec);
 
     if (AXObjectCache::accessibilityEnabled())
-         element()->document()->axObjectCache()->postNotification(element()->renderer(), AXObjectCache::AXValueChanged, true);
+         element()->document()->axObjectCache()->postNotification(element(), AXObjectCache::AXValueChanged, true);
 }
 
 bool InputType::getAllowedValueStep(Decimal* step) const
@@ -1050,150 +1114,4 @@ void InputType::stepUpFromRenderer(int n)
     }
 }
 
-namespace InputTypeNames {
-
-// The type names must be lowercased because they will be the return values of
-// input.type and input.type must be lowercase according to DOM Level 2.
-
-const AtomicString& button()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("button"));
-    return name;
-}
-
-const AtomicString& checkbox()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("checkbox"));
-    return name;
-}
-
-#if ENABLE(INPUT_TYPE_COLOR)
-const AtomicString& color()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("color"));
-    return name;
-}
-#endif
-
-const AtomicString& date()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("date"));
-    return name;
-}
-
-const AtomicString& datetime()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("datetime"));
-    return name;
-}
-
-const AtomicString& datetimelocal()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("datetime-local"));
-    return name;
-}
-
-const AtomicString& email()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("email"));
-    return name;
-}
-
-const AtomicString& file()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("file"));
-    return name;
-}
-
-const AtomicString& hidden()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("hidden"));
-    return name;
-}
-
-const AtomicString& image()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("image"));
-    return name;
-}
-
-const AtomicString& month()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("month"));
-    return name;
-}
-
-const AtomicString& number()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("number"));
-    return name;
-}
-
-const AtomicString& password()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("password"));
-    return name;
-}
-
-const AtomicString& radio()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("radio"));
-    return name;
-}
-
-const AtomicString& range()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("range"));
-    return name;
-}
-
-const AtomicString& reset()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("reset"));
-    return name;
-}
-
-const AtomicString& search()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("search"));
-    return name;
-}
-
-const AtomicString& submit()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("submit"));
-    return name;
-}
-
-const AtomicString& telephone()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("tel"));
-    return name;
-}
-
-const AtomicString& text()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("text"));
-    return name;
-}
-
-const AtomicString& time()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("time"));
-    return name;
-}
-
-const AtomicString& url()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("url"));
-    return name;
-}
-
-const AtomicString& week()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("week"));
-    return name;
-}
-
-} // namespace WebCore::InputTypeNames
 } // namespace WebCore

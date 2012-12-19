@@ -7,7 +7,6 @@
 
 #ifndef NET_HTTP_HTTP_CACHE_TRANSACTION_H_
 #define NET_HTTP_HTTP_CACHE_TRANSACTION_H_
-#pragma once
 
 #include <string>
 
@@ -23,6 +22,7 @@ namespace net {
 
 class PartialData;
 struct HttpRequestInfo;
+class HttpTransactionDelegate;
 
 // This is the transaction that is returned by the HttpCache transaction
 // factory.
@@ -57,7 +57,9 @@ class HttpCache::Transaction : public HttpTransaction {
     UPDATE          = READ_META | WRITE,  // READ_WRITE & ~READ_DATA
   };
 
-  explicit Transaction(HttpCache* cache);
+  Transaction(HttpCache* cache,
+              HttpTransactionDelegate* transaction_delegate,
+              InfiniteCacheTransaction* infinite_cache_transaction);
   virtual ~Transaction();
 
   Mode mode() const { return mode_; }
@@ -119,7 +121,7 @@ class HttpCache::Transaction : public HttpTransaction {
   virtual void DoneReading() OVERRIDE;
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
-  virtual uint64 GetUploadProgress(void) const OVERRIDE;
+  virtual UploadProgress GetUploadProgress(void) const OVERRIDE;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -173,6 +175,19 @@ class HttpCache::Transaction : public HttpTransaction {
     STATE_CACHE_READ_DATA_COMPLETE,
     STATE_CACHE_WRITE_DATA,
     STATE_CACHE_WRITE_DATA_COMPLETE
+  };
+
+  // Used for categorizing transactions for reporting in histograms. Patterns
+  // cover relatively common use cases being measured and considered for
+  // optimization. Many use cases that are more complex or uncommon are binned
+  // as PATTERN_NOT_COVERED, and details are not reported.
+  enum TransactionPattern {
+    PATTERN_UNDEFINED,
+    PATTERN_NOT_COVERED,
+    PATTERN_ENTRY_NOT_CACHED,
+    PATTERN_ENTRY_USED,
+    PATTERN_ENTRY_VALIDATED,
+    PATTERN_ENTRY_UPDATED,
   };
 
   // This is a helper function used to trigger a completion callback.  It may
@@ -327,6 +342,11 @@ class HttpCache::Transaction : public HttpTransaction {
   // working with range requests.
   int DoPartialCacheReadCompleted(int result);
 
+  // Restarts this transaction after deleting the cached data. It is meant to
+  // be used when the current request cannot be fulfilled due to conflicts
+  // between the byte range request and the cached entry.
+  int DoRestartPartialRequest();
+
   // Returns true if we should bother attempting to resume this request if it
   // is aborted while in progress. If |has_data| is true, the size of the stored
   // data is considered for the result.
@@ -334,6 +354,13 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Called to signal completion of asynchronous IO.
   void OnIOComplete(int result);
+
+  void ReportCacheActionStart();
+  void ReportCacheActionFinish();
+  void ReportNetworkActionStart();
+  void ReportNetworkActionFinish();
+  void UpdateTransactionPattern(TransactionPattern new_transaction_pattern);
+  void RecordHistograms();
 
   State next_state_;
   const HttpRequestInfo* request_;
@@ -345,9 +372,9 @@ class HttpCache::Transaction : public HttpTransaction {
   ValidationHeaders external_validation_;
   base::WeakPtr<HttpCache> cache_;
   HttpCache::ActiveEntry* entry_;
-  base::TimeTicks entry_lock_waiting_since_;
   HttpCache::ActiveEntry* new_entry_;
   scoped_ptr<HttpTransaction> network_trans_;
+  scoped_ptr<InfiniteCacheTransaction> infinite_cache_transaction_;
   CompletionCallback callback_;  // Consumer's callback.
   HttpResponseInfo response_;
   HttpResponseInfo auth_response_;
@@ -369,9 +396,19 @@ class HttpCache::Transaction : public HttpTransaction {
   int effective_load_flags_;
   int write_len_;
   scoped_ptr<PartialData> partial_;  // We are dealing with range requests.
-  uint64 final_upload_progress_;
+  UploadProgress final_upload_progress_;
   base::WeakPtrFactory<Transaction> weak_factory_;
   CompletionCallback io_callback_;
+
+  // Members used to track data for histograms.
+  TransactionPattern transaction_pattern_;
+  int bytes_read_from_cache_;
+  int bytes_read_from_network_;
+  base::TimeTicks entry_lock_waiting_since_;
+  base::TimeTicks first_cache_access_since_;
+  base::TimeTicks send_request_since_;
+
+  HttpTransactionDelegate* transaction_delegate_;
 };
 
 }  // namespace net

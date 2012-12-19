@@ -37,7 +37,7 @@
 namespace WebCore {
 
 ClassNodeList::ClassNodeList(PassRefPtr<Node> rootNode, const String& classNames)
-    : DynamicSubtreeNodeList(rootNode)
+    : DynamicSubtreeNodeList(rootNode, ClassNodeListType, InvalidateOnClassAttrChange)
     , m_classNames(classNames, document()->inQuirksMode())
     , m_originalClassNames(classNames)
 {
@@ -54,8 +54,11 @@ bool ClassNodeList::nodeMatches(Element* testNode) const
         return false;
     if (!m_classNames.size())
         return false;
-    ASSERT(testNode->isStyledElement());
-    return static_cast<StyledElement*>(testNode)->classNames().containsAll(m_classNames);
+    // FIXME: DOM4 allows getElementsByClassName to return non StyledElement.
+    // https://bugs.webkit.org/show_bug.cgi?id=94718
+    if (!testNode->isStyledElement())
+        return false;
+    return testNode->classNames().containsAll(m_classNames);
 }
 
 } // namespace WebCore

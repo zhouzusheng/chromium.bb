@@ -89,6 +89,7 @@ inline SVGUseElement::SVGUseElement(const QualifiedName& tagName, Document* docu
     , m_wasInsertedByParser(wasInsertedByParser)
     , m_haveFiredLoadEvent(false)
     , m_needsShadowTreeRecreation(false)
+    , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
     ASSERT(hasCustomCallbacks());
     ASSERT(hasTagName(SVGNames::useTag));
@@ -99,7 +100,7 @@ PassRefPtr<SVGUseElement> SVGUseElement::create(const QualifiedName& tagName, Do
 {
     // Always build a #shadow-root for SVGUseElement.
     RefPtr<SVGUseElement> use = adoptRef(new SVGUseElement(tagName, document, wasInsertedByParser));
-    use->ensureShadowRoot();
+    use->createShadowSubtree();
     return use.release();
 }
 
@@ -107,6 +108,14 @@ SVGUseElement::~SVGUseElement()
 {
     if (m_cachedDocument)
         m_cachedDocument->removeClient(this);
+
+    clearResourceReferences();
+}
+
+void SVGUseElement::createShadowSubtree()
+{
+    ASSERT(!shadow());
+    ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot);
 }
 
 SVGElementInstance* SVGUseElement::instanceRoot()
@@ -401,6 +410,9 @@ void SVGUseElement::clearResourceReferences()
     }
 
     m_needsShadowTreeRecreation = false;
+
+    ASSERT(document());
+    document()->accessSVGExtensions()->removeAllTargetReferencesForElement(this);
 }
 
 void SVGUseElement::buildPendingResource()
@@ -408,20 +420,19 @@ void SVGUseElement::buildPendingResource()
     if (!referencedDocument())
         return;
     clearResourceReferences();
-    if (!inDocument())
+    if (!inDocument() || isInShadowTree())
         return;
 
     String id;
     Element* target = SVGURIReference::targetElementFromIRIString(href(), document(), &id, externalDocument());
-    if (!target) {
+    if (!target || !target->inDocument()) {
         // If we can't find the target of an external element, just give up.
         // We can't observe if the target somewhen enters the external document, nor should we do it.
         if (externalDocument())
             return;
-        if (hasPendingResources() || id.isEmpty())
+        if (id.isEmpty())
             return;
 
-        ASSERT(!hasPendingResources());
         referencedDocument()->accessSVGExtensions()->addPendingResource(id, this);
         ASSERT(hasPendingResources());
         return;
@@ -460,7 +471,7 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
 
     // Eventually enter recursion to build SVGElementInstance objects for the sub-tree children
     bool foundProblem = false;
-    buildInstanceTree(target, m_targetElementInstance.get(), foundProblem);
+    buildInstanceTree(target, m_targetElementInstance.get(), foundProblem, false);
 
     if (instanceTreeIsLoading(m_targetElementInstance.get()))
         return;
@@ -513,6 +524,10 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
 
     // Update relative length information.
     updateRelativeLengthsInformation();
+
+    // Rebuild all dependent use elements.
+    ASSERT(document());
+    document()->accessSVGExtensions()->removeAllElementReferencesForTarget(this);
 
     // Eventually dump instance tree
 #ifdef DUMP_INSTANCE_TREE
@@ -581,7 +596,7 @@ RenderObject* SVGUseElement::rendererClipChild() const
     return 0;
 }
 
-void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundProblem)
+void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundProblem, bool foundUse)
 {
     ASSERT(target);
     ASSERT(targetInstance);
@@ -594,6 +609,14 @@ void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* ta
         foundProblem = hasCycleUseReferencing(static_cast<SVGUseElement*>(target), targetInstance, newTarget);
         if (foundProblem)
             return;
+
+        // We only need to track fist degree <use> dependencies. Indirect references are handled
+        // as the invalidation bubbles up the dependency chain.
+        if (!foundUse) {
+            ASSERT(document());
+            document()->accessSVGExtensions()->addElementReferencingTarget(this, target);
+            foundUse = true;
+        }
     } else if (isDisallowedElement(target)) {
         foundProblem = true;
         return;
@@ -621,7 +644,7 @@ void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* ta
         targetInstance->appendChild(instance.release());
 
         // Enter recursion, appending new instance tree nodes to the "instance" object.
-        buildInstanceTree(element, instancePtr, foundProblem);
+        buildInstanceTree(element, instancePtr, foundProblem, foundUse);
         if (foundProblem)
             return;
     }
@@ -632,7 +655,7 @@ void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* ta
     RefPtr<SVGElementInstance> newInstance = SVGElementInstance::create(this, static_cast<SVGUseElement*>(target), newTarget);
     SVGElementInstance* newInstancePtr = newInstance.get();
     targetInstance->appendChild(newInstance.release());
-    buildInstanceTree(newTarget, newInstancePtr, foundProblem);
+    buildInstanceTree(newTarget, newInstancePtr, foundProblem, foundUse);
 }
 
 bool SVGUseElement::hasCycleUseReferencing(SVGUseElement* use, SVGElementInstance* targetInstance, SVGElement*& newTarget)

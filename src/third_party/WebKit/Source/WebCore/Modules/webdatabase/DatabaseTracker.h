@@ -31,10 +31,10 @@
 
 #if ENABLE(SQL_DATABASE)
 
-#include "PlatformString.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/text/StringHash.h>
+#include <wtf/text/WTFString.h>
 
 #if !PLATFORM(CHROMIUM)
 #include "DatabaseDetails.h"
@@ -82,7 +82,7 @@ public:
     void interruptAllDatabasesForContext(const ScriptExecutionContext*);
 
 private:
-    DatabaseTracker(const String& databasePath);
+    explicit DatabaseTracker(const String& databasePath);
 
 #if !PLATFORM(CHROMIUM)
 public:
@@ -125,7 +125,7 @@ private:
     bool hasEntryForDatabase(SecurityOrigin*, const String& databaseIdentifier);
 
     bool addDatabase(SecurityOrigin*, const String& name, const String& path);
-    void populateOrigins();
+    void populateOriginsIfNeeded();
 
     bool deleteDatabaseFile(SecurityOrigin*, const String& name);
 

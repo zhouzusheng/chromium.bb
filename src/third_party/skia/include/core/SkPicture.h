@@ -26,6 +26,8 @@ class SkWStream;
 */
 class SK_API SkPicture : public SkRefCnt {
 public:
+    SK_DECLARE_INST_COUNT(SkPicture)
+
     /** The constructor prepares the picture to record.
         @param width the width of the virtual device the picture records.
         @param height the height of the virtual device the picture records.
@@ -35,14 +37,30 @@ public:
         this call, those elements will not appear in this picture.
     */
     SkPicture(const SkPicture& src);
-    explicit SkPicture(SkStream*);
+    /**
+     *  Recreate a picture that was serialized into a stream. *success is set to
+     *  true if the picture was deserialized successfully and false otherwise.
+     */
+    explicit SkPicture(SkStream*, bool* success = NULL);
     virtual ~SkPicture();
-    
+
     /**
      *  Swap the contents of the two pictures. Guaranteed to succeed.
      */
     void swap(SkPicture& other);
-    
+
+    /**
+     *  Creates a thread-safe clone of the picture that is ready for playback.
+     */
+    SkPicture* clone() const;
+
+    /**
+     * Creates multiple thread-safe clones of this picture that are ready for
+     * playback. The resulting clones are stored in the provided array of
+     * SkPictures.
+     */
+    void clone(SkPicture* pictures, int count) const;
+
     enum RecordingFlags {
         /*  This flag specifies that when clipPath() is called, the path will
             be faithfully recorded, but the recording canvas' current clip will
@@ -53,15 +71,24 @@ public:
             path.
          */
         kUsePathBoundsForClip_RecordingFlag = 0x01,
+        /*  This flag causes the picture to compute bounding boxes and build
+            up a spatial hierarchy (currently an R-Tree), plus a tree of Canvas'
+            usually stack-based clip/etc state. This requires an increase in
+            recording time (often ~2x; likely more for very complex pictures),
+            but allows us to perform much faster culling at playback time, and
+            completely avoid some unnecessary clips and other operations. This
+            is ideal for tiled rendering, or any other situation where you're
+            drawing a fraction of a large scene into a smaller viewport.
 
-        /*  When a draw operation is recorded that has a bitmap parameter, it
-            may be unsafe to defer rendering if source bitmap may be written to
-            between the time of recording and the time of executing the draw 
-            operation. This flag specifies that SkPicture should serialize a
-            snapshot of any source bitmaps that reside in RAM and are not
-            marked as immutable, making the draw operation safe for deferral.
-         */
-        kFlattenMutableNonTexturePixelRefs_RecordingFlag = 0x02
+            In most cases the record cost is offset by the playback improvement
+            after a frame or two of tiled rendering (and complex pictures that
+            induce the worst record times will generally get the largest
+            speedups at playback time).
+
+            Note: Currently this is not serializable, the bounding data will be
+            discarded if you serialize into a stream and then deserialize.
+        */
+        kOptimizeForClippedPlayback_RecordingFlag = 0x02
     };
 
     /** Returns the canvas that records the drawing commands.
@@ -85,22 +112,12 @@ public:
     */
     void endRecording();
 
-    /** Returns true if any draw commands have been recorded since the last
-        call to beginRecording.
-    */
-    bool hasRecorded() const;
-
-    /** Returns true if a snapshot of the specified bitmap will be flattened
-        whaen a draw operation using the bitmap is recorded.
-    */
-    bool willFlattenPixelsOnRecord(const SkBitmap&) const;
-    
     /** Replays the drawing commands on the specified canvas. This internally
         calls endRecording() if that has not already been called.
         @param surface the canvas receiving the drawing commands.
     */
     void draw(SkCanvas* surface);
-    
+
     /** Return the width of the picture's recording canvas. This
         value reflects what was passed to setSize(), and does not necessarily
         reflect the bounds of what has been recorded into the picture.
@@ -119,17 +136,26 @@ public:
 
     /** Signals that the caller is prematurely done replaying the drawing
         commands. This can be called from a canvas virtual while the picture
-        is drawing. Has no effect if the picture is not drawing. 
+        is drawing. Has no effect if the picture is not drawing.
     */
     void abortPlayback();
-    
+
 private:
     int fWidth, fHeight;
     SkPictureRecord* fRecord;
     SkPicturePlayback* fPlayback;
 
+    /** Used by the R-Tree when kOptimizeForClippedPlayback_RecordingFlag is
+        set, these were empirically determined to produce reasonable performance
+        in most cases.
+    */
+    static const int kRTreeMinChildren = 6;
+    static const int kRTreeMaxChildren = 11;
+
     friend class SkFlatPicture;
     friend class SkPicturePlayback;
+
+    typedef SkRefCnt INHERITED;
 };
 
 class SkAutoPictureRecord : SkNoncopyable {
@@ -142,11 +168,11 @@ public:
     ~SkAutoPictureRecord() {
         fPicture->endRecording();
     }
-    
+
     /** Return the canvas to draw into for recording into the picture.
     */
     SkCanvas* getRecordingCanvas() const { return fCanvas; }
-    
+
 private:
     SkPicture*  fPicture;
     SkCanvas*   fCanvas;

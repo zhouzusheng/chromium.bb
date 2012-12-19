@@ -111,6 +111,19 @@ static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInf
     return paintMediaButton(paintInfo.context, rect, mediaElement->canPlay() ? mediaPlay : mediaPause);
 }
 
+static bool paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
+{
+    HTMLMediaElement* mediaElement = toParentMediaElement(object);
+    if (!mediaElement)
+        return false;
+
+    if (!hasSource(mediaElement) || !mediaElement->canPlay())
+        return false;
+
+    static Image* mediaOverlayPlay = platformResource("mediaplayerOverlayPlay");
+    return paintMediaButton(paintInfo.context, rect, mediaOverlayPlay);
+}
+
 static Image* getMediaSliderThumb()
 {
     static Image* mediaSliderThumb = platformResource("mediaplayerSliderThumb");
@@ -240,9 +253,7 @@ static bool paintMediaSlider(RenderObject* object, const PaintInfo& paintInfo, c
 static bool paintMediaSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     ASSERT(object->node());
-    Node* hostNode = object->node()->shadowAncestorNode();
-    ASSERT(hostNode);
-    HTMLMediaElement* mediaElement = toParentMediaElement(hostNode);
+    HTMLMediaElement* mediaElement = toParentMediaElement(object->node()->shadowHost());
     if (!mediaElement)
         return false;
 
@@ -295,9 +306,7 @@ static bool paintMediaVolumeSlider(RenderObject* object, const PaintInfo& paintI
 static bool paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     ASSERT(object->node());
-    Node* hostNode = object->node()->shadowAncestorNode();
-    ASSERT(hostNode);
-    HTMLMediaElement* mediaElement = toParentMediaElement(hostNode);
+    HTMLMediaElement* mediaElement = toParentMediaElement(object->node()->shadowHost());
     if (!mediaElement)
         return false;
 
@@ -318,6 +327,22 @@ static bool paintMediaFullscreenButton(RenderObject* object, const PaintInfo& pa
     return paintMediaButton(paintInfo.context, rect, mediaFullscreenButton);
 }
 
+static bool paintMediaClosedCaptionsButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
+{
+    HTMLMediaElement* mediaElement = toParentMediaElement(object);
+    if (!mediaElement)
+        return false;
+
+    static Image* mediaClosedCaptionButton = platformResource("mediaplayerClosedCaption");
+    static Image* mediaClosedCaptionButtonDisabled = platformResource("mediaplayerClosedCaptionDisabled");
+
+    if (mediaElement->webkitClosedCaptionsVisible())
+        return paintMediaButton(paintInfo.context, rect, mediaClosedCaptionButton);
+
+    return paintMediaButton(paintInfo.context, rect, mediaClosedCaptionButtonDisabled);
+}
+
+
 bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType part, RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     switch (part) {
@@ -327,6 +352,8 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     case MediaPauseButton:
     case MediaPlayButton:
         return paintMediaPlayButton(object, paintInfo, rect);
+    case MediaShowClosedCaptionsButton:
+        return paintMediaClosedCaptionsButton(object, paintInfo, rect);
     case MediaSlider:
         return paintMediaSlider(object, paintInfo, rect);
     case MediaSliderThumb:
@@ -338,6 +365,8 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     case MediaEnterFullscreenButton:
     case MediaExitFullscreenButton:
         return paintMediaFullscreenButton(object, paintInfo, rect);
+    case MediaOverlayPlayButton:
+        return paintMediaOverlayPlayButton(object, paintInfo, rect);
     case MediaVolumeSliderMuteButton:
     case MediaSeekBackButton:
     case MediaSeekForwardButton:
@@ -349,7 +378,6 @@ bool RenderMediaControlsChromium::paintMediaControlsPart(MediaControlElementType
     case MediaRewindButton:
     case MediaReturnToRealtimeButton:
     case MediaStatusDisplay:
-    case MediaShowClosedCaptionsButton:
     case MediaHideClosedCaptionsButton:
     case MediaTextTrackDisplayContainer:
     case MediaTextTrackDisplay:

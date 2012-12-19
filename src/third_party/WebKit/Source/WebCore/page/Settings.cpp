@@ -138,7 +138,16 @@ Settings::Settings(Page* page)
     , m_sessionStorageQuota(StorageMap::noQuota)
     , m_editingBehaviorType(editingBehaviorTypeForPlatform())
     , m_maximumHTMLParserDOMTreeDepth(defaultMaximumHTMLParserDOMTreeDepth)
-    , m_fontBoostingEnabled(true)
+    , m_storageBlockingPolicy(SecurityOrigin::AllowAllStorage)
+#if ENABLE(TEXT_AUTOSIZING)
+    , m_textAutosizingFontScaleFactor(1)
+#if HACK_FORCE_TEXT_AUTOSIZING_ON_DESKTOP
+    , m_textAutosizingWindowSizeOverride(320, 480)
+    , m_textAutosizingEnabled(true)
+#else
+    , m_textAutosizingEnabled(false)
+#endif
+#endif
     , m_isSpatialNavigationEnabled(false)
     , m_isJavaEnabled(false)
     , m_isJavaEnabledForLocalFiles(true)
@@ -178,7 +187,9 @@ Settings::Settings(Page* page)
     , m_needsSiteSpecificQuirks(false)
     , m_fontRenderingMode(0)
     , m_frameFlatteningEnabled(false)
+#if ENABLE(WEB_ARCHIVE)
     , m_webArchiveDebugModeEnabled(false)
+#endif
     , m_localFileContentSniffingEnabled(false)
     , m_inApplicationChromeMode(false)
     , m_offlineWebApplicationCacheEnabled(false)
@@ -189,8 +200,14 @@ Settings::Settings(Page* page)
     , m_acceleratedDrawingEnabled(false)
     , m_acceleratedFiltersEnabled(false)
     , m_isCSSCustomFilterEnabled(false)
+#if ENABLE(CSS_STICKY_POSITION)
+    , m_cssStickyPositionEnabled(true)
+#endif
 #if ENABLE(CSS_REGIONS)
     , m_cssRegionsEnabled(false)
+#endif
+#if ENABLE(CSS_VARIABLES)
+    , m_cssVariablesEnabled(false)
 #endif
     , m_regionBasedColumnsEnabled(false)
     , m_cssGridLayoutEnabled(false)
@@ -230,6 +247,7 @@ Settings::Settings(Page* page)
     , m_unifiedTextCheckerEnabled(false)
 #endif
     , m_memoryInfoEnabled(false)
+    , m_quantizedMemoryInfoEnabled(false)
     , m_interactiveFormValidation(false)
     , m_usePreHTML5ParserQuirks(false)
     , m_hyperlinkAuditingEnabled(false)
@@ -241,9 +259,6 @@ Settings::Settings(Page* page)
     , m_allowRunningOfInsecureContent(true)
 #if ENABLE(SMOOTH_SCROLLING)
     , m_scrollAnimatorEnabled(true)
-#endif
-#if ENABLE(WEB_SOCKETS)
-    , m_useHixie76WebSocketProtocol(false)
 #endif
     , m_mediaPlaybackRequiresUserGesture(false)
     , m_mediaPlaybackAllowsInline(true)
@@ -270,7 +285,10 @@ Settings::Settings(Page* page)
     , m_needsDidFinishLoadOrderQuirk(false)
     , m_fixedPositionCreatesStackingContext(false)
     , m_syncXHRInDocumentsEnabled(true)
+    , m_cookieEnabled(true)
     , m_windowFocusRestricted(true)
+    , m_diagnosticLoggingEnabled(false)
+    , m_scrollingPerformanceLoggingEnabled(false)
     , m_loadsImagesAutomaticallyTimer(this, &Settings::loadsImagesAutomaticallyTimerFired)
     , m_incrementalRenderingSuppressionTimeoutInSeconds(defaultIncrementalRenderingSuppressionTimeoutInSeconds)
 {
@@ -399,14 +417,32 @@ void Settings::setDefaultFixedFontSize(int defaultFontSize)
     m_page->setNeedsRecalcStyleInAllFrames();
 }
 
-void Settings::setFontBoostingEnabled(bool fontBoostingEnabled)
+#if ENABLE(TEXT_AUTOSIZING)
+void Settings::setTextAutosizingEnabled(bool textAutosizingEnabled)
 {
-    if (m_fontBoostingEnabled == fontBoostingEnabled)
+    if (m_textAutosizingEnabled == textAutosizingEnabled)
         return;
 
-    m_fontBoostingEnabled = fontBoostingEnabled;
+    m_textAutosizingEnabled = textAutosizingEnabled;
     m_page->setNeedsRecalcStyleInAllFrames();
 }
+
+void Settings::setTextAutosizingWindowSizeOverride(const IntSize& textAutosizingWindowSizeOverride)
+{
+    if (m_textAutosizingWindowSizeOverride == textAutosizingWindowSizeOverride)
+        return;
+
+    m_textAutosizingWindowSizeOverride = textAutosizingWindowSizeOverride;
+    m_page->setNeedsRecalcStyleInAllFrames();
+}
+
+void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
+{
+    m_textAutosizingFontScaleFactor = fontScaleFactor;
+    m_page->setNeedsRecalcStyleInAllFrames();
+}
+
+#endif
 
 void Settings::setLoadsImagesAutomatically(bool loadsImagesAutomatically)
 {
@@ -898,6 +934,15 @@ void Settings::setLoadDeferringEnabled(bool enabled)
     m_loadDeferringEnabled = enabled;
 }
 
+void Settings::setStorageBlockingPolicy(SecurityOrigin::StorageBlockingPolicy enabled)
+{
+    if (m_storageBlockingPolicy == enabled)
+        return;
+
+    m_storageBlockingPolicy = enabled;
+    m_page->storageBlockingStateChanged();
+}
+
 void Settings::setTiledBackingStoreEnabled(bool enabled)
 {
     m_tiledBackingStoreEnabled = enabled;
@@ -905,6 +950,14 @@ void Settings::setTiledBackingStoreEnabled(bool enabled)
     if (m_page->mainFrame())
         m_page->mainFrame()->setTiledBackingStoreEnabled(enabled);
 #endif
+}
+
+void Settings::setScrollingPerformanceLoggingEnabled(bool enabled)
+{
+    m_scrollingPerformanceLoggingEnabled = enabled;
+
+    if (m_page->mainFrame() && m_page->mainFrame()->view())
+        m_page->mainFrame()->view()->setScrollingPerformanceLoggingEnabled(enabled);
 }
 
 void Settings::setMockScrollbarsEnabled(bool flag)

@@ -365,8 +365,8 @@ class Message(interface.ItemFormatter):
     message = message.replace('"', '""')
     # Replace linebreaks with a \n escape
     message = util.LINEBREAKS.sub(r'\\n', message)
-    substituter = getattr(item.GetRoot(), 'substituter', None)
-    if substituter:
+    if hasattr(item.GetRoot(), 'GetSubstituter'):
+      substituter = item.GetRoot().GetSubstituter()
       message = substituter.Substitute(message)
 
     name_attr = item.GetTextualIds()[0]
@@ -391,10 +391,9 @@ class RcSection(interface.ItemFormatter):
         fallback_to_english=item.ShouldFallbackToEnglish()) + '\n\n'
 
       # Replace the language expand_variables in version rc info.
-      if item.ExpandVariables():
-        substituter = getattr(item.GetRoot(), 'substituter', None)
-        if substituter:
-          text = substituter.Substitute(text)
+      if item.ExpandVariables() and hasattr(item.GetRoot(), 'GetSubstituter'):
+        substituter = item.GetRoot().GetSubstituter()
+        text = substituter.Substitute(text)
 
       return text
 

@@ -21,13 +21,18 @@
 
 #ifndef BASE_TIME_H_
 #define BASE_TIME_H_
-#pragma once
 
 #include <time.h>
 
 #include "base/atomicops.h"
 #include "base/base_export.h"
 #include "base/basictypes.h"
+
+#if defined(OS_MACOSX)
+#include <CoreFoundation/CoreFoundation.h>
+// Avoid Mac system header macro leak.
+#undef TYPE_BOOL
+#endif
 
 #if defined(OS_POSIX)
 // For struct timeval.
@@ -39,6 +44,8 @@
 // See TODO(iyengar) below.
 #include <windows.h>
 #endif
+
+#include <limits>
 
 namespace base {
 
@@ -59,6 +66,9 @@ class BASE_EXPORT TimeDelta {
   static TimeDelta FromSeconds(int64 secs);
   static TimeDelta FromMilliseconds(int64 ms);
   static TimeDelta FromMicroseconds(int64 us);
+#if defined(OS_WIN)
+  static TimeDelta FromQPCValue(LONGLONG qpc_value);
+#endif
 
   // Converts an integer value representing TimeDelta to a class. This is used
   // when deserializing a |TimeDelta| structure, using a value known to be
@@ -238,6 +248,11 @@ class BASE_EXPORT Time {
     return us_ == 0;
   }
 
+  // Returns true if the time object is the maximum time.
+  bool is_max() const {
+    return us_ == std::numeric_limits<int64>::max();
+  }
+
   // Returns the time for epoch in Unix-like system (Jan 1, 1970).
   static Time UnixEpoch();
 
@@ -245,6 +260,10 @@ class BASE_EXPORT Time {
   // in which case time will actually go backwards. We don't guarantee that
   // times are increasing, or that two calls to Now() won't be the same.
   static Time Now();
+
+  // Returns the maximum time, which should be greater than any reasonable time
+  // with which we might compare it.
+  static Time Max();
 
   // Returns the current time. Same as Now() except that this function always
   // uses system time so that there are no discrepancies between the returned
@@ -275,6 +294,11 @@ class BASE_EXPORT Time {
 #if defined(OS_POSIX)
   static Time FromTimeVal(struct timeval t);
   struct timeval ToTimeVal() const;
+#endif
+
+#if defined(OS_MACOSX)
+  static Time FromCFAbsoluteTime(CFAbsoluteTime t);
+  CFAbsoluteTime ToCFAbsoluteTime() const;
 #endif
 
 #if defined(OS_WIN)
@@ -499,6 +523,8 @@ class BASE_EXPORT TimeTicks {
 #if defined(OS_WIN)
   // Get the absolute value of QPC time drift. For testing.
   static int64 GetQPCDriftMicroseconds();
+
+  static TimeTicks FromQPCValue(LONGLONG qpc_value);
 
   // Returns true if the high resolution clock is working on this system.
   // This is only for testing.

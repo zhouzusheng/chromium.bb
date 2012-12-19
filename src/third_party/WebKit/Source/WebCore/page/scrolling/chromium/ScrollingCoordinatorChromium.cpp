@@ -29,49 +29,70 @@
 
 #include "Frame.h"
 #include "FrameView.h"
-#include "LayerChromium.h"
+#include "GraphicsLayerChromium.h"
+#include "Page.h"
 #include "Region.h"
 #include "RenderLayerCompositor.h"
 #include "RenderView.h"
-#include "ScrollbarLayerChromium.h"
-#include "ScrollbarTheme.h"
-#include "cc/CCProxy.h"
+#include "ScrollbarThemeComposite.h"
+#include "WebScrollbarImpl.h"
+#include "WebScrollbarThemeGeometryNative.h"
+#include <public/Platform.h>
+#include <public/WebCompositorSupport.h>
+#include <public/WebScrollbar.h>
+#include <public/WebScrollbarLayer.h>
+#include <public/WebScrollbarThemeGeometry.h>
+#include <public/WebScrollbarThemePainter.h>
+
+using WebKit::WebLayer;
+using WebKit::WebRect;
+using WebKit::WebScrollbarLayer;
+using WebKit::WebVector;
 
 namespace WebCore {
 
 class ScrollingCoordinatorPrivate {
 WTF_MAKE_NONCOPYABLE(ScrollingCoordinatorPrivate);
 public:
-    ScrollingCoordinatorPrivate() { }
-    ~ScrollingCoordinatorPrivate() { }
+    ScrollingCoordinatorPrivate()
+        : m_scrollLayer(0)
+    {
+    }
 
-    void setScrollLayer(LayerChromium* layer)
+    ~ScrollingCoordinatorPrivate()
+    {
+        if (m_horizontalScrollbarLayer)
+            GraphicsLayerChromium::unregisterContentsLayer(m_horizontalScrollbarLayer->layer());
+        if (m_verticalScrollbarLayer)
+            GraphicsLayerChromium::unregisterContentsLayer(m_verticalScrollbarLayer->layer());
+    }
+
+    void setScrollLayer(WebLayer* layer)
     {
         m_scrollLayer = layer;
 
-        int id = layer ? layer->id() : 0;
         if (m_horizontalScrollbarLayer)
-            m_horizontalScrollbarLayer->setScrollLayerId(id);
+            m_horizontalScrollbarLayer->setScrollLayer(layer);
         if (m_verticalScrollbarLayer)
-            m_verticalScrollbarLayer->setScrollLayerId(id);
+            m_verticalScrollbarLayer->setScrollLayer(layer);
     }
 
-    void setHorizontalScrollbarLayer(PassRefPtr<ScrollbarLayerChromium> layer)
+    void setHorizontalScrollbarLayer(PassOwnPtr<WebScrollbarLayer> layer)
     {
         m_horizontalScrollbarLayer = layer;
     }
 
-    void setVerticalScrollbarLayer(PassRefPtr<ScrollbarLayerChromium> layer)
+    void setVerticalScrollbarLayer(PassOwnPtr<WebScrollbarLayer> layer)
     {
         m_verticalScrollbarLayer = layer;
     }
 
-    LayerChromium* scrollLayer() const { return m_scrollLayer.get(); }
+    WebLayer* scrollLayer() const { return m_scrollLayer; }
 
 private:
-    RefPtr<LayerChromium> m_scrollLayer;
-    RefPtr<ScrollbarLayerChromium> m_horizontalScrollbarLayer;
-    RefPtr<ScrollbarLayerChromium> m_verticalScrollbarLayer;
+    WebLayer* m_scrollLayer;
+    OwnPtr<WebScrollbarLayer> m_horizontalScrollbarLayer;
+    OwnPtr<WebScrollbarLayer> m_verticalScrollbarLayer;
 };
 
 PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
@@ -103,14 +124,19 @@ static GraphicsLayer* scrollLayerForFrameView(FrameView* frameView)
 #endif
 }
 
-static PassRefPtr<ScrollbarLayerChromium> createScrollbarLayer(Scrollbar* scrollbar, LayerChromium* scrollLayer, GraphicsLayer* scrollbarGraphicsLayer, FrameView* frameView)
+static WebLayer* scrollableLayerForGraphicsLayer(GraphicsLayer* layer)
+{
+    return layer->platformLayer();
+}
+
+static PassOwnPtr<WebScrollbarLayer> createScrollbarLayer(Scrollbar* scrollbar, WebLayer* scrollLayer, GraphicsLayer* scrollbarGraphicsLayer, FrameView* frameView)
 {
     ASSERT(scrollbar);
     ASSERT(scrollbarGraphicsLayer);
 
     if (!scrollLayer) {
         // FIXME: sometimes we get called before setScrollLayer, workaround by finding the scroll layout ourselves.
-        scrollLayer = scrollLayerForFrameView(frameView)->platformLayer();
+        scrollLayer = scrollableLayerForGraphicsLayer(scrollLayerForFrameView(frameView));
         ASSERT(scrollLayer);
     }
 
@@ -121,24 +147,29 @@ static PassRefPtr<ScrollbarLayerChromium> createScrollbarLayer(Scrollbar* scroll
         scrollbarGraphicsLayer->setContentsOpaque(isOpaqueRootScrollbar);
 
     // FIXME: Mac scrollbar themes are not thread-safe to paint.
-    // FIXME: Win scrollbars on XP Classic themes do not paint valid alpha
-    // values due to GDI. This needs to be fixed in theme code before it
-    // can be turned on here.
     bool platformSupported = true;
-#if OS(DARWIN) || OS(WINDOWS)
+#if OS(DARWIN)
     platformSupported = false;
 #endif
 
-    if (!platformSupported || scrollbar->isOverlayScrollbar()) {
+    if (!platformSupported || scrollbar->isCustomScrollbar()) {
         scrollbarGraphicsLayer->setContentsToMedia(0);
         scrollbarGraphicsLayer->setDrawsContent(true);
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<ScrollbarLayerChromium> scrollbarLayer = ScrollbarLayerChromium::create(scrollbar, scrollLayer->id());
-    scrollbarGraphicsLayer->setContentsToMedia(scrollbarLayer.get());
+    // All Chromium scrollbar themes derive from ScrollbarThemeComposite.
+    ScrollbarThemeComposite* themeComposite = static_cast<ScrollbarThemeComposite*>(scrollbar->theme());
+    WebKit::WebScrollbarThemePainter painter(themeComposite, scrollbar);
+    OwnPtr<WebKit::WebScrollbarThemeGeometry> geometry(WebKit::WebScrollbarThemeGeometryNative::create(themeComposite));
+
+    OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createScrollbarLayer(new WebKit::WebScrollbarImpl(scrollbar), painter, geometry.leakPtr()));
+    scrollbarLayer->setScrollLayer(scrollLayer);
+
+    GraphicsLayerChromium::registerContentsLayer(scrollbarLayer->layer());
+    scrollbarGraphicsLayer->setContentsToMedia(scrollbarLayer->layer());
     scrollbarGraphicsLayer->setDrawsContent(false);
-    scrollbarLayer->setOpaque(scrollbarGraphicsLayer->contentsOpaque());
+    scrollbarLayer->layer()->setOpaque(scrollbarGraphicsLayer->contentsOpaque());
 
     return scrollbarLayer.release();
 }
@@ -148,6 +179,7 @@ void ScrollingCoordinator::frameViewHorizontalScrollbarLayerDidChange(FrameView*
     if (!horizontalScrollbarLayer || !coordinatesScrollingForFrameView(frameView))
         return;
 
+    setScrollLayer(scrollLayerForFrameView(m_page->mainFrame()->view()));
     m_private->setHorizontalScrollbarLayer(createScrollbarLayer(frameView->horizontalScrollbar(), m_private->scrollLayer(), horizontalScrollbarLayer, frameView));
 }
 
@@ -156,18 +188,26 @@ void ScrollingCoordinator::frameViewVerticalScrollbarLayerDidChange(FrameView* f
     if (!verticalScrollbarLayer || !coordinatesScrollingForFrameView(frameView))
         return;
 
+    setScrollLayer(scrollLayerForFrameView(m_page->mainFrame()->view()));
     m_private->setVerticalScrollbarLayer(createScrollbarLayer(frameView->verticalScrollbar(), m_private->scrollLayer(), verticalScrollbarLayer, frameView));
 }
 
 void ScrollingCoordinator::setScrollLayer(GraphicsLayer* scrollLayer)
 {
-    m_private->setScrollLayer(scrollLayer ? scrollLayer->platformLayer() : 0);
+    m_private->setScrollLayer(scrollLayer ? scrollableLayerForGraphicsLayer(scrollLayer) : 0);
 }
 
 void ScrollingCoordinator::setNonFastScrollableRegion(const Region& region)
 {
-    if (LayerChromium* layer = m_private->scrollLayer())
-        layer->setNonFastScrollableRegion(region);
+    // We won't necessarily get a setScrollLayer() call before this one, so grab the root ourselves.
+    setScrollLayer(scrollLayerForFrameView(m_page->mainFrame()->view()));
+    if (m_private->scrollLayer()) {
+        Vector<IntRect> rects = region.rects();
+        WebVector<WebRect> webRects(rects.size());
+        for (size_t i = 0; i < rects.size(); ++i)
+            webRects[i] = rects[i];
+        m_private->scrollLayer()->setNonFastScrollableRegion(webRects);
+    }
 }
 
 void ScrollingCoordinator::setScrollParameters(const ScrollParameters&)
@@ -177,14 +217,18 @@ void ScrollingCoordinator::setScrollParameters(const ScrollParameters&)
 
 void ScrollingCoordinator::setWheelEventHandlerCount(unsigned wheelEventHandlerCount)
 {
-    if (LayerChromium* layer = m_private->scrollLayer())
-        layer->setHaveWheelEventHandlers(wheelEventHandlerCount > 0);
+    // We won't necessarily get a setScrollLayer() call before this one, so grab the root ourselves.
+    setScrollLayer(scrollLayerForFrameView(m_page->mainFrame()->view()));
+    if (m_private->scrollLayer())
+        m_private->scrollLayer()->setHaveWheelEventHandlers(wheelEventHandlerCount > 0);
 }
 
-void ScrollingCoordinator::setShouldUpdateScrollLayerPositionOnMainThread(bool should)
+void ScrollingCoordinator::setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons reasons)
 {
-    if (LayerChromium* layer = m_private->scrollLayer())
-        layer->setShouldScrollOnMainThread(should);
+    // We won't necessarily get a setScrollLayer() call before this one, so grab the root ourselves.
+    setScrollLayer(scrollLayerForFrameView(m_page->mainFrame()->view()));
+    if (m_private->scrollLayer())
+        m_private->scrollLayer()->setShouldScrollOnMainThread(reasons);
 }
 
 bool ScrollingCoordinator::supportsFixedPositionLayers() const
@@ -194,14 +238,28 @@ bool ScrollingCoordinator::supportsFixedPositionLayers() const
 
 void ScrollingCoordinator::setLayerIsContainerForFixedPositionLayers(GraphicsLayer* layer, bool enable)
 {
-    if (LayerChromium* platformLayer = layer->platformLayer())
-        platformLayer->setIsContainerForFixedPositionLayers(enable);
+    if (WebLayer* scrollableLayer = scrollableLayerForGraphicsLayer(layer))
+        scrollableLayer->setIsContainerForFixedPositionLayers(enable);
 }
 
 void ScrollingCoordinator::setLayerIsFixedToContainerLayer(GraphicsLayer* layer, bool enable)
 {
-    if (LayerChromium* platformLayer = layer->platformLayer())
-        platformLayer->setFixedToContainerLayer(enable);
+    if (WebLayer* scrollableLayer = scrollableLayerForGraphicsLayer(layer))
+        scrollableLayer->setFixedToContainerLayer(enable);
+}
+
+void ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* scrollableArea, GraphicsLayer* scrollLayer)
+{
+    if (!scrollLayer)
+        return;
+    GraphicsLayerChromium* layer = static_cast<GraphicsLayerChromium*>(scrollLayer);
+    layer->setScrollableArea(scrollableArea);
+
+    if (WebLayer* webLayer = scrollLayer->platformLayer()) {
+        webLayer->setScrollable(true);
+        webLayer->setScrollPosition(scrollableArea->scrollPosition());
+        webLayer->setMaxScrollPosition(IntSize(scrollableArea->scrollSize(HorizontalScrollbar), scrollableArea->scrollSize(VerticalScrollbar)));
+    }
 }
 
 }

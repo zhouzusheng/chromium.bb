@@ -37,7 +37,6 @@
 #include "DedicatedWorkerContext.h"
 #include "WorkerContextExecutionProxy.h"
 #include "V8Binding.h"
-#include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "V8WorkerContextEventListener.h"
 
@@ -49,7 +48,7 @@ static v8::Handle<v8::Value> handlePostMessageCallback(const v8::Arguments& args
     MessagePortArray ports;
     ArrayBufferArray arrayBuffers;
     if (args.Length() > 1) {
-        if (!extractTransferables(args[1], ports, arrayBuffers))
+        if (!extractTransferables(args[1], ports, arrayBuffers, args.GetIsolate()))
             return v8::Undefined();
     }
     bool didThrow = false;
@@ -63,7 +62,7 @@ static v8::Handle<v8::Value> handlePostMessageCallback(const v8::Arguments& args
         return v8::Undefined();
     ExceptionCode ec = 0;
     workerContext->postMessage(message.release(), &ports, ec);
-    return throwError(ec, args.GetIsolate());
+    return setDOMException(ec, args.GetIsolate());
 }
 
 v8::Handle<v8::Value> V8DedicatedWorkerContext::postMessageCallback(const v8::Arguments& args)
@@ -72,11 +71,13 @@ v8::Handle<v8::Value> V8DedicatedWorkerContext::postMessageCallback(const v8::Ar
     return handlePostMessageCallback(args);
 }
 
+#if ENABLE(LEGACY_VENDOR_PREFIXES)
 v8::Handle<v8::Value> V8DedicatedWorkerContext::webkitPostMessageCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.DedicatedWorkerContext.postMessage");
     return handlePostMessageCallback(args);
 }
+#endif
 
 } // namespace WebCore
 

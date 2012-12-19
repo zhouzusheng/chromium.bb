@@ -28,9 +28,13 @@
 #include "config.h"
 #include "TextEncoding.h"
 
-#include "PlatformString.h"
 #include "TextCodec.h"
 #include "TextEncodingRegistry.h"
+#include <wtf/OwnPtr.h>
+#include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
+#include <wtf/text/WTFString.h>
+
 #if USE(ICU_UNICODE)
 #include <unicode/unorm.h>
 #elif USE(QT4_UNICODE)
@@ -39,9 +43,6 @@
 #include <glib.h>
 #include <wtf/gobject/GOwnPtr.h>
 #endif
-#include <wtf/text/CString.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
@@ -58,7 +59,7 @@ TextEncoding::TextEncoding(const char* name)
 }
 
 TextEncoding::TextEncoding(const String& name)
-    : m_name(atomicCanonicalTextEncodingName(name.characters(), name.length()))
+    : m_name(atomicCanonicalTextEncodingName(name))
     , m_backslashAsCurrencySymbol(backslashAsCurrencySymbol())
 {
 }
@@ -125,7 +126,7 @@ CString TextEncoding::encode(const UChar* characters, size_t length, Unencodable
     UTF16Normalized.set(g_utf8_to_utf16(UTF8Normalized.get(), -1, 0, &UTF16Length, 0));
 
     return newTextCodec(*this)->encode(UTF16Normalized.get(), UTF16Length, handling);
-#elif OS(WINCE)
+#elif OS(WINDOWS) && USE(WCHAR_UNICODE)
     // normalization will be done by Windows CE API
     OwnPtr<TextCodec> textCodec = newTextCodec(*this);
     return textCodec.get() ? textCodec->encode(characters, length, handling) : CString();

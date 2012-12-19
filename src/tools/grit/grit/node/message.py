@@ -112,9 +112,11 @@ class MessageNode(base.ContentNode):
     elif t in ('rc_all', 'rc_translateable', 'rc_nontranslateable'):
       return grit.format.rc.Message()
     elif t == 'c_format' and self.SatisfiesOutputCondition():
-        return grit.format.c_format.Message()
+      return grit.format.c_format.Message()
     elif t == 'js_map_format':
-        return grit.format.js_map_format.Message()
+      return grit.format.js_map_format.Message()
+    elif t == 'android':
+      return grit.format.android_xml.Message()
     else:
       return super(MessageNode, self).ItemFormatter(t)
 

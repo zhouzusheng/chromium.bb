@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_FILE_JOB_H_
 #define NET_URL_REQUEST_URL_REQUEST_FILE_JOB_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -25,13 +24,11 @@ namespace net {
 // A request job that handles reading file URLs
 class NET_EXPORT URLRequestFileJob : public URLRequestJob {
  public:
-  URLRequestFileJob(URLRequest* request, const FilePath& file_path);
+  URLRequestFileJob(URLRequest* request,
+                    NetworkDelegate* network_delegate,
+                    const FilePath& file_path);
 
   static URLRequest::ProtocolFactory Factory;
-
-#if defined(OS_CHROMEOS)
-  static bool AccessDisabled(const FilePath& file_path);
-#endif
 
   // URLRequestJob:
   virtual void Start() OVERRIDE;
@@ -53,12 +50,6 @@ class NET_EXPORT URLRequestFileJob : public URLRequestJob {
   FilePath file_path_;
 
  private:
-  // Tests to see if access to |path| is allowed. If g_allow_file_access_ is
-  // true, then this will return true. If the NetworkDelegate associated with
-  // the |request| says it's OK, then this will also return true.
-  static bool IsFileAccessAllowed(const URLRequest& request,
-                                  const FilePath& path);
-
   // Callback after fetching file info on a background thread.
   void DidResolve(bool exists, const base::PlatformFileInfo& file_info);
 

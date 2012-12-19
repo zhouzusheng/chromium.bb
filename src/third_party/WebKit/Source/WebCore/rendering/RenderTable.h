@@ -47,6 +47,8 @@ public:
 
     int getColumnPos(unsigned col) const { return m_columnPos[col]; }
 
+    // Per CSS 3 writing-mode: "The first and second values of the 'border-spacing' property represent spacing between columns
+    // and rows respectively, not necessarily the horizontal and vertical spacing respectively".
     int hBorderSpacing() const { return m_hSpacing; }
     int vBorderSpacing() const { return m_vSpacing; }
     
@@ -178,10 +180,19 @@ public:
         return c;
     }
 
+    LayoutUnit borderSpacingInRowDirection() const
+    {
+        if (unsigned effectiveColumnCount = numEffCols())
+            return static_cast<LayoutUnit>(effectiveColumnCount + 1) * hBorderSpacing();
+
+        return ZERO_LAYOUT_UNIT;
+    }
+
     LayoutUnit bordersPaddingAndSpacingInRowDirection() const
     {
+        // 'border-spacing' only applies to separate borders (see 17.6.1 The separated borders model).
         return borderStart() + borderEnd() +
-               (collapseBorders() ? ZERO_LAYOUT_UNIT : (paddingStart() + paddingEnd() + static_cast<LayoutUnit>(numEffCols() + 1) * hBorderSpacing()));
+               (collapseBorders() ? ZERO_LAYOUT_UNIT : (paddingStart() + paddingEnd() + borderSpacingInRowDirection()));
     }
 
     // Return the first column or column-group.
@@ -231,6 +242,9 @@ public:
     const BorderValue& tableStartBorderAdjoiningCell(const RenderTableCell*) const;
     const BorderValue& tableEndBorderAdjoiningCell(const RenderTableCell*) const;
 
+    void addCaption(const RenderTableCaption*);
+    void removeCaption(const RenderTableCaption*);
+
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -241,24 +255,24 @@ private:
 
     virtual bool avoidsFloats() const { return true; }
 
-    virtual void removeChild(RenderObject* oldChild);
-
     virtual void paint(PaintInfo&, const LayoutPoint&);
     virtual void paintObject(PaintInfo&, const LayoutPoint&);
     virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&);
     virtual void paintMask(PaintInfo&, const LayoutPoint&);
     virtual void layout();
     virtual void computePreferredLogicalWidths();
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
-    
-    virtual LayoutUnit firstLineBoxBaseline() const;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+
+    virtual LayoutUnit baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
+    virtual LayoutUnit firstLineBoxBaseline() const OVERRIDE;
+    virtual LayoutUnit lastLineBoxBaseline() const OVERRIDE;
 
     virtual RenderBlock* firstLineBlock() const;
     virtual void updateFirstLetter();
     
     virtual void setCellLogicalWidths();
 
-    virtual void computeLogicalWidth();
+    virtual void updateLogicalWidth() OVERRIDE;
 
     LayoutUnit convertStyleLogicalWidthToComputedWidth(const Length& styleLogicalWidth, LayoutUnit availableWidth);
 

@@ -18,21 +18,34 @@ scoped_refptr<StreamParserBuffer> StreamParserBuffer::CopyFrom(
       new StreamParserBuffer(data, data_size, is_keyframe));
 }
 
-base::TimeDelta StreamParserBuffer::GetEndTimestamp() const {
-  DCHECK(GetTimestamp() != kNoTimestamp());
-  DCHECK(GetDuration() != kNoTimestamp());
-  return GetTimestamp() + GetDuration();
+base::TimeDelta StreamParserBuffer::GetDecodeTimestamp() const {
+  if (decode_timestamp_ == kNoTimestamp())
+    return GetTimestamp();
+  return decode_timestamp_;
+}
+
+void StreamParserBuffer::SetDecodeTimestamp(const base::TimeDelta& timestamp) {
+  decode_timestamp_ = timestamp;
 }
 
 StreamParserBuffer::StreamParserBuffer(const uint8* data, int data_size,
                                        bool is_keyframe)
     : DecoderBuffer(data, data_size),
-      is_keyframe_(is_keyframe) {
+      is_keyframe_(is_keyframe),
+      decode_timestamp_(kNoTimestamp()),
+      config_id_(kInvalidConfigId) {
   SetDuration(kNoTimestamp());
 }
 
-
 StreamParserBuffer::~StreamParserBuffer() {
+}
+
+int StreamParserBuffer::GetConfigId() const {
+  return config_id_;
+}
+
+void StreamParserBuffer::SetConfigId(int config_id) {
+  config_id_ = config_id;
 }
 
 }  // namespace media

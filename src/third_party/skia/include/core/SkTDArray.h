@@ -95,7 +95,7 @@ public:
     /**
      *  Return the number of elements in the array
      */
-    int count() const { return fCount; }
+    int count() const { return (int)fCount; }
 
     /**
      *  return the number of bytes in the array: count * sizeof(T)
@@ -121,7 +121,7 @@ public:
             SkASSERT(fReserve == 0 && fCount == 0);
         }
     }
-    
+
     void rewind() {
         // same as setCount(0)
         fCount = 0;
@@ -166,9 +166,9 @@ public:
         }
         return fArray + oldCount;
     }
-    
+
     T* appendClear() {
-        T* result = this->append(); 
+        T* result = this->append();
         *result = 0;
         return result;
     }
@@ -229,6 +229,13 @@ public:
     }
 
     /**
+     * Returns true iff the array contains this element.
+     */
+    bool contains(const T& elem) const {
+        return (this->find(elem) >= 0);
+    }
+
+    /**
      * Copies up to max elements into dst. The number of items copied is
      * capped by count - index. The actual number copied is returned.
      */
@@ -259,7 +266,7 @@ public:
         T*  iter = fArray;
         T*  stop = fArray + fCount;
         while (iter < stop) {
-            delete (*iter);
+            SkDELETE (*iter);
             iter += 1;
         }
         this->reset();
@@ -333,4 +340,3 @@ private:
 };
 
 #endif
-

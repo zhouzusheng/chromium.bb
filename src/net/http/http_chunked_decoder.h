@@ -44,7 +44,6 @@
 
 #ifndef NET_HTTP_HTTP_CHUNKED_DECODER_H_
 #define NET_HTTP_HTTP_CHUNKED_DECODER_H_
-#pragma once
 
 #include <string>
 
@@ -78,6 +77,10 @@ namespace net {
 //
 class NET_EXPORT_PRIVATE HttpChunkedDecoder {
  public:
+  // The maximum length of |line_buf_| between calls to FilterBuff().
+  // Exposed for tests.
+  static const size_t kMaxLineBufLen;
+
   HttpChunkedDecoder();
 
   // Indicates that a previous call to FilterBuf encountered the final CRLF.

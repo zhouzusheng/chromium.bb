@@ -6,18 +6,35 @@
 
 namespace switches {
 
-// Let text glyphs have X-positions that aren't snapped to the pixel grid.
-const char kEnableTextSubpixelPositioning[] =
-    "enable-text-subpixel-positioning";
+// Disable support for bezel touch.
+const char kEnableBezelTouch[] = "enable-bezel-touch";
+
+// Whether or not ImageSkiaOperations methods can scale one of images
+// if they don't have the same scale factor.
+const char kDisableScalingInImageSkiaOperations[] =
+    "disable-scaling-in-image-skia-operations";
+
+// Let text glyphs have X-positions that aren't snapped to the pixel grid in
+// the browser UI.
+const char kEnableBrowserTextSubpixelPositioning[] =
+    "enable-browser-text-subpixel-positioning";
 
 // Enable touch screen calibration.
 const char kEnableTouchCalibration[] = "enable-touch-calibration";
+
+// Enable support for touch event calibration in x direction.
+const char kEnableTouchCalibrationX[] = "enable-touch-calibration-x";
 
 // Enable support for touch events.
 const char kEnableTouchEvents[] = "enable-touch-events";
 
 // Enables the Views textfield on Windows.
 const char kEnableViewsTextfield[] = "enable-views-textfield";
+
+// Enable text glyphs to have X-positions that aren't snapped to the pixel grid
+// in webkit renderers.
+const char kEnableWebkitTextSubpixelPositioning[] =
+    "enable-webkit-text-subpixel-positioning";
 
 // Overrides the device scale factor for the browser UI and the
 // contents.
@@ -34,16 +51,12 @@ const char kHighlightMissing2xResources[] =
 // language[-country] where language is the 2 letter code from ISO-639.
 const char kLang[] = "lang";
 
-// Loads 2x resources. These resource paks currently contain
-// mix of 1x and 2x and loading them may break the UI on 2x display.
-const char kLoad2xResources[] = "load-2x-resources";
-
 // Load the locale resources from the given path. When running on Mac/Unix the
 // path should point to a locale.pak file.
 const char kLocalePak[] = "locale_pak";
 
-// Enables a new appearance for checkboxes and radio buttons.
-const char kNewCheckboxStyle[]           = "new-checkbox-style";
+// Disables the new appearance for checkboxes and radio buttons.
+const char kOldCheckboxStyle[]           = "old-checkbox-style";
 
 // Disable ui::MessageBox. This is useful when running as part of scripts that
 // do not have a user interface.

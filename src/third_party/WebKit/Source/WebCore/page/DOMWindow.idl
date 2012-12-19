@@ -135,7 +135,7 @@ module window {
 
         attribute [Replaceable, DoNotCheckSecurityOnGetter, V8CustomSetter] DOMWindow opener;
         attribute [Replaceable, DoNotCheckSecurityOnGetter] DOMWindow parent;
-        attribute [Replaceable, DoNotCheckSecurityOnGetter, V8Unforgeable, V8ReadOnly] DOMWindow top;
+        readonly attribute [DoNotCheckSecurityOnGetter, V8Unforgeable] DOMWindow top;
 
         // DOM Level 2 AbstractView Interface
         readonly attribute Document document;
@@ -186,10 +186,13 @@ module window {
         [DoNotCheckSecurity, Custom] void postMessage(in SerializedScriptValue message, in DOMString targetOrigin, in Array messagePorts)
             raises(DOMException);
 
+#if defined(ENABLE_LEGACY_VENDOR_PREFIXES) && ENABLE_LEGACY_VENDOR_PREFIXES
         [DoNotCheckSecurity, Custom] void webkitPostMessage(in SerializedScriptValue message, in DOMString targetOrigin)
             raises(DOMException);
         [DoNotCheckSecurity, Custom] void webkitPostMessage(in SerializedScriptValue message, in DOMString targetOrigin, in Array transferList)
             raises(DOMException);
+#endif // defined(ENABLE_LEGACY_VENDOR_PREFIXES) && ENABLE_LEGACY_VENDOR_PREFIXES
+
 #else
         // There's no good way to expose an array via the ObjC bindings, so for now just allow passing in a single port.
         [DoNotCheckSecurity, Custom] void postMessage(in SerializedScriptValue message, in [Optional] MessagePort messagePort, in DOMString targetOrigin)
@@ -211,7 +214,7 @@ module window {
         // [Custom] long setInterval(in DOMString code, in long timeout);
         void clearInterval(in [Optional=DefaultIsUndefined] long handle);
 
-#if defined(ENABLE_REQUEST_ANIMATION_FRAME)
+#if defined(ENABLE_REQUEST_ANIMATION_FRAME) && ENABLE_REQUEST_ANIMATION_FRAME
         // WebKit animation extensions, being standardized in the WebPerf WG
         long webkitRequestAnimationFrame(in [Callback] RequestAnimationFrameCallback callback);
         void webkitCancelAnimationFrame(in long id);
@@ -313,6 +316,8 @@ module window {
         attribute [Conditional=DEVICE_ORIENTATION,V8EnabledAtRuntime] EventListener ondevicemotion;
         attribute [Conditional=DEVICE_ORIENTATION,V8EnabledAtRuntime] EventListener ondeviceorientation;
 
+        attribute [Conditional=PROXIMITY_EVENTS] EventListener onwebkitdeviceproximity;
+
         // EventTarget interface
         [Custom] void addEventListener(in DOMString type,
                                       in EventListener listener,
@@ -369,6 +374,7 @@ module window {
         attribute DocumentConstructor Document;
         attribute NodeConstructor Node;
         attribute NodeListConstructor NodeList;
+        attribute [Conditional=MICRODATA] PropertyNodeListConstructor PropertyNodeList;
         attribute NamedNodeMapConstructor NamedNodeMap;
         attribute CharacterDataConstructor CharacterData;
         attribute AttrConstructor Attr;
@@ -406,7 +412,8 @@ module window {
         attribute HTMLButtonElementConstructor HTMLButtonElement;
         attribute HTMLCanvasElementConstructor HTMLCanvasElement;
         attribute HTMLDListElementConstructor HTMLDListElement;
-        attribute [Conditional=DATALIST] HTMLDataListElementConstructor HTMLDataListElement;
+        attribute [Conditional=DATALIST_ELEMENT] HTMLDataListElementConstructor HTMLDataListElement;
+        attribute [Conditional=DIALOG_ELEMENT, V8EnabledPerContext=dialogElement] HTMLDialogElementConstructor HTMLDialogElement;
         attribute HTMLDirectoryElementConstructor HTMLDirectoryElement;
         attribute HTMLDivElementConstructor HTMLDivElement;
         attribute HTMLEmbedElementConstructor HTMLEmbedElement;
@@ -431,7 +438,7 @@ module window {
         attribute HTMLMarqueeElementConstructor HTMLMarqueeElement;
         attribute HTMLMenuElementConstructor HTMLMenuElement;
         attribute HTMLMetaElementConstructor HTMLMetaElement;
-#if defined(ENABLE_METER_TAG) && ENABLE_METER_TAG
+#if defined(ENABLE_METER_ELEMENT) && ENABLE_METER_ELEMENT
         attribute HTMLMeterElementConstructor HTMLMeterElement;
 #endif
         attribute HTMLModElementConstructor HTMLModElement;
@@ -443,7 +450,7 @@ module window {
         attribute HTMLParagraphElementConstructor HTMLParagraphElement;
         attribute HTMLParamElementConstructor HTMLParamElement;
         attribute HTMLPreElementConstructor HTMLPreElement;
-#if defined(ENABLE_PROGRESS_TAG) && ENABLE_PROGRESS_TAG
+#if defined(ENABLE_PROGRESS_ELEMENT) && ENABLE_PROGRESS_ELEMENT
         attribute HTMLProgressElementConstructor HTMLProgressElement;
 #endif
         attribute HTMLQuoteElementConstructor HTMLQuoteElement;
@@ -549,6 +556,7 @@ module window {
         attribute StorageEventConstructor StorageEvent;
         attribute [Conditional=INPUT_SPEECH] SpeechInputEventConstructor SpeechInputEvent;
         attribute [Conditional=WEBGL] WebGLContextEventConstructor WebGLContextEvent;
+        attribute [Conditional=PROXIMITY_EVENTS] DeviceProximityEventConstructor DeviceProximityEvent;
 
         attribute EventExceptionConstructor EventException;
 
@@ -776,9 +784,14 @@ module window {
 
         attribute [Conditional=BLOB&LEGACY_WEBKIT_BLOB_BUILDER] WebKitBlobBuilderConstructor WebKitBlobBuilder;
 
-        attribute [Conditional=BLOB] DOMURLConstructor webkitURL;
+        attribute [Conditional=BLOB] DOMURLConstructor URL;
+        attribute [Conditional=BLOB] DOMURLConstructor webkitURL; // FIXME: deprecate this.
 
-        attribute [Conditional=MUTATION_OBSERVERS] WebKitMutationObserverConstructor WebKitMutationObserver;
+        attribute [Conditional=MUTATION_OBSERVERS] MutationObserverConstructor WebKitMutationObserver;
+
+        attribute [Conditional=MEDIA_SOURCE, V8EnabledAtRuntime=mediaSource] MediaSourceConstructor WebKitMediaSource;
+        attribute [Conditional=MEDIA_SOURCE, V8EnabledAtRuntime=mediaSource] SourceBufferConstructor WebKitSourceBuffer;
+        attribute [Conditional=MEDIA_SOURCE, V8EnabledAtRuntime=mediaSource] SourceBufferListConstructor WebKitSourceBufferList;
 
 #endif // defined(LANGUAGE_JAVASCRIPT)
 

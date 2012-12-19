@@ -34,12 +34,12 @@
 #if ENABLE(FILE_SYSTEM)
 
 #include "AsyncFileSystem.h"
+#include "FileSystemFlags.h"
 #include "FileSystemType.h"
 #include "KURL.h"
-#include "PlatformString.h"
-#include "WebKitFlags.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -78,6 +78,12 @@ public:
     AsyncFileSystem* asyncFileSystem() const { return m_asyncFileSystem.get(); }
     SecurityOrigin* securityOrigin() const;
 
+    // The clonable flag is used in the structured clone algorithm to test
+    // whether the FileSystem API object is permitted to be cloned. It defaults
+    // to false, and must be explicitly set by internal code permit cloning.
+    void makeClonable() { m_clonable = true; }
+    bool clonable() const { return m_clonable; }
+
     static bool isValidType(FileSystemType);
     static bool crackFileSystemURL(const KURL&, FileSystemType&, String& filePath);
     bool supportsToURL() const;
@@ -92,8 +98,8 @@ public:
     bool remove(const EntryBase*, PassRefPtr<VoidCallback>, PassRefPtr<ErrorCallback>);
     bool removeRecursively(const EntryBase*, PassRefPtr<VoidCallback>, PassRefPtr<ErrorCallback>);
     bool getParent(const EntryBase*, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
-    bool getFile(const EntryBase*, const String& path, PassRefPtr<WebKitFlags>, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
-    bool getDirectory(const EntryBase*, const String& path, PassRefPtr<WebKitFlags>, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
+    bool getFile(const EntryBase*, const String& path, const FileSystemFlags&, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
+    bool getDirectory(const EntryBase*, const String& path, const FileSystemFlags&, PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>);
     bool readDirectory(PassRefPtr<DirectoryReaderBase>, const String& path, PassRefPtr<EntriesCallback>, PassRefPtr<ErrorCallback>);
 
 protected:
@@ -104,6 +110,7 @@ protected:
     String m_name;
     FileSystemType m_type;
     KURL m_filesystemRootURL;
+    bool m_clonable;
 
     mutable OwnPtr<AsyncFileSystem> m_asyncFileSystem;
 };

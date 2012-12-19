@@ -1,6 +1,6 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2010, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2007-2009 Torch Mobile, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -22,10 +22,13 @@
 #include "config.h"
 #include "WTFString.h"
 
+#include "IntegerToStringConversion.h"
 #include <stdarg.h>
 #include <wtf/ASCIICType.h>
 #include <wtf/DataLog.h>
+#include <wtf/HexNumber.h>
 #include <wtf/MathExtras.h>
+#include <wtf/MemoryInstrumentation.h>
 #include <wtf/text/CString.h>
 #include <wtf/StringExtras.h>
 #include <wtf/Vector.h>
@@ -81,6 +84,11 @@ String::String(const LChar* characters)
 
 String::String(const char* characters)
     : m_impl(characters ? StringImpl::create(reinterpret_cast<const LChar*>(characters)) : 0)
+{
+}
+
+String::String(ASCIILiteral characters)
+    : m_impl(StringImpl::createFromLiteral(characters))
 {
 }
 
@@ -412,54 +420,36 @@ String String::format(const char *format, ...)
 #endif
 }
 
-String String::number(short n)
+String String::number(int number)
 {
-    return String::format("%hd", n);
+    return numberToStringSigned<String>(number);
 }
 
-String String::number(unsigned short n)
+String String::number(unsigned int number)
 {
-    return String::format("%hu", n);
+    return numberToStringUnsigned<String>(number);
 }
 
-String String::number(int n)
+String String::number(long number)
 {
-    return String::format("%d", n);
+    return numberToStringSigned<String>(number);
 }
 
-String String::number(unsigned n)
+String String::number(unsigned long number)
 {
-    return String::format("%u", n);
+    return numberToStringUnsigned<String>(number);
 }
 
-String String::number(long n)
+String String::number(long long number)
 {
-    return String::format("%ld", n);
+    return numberToStringSigned<String>(number);
 }
 
-String String::number(unsigned long n)
+String String::number(unsigned long long number)
 {
-    return String::format("%lu", n);
+    return numberToStringUnsigned<String>(number);
 }
 
-String String::number(long long n)
-{
-#if OS(WINDOWS) && !PLATFORM(QT)
-    return String::format("%I64i", n);
-#else
-    return String::format("%lli", n);
-#endif
-}
-
-String String::number(unsigned long long n)
-{
-#if OS(WINDOWS) && !PLATFORM(QT)
-    return String::format("%I64u", n);
-#else
-    return String::format("%llu", n);
-#endif
-}
-    
 String String::number(double number, unsigned flags, unsigned precision)
 {
     NumberToStringBuffer buffer;
@@ -470,6 +460,12 @@ String String::number(double number, unsigned flags, unsigned precision)
 
     // Mimic String::format("%.[precision]f", ...), but use dtoas rounding facilities.
     return String(numberToFixedWidthString(number, precision, buffer));
+}
+
+String String::numberToStringECMAScript(double number)
+{
+    NumberToStringBuffer buffer;
+    return String(numberToString(number, buffer));
 }
 
 int String::toIntStrict(bool* ok, int base) const
@@ -645,8 +641,7 @@ CString String::ascii() const
     // preserved, characters outside of this range are converted to '?'.
 
     unsigned length = this->length();
-
-    if (!length) {
+    if (!length) { 
         char* characterBuffer;
         return CString::newUninitialized(length, characterBuffer);
     }
@@ -691,7 +686,7 @@ CString String::latin1() const
     if (is8Bit())
         return CString(reinterpret_cast<const char*>(this->characters8()), length);
 
-    const UChar* characters = this->characters();
+    const UChar* characters = this->characters16();
 
     char* characterBuffer;
     CString result = CString::newUninitialized(length, characterBuffer);
@@ -770,6 +765,19 @@ CString String::utf8(bool strict) const
     return CString(bufferVector.data(), buffer - bufferVector.data());
 }
 
+String String::make8BitFrom16BitSource(const UChar* source, size_t length)
+{
+    if (!length)
+        return String();
+
+    LChar* destination;
+    String result = String::createUninitialized(length, destination);
+
+    copyLCharsFromUCharSource(destination, source, length);
+
+    return result;
+}
+
 String String::fromUTF8(const LChar* stringStart, size_t length)
 {
     if (length > numeric_limits<unsigned>::max())
@@ -812,6 +820,12 @@ String String::fromUTF8WithLatin1Fallback(const LChar* string, size_t size)
     if (!utf8)
         return String(string, size);
     return utf8;
+}
+
+void String::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this);
+    info.addMember(m_impl);
 }
 
 // String Operations
@@ -1122,16 +1136,19 @@ Vector<char> asciiDebug(StringImpl* impl)
         return asciiDebug(String("[null]").impl());
 
     Vector<char> buffer;
-    unsigned length = impl->length();
-    const UChar* characters = impl->characters();
-
-    buffer.resize(length + 1);
-    for (unsigned i = 0; i < length; ++i) {
-        UChar ch = characters[i];
-        buffer[i] = ch && (ch < 0x20 || ch > 0x7f) ? '?' : ch;
+    for (unsigned i = 0; i < impl->length(); ++i) {
+        UChar ch = (*impl)[i];
+        if (isASCIIPrintable(ch)) {
+            if (ch == '\\')
+                buffer.append(ch);
+            buffer.append(ch);
+        } else {
+            buffer.append('\\');
+            buffer.append('u');
+            appendUnsignedAsHexFixedSize(ch, buffer, 4);
+        }
     }
-    buffer[length] = '\0';
-
+    buffer.append('\0');
     return buffer;
 }
 

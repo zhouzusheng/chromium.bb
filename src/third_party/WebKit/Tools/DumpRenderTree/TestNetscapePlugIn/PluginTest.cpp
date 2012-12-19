@@ -166,6 +166,16 @@ void PluginTest::NPN_InvalidateRect(NPRect* invalidRect)
     browser->invalidaterect(m_npp, invalidRect);
 }
 
+bool PluginTest::NPN_Invoke(NPObject *npobj, NPIdentifier methodName, const NPVariant *args, uint32_t argCount, NPVariant *result)
+{
+    return browser->invoke(m_npp, npobj, methodName, args, argCount, result);
+}
+
+void* PluginTest::NPN_MemAlloc(uint32_t size)
+{
+    return browser->memalloc(size);
+}
+
 // NPRuntime NPN functions.
 
 NPIdentifier PluginTest::NPN_GetStringIdentifier(const NPUTF8 *name)
@@ -249,12 +259,12 @@ void PluginTest::log(const char* format, ...)
 
 void PluginTest::waitUntilDone()
 {
-    executeScript("layoutTestController.waitUntilDone()");
+    executeScript("testRunner.waitUntilDone()");
 }
 
 void PluginTest::notifyDone()
 {
-    executeScript("layoutTestController.notifyDone()");
+    executeScript("testRunner.notifyDone()");
 }
 
 void PluginTest::registerCreateTestFunction(const string& identifier, CreateTestFunction createTestFunction)

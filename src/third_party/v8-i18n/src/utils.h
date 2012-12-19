@@ -32,6 +32,11 @@ class Utils {
   // We can't use OS::SNPrintF, it's only for internal code.
   static void StrNCopy(char* dest, int length, const char* src);
 
+  // Converts v8::String into UnicodeString. Returns false if input
+  // can't be converted into utf8.
+  static bool V8StringToUnicodeString(const v8::Handle<v8::Value>& input,
+				      icu::UnicodeString* output);
+
   // Extract a String setting named in |settings| and set it to |result|.
   // Return true if it's specified. Otherwise, return false.
   static bool ExtractStringSetting(const v8::Handle<v8::Object>& settings,

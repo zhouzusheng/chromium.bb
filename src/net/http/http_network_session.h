@@ -4,7 +4,6 @@
 
 #ifndef NET_HTTP_HTTP_NETWORK_SESSION_H_
 #define NET_HTTP_HTTP_NETWORK_SESSION_H_
-#pragma once
 
 #include <set>
 #include "base/memory/ref_counted.h"
@@ -39,7 +38,6 @@ class ProxyService;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
-class SSLHostInfoFactory;
 class TransportClientSocketPool;
 class TransportSecurityState;
 
@@ -49,20 +47,7 @@ class NET_EXPORT HttpNetworkSession
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   struct NET_EXPORT Params {
-    Params()
-        : client_socket_factory(NULL),
-          host_resolver(NULL),
-          cert_verifier(NULL),
-          server_bound_cert_service(NULL),
-          transport_security_state(NULL),
-          proxy_service(NULL),
-          ssl_host_info_factory(NULL),
-          ssl_config_service(NULL),
-          http_auth_handler_factory(NULL),
-          network_delegate(NULL),
-          http_server_properties(NULL),
-          net_log(NULL),
-          force_http_pipelining(false) {}
+    Params();
 
     ClientSocketFactory* client_socket_factory;
     HostResolver* host_resolver;
@@ -70,14 +55,18 @@ class NET_EXPORT HttpNetworkSession
     ServerBoundCertService* server_bound_cert_service;
     TransportSecurityState* transport_security_state;
     ProxyService* proxy_service;
-    SSLHostInfoFactory* ssl_host_info_factory;
     std::string ssl_session_cache_shard;
     SSLConfigService* ssl_config_service;
     HttpAuthHandlerFactory* http_auth_handler_factory;
     NetworkDelegate* network_delegate;
     HttpServerProperties* http_server_properties;
     NetLog* net_log;
+    HostMappingRules* host_mapping_rules;
     bool force_http_pipelining;
+    bool ignore_certificate_errors;
+    bool http_pipelining_enabled;
+    uint16 testing_fixed_http_port;
+    uint16 testing_fixed_https_port;
     std::string trusted_spdy_proxy;
   };
 
@@ -145,6 +134,10 @@ class NET_EXPORT HttpNetworkSession
 
   // Returns the original Params used to construct this session.
   const Params& params() const { return params_; }
+
+  void set_http_pipelining_enabled(bool enable) {
+    params_.http_pipelining_enabled = enable;
+  }
 
  private:
   friend class base::RefCounted<HttpNetworkSession>;

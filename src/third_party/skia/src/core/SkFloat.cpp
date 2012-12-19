@@ -8,7 +8,7 @@
 
 
 #include "SkFloat.h"
-#include "SkMath.h"
+#include "SkMathPriv.h"
 
 #define EXP_BIAS    (127+23)
 
@@ -289,7 +289,7 @@ void SkFloat::UnitTest()
     SkASSERT(n == -3);
 
     d.setAdd(c, b);
-    SkDebugf("SkFloat: %d + %d = %d\n", c.getInt(), b.getInt(), d.getInt());    
+    SkDebugf("SkFloat: %d + %d = %d\n", c.getInt(), b.getInt(), d.getInt());
 
     SkRandom    rand;
 

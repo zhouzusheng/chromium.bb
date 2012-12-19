@@ -24,6 +24,7 @@
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 
+using ppapi::TrackedCallback;
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_Buffer_API;
 using ppapi::thunk::PPB_Graphics3D_API;
@@ -43,6 +44,7 @@ PPB_VideoDecoder_Impl::PPB_VideoDecoder_Impl(PP_Instance instance)
 }
 
 PPB_VideoDecoder_Impl::~PPB_VideoDecoder_Impl() {
+  Destroy();
 }
 
 // Convert PP_VideoDecoder_Profile to media::VideoCodecProfile.
@@ -76,6 +78,8 @@ static media::VideoCodecProfile PPToMediaProfile(
       return media::H264PROFILE_STEREOHIGH;
     case PP_VIDEODECODER_H264PROFILE_MULTIVIEWHIGH:
       return media::H264PROFILE_MULTIVIEWHIGH;
+    case PP_VIDEODECODER_VP8PROFILE_MAIN:
+      return media::VP8PROFILE_MAIN;
     default:
       return media::VIDEO_CODEC_PROFILE_UNKNOWN;
   }
@@ -115,9 +119,9 @@ bool PPB_VideoDecoder_Impl::Init(
   if (!plugin_delegate)
     return false;
 
-  platform_video_decoder_ = plugin_delegate->CreateVideoDecoder(
-      this, command_buffer_route_id);
-  if (!platform_video_decoder_)
+  platform_video_decoder_.reset(plugin_delegate->CreateVideoDecoder(
+      this, command_buffer_route_id));
+  if (!platform_video_decoder_.get())
     return false;
 
   FlushCommandBuffer();
@@ -126,11 +130,8 @@ bool PPB_VideoDecoder_Impl::Init(
 
 int32_t PPB_VideoDecoder_Impl::Decode(
     const PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
-    PP_CompletionCallback callback) {
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-
-  if (!platform_video_decoder_)
+    scoped_refptr<TrackedCallback> callback) {
+  if (!platform_video_decoder_.get())
     return PP_ERROR_BADRESOURCE;
 
   EnterResourceNoLock<PPB_Buffer_API> enter(bitstream_buffer->data, true);
@@ -153,7 +154,7 @@ int32_t PPB_VideoDecoder_Impl::Decode(
 void PPB_VideoDecoder_Impl::AssignPictureBuffers(
     uint32_t no_of_buffers,
     const PP_PictureBuffer_Dev* buffers) {
-  if (!platform_video_decoder_)
+  if (!platform_video_decoder_.get())
     return;
 
   std::vector<media::PictureBuffer> wrapped_buffers;
@@ -171,18 +172,15 @@ void PPB_VideoDecoder_Impl::AssignPictureBuffers(
 }
 
 void PPB_VideoDecoder_Impl::ReusePictureBuffer(int32_t picture_buffer_id) {
-  if (!platform_video_decoder_)
+  if (!platform_video_decoder_.get())
     return;
 
   FlushCommandBuffer();
   platform_video_decoder_->ReusePictureBuffer(picture_buffer_id);
 }
 
-int32_t PPB_VideoDecoder_Impl::Flush(PP_CompletionCallback callback) {
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-
-  if (!platform_video_decoder_)
+int32_t PPB_VideoDecoder_Impl::Flush(scoped_refptr<TrackedCallback> callback) {
+  if (!platform_video_decoder_.get())
     return PP_ERROR_BADRESOURCE;
 
   if (!SetFlushCallback(callback))
@@ -193,11 +191,8 @@ int32_t PPB_VideoDecoder_Impl::Flush(PP_CompletionCallback callback) {
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_VideoDecoder_Impl::Reset(PP_CompletionCallback callback) {
-  if (!callback.func)
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-
-  if (!platform_video_decoder_)
+int32_t PPB_VideoDecoder_Impl::Reset(scoped_refptr<TrackedCallback> callback) {
+  if (!platform_video_decoder_.get())
     return PP_ERROR_BADRESOURCE;
 
   if (!SetResetCallback(callback))
@@ -209,13 +204,12 @@ int32_t PPB_VideoDecoder_Impl::Reset(PP_CompletionCallback callback) {
 }
 
 void PPB_VideoDecoder_Impl::Destroy() {
-  if (!platform_video_decoder_)
+  if (!platform_video_decoder_.get())
     return;
 
   FlushCommandBuffer();
-  platform_video_decoder_->Destroy();
+  platform_video_decoder_.release()->Destroy();
   ::ppapi::PPB_VideoDecoder_Shared::Destroy();
-  platform_video_decoder_ = NULL;
   ppp_videodecoder_ = NULL;
 }
 

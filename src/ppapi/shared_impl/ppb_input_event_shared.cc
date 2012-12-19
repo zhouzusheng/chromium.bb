@@ -23,10 +23,14 @@ InputEventData::InputEventData()
       wheel_ticks(PP_MakeFloatPoint(0.0f, 0.0f)),
       wheel_scroll_by_page(false),
       key_code(0),
+      usb_key_code(0),
       character_text(),
       composition_target_segment(-1),
       composition_selection_start(0),
-      composition_selection_end(0) {
+      composition_selection_end(0),
+      touches(),
+      changed_touches(),
+      target_touches() {
 }
 
 InputEventData::~InputEventData() {
@@ -107,7 +111,7 @@ uint32_t PPB_InputEvent_Shared::GetUsbKeyCode() {
 uint32_t PPB_InputEvent_Shared::GetIMESegmentNumber() {
   if (data_.composition_segment_offsets.empty())
     return 0;
-  return data_.composition_segment_offsets.size() - 1;
+  return static_cast<uint32_t>(data_.composition_segment_offsets.size() - 1);
 }
 
 uint32_t PPB_InputEvent_Shared::GetIMESegmentOffset(uint32_t index) {
@@ -125,6 +129,81 @@ void PPB_InputEvent_Shared::GetIMESelection(uint32_t* start, uint32_t* end) {
     *start = data_.composition_selection_start;
   if (end)
     *end = data_.composition_selection_end;
+}
+
+void PPB_InputEvent_Shared::AddTouchPoint(PP_TouchListType list,
+                                          const PP_TouchPoint& point) {
+  switch (list) {
+    case PP_TOUCHLIST_TYPE_TOUCHES:
+      data_.touches.push_back(point);
+      break;
+    case PP_TOUCHLIST_TYPE_CHANGEDTOUCHES:
+      data_.changed_touches.push_back(point);
+      break;
+    case PP_TOUCHLIST_TYPE_TARGETTOUCHES:
+      data_.target_touches.push_back(point);
+      break;
+    default:
+      break;
+  }
+}
+
+uint32_t PPB_InputEvent_Shared::GetTouchCount(PP_TouchListType list) {
+  switch (list) {
+    case PP_TOUCHLIST_TYPE_TOUCHES:
+      return static_cast<uint32_t>(data_.touches.size());
+    case PP_TOUCHLIST_TYPE_CHANGEDTOUCHES:
+      return static_cast<uint32_t>(data_.changed_touches.size());
+    case PP_TOUCHLIST_TYPE_TARGETTOUCHES:
+      return static_cast<uint32_t>(data_.target_touches.size());
+  }
+
+  return 0;
+}
+
+PP_TouchPoint PPB_InputEvent_Shared::GetTouchByIndex(PP_TouchListType list,
+                                                     uint32_t index) {
+  std::vector<PP_TouchPoint>* points;
+  switch (list) {
+    case PP_TOUCHLIST_TYPE_TOUCHES:
+      points = &data_.touches;
+      break;
+    case PP_TOUCHLIST_TYPE_CHANGEDTOUCHES:
+      points = &data_.changed_touches;
+      break;
+    case PP_TOUCHLIST_TYPE_TARGETTOUCHES:
+      points = &data_.target_touches;
+      break;
+    default:
+      return PP_MakeTouchPoint();
+  }
+  if (index >= points->size()) {
+    return PP_MakeTouchPoint();
+  }
+  return points->at(index);
+}
+
+PP_TouchPoint PPB_InputEvent_Shared::GetTouchById(PP_TouchListType list,
+                                                  uint32_t id) {
+  const std::vector<PP_TouchPoint>* points;
+  switch (list) {
+    case PP_TOUCHLIST_TYPE_TOUCHES:
+      points = &data_.touches;
+      break;
+    case PP_TOUCHLIST_TYPE_CHANGEDTOUCHES:
+      points = &data_.changed_touches;
+      break;
+    case PP_TOUCHLIST_TYPE_TARGETTOUCHES:
+      points = &data_.target_touches;
+      break;
+    default:
+      return PP_MakeTouchPoint();
+  }
+  for (size_t i = 0; i < points->size(); i++) {
+    if (points->at(i).id == id)
+      return points->at(i);
+  }
+  return PP_MakeTouchPoint();
 }
 
 //static
@@ -242,6 +321,26 @@ PP_Resource PPB_InputEvent_Shared::CreateWheelInputEvent(
   data.wheel_ticks = *wheel_ticks;
   data.wheel_scroll_by_page = PP_ToBool(scroll_by_page);
 
+  return (new PPB_InputEvent_Shared(type, instance, data))->GetReference();
+}
+
+// static
+PP_Resource PPB_InputEvent_Shared::CreateTouchInputEvent(
+    ResourceObjectType type,
+    PP_Instance instance,
+    PP_InputEvent_Type event_type,
+    PP_TimeTicks time_stamp,
+    uint32_t modifiers) {
+  if (event_type != PP_INPUTEVENT_TYPE_TOUCHSTART &&
+      event_type != PP_INPUTEVENT_TYPE_TOUCHMOVE &&
+      event_type != PP_INPUTEVENT_TYPE_TOUCHEND &&
+      event_type != PP_INPUTEVENT_TYPE_TOUCHCANCEL)
+    return 0;
+
+  InputEventData data;
+  data.event_type = event_type;
+  data.event_time_stamp = time_stamp;
+  data.event_modifiers = modifiers;
   return (new PPB_InputEvent_Shared(type, instance, data))->GetReference();
 }
 

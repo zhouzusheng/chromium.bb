@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_DOM_STORAGE_DOM_STORAGE_CACHED_AREA_H_
 #define WEBKIT_DOM_STORAGE_DOM_STORAGE_CACHED_AREA_H_
-#pragma once
 
 #include <map>
 
@@ -19,7 +18,7 @@ class DomStorageMap;
 class DomStorageProxy;
 
 // Unlike the other classes in the dom_storage library, this one is intended
-// for use in renderer processes. It maintains a complete cach of the an
+// for use in renderer processes. It maintains a complete cache of the
 // origin's Map of key/value pairs for fast access. The cache is primed on
 // first access and changes are written to the backend thru the |proxy|.
 // Mutations originating in other processes are applied to the cache via
@@ -43,6 +42,8 @@ class DomStorageCachedArea : public base::RefCounted<DomStorageCachedArea> {
 
   void ApplyMutation(const NullableString16& key,
                      const NullableString16& new_value);
+
+  size_t MemoryBytesUsedByCache() const;
 
  private:
   friend class DomStorageCachedAreaTest;

@@ -28,10 +28,8 @@
 
 #if ENABLE(DEVICE_ORIENTATION)
 
-#include "DeviceOrientation.h"
+#include "DeviceOrientationData.h"
 #include "V8Binding.h"
-#include "V8BindingMacros.h"
-#include "V8Proxy.h"
 
 #include <v8.h>
 
@@ -93,9 +91,9 @@ v8::Handle<v8::Value> V8DeviceOrientationEvent::initDeviceOrientationEventCallba
     double gamma = args[5]->NumberValue();
     bool absoluteProvided = !isUndefinedOrNull(args[6]);
     bool absolute = args[6]->BooleanValue();
-    RefPtr<DeviceOrientation> orientation = DeviceOrientation::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, absoluteProvided, absolute);
+    RefPtr<DeviceOrientationData> orientation = DeviceOrientationData::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, absoluteProvided, absolute);
     imp->initDeviceOrientationEvent(type, bubbles, cancelable, orientation.get());
-    return v8::Handle<v8::Value>();
+    return v8Undefined();
 }
 
 } // namespace WebCore

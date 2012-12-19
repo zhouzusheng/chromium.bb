@@ -65,6 +65,9 @@ public:
 
     bool isPrimitiveValue() const { return m_classType == PrimitiveClass; }
     bool isValueList() const { return m_classType >= ValueListClass; }
+    
+    bool isBaseValueList() const { return m_classType == ValueListClass; }
+        
 
     bool isAspectRatioValue() const { return m_classType == AspectRatioClass; }
     bool isBorderImageSliceValue() const { return m_classType == BorderImageSliceClass; }
@@ -72,6 +75,7 @@ public:
     bool isFontFeatureValue() const { return m_classType == FontFeatureClass; }
     bool isFontValue() const { return m_classType == FontClass; }
     bool isImageGeneratorValue() const { return m_classType >= CanvasClass && m_classType <= RadialGradientClass; }
+    bool isGradientValue() const { return m_classType >= LinearGradientClass && m_classType <= RadialGradientClass; }
 #if ENABLE(CSS_IMAGE_SET)
     bool isImageSetValue() const { return m_classType == ImageSetClass; }
 #endif
@@ -90,6 +94,8 @@ public:
 #if ENABLE(CSS_FILTERS)
     bool isWebKitCSSFilterValue() const { return m_classType == WebKitCSSFilterClass; }
 #if ENABLE(CSS_SHADERS)
+    bool isWebKitCSSArrayFunctionValue() const { return m_classType == WebKitCSSArrayFunctionValueClass; }
+    bool isWebKitCSSMixFunctionValue() const { return m_classType == WebKitCSSMixFunctionValueClass; }
     bool isWebKitCSSShaderValue() const { return m_classType == WebKitCSSShaderClass; }
 #endif
 #endif // ENABLE(CSS_FILTERS)
@@ -99,6 +105,7 @@ public:
 #if ENABLE(SVG)
     bool isSVGColor() const { return m_classType == SVGColorClass || m_classType == SVGPaintClass; }
     bool isSVGPaint() const { return m_classType == SVGPaintClass; }
+    bool isWebKitCSSSVGDocumentValue() const { return m_classType == WebKitCSSSVGDocumentClass; }
 #endif
     
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
@@ -115,9 +122,13 @@ public:
 
     void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
 
+    bool hasFailedOrCanceledSubresources() const;
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
 protected:
 
-    static const size_t ClassTypeBits = 5;
+    static const size_t ClassTypeBits = 6;
     enum ClassType {
         PrimitiveClass,
 
@@ -161,6 +172,7 @@ protected:
 #if ENABLE(SVG)
         SVGColorClass,
         SVGPaintClass,
+        WebKitCSSSVGDocumentClass,
 #endif
 
         // List class types must appear after ValueListClass.
@@ -170,6 +182,10 @@ protected:
 #endif
 #if ENABLE(CSS_FILTERS)
         WebKitCSSFilterClass,
+#if ENABLE(CSS_SHADERS)
+        WebKitCSSArrayFunctionValueClass,
+        WebKitCSSMixFunctionValueClass,
+#endif
 #endif
         WebKitCSSTransformClass,
         // Do not append non-list class types here.

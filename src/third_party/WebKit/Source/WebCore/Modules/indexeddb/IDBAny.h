@@ -28,10 +28,10 @@
 
 #if ENABLE(INDEXED_DATABASE)
 
-#include "PlatformString.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -42,6 +42,7 @@ class IDBDatabase;
 class IDBFactory;
 class IDBIndex;
 class IDBKey;
+class IDBKeyPath;
 class IDBObjectStore;
 class IDBTransaction;
 class SerializedScriptValue;
@@ -56,6 +57,12 @@ public:
     {
         RefPtr<IDBAny> any = IDBAny::createInvalid();
         any->set(idbObject);
+        return any.release();
+    }
+    static PassRefPtr<IDBAny> create(const IDBKeyPath& keyPath)
+    {
+        RefPtr<IDBAny> any = IDBAny::createInvalid();
+        any->set(keyPath);
         return any.release();
     }
     template<typename T>
@@ -109,6 +116,7 @@ public:
     void set(PassRefPtr<IDBObjectStore>);
     void set(PassRefPtr<IDBTransaction>);
     void set(PassRefPtr<SerializedScriptValue>);
+    void set(const IDBKeyPath&);
     void set(const String&);
 
 private:

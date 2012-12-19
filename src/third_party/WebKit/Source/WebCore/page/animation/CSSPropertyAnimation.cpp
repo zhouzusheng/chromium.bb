@@ -120,44 +120,22 @@ static inline PassOwnPtr<ShadowData> blendFunc(const AnimationBase* anim, const 
 
 static inline TransformOperations blendFunc(const AnimationBase* anim, const TransformOperations& from, const TransformOperations& to, double progress)
 {
-    TransformOperations result;
-
-    // If we have a transform function list, use that to do a per-function animation. Otherwise do a Matrix animation
-    if (anim->isTransformFunctionListValid()) {
-        unsigned fromSize = from.operations().size();
-        unsigned toSize = to.operations().size();
-        unsigned size = max(fromSize, toSize);
-        for (unsigned i = 0; i < size; i++) {
-            RefPtr<TransformOperation> fromOp = (i < fromSize) ? from.operations()[i].get() : 0;
-            RefPtr<TransformOperation> toOp = (i < toSize) ? to.operations()[i].get() : 0;
-            RefPtr<TransformOperation> blendedOp = toOp ? toOp->blend(fromOp.get(), progress) : (fromOp ? fromOp->blend(0, progress, true) : PassRefPtr<TransformOperation>(0));
-            if (blendedOp)
-                result.operations().append(blendedOp);
-            else {
-                RefPtr<TransformOperation> identityOp = IdentityTransformOperation::create();
-                if (progress > 0.5)
-                    result.operations().append(toOp ? toOp : identityOp);
-                else
-                    result.operations().append(fromOp ? fromOp : identityOp);
-            }
-        }
-    } else {
-        // Convert the TransformOperations into matrices
-        LayoutSize size = anim->renderer()->isBox() ? toRenderBox(anim->renderer())->borderBoxRect().size() : LayoutSize();
-        TransformationMatrix fromT;
-        TransformationMatrix toT;
-        from.apply(size, fromT);
-        to.apply(size, toT);
-
-        toT.blend(fromT, progress);
-
-        // Append the result
-        result.operations().append(Matrix3DTransformOperation::create(toT));
-    }
-    return result;
+    if (anim->isTransformFunctionListValid())
+        return to.blendByMatchingOperations(from, progress);
+    return to.blendByUsingMatrixInterpolation(from, progress, anim->renderer()->isBox() ? toRenderBox(anim->renderer())->borderBoxRect().size() : LayoutSize());
 }
 
 #if ENABLE(CSS_FILTERS)
+static inline PassRefPtr<FilterOperation> blendFunc(const AnimationBase* anim, FilterOperation* fromOp, FilterOperation* toOp, double progress, bool blendToPassthrough = false)
+{
+    ASSERT(toOp);
+    if (toOp->blendingNeedsRendererSize()) {
+        LayoutSize size = anim->renderer()->isBox() ? toRenderBox(anim->renderer())->borderBoxRect().size() : LayoutSize();
+        return toOp->blend(fromOp, progress, size, blendToPassthrough);
+    }
+    return toOp->blend(fromOp, progress, blendToPassthrough);
+}
+
 static inline FilterOperations blendFunc(const AnimationBase* anim, const FilterOperations& from, const FilterOperations& to, double progress)
 {
     FilterOperations result;
@@ -170,7 +148,7 @@ static inline FilterOperations blendFunc(const AnimationBase* anim, const Filter
         for (size_t i = 0; i < size; i++) {
             RefPtr<FilterOperation> fromOp = (i < fromSize) ? from.operations()[i].get() : 0;
             RefPtr<FilterOperation> toOp = (i < toSize) ? to.operations()[i].get() : 0;
-            RefPtr<FilterOperation> blendedOp = toOp ? toOp->blend(fromOp.get(), progress) : (fromOp ? fromOp->blend(0, progress, true) : PassRefPtr<FilterOperation>(0));
+            RefPtr<FilterOperation> blendedOp = toOp ? blendFunc(anim, fromOp.get(), toOp.get(), progress) : (fromOp ? blendFunc(anim, 0, fromOp.get(), progress, true) : 0);
             if (blendedOp)
                 result.operations().append(blendedOp);
             else {
@@ -901,7 +879,6 @@ private:
     Vector<AnimationPropertyWrapperBase*> m_propertyWrappers;
 };
 
-#if ENABLE(CSS3_FLEXBOX)
 class PropertyWrapperFlex : public AnimationPropertyWrapperBase {
 public:
     PropertyWrapperFlex() : AnimationPropertyWrapperBase(CSSPropertyWebkitFlex)
@@ -917,17 +894,16 @@ public:
         if (!a || !b)
             return false;
 
-        return a->flexPreferredSize() == b->flexPreferredSize() && a->positiveFlex() == b->positiveFlex() && a->negativeFlex() == b->negativeFlex();
+        return a->flexBasis() == b->flexBasis() && a->flexGrow() == b->flexGrow() && a->flexShrink() == b->flexShrink();
     }
 
     virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
     {
-        dst->setFlexPreferredSize(blendFunc(anim, a->flexPreferredSize(), b->flexPreferredSize(), progress));
-        dst->setPositiveFlex(blendFunc(anim, a->positiveFlex(), b->positiveFlex(), progress));
-        dst->setNegativeFlex(blendFunc(anim, a->negativeFlex(), b->negativeFlex(), progress));
+        dst->setFlexBasis(blendFunc(anim, a->flexBasis(), b->flexBasis(), progress));
+        dst->setFlexGrow(blendFunc(anim, a->flexGrow(), b->flexGrow(), progress));
+        dst->setFlexShrink(blendFunc(anim, a->flexShrink(), b->flexShrink(), progress));
     }
 };
-#endif
 
 #if ENABLE(SVG)
 class PropertyWrapperSVGPaint : public AnimationPropertyWrapperBase {
@@ -1046,9 +1022,7 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new PropertyWrapper<Length>(CSSPropertyMinHeight, &RenderStyle::minHeight, &RenderStyle::setMinHeight));
     gPropertyWrappers->append(new PropertyWrapper<Length>(CSSPropertyMaxHeight, &RenderStyle::maxHeight, &RenderStyle::setMaxHeight));
 
-#if ENABLE(CSS3_FLEXBOX)
     gPropertyWrappers->append(new PropertyWrapperFlex());
-#endif
 
     gPropertyWrappers->append(new PropertyWrapper<unsigned>(CSSPropertyBorderLeftWidth, &RenderStyle::borderLeftWidth, &RenderStyle::setBorderLeftWidth));
     gPropertyWrappers->append(new PropertyWrapper<unsigned>(CSSPropertyBorderRightWidth, &RenderStyle::borderRightWidth, &RenderStyle::setBorderRightWidth));
@@ -1087,7 +1061,16 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyWebkitMaskPositionY, &RenderStyle::maskLayers, &RenderStyle::accessMaskLayers));
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyWebkitMaskSize, &RenderStyle::maskLayers, &RenderStyle::accessMaskLayers));
 
-    gPropertyWrappers->append(new PropertyWrapper<int>(CSSPropertyFontSize, &RenderStyle::fontSize, &RenderStyle::setBlendedFontSize));
+    gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyFontSize,
+        // Must pass a specified size to setFontSize if Text Autosizing is enabled, but a computed size
+        // if text zoom is enabled (if neither is enabled it's irrelevant as they're probably the same).
+        // FIXME: Find some way to assert that text zoom isn't activated when Text Autosizing is compiled in.
+#if ENABLE(TEXT_AUTOSIZING)
+        &RenderStyle::specifiedFontSize,
+#else
+        &RenderStyle::computedFontSize,
+#endif
+        &RenderStyle::setFontSize));
     gPropertyWrappers->append(new PropertyWrapper<unsigned short>(CSSPropertyWebkitColumnRuleWidth, &RenderStyle::columnRuleWidth, &RenderStyle::setColumnRuleWidth));
     gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyWebkitColumnGap, &RenderStyle::columnGap, &RenderStyle::setColumnGap));
     gPropertyWrappers->append(new PropertyWrapper<unsigned short>(CSSPropertyWebkitColumnCount, &RenderStyle::columnCount, &RenderStyle::setColumnCount));
@@ -1095,7 +1078,7 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new PropertyWrapper<short>(CSSPropertyWebkitBorderHorizontalSpacing, &RenderStyle::horizontalBorderSpacing, &RenderStyle::setHorizontalBorderSpacing));
     gPropertyWrappers->append(new PropertyWrapper<short>(CSSPropertyWebkitBorderVerticalSpacing, &RenderStyle::verticalBorderSpacing, &RenderStyle::setVerticalBorderSpacing));
     gPropertyWrappers->append(new PropertyWrapper<int>(CSSPropertyZIndex, &RenderStyle::zIndex, &RenderStyle::setZIndex));
-    gPropertyWrappers->append(new PropertyWrapper<Length>(CSSPropertyLineHeight, &RenderStyle::lineHeight, &RenderStyle::setLineHeight));
+    gPropertyWrappers->append(new PropertyWrapper<Length>(CSSPropertyLineHeight, &RenderStyle::specifiedLineHeight, &RenderStyle::setLineHeight));
     gPropertyWrappers->append(new PropertyWrapper<int>(CSSPropertyOutlineOffset, &RenderStyle::outlineOffset, &RenderStyle::setOutlineOffset));
     gPropertyWrappers->append(new PropertyWrapper<unsigned short>(CSSPropertyOutlineWidth, &RenderStyle::outlineWidth, &RenderStyle::setOutlineWidth));
     gPropertyWrappers->append(new PropertyWrapper<int>(CSSPropertyLetterSpacing, &RenderStyle::letterSpacing, &RenderStyle::setLetterSpacing));

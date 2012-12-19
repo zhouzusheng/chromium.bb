@@ -9,9 +9,14 @@
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
 #include "base/threading/simple_thread.h"
+#include "media/base/audio_bus.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_audio_api.h"
+
+#if defined(OS_NACL)
+#include "native_client/src/untrusted/irt/irt_ppapi.h"
+#endif
 
 namespace ppapi {
 
@@ -24,9 +29,6 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
  public:
   PPB_Audio_Shared();
   virtual ~PPB_Audio_Shared();
-
-  // Keep in sync with media::AudioOutputController::kPauseMark.
-  static const int kPauseMark;
 
   bool playing() const { return playing_; }
 
@@ -52,7 +54,14 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
   void SetStreamInfo(PP_Instance instance,
                      base::SharedMemoryHandle shared_memory_handle,
                      size_t shared_memory_size,
-                     base::SyncSocket::Handle socket_handle);
+                     base::SyncSocket::Handle socket_handle,
+                     int sample_frame_count);
+
+#if defined(OS_NACL)
+  // NaCl has a special API for IRT code to create threads that can call back
+  // into user code.
+  static void SetThreadFunctions(const struct PP_ThreadFunctions* functions);
+#endif
 
  private:
   // Starts execution of the audio thread.
@@ -79,14 +88,28 @@ class PPAPI_SHARED_EXPORT PPB_Audio_Shared
   // The size of the sample buffer in bytes.
   size_t shared_memory_size_;
 
+#if !defined(OS_NACL)
   // When the callback is set, this thread is spawned for calling it.
   scoped_ptr<base::DelegateSimpleThread> audio_thread_;
+#else
+  uintptr_t thread_id_;
+  bool thread_active_;
+
+  static void CallRun(void* self);
+#endif
 
   // Callback to call when audio is ready to accept new samples.
   PPB_Audio_Callback callback_;
 
   // User data pointer passed verbatim to the callback function.
   void* user_data_;
+
+  // AudioBus for shuttling data across the shared memory.
+  scoped_ptr<media::AudioBus> audio_bus_;
+
+  // Internal buffer for client's integer audio data.
+  int client_buffer_size_bytes_;
+  scoped_array<uint8_t> client_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_Audio_Shared);
 };

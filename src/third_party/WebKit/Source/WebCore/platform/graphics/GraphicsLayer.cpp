@@ -31,10 +31,11 @@
 
 #include "FloatPoint.h"
 #include "GraphicsContext.h"
-#include "LayoutTypes.h"
+#include "LayoutTypesInlineMethods.h"
 #include "RotateTransformOperation.h"
 #include "TextStream.h"
 #include <wtf/text/CString.h>
+#include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 
 #ifndef NDEBUG
@@ -79,7 +80,8 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_acceleratesDrawing(false)
     , m_maintainsPixelAlignment(false)
     , m_appliesPageScale(false)
-    , m_paintingPhase(GraphicsLayerPaintAll)
+    , m_usingTileCache(false)
+    , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_contentsOrientation(CompositingCoordinatesTopDown)
     , m_parent(0)
     , m_maskLayer(0)
@@ -322,10 +324,11 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
 String GraphicsLayer::animationNameForTransition(AnimatedPropertyID property)
 {
     // | is not a valid identifier character in CSS, so this can never conflict with a keyframe identifier.
-    String id = "-|transition";
+    StringBuilder id;
+    id.appendLiteral("-|transition");
     id.append(static_cast<char>(property));
     id.append('-');
-    return id;
+    return id.toString();
 }
 
 void GraphicsLayer::suspendAnimations(double)
@@ -340,9 +343,7 @@ void GraphicsLayer::updateDebugIndicators()
 {
     if (GraphicsLayer::showDebugBorders()) {
         if (drawsContent()) {
-            // FIXME: It's weird to ask the client if this layer is a tile cache layer.
-            // Maybe we should just cache that information inside GraphicsLayer?
-            if (m_client->shouldUseTileCache(this)) // tile cache layer: dark blue
+            if (m_usingTileCache) // tile cache layer: dark blue
                 setDebugBorder(Color(0, 0, 128, 128), 0.5);
             else if (m_usingTiledLayer)
                 setDebugBorder(Color(255, 128, 0, 128), 2); // tiled layer: orange
@@ -385,7 +386,7 @@ void GraphicsLayer::distributeOpacity(float accumulatedOpacity)
     }
 }
 
-#if PLATFORM(QT) || PLATFORM(GTK)
+#if PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
 GraphicsLayer::GraphicsLayerFactory* GraphicsLayer::s_graphicsLayerFactory = 0;
 
 void GraphicsLayer::setGraphicsLayerFactory(GraphicsLayer::GraphicsLayerFactory factory)
@@ -509,13 +510,13 @@ int GraphicsLayer::validateTransformOperations(const KeyframeValueList& valueLis
     return firstIndex;
 }
 
-double GraphicsLayer::backingStoreArea() const
+double GraphicsLayer::backingStoreMemoryEstimate() const
 {
     if (!drawsContent())
         return 0;
     
     // Effects of page and device scale are ignored; subclasses should override to take these into account.
-    return static_cast<double>(size().width()) * size().height();
+    return static_cast<double>(4 * size().width()) * size().height();
 }
 
 static void writeIndent(TextStream& ts, int indent)

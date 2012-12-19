@@ -31,13 +31,12 @@
 #include "config.h"
 #include "V8NamedNodeMap.h"
 
+#include "BindingState.h"
 #include "NamedNodeMap.h"
 #include "V8Attr.h"
 #include "V8Binding.h"
-#include "V8BindingState.h"
 #include "V8Element.h"
 #include "V8Node.h"
-#include "V8Proxy.h"
 
 #include <wtf/RefPtr.h>
 
@@ -49,9 +48,9 @@ v8::Handle<v8::Value> V8NamedNodeMap::indexedPropertyGetter(uint32_t index, cons
     NamedNodeMap* imp = V8NamedNodeMap::toNative(info.Holder());
     RefPtr<Node> result = imp->item(index);
     if (!result)
-        return v8::Handle<v8::Value>();
+        return v8Undefined();
 
-    return toV8(result.release(), info.GetIsolate());
+    return toV8(result.release(), info.Holder(), info.GetIsolate());
 }
 
 v8::Handle<v8::Value> V8NamedNodeMap::namedPropertyGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
@@ -59,28 +58,16 @@ v8::Handle<v8::Value> V8NamedNodeMap::namedPropertyGetter(v8::Local<v8::String> 
     INC_STATS("DOM.NamedNodeMap.NamedPropertyGetter");
 
     if (!info.Holder()->GetRealNamedPropertyInPrototypeChain(name).IsEmpty())
-        return v8::Handle<v8::Value>();
+        return v8Undefined();
     if (info.Holder()->HasRealNamedCallbackProperty(name))
-        return v8::Handle<v8::Value>();
+        return v8Undefined();
 
     NamedNodeMap* imp = V8NamedNodeMap::toNative(info.Holder());
     RefPtr<Node> result = imp->getNamedItem(toWebCoreString(name));
     if (!result)
-        return v8::Handle<v8::Value>();
+        return v8Undefined();
 
-    return toV8(result.release(), info.GetIsolate());
-}
-
-v8::Handle<v8::Value> toV8(NamedNodeMap* impl, v8::Isolate* isolate)
-{
-    if (!impl)
-        return v8NullWithCheck(isolate);
-    v8::Handle<v8::Object> wrapper = V8NamedNodeMap::wrap(impl, isolate);
-    // Add a hidden reference from named node map to its owner node.
-    Element* element = impl->element();
-    if (!wrapper.IsEmpty() && element)
-        wrapper->SetHiddenValue(V8HiddenPropertyName::ownerNode(), toV8(element, isolate));
-    return wrapper;
+    return toV8(result.release(), info.Holder(), info.GetIsolate());
 }
 
 } // namespace WebCore

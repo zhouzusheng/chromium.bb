@@ -41,6 +41,7 @@
 #include "RenderTableCol.h"
 #include "RenderTableSection.h"
 #include "RenderView.h"
+#include "StyleInheritedData.h"
 
 using namespace std;
 
@@ -114,12 +115,11 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     if (!beforeChild)
         beforeChild = afterPseudoElementRenderer();
 
-    bool wrapInAnonymousSection = !child->isPositioned();
+    bool wrapInAnonymousSection = !child->isOutOfFlowPositioned();
 
-    if (child->isTableCaption()) {
-        m_captions.append(toRenderTableCaption(child));
+    if (child->isTableCaption())
         wrapInAnonymousSection = false;
-    } else if (child->isRenderTableCol()) {
+    else if (child->isRenderTableCol()) {
         m_hasColElements = true;
         wrapInAnonymousSection = false;
     } else if (child->isTableSection()) {
@@ -196,25 +196,34 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     section->addChild(child);
 }
 
-void RenderTable::removeChild(RenderObject* oldChild)
+void RenderTable::addCaption(const RenderTableCaption* caption)
 {
-    RenderBox::removeChild(oldChild);
- 
-    size_t index = m_captions.find(oldChild);
-    if (index != notFound) {
-        m_captions.remove(index);
-        if (node())
-            node()->setNeedsStyleRecalc();
-    }
-    setNeedsSectionRecalc();
+    ASSERT(m_captions.find(caption) == notFound);
+    m_captions.append(const_cast<RenderTableCaption*>(caption));
 }
 
-void RenderTable::computeLogicalWidth()
+void RenderTable::removeCaption(const RenderTableCaption* oldCaption)
+{
+    size_t index = m_captions.find(oldCaption);
+    ASSERT(index != notFound);
+    if (index == notFound)
+        return;
+
+    m_captions.remove(index);
+}
+
+void RenderTable::updateLogicalWidth()
 {
     recalcSectionsIfNeeded();
 
-    if (isPositioned())
-        computePositionedLogicalWidth();
+    if (isOutOfFlowPositioned()) {
+        LogicalExtentComputedValues computedValues;
+        computePositionedLogicalWidth(computedValues);
+        setLogicalWidth(computedValues.m_extent);
+        setLogicalLeft(computedValues.m_position);
+        setMarginStart(computedValues.m_margins.m_start);
+        setMarginEnd(computedValues.m_margins.m_end);
+    }
 
     RenderBlock* cb = containingBlock();
     RenderView* renderView = view();
@@ -258,7 +267,13 @@ void RenderTable::computeLogicalWidth()
         LayoutUnit containerLogicalWidthForAutoMargins = availableLogicalWidth;
         if (avoidsFloats() && cb->containsFloats())
             containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(0, 0); // FIXME: Work with regions someday.
-        computeInlineDirectionMargins(cb, containerLogicalWidthForAutoMargins, logicalWidth());
+        ComputedMarginValues marginValues;
+        bool hasInvertedDirection =  cb->style()->isLeftToRightDirection() == style()->isLeftToRightDirection();
+        computeInlineDirectionMargins(cb, containerLogicalWidthForAutoMargins, logicalWidth(),
+            hasInvertedDirection ? marginValues.m_start : marginValues.m_end,
+            hasInvertedDirection ? marginValues.m_end : marginValues.m_start);
+        setMarginStart(marginValues.m_start);
+        setMarginEnd(marginValues.m_end);
     } else {
         setMarginStart(minimumValueForLength(style()->marginStart(), availableLogicalWidth, renderView));
         setMarginEnd(minimumValueForLength(style()->marginEnd(), availableLogicalWidth, renderView));
@@ -273,7 +288,8 @@ LayoutUnit RenderTable::convertStyleLogicalWidthToComputedWidth(const Length& st
     bool isCSSTable = !node() || !node()->hasTagName(tableTag);
     if (isCSSTable && styleLogicalWidth.isFixed() && styleLogicalWidth.isPositive()) {
         recalcBordersInRowDirection();
-        borders = borderStart() + borderEnd() + (collapseBorders() ? ZERO_LAYOUT_UNIT : paddingStart() + paddingEnd());
+        if (style()->boxSizing() == CONTENT_BOX)
+            borders = borderStart() + borderEnd() + (collapseBorders() ? ZERO_LAYOUT_UNIT : paddingStart() + paddingEnd());
     }
     return minimumValueForLength(styleLogicalWidth, availableWidth, view()) + borders;
 }
@@ -330,7 +346,7 @@ void RenderTable::layout()
     initMaxMarginValues();
     
     LayoutUnit oldLogicalWidth = logicalWidth();
-    computeLogicalWidth();
+    updateLogicalWidth();
 
     if (logicalWidth() != oldLogicalWidth) {
         for (unsigned i = 0; i < m_captions.size(); i++)
@@ -390,14 +406,17 @@ void RenderTable::layout()
 
     setLogicalHeight(logicalHeight() + borderAndPaddingBefore);
 
-    if (!isPositioned())
-        computeLogicalHeight();
+    if (!isOutOfFlowPositioned())
+        updateLogicalHeight();
 
     Length logicalHeightLength = style()->logicalHeight();
     LayoutUnit computedLogicalHeight = 0;
     if (logicalHeightLength.isFixed()) {
         // HTML tables size as though CSS height includes border/padding, CSS tables do not.
-        LayoutUnit borders = node() && node()->hasTagName(tableTag) ? (borderAndPaddingBefore + borderAndPaddingAfter) : ZERO_LAYOUT_UNIT;
+        LayoutUnit borders = ZERO_LAYOUT_UNIT;
+        // FIXME: We cannot apply box-sizing: content-box on <table> which other browsers allow.
+        if ((node() && node()->hasTagName(tableTag)) || style()->boxSizing() == BORDER_BOX)
+            borders = borderAndPaddingBefore + borderAndPaddingAfter;
         computedLogicalHeight = logicalHeightLength.value() - borders;
     } else if (logicalHeightLength.isPercent())
         computedLogicalHeight = computePercentageLogicalHeight(logicalHeightLength);
@@ -439,8 +458,8 @@ void RenderTable::layout()
         layoutCaption(m_captions[i]);
     }
 
-    if (isPositioned())
-        computeLogicalHeight();
+    if (isOutOfFlowPositioned())
+        updateLogicalHeight();
 
     // table can be containing block of positioned elements.
     // FIXME: Only pass true if width or height changed.
@@ -517,20 +536,14 @@ void RenderTable::addOverflowFromChildren()
         addOverflowFromChild(m_captions[i]);
 
     // Add overflow from our sections.
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isTableSection()) {
-            RenderTableSection* section = toRenderTableSection(child);
-            addOverflowFromChild(section);
-        }
-    }
+    for (RenderTableSection* section = topSection(); section; section = sectionBelow(section))
+        addOverflowFromChild(section);
 }
 
 void RenderTable::setCellLogicalWidths()
 {
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isTableSection())
-            toRenderTableSection(child)->setCellLogicalWidths();
-    }
+    for (RenderTableSection* section = topSection(); section; section = sectionBelow(section))
+        section->setCellLogicalWidths();
 }
 
 void RenderTable::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -776,17 +789,12 @@ void RenderTable::recalcSections() const
     m_foot = 0;
     m_firstBody = 0;
     m_hasColElements = false;
-    m_captions.clear();
 
     // We need to get valid pointers to caption, head, foot and first body again
     RenderObject* nextSibling;
     for (RenderObject* child = firstChild(); child; child = nextSibling) {
         nextSibling = child->nextSibling();
         switch (child->style()->display()) {
-        case TABLE_CAPTION:
-            if (child->isTableCaption())
-                m_captions.append(toRenderTableCaption(child));
-            break;
         case TABLE_COLUMN:
         case TABLE_COLUMN_GROUP:
             m_hasColElements = true;
@@ -1000,18 +1008,11 @@ int RenderTable::outerBorderAfter() const
     if (!collapseBorders())
         return 0;
     int borderWidth = 0;
-    RenderTableSection* bottomSection;
-    if (m_foot)
-        bottomSection = m_foot;
-    else {
-        RenderObject* child;
-        for (child = lastChild(); child && !child->isTableSection(); child = child->previousSibling()) { }
-        bottomSection = child ? toRenderTableSection(child) : 0;
-    }
-    if (bottomSection) {
-        borderWidth = bottomSection->outerBorderAfter();
+
+    if (RenderTableSection* section = bottomSection()) {
+        borderWidth = section->outerBorderAfter();
         if (borderWidth < 0)
-            return 0;   // Overridden by hidden
+            return 0; // Overridden by hidden
     }
     const BorderValue& tb = style()->borderAfter();
     if (tb.style() == BHIDDEN)
@@ -1035,10 +1036,8 @@ int RenderTable::outerBorderStart() const
         borderWidth = (tb.width() + (style()->isLeftToRightDirection() ? 0 : 1)) / 2;
 
     bool allHidden = true;
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->isTableSection())
-            continue;
-        int sw = toRenderTableSection(child)->outerBorderStart();
+    for (RenderTableSection* section = topSection(); section; section = sectionBelow(section)) {
+        int sw = section->outerBorderStart();
         if (sw < 0)
             continue;
         allHidden = false;
@@ -1064,10 +1063,8 @@ int RenderTable::outerBorderEnd() const
         borderWidth = (tb.width() + (style()->isLeftToRightDirection() ? 1 : 0)) / 2;
 
     bool allHidden = true;
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->isTableSection())
-            continue;
-        int sw = toRenderTableSection(child)->outerBorderEnd();
+    for (RenderTableSection* section = topSection(); section; section = sectionBelow(section)) {
+        int sw = section->outerBorderEnd();
         if (sw < 0)
             continue;
         allHidden = false;
@@ -1219,8 +1216,27 @@ void RenderTable::updateFirstLetter()
 {
 }
 
+LayoutUnit RenderTable::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
+{
+    LayoutUnit baseline = firstLineBoxBaseline();
+    if (baseline != -1)
+        return baseline;
+
+    return RenderBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
+}
+
+LayoutUnit RenderTable::lastLineBoxBaseline() const
+{
+    // Tables don't contribute their baseline towards the computation of an inline-block's baseline.
+    return -1;
+}
+
 LayoutUnit RenderTable::firstLineBoxBaseline() const
 {
+    // The baseline of a 'table' is the same as the 'inline-table' baseline per CSS 3 Flexbox (CSS 2.1
+    // doesn't define the baseline of a 'table' only an 'inline-table').
+    // This is also needed to properly determine the baseline of a cell if it has a table child.
+
     if (isWritingModeRoot())
         return -1;
 
@@ -1230,7 +1246,12 @@ LayoutUnit RenderTable::firstLineBoxBaseline() const
     if (!topNonEmptySection)
         return -1;
 
-    return topNonEmptySection->logicalTop() + topNonEmptySection->firstLineBoxBaseline();
+    LayoutUnit baseline = topNonEmptySection->firstLineBoxBaseline();
+    if (baseline > 0)
+        return topNonEmptySection->logicalTop() + baseline;
+
+    // FIXME: A table row always has a baseline per CSS 2.1. Will this return the right value?
+    return -1;
 }
 
 LayoutRect RenderTable::overflowClipRect(const LayoutPoint& location, RenderRegion* region, OverlayScrollbarSizeRelevancy relevancy)
@@ -1256,17 +1277,17 @@ LayoutRect RenderTable::overflowClipRect(const LayoutPoint& location, RenderRegi
     return rect;
 }
 
-bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     LayoutPoint adjustedLocation = accumulatedOffset + location();
 
     // Check kids first.
-    if (!hasOverflowClip() || overflowClipRect(adjustedLocation, result.region()).intersects(result.rectForPoint(pointInContainer))) {
+    if (!hasOverflowClip() || locationInContainer.intersects(overflowClipRect(adjustedLocation, locationInContainer.region()))) {
         for (RenderObject* child = lastChild(); child; child = child->previousSibling()) {
             if (child->isBox() && !toRenderBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
                 LayoutPoint childPoint = flipForWritingModeForChild(toRenderBox(child), adjustedLocation);
-                if (child->nodeAtPoint(request, result, pointInContainer, childPoint, action)) {
-                    updateHitTestResult(result, toLayoutPoint(pointInContainer - childPoint));
+                if (child->nodeAtPoint(request, result, locationInContainer, childPoint, action)) {
+                    updateHitTestResult(result, toLayoutPoint(locationInContainer.point() - childPoint));
                     return true;
                 }
             }
@@ -1275,9 +1296,9 @@ bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
 
     // Check our bounds next.
     LayoutRect boundsRect(adjustedLocation, size());
-    if (visibleToHitTesting() && (action == HitTestBlockBackground || action == HitTestChildBlockBackground) && boundsRect.intersects(result.rectForPoint(pointInContainer))) {
-        updateHitTestResult(result, flipForWritingMode(pointInContainer - toLayoutSize(adjustedLocation)));
-        if (!result.addNodeToRectBasedTestResult(node(), pointInContainer, boundsRect))
+    if (visibleToHitTesting() && (action == HitTestBlockBackground || action == HitTestChildBlockBackground) && locationInContainer.intersects(boundsRect)) {
+        updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(adjustedLocation)));
+        if (!result.addNodeToRectBasedTestResult(node(), request, locationInContainer, boundsRect))
             return true;
     }
 

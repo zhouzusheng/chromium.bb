@@ -58,6 +58,8 @@ public:
     }
     bool shadowDataEquivalent(const StyleRareInheritedData&) const;
 
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
     Color textStrokeColor;
     float textStrokeWidth;
     Color textFillColor;
@@ -81,12 +83,12 @@ public:
     unsigned textSecurity : 2; // ETextSecurity
     unsigned userModify : 2; // EUserModify (editing)
     unsigned wordBreak : 2; // EWordBreak
-    unsigned wordWrap : 1; // EWordWrap 
+    unsigned overflowWrap : 1; // EOverflowWrap
     unsigned nbspMode : 1; // ENBSPMode
     unsigned khtmlLineBreak : 1; // EKHTMLLineBreak
     unsigned textSizeAdjust : 1; // An Apple extension.
     unsigned resize : 2; // EResize
-    unsigned userSelect : 1;  // EUserSelect
+    unsigned userSelect : 2; // EUserSelect
     unsigned colorSpace : 1; // ColorSpace
     unsigned speak : 3; // ESpeak
     unsigned hyphens : 2; // Hyphens
@@ -95,11 +97,18 @@ public:
     unsigned textEmphasisPosition : 1; // TextEmphasisPosition
     unsigned m_lineBoxContain: 7; // LineBoxContain
     // CSS Image Values Level 3
+#if ENABLE(CSS_IMAGE_ORIENTATION)
+    unsigned m_imageOrientation : 4; // ImageOrientationEnum
+#endif
     unsigned m_imageRendering : 2; // EImageRendering
     unsigned m_lineSnap : 2; // LineSnap
     unsigned m_lineAlign : 1; // LineAlign
-#if ENABLE(OVERFLOW_SCROLLING)
+#if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
     unsigned useTouchOverflowScrolling: 1;
+#endif
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    unsigned m_imageResolutionSource : 1; // ImageResolutionSource
+    unsigned m_imageResolutionSnap : 1; // ImageResolutionSnap
 #endif
 
     AtomicString hyphenationString;

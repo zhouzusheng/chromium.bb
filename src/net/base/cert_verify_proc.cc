@@ -8,6 +8,7 @@
 #include "base/sha1.h"
 #include "build/build_config.h"
 #include "net/base/cert_status_flags.h"
+#include "net/base/cert_verifier.h"
 #include "net/base/cert_verify_result.h"
 #include "net/base/crl_set.h"
 #include "net/base/net_errors.h"
@@ -82,12 +83,11 @@ int CertVerifyProc::Verify(X509Certificate* cert,
   // CRLSet has expired, then enable online revocation checks. If the online
   // check fails, EV status won't be shown.
   //
-  // A possible optimisation is to only enable online revocation checking in
-  // the event that the leaf certificate appears to include a EV policy ID.
-  // However, it's expected that having a current CRLSet will be very common.
-  if ((flags & X509Certificate::VERIFY_EV_CERT) &&
+  // TODO(rsleevi): http://crbug.com/142974 - Allow preferences to fully
+  // disable revocation checking.
+  if ((flags & CertVerifier::VERIFY_EV_CERT) &&
       (!crl_set || crl_set->IsExpired())) {
-    flags |= X509Certificate::VERIFY_REV_CHECKING_ENABLED;
+    flags |= CertVerifier::VERIFY_REV_CHECKING_ENABLED_EV_ONLY;
   }
 
   int rv = VerifyInternal(cert, hostname, flags, crl_set, verify_result);
@@ -217,9 +217,10 @@ bool CertVerifyProc::IsBlacklisted(X509Certificate* cert) {
 }
 
 // static
+// NOTE: This implementation assumes and enforces that the hashes are SHA1.
 bool CertVerifyProc::IsPublicKeyBlacklisted(
-    const std::vector<SHA1Fingerprint>& public_key_hashes) {
-  static const unsigned kNumHashes = 8;
+    const HashValueVector& public_key_hashes) {
+  static const unsigned kNumHashes = 9;
   static const uint8 kHashes[kNumHashes][base::kSHA1Length] = {
     // Subject: CN=DigiNotar Root CA
     // Issuer: CN=Entrust.net x2 and self-signed
@@ -256,13 +257,20 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // 2021 GMT.
     {0xe1, 0x2d, 0x89, 0xf5, 0x6d, 0x22, 0x76, 0xf8, 0x30, 0xe6,
      0xce, 0xaf, 0xa6, 0x6c, 0x72, 0x5c, 0x0b, 0x41, 0xa9, 0x32},
+    // Cyberoam CA certificate. Private key leaked, but this certificate would
+    // only have been installed by Cyberoam customers. The certificate expires
+    // in 2036, but we can probably remove in a couple of years (2014).
+    {0xd9, 0xf5, 0xc6, 0xce, 0x57, 0xff, 0xaa, 0x39, 0xcc, 0x7e,
+     0xd1, 0x72, 0xbd, 0x53, 0xe0, 0xd3, 0x07, 0x83, 0x4b, 0xd1},
   };
 
   for (unsigned i = 0; i < kNumHashes; i++) {
-    for (std::vector<SHA1Fingerprint>::const_iterator
-         j = public_key_hashes.begin(); j != public_key_hashes.end(); ++j) {
-      if (memcmp(j->data, kHashes[i], base::kSHA1Length) == 0)
+    for (HashValueVector::const_iterator j = public_key_hashes.begin();
+         j != public_key_hashes.end(); ++j) {
+      if (j->tag == HASH_VALUE_SHA1 &&
+          memcmp(j->data(), kHashes[i], base::kSHA1Length) == 0) {
         return true;
+      }
     }
   }
 

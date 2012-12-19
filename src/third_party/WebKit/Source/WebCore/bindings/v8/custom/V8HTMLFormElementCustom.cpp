@@ -37,7 +37,6 @@
 #include "V8NamedNodesCollection.h"
 #include "V8Node.h"
 #include "V8NodeList.h"
-#include "V8Proxy.h"
 
 namespace WebCore {
 
@@ -48,15 +47,15 @@ v8::Handle<v8::Value> V8HTMLFormElement::indexedPropertyGetter(uint32_t index, c
 
     RefPtr<Node> formElement = form->elements()->item(index);
     if (!formElement)
-        return v8::Handle<v8::Value>();
-    return toV8(formElement.release(), info.GetIsolate());
+        return v8Undefined();
+    return toV8(formElement.release(), info.Holder(), info.GetIsolate());
 }
 
 v8::Handle<v8::Value> V8HTMLFormElement::namedPropertyGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
     INC_STATS("DOM.HTMLFormElement.NamedPropertyGetter");
     HTMLFormElement* imp = V8HTMLFormElement::toNative(info.Holder());
-    AtomicString v = v8StringToAtomicWebCoreString(name);
+    AtomicString v = toWebCoreAtomicString(name);
 
     // Call getNamedElements twice, first time check if it has a value
     // and let HTMLFormElement update its cache.
@@ -65,7 +64,7 @@ v8::Handle<v8::Value> V8HTMLFormElement::namedPropertyGetter(v8::Local<v8::Strin
         Vector<RefPtr<Node> > elements;
         imp->getNamedElements(v, elements);
         if (elements.isEmpty())
-            return v8::Handle<v8::Value>();
+            return v8Undefined();
     }
 
     // Second call may return different results from the first call,
@@ -75,9 +74,9 @@ v8::Handle<v8::Value> V8HTMLFormElement::namedPropertyGetter(v8::Local<v8::Strin
     ASSERT(!elements.isEmpty());
 
     if (elements.size() == 1)
-        return toV8(elements.at(0).release(), info.GetIsolate());
+        return toV8(elements.at(0).release(), info.Holder(), info.GetIsolate());
 
-    return toV8(V8NamedNodesCollection::create(elements), info.GetIsolate());
+    return toV8(V8NamedNodesCollection::create(elements), info.Holder(), info.GetIsolate());
 }
 
 } // namespace WebCore

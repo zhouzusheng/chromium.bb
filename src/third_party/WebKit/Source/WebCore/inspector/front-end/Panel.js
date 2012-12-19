@@ -33,6 +33,7 @@
 WebInspector.Panel = function(name)
 {
     WebInspector.View.call(this);
+    WebInspector.panels[name] = this;
 
     this.element.addStyleClass("panel");
     this.element.addStyleClass(name);
@@ -47,15 +48,6 @@ WebInspector.Panel = function(name)
 WebInspector.Panel.counterRightMargin = 25;
 
 WebInspector.Panel.prototype = {
-    get toolbarItem()
-    {
-        if (this._toolbarItem)
-            return this._toolbarItem;
-
-        this._toolbarItem = WebInspector.Toolbar.createPanelToolbarItem(this);
-        return this._toolbarItem;
-    },
-
     get name()
     {
         return this._panelName;
@@ -63,7 +55,7 @@ WebInspector.Panel.prototype = {
 
     show: function()
     {
-        WebInspector.View.prototype.show.call(this, WebInspector.inspectorView.element);
+        WebInspector.View.prototype.show.call(this, WebInspector.inspectorView.panelsElement());
     },
 
     wasShown: function()
@@ -73,11 +65,8 @@ WebInspector.Panel.prototype = {
             this._statusBarItemContainer = document.createElement("div");
             for (var i = 0; i < statusBarItems.length; ++i)
                 this._statusBarItemContainer.appendChild(statusBarItems[i]);
-            document.getElementById("main-status-bar").appendChild(this._statusBarItemContainer);
+            document.getElementById("panel-status-bar").appendChild(this._statusBarItemContainer);
         }
-
-        if ("_toolbarItem" in this)
-            this._toolbarItem.addStyleClass("toggled-on");
 
         this.focus();
     },
@@ -87,8 +76,6 @@ WebInspector.Panel.prototype = {
         if (this._statusBarItemContainer && this._statusBarItemContainer.parentNode)
             this._statusBarItemContainer.parentNode.removeChild(this._statusBarItemContainer);
         delete this._statusBarItemContainer;
-        if ("_toolbarItem" in this)
-            this._toolbarItem.removeStyleClass("toggled-on");
     },
 
     reset: function()
@@ -106,6 +93,9 @@ WebInspector.Panel.prototype = {
         WebInspector.searchController.updateSearchMatchesCount(0, this);
     },
 
+    /**
+     * @param {string} query
+     */
     performSearch: function(query)
     {
         // Call searchCanceled since it will reset everything we need before doing a new search.
@@ -117,6 +107,44 @@ WebInspector.Panel.prototype = {
     },
 
     jumpToPreviousSearchResult: function()
+    {
+    },
+
+    /**
+     * @return {boolean}
+     */
+    canSearchAndReplace: function()
+    {
+        return false;
+    },
+
+    /**
+     * @param {string} text
+     */
+    replaceSelectionWith: function(text)
+    {
+    },
+
+    /**
+     * @param {string} query
+     * @param {string} text
+     */
+    replaceAllWith: function(query, text)
+    {
+    },
+
+    /**
+     * @return {boolean}
+     */
+    canFilter: function()
+    {
+        return false;
+    },
+
+    /**
+     * @param {string} query
+     */
+    performFilter: function(query)
     {
     },
 
@@ -167,10 +195,6 @@ WebInspector.Panel.prototype = {
     },
 
     // Should be implemented by ancestors.
-
-    get toolbarItemLabel()
-    {
-    },
 
     get statusBarItems()
     {
@@ -227,3 +251,67 @@ WebInspector.Panel.prototype = {
 }
 
 WebInspector.Panel.prototype.__proto__ = WebInspector.View.prototype;
+
+/**
+ * @constructor
+ * @param {string} name
+ * @param {string} title
+ * @param {string=} className
+ * @param {string=} scriptName
+ * @param {WebInspector.Panel=} panel
+ */
+WebInspector.PanelDescriptor = function(name, title, className, scriptName, panel)
+{
+    this._name = name;
+    this._title = title;
+    this._className = className;
+    this._scriptName = scriptName;
+    this._panel = panel;
+}
+
+WebInspector.PanelDescriptor.prototype = {
+    /**
+     * @return {string}
+     */
+    name: function()
+    {
+        return this._name;
+    },
+
+    /**
+     * @return {string}
+     */
+    title: function()
+    {
+        return this._title;
+    },
+
+    /**
+     * @return {string}
+     */
+    iconURL: function()
+    {
+        return this._iconURL;
+    },
+
+    /**
+     * @param {string} iconURL
+     */
+    setIconURL: function(iconURL)
+    {
+        this._iconURL = iconURL;
+    },
+
+    /**
+     * @return {WebInspector.Panel}
+     */
+    panel: function()
+    {
+        if (this._panel)
+            return this._panel;
+        if (this._scriptName)
+            importScript(this._scriptName);
+        this._panel = new WebInspector[this._className];
+        return this._panel;
+    }
+}

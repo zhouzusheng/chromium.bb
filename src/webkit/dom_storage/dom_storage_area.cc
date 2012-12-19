@@ -5,7 +5,6 @@
 #include "webkit/dom_storage/dom_storage_area.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/time.h"
@@ -15,6 +14,9 @@
 #include "webkit/dom_storage/dom_storage_namespace.h"
 #include "webkit/dom_storage/dom_storage_task_runner.h"
 #include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/dom_storage/local_storage_database_adapter.h"
+#include "webkit/dom_storage/session_storage_database.h"
+#include "webkit/dom_storage/session_storage_database_adapter.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -63,7 +65,7 @@ DomStorageArea::DomStorageArea(const GURL& origin, const FilePath& directory,
       commit_batches_in_flight_(0) {
   if (!directory.empty()) {
     FilePath path = directory.Append(DatabaseFileNameFromOrigin(origin_));
-    backing_.reset(new DomStorageDatabase(path));
+    backing_.reset(new LocalStorageDatabaseAdapter(path));
     is_initial_import_done_ = false;
   }
 }
@@ -72,16 +74,23 @@ DomStorageArea::DomStorageArea(
     int64 namespace_id,
     const std::string& persistent_namespace_id,
     const GURL& origin,
+    SessionStorageDatabase* session_storage_backing,
     DomStorageTaskRunner* task_runner)
     : namespace_id_(namespace_id),
       persistent_namespace_id_(persistent_namespace_id),
       origin_(origin),
       task_runner_(task_runner),
       map_(new DomStorageMap(kPerAreaQuota + kPerAreaOverQuotaAllowance)),
+      session_storage_backing_(session_storage_backing),
       is_initial_import_done_(true),
       is_shutdown_(false),
       commit_batches_in_flight_(0) {
   DCHECK(namespace_id != kLocalStorageNamespaceId);
+  if (session_storage_backing) {
+    backing_.reset(new SessionStorageDatabaseAdapter(
+        session_storage_backing, persistent_namespace_id, origin));
+    is_initial_import_done_ = false;
+  }
 }
 
 DomStorageArea::~DomStorageArea() {
@@ -168,13 +177,20 @@ DomStorageArea* DomStorageArea::ShallowCopy(
     const std::string& destination_persistent_namespace_id) {
   DCHECK_NE(kLocalStorageNamespaceId, namespace_id_);
   DCHECK_NE(kLocalStorageNamespaceId, destination_namespace_id);
-  DCHECK(!backing_.get());  // SessionNamespaces aren't stored on disk.
 
   DomStorageArea* copy = new DomStorageArea(
       destination_namespace_id, destination_persistent_namespace_id, origin_,
-      task_runner_);
+      session_storage_backing_, task_runner_);
   copy->map_ = map_;
   copy->is_shutdown_ = is_shutdown_;
+  copy->is_initial_import_done_ = true;
+
+  // All the uncommitted changes to this area need to happen before the actual
+  // shallow copy is made (scheduled by the upper layer). Another OnCommitTimer
+  // call might be in the event queue at this point, but it's handled gracefully
+  // when it fires.
+  if (commit_batch_.get())
+    OnCommitTimer();
   return copy;
 }
 
@@ -185,6 +201,8 @@ bool DomStorageArea::HasUncommittedChanges() const {
 
 void DomStorageArea::DeleteOrigin() {
   DCHECK(!is_shutdown_);
+  // This function shouldn't be called for sessionStorage.
+  DCHECK(!session_storage_backing_.get());
   if (HasUncommittedChanges()) {
     // TODO(michaeln): This logically deletes the data immediately,
     // and in a matter of a second, deletes the rows from the backing
@@ -197,10 +215,8 @@ void DomStorageArea::DeleteOrigin() {
   map_ = new DomStorageMap(kPerAreaQuota + kPerAreaOverQuotaAllowance);
   if (backing_.get()) {
     is_initial_import_done_ = false;
-    backing_.reset(new DomStorageDatabase(backing_->file_path()));
-    file_util::Delete(backing_->file_path(), false);
-    file_util::Delete(
-        DomStorageDatabase::GetJournalFilePath(backing_->file_path()), false);
+    backing_->Reset();
+    backing_->DeleteFiles();
   }
 }
 
@@ -217,7 +233,7 @@ void DomStorageArea::PurgeMemory() {
 
   // Recreate the database object, this frees up the open sqlite connection
   // and its page cache.
-  backing_.reset(new DomStorageDatabase(backing_->file_path()));
+  backing_->Reset();
 }
 
 void DomStorageArea::Shutdown() {
@@ -238,7 +254,6 @@ void DomStorageArea::InitialImportIfNeeded() {
   if (is_initial_import_done_)
     return;
 
-  DCHECK_EQ(kLocalStorageNamespaceId, namespace_id_);
   DCHECK(backing_.get());
 
   ValuesMap initial_values;
@@ -266,13 +281,15 @@ DomStorageArea::CommitBatch* DomStorageArea::CreateCommitBatchIfNeeded() {
 }
 
 void DomStorageArea::OnCommitTimer() {
-  DCHECK_EQ(kLocalStorageNamespaceId, namespace_id_);
   if (is_shutdown_)
     return;
 
   DCHECK(backing_.get());
-  DCHECK(commit_batch_.get());
-  DCHECK(!commit_batches_in_flight_);
+
+  // It's possible that there is nothing to commit, since a shallow copy occured
+  // before the timer fired.
+  if (!commit_batch_.get())
+    return;
 
   // This method executes on the primary sequence, we schedule
   // a task for immediate execution on the commit sequence.
@@ -300,9 +317,9 @@ void DomStorageArea::CommitChanges(const CommitBatch* commit_batch) {
 void DomStorageArea::OnCommitComplete() {
   // We're back on the primary sequence in this method.
   DCHECK(task_runner_->IsRunningOnPrimarySequence());
+  --commit_batches_in_flight_;
   if (is_shutdown_)
     return;
-  --commit_batches_in_flight_;
   if (commit_batch_.get() && !commit_batches_in_flight_) {
     // More changes have accrued, restart the timer.
     task_runner_->PostDelayedTask(
@@ -325,6 +342,7 @@ void DomStorageArea::ShutdownInCommitSequence() {
   }
   commit_batch_.reset();
   backing_.reset();
+  session_storage_backing_ = NULL;
 }
 
 }  // namespace dom_storage

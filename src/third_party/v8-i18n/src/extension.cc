@@ -16,12 +16,7 @@
 
 #include "src/break-iterator.h"
 #include "src/collator.h"
-#include "src/datetime-format.h"
-#include "src/intl-break-iterator.h"
-#include "src/intl-collator.h"
-#include "src/intl-date-format.h"
-#include "src/intl-number-format.h"
-#include "src/locale-list.h"
+#include "src/date-format.h"
 #include "src/locale.h"
 #include "src/natives.h"
 #include "src/number-format.h"
@@ -36,49 +31,60 @@ Extension::Extension()
 
 v8::Handle<v8::FunctionTemplate> Extension::GetNativeFunction(
     v8::Handle<v8::String> name) {
-  if (name->Equals(v8::String::New("NativeJSLocale"))) {
-    return v8::FunctionTemplate::New(Locale::JSLocale);
-  } else if (name->Equals(v8::String::New("NativeJSBreakIterator"))) {
-    return v8::FunctionTemplate::New(BreakIterator::JSBreakIterator);
-  } else if (name->Equals(v8::String::New("NativeJSCollator"))) {
-    return v8::FunctionTemplate::New(Collator::JSCollator);
-  } else if (name->Equals(v8::String::New("NativeJSDateTimeFormat"))) {
-    return v8::FunctionTemplate::New(DateTimeFormat::JSDateTimeFormat);
-  } else if (name->Equals(v8::String::New("NativeJSNumberFormat"))) {
-    return v8::FunctionTemplate::New(NumberFormat::JSNumberFormat);
-  } else if (name->Equals(v8::String::New("NativeJSCanonicalizeLanguageTag"))) {
+  // Standalone, helper methods.
+  if (name->Equals(v8::String::New("NativeJSCanonicalizeLanguageTag"))) {
     return v8::FunctionTemplate::New(JSCanonicalizeLanguageTag);
   } else if (name->Equals(v8::String::New("NativeJSAvailableLocalesOf"))) {
     return v8::FunctionTemplate::New(JSAvailableLocalesOf);
-  } else if (name->Equals(v8::String::New("NativeJSCreateDateTimeFormat"))) {
-    return v8::FunctionTemplate::New(IntlDateFormat::JSCreateDateTimeFormat);
+  } else if (name->Equals(v8::String::New("NativeJSGetDefaultICULocale"))) {
+    return v8::FunctionTemplate::New(JSGetDefaultICULocale);
+  } else if (name->Equals(v8::String::New("NativeJSGetLanguageTagVariants"))) {
+    return v8::FunctionTemplate::New(JSGetLanguageTagVariants);
+  }
+
+  // Date format and parse.
+  if (name->Equals(v8::String::New("NativeJSCreateDateTimeFormat"))) {
+    return v8::FunctionTemplate::New(DateFormat::JSCreateDateTimeFormat);
   } else if (name->Equals(v8::String::New("NativeJSInternalDateFormat"))) {
-    return v8::FunctionTemplate::New(IntlDateFormat::JSInternalFormat);
-  } else if (name->Equals(v8::String::New("NativeJSCreateNumberFormat"))) {
-    return v8::FunctionTemplate::New(IntlNumberFormat::JSCreateNumberFormat);
+    return v8::FunctionTemplate::New(DateFormat::JSInternalFormat);
+  } else if (name->Equals(v8::String::New("NativeJSInternalDateParse"))) {
+    return v8::FunctionTemplate::New(DateFormat::JSInternalParse);
+  }
+
+  // Number format and parse.
+  if (name->Equals(v8::String::New("NativeJSCreateNumberFormat"))) {
+    return v8::FunctionTemplate::New(NumberFormat::JSCreateNumberFormat);
   } else if (name->Equals(v8::String::New("NativeJSInternalNumberFormat"))) {
-    return v8::FunctionTemplate::New(IntlNumberFormat::JSInternalFormat);
-  } else if (name->Equals(v8::String::New("NativeJSCreateCollator"))) {
-    return v8::FunctionTemplate::New(IntlCollator::JSCreateCollator);
+    return v8::FunctionTemplate::New(NumberFormat::JSInternalFormat);
+  } else if (name->Equals(v8::String::New("NativeJSInternalNumberParse"))) {
+    return v8::FunctionTemplate::New(NumberFormat::JSInternalParse);
+  }
+
+  // Collator.
+  if (name->Equals(v8::String::New("NativeJSCreateCollator"))) {
+    return v8::FunctionTemplate::New(Collator::JSCreateCollator);
   } else if (name->Equals(v8::String::New("NativeJSInternalCompare"))) {
-    return v8::FunctionTemplate::New(IntlCollator::JSInternalCompare);
-  } else if (name->Equals(v8::String::New("NativeJSCreateBreakIterator"))) {
-    return v8::FunctionTemplate::New(IntlBreakIterator::JSCreateBreakIterator);
+    return v8::FunctionTemplate::New(Collator::JSInternalCompare);
+  }
+
+  // Break iterator.
+  if (name->Equals(v8::String::New("NativeJSCreateBreakIterator"))) {
+    return v8::FunctionTemplate::New(BreakIterator::JSCreateBreakIterator);
   } else if (name->Equals(v8::String::New("NativeJSBreakIteratorAdoptText"))) {
     return v8::FunctionTemplate::New(
-	IntlBreakIterator::JSInternalBreakIteratorAdoptText);
+        BreakIterator::JSInternalBreakIteratorAdoptText);
   } else if (name->Equals(v8::String::New("NativeJSBreakIteratorFirst"))) {
     return v8::FunctionTemplate::New(
-        IntlBreakIterator::JSInternalBreakIteratorFirst);
+        BreakIterator::JSInternalBreakIteratorFirst);
   } else if (name->Equals(v8::String::New("NativeJSBreakIteratorNext"))) {
     return v8::FunctionTemplate::New(
-        IntlBreakIterator::JSInternalBreakIteratorNext);
+        BreakIterator::JSInternalBreakIteratorNext);
   } else if (name->Equals(v8::String::New("NativeJSBreakIteratorCurrent"))) {
     return v8::FunctionTemplate::New(
-        IntlBreakIterator::JSInternalBreakIteratorCurrent);
+        BreakIterator::JSInternalBreakIteratorCurrent);
   } else if (name->Equals(v8::String::New("NativeJSBreakIteratorBreakType"))) {
     return v8::FunctionTemplate::New(
-	IntlBreakIterator::JSInternalBreakIteratorBreakType);
+	BreakIterator::JSInternalBreakIteratorBreakType);
   }
 
   return v8::Handle<v8::FunctionTemplate>();

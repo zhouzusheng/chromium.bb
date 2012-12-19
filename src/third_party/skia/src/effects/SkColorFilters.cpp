@@ -10,6 +10,7 @@
 #include "SkBlitRow.h"
 #include "SkColorFilter.h"
 #include "SkColorPriv.h"
+#include "SkFlattenableBuffers.h"
 #include "SkUtils.h"
 
 #define ILLEGAL_XFERMODE_MODE   ((SkXfermode::Mode)-1)
@@ -33,7 +34,7 @@ public:
     SkXfermode::Mode getMode() const { return fMode; }
     bool isModeValid() const { return ILLEGAL_XFERMODE_MODE != fMode; }
     SkPMColor getPMColor() const { return fPMColor; }
-    
+
     virtual bool asColorMode(SkColor* color, SkXfermode::Mode* mode) SK_OVERRIDE {
         if (ILLEGAL_XFERMODE_MODE == fMode) {
             return false;
@@ -51,41 +52,41 @@ public:
     virtual uint32_t getFlags() SK_OVERRIDE {
         return fProc16 ? (kAlphaUnchanged_Flag | kHasFilter16_Flag) : 0;
     }
-    
+
     virtual void filterSpan(const SkPMColor shader[], int count,
                             SkPMColor result[]) SK_OVERRIDE {
         SkPMColor       color = fPMColor;
         SkXfermodeProc  proc = fProc;
-        
+
         for (int i = 0; i < count; i++) {
             result[i] = proc(color, shader[i]);
         }
     }
-    
+
     virtual void filterSpan16(const uint16_t shader[], int count,
                               uint16_t result[]) SK_OVERRIDE {
         SkASSERT(this->getFlags() & kHasFilter16_Flag);
-        
+
         SkPMColor        color = fPMColor;
         SkXfermodeProc16 proc16 = fProc16;
-        
+
         for (int i = 0; i < count; i++) {
             result[i] = proc16(color, shader[i]);
         }
     }
-    
+
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkModeColorFilter)
 
 protected:
     virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
-        buffer.write32(fColor);
-        buffer.write32(fMode);
+        buffer.writeColor(fColor);
+        buffer.writeUInt(fMode);
     }
 
     SkModeColorFilter(SkFlattenableReadBuffer& buffer) {
-        fColor = buffer.readU32();
-        fMode = (SkXfermode::Mode)buffer.readU32();
+        fColor = buffer.readColor();
+        fMode = (SkXfermode::Mode)buffer.readUInt();
         this->updateCache();
     }
 
@@ -96,13 +97,13 @@ private:
     SkPMColor           fPMColor;
     SkXfermodeProc      fProc;
     SkXfermodeProc16    fProc16;
-    
+
     void updateCache() {
         fPMColor = SkPreMultiplyColor(fColor);
         fProc = SkXfermode::GetProc(fMode);
         fProc16 = SkXfermode::GetProc16(fMode, fColor);
     }
-    
+
     typedef SkColorFilter INHERITED;
 };
 
@@ -265,13 +266,13 @@ public:
 protected:
     virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE {
         this->INHERITED::flatten(buffer);
-        buffer.write32(fMul);
-        buffer.write32(fAdd);
+        buffer.writeColor(fMul);
+        buffer.writeColor(fAdd);
     }
 
     SkLightingColorFilter(SkFlattenableReadBuffer& buffer) {
-        fMul = buffer.readU32();
-        fAdd = buffer.readU32();
+        fMul = buffer.readColor();
+        fAdd = buffer.readColor();
     }
 
     SkColor fMul, fAdd;

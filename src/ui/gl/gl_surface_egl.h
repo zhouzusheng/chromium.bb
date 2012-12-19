@@ -4,7 +4,6 @@
 
 #ifndef UI_GL_GL_SURFACE_EGL_H_
 #define UI_GL_GL_SURFACE_EGL_H_
-#pragma once
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -42,6 +41,13 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
   static EGLDisplay GetSoftwareDisplay();
   static EGLNativeDisplayType GetNativeDisplay();
 
+  // These aren't particularly tied to surfaces, but since we already
+  // have the static InitializeOneOff here, it's easiest to reuse its
+  // initialization guards.
+  static const char* GetEGLExtensions();
+  static bool HasEGLExtension(const char* name);
+  static bool IsCreateContextRobustnessSupported();
+
  protected:
   virtual ~GLSurfaceEGL();
 
@@ -60,6 +66,7 @@ class NativeViewGLSurfaceEGL : public GLSurfaceEGL {
   virtual EGLConfig GetConfig() OVERRIDE;
   virtual bool Initialize() OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual bool Resize(const gfx::Size& size) OVERRIDE;
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;

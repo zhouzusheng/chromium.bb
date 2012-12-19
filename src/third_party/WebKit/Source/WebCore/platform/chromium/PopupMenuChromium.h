@@ -56,9 +56,8 @@ public:
 
     static int minimumRowHeight() { return s_minimumRowHeight; }
     static void setMinimumRowHeight(int minimumRowHeight) { s_minimumRowHeight = minimumRowHeight; }
-
-    static int optionPaddingForTouch() { return s_optionPaddingForTouch; }
-    static void setOptionPaddingForTouch(int optionPaddingForTouch) { s_optionPaddingForTouch = optionPaddingForTouch; }
+    static int optionRowHeightForTouch() { return s_optionRowHeightForTouch; }
+    static void setOptionRowHeightForTouch(int optionRowHeightForTouch) { s_optionRowHeightForTouch = optionRowHeightForTouch; }
 
 private:
     PopupMenuClient* client() const { return m_popupClient; }
@@ -67,7 +66,7 @@ private:
     PopupMenuPrivate p;
 
     static int s_minimumRowHeight;
-    static int s_optionPaddingForTouch;
+    static int s_optionRowHeightForTouch;
 };
 
 } // namespace WebCore

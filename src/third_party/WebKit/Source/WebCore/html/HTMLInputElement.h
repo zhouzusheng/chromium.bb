@@ -25,7 +25,9 @@
 #ifndef HTMLInputElement_h
 #define HTMLInputElement_h
 
+#include "FileChooser.h"
 #include "HTMLTextFormControlElement.h"
+#include "ImageLoaderClient.h"
 #include "StepRange.h"
 
 namespace WebCore {
@@ -38,8 +40,9 @@ class HTMLOptionElement;
 class Icon;
 class InputType;
 class KURL;
+class ListAttributeTargetObserver;
 
-class HTMLInputElement : public HTMLTextFormControlElement {
+class HTMLInputElement : public HTMLTextFormControlElement, public ImageLoaderClientBase<HTMLInputElement> {
 public:
     static PassRefPtr<HTMLInputElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
@@ -70,6 +73,10 @@ public:
     bool getAllowedValueStep(Decimal*) const;
     StepRange createStepRange(AnyStepHandling) const;
 
+#if ENABLE(DATALIST_ELEMENT)
+    Decimal findClosestTickMarkValue(const Decimal&);
+#endif
+
     // Implementations of HTMLInputElement::stepUp() and stepDown().
     void stepUp(int, ExceptionCode&);
     void stepDown(int, ExceptionCode&);
@@ -77,7 +84,6 @@ public:
     void stepDown(ExceptionCode& ec) { stepDown(1, ec); }
     // stepUp()/stepDown() for user-interaction.
     bool isSteppable() const;
-    void stepUpFromRenderer(int);
 
     bool isTextButton() const;
 
@@ -122,6 +128,8 @@ public:
 #if ENABLE(INPUT_SPEECH)
     HTMLElement* speechButtonElement() const;
 #endif
+    HTMLElement* sliderThumbElement() const;
+    HTMLElement* sliderTrackElement() const;
     virtual HTMLElement* placeholderElement() const;
 
     bool checked() const { return m_isChecked; }
@@ -150,8 +158,6 @@ public:
     String sanitizeValue(const String&) const;
 
     String localizeValue(const String&) const;
-
-    void updateInnerTextValue();
 
     // The value which is drawn by a renderer.
     String visibleValue() const;
@@ -219,6 +225,10 @@ public:
     // Returns true if the given DragData has more than one dropped files.
     bool receiveDroppedFiles(const DragData*);
 
+#if ENABLE(FILE_SYSTEM)
+    String droppedFileSystemId();
+#endif
+
     Icon* icon() const;
     // These functions are used for rendering the input active during a
     // drag-and-drop operation.
@@ -228,14 +238,23 @@ public:
     void addSearchResult();
     void onSearch();
 
-#if ENABLE(DATALIST)
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+
+#if ENABLE(DATALIST_ELEMENT)
     HTMLElement* list() const;
+    HTMLDataListElement* dataList() const;
+    void listAttributeTargetChanged();
 #endif
 
     HTMLInputElement* checkedRadioButtonForGroup() const;
     bool isInRequiredRadioButtonGroup() const;
 
+    // Functions for InputType classes.
     void setValueInternal(const String&, TextFieldEventBehavior);
+    bool isTextFormControlFocusable() const;
+    bool isTextFormControlKeyboardFocusable(KeyboardEvent*) const;
+    bool isTextFormControlMouseFocusable() const;
+    bool valueAttributeWasUpdatedAfterParsing() const { return m_valueAttributeWasUpdatedAfterParsing; }
 
     void cacheSelectionInResponseToSetValue(int caretOffset) { cacheSelection(caretOffset, caretOffset, SelectionHasNoDirection); }
 
@@ -258,12 +277,22 @@ public:
     void setHeight(unsigned);
     void setWidth(unsigned);
 
+    virtual void blur() OVERRIDE;
+    void defaultBlur();
+    void defaultFocus(bool restorePreviousSelection);
+    virtual void focus(bool restorePreviousSelection = true) OVERRIDE;
+
     virtual const AtomicString& name() const OVERRIDE;
+
+    static Vector<FileChooserFileInfo> filesFromFileInputFormControlState(const FormControlState&);
 
 protected:
     HTMLInputElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
     void createShadowSubtree();
     virtual void defaultEventHandler(Event*);
+    // FIXME: Author shadows should be allowed
+    // https://bugs.webkit.org/show_bug.cgi?id=92608
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
 private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
@@ -274,6 +303,7 @@ private:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
+    virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
     virtual bool isEnumeratable() const;
@@ -288,8 +318,9 @@ private:
 
     virtual const AtomicString& formControlType() const;
 
-    virtual bool saveFormControlState(String& value) const;
-    virtual void restoreFormControlState(const String&);
+    virtual bool shouldSaveAndRestoreFormControlState() const OVERRIDE;
+    virtual FormControlState saveFormControlState() const OVERRIDE;
+    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
 
     virtual bool canStartSelection() const;
 
@@ -349,9 +380,8 @@ private:
     
     virtual void subtreeHasChanged();
 
-
-#if ENABLE(DATALIST)
-    HTMLDataListElement* dataList() const;
+#if ENABLE(DATALIST_ELEMENT)
+    void resetListAttributeTargetObserver();
 #endif
     void parseMaxLengthAttribute(const Attribute&);
     void updateValueIfNeeded();
@@ -374,15 +404,28 @@ private:
     bool m_isActivatedSubmit : 1;
     unsigned m_autocomplete : 2; // AutoCompleteSetting
     bool m_isAutofilled : 1;
-#if ENABLE(DATALIST)
+#if ENABLE(DATALIST_ELEMENT)
     bool m_hasNonEmptyList : 1;
 #endif
     bool m_stateRestored : 1;
     bool m_parsingInProgress : 1;
+    bool m_valueAttributeWasUpdatedAfterParsing : 1;
     bool m_wasModifiedByUser : 1;
     bool m_canReceiveDroppedFiles : 1;
+#if ENABLE(TOUCH_EVENTS)
+    bool m_hasTouchEventHandler : 1;
+#endif
     OwnPtr<InputType> m_inputType;
+#if ENABLE(DATALIST_ELEMENT)
+    OwnPtr<ListAttributeTargetObserver> m_listAttributeTargetObserver;
+#endif
 };
+
+inline bool isHTMLInputElement(Node* node)
+{
+    ASSERT(node);
+    return node->hasTagName(HTMLNames::inputTag);
+}
 
 } //namespace
 #endif

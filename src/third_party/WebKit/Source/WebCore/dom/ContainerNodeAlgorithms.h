@@ -46,6 +46,7 @@ private:
     void notifyNodeInsertedIntoTree(ContainerNode*);
 
     ContainerNode* m_insertionPoint;
+    Vector< RefPtr<Node> > m_postInsertionNotificationTargets;
 };
 
 class ChildNodeRemovalNotifier {
@@ -192,13 +193,10 @@ inline void ChildNodeInsertionNotifier::notifyNodeInsertedIntoDocument(Node* nod
 {
     ASSERT(m_insertionPoint->inDocument());
     RefPtr<Node> protect(node);
-    Node::InsertionNotificationRequest request = node->insertedInto(m_insertionPoint);
-
+    if (Node::InsertionShouldCallDidNotifySubtreeInsertions == node->insertedInto(m_insertionPoint))
+        m_postInsertionNotificationTargets.append(node);
     if (node->isContainerNode())
         notifyDescendantInsertedIntoDocument(toContainerNode(node));
-
-    if (request == Node::InsertionShouldCallDidNotifyDescendantInsertions)
-        node->didNotifyDescendantInsertions(m_insertionPoint);
 }
 
 inline void ChildNodeInsertionNotifier::notifyNodeInsertedIntoTree(ContainerNode* node)
@@ -206,11 +204,9 @@ inline void ChildNodeInsertionNotifier::notifyNodeInsertedIntoTree(ContainerNode
     ASSERT(!m_insertionPoint->inDocument());
     forbidEventDispatch();
 
-    Node::InsertionNotificationRequest request = node->insertedInto(m_insertionPoint);
-
+    if (Node::InsertionShouldCallDidNotifySubtreeInsertions == node->insertedInto(m_insertionPoint))
+        m_postInsertionNotificationTargets.append(node);
     notifyDescendantInsertedIntoTree(node);
-    if (request == Node::InsertionShouldCallDidNotifyDescendantInsertions)
-        node->didNotifyDescendantInsertions(m_insertionPoint);
 
     allowEventDispatch();
 }
@@ -235,6 +231,9 @@ inline void ChildNodeInsertionNotifier::notify(Node* node)
         notifyNodeInsertedIntoDocument(node);
     else if (node->isContainerNode())
         notifyNodeInsertedIntoTree(toContainerNode(node));
+
+    for (size_t i = 0; i < m_postInsertionNotificationTargets.size(); ++i)
+        m_postInsertionNotificationTargets[i]->didNotifySubtreeInsertions(m_insertionPoint);
 }
 
 
@@ -260,20 +259,45 @@ inline void ChildNodeRemovalNotifier::notifyNodeRemovedFromTree(ContainerNode* n
 
 inline void ChildNodeRemovalNotifier::notify(Node* node)
 {
-    if (node->inDocument())
+    if (node->inDocument()) {
         notifyNodeRemovedFromDocument(node);
-    else if (node->isContainerNode())
+        node->document()->notifyRemovePendingSheetIfNeeded();
+    } else if (node->isContainerNode())
         notifyNodeRemovedFromTree(toContainerNode(node));
 }
 
 class ChildFrameDisconnector {
 public:
-    explicit ChildFrameDisconnector(Node* root);
+    enum ShouldIncludeRoot {
+        DoNotIncludeRoot,
+        IncludeRoot
+    };
+
+    explicit ChildFrameDisconnector(Node* root, ShouldIncludeRoot shouldIncludeRoot = IncludeRoot)
+        : m_root(root)
+    {
+        collectDescendant(m_root, shouldIncludeRoot);
+        rootNodes().add(m_root);
+    }
+
+    ~ChildFrameDisconnector()
+    {
+        rootNodes().remove(m_root);
+    }
+
     void disconnect();
 
+    static bool nodeHasDisconnector(Node*);
+
 private:
-    void collectDescendant(Node* root);
+    void collectDescendant(Node* root, ShouldIncludeRoot);
     void collectDescendant(ElementShadow*);
+
+    static HashSet<Node*>& rootNodes()
+    {
+        DEFINE_STATIC_LOCAL(HashSet<Node*>, nodes, ());
+        return nodes;
+    }
 
     class Target {
     public:
@@ -292,16 +316,13 @@ private:
     };
 
     Vector<Target, 10> m_list;
+    Node* m_root;
 };
 
-inline ChildFrameDisconnector::ChildFrameDisconnector(Node* root)
+inline void ChildFrameDisconnector::collectDescendant(Node* root, ShouldIncludeRoot shouldIncludeRoot)
 {
-    collectDescendant(root);
-}
-
-inline void ChildFrameDisconnector::collectDescendant(Node* root)
-{
-    for (Node* node = root; node; node = node->traverseNextNode(root)) {
+    for (Node* node = shouldIncludeRoot == IncludeRoot ? root : root->firstChild(); node;
+            node = node->traverseNextNode(root)) {
         if (!node->isElementNode())
             continue;
         Element* element = toElement(node);
@@ -320,6 +341,20 @@ inline void ChildFrameDisconnector::disconnect()
         if (target.isValid())
             target.disconnect();
     }
+}
+
+inline bool ChildFrameDisconnector::nodeHasDisconnector(Node* node)
+{
+    HashSet<Node*>& nodes = rootNodes();
+
+    if (nodes.isEmpty())
+        return false;
+
+    for (; node; node = node->parentNode())
+        if (nodes.contains(node))
+            return true;
+
+    return false;
 }
 
 } // namespace WebCore

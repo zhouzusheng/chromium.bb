@@ -71,6 +71,11 @@ namespace WebCore {
     macro(focus) \
     macro(focusin) \
     macro(focusout) \
+    macro(gesturetap) \
+    macro(gesturetapdown) \
+    macro(gesturescrollstart) \
+    macro(gesturescrollend) \
+    macro(gesturescrollupdate) \
     macro(hashchange) \
     macro(input) \
     macro(invalid) \
@@ -110,6 +115,7 @@ namespace WebCore {
     macro(textInput) \
     macro(unload) \
     macro(updateready) \
+    macro(upgradeneeded) \
     macro(versionchange) \
     macro(webkitvisibilitychange) \
     macro(write) \
@@ -157,6 +163,8 @@ namespace WebCore {
     macro(webkitbeginfullscreen) \
     macro(webkitendfullscreen) \
     \
+    macro(webkitaddsourcebuffer) \
+    macro(webkitremovesourcebuffer) \
     macro(webkitsourceopen) \
     macro(webkitsourceended) \
     macro(webkitsourceclose) \
@@ -216,16 +224,25 @@ namespace WebCore {
     macro(addstream) \
     macro(removestream) \
     macro(statechange) \
+    macro(removetrack) \
+    macro(mute) \
+    macro(unmute) \
+    macro(icechange) \
+    macro(icecandidate) \
+    macro(negotiationneeded) \
     \
     macro(show) \
     \
-    macro(webkitpointerlocklost) \
     macro(webkitpointerlockchange) \
     macro(webkitpointerlockerror) \
     \
     macro(webkitRegionLayoutUpdate) \
     \
     macro(webkitnetworkinfochange) \
+    \
+    macro(webkitresourcetimingbufferfull) \
+    \
+    macro(webkitdeviceproximity) \
     \
 
 // end of DOM_EVENT_NAMES_FOR_EACH
@@ -249,7 +266,30 @@ namespace WebCore {
 
         inline bool isTouchEventType(const AtomicString& eventType) const
         {
-            return eventType == touchstartEvent || eventType == touchmoveEvent || eventType == touchendEvent || eventType == touchcancelEvent;
+            return eventType == touchstartEvent
+                || eventType == touchmoveEvent
+                || eventType == touchendEvent
+                || eventType == touchcancelEvent;
+        }
+
+        inline bool isGestureEventType(const AtomicString& eventType) const
+        {
+            return eventType == gesturetapEvent
+                || eventType == gesturetapdownEvent
+                || eventType == gesturescrollstartEvent
+                || eventType == gesturescrollendEvent
+                || eventType == gesturescrollupdateEvent;
+        }
+
+        Vector<AtomicString> touchEventNames() const
+        {
+            Vector<AtomicString> names;
+            names.reserveCapacity(4);
+            names.append(touchstartEvent);
+            names.append(touchmoveEvent);
+            names.append(touchendEvent);
+            names.append(touchcancelEvent);
+            return names;
         }
     };
 

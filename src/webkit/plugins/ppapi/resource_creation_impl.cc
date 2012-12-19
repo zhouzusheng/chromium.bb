@@ -16,7 +16,6 @@
 #include "webkit/plugins/ppapi/ppb_broker_impl.h"
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
 #include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
-#include "webkit/plugins/ppapi/ppb_file_chooser_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_io_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_system_impl.h"
@@ -115,13 +114,6 @@ PP_Resource ResourceCreationImpl::CreateDirectoryReader(
   return PPB_DirectoryReader_Impl::Create(directory_ref);
 }
 
-PP_Resource ResourceCreationImpl::CreateFileChooser(
-    PP_Instance instance,
-    PP_FileChooserMode_Dev mode,
-    const char* accept_types) {
-  return PPB_FileChooser_Impl::Create(instance, mode, accept_types);
-}
-
 PP_Resource ResourceCreationImpl::CreateFileIO(PP_Instance instance) {
   return (new PPB_FileIO_Impl(instance))->GetReference();
 }
@@ -182,7 +174,15 @@ PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
                                                   PP_ImageDataFormat format,
                                                   const PP_Size& size,
                                                   PP_Bool init_to_zero) {
-  return PPB_ImageData_Impl::Create(instance, format, size, init_to_zero);
+  return PPB_ImageData_Impl::CreatePlatform(instance, format, size,
+                                            init_to_zero);
+}
+
+PP_Resource ResourceCreationImpl::CreateImageDataNaCl(PP_Instance instance,
+                                                      PP_ImageDataFormat format,
+                                                      const PP_Size& size,
+                                                      PP_Bool init_to_zero) {
+  return PPB_ImageData_Impl::CreateNaCl(instance, format, size, init_to_zero);
 }
 
 PP_Resource ResourceCreationImpl::CreateIMEInputEvent(
@@ -224,6 +224,15 @@ PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
   return PPB_InputEvent_Shared::CreateMouseInputEvent(
       ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers,
       mouse_button, mouse_position, click_count, mouse_movement);
+}
+
+PP_Resource ResourceCreationImpl::CreateTouchInputEvent(
+    PP_Instance instance,
+    PP_InputEvent_Type type,
+    PP_TimeTicks time_stamp,
+    uint32_t modifiers) {
+  return PPB_InputEvent_Shared::CreateTouchInputEvent(
+      ::ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
 }
 
 PP_Resource ResourceCreationImpl::CreateNetworkMonitor(

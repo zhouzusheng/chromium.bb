@@ -30,8 +30,8 @@
 #include "Page.h"
 #include "Settings.h"
 #include "StorageArea.h"
-#include "PlatformString.h"
 #include <wtf/PassRefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -46,10 +46,14 @@ Storage::Storage(Frame* frame, PassRefPtr<StorageArea> storageArea)
 {
     ASSERT(m_frame);
     ASSERT(m_storageArea);
+    if (m_storageArea)
+        m_storageArea->incrementAccessCount();
 }
 
 Storage::~Storage()
 {
+    if (m_storageArea)
+        m_storageArea->decrementAccessCount();
 }
 
 unsigned Storage::length() const

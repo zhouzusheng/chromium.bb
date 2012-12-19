@@ -68,7 +68,7 @@ static inline RenderWidget* findWidgetRenderer(const Node* n)
     return 0;
 }
 
-RenderWidget* HTMLEmbedElement::renderWidgetForJSBindings()
+RenderWidget* HTMLEmbedElement::renderWidgetForJSBindings() const
 {
     document()->updateLayoutIgnorePendingStylesheets();
     return findWidgetRenderer(this);
@@ -99,8 +99,6 @@ void HTMLEmbedElement::parseAttribute(const Attribute& attribute)
         size_t pos = m_serviceType.find(";");
         if (pos != notFound)
             m_serviceType = m_serviceType.left(pos);
-        if (!isImageType() && m_imageLoader)
-            m_imageLoader.clear();
     } else if (attribute.name() == codeAttr)
         m_url = stripLeadingAndTrailingHTMLSpaces(attribute.value());
     else if (attribute.name() == srcAttr) {
@@ -120,9 +118,9 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
         return;
 
     for (unsigned i = 0; i < attributeCount(); ++i) {
-        Attribute* it = attributeItem(i);
-        paramNames.append(it->localName().string());
-        paramValues.append(it->value().string());
+        const Attribute* attribute = attributeItem(i);
+        paramNames.append(attribute->localName().string());
+        paramValues.append(attribute->value().string());
     }
 }
 

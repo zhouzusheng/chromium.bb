@@ -33,6 +33,7 @@
 
 #include "DOMData.h"
 #include "V8Binding.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/MainThread.h>
 
 namespace WebCore {
@@ -98,7 +99,7 @@ DOMDataStore::~DOMDataStore()
 
 DOMDataList& DOMDataStore::allStores()
 {
-    return V8BindingPerIsolateData::current()->allStores();
+    return V8PerIsolateData::current()->allStores();
 }
 
 void* DOMDataStore::getDOMWrapperMap(DOMWrapperMapType type)
@@ -116,6 +117,15 @@ void* DOMDataStore::getDOMWrapperMap(DOMWrapperMapType type)
 
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+void DOMDataStore::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
+    info.addWeakPointer(m_domNodeMap);
+    info.addWeakPointer(m_activeDomNodeMap);
+    info.addWeakPointer(m_domObjectMap);
+    info.addWeakPointer(m_activeDomObjectMap);
 }
 
 // Called when the object is near death (not reachable from JS roots).

@@ -13,7 +13,7 @@ const char kIsFirstRequest[] = "isFirstRequest";
 const char kPreviewRequestID[] = "requestID";
 
 // Unique ID to identify a print preview UI.
-const char kPreviewUIAddr[] = "previewUIAddr";
+const char kPreviewUIID[] = "previewUIID";
 
 // Print using cloud print: true if selected, false if not.
 const char kSettingCloudPrintId[] = "cloudPrintID";
@@ -26,6 +26,9 @@ const char kSettingCollate[] = "collate";
 
 // Print out color: true for color, false for grayscale.
 const char kSettingColor[] = "color";
+
+// Default to color on or not.
+const char kSettingSetColorAsDefault[] = "setColorAsDefault";
 
 // Key that specifies the height of the content area of the page.
 const char kSettingContentHeight[] = "contentHeight";

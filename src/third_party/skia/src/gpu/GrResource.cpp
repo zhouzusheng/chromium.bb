@@ -14,8 +14,7 @@ SK_DEFINE_INST_COUNT(GrResource)
 
 GrResource::GrResource(GrGpu* gpu) {
     fGpu        = gpu;
-    fNext       = NULL;
-    fPrevious   = NULL;
+    fCacheEntry = NULL;
     fGpu->insertResource(this);
 }
 

@@ -52,6 +52,7 @@
 #include "base/time.h"
 #include "base/utf_offset_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "base/values.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon.h"
 #include "googleurl/src/url_canon_ip.h"
@@ -835,7 +836,7 @@ class HostComponentTransform : public AppendComponentTransform {
  private:
   virtual string16 Execute(
       const std::string& component_text,
-      std::vector<size_t>* offsets_into_component) const {
+      std::vector<size_t>* offsets_into_component) const OVERRIDE {
     return IDNToUnicodeWithOffsets(component_text, languages_,
                                    offsets_into_component);
   }
@@ -852,7 +853,7 @@ class NonHostComponentTransform : public AppendComponentTransform {
  private:
   virtual string16 Execute(
       const std::string& component_text,
-      std::vector<size_t>* offsets_into_component) const {
+      std::vector<size_t>* offsets_into_component) const OVERRIDE {
     return (unescape_rules_ == UnescapeRule::NONE) ?
         UTF8ToUTF16AndAdjustOffsets(component_text, offsets_into_component) :
         UnescapeAndDecodeUTF8URLComponentWithOffsets(component_text,
@@ -1625,48 +1626,100 @@ std::string GetHostAndOptionalPort(const GURL& url) {
   return url.host();
 }
 
-std::string NetAddressToString(const struct addrinfo* net_address) {
-  return NetAddressToString(net_address->ai_addr, net_address->ai_addrlen);
-}
-
-std::string NetAddressToString(const struct sockaddr* net_address,
-                               socklen_t address_len) {
-#if defined(OS_WIN)
-  EnsureWinsockInit();
-#endif
-
-  // This buffer is large enough to fit the biggest IPv6 string.
-  char buffer[INET6_ADDRSTRLEN];
-
-  int result = getnameinfo(net_address, address_len, buffer, sizeof(buffer),
-                           NULL, 0, NI_NUMERICHOST);
-
-  if (result != 0) {
-    DVLOG(1) << "getnameinfo() failed with " << result << ": "
-             << gai_strerror(result);
-    buffer[0] = '\0';
-  }
-  return std::string(buffer);
-}
-
-std::string NetAddressToStringWithPort(const struct addrinfo* net_address) {
-  return NetAddressToStringWithPort(
-      net_address->ai_addr, net_address->ai_addrlen);
-}
-std::string NetAddressToStringWithPort(const struct sockaddr* net_address,
-                                       socklen_t address_len) {
-  std::string ip_address_string = NetAddressToString(net_address, address_len);
-  if (ip_address_string.empty())
-    return std::string();  // Failed.
-
-  int port = GetPortFromSockaddr(net_address, address_len);
-
-  if (ip_address_string.find(':') != std::string::npos) {
-    // Surround with square brackets to avoid ambiguity.
-    return base::StringPrintf("[%s]:%d", ip_address_string.c_str(), port);
+// Extracts the address and port portions of a sockaddr.
+bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
+                              socklen_t sock_addr_len,
+                              const uint8** address,
+                              size_t* address_len,
+                              uint16* port) {
+  if (sock_addr->sa_family == AF_INET) {
+    if (sock_addr_len < static_cast<socklen_t>(sizeof(struct sockaddr_in)))
+      return false;
+    const struct sockaddr_in* addr =
+        reinterpret_cast<const struct sockaddr_in*>(sock_addr);
+    *address = reinterpret_cast<const uint8*>(&addr->sin_addr);
+    *address_len = kIPv4AddressSize;
+    if (port)
+      *port = base::NetToHost16(addr->sin_port);
+    return true;
   }
 
-  return base::StringPrintf("%s:%d", ip_address_string.c_str(), port);
+  if (sock_addr->sa_family == AF_INET6) {
+    if (sock_addr_len < static_cast<socklen_t>(sizeof(struct sockaddr_in6)))
+      return false;
+    const struct sockaddr_in6* addr =
+        reinterpret_cast<const struct sockaddr_in6*>(sock_addr);
+    *address = reinterpret_cast<const unsigned char*>(&addr->sin6_addr);
+    *address_len = kIPv6AddressSize;
+    if (port)
+      *port = base::NetToHost16(addr->sin6_port);
+    return true;
+  }
+
+  return false;  // Unrecognized |sa_family|.
+}
+
+std::string IPAddressToString(const uint8* address,
+                              size_t address_len) {
+  std::string str;
+  url_canon::StdStringCanonOutput output(&str);
+
+  if (address_len == kIPv4AddressSize) {
+    url_canon::AppendIPv4Address(address, &output);
+  } else if (address_len == kIPv6AddressSize) {
+    url_canon::AppendIPv6Address(address, &output);
+  } else {
+    CHECK(false) << "Invalid IP address with length: " << address_len;
+  }
+
+  output.Complete();
+  return str;
+}
+
+std::string IPAddressToStringWithPort(const uint8* address,
+                                      size_t address_len,
+                                      uint16 port) {
+  std::string address_str = IPAddressToString(address, address_len);
+
+  if (address_len == kIPv6AddressSize) {
+    // Need to bracket IPv6 addresses since they contain colons.
+    return base::StringPrintf("[%s]:%d", address_str.c_str(), port);
+  }
+  return base::StringPrintf("%s:%d", address_str.c_str(), port);
+}
+
+std::string NetAddressToString(const struct sockaddr* sa,
+                               socklen_t sock_addr_len) {
+  const uint8* address;
+  size_t address_len;
+  if (!GetIPAddressFromSockAddr(sa, sock_addr_len, &address,
+                                &address_len, NULL)) {
+    NOTREACHED();
+    return "";
+  }
+  return IPAddressToString(address, address_len);
+}
+
+std::string NetAddressToStringWithPort(const struct sockaddr* sa,
+                                       socklen_t sock_addr_len) {
+  const uint8* address;
+  size_t address_len;
+  uint16 port;
+  if (!GetIPAddressFromSockAddr(sa, sock_addr_len, &address,
+                                &address_len, &port)) {
+    NOTREACHED();
+    return "";
+  }
+  return IPAddressToStringWithPort(address, address_len, port);
+}
+
+std::string IPAddressToString(const IPAddressNumber& addr) {
+  return IPAddressToString(&addr.front(), addr.size());
+}
+
+std::string IPAddressToStringWithPort(const IPAddressNumber& addr,
+                                      uint16 port) {
+  return IPAddressToStringWithPort(&addr.front(), addr.size(), port);
 }
 
 std::string GetHostName() {
@@ -1972,53 +2025,41 @@ ScopedPortException::~ScopedPortException() {
     NOTREACHED();
 }
 
-enum IPv6SupportStatus {
-  IPV6_CANNOT_CREATE_SOCKETS,
-  IPV6_CAN_CREATE_SOCKETS,
-  IPV6_GETIFADDRS_FAILED,
-  IPV6_GLOBAL_ADDRESS_MISSING,
-  IPV6_GLOBAL_ADDRESS_PRESENT,
-  IPV6_INTERFACE_ARRAY_TOO_SHORT,
-  IPV6_SUPPORT_MAX  // Bounding values for enumeration.
-};
+namespace {
 
-static void IPv6SupportResults(IPv6SupportStatus result) {
-  static bool run_once = false;
-  if (!run_once) {
-    run_once = true;
-    UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status", result, IPV6_SUPPORT_MAX);
-  } else {
-    UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status_retest", result,
-                              IPV6_SUPPORT_MAX);
-  }
-}
+const char* kFinalStatusNames[] = {
+  "Cannot create sockets",
+  "Can create sockets",
+  "Can't get addresses",
+  "Global ipv6 address missing",
+  "Global ipv6 address present",
+  "Interface array too short",
+  "Probing not supported",  // IPV6_SUPPORT_MAX
+};
+COMPILE_ASSERT(arraysize(kFinalStatusNames) == IPV6_SUPPORT_MAX + 1,
+               IPv6SupportStatus_name_count_mismatch);
 
 // TODO(jar): The following is a simple estimate of IPv6 support.  We may need
 // to do a test resolution, and a test connection, to REALLY verify support.
-// static
-bool IPv6Supported() {
+IPv6SupportResult TestIPv6SupportInternal() {
 #if defined(OS_ANDROID)
   // TODO: We should fully implement IPv6 probe once 'getifaddrs' API available;
   // Another approach is implementing the similar feature by
   // java.net.NetworkInterface through JNI.
   NOTIMPLEMENTED();
-  // so we don't get a 'defined but not used' warning/err
-  IPv6SupportResults(IPV6_GETIFADDRS_FAILED);
-  return true;
+  return IPv6SupportResult(true, IPV6_SUPPORT_MAX, 0);
 #elif defined(OS_POSIX)
   int test_socket = socket(AF_INET6, SOCK_STREAM, 0);
-  if (test_socket == -1) {
-    IPv6SupportResults(IPV6_CANNOT_CREATE_SOCKETS);
-    return false;
-  }
+  if (test_socket == -1)
+    return IPv6SupportResult(false, IPV6_CANNOT_CREATE_SOCKETS, errno);
   close(test_socket);
 
   // Check to see if any interface has a IPv6 address.
   struct ifaddrs* interface_addr = NULL;
   int rv = getifaddrs(&interface_addr);
   if (rv != 0) {
-     IPv6SupportResults(IPV6_GETIFADDRS_FAILED);
-     return true;  // Don't yet block IPv6.
+    // Don't yet block IPv6.
+    return IPv6SupportResult(true, IPV6_GETIFADDRS_FAILED, errno);
   }
 
   bool found_ipv6 = false;
@@ -2044,19 +2085,17 @@ bool IPv6Supported() {
     break;
   }
   freeifaddrs(interface_addr);
-  if (!found_ipv6) {
-    IPv6SupportResults(IPV6_GLOBAL_ADDRESS_MISSING);
-    return false;
-  }
+  if (!found_ipv6)
+    return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, 0);
 
-  IPv6SupportResults(IPV6_GLOBAL_ADDRESS_PRESENT);
-  return true;
+  return IPv6SupportResult(true, IPV6_GLOBAL_ADDRESS_PRESENT, 0);
 #elif defined(OS_WIN)
   EnsureWinsockInit();
   SOCKET test_socket = socket(AF_INET6, SOCK_STREAM, 0);
   if (test_socket == INVALID_SOCKET) {
-    IPv6SupportResults(IPV6_CANNOT_CREATE_SOCKETS);
-    return false;
+    return IPv6SupportResult(false,
+                             IPV6_CANNOT_CREATE_SOCKETS,
+                             WSAGetLastError());
   }
   closesocket(test_socket);
 
@@ -2079,13 +2118,11 @@ bool IPv6Supported() {
                                  NULL, adapters.get(), &adapters_size);
     num_tries++;
   } while (error == ERROR_BUFFER_OVERFLOW && num_tries <= 3);
-  if (error == ERROR_NO_DATA) {
-    IPv6SupportResults(IPV6_GLOBAL_ADDRESS_MISSING);
-    return false;
-  }
+  if (error == ERROR_NO_DATA)
+    return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, error);
   if (error != ERROR_SUCCESS) {
-    IPv6SupportResults(IPV6_GETIFADDRS_FAILED);
-    return true;  // Don't yet block IPv6.
+    // Don't yet block IPv6.
+    return IPv6SupportResult(true, IPV6_GETIFADDRS_FAILED, error);
   }
 
   PIP_ADAPTER_ADDRESSES adapter;
@@ -2106,17 +2143,56 @@ bool IPv6Supported() {
       struct in6_addr* sin6_addr = &addr_in6->sin6_addr;
       if (IN6_IS_ADDR_LOOPBACK(sin6_addr) || IN6_IS_ADDR_LINKLOCAL(sin6_addr))
         continue;
-      IPv6SupportResults(IPV6_GLOBAL_ADDRESS_PRESENT);
-      return true;
+      return IPv6SupportResult(true, IPV6_GLOBAL_ADDRESS_PRESENT, 0);
     }
   }
 
-  IPv6SupportResults(IPV6_GLOBAL_ADDRESS_MISSING);
-  return false;
+  return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, 0);
 #else
   NOTIMPLEMENTED();
-  return true;
+  return IPv6SupportResult(true, IPV6_SUPPORT_MAX, 0);
 #endif  // defined(various platforms)
+}
+
+}  // namespace
+
+IPv6SupportResult::IPv6SupportResult(bool ipv6_supported,
+                                     IPv6SupportStatus ipv6_support_status,
+                                     int os_error)
+                                     : ipv6_supported(ipv6_supported),
+                                       ipv6_support_status(ipv6_support_status),
+                                       os_error(os_error) {
+}
+
+base::Value* IPv6SupportResult::ToNetLogValue(
+    NetLog::LogLevel /* log_level */) const {
+  base::DictionaryValue* dict = new DictionaryValue();
+  dict->SetBoolean("ipv6_supported", ipv6_supported);
+  dict->SetString("ipv6_support_status",
+                  kFinalStatusNames[ipv6_support_status]);
+  if (os_error)
+    dict->SetInteger("os_error", os_error);
+  return dict;
+}
+
+IPv6SupportResult TestIPv6Support() {
+  IPv6SupportResult result = TestIPv6SupportInternal();
+
+  // Record UMA.
+  if (result.ipv6_support_status != IPV6_SUPPORT_MAX) {
+    static bool run_once = false;
+    if (!run_once) {
+      run_once = true;
+      UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status",
+                                result.ipv6_support_status,
+                                IPV6_SUPPORT_MAX);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status_retest",
+                                result.ipv6_support_status,
+                                IPV6_SUPPORT_MAX);
+    }
+  }
+  return result;
 }
 
 bool HaveOnlyLoopbackAddresses() {
@@ -2192,6 +2268,12 @@ bool ParseIPLiteralToNumber(const std::string& ip_literal,
   return family == url_canon::CanonHostInfo::IPV4;
 }
 
+namespace {
+
+const unsigned char kIPv4MappedPrefix[] =
+    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF };
+}
+
 IPAddressNumber ConvertIPv4NumberToIPv6Number(
     const IPAddressNumber& ipv4_number) {
   DCHECK(ipv4_number.size() == 4);
@@ -2200,11 +2282,25 @@ IPAddressNumber ConvertIPv4NumberToIPv6Number(
   // <80 bits of zeros>  + <16 bits of ones> + <32-bit IPv4 address>.
   IPAddressNumber ipv6_number;
   ipv6_number.reserve(16);
-  ipv6_number.insert(ipv6_number.end(), 10, 0);
-  ipv6_number.push_back(0xFF);
-  ipv6_number.push_back(0xFF);
+  ipv6_number.insert(ipv6_number.end(),
+                     kIPv4MappedPrefix,
+                     kIPv4MappedPrefix + arraysize(kIPv4MappedPrefix));
   ipv6_number.insert(ipv6_number.end(), ipv4_number.begin(), ipv4_number.end());
   return ipv6_number;
+}
+
+bool IsIPv4Mapped(const IPAddressNumber& address) {
+  if (address.size() != kIPv6AddressSize)
+    return false;
+  return std::equal(address.begin(),
+                    address.begin() + arraysize(kIPv4MappedPrefix),
+                    kIPv4MappedPrefix);
+}
+
+IPAddressNumber ConvertIPv4MappedToIPv4(const IPAddressNumber& address) {
+  DCHECK(IsIPv4Mapped(address));
+  return IPAddressNumber(address.begin() + arraysize(kIPv4MappedPrefix),
+                         address.end());
 }
 
 bool ParseCIDRBlock(const std::string& cidr_literal,

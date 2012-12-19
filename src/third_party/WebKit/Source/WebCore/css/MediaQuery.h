@@ -29,10 +29,10 @@
 #ifndef MediaQuery_h
 #define MediaQuery_h
 
-#include "PlatformString.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 #include <wtf/text/StringHash.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 class MediaQueryExp;
@@ -57,6 +57,8 @@ public:
     bool ignored() const { return m_ignored; }
 
     PassOwnPtr<MediaQuery> copy() const { return adoptPtr(new MediaQuery(*this)); }
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
  private:
     MediaQuery(const MediaQuery&);

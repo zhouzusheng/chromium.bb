@@ -25,6 +25,7 @@
 #include "CSSValue.h"
 #include "RenderStyleConstants.h"
 #include "TextDirection.h"
+#include "WritingMode.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -51,12 +52,15 @@ public:
 
     CSSValue* value() const { return m_value.get(); }
 
+    String cssName() const;
     String cssText() const;
 
     void wrapValueInCommaSeparatedList();
 
     static CSSPropertyID resolveDirectionAwareProperty(CSSPropertyID, TextDirection, WritingMode);
     static bool isInheritedProperty(CSSPropertyID);
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     // Make sure the following fits in 4 bytes. Really.

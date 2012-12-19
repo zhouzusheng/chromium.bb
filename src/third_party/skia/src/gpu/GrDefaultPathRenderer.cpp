@@ -186,7 +186,6 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
                                        const GrVec* translate,
                                        GrScalar srcSpaceTol,
                                        GrDrawTarget* target,
-                                       GrDrawState::StageMask stageMask,
                                        GrPrimitiveType* primType,
                                        int* vertexCnt,
                                        int* indexCnt,
@@ -208,12 +207,6 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
     }
 
     GrVertexLayout layout = 0;
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        if ((1 << s) & stageMask) {
-            layout |= GrDrawTarget::StagePosAsTexCoordVertexLayoutBit(s);
-        }
-    }
-
     bool indexed = contourCnt > 1;
 
     int maxIdxs = 0;
@@ -276,7 +269,7 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
             case kQuadratic_PathCmd: {
                 // first pt of quad is the pt we ended on in previous step
                 uint16_t firstQPtIdx = (uint16_t)(vert - base) - 1;
-                uint16_t numPts =  (uint16_t) 
+                uint16_t numPts =  (uint16_t)
                     GrPathUtils::generateQuadraticPoints(
                             pts[0], pts[1], pts[2],
                             srcSpaceTolSqd, &vert,
@@ -319,7 +312,7 @@ FINISHED:
     *vertexCnt = vert - base;
     *indexCnt = idx - idxBase;
 
-    if (NULL != translate && 
+    if (NULL != translate &&
         (translate->fX || translate->fY)) {
         int count = vert - base;
         for (int i = 0; i < count; i++) {
@@ -334,7 +327,6 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
                                              GrPathFill fill,
                                              const GrVec* translate,
                                              GrDrawTarget* target,
-                                             GrDrawState::StageMask stageMask,
                                              bool stencilOnly) {
 
     GrMatrix viewM = target->getDrawState().getViewMatrix();
@@ -350,7 +342,6 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
                           translate,
                           tol,
                           target,
-                          stageMask,
                           &primType,
                           &vertexCnt,
                           &indexCnt,
@@ -481,12 +472,10 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
                     drawState->getViewInverse(&vmi)) {
                     vmi.mapRect(&bounds);
                 } else {
-                    if (stageMask) {
-                        if (!drawState->getViewInverse(&vmi)) {
-                            GrPrintf("Could not invert matrix.");
-                            return false;
-                        }
-                        drawState->preConcatSamplerMatrices(stageMask, vmi);
+                    const GrMatrix& vm = drawState->getViewMatrix();
+                    if (!drawState->preConcatSamplerMatricesWithInverse(vm)) {
+                        GrPrintf("Could not invert matrix.\n");
+                        return false;
                     }
                     drawState->viewMatrix()->reset();
                 }
@@ -497,13 +486,13 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
                 }
             }
             GrDrawTarget::AutoGeometryPush agp(target);
-            target->drawSimpleRect(bounds, NULL, stageMask);
+            target->drawSimpleRect(bounds, NULL);
         } else {
             if (passCount > 1) {
                 drawState->enableState(GrDrawState::kNoColorWrites_StateBit);
             }
             if (indexCnt) {
-                target->drawIndexed(primType, 0, 0, 
+                target->drawIndexed(primType, 0, 0,
                                     vertexCnt, indexCnt);
             } else {
                 target->drawNonIndexed(primType, 0, vertexCnt);
@@ -518,7 +507,7 @@ bool GrDefaultPathRenderer::canDrawPath(const SkPath& path,
                                         GrPathFill fill,
                                         const GrDrawTarget* target,
                                         bool antiAlias) const {
-    // this class can draw any path with any fill but doesn't do any 
+    // this class can draw any path with any fill but doesn't do any
     // anti-aliasing.
     return !antiAlias;
 }
@@ -527,13 +516,11 @@ bool GrDefaultPathRenderer::onDrawPath(const SkPath& path,
                                        GrPathFill fill,
                                        const GrVec* translate,
                                        GrDrawTarget* target,
-                                       GrDrawState::StageMask stageMask,
                                        bool antiAlias) {
     return this->internalDrawPath(path,
                                   fill,
                                   translate,
                                   target,
-                                  stageMask,
                                   false);
 }
 
@@ -542,5 +529,5 @@ void GrDefaultPathRenderer::drawPathToStencil(const SkPath& path,
                                               GrDrawTarget* target) {
     GrAssert(kInverseEvenOdd_GrPathFill != fill);
     GrAssert(kInverseWinding_GrPathFill != fill);
-    this->internalDrawPath(path, fill, NULL, target, 0, true);
+    this->internalDrawPath(path, fill, NULL, target, true);
 }

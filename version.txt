@@ -1,11 +1,11 @@
-win stable release 21.0.1180.60
-released 07/31/12
-trunk revision 142910
-branch revision 149126
-webkit revision 120591
-webkit version: 537.1
-v8 version 3.11.10.17
+win stable release 23.0.1271.97
+released 12/11/12
+trunk revision 157509
+branch revision 171054
+webkit revision 128938
+webkit version: 537.11
+v8 version 3.13.7.5
 
-created from true branch 1180_57
-http://src.chromium.org/svn/releases/21.0.1180.60/
+created from true branch 1271
+http://src.chromium.org/svn/releases/23.0.1271.97/
 

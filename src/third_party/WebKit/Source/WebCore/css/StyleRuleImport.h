@@ -33,6 +33,7 @@ class MediaQuerySet;
 class StyleSheetContents;
 
 class StyleRuleImport : public StyleRuleBase {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassRefPtr<StyleRuleImport> create(const String& href, PassRefPtr<MediaQuerySet>);
 
@@ -49,6 +50,8 @@ public:
     MediaQuerySet* mediaQueries() { return m_mediaQueries.get(); }
 
     void requestStyleSheet();
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     // NOTE: We put the CachedStyleSheetClient in a member instead of inheriting from it

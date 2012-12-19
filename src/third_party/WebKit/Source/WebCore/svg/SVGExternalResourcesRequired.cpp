@@ -24,6 +24,7 @@
 #include "SVGExternalResourcesRequired.h"
 
 #include "Attr.h"
+#include "SVGElement.h"
 #include "SVGNames.h"
 
 namespace WebCore {
@@ -103,7 +104,7 @@ void SVGExternalResourcesRequired::insertedIntoDocument(SVGElement* targetElemen
     if (externalResourcesRequiredBaseValue())
         return;
     setHaveFiredLoadEvent(true);
-    targetElement->sendSVGLoadEventIfPossible();
+    targetElement->sendSVGLoadEventIfPossibleAsynchronously();
 }
 
 void SVGExternalResourcesRequired::finishParsingChildren()

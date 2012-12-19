@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_FILEAPI_FILE_SYSTEM_UTIL_H_
 #define WEBKIT_FILEAPI_FILE_SYSTEM_UTIL_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -12,8 +11,8 @@
 #include "base/file_path.h"
 #include "base/platform_file.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileError.h"
-#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
@@ -24,26 +23,12 @@ extern const char kPersistentDir[];
 extern const char kTemporaryDir[];
 extern const char kExternalDir[];
 extern const char kIsolatedDir[];
+extern const char kTestDir[];
 extern const char kPersistentName[];
 extern const char kTemporaryName[];
 extern const char kExternalName[];
 extern const char kIsolatedName[];
-
-// Cracks the given filesystem |url| and populates |origin_url|, |type|
-// and |file_path|.  Returns true if the given |url| is a valid filesystem
-// url and the routine could successfully crack it, returns false otherwise.
-// The file_path this returns will be using '/' as a path separator, no matter
-// what platform you're on.
-// TODO(ericu): Look into making file_path [and all FileSystem API virtual
-// paths] just an std::string, to prevent platform-specific FilePath behavior
-// from getting invoked by accident.  Currently the FilePath returned here needs
-// special treatment, as it may contain paths that are illegal on the current
-// platform.  To avoid problems, use VirtualPath::BaseName and
-// VirtualPath::GetComponents instead of the FilePath methods.
-FILEAPI_EXPORT bool CrackFileSystemURL(const GURL& url,
-                                       GURL* origin_url,
-                                       FileSystemType* type,
-                                       FilePath* file_path);
+extern const char kTestName[];
 
 class FILEAPI_EXPORT VirtualPath {
  public:
@@ -67,6 +52,8 @@ class FILEAPI_EXPORT VirtualPath {
 //
 // For Isolated filesystem this returns the 'common' root part, e.g.
 // returns URL without the filesystem ID.
+//
+// |type| needs to be public type as the returned URI is given to the renderer.
 FILEAPI_EXPORT GURL GetFileSystemRootURI(const GURL& origin_url,
                                          FileSystemType type);
 
@@ -75,6 +62,8 @@ FILEAPI_EXPORT GURL GetFileSystemRootURI(const GURL& origin_url,
 // (The name itself is neither really significant nor a formal identifier
 // but can be read as the .name field of the returned FileSystem object
 // as a user-friendly name in the javascript layer).
+//
+// |type| needs to be public type as the returned name is given to the renderer.
 //
 // Example:
 //   The name for a TEMPORARY filesystem of "http://www.example.com:80/"

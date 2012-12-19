@@ -35,9 +35,7 @@
  */
 WebInspector.ResourceTreeModel = function(networkManager)
 {
-    networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.ResourceTrackingEnabled, this._onResourceTrackingEnabled, this);
-    networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestUpdated, this._onRequestUpdated, this);
-    networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestUpdated, this);
+    networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestFinished, this);
     networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestUpdateDropped, this._onRequestUpdateDropped, this);
 
     WebInspector.console.addEventListener(WebInspector.ConsoleModel.Events.MessageAdded, this._consoleMessageAdded, this);
@@ -60,7 +58,6 @@ WebInspector.ResourceTreeModel.EventTypes = {
     FrameDetached: "FrameDetached",
     MainFrameNavigated: "MainFrameNavigated",
     ResourceAdded: "ResourceAdded",
-    ResourceContentCommitted: "resource-content-committed",
     WillLoadCachedResources: "WillLoadCachedResources",
     CachedResourcesLoaded: "CachedResourcesLoaded",
     DOMContentLoaded: "DOMContentLoaded",
@@ -69,11 +66,6 @@ WebInspector.ResourceTreeModel.EventTypes = {
 }
 
 WebInspector.ResourceTreeModel.prototype = {
-    _onResourceTrackingEnabled: function()
-    {
-        this._fetchResourceTree();
-    },
-
     _fetchResourceTree: function()
     {
         this._frames = {};
@@ -93,9 +85,12 @@ WebInspector.ResourceTreeModel.prototype = {
         this._addFramesRecursively(null, mainFramePayload);
         this._dispatchInspectedURLChanged();
         this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded);
-        WebInspector.Resource.restoreRevisions();
-
         this._cachedResourcesProcessed = true;
+    },
+
+    cachedResourcesLoaded: function()
+    {
+        return this._cachedResourcesProcessed;
     },
 
     _dispatchInspectedURLChanged: function()
@@ -120,9 +115,6 @@ WebInspector.ResourceTreeModel.prototype = {
      */
     _frameNavigated: function(framePayload)
     {
-        if (this._frontendReused(framePayload))
-            return;
-
         // Do nothing unless cached resource tree is processed - it will overwrite everything.
         if (!this._cachedResourcesProcessed)
             return;
@@ -158,20 +150,6 @@ WebInspector.ResourceTreeModel.prototype = {
     },
 
     /**
-     * @param {PageAgent.Frame} framePayload
-     * @return {boolean}
-     */
-    _frontendReused: function(framePayload)
-    {
-        if (!framePayload.parentId && !WebInspector.networkLog.requests.length) {
-            // We are navigating main frame to the existing loaded backend (no provisioual loaded resources are there). 
-            this._fetchResourceTree();
-            return true;
-        }
-        return false;
-    },
-
-    /**
      * @param {NetworkAgent.FrameId} frameId
      */
     _frameDetached: function(frameId)
@@ -193,7 +171,7 @@ WebInspector.ResourceTreeModel.prototype = {
     /**
      * @param {WebInspector.Event} event
      */
-    _onRequestUpdated: function(event)
+    _onRequestFinished: function(event)
     {
         if (!this._cachedResourcesProcessed)
             return;
@@ -334,23 +312,16 @@ WebInspector.ResourceTreeModel.prototype = {
     {
         var framePayload = frameTreePayload.frame;
         var frame = new WebInspector.ResourceTreeFrame(this, parentFrame, framePayload);
+        this._addFrame(frame);
 
-        // Create frame resource.
         var frameResource = this._createResourceFromFramePayload(framePayload, framePayload.url, WebInspector.resourceTypes.Document, framePayload.mimeType);
-
         if (frame.isMainFrame())
             WebInspector.inspectedPageURL = frameResource.url;
-
-        this._addFrame(frame);
         frame.addResource(frameResource);
 
         for (var i = 0; frameTreePayload.childFrames && i < frameTreePayload.childFrames.length; ++i)
             this._addFramesRecursively(frame, frameTreePayload.childFrames[i]);
 
-        if (!frameTreePayload.resources)
-            return;
-
-        // Create frame subresources.
         for (var i = 0; i < frameTreePayload.resources.length; ++i) {
             var subresource = frameTreePayload.resources[i];
             var resource = this._createResourceFromFramePayload(framePayload, subresource.url, WebInspector.resourceTypes[subresource.type], subresource.mimeType);

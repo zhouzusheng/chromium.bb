@@ -4,7 +4,6 @@
 
 #ifndef BASE_MESSAGE_LOOP_H_
 #define BASE_MESSAGE_LOOP_H_
-#pragma once
 
 #include <queue>
 #include <string>
@@ -31,7 +30,7 @@
 #include "base/message_pump_libevent.h"
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_NACL)
 #include "base/message_pump_aurax11.h"
 #else
 #include "base/message_pump_gtk.h"
@@ -42,7 +41,11 @@
 
 namespace base {
 class Histogram;
+class RunLoop;
 class ThreadTaskRunnerHandle;
+#if defined(OS_ANDROID)
+class MessagePumpForUI;
+#endif
 }  // namespace base
 
 // A MessageLoop is used to process events for a particular thread.  There is
@@ -165,20 +168,12 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   void PostDelayedTask(
       const tracked_objects::Location& from_here,
-      const base::Closure& task, int64 delay_ms);
-
-  void PostDelayedTask(
-      const tracked_objects::Location& from_here,
       const base::Closure& task,
       base::TimeDelta delay);
 
   void PostNonNestableTask(
       const tracked_objects::Location& from_here,
       const base::Closure& task);
-
-  void PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task, int64 delay_ms);
 
   void PostNonNestableDelayedTask(
       const tracked_objects::Location& from_here,
@@ -217,30 +212,55 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
         this, from_here, object);
   }
 
+  // Deprecated: use RunLoop instead.
   // Run the message loop.
   void Run();
 
+  // Deprecated: use RunLoop instead.
   // Process all pending tasks, windows messages, etc., but don't wait/sleep.
   // Return as soon as all items that can be run are taken care of.
-  void RunAllPending();
+  void RunUntilIdle();
 
-  // Signals the Run method to return after it is done processing all pending
-  // messages.  This method may only be called on the same thread that called
-  // Run, and Run must still be on the call stack.
+  // TODO(jbates) remove this. crbug.com/131220. See RunUntilIdle().
+  void RunAllPending() { RunUntilIdle(); }
+
+  // TODO(jbates) remove this. crbug.com/131220. See QuitWhenIdle().
+  void Quit() { QuitWhenIdle(); }
+
+  // Deprecated: use RunLoop instead.
   //
-  // Use QuitClosure if you need to Quit another thread's MessageLoop, but note
-  // that doing so is fairly dangerous if the target thread makes nested calls
-  // to MessageLoop::Run.  The problem being that you won't know which nested
-  // run loop you are quitting, so be careful!
-  void Quit();
+  // Signals the Run method to return when it becomes idle. It will continue to
+  // process pending messages and future messages as long as they are enqueued.
+  // Warning: if the MessageLoop remains busy, it may never quit. Only use this
+  // Quit method when looping procedures (such as web pages) have been shut
+  // down.
+  //
+  // This method may only be called on the same thread that called Run, and Run
+  // must still be on the call stack.
+  //
+  // Use QuitClosure variants if you need to Quit another thread's MessageLoop,
+  // but note that doing so is fairly dangerous if the target thread makes
+  // nested calls to MessageLoop::Run.  The problem being that you won't know
+  // which nested run loop you are quitting, so be careful!
+  void QuitWhenIdle();
 
+  // Deprecated: use RunLoop instead.
+  //
   // This method is a variant of Quit, that does not wait for pending messages
   // to be processed before returning from Run.
   void QuitNow();
 
-  // Invokes Quit on the current MessageLoop when run. Useful to schedule an
-  // arbitrary MessageLoop to Quit.
-  static base::Closure QuitClosure();
+  // TODO(jbates) remove this. crbug.com/131220. See QuitWhenIdleClosure().
+  static base::Closure QuitClosure() { return QuitWhenIdleClosure(); }
+
+  // Deprecated: use RunLoop instead.
+  // Construct a Closure that will call QuitWhenIdle(). Useful to schedule an
+  // arbitrary MessageLoop to QuitWhenIdle.
+  static base::Closure QuitWhenIdleClosure();
+
+  // Returns true if this loop is |type|. This allows subclasses (especially
+  // those in tests) to specialize how they are identified.
+  virtual bool IsType(Type type) const;
 
   // Returns the type passed to the constructor.
   Type type() const { return type_; }
@@ -362,35 +382,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   //----------------------------------------------------------------------------
  protected:
-  struct RunState {
-    // Used to count how many Run() invocations are on the stack.
-    int run_depth;
-
-    // Used to record that Quit() was called, or that we should quit the pump
-    // once it becomes idle.
-    bool quit_received;
-
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-    Dispatcher* dispatcher;
-#endif
-  };
-
-#if defined(OS_ANDROID)
-  // Android Java process manages the UI thread message loop. So its
-  // MessagePumpForUI needs to keep the RunState.
- public:
-#endif
-  class BASE_EXPORT AutoRunState : RunState {
-   public:
-    explicit AutoRunState(MessageLoop* loop);
-    ~AutoRunState();
-   private:
-    MessageLoop* loop_;
-    RunState* previous_state_;
-  };
-#if defined(OS_ANDROID)
- protected:
-#endif
+  friend class base::RunLoop;
 
 #if defined(OS_WIN)
   base::MessagePumpWin* pump_win() {
@@ -449,7 +441,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   bool DeletePendingTasks();
 
   // Calculates the time at which a PendingTask should run.
-  base::TimeTicks CalculateDelayedRuntime(int64 delay_ms);
+  base::TimeTicks CalculateDelayedRuntime(base::TimeDelta delay);
 
   // Start recording histogram info about events and action IF it was enabled
   // and IF the statistics recorder can accept a registration of our histogram.
@@ -504,7 +496,7 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // Protect access to incoming_queue_.
   mutable base::Lock incoming_queue_lock_;
 
-  RunState* state_;
+  base::RunLoop* run_loop_;
 
 #if defined(OS_WIN)
   base::TimeTicks high_resolution_timer_expiration_;
@@ -513,7 +505,8 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   bool os_modal_loop_;
 #endif
 
-  // The next sequence number to use for delayed tasks.
+  // The next sequence number to use for delayed tasks. Updating this counter is
+  // protected by incoming_queue_lock_.
   int next_sequence_num_;
 
   ObserverList<TaskObserver> task_observers_;
@@ -533,7 +526,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
                            void(*releaser)(const void*),
                            const void* object);
 
-
   DISALLOW_COPY_AND_ASSIGN(MessageLoop);
 };
 
@@ -546,6 +538,10 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 //
 class BASE_EXPORT MessageLoopForUI : public MessageLoop {
  public:
+#if defined(OS_WIN)
+  typedef base::MessagePumpForUI::MessageFilter MessageFilter;
+#endif
+
   MessageLoopForUI() : MessageLoop(TYPE_UI) {
   }
 
@@ -561,6 +557,13 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   void DidProcessMessage(const MSG& message);
 #endif  // defined(OS_WIN)
 
+#if defined(OS_IOS)
+  // On iOS, the main message loop cannot be Run().  Instead call Attach(),
+  // which connects this MessageLoop to the UI thread's CFRunLoop and allows
+  // PostTask() to work.
+  void Attach();
+#endif
+
 #if defined(OS_ANDROID)
   // On Android, the UI message loop is handled by Java side. So Run() should
   // never be called. Instead use Start(), which will forward all the native UI
@@ -571,10 +574,19 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   // methods.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
-  void RunWithDispatcher(Dispatcher* dispatcher);
-  void RunAllPendingWithDispatcher(Dispatcher* dispatcher);
+
+#if defined(OS_WIN)
+  // Plese see MessagePumpForUI for definitions of this method.
+  void SetMessageFilter(scoped_ptr<MessageFilter> message_filter) {
+    pump_ui()->SetMessageFilter(message_filter.Pass());
+  }
+#endif
 
  protected:
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_NACL)
+  friend class base::MessagePumpAuraX11;
+#endif
+
   // TODO(rvargas): Make this platform independent.
   base::MessagePumpForUI* pump_ui() {
     return static_cast<base::MessagePumpForUI*>(pump_.get());
@@ -635,7 +647,8 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
 
 #if defined(OS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
-  void RegisterIOHandler(HANDLE file_handle, IOHandler* handler);
+  void RegisterIOHandler(HANDLE file, IOHandler* handler);
+  bool RegisterJobObject(HANDLE job, IOHandler* handler);
   bool WaitForIOCompletion(DWORD timeout, IOHandler* filter);
 
  protected:

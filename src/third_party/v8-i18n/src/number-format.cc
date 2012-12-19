@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 #include <string.h>
 
 #include "src/utils.h"
+#include "unicode/curramt.h"
 #include "unicode/dcfmtsym.h"
 #include "unicode/decimfmt.h"
 #include "unicode/locid.h"
 #include "unicode/numfmt.h"
+#include "unicode/numsys.h"
 #include "unicode/uchar.h"
 #include "unicode/ucurr.h"
 #include "unicode/unum.h"
@@ -28,25 +30,24 @@
 
 namespace v8_i18n {
 
-const int NumberFormat::kCurrencyCodeLength = 4;
-
-v8::Persistent<v8::FunctionTemplate> NumberFormat::number_format_template_;
-
-static icu::DecimalFormat* CreateNumberFormat(v8::Handle<v8::String>,
-                                              v8::Handle<v8::String>,
-                                              v8::Handle<v8::Object>);
-static icu::DecimalFormat* CreateFormatterFromSkeleton(
-    const icu::Locale&, const icu::UnicodeString&, UErrorCode*);
-static icu::DecimalFormatSymbols* GetFormatSymbols(const icu::Locale&);
-static bool GetCurrencyCode(const icu::Locale&,
-                            const char* const,
-                            v8::Handle<v8::Object>,
-                            UChar*);
-static v8::Handle<v8::Value> ThrowUnexpectedObjectError();
+static icu::DecimalFormat* InitializeNumberFormat(v8::Handle<v8::String>,
+                                                  v8::Handle<v8::Object>,
+                                                  v8::Handle<v8::Object>);
+static icu::DecimalFormat* CreateICUNumberFormat(const icu::Locale&,
+                                                 v8::Handle<v8::Object>);
+static void SetResolvedSettings(const icu::Locale&,
+                                icu::DecimalFormat*,
+                                v8::Handle<v8::Object>);
 
 icu::DecimalFormat* NumberFormat::UnpackNumberFormat(
     v8::Handle<v8::Object> obj) {
-  if (number_format_template_->HasInstance(obj)) {
+  v8::HandleScope handle_scope;
+
+  // v8::ObjectTemplate doesn't have HasInstance method so we can't check
+  // if obj is an instance of NumberFormat class. We'll check for a property
+  // that has to be in the object. The same applies to other services, like
+  // Collator and DateTimeFormat.
+  if (obj->HasOwnProperty(v8::String::New("numberFormat"))) {
     return static_cast<icu::DecimalFormat*>(
         obj->GetPointerFromInternalField(0));
   }
@@ -62,97 +63,127 @@ void NumberFormat::DeleteNumberFormat(v8::Persistent<v8::Value> object,
   // First delete the hidden C++ object.
   // Unpacking should never return NULL here. That would only happen if
   // this method is used as the weak callback for persistent handles not
-  // pointing to a number formatter.
+  // pointing to a date time formatter.
   delete UnpackNumberFormat(persistent_object);
 
   // Then dispose of the persistent handle to JS object.
   persistent_object.Dispose();
 }
 
-v8::Handle<v8::Value> NumberFormat::Format(const v8::Arguments& args) {
+v8::Handle<v8::Value> NumberFormat::JSInternalFormat(
+    const v8::Arguments& args) {
   v8::HandleScope handle_scope;
 
-  if (args.Length() != 1 || !args[0]->IsNumber()) {
-    // Just return NaN on invalid input.
-    return v8::String::New("NaN");
+  if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsNumber()) {
+    return v8::ThrowException(v8::Exception::Error(
+        v8::String::New("Formatter and numeric value have to be specified.")));
   }
 
-  icu::DecimalFormat* number_format = UnpackNumberFormat(args.Holder());
+  icu::DecimalFormat* number_format = UnpackNumberFormat(args[0]->ToObject());
   if (!number_format) {
-    return ThrowUnexpectedObjectError();
+    return v8::ThrowException(v8::Exception::Error(
+        v8::String::New("NumberFormat method called on an object "
+                        "that is not a NumberFormat.")));
   }
 
   // ICU will handle actual NaN value properly and return NaN string.
   icu::UnicodeString result;
-  number_format->format(args[0]->NumberValue(), result);
+  number_format->format(args[1]->NumberValue(), result);
 
   return v8::String::New(
       reinterpret_cast<const uint16_t*>(result.getBuffer()), result.length());
 }
 
-v8::Handle<v8::Value> NumberFormat::JSNumberFormat(const v8::Arguments& args) {
+v8::Handle<v8::Value> NumberFormat::JSInternalParse(
+    const v8::Arguments& args) {
   v8::HandleScope handle_scope;
 
-  // Expect locale id, region id and settings.
+  if (args.Length() != 2 || !args[0]->IsObject() || !args[1]->IsString()) {
+    return v8::ThrowException(v8::Exception::Error(
+        v8::String::New("Formatter and string have to be specified.")));
+  }
+
+  icu::DecimalFormat* number_format = UnpackNumberFormat(args[0]->ToObject());
+  if (!number_format) {
+    return v8::ThrowException(v8::Exception::Error(
+        v8::String::New("NumberFormat method called on an object "
+                        "that is not a NumberFormat.")));
+  }
+
+  // ICU will handle actual NaN value properly and return NaN string.
+  icu::UnicodeString string_number;
+  if (!Utils::V8StringToUnicodeString(args[1]->ToString(), &string_number)) {
+    string_number = "";
+  }
+
+  UErrorCode status = U_ZERO_ERROR;
+  icu::Formattable result;
+  // ICU 4.6 doesn't support parseCurrency call. We need to wait for ICU49
+  // to be part of Chrome.
+  // TODO(cira): Include currency parsing code using parseCurrency call.
+  // We need to check if the formatter parses all currencies or only the
+  // one it was constructed with (it will impact the API - how to return ISO
+  // code and the value).
+  number_format->parse(string_number, result, status);
+  if (U_FAILURE(status)) {
+    return v8::Undefined();
+  }
+
+  switch (result.getType()) {
+  case icu::Formattable::kDouble:
+    return v8::Number::New(result.getDouble());
+    break;
+  case icu::Formattable::kLong:
+    return v8::Number::New(result.getLong());
+    break;
+  case icu::Formattable::kInt64:
+    return v8::Number::New(result.getInt64());
+    break;
+  default:
+    return v8::Undefined();
+  }
+
+  // To make compiler happy.
+  return v8::Undefined();
+}
+
+v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
+    const v8::Arguments& args) {
+  v8::HandleScope handle_scope;
+
   if (args.Length() != 3 ||
-      !args[0]->IsString() || !args[1]->IsString() || !args[2]->IsObject()) {
-    return v8::ThrowException(v8::Exception::SyntaxError(
-        v8::String::New("Locale, region and number settings are required.")));
+      !args[0]->IsString() ||
+      !args[1]->IsObject() ||
+      !args[2]->IsObject()) {
+    return v8::ThrowException(v8::Exception::Error(
+        v8::String::New("Internal error, wrong parameters.")));
   }
 
-  icu::DecimalFormat* number_format = CreateNumberFormat(
-      args[0]->ToString(), args[1]->ToString(), args[2]->ToObject());
-
-  if (number_format_template_.IsEmpty()) {
-    v8::Local<v8::FunctionTemplate> raw_template(v8::FunctionTemplate::New());
-
-    raw_template->SetClassName(v8::String::New("v8Locale.NumberFormat"));
-
-    // Define internal field count on instance template.
-    v8::Local<v8::ObjectTemplate> object_template =
-        raw_template->InstanceTemplate();
-
-    // Set aside internal field for icu number formatter.
-    object_template->SetInternalFieldCount(1);
-
-    // Define all of the prototype methods on prototype template.
-    v8::Local<v8::ObjectTemplate> proto = raw_template->PrototypeTemplate();
-    proto->Set(v8::String::New("format"),
-               v8::FunctionTemplate::New(Format));
-
-    number_format_template_ =
-        v8::Persistent<v8::FunctionTemplate>::New(raw_template);
-  }
+  v8::Persistent<v8::ObjectTemplate> number_format_template =
+      Utils::GetTemplate();
 
   // Create an empty object wrapper.
-  v8::Local<v8::Object> local_object =
-      number_format_template_->GetFunction()->NewInstance();
+  v8::Local<v8::Object> local_object = number_format_template->NewInstance();
   v8::Persistent<v8::Object> wrapper =
       v8::Persistent<v8::Object>::New(local_object);
 
   // Set number formatter as internal field of the resulting JS object.
-  wrapper->SetPointerInInternalField(0, number_format);
+  icu::DecimalFormat* number_format = InitializeNumberFormat(
+      args[0]->ToString(), args[1]->ToObject(), args[2]->ToObject());
 
-  // Create options key.
-  v8::Local<v8::Object> options = v8::Object::New();
+  if (!number_format) {
+    return v8::ThrowException(v8::Exception::Error(v8::String::New(
+        "Internal error. Couldn't create ICU number formatter.")));
+  } else {
+    wrapper->SetPointerInInternalField(0, number_format);
 
-  // Show what ICU decided to use for easier problem tracking.
-  // Keep it as v8 specific extension.
-  icu::UnicodeString pattern;
-  number_format->toPattern(pattern);
-  options->Set(v8::String::New("v8ResolvedPattern"),
-               v8::String::New(reinterpret_cast<const uint16_t*>(
-                   pattern.getBuffer()), pattern.length()));
-
-  // Set resolved currency code in options.currency if not empty.
-  icu::UnicodeString currency(number_format->getCurrency());
-  if (!currency.isEmpty()) {
-    options->Set(v8::String::New("currencyCode"),
-                 v8::String::New(reinterpret_cast<const uint16_t*>(
-                     currency.getBuffer()), currency.length()));
+    v8::TryCatch try_catch;
+    wrapper->Set(v8::String::New("numberFormat"), v8::String::New("valid"));
+    if (try_catch.HasCaught()) {
+      return v8::ThrowException(v8::Exception::Error(
+          v8::String::New("Internal error, couldn't set property.")));
+    }
   }
-
-  wrapper->Set(v8::String::New("options"), options);
 
   // Make object handle weak so we can delete iterator once GC kicks in.
   wrapper.MakeWeak(NULL, DeleteNumberFormat);
@@ -160,39 +191,90 @@ v8::Handle<v8::Value> NumberFormat::JSNumberFormat(const v8::Arguments& args) {
   return wrapper;
 }
 
-// Returns DecimalFormat.
-static icu::DecimalFormat* CreateNumberFormat(v8::Handle<v8::String> locale,
-                                              v8::Handle<v8::String> region,
-                                              v8::Handle<v8::Object> settings) {
+static icu::DecimalFormat* InitializeNumberFormat(
+    v8::Handle<v8::String> locale,
+    v8::Handle<v8::Object> options,
+    v8::Handle<v8::Object> resolved) {
   v8::HandleScope handle_scope;
 
-  v8::String::AsciiValue ascii_locale(locale);
-  icu::Locale icu_locale(*ascii_locale);
-
-  // Make formatter from skeleton.
-  icu::DecimalFormat* number_format = NULL;
+  // Convert BCP47 into ICU locale format.
   UErrorCode status = U_ZERO_ERROR;
-  icu::UnicodeString setting;
+  icu::Locale icu_locale;
+  char icu_result[ULOC_FULLNAME_CAPACITY];
+  int icu_length = 0;
+  v8::String::AsciiValue bcp47_locale(locale);
+  if (bcp47_locale.length() != 0) {
+    uloc_forLanguageTag(*bcp47_locale, icu_result, ULOC_FULLNAME_CAPACITY,
+                        &icu_length, &status);
+    if (U_FAILURE(status) || icu_length == 0) {
+      return NULL;
+    }
+    icu_locale = icu::Locale(icu_result);
+  }
 
-  if (Utils::ExtractStringSetting(settings, "skeleton", &setting)) {
-    // TODO(cira): Use ICU skeleton once
-    // http://bugs.icu-project.org/trac/ticket/8610 is resolved.
-    number_format = CreateFormatterFromSkeleton(icu_locale, setting, &status);
-  } else if (Utils::ExtractStringSetting(settings, "pattern", &setting)) {
-    number_format =
-        new icu::DecimalFormat(setting, GetFormatSymbols(icu_locale), status);
-  } else if (Utils::ExtractStringSetting(settings, "style", &setting)) {
-    if (setting == UNICODE_STRING_SIMPLE("currency")) {
+  icu::DecimalFormat* number_format =
+      CreateICUNumberFormat(icu_locale, options);
+  if (!number_format) {
+    // Remove extensions and try again.
+    icu::Locale no_extension_locale(icu_locale.getBaseName());
+    number_format = CreateICUNumberFormat(no_extension_locale, options);
+
+    // Set resolved settings (pattern, numbering system).
+    SetResolvedSettings(no_extension_locale, number_format, resolved);
+  } else {
+    SetResolvedSettings(icu_locale, number_format, resolved);
+  }
+
+  return number_format;
+}
+
+static icu::DecimalFormat* CreateICUNumberFormat(
+    const icu::Locale& icu_locale, v8::Handle<v8::Object> options) {
+  // Make formatter from options. Numbering system is added
+  // to the locale as Unicode extension (if it was specified at all).
+  UErrorCode status = U_ZERO_ERROR;
+  icu::DecimalFormat* number_format = NULL;
+  icu::UnicodeString style;
+  icu::UnicodeString currency;
+  if (Utils::ExtractStringSetting(options, "style", &style)) {
+    if (style == UNICODE_STRING_SIMPLE("currency")) {
+      Utils::ExtractStringSetting(options, "currency", &currency);
+
+      icu::UnicodeString display;
+      Utils::ExtractStringSetting(options, "currencyDisplay", &display);
+#if (U_ICU_VERSION_MAJOR_NUM == 4) && (U_ICU_VERSION_MINOR_NUM <= 6)
+      icu::NumberFormat::EStyles style;
+      if (display == UNICODE_STRING_SIMPLE("code")) {
+        style = icu::NumberFormat::kIsoCurrencyStyle;
+      } else if (display == UNICODE_STRING_SIMPLE("name")) {
+        style = icu::NumberFormat::kPluralCurrencyStyle;
+      } else {
+        style = icu::NumberFormat::kCurrencyStyle;
+      }
+#else  // ICU version is 4.8 or above (we ignore versions below 4.0).
+      UNumberFormatStyle style;
+      if (display == UNICODE_STRING_SIMPLE("code")) {
+        style = UNUM_CURRENCY_ISO;
+      } else if (display == UNICODE_STRING_SIMPLE("name")) {
+        style = UNUM_CURRENCY_PLURAL;
+      } else {
+        style = UNUM_CURRENCY;
+      }
+#endif
+
       number_format = static_cast<icu::DecimalFormat*>(
-          icu::NumberFormat::createCurrencyInstance(icu_locale, status));
-    } else if (setting == UNICODE_STRING_SIMPLE("percent")) {
+          icu::NumberFormat::createInstance(icu_locale, style,  status));
+    } else if (style == UNICODE_STRING_SIMPLE("percent")) {
       number_format = static_cast<icu::DecimalFormat*>(
           icu::NumberFormat::createPercentInstance(icu_locale, status));
-    } else if (setting == UNICODE_STRING_SIMPLE("scientific")) {
-      number_format = static_cast<icu::DecimalFormat*>(
-          icu::NumberFormat::createScientificInstance(icu_locale, status));
+      if (U_FAILURE(status)) {
+        delete number_format;
+        return NULL;
+      }
+      // Make sure 1.1% doesn't go into 2%.
+      number_format->setMinimumFractionDigits(1);
     } else {
-      // Make it decimal in any other case.
+      // Make a decimal instance by default.
       number_format = static_cast<icu::DecimalFormat*>(
           icu::NumberFormat::createInstance(icu_locale, status));
     }
@@ -200,161 +282,117 @@ static icu::DecimalFormat* CreateNumberFormat(v8::Handle<v8::String> locale,
 
   if (U_FAILURE(status)) {
     delete number_format;
-    status = U_ZERO_ERROR;
-    number_format = static_cast<icu::DecimalFormat*>(
-        icu::NumberFormat::createInstance(icu_locale, status));
+    return NULL;
   }
 
-  // Attach appropriate currency code to the formatter.
-  // It affects currency formatters only.
-  // Region is full language identifier in form 'und_' + region id.
-  v8::String::AsciiValue ascii_region(region);
-
-  UChar currency_code[NumberFormat::kCurrencyCodeLength];
-  if (GetCurrencyCode(icu_locale, *ascii_region, settings, currency_code)) {
-    number_format->setCurrency(currency_code, status);
+  // Set all options.
+  if (!currency.isEmpty()) {
+    number_format->setCurrency(currency.getBuffer(), status);
   }
+
+  int32_t digits;
+  if (Utils::ExtractIntegerSetting(
+          options, "minimumIntegerDigits", &digits)) {
+    number_format->setMinimumIntegerDigits(digits);
+  }
+
+  if (Utils::ExtractIntegerSetting(
+          options, "minimumFractionDigits", &digits)) {
+    number_format->setMinimumFractionDigits(digits);
+  }
+
+  if (Utils::ExtractIntegerSetting(
+          options, "maximumFractionDigits", &digits)) {
+    number_format->setMaximumFractionDigits(digits);
+  }
+
+  if (Utils::ExtractIntegerSetting(
+          options, "minimumSignificantDigits", &digits)) {
+    number_format->setMinimumSignificantDigits(digits);
+  }
+
+  if (Utils::ExtractIntegerSetting(
+          options, "maximumSignificantDigits", &digits)) {
+    number_format->setMaximumSignificantDigits(digits);
+  }
+
+  bool grouping;
+  if (Utils::ExtractBooleanSetting(options, "useGrouping", &grouping)) {
+    number_format->setGroupingUsed(grouping);
+  }
+
+  // Set rounding mode.
+  number_format->setRoundingMode(icu::DecimalFormat::kRoundHalfUp);
 
   return number_format;
 }
 
-// Generates ICU number format pattern from given skeleton.
-// TODO(cira): Remove once ICU includes equivalent method
-// (see http://bugs.icu-project.org/trac/ticket/8610).
-static icu::DecimalFormat* CreateFormatterFromSkeleton(
-    const icu::Locale& icu_locale,
-    const icu::UnicodeString& skeleton,
-    UErrorCode* status) {
-  icu::DecimalFormat skeleton_format(
-      skeleton, GetFormatSymbols(icu_locale), *status);
+static void SetResolvedSettings(const icu::Locale& icu_locale,
+                                icu::DecimalFormat* number_format,
+                                v8::Handle<v8::Object> resolved) {
+  v8::HandleScope handle_scope;
 
-  // Find out if skeleton contains currency or percent symbol and create
-  // proper instance to tweak.
-  icu::DecimalFormat* base_format = NULL;
+  icu::UnicodeString pattern;
+  number_format->toPattern(pattern);
+  resolved->Set(v8::String::New("pattern"),
+                v8::String::New(reinterpret_cast<const uint16_t*>(
+                    pattern.getBuffer()), pattern.length()));
 
-  // UChar representation of U+00A4 currency symbol.
-  const UChar currency_symbol = 0xA4u;
+  // Set resolved currency code in options.currency if not empty.
+  icu::UnicodeString currency(number_format->getCurrency());
+  if (!currency.isEmpty()) {
+    resolved->Set(v8::String::New("currency"),
+                  v8::String::New(reinterpret_cast<const uint16_t*>(
+                      currency.getBuffer()), currency.length()));
+  }
 
-  int32_t index = skeleton.indexOf(currency_symbol);
-  if (index != -1) {
-    // Find how many U+00A4 are there. There is at least one.
-    // Case of non-consecutive U+00A4 is taken care of in api.js.
-    int32_t end_index = skeleton.lastIndexOf(currency_symbol, index);
-
-#if (U_ICU_VERSION_MAJOR_NUM == 4) && (U_ICU_VERSION_MINOR_NUM <= 6)
-    icu::NumberFormat::EStyles style;
-    switch (end_index - index) {
-      case 0:
-        style = icu::NumberFormat::kCurrencyStyle;
-        break;
-      case 1:
-        style = icu::NumberFormat::kIsoCurrencyStyle;
-        break;
-      default:
-        style = icu::NumberFormat::kPluralCurrencyStyle;
-    }
-#else  // ICU version is 4.8 or above (we ignore versions below 4.0).
-    UNumberFormatStyle style;
-    switch (end_index - index) {
-      case 0:
-        style = UNUM_CURRENCY;
-        break;
-      case 1:
-        style = UNUM_CURRENCY_ISO;
-        break;
-      default:
-        style = UNUM_CURRENCY_PLURAL;
-    }
-#endif
-
-    base_format = static_cast<icu::DecimalFormat*>(
-        icu::NumberFormat::createInstance(icu_locale, style, *status));
-  } else if (skeleton.indexOf('%') != -1) {
-    base_format = static_cast<icu::DecimalFormat*>(
-        icu::NumberFormat::createPercentInstance(icu_locale, *status));
+  // Ugly hack. ICU doesn't expose numbering system in any way, so we have
+  // to assume that for given locale NumberingSystem constructor produces the
+  // same digits as NumberFormat would.
+  UErrorCode status = U_ZERO_ERROR;
+  icu::NumberingSystem* numbering_system =
+      icu::NumberingSystem::createInstance(icu_locale, status);
+  if (U_SUCCESS(status)) {
+    const char* ns = numbering_system->getName();
+    resolved->Set(v8::String::New("numberingSystem"), v8::String::New(ns));
   } else {
-    // TODO(cira): Handle scientific skeleton.
-    base_format = static_cast<icu::DecimalFormat*>(
-        icu::NumberFormat::createInstance(icu_locale, *status));
+    resolved->Set(v8::String::New("numberingSystem"), v8::Undefined());
+  }
+  delete numbering_system;
+
+  resolved->Set(v8::String::New("useGrouping"),
+                v8::Boolean::New(number_format->isGroupingUsed()));
+
+  resolved->Set(v8::String::New("minimumIntegerDigits"),
+                v8::Integer::New(number_format->getMinimumIntegerDigits()));
+
+  resolved->Set(v8::String::New("minimumFractionDigits"),
+                v8::Integer::New(number_format->getMinimumFractionDigits()));
+
+  resolved->Set(v8::String::New("maximumFractionDigits"),
+                v8::Integer::New(number_format->getMaximumFractionDigits()));
+
+  if (resolved->HasOwnProperty(v8::String::New("minimumSignificantDigits"))) {
+    resolved->Set(v8::String::New("minimumSignificantDigits"), v8::Integer::New(
+        number_format->getMinimumSignificantDigits()));
   }
 
-  if (U_FAILURE(*status)) {
-    delete base_format;
-    return NULL;
+  if (resolved->HasOwnProperty(v8::String::New("maximumSignificantDigits"))) {
+    resolved->Set(v8::String::New("maximumSignificantDigits"), v8::Integer::New(
+        number_format->getMaximumSignificantDigits()));
   }
 
-  // Copy important information from skeleton to the new formatter.
-  // TODO(cira): copy rounding information from skeleton?
-  base_format->setGroupingUsed(skeleton_format.isGroupingUsed());
-
-  base_format->setMinimumIntegerDigits(
-      skeleton_format.getMinimumIntegerDigits());
-
-  base_format->setMinimumFractionDigits(
-      skeleton_format.getMinimumFractionDigits());
-
-  base_format->setMaximumFractionDigits(
-      skeleton_format.getMaximumFractionDigits());
-
-  return base_format;
-}
-
-// Gets decimal symbols for a locale.
-static icu::DecimalFormatSymbols* GetFormatSymbols(
-    const icu::Locale& icu_locale) {
-  UErrorCode status = U_ZERO_ERROR;
-  icu::DecimalFormatSymbols* symbols =
-      new icu::DecimalFormatSymbols(icu_locale, status);
-
-  if (U_FAILURE(status)) {
-    delete symbols;
-    // Use symbols from default locale.
-    symbols = new icu::DecimalFormatSymbols(status);
+  // Set the locale
+  char result[ULOC_FULLNAME_CAPACITY];
+  status = U_ZERO_ERROR;
+  uloc_toLanguageTag(
+      icu_locale.getName(), result, ULOC_FULLNAME_CAPACITY, FALSE, &status);
+  if (U_SUCCESS(status)) {
+    resolved->Set(v8::String::New("locale"), v8::String::New(result));
+  } else {
+    // This would never happen, since we got the locale from ICU.
+    resolved->Set(v8::String::New("locale"), v8::String::New("und"));
   }
-
-  return symbols;
-}
-
-// Gets currency ISO 4217 3-letter code.
-// Check currencyCode setting first, then @currency=code and in the end
-// try to infer currency code from locale in the form 'und_' + region id.
-// Returns false in case of error.
-static bool GetCurrencyCode(const icu::Locale& icu_locale,
-                            const char* const und_region_locale,
-                            v8::Handle<v8::Object> settings,
-                            UChar* code) {
-  UErrorCode status = U_ZERO_ERROR;
-
-  // If there is user specified currency code, use it.
-  icu::UnicodeString currency;
-  if (Utils::ExtractStringSetting(settings, "currencyCode", &currency)) {
-    currency.extract(code, NumberFormat::kCurrencyCodeLength, status);
-    return true;
-  }
-
-  // If ICU locale has -cu- currency code use it.
-  char currency_code[NumberFormat::kCurrencyCodeLength];
-  int32_t length = icu_locale.getKeywordValue(
-      "currency", currency_code, NumberFormat::kCurrencyCodeLength, status);
-  if (length != 0) {
-    Utils::AsciiToUChar(currency_code, length + 1,
-                        code, NumberFormat::kCurrencyCodeLength);
-    return true;
-  }
-
-  // Otherwise infer currency code from the region id.
-  ucurr_forLocale(
-      und_region_locale, code, NumberFormat::kCurrencyCodeLength, &status);
-
-  return !!U_SUCCESS(status);
-}
-
-// Throws a JavaScript exception.
-static v8::Handle<v8::Value> ThrowUnexpectedObjectError() {
-  // Returns undefined, and schedules an exception to be thrown.
-  return v8::ThrowException(v8::Exception::Error(
-      v8::String::New("NumberFormat method called on an object "
-                      "that is not a NumberFormat.")));
 }
 
 }  // namespace v8_i18n

@@ -53,7 +53,7 @@ struct ScrollAnimatorParameters;
 
 class ScrollAnimatorNone : public ScrollAnimator, public PlatformGestureCurveTarget {
 public:
-    ScrollAnimatorNone(ScrollableArea*);
+    explicit ScrollAnimatorNone(ScrollableArea*);
     virtual ~ScrollAnimatorNone();
 
     virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float multiplier);
@@ -173,7 +173,9 @@ protected:
     bool m_firstVelocitySet;
     bool m_firstVelocityIsVertical;
 
+#if ENABLE(GESTURE_ANIMATION)
     OwnPtr<ActivePlatformGestureAnimation> m_gestureAnimation;
+#endif
 };
 
 } // namespace WebCore

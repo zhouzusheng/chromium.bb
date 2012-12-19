@@ -32,18 +32,24 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBDatabaseCallbacksImpl> IDBDatabaseCallbacksImpl::create(IDBDatabase* database)
+PassRefPtr<IDBDatabaseCallbacksImpl> IDBDatabaseCallbacksImpl::create()
 {
-    return adoptRef(new IDBDatabaseCallbacksImpl(database));
+    return adoptRef(new IDBDatabaseCallbacksImpl());
 }
 
-IDBDatabaseCallbacksImpl::IDBDatabaseCallbacksImpl(IDBDatabase* database)
-    : m_database(database)
+IDBDatabaseCallbacksImpl::IDBDatabaseCallbacksImpl()
+    : m_database(0)
 {
 }
 
 IDBDatabaseCallbacksImpl::~IDBDatabaseCallbacksImpl()
 {
+}
+
+void IDBDatabaseCallbacksImpl::onForcedClose()
+{
+    if (m_database)
+        m_database->forceClose();
 }
 
 void IDBDatabaseCallbacksImpl::onVersionChange(const String& version)
@@ -52,10 +58,17 @@ void IDBDatabaseCallbacksImpl::onVersionChange(const String& version)
         m_database->onVersionChange(version);
 }
 
-void IDBDatabaseCallbacksImpl::unregisterDatabase(IDBDatabase* database)
+void IDBDatabaseCallbacksImpl::onVersionChange(int64_t oldVersion, int64_t newVersion)
 {
-    ASSERT_UNUSED(database, database == m_database);
-    m_database = 0;
+    if (m_database)
+        m_database->onVersionChange(oldVersion, newVersion);
+}
+
+void IDBDatabaseCallbacksImpl::connect(IDBDatabase* database)
+{
+    ASSERT(!m_database);
+    ASSERT(database);
+    m_database = database;
 }
 
 } // namespace WebCore

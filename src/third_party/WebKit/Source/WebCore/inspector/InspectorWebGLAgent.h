@@ -35,25 +35,28 @@
 
 #include "InspectorBaseAgent.h"
 #include "InspectorFrontend.h"
-#include "PlatformString.h"
+#include "InspectorTypeBuilder.h"
 #include "ScriptState.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class InjectedScriptManager;
+class InjectedScriptWebGLModule;
 class InspectorState;
 class InstrumentingAgents;
+class Page;
 class ScriptObject;
 
 typedef String ErrorString;
 
 class InspectorWebGLAgent : public InspectorBaseAgent<InspectorWebGLAgent>, public InspectorBackendDispatcher::WebGLCommandHandler {
 public:
-    static PassOwnPtr<InspectorWebGLAgent> create(InstrumentingAgents* instrumentingAgents, InspectorState* state, InjectedScriptManager* injectedScriptManager)
+    static PassOwnPtr<InspectorWebGLAgent> create(InstrumentingAgents* instrumentingAgents, InspectorState* state, Page* page, InjectedScriptManager* injectedScriptManager)
     {
-        return adoptPtr(new InspectorWebGLAgent(instrumentingAgents, state, injectedScriptManager));
+        return adoptPtr(new InspectorWebGLAgent(instrumentingAgents, state, page, injectedScriptManager));
     }
     ~InspectorWebGLAgent();
 
@@ -68,14 +71,21 @@ public:
     // Called from the front-end.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
+    virtual void dropTraceLog(ErrorString*, const String&);
+    virtual void captureFrame(ErrorString*, String*);
+    virtual void getTraceLog(ErrorString*, const String&, RefPtr<TypeBuilder::WebGL::TraceLog>&);
+    virtual void replayTraceLog(ErrorString*, const String&, int, String*);
 
     // Called from the injected script.
 
     // Called from InspectorInstrumentation
 
 private:
-    InspectorWebGLAgent(InstrumentingAgents*, InspectorState*, InjectedScriptManager*);
+    InspectorWebGLAgent(InstrumentingAgents*, InspectorState*, Page*, InjectedScriptManager*);
 
+    InjectedScriptWebGLModule injectedScriptWebGLModuleForTraceLogId(ErrorString*, const String&);
+
+    Page* m_inspectedPage;
     InjectedScriptManager* m_injectedScriptManager;
     InspectorFrontend::WebGL* m_frontend;
     bool m_enabled;

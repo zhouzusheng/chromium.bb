@@ -27,7 +27,7 @@
 #define FontFeatureValue_h
 
 #include "CSSValue.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -41,6 +41,8 @@ public:
     const String& tag() const { return m_tag; }
     int value() const { return m_value; }
     String customCssText() const;
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     FontFeatureValue(const String&, int);

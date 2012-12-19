@@ -27,7 +27,8 @@
 #include "CSSReflectValue.h"
 
 #include "CSSPrimitiveValue.h"
-#include "PlatformString.h"
+#include "WebCoreMemoryInstrumentation.h"
+#include <wtf/text/StringBuilder.h>
 
 using namespace std;
 
@@ -35,34 +36,42 @@ namespace WebCore {
 
 String CSSReflectValue::customCssText() const
 {
-    String result;
+    StringBuilder result;
     switch (m_direction) {
         case ReflectionBelow:
-            result += "below ";
+            result.appendLiteral("below ");
             break;
         case ReflectionAbove:
-            result += "above ";
+            result.appendLiteral("above ");
             break;
         case ReflectionLeft:
-            result += "left ";
+            result.appendLiteral("left ");
             break;
         case ReflectionRight:
-            result += "right ";
+            result.appendLiteral("right ");
             break;
         default:
             break;
     }
 
-    result += m_offset->cssText() + " ";
+    result.append(m_offset->cssText());
+    result.append(' ');
     if (m_mask)
-        result += m_mask->cssText();
-    return result;
+        result.append(m_mask->cssText());
+    return result.toString();
 }
 
 void CSSReflectValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
 {
     if (m_mask)
         m_mask->addSubresourceStyleURLs(urls, styleSheet);
+}
+
+void CSSReflectValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    info.addMember(m_offset);
+    info.addMember(m_mask);
 }
 
 } // namespace WebCore

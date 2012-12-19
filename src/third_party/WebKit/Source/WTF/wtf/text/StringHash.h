@@ -56,19 +56,14 @@ namespace WTF {
                 return false;
 
             if (a->is8Bit()) {
-                if (b->is8Bit()) {
-                    // Both a & b are 8 bit.
+                if (b->is8Bit())
                     return WTF::equal(a->characters8(), b->characters8(), aLength);
-                }
 
-                // We know that a is 8 bit & b is 16 bit.
                 return WTF::equal(a->characters8(), b->characters16(), aLength);
             }
 
-            if (b->is8Bit()) {
-                // We know that a is 8 bit and b is 16 bit.
+            if (b->is8Bit())
                 return WTF::equal(a->characters16(), b->characters8(), aLength);
-            }
 
             return WTF::equal(a->characters16(), b->characters16(), aLength);
         }
@@ -97,7 +92,7 @@ namespace WTF {
 
         static unsigned hash(const UChar* data, unsigned length)
         {
-            return StringHasher::computeHash<UChar, foldCase<UChar> >(data, length);
+            return StringHasher::computeHashAndMaskTop8Bits<UChar, foldCase<UChar> >(data, length);
         }
 
         static unsigned hash(StringImpl* str)
@@ -109,7 +104,7 @@ namespace WTF {
 
         static unsigned hash(const LChar* data, unsigned length)
         {
-            return StringHasher::computeHash<LChar, foldCase<LChar> >(data, length);
+            return StringHasher::computeHashAndMaskTop8Bits<LChar, foldCase<LChar> >(data, length);
         }
 
         static inline unsigned hash(const char* data, unsigned length)
@@ -126,7 +121,18 @@ namespace WTF {
             unsigned length = a->length();
             if (length != b->length())
                 return false;
-            return WTF::Unicode::umemcasecmp(a->characters(), b->characters(), length) == 0;
+
+            if (a->is8Bit()) {
+                if (b->is8Bit())
+                    return equalIgnoringCase(a->characters8(), b->characters8(), length);
+
+                return equalIgnoringCase(b->characters16(), a->characters8(), length);
+            }
+
+            if (b->is8Bit())
+                return equalIgnoringCase(a->characters16(), b->characters8(), length);
+
+            return equalIgnoringCase(a->characters16(), b->characters16(), length);
         }
 
         static unsigned hash(const RefPtr<StringImpl>& key) 

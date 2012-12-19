@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
 #define WEBKIT_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
-#pragma once
 
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
@@ -58,13 +57,6 @@ class DomStorageTaskRunner : public base::TaskRunner {
   bool IsRunningOnCommitSequence() const {
     return IsRunningOnSequence(COMMIT_SEQUENCE);
   }
-
-  // DEPRECATED: Only here because base::TaskRunner requires it, implemented
-  // by calling the virtual PostDelayedTask(..., TimeDelta) variant.
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      int64 delay_ms) OVERRIDE;
 
  protected:
   virtual ~DomStorageTaskRunner() {}

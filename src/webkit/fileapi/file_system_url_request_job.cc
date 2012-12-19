@@ -28,9 +28,10 @@
 #include "net/url_request/url_request.h"
 #include "webkit/blob/file_stream_reader.h"
 #include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/local_file_system_operation.h"
 
+using net::NetworkDelegate;
 using net::URLRequest;
 using net::URLRequestJob;
 using net::URLRequestStatus;
@@ -54,8 +55,10 @@ static net::HttpResponseHeaders* CreateHttpResponseHeaders() {
 }
 
 FileSystemURLRequestJob::FileSystemURLRequestJob(
-    URLRequest* request, FileSystemContext* file_system_context)
-    : URLRequestJob(request),
+    URLRequest* request,
+    NetworkDelegate* network_delegate,
+    FileSystemContext* file_system_context)
+    : URLRequestJob(request, network_delegate),
       file_system_context_(file_system_context),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       is_directory_(false),
@@ -113,14 +116,11 @@ bool FileSystemURLRequestJob::ReadRawData(net::IOBuffer* dest, int dest_size,
 
 bool FileSystemURLRequestJob::GetMimeType(std::string* mime_type) const {
   DCHECK(request_);
-  FilePath virtual_path;
-  if (CrackFileSystemURL(request_->url(), NULL, NULL, &virtual_path)) {
-    FilePath::StringType extension = virtual_path.Extension();
-    if (!extension.empty())
-      extension = extension.substr(1);
-    return net::GetWellKnownMimeTypeFromExtension(extension, mime_type);
-  }
-  return false;
+  DCHECK(url_.is_valid());
+  FilePath::StringType extension = url_.path().Extension();
+  if (!extension.empty())
+    extension = extension.substr(1);
+  return net::GetWellKnownMimeTypeFromExtension(extension, mime_type);
 }
 
 void FileSystemURLRequestJob::SetExtraRequestHeaders(
@@ -156,15 +156,17 @@ void FileSystemURLRequestJob::StartAsync() {
   if (!request_)
     return;
   DCHECK(!reader_.get());
-  FileSystemOperationInterface* operation =
-      file_system_context_->CreateFileSystemOperation(request_->url());
-  if (!operation) {
+  url_ = FileSystemURL(request_->url());
+  base::PlatformFileError error_code;
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url_, &error_code);
+  if (error_code != base::PLATFORM_FILE_OK) {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
-                                net::ERR_INVALID_URL));
+                                net::PlatformFileErrorToNetError(error_code)));
     return;
   }
   operation->GetMetadata(
-      request_->url(),
+      url_,
       base::Bind(&FileSystemURLRequestJob::DidGetMetadata,
                  weak_factory_.GetWeakPtr()));
 }
@@ -202,7 +204,7 @@ void FileSystemURLRequestJob::DidGetMetadata(
   DCHECK(!reader_.get());
   reader_.reset(
       file_system_context_->CreateFileStreamReader(
-          request_->url(),
+          url_,
           byte_range_.first_byte_position()));
 
   set_expected_content_size(remaining_bytes_);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -108,6 +108,16 @@ NPError NPP_New(NPMIMEType pluginType, NPP instance, uint16 mode,
           NPAPIClient::PluginClient::HostFunctions());
     }
   }
+
+#if defined(OS_MACOSX)
+  // Set modern drawing and event models.
+  NPError drawing_ret = NPAPIClient::PluginClient::HostFunctions()->setvalue(
+      instance, NPPVpluginDrawingModel, (void*)NPDrawingModelCoreGraphics);
+  NPError event_ret = NPAPIClient::PluginClient::HostFunctions()->setvalue(
+      instance, NPPVpluginEventModel, (void*)NPEventModelCocoa);
+  if (drawing_ret != NPERR_NO_ERROR || event_ret != NPERR_NO_ERROR)
+    return NPERR_INCOMPATIBLE_VERSION_ERROR;
+#endif
 
   NPError ret = new_test->New(mode, argc, (const char**)argn,
       (const char**)argv, saved);

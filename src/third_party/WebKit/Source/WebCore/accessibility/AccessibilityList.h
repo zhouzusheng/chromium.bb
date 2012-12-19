@@ -29,7 +29,7 @@
 #ifndef AccessibilityList_h
 #define AccessibilityList_h
 
-#if PLATFORM(MAC) && defined(BUILDING_ON_LEOPARD)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED == 1050
 #define ACCESSIBILITY_LISTS 0
 #else
 #define ACCESSIBILITY_LISTS 1
@@ -42,7 +42,7 @@ namespace WebCore {
 class AccessibilityList : public AccessibilityRenderObject {
     
 private:
-    AccessibilityList(RenderObject*);
+    explicit AccessibilityList(RenderObject*);
 public:
     static PassRefPtr<AccessibilityList> create(RenderObject*);
     virtual ~AccessibilityList();

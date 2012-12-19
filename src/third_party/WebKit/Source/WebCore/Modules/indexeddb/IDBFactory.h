@@ -30,11 +30,11 @@
 
 #include "DOMStringList.h"
 #include "IDBFactoryBackendInterface.h"
-#include "IDBRequest.h"
-#include "PlatformString.h"
+#include "IDBOpenDBRequest.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
+#include <wtf/text/WTFString.h>
 
 #if ENABLE(INDEXED_DATABASE)
 
@@ -58,13 +58,16 @@ public:
 
     PassRefPtr<IDBRequest> getDatabaseNames(ScriptExecutionContext*);
 
-    PassRefPtr<IDBRequest> open(ScriptExecutionContext*, const String& name, ExceptionCode&);
+    PassRefPtr<IDBOpenDBRequest> open(ScriptExecutionContext*, const String& name, ExceptionCode&);
+    PassRefPtr<IDBOpenDBRequest> open(ScriptExecutionContext*, const String& name, int64_t version, ExceptionCode&);
     PassRefPtr<IDBVersionChangeRequest> deleteDatabase(ScriptExecutionContext*, const String& name, ExceptionCode&);
 
     short cmp(PassRefPtr<IDBKey> first, PassRefPtr<IDBKey> second, ExceptionCode&);
 
 private:
     IDBFactory(IDBFactoryBackendInterface*);
+
+    PassRefPtr<IDBOpenDBRequest> openInternal(ScriptExecutionContext*, const String& name, int64_t version, ExceptionCode&);
 
     RefPtr<IDBFactoryBackendInterface> m_backend;
 };

@@ -27,6 +27,7 @@
 #include "EventDispatcher.h"
 
 #include "ComposedShadowTreeWalker.h"
+#include "ContainerNode.h"
 #include "ElementShadow.h"
 #include "EventContext.h"
 #include "EventDispatchMediator.h"
@@ -61,13 +62,25 @@ EventRelatedTargetAdjuster::EventRelatedTargetAdjuster(PassRefPtr<Node> node, Pa
 
 void EventRelatedTargetAdjuster::adjust(Vector<EventContext>& ancestors)
 {
+    Vector<EventTarget*> relatedTargetStack;
     TreeScope* lastTreeScope = 0;
+    Node* lastNode = 0;
     for (ComposedShadowTreeParentWalker walker(m_relatedTarget.get()); walker.get(); walker.parentIncludingInsertionPointAndShadowRoot()) {
-        TreeScope* scope = walker.get()->treeScope();
-        // Skips adding a node to the map if treeScope does not change.
+        Node* node = walker.get();
+        if (relatedTargetStack.isEmpty())
+            relatedTargetStack.append(node);
+        else if (isInsertionPoint(node) && toInsertionPoint(node)->contains(lastNode))
+            relatedTargetStack.append(relatedTargetStack.last());
+        TreeScope* scope = node->treeScope();
+        // Skips adding a node to the map if treeScope does not change. Just for the performance optimization.
         if (scope != lastTreeScope)
-            m_relatedTargetMap.add(scope, walker.get());
+            m_relatedTargetMap.add(scope, relatedTargetStack.last());
         lastTreeScope = scope;
+        lastNode = node;
+        if (node->isShadowRoot()) {
+            ASSERT(!relatedTargetStack.isEmpty());
+            relatedTargetStack.removeLast();
+        }
     }
 
     lastTreeScope = 0;
@@ -75,7 +88,7 @@ void EventRelatedTargetAdjuster::adjust(Vector<EventContext>& ancestors)
     for (Vector<EventContext>::iterator iter = ancestors.begin(); iter < ancestors.end(); ++iter) {
         TreeScope* scope = iter->node()->treeScope();
         if (scope == lastTreeScope) {
-            // Re-use the previous adjustedRelatedTarget if treeScope does not change.
+            // Re-use the previous adjustedRelatedTarget if treeScope does not change. Just for the performance optimization.
             iter->setRelatedTarget(adjustedRelatedTarget);
         } else {
             adjustedRelatedTarget = findRelatedTarget(scope);
@@ -138,41 +151,6 @@ inline static EventTarget* eventTargetRespectingSVGTargetRules(Node* referenceNo
     return referenceNode;
 }
 
-void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
-{
-    // We need to set the target here because it can go away by the time we actually fire the event.
-    mediator->event()->setTarget(eventTargetRespectingSVGTargetRules(node));
-    ScopedEventQueue::instance()->enqueueEventDispatchMediator(mediator);
-}
-
-void EventDispatcher::dispatchSimulatedClick(Node* node, PassRefPtr<Event> underlyingEvent, bool sendMouseEvents, bool showPressedLook)
-{
-    if (node->disabled())
-        return;
-
-    EventDispatcher dispatcher(node);
-
-    if (!gNodesDispatchingSimulatedClicks)
-        gNodesDispatchingSimulatedClicks = new HashSet<Node*>;
-    else if (gNodesDispatchingSimulatedClicks->contains(node))
-        return;
-
-    gNodesDispatchingSimulatedClicks->add(node);
-
-    // send mousedown and mouseup before the click, if requested
-    if (sendMouseEvents)
-        dispatcher.dispatchEvent(SimulatedMouseEvent::create(eventNames().mousedownEvent, node->document()->defaultView(), underlyingEvent));
-    node->setActive(true, showPressedLook);
-    if (sendMouseEvents)
-        dispatcher.dispatchEvent(SimulatedMouseEvent::create(eventNames().mouseupEvent, node->document()->defaultView(), underlyingEvent));
-    node->setActive(false);
-
-    // always send click
-    dispatcher.dispatchEvent(SimulatedMouseEvent::create(eventNames().clickEvent, node->document()->defaultView(), underlyingEvent));
-
-    gNodesDispatchingSimulatedClicks->remove(node);
-}
-
 void EventDispatcher::adjustRelatedTarget(Event* event, PassRefPtr<EventTarget> prpRelatedTarget)
 {
     if (!prpRelatedTarget)
@@ -189,7 +167,9 @@ void EventDispatcher::adjustRelatedTarget(Event* event, PassRefPtr<EventTarget> 
 EventDispatcher::EventDispatcher(Node* node)
     : m_node(node)
     , m_ancestorsInitialized(false)
-    , m_shouldPreventDispatch(false)
+#ifndef NDEBUG
+    , m_eventDispatched(false)
+#endif
 {
     ASSERT(node);
     m_view = node->document()->view();
@@ -203,47 +183,108 @@ void EventDispatcher::ensureEventAncestors(Event* event)
     bool inDocument = m_node->inDocument();
     bool isSVGElement = m_node->isSVGElement();
     Vector<EventTarget*> targetStack;
+    Node* last = 0;
     for (ComposedShadowTreeParentWalker walker(m_node.get()); walker.get(); walker.parentIncludingInsertionPointAndShadowRoot()) {
         Node* node = walker.get();
-        if (isActiveInsertionPoint(node) || targetStack.isEmpty())
+        if (targetStack.isEmpty())
             targetStack.append(eventTargetRespectingSVGTargetRules(node));
+        else if (isInsertionPoint(node) && toInsertionPoint(node)->contains(last))
+            targetStack.append(targetStack.last());
         m_ancestors.append(EventContext(node, eventTargetRespectingSVGTargetRules(node), targetStack.last()));
         if (!inDocument)
             return;
+        last = node;
         if (!node->isShadowRoot())
             continue;
-        if (determineDispatchBehavior(event, toShadowRoot(node)) == StayInsideShadowDOM)
+        if (determineDispatchBehavior(event, toShadowRoot(node), targetStack.last()) == StayInsideShadowDOM)
             return;
-        if (!isSVGElement && !targetStack.isEmpty())
+        if (!isSVGElement) {
+            ASSERT(!targetStack.isEmpty());
             targetStack.removeLast();
+        }
     }
 }
 
-bool EventDispatcher::dispatchEvent(PassRefPtr<Event> event)
+void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
 {
-    event->setTarget(eventTargetRespectingSVGTargetRules(m_node.get()));
+    // We need to set the target here because it can go away by the time we actually fire the event.
+    mediator->event()->setTarget(eventTargetRespectingSVGTargetRules(node));
+    ScopedEventQueue::instance()->enqueueEventDispatchMediator(mediator);
+}
 
+void EventDispatcher::dispatchSimulatedClick(Node* node, PassRefPtr<Event> underlyingEvent, bool sendMouseEvents, bool showPressedLook)
+{
+    if (node->disabled())
+        return;
+
+    if (!gNodesDispatchingSimulatedClicks)
+        gNodesDispatchingSimulatedClicks = new HashSet<Node*>;
+    else if (gNodesDispatchingSimulatedClicks->contains(node))
+        return;
+
+    gNodesDispatchingSimulatedClicks->add(node);
+
+    // send mousedown and mouseup before the click, if requested
+    if (sendMouseEvents)
+        EventDispatcher(node).dispatchEvent(SimulatedMouseEvent::create(eventNames().mousedownEvent, node->document()->defaultView(), underlyingEvent));
+    node->setActive(true, showPressedLook);
+    if (sendMouseEvents)
+        EventDispatcher(node).dispatchEvent(SimulatedMouseEvent::create(eventNames().mouseupEvent, node->document()->defaultView(), underlyingEvent));
+    node->setActive(false);
+
+    // always send click
+    EventDispatcher(node).dispatchEvent(SimulatedMouseEvent::create(eventNames().clickEvent, node->document()->defaultView(), underlyingEvent));
+
+    gNodesDispatchingSimulatedClicks->remove(node);
+}
+
+bool EventDispatcher::dispatchEvent(PassRefPtr<Event> prpEvent)
+{
+#ifndef NDEBUG
+    ASSERT(!m_eventDispatched);
+    m_eventDispatched = true;
+#endif
+    RefPtr<Event> event = prpEvent;
+    ChildNodesLazySnapshot::takeChildNodesLazySnapshot();
+
+    event->setTarget(eventTargetRespectingSVGTargetRules(m_node.get()));
     ASSERT(!eventDispatchForbidden());
     ASSERT(event->target());
     ASSERT(!event->type().isNull()); // JavaScript code can create an event with an empty name, but not null.
-
-    RefPtr<EventTarget> originalTarget = event->target();
     ensureEventAncestors(event.get());
+    WindowEventContext windowEventContext(event.get(), m_node.get(), topEventContext());
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEvent(m_node->document(), *event, windowEventContext.window(), m_node.get(), m_ancestors);
 
-    WindowEventContext windowContext(event.get(), m_node.get(), topEventContext());
+    void* preDispatchEventHandlerResult;
+    if (dispatchEventPreProcess(event, preDispatchEventHandlerResult) == ContinueDispatching)
+        if (dispatchEventAtCapturing(event, windowEventContext) == ContinueDispatching)
+            if (dispatchEventAtTarget(event) == ContinueDispatching)
+                dispatchEventAtBubbling(event, windowEventContext);
+    dispatchEventPostProcess(event, preDispatchEventHandlerResult);
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEvent(m_node->document(), *event, windowContext.window(), m_node.get(), m_ancestors);
+    // Ensure that after event dispatch, the event's target object is the
+    // outermost shadow DOM boundary.
+    event->setTarget(windowEventContext.target());
+    event->setCurrentTarget(0);
+    InspectorInstrumentation::didDispatchEvent(cookie);
 
+    return !event->defaultPrevented();
+}
+
+inline EventDispatchContinuation EventDispatcher::dispatchEventPreProcess(PassRefPtr<Event> event, void*& preDispatchEventHandlerResult)
+{
     // Give the target node a chance to do some work before DOM event handlers get a crack.
-    void* data = m_node->preDispatchEventHandler(event.get());
-    if (m_ancestors.isEmpty() || m_shouldPreventDispatch || event->propagationStopped())
-        goto doneDispatching;
+    preDispatchEventHandlerResult = m_node->preDispatchEventHandler(event.get());
+    return (m_ancestors.isEmpty() || event->propagationStopped()) ? DoneDispatching : ContinueDispatching;
+}
 
+inline EventDispatchContinuation EventDispatcher::dispatchEventAtCapturing(PassRefPtr<Event> event, WindowEventContext& windowEventContext)
+{
     // Trigger capturing event handlers, starting at the top and working our way down.
     event->setEventPhase(Event::CAPTURING_PHASE);
 
-    if (windowContext.handleLocalEvents(event.get()) && event->propagationStopped())
-        goto doneDispatching;
+    if (windowEventContext.handleLocalEvents(event.get()) && event->propagationStopped())
+        return DoneDispatching;
 
     for (size_t i = m_ancestors.size() - 1; i > 0; --i) {
         const EventContext& eventContext = m_ancestors[i];
@@ -255,16 +296,21 @@ bool EventDispatcher::dispatchEvent(PassRefPtr<Event> event)
             event->setEventPhase(Event::CAPTURING_PHASE);
         eventContext.handleLocalEvents(event.get());
         if (event->propagationStopped())
-            goto doneDispatching;
+            return DoneDispatching;
     }
 
-    event->setEventPhase(Event::AT_TARGET);
-    event->setTarget(originalTarget.get());
-    event->setCurrentTarget(eventTargetRespectingSVGTargetRules(m_node.get()));
-    m_ancestors[0].handleLocalEvents(event.get());
-    if (event->propagationStopped())
-        goto doneDispatching;
+    return ContinueDispatching;
+}
 
+inline EventDispatchContinuation EventDispatcher::dispatchEventAtTarget(PassRefPtr<Event> event)
+{
+    event->setEventPhase(Event::AT_TARGET);
+    m_ancestors[0].handleLocalEvents(event.get());
+    return event->propagationStopped() ? DoneDispatching : ContinueDispatching;
+}
+
+inline EventDispatchContinuation EventDispatcher::dispatchEventAtBubbling(PassRefPtr<Event> event, WindowEventContext& windowContext)
+{
     if (event->bubbles() && !event->cancelBubble()) {
         // Trigger bubbling event handlers, starting at the bottom and working our way up.
         event->setEventPhase(Event::BUBBLING_PHASE);
@@ -278,18 +324,21 @@ bool EventDispatcher::dispatchEvent(PassRefPtr<Event> event)
                 event->setEventPhase(Event::BUBBLING_PHASE);
             eventContext.handleLocalEvents(event.get());
             if (event->propagationStopped() || event->cancelBubble())
-                goto doneDispatching;
+                return DoneDispatching;
         }
         windowContext.handleLocalEvents(event.get());
     }
+    return ContinueDispatching;
+}
 
-doneDispatching:
-    event->setTarget(originalTarget.get());
+inline void EventDispatcher::dispatchEventPostProcess(PassRefPtr<Event> event, void* preDispatchEventHandlerResult)
+{
+    event->setTarget(eventTargetRespectingSVGTargetRules(m_node.get()));
     event->setCurrentTarget(0);
     event->setEventPhase(0);
 
     // Pass the data from the preDispatchEventHandler to the postDispatchEventHandler.
-    m_node->postDispatchEventHandler(event.get(), data);
+    m_node->postDispatchEventHandler(event.get(), preDispatchEventHandlerResult);
 
     // Call default event handlers. While the DOM does have a concept of preventing
     // default handling, the detail of which handlers are called is an internal
@@ -299,7 +348,7 @@ doneDispatching:
         m_node->defaultEventHandler(event.get());
         ASSERT(!event->defaultPrevented());
         if (event->defaultHandled())
-            goto doneWithDefault;
+            return;
         // For bubbling events, call default event handlers on the same targets in the
         // same order as the bubbling phase.
         if (event->bubbles()) {
@@ -308,20 +357,10 @@ doneDispatching:
                 m_ancestors[i].node()->defaultEventHandler(event.get());
                 ASSERT(!event->defaultPrevented());
                 if (event->defaultHandled())
-                    goto doneWithDefault;
+                    return;
             }
         }
     }
-
-doneWithDefault:
-
-    // Ensure that after event dispatch, the event's target object is the
-    // outermost shadow DOM boundary.
-    event->setTarget(windowContext.target());
-    event->setCurrentTarget(0);
-    InspectorInstrumentation::didDispatchEvent(cookie);
-
-    return !event->defaultPrevented();
 }
 
 const EventContext* EventDispatcher::topEventContext()
@@ -329,7 +368,12 @@ const EventContext* EventDispatcher::topEventContext()
     return m_ancestors.isEmpty() ? 0 : &m_ancestors.last();
 }
 
-EventDispatchBehavior EventDispatcher::determineDispatchBehavior(Event* event, ShadowRoot* shadowRoot)
+static inline bool inTheSameScope(ShadowRoot* shadowRoot, EventTarget* target)
+{
+    return target->toNode() && target->toNode()->treeScope()->rootNode() == shadowRoot;
+}
+
+EventDispatchBehavior EventDispatcher::determineDispatchBehavior(Event* event, ShadowRoot* shadowRoot, EventTarget* target)
 {
 #if ENABLE(FULLSCREEN_API) && ENABLE(VIDEO)
     // Video-only full screen is a mode where we use the shadow DOM as an implementation
@@ -347,7 +391,17 @@ EventDispatchBehavior EventDispatcher::determineDispatchBehavior(Event* event, S
     // WebKit never allowed selectstart event to cross the the shadow DOM boundary.
     // Changing this breaks existing sites.
     // See https://bugs.webkit.org/show_bug.cgi?id=52195 for details.
-    if (event->type() == eventNames().selectstartEvent)
+    const AtomicString eventType = event->type();
+    if (inTheSameScope(shadowRoot, target)
+        && (eventType == eventNames().abortEvent
+            || eventType == eventNames().changeEvent
+            || eventType == eventNames().errorEvent
+            || eventType == eventNames().loadEvent
+            || eventType == eventNames().resetEvent
+            || eventType == eventNames().resizeEvent
+            || eventType == eventNames().scrollEvent
+            || eventType == eventNames().selectEvent
+            || eventType == eventNames().selectstartEvent))
         return StayInsideShadowDOM;
 
     return RetargetEvent;

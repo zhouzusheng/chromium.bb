@@ -49,14 +49,17 @@ namespace WebCore {
         void add(const AtomicString&);
         void remove(const AtomicString&);
 
+        bool isUnique() const { return m_keyString.isNull(); } 
         size_t size() const { return m_vector.size(); }
         const AtomicString& operator[](size_t i) { ASSERT(i < size()); return m_vector[i]; }
 
     private:
-        SpaceSplitStringData(const AtomicString&);
-        SpaceSplitStringData(const SpaceSplitStringData&);
+        explicit SpaceSplitStringData(const AtomicString&);
+        explicit SpaceSplitStringData(const SpaceSplitStringData&);
 
         void createVector(const String&);
+        template <typename CharacterType>
+        inline void createVector(const CharacterType*, unsigned);
 
         AtomicString m_keyString;
         Vector<AtomicString, 4> m_vector;
@@ -82,7 +85,7 @@ namespace WebCore {
     private:
         void ensureUnique()
         {
-            if (m_data && !m_data->hasOneRef())
+            if (m_data && !m_data->isUnique())
                 m_data = SpaceSplitStringData::createUnique(*m_data);
         }
 

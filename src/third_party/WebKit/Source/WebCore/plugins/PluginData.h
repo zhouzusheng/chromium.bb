@@ -22,7 +22,7 @@
 
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -83,7 +83,7 @@ public:
     static void refresh();
 
 private:
-    PluginData(const Page*);
+    explicit PluginData(const Page*);
     void initPlugins(const Page*);
 
     Vector<PluginInfo> m_plugins;

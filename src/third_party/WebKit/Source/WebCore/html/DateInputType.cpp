@@ -35,6 +35,7 @@
 #include "DateComponents.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "KeyboardEvent.h"
 #include "LocalizedDate.h"
 #include <wtf/PassOwnPtr.h>
@@ -51,6 +52,9 @@ static const int dateStepScaleFactor = 86400000;
 
 inline DateInputType::DateInputType(HTMLInputElement* element)
     : BaseDateAndTimeInputType(element)
+#if ENABLE(CALENDAR_PICKER)
+    , m_pickerElement(0)
+#endif
 {
 }
 
@@ -102,14 +106,15 @@ bool DateInputType::isDateField() const
 void DateInputType::createShadowSubtree()
 {
     BaseDateAndTimeInputType::createShadowSubtree();
-    m_pickerElement = CalendarPickerElement::create(element()->document());
-    containerElement()->insertBefore(m_pickerElement.get(), innerBlockElement()->nextSibling(), ASSERT_NO_EXCEPTION);
+    RefPtr<CalendarPickerElement> pickerElement = CalendarPickerElement::create(element()->document());
+    m_pickerElement = pickerElement.get();
+    containerElement()->insertBefore(m_pickerElement, innerBlockElement()->nextSibling(), ASSERT_NO_EXCEPTION);
 }
 
 void DateInputType::destroyShadowSubtree()
 {
     TextFieldInputType::destroyShadowSubtree();
-    m_pickerElement.clear();
+    m_pickerElement = 0;
 }
 
 bool DateInputType::needsContainer() const
@@ -144,7 +149,7 @@ void DateInputType::handleBlurEvent()
     element()->setFormControlValueMatchesRenderer(false);
     // We need to reset the renderer value explicitly because an unacceptable
     // renderer value should be purged before style calculation.
-    element()->updateInnerTextValue();
+    updateInnerTextValue();
 }
 
 bool DateInputType::supportsPlaceholder() const

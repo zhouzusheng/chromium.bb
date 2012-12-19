@@ -23,7 +23,6 @@
 #include "AlternativeTextClient.h"
 #include "BackForwardController.h"
 #include "BackForwardList.h"
-#include "Base64.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "ContextMenuClient.h"
@@ -56,7 +55,6 @@
 #include "PageGroup.h"
 #include "PluginData.h"
 #include "PluginView.h"
-#include "PluginViewBase.h"
 #include "PointerLockController.h"
 #include "ProgressTracker.h"
 #include "RenderArena.h"
@@ -77,6 +75,7 @@
 #include <wtf/HashMap.h>
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/Base64.h>
 #include <wtf/text/StringHash.h>
 
 namespace WebCore {
@@ -133,6 +132,7 @@ Page::Page(PageClients& pageClients)
     , m_backForwardController(BackForwardController::create(this, pageClients.backForwardClient))
     , m_theme(RenderTheme::themeForPage(this))
     , m_editorClient(pageClients.editorClient)
+    , m_validationMessageClient(pageClients.validationMessageClient)
     , m_frameCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
@@ -144,6 +144,7 @@ Page::Page(PageClients& pageClients)
     , m_mediaVolume(1)
     , m_pageScaleFactor(1)
     , m_deviceScaleFactor(1)
+    , m_suppressScrollbarAnimations(false)
     , m_javaScriptURLsAreAllowed(true)
     , m_didLoadUserStyleSheet(false)
     , m_userStyleSheetModificationTime(0)
@@ -167,6 +168,8 @@ Page::Page(PageClients& pageClients)
     , m_alternativeTextClient(pageClients.alternativeTextClient)
     , m_scriptedAnimationsSuspended(false)
 {
+    ASSERT(m_editorClient);
+
     if (!allPages) {
         allPages = new HashSet<Page*>;
         
@@ -390,6 +393,7 @@ void Page::setGroupName(const String& name)
 const String& Page::groupName() const
 {
     DEFINE_STATIC_LOCAL(String, nullString, ());
+    // FIXME: Why not just return String()?
     return m_group ? m_group->name() : nullString;
 }
 
@@ -690,6 +694,46 @@ void Page::setDeviceScaleFactor(float scaleFactor)
     pageCache()->markPagesForFullStyleRecalc(this);
 }
 
+void Page::setShouldSuppressScrollbarAnimations(bool suppressAnimations)
+{
+    if (suppressAnimations == m_suppressScrollbarAnimations)
+        return;
+
+    if (!suppressAnimations) {
+        // If animations are not going to be suppressed anymore, then there is nothing to do here but
+        // change the cached value.
+        m_suppressScrollbarAnimations = suppressAnimations;
+        return;
+    }
+
+    // On the other hand, if we are going to start suppressing animations, then we need to make sure we
+    // finish any current scroll animations first.
+    FrameView* view = mainFrame()->view();
+    if (!view)
+        return;
+
+    view->finishCurrentScrollAnimations();
+    
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        FrameView* frameView = frame->view();
+        if (!frameView)
+            continue;
+
+        const HashSet<ScrollableArea*>* scrollableAreas = frameView->scrollableAreas();
+        if (!scrollableAreas)
+            continue;
+
+        for (HashSet<ScrollableArea*>::const_iterator it = scrollableAreas->begin(), end = scrollableAreas->end(); it != end; ++it) {
+            ScrollableArea* scrollableArea = *it;
+            ASSERT(scrollableArea->scrollbarsCanBeActive());
+
+            scrollableArea->finishCurrentScrollAnimations();
+        }
+    }
+
+    m_suppressScrollbarAnimations = suppressAnimations;
+}
+
 void Page::setPagination(const Pagination& pagination)
 {
     if (m_pagination == pagination)
@@ -707,13 +751,11 @@ unsigned Page::pageCount() const
         return 0;
 
     FrameView* frameView = mainFrame()->view();
-    if (!frameView->didFirstLayout())
-        return 0;
-
-    mainFrame()->view()->forceLayout();
+    if (frameView->needsLayout())
+        frameView->layout();
 
     RenderView* contentRenderer = mainFrame()->contentRenderer();
-    return contentRenderer->columnCount(contentRenderer->columnInfo());
+    return contentRenderer ? contentRenderer->columnCount(contentRenderer->columnInfo()) : 0;
 }
 
 void Page::didMoveOnscreen()
@@ -790,7 +832,7 @@ void Page::userStyleSheetLocationChanged()
         m_didLoadUserStyleSheet = true;
 
         Vector<char> styleSheetAsUTF8;
-        if (base64Decode(decodeURLEscapeSequences(url.string().substring(35)), styleSheetAsUTF8, IgnoreWhitespace))
+        if (base64Decode(decodeURLEscapeSequences(url.string().substring(35)), styleSheetAsUTF8, Base64IgnoreWhitespace))
             m_userStyleSheet = String::fromUTF8(styleSheetAsUTF8.data(), styleSheetAsUTF8.size());
     }
 
@@ -836,7 +878,7 @@ const String& Page::userStyleSheet() const
 
     RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("text/css");
     m_userStyleSheet = decoder->decode(data->data(), data->size());
-    m_userStyleSheet += decoder->flush();
+    m_userStyleSheet.append(decoder->flush());
 
     return m_userStyleSheet;
 }
@@ -987,16 +1029,8 @@ void Page::dnsPrefetchingStateChanged()
         frame->document()->initDNSPrefetch();
 }
 
-void Page::privateBrowsingStateChanged()
+void Page::collectPluginViews(Vector<RefPtr<PluginViewBase>, 32>& pluginViewBases)
 {
-    bool privateBrowsingEnabled = m_settings->privateBrowsingEnabled();
-
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
-        frame->document()->privateBrowsingStateDidChange();
-
-    // Collect the PluginViews in to a vector to ensure that action the plug-in takes
-    // from below privateBrowsingStateChanged does not affect their lifetime.
-    Vector<RefPtr<PluginViewBase>, 32> pluginViewBases;
     for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
         FrameView* view = frame->view();
         if (!view)
@@ -1012,6 +1046,33 @@ void Page::privateBrowsingStateChanged()
                 pluginViewBases.append(static_cast<PluginViewBase*>(widget));
         }
     }
+}
+
+void Page::storageBlockingStateChanged()
+{
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
+        frame->document()->storageBlockingStateDidChange();
+
+    // Collect the PluginViews in to a vector to ensure that action the plug-in takes
+    // from below storageBlockingStateChanged does not affect their lifetime.
+    Vector<RefPtr<PluginViewBase>, 32> pluginViewBases;
+    collectPluginViews(pluginViewBases);
+
+    for (size_t i = 0; i < pluginViewBases.size(); ++i)
+        pluginViewBases[i]->storageBlockingStateChanged();
+}
+
+void Page::privateBrowsingStateChanged()
+{
+    bool privateBrowsingEnabled = m_settings->privateBrowsingEnabled();
+
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext())
+        frame->document()->privateBrowsingStateDidChange();
+
+    // Collect the PluginViews in to a vector to ensure that action the plug-in takes
+    // from below privateBrowsingStateChanged does not affect their lifetime.
+    Vector<RefPtr<PluginViewBase>, 32> pluginViewBases;
+    collectPluginViews(pluginViewBases);
 
     for (size_t i = 0; i < pluginViewBases.size(); ++i)
         pluginViewBases[i]->privateBrowsingStateChanged(privateBrowsingEnabled);
@@ -1156,6 +1217,26 @@ void Page::resumeActiveDOMObjectsAndAnimations()
         frame->resumeActiveDOMObjectsAndAnimations();
 }
 
+bool Page::hasSeenAnyPlugin() const
+{
+    return !m_seenPlugins.isEmpty();
+}
+
+bool Page::hasSeenPlugin(const String& serviceType) const
+{
+    return m_seenPlugins.contains(serviceType);
+}
+
+void Page::sawPlugin(const String& serviceType)
+{
+    m_seenPlugins.add(serviceType);
+}
+
+void Page::resetSeenPlugins()
+{
+    m_seenPlugins.clear();
+}
+
 Page::PageClients::PageClients()
     : alternativeTextClient(0)
     , chromeClient(0)
@@ -1165,6 +1246,7 @@ Page::PageClients::PageClients()
     , editorClient(0)
     , dragClient(0)
     , inspectorClient(0)
+    , validationMessageClient(0)
 {
 }
 

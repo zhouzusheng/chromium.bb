@@ -33,9 +33,13 @@
 #include "WebKitBlobBuilder.h"
 
 #include "Blob.h"
+#include "Document.h"
 #include "ExceptionCode.h"
+#include "FeatureObserver.h"
 #include "File.h"
+#include "HistogramSupport.h"
 #include "LineEnding.h"
+#include "ScriptCallStack.h"
 #include "ScriptExecutionContext.h"
 #include "TextEncoding.h"
 #include <wtf/ArrayBuffer.h>
@@ -47,11 +51,22 @@
 
 namespace WebCore {
 
+enum BlobConstructorArrayBufferOrView {
+    BlobConstructorArrayBuffer,
+    BlobConstructorArrayBufferView,
+    BlobConstructorArrayBufferOrViewMax,
+};
+
 // static
 PassRefPtr<WebKitBlobBuilder> WebKitBlobBuilder::create(ScriptExecutionContext* context)
 {
     String message("BlobBuilder is deprecated. Use \"Blob\" constructor instead.");
     context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, message);
+
+    if (context->isDocument()) {
+        Document* document = static_cast<Document*>(context);
+        FeatureObserver::observe(document->domWindow(), FeatureObserver::LegacyBlobBuilder);
+    }
 
     return adoptRef(new WebKitBlobBuilder());
 }
@@ -101,22 +116,23 @@ void WebKitBlobBuilder::append(ScriptExecutionContext* context, ArrayBuffer* arr
 {
     String consoleMessage("ArrayBuffer values are deprecated in Blob Constructor. Use ArrayBufferView instead.");
     context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
+
+    HistogramSupport::histogramEnumeration("WebCore.Blob.constructor.ArrayBufferOrView", BlobConstructorArrayBuffer, BlobConstructorArrayBufferOrViewMax);
+
     if (!arrayBuffer)
         return;
-    Vector<char>& buffer = getBuffer();
-    size_t oldSize = buffer.size();
-    buffer.append(static_cast<const char*>(arrayBuffer->data()), arrayBuffer->byteLength());
-    m_size += buffer.size() - oldSize;
+
+    appendBytesData(arrayBuffer->data(), arrayBuffer->byteLength());
 }
 
 void WebKitBlobBuilder::append(ArrayBufferView* arrayBufferView)
 {
+    HistogramSupport::histogramEnumeration("WebCore.Blob.constructor.ArrayBufferOrView", BlobConstructorArrayBufferView, BlobConstructorArrayBufferOrViewMax);
+
     if (!arrayBufferView)
         return;
-    Vector<char>& buffer = getBuffer();
-    size_t oldSize = buffer.size();
-    buffer.append(static_cast<const char*>(arrayBufferView->baseAddress()), arrayBufferView->byteLength());
-    m_size += buffer.size() - oldSize;
+
+    appendBytesData(arrayBufferView->baseAddress(), arrayBufferView->byteLength());
 }
 #endif
 
@@ -133,6 +149,11 @@ void WebKitBlobBuilder::append(Blob* blob)
         file->captureSnapshot(snapshotSize, snapshotModificationTime);
 
         m_size += snapshotSize;
+#if ENABLE(FILE_SYSTEM)
+        if (!file->fileSystemURL().isEmpty())
+            m_items.append(BlobDataItem(file->fileSystemURL(), 0, snapshotSize, snapshotModificationTime));
+        else
+#endif
         m_items.append(BlobDataItem(file->path(), 0, snapshotSize, snapshotModificationTime));
     } else {
         long long blobSize = static_cast<long long>(blob->size());
@@ -141,8 +162,18 @@ void WebKitBlobBuilder::append(Blob* blob)
     }
 }
 
-PassRefPtr<Blob> WebKitBlobBuilder::getBlob(const String& contentType)
+void WebKitBlobBuilder::appendBytesData(const void* data, size_t length)
 {
+    Vector<char>& buffer = getBuffer();
+    size_t oldSize = buffer.size();
+    buffer.append(static_cast<const char*>(data), length);
+    m_size += buffer.size() - oldSize;
+}
+
+PassRefPtr<Blob> WebKitBlobBuilder::getBlob(const String& contentType, BlobConstructionReason constructionReason)
+{
+    HistogramSupport::histogramEnumeration("WebCore.BlobBuilder.getBlob", constructionReason, BlobConstructionReasonMax);
+
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->setContentType(contentType);
     blobData->swapItems(m_items);

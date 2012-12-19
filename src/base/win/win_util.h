@@ -21,7 +21,6 @@
 
 #ifndef BASE_WIN_WIN_UTIL_H_
 #define BASE_WIN_WIN_UTIL_H_
-#pragma once
 
 #include <windows.h>
 
@@ -79,9 +78,10 @@ BASE_EXPORT bool SetStringValueForPropertyStore(
 BASE_EXPORT bool SetAppIdForPropertyStore(IPropertyStore* property_store,
                                           const wchar_t* app_id);
 
-// Sets the DualModeApp property to true in |property_store|. The function is
-// intended for tagging dual mode applications in Win8.
-BASE_EXPORT bool SetDualModeForPropertyStore(IPropertyStore* property_store);
+// Sets the DualModeApp property to |is_dual_mode| in |property_store|. This
+// method is intended for tagging dual mode applications in Win8+.
+BASE_EXPORT bool SetDualModeForPropertyStore(IPropertyStore* property_store,
+                                             bool is_dual_mode);
 
 // Adds the specified |command| using the specified |name| to the AutoRun key.
 // |root_key| could be HKCU or HKLM or the root of any user hive.
@@ -104,6 +104,10 @@ BASE_EXPORT bool ReadCommandFromAutoRun(HKEY root_key,
 // this. In particular, TerminateProcess() is not caught.
 BASE_EXPORT void SetShouldCrashOnProcessDetach(bool crash);
 BASE_EXPORT bool ShouldCrashOnProcessDetach();
+
+// A tablet by this definition is something that has integrated multi-touch
+// ready to use and also has screen resolution not greater than 1366x768.
+BASE_EXPORT bool IsMachineATablet();
 
 // Get the size of a struct up to and including the specified member.
 // This is necessary to set compatible struct sizes for different versions

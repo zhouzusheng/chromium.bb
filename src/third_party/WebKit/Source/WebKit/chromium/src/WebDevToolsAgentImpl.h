@@ -32,11 +32,11 @@
 #define WebDevToolsAgentImpl_h
 
 #include "InspectorClient.h"
+#include "InspectorFrontendChannel.h"
 
 #include "WebDevToolsAgentPrivate.h"
 #include "WebPageOverlay.h"
 #include "platform/WebSize.h"
-#include "platform/WebThread.h"
 
 #include <wtf/Forward.h>
 #include <wtf/OwnPtr.h>
@@ -66,8 +66,8 @@ struct WebDevToolsMessageData;
 
 class WebDevToolsAgentImpl : public WebDevToolsAgentPrivate,
                              public WebCore::InspectorClient,
-                             public WebPageOverlay,
-                             public WebThread::TaskObserver {
+                             public WebCore::InspectorFrontendChannel,
+                             public WebPageOverlay {
 public:
     WebDevToolsAgentImpl(WebViewImpl* webViewImpl, WebDevToolsAgentClient* client);
     virtual ~WebDevToolsAgentImpl();
@@ -90,20 +90,18 @@ public:
 
     // InspectorClient implementation.
     virtual void inspectorDestroyed();
-    virtual void openInspectorFrontend(WebCore::InspectorController*);
+    virtual WebCore::InspectorFrontendChannel* openInspectorFrontend(WebCore::InspectorController*);
     virtual void closeInspectorFrontend();
 
     virtual void bringFrontendToFront();
     virtual void highlight();
     virtual void hideHighlight();
+    virtual bool supportsInspectorStateUpdates() const { return true; }
     virtual void updateInspectorStateCookie(const WTF::String&);
     virtual bool sendMessageToFrontend(const WTF::String&);
 
     virtual void clearBrowserCache();
     virtual void clearBrowserCookies();
-
-    virtual void startMainThreadMonitoring();
-    virtual void stopMainThreadMonitoring();
 
     virtual void overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow);
     virtual void autoZoomPageToFitWidth();
@@ -112,10 +110,6 @@ public:
 
     // WebPageOverlay
     virtual void paintPageOverlay(WebCanvas*);
-
-    // WebThread::TaskObserver
-    virtual void willProcessTask();
-    virtual void didProcessTask();
 
 private:
     WebCore::InspectorController* inspectorController();

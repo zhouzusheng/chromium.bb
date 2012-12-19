@@ -31,12 +31,14 @@
 #ifndef MeterShadowElement_h
 #define MeterShadowElement_h
 
+#if ENABLE(METER_ELEMENT)
 #include "HTMLDivElement.h"
 #include <wtf/Forward.h>
 
 namespace WebCore {
 
 class HTMLMeterElement;
+class RenderMeter;
 
 class MeterShadowElement : public HTMLDivElement {
 public:
@@ -46,6 +48,22 @@ public:
 private:
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 };
+
+class MeterInnerElement : public MeterShadowElement {
+public:
+    MeterInnerElement(Document*);
+    static PassRefPtr<MeterInnerElement> create(Document*);
+
+private:
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
+};
+
+inline PassRefPtr<MeterInnerElement> MeterInnerElement::create(Document* document)
+{
+    return adoptRef(new MeterInnerElement(document));
+}
 
 class MeterBarElement : public MeterShadowElement {
 public:
@@ -62,7 +80,6 @@ inline PassRefPtr<MeterBarElement> MeterBarElement::create(Document* document)
 {
     return adoptRef(new MeterBarElement(document));
 }
-
 
 class MeterValueElement : public MeterShadowElement {
 public:
@@ -82,5 +99,5 @@ inline PassRefPtr<MeterValueElement> MeterValueElement::create(Document* documen
 }
 
 }
-
-#endif
+#endif // ENABLE(METER_ELEMENT)
+#endif // MeterShadowElement_h

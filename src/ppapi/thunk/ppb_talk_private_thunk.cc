@@ -4,6 +4,7 @@
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_talk_private.h"
+#include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_talk_private_api.h"
 #include "ppapi/thunk/thunk.h"
@@ -22,10 +23,10 @@ PP_Resource Create(PP_Instance instance) {
 
 int32_t GetPermission(PP_Resource resource,
                       PP_CompletionCallback callback) {
-  EnterResource<PPB_Talk_Private_API> enter(resource, true);
+  EnterResource<PPB_Talk_Private_API> enter(resource, callback, true);
   if (enter.failed())
     return PP_ERROR_BADRESOURCE;
-  return enter.object()->GetPermission(callback);
+  return enter.SetResult(enter.object()->GetPermission(enter.callback()));
 }
 
 const PPB_Talk_Private_1_0 g_ppb_talk_private_thunk = {

@@ -122,9 +122,6 @@ TreeOutline.prototype.insertChild = function(child, index)
     }
 
     child._attach();
-
-    if (this.treeOutline.onadd)
-        this.treeOutline.onadd(child);
 }
 
 TreeOutline.prototype.removeChildAtIndex = function(childIndex)
@@ -286,15 +283,6 @@ TreeOutline.prototype.findTreeElement = function(representedObject, isAncestor, 
     return this.getCachedTreeElement(representedObject);
 }
 
-TreeOutline.prototype._treeElementDidChange = function(treeElement)
-{
-    if (treeElement.treeOutline !== this)
-        return;
-
-    if (this.onchange)
-        this.onchange(treeElement);
-}
-
 TreeOutline.prototype.treeElementFromPoint = function(x, y)
 {
     var node = this._childrenListNode.ownerDocument.elementFromPoint(x, y);
@@ -376,16 +364,12 @@ TreeOutline.prototype._treeKeyDown = function(event)
                     this.selectedTreeElement.expand();
             }
         }
-    } else if (event.keyCode === 8 /* Backspace */ || event.keyCode === 46 /* Delete */) {
-        if (this.selectedTreeElement.ondelete)
-            handled = this.selectedTreeElement.ondelete();
-    } else if (isEnterKey(event)) {
-        if (this.selectedTreeElement.onenter)
-            handled = this.selectedTreeElement.onenter();
-    } else if (event.keyCode === WebInspector.KeyboardShortcut.Keys.Space.code) {
-        if (this.selectedTreeElement.onspace)
-            handled = this.selectedTreeElement.onspace();
-    }
+    } else if (event.keyCode === 8 /* Backspace */ || event.keyCode === 46 /* Delete */)
+        handled = this.selectedTreeElement.ondelete();
+    else if (isEnterKey(event))
+        handled = this.selectedTreeElement.onenter();
+    else if (event.keyCode === WebInspector.KeyboardShortcut.Keys.Space.code)
+        handled = this.selectedTreeElement.onspace();
 
     if (nextSelectedElement) {
         nextSelectedElement.reveal();
@@ -505,8 +489,7 @@ TreeOutline.prototype._searchInputKeyDown = function(event)
     } else if (isEnterKey(event)) {
         var lastSearchMatchElement = this._currentSearchMatchElement;
         this._searchFinished();
-        if (lastSearchMatchElement && lastSearchMatchElement.onenter)
-            lastSearchMatchElement.onenter();
+        lastSearchMatchElement.onenter();
         handled = true;
     }
 
@@ -640,7 +623,6 @@ TreeElement.prototype = {
     set title(x) {
         this._title = x;
         this._setListItemNodeContent();
-        this.didChange();
     },
 
     get tooltip() {
@@ -651,7 +633,6 @@ TreeElement.prototype = {
         this._tooltip = x;
         if (this._listItemNode)
             this._listItemNode.title = x ? x : "";
-        this.didChange();
     },
 
     get hasChildren() {
@@ -673,8 +654,6 @@ TreeElement.prototype = {
             this._listItemNode.classList.remove("parent");
             this.collapse();
         }
-
-        this.didChange();
     },
 
     get hidden() {
@@ -708,24 +687,6 @@ TreeElement.prototype = {
         this._shouldRefreshChildren = x;
         if (x && this.expanded)
             this.expand();
-    },
-
-    _fireDidChange: function()
-    {
-        delete this._didChangeTimeoutIdentifier;
-
-        if (this.treeOutline)
-            this.treeOutline._treeElementDidChange(this);
-    },
-
-    didChange: function()
-    {
-        if (!this.treeOutline)
-            return;
-
-        // Prevent telling the TreeOutline multiple times in a row by delaying it with a timeout.
-        if (!this._didChangeTimeoutIdentifier)
-            this._didChangeTimeoutIdentifier = setTimeout(this._fireDidChange.bind(this), 0);
     },
 
     _setListItemNodeContent: function()
@@ -773,8 +734,7 @@ TreeElement.prototype._attach = function()
         this._listItemNode.addEventListener("click", TreeElement.treeElementToggled, false);
         this._listItemNode.addEventListener("dblclick", TreeElement.treeElementDoubleClicked, false);
 
-        if (this.onattach)
-            this.onattach(this);
+        this.onattach();
     }
 
     var nextSibling = null;
@@ -840,11 +800,10 @@ TreeElement.treeElementDoubleClicked = function(event)
     if (!element || !element.treeElement)
         return;
 
-    if (element.treeElement.ondblclick) {
-        var handled = element.treeElement.ondblclick.call(element.treeElement, event);
-        if (handled)
-            return;
-    } else if (element.treeElement.hasChildren && !element.treeElement.expanded)
+    var handled = element.treeElement.ondblclick.call(element.treeElement, event);
+    if (handled)
+        return;
+    if (element.treeElement.hasChildren && !element.treeElement.expanded)
         element.treeElement.expand();
 }
 
@@ -860,8 +819,7 @@ TreeElement.prototype.collapse = function()
     if (this.treeOutline)
         this.treeOutline._expandedStateMap.put(this.representedObject, false);
 
-    if (this.oncollapse)
-        this.oncollapse(this);
+    this.oncollapse();
 }
 
 TreeElement.prototype.collapseRecursively = function()
@@ -879,9 +837,9 @@ TreeElement.prototype.expand = function()
     if (!this.hasChildren || (this.expanded && !this._shouldRefreshChildren && this._childrenListNode))
         return;
 
-    // Set this before onpopulate. Since onpopulate can add elements and call onadd, this makes
+    // Set this before onpopulate. Since onpopulate can add elements, this makes
     // sure the expanded flag is true before calling those functions. This prevents the possibility
-    // of an infinite loop if onpopulate or onadd were to call expand.
+    // of an infinite loop if onpopulate were to call expand.
 
     this.expanded = true;
     if (this.treeOutline)
@@ -915,8 +873,7 @@ TreeElement.prototype.expand = function()
     if (this._childrenListNode)
         this._childrenListNode.classList.add("expanded");
 
-    if (this.onexpand)
-        this.onexpand(this);
+    this.onexpand();
 }
 
 TreeElement.prototype.expandRecursively = function(maxDepth)
@@ -962,8 +919,7 @@ TreeElement.prototype.reveal = function()
         currentAncestor = currentAncestor.parent;
     }
 
-    if (this.onreveal)
-        this.onreveal(this);
+    this.onreveal(this);
 }
 
 TreeElement.prototype.revealed = function()
@@ -1009,9 +965,7 @@ TreeElement.prototype.select = function(omitFocus, selectedByUser)
     if (this._listItemNode)
         this._listItemNode.classList.add("selected");
 
-    if (this.onselect)
-        return this.onselect(this, selectedByUser);
-    return false;
+    return this.onselect(selectedByUser);
 }
 
 /**
@@ -1035,16 +989,21 @@ TreeElement.prototype.deselect = function(supressOnDeselect)
     this.treeOutline.selectedTreeElement = null;
     if (this._listItemNode)
         this._listItemNode.classList.remove("selected");
-
-    if (this.ondeselect && !supressOnDeselect)
-        this.ondeselect(this);
     return true;
 }
 
-TreeElement.prototype.onpopulate = function()
-{
-    // Overriden by subclasses.
-}
+// Overridden by subclasses.
+TreeElement.prototype.onpopulate = function() { }
+TreeElement.prototype.onenter = function() { }
+TreeElement.prototype.ondelete = function() { }
+TreeElement.prototype.onspace = function() { }
+TreeElement.prototype.onattach = function() { }
+TreeElement.prototype.onexpand = function() { }
+TreeElement.prototype.oncollapse = function() { }
+TreeElement.prototype.ondblclick = function() { }
+TreeElement.prototype.onreveal = function() { }
+/** @param {boolean} selectedByUser */
+TreeElement.prototype.onselect = function(selectedByUser) { }
 
 /**
  * @param {boolean} skipUnrevealed

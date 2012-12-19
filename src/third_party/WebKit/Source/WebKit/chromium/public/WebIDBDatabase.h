@@ -28,6 +28,7 @@
 
 #include "WebDOMStringList.h"
 #include "WebExceptionCode.h"
+#include "WebIDBMetadata.h"
 #include "platform/WebCommon.h"
 
 namespace WebKit {
@@ -44,20 +45,10 @@ class WebIDBDatabase {
 public:
     virtual ~WebIDBDatabase() { }
 
-    virtual WebString name() const
+    virtual WebIDBMetadata metadata() const
     {
         WEBKIT_ASSERT_NOT_REACHED();
-        return WebString();
-    }
-    virtual WebString version() const
-    {
-        WEBKIT_ASSERT_NOT_REACHED();
-        return WebString();
-    }
-    virtual WebDOMStringList objectStoreNames() const
-    {
-        WEBKIT_ASSERT_NOT_REACHED();
-        return WebDOMStringList();
+        return WebIDBMetadata();
     }
     virtual WebIDBObjectStore* createObjectStore(const WebString&, const WebIDBKeyPath&, bool, const WebIDBTransaction&, WebExceptionCode&)
     {
@@ -73,8 +64,7 @@ public:
         return 0;
     }
     virtual void close() { WEBKIT_ASSERT_NOT_REACHED(); }
-
-    virtual void open(WebIDBDatabaseCallbacks*) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void forceClose() { WEBKIT_ASSERT_NOT_REACHED(); }
 
 protected:
     WebIDBDatabase() { }

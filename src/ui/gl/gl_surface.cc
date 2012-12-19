@@ -75,8 +75,7 @@ bool GLSurface::InitializeOneOff() {
 
 GLSurface::GLSurface() {}
 
-bool GLSurface::Initialize()
-{
+bool GLSurface::Initialize() {
   return true;
 }
 
@@ -85,11 +84,29 @@ bool GLSurface::Resize(const gfx::Size& size) {
   return false;
 }
 
+bool GLSurface::DeferDraws() {
+  return false;
+}
+
+bool GLSurface::DeferSwapBuffers() {
+  return false;
+}
+
 std::string GLSurface::GetExtensions() {
   // Use of GLSurfaceAdapter class means that we can't compare
   // GetCurrent() and this directly.
   DCHECK_EQ(GetCurrent()->GetHandle(), GetHandle());
   return std::string("");
+}
+
+bool GLSurface::HasExtension(const char* name) {
+  std::string extensions = GetExtensions();
+  extensions += " ";
+
+  std::string delimited_name(name);
+  delimited_name += " ";
+
+  return extensions.find(delimited_name) != std::string::npos;
 }
 
 unsigned int GLSurface::GetBackingFrameBufferObject() {
@@ -143,6 +160,19 @@ void GLSurface::SetCurrent(GLSurface* surface) {
   current_surface_.Pointer()->Set(surface);
 }
 
+bool GLSurface::ExtensionsContain(const char* c_extensions, const char* name) {
+  DCHECK(name);
+  if (!c_extensions)
+    return false;
+  std::string extensions(c_extensions);
+  extensions += " ";
+
+  std::string delimited_name(name);
+  delimited_name += " ";
+
+  return extensions.find(delimited_name) != std::string::npos;
+}
+
 GLSurfaceAdapter::GLSurfaceAdapter(GLSurface* surface) : surface_(surface) {}
 
 bool GLSurfaceAdapter::Initialize() {
@@ -155,6 +185,14 @@ void GLSurfaceAdapter::Destroy() {
 
 bool GLSurfaceAdapter::Resize(const gfx::Size& size) {
   return surface_->Resize(size);
+}
+
+bool GLSurfaceAdapter::DeferDraws() {
+  return surface_->DeferDraws();
+}
+
+bool GLSurfaceAdapter::DeferSwapBuffers() {
+  return surface_->DeferSwapBuffers();
 }
 
 bool GLSurfaceAdapter::IsOffscreen() {

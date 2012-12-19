@@ -28,7 +28,6 @@
 #define ElementShadow_h
 
 #include "ContentDistributor.h"
-#include "Element.h"
 #include "ExceptionCode.h"
 #include "ShadowRoot.h"
 #include <wtf/DoublyLinkedList.h>
@@ -44,6 +43,7 @@ class Element;
 class TreeScope;
 
 class ElementShadow {
+   WTF_MAKE_NONCOPYABLE(ElementShadow); WTF_MAKE_FAST_ALLOCATED;
 public:
     ElementShadow();
     ~ElementShadow();
@@ -53,7 +53,7 @@ public:
     ShadowRoot* oldestShadowRoot() const;
 
     void removeAllShadowRoots();
-    void addShadowRoot(Element* shadowHost, PassRefPtr<ShadowRoot>, ExceptionCode&);
+    void addShadowRoot(Element* shadowHost, PassRefPtr<ShadowRoot>, ShadowRoot::ShadowRootType, ExceptionCode&);
 
     void attach();
     void detach();
@@ -62,8 +62,9 @@ public:
     bool needsStyleRecalc();
     void recalcStyle(Node::StyleChange);
 
-    void ensureDistribution();
+    void setValidityUndetermined();
     void invalidateDistribution();
+    void ensureDistribution();
  
     InsertionPoint* insertionPointFor(const Node*) const;
 
@@ -75,7 +76,6 @@ private:
 
     DoublyLinkedList<ShadowRoot> m_shadowRoots;
     ContentDistributor m_distributor;
-    WTF_MAKE_NONCOPYABLE(ElementShadow);
 };
 
 inline ShadowRoot* ElementShadow::youngestShadowRoot() const

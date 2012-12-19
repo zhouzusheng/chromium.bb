@@ -28,6 +28,7 @@
 #define DocumentMarkerController_h
 
 #include "DocumentMarker.h"
+#include "IntRect.h"
 #include "LayoutTypes.h"
 #include <wtf/HashMap.h>
 #include <wtf/Vector.h>
@@ -50,7 +51,7 @@ public:
     void addMarker(Range*, DocumentMarker::MarkerType, const String& description);
     void addMarkerToNode(Node*, unsigned startOffset, unsigned length, DocumentMarker::MarkerType);
     void addMarkerToNode(Node*, unsigned startOffset, unsigned length, DocumentMarker::MarkerType, PassRefPtr<DocumentMarkerDetails>);
-    void addTextMatchMarker(Range*, bool activeMatch);
+    void addTextMatchMarker(const Range*, bool activeMatch);
 
     void copyMarkers(Node* srcNode, unsigned startOffset, int length, Node* dstNode, int delta);
     bool hasMarkers(Range*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());

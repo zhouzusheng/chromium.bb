@@ -27,6 +27,7 @@
 
 #include "CachedImage.h"
 #include "Document.h"
+#include "Font.h"
 #include "GraphicsContext.h"
 #include "RenderLayer.h"
 #include "RenderListItem.h"
@@ -221,7 +222,6 @@ static int toArmenianUnder10000(int number, bool upper, bool addCircumflex, UCha
 
     if (int thousands = number / 1000) {
         if (thousands == 7) {
-            letters[length++] = 0x0548 + lowerOffset;
             letters[length++] = 0x0552 + lowerOffset;
             if (addCircumflex)
                 letters[length++] = 0x0302;

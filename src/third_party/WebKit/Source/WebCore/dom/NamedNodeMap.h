@@ -37,6 +37,7 @@ class Element;
 typedef int ExceptionCode;
 
 class NamedNodeMap {
+    WTF_MAKE_FAST_ALLOCATED;
     friend class Element;
 public:
     static PassOwnPtr<NamedNodeMap> create(Element* element)
@@ -64,7 +65,7 @@ public:
     Element* element() const { return m_element; }
 
 private:
-    NamedNodeMap(Element* element)
+    explicit NamedNodeMap(Element* element)
         : m_element(element)
     {
         // Only supports NamedNodeMaps with Element associated, DocumentType.entities and DocumentType.notations are not supported yet.

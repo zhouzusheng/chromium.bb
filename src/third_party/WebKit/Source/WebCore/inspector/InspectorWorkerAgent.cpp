@@ -52,6 +52,7 @@ static const char autoconnectToWorkers[] = "autoconnectToWorkers";
 };
 
 class InspectorWorkerAgent::WorkerFrontendChannel : public WorkerContextProxy::PageInspector {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit WorkerFrontendChannel(InspectorFrontend* frontend, WorkerContextProxy* proxy)
         : m_frontend(frontend)
@@ -62,6 +63,7 @@ public:
     }
     virtual ~WorkerFrontendChannel()
     {
+        disconnectFromWorkerContext();
     }
 
     int id() const { return m_id; }
@@ -135,20 +137,25 @@ void InspectorWorkerAgent::restore()
 
 void InspectorWorkerAgent::clearFrontend()
 {
-    m_inspectorFrontend = 0;
     m_state->setBoolean(WorkerAgentState::autoconnectToWorkers, false);
-    destroyWorkerFrontendChannels();
+    disable(0);
+    m_inspectorFrontend = 0;
 }
 
-void InspectorWorkerAgent::setWorkerInspectionEnabled(ErrorString*, bool value)
+void InspectorWorkerAgent::enable(ErrorString*)
 {
-    m_state->setBoolean(WorkerAgentState::workerInspectionEnabled, value);
+    m_state->setBoolean(WorkerAgentState::workerInspectionEnabled, true);
     if (!m_inspectorFrontend)
         return;
-    if (value)
-        createWorkerFrontendChannelsForExistingWorkers();
-    else
-        destroyWorkerFrontendChannels();
+    createWorkerFrontendChannelsForExistingWorkers();
+}
+
+void InspectorWorkerAgent::disable(ErrorString*)
+{
+    m_state->setBoolean(WorkerAgentState::workerInspectionEnabled, false);
+    if (!m_inspectorFrontend)
+        return;
+    destroyWorkerFrontendChannels();
 }
 
 void InspectorWorkerAgent::connectToWorker(ErrorString* error, int workerId)

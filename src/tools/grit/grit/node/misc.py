@@ -458,9 +458,12 @@ class GritNode(base.Node):
     from grit.node import empty
     for node in self.inorder():
       if isinstance(node, empty.GroupingNode):
-        filename = os.path.abspath(filename_or_stream)[
-          len(src_root_dir) + 1:]
-        filename = filename.replace('\\', '/')
+        abs_filename = os.path.abspath(filename_or_stream)
+        if abs_filename[:len(src_root_dir)] != src_root_dir:
+          filename = os.path.basename(filename_or_stream)
+        else:
+          filename = abs_filename[len(src_root_dir) + 1:]
+          filename = filename.replace('\\', '/')
 
         if node.attrs['first_id'] != '':
           raise Exception(

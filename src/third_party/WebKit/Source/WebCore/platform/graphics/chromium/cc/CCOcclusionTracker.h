@@ -26,12 +26,12 @@
 #ifndef CCOcclusionTracker_h
 #define CCOcclusionTracker_h
 
+#include "CCLayerIterator.h"
 #include "FloatQuad.h"
 #include "Region.h"
-#include "cc/CCLayerIterator.h"
-#include "cc/CCOverdrawMetrics.h"
 
 namespace WebCore {
+class CCOverdrawMetrics;
 class CCLayerImpl;
 class CCRenderSurface;
 class LayerChromium;
@@ -46,7 +46,7 @@ template<typename LayerType, typename RenderSurfaceType>
 class CCOcclusionTrackerBase {
     WTF_MAKE_NONCOPYABLE(CCOcclusionTrackerBase);
 public:
-    CCOcclusionTrackerBase(IntRect scissorRectInScreenSpace, bool recordMetricsForFrame);
+    CCOcclusionTrackerBase(IntRect rootTargetRect, bool recordMetricsForFrame);
 
     // Called at the beginning of each step in the CCLayerIterator's front-to-back traversal.
     void enterLayer(const CCLayerIteratorPosition<LayerType>&);
@@ -54,29 +54,30 @@ public:
     void leaveLayer(const CCLayerIteratorPosition<LayerType>&);
 
     // Returns true if the given rect in content space for the layer is fully occluded in either screen space or the layer's target surface.
-    bool occluded(const LayerType*, const IntRect& contentRect) const;
+    bool occluded(const LayerType*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface = 0) const;
     // Gives an unoccluded sub-rect of |contentRect| in the content space of the layer. Used when considering occlusion for a layer that paints/draws something.
-    IntRect unoccludedContentRect(const LayerType*, const IntRect& contentRect) const;
+    IntRect unoccludedContentRect(const LayerType*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface = 0) const;
 
-    // Gives an unoccluded sub-rect of |contentRect| in the content space of the surface. Used when considering occlusion for a contributing surface
-    // that is rendering into another target surface.
-    IntRect unoccludedContributingSurfaceContentRect(const RenderSurfaceType*, bool forReplica, const IntRect& contentRect) const;
+    // Gives an unoccluded sub-rect of |contentRect| in the content space of the renderTarget owned by the layer.
+    // Used when considering occlusion for a contributing surface that is rendering into another target.
+    IntRect unoccludedContributingSurfaceContentRect(const LayerType*, bool forReplica, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface = 0) const;
 
     // Report operations for recording overdraw metrics.
     CCOverdrawMetrics& overdrawMetrics() const { return *m_overdrawMetrics.get(); }
 
     // Gives the region of the screen that is not occluded by something opaque.
-    Region computeVisibleRegionInScreen() const { return subtract(Region(m_scissorRectInScreenSpace), m_stack.last().occlusionInScreen); }
+    Region computeVisibleRegionInScreen() const { return subtract(Region(m_rootTargetRect), m_stack.last().occlusionInScreen); }
 
     void setMinimumTrackingSize(const IntSize& size) { m_minimumTrackingSize = size; }
 
-    static IntSize preferredMinimumTrackingSize() { return IntSize(160, 160); }
+    // The following is used for visualization purposes.
+    void setOccludingScreenSpaceRectsContainer(Vector<IntRect>* rects) { m_occludingScreenSpaceRects = rects; }
 
 protected:
     struct StackObject {
-        StackObject() : surface(0) { }
-        StackObject(const RenderSurfaceType* surface) : surface(surface) { }
-        const RenderSurfaceType* surface;
+        StackObject() : target(0) { }
+        StackObject(const LayerType* target) : target(target) { }
+        const LayerType* target;
         Region occlusionInScreen;
         Region occlusionInTarget;
     };
@@ -91,26 +92,29 @@ protected:
     Vector<StackObject, 1> m_stack;
 
     // Allow tests to override this.
-    virtual IntRect layerScissorRectInTargetSurface(const LayerType*) const;
+    virtual IntRect layerClipRectInTarget(const LayerType*) const;
 
 private:
     // Called when visiting a layer representing itself. If the target was not already current, then this indicates we have entered a new surface subtree.
-    void enterTargetRenderSurface(const RenderSurfaceType* newTarget);
+    void enterRenderTarget(const LayerType* newTarget);
 
     // Called when visiting a layer representing a target surface. This indicates we have visited all the layers within the surface, and we may
     // perform any surface-wide operations.
-    void finishedTargetRenderSurface(const LayerType*, const RenderSurfaceType* finishedTarget);
+    void finishedRenderTarget(const LayerType* finishedTarget);
 
     // Called when visiting a layer representing a contributing surface. This indicates that we are leaving our current surface, and
     // entering the new one. We then perform any operations required for merging results from the child subtree into its parent.
-    void leaveToTargetRenderSurface(const RenderSurfaceType* newTarget);
+    void leaveToRenderTarget(const LayerType* newTarget);
 
     // Add the layer's occlusion to the tracked state.
     void markOccludedBehindLayer(const LayerType*);
 
-    IntRect m_scissorRectInScreenSpace;
+    IntRect m_rootTargetRect;
     OwnPtr<CCOverdrawMetrics> m_overdrawMetrics;
     IntSize m_minimumTrackingSize;
+
+    // This is used for visualizing the occlusion tracking process.
+    Vector<IntRect>* m_occludingScreenSpaceRects;
 };
 
 typedef CCOcclusionTrackerBase<LayerChromium, RenderSurfaceChromium> CCOcclusionTracker;

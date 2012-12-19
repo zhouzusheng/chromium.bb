@@ -31,13 +31,13 @@
 #if ENABLE(SQL_DATABASE)
 
 #include "Database.h"
-#include "PlatformString.h"
 #include "SQLTransaction.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/Threading.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -146,7 +146,7 @@ public:
     SQLTransaction* transaction() const { return m_transaction.get(); }
 
 private:
-    DatabaseTransactionTask(PassRefPtr<SQLTransaction>);
+    explicit DatabaseTransactionTask(PassRefPtr<SQLTransaction>);
 
     virtual void doPerformTask();
 #if !LOG_DISABLED

@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_RENDER_TEXT_H_
 #define UI_GFX_RENDER_TEXT_H_
-#pragma once
 
 #include <algorithm>
 #include <cstring>
@@ -17,12 +16,14 @@
 #include "base/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/gfx/shadow_value.h"
+#include "ui/gfx/text_constants.h"
 
 class SkCanvas;
 class SkDrawLooper;
@@ -91,23 +92,6 @@ struct UI_EXPORT StyleRange {
 
 typedef std::vector<StyleRange> StyleRanges;
 
-// TODO(msw): Distinguish between logical character stops and glyph stops?
-// CHARACTER_BREAK cursor movements should stop at neighboring characters.
-// WORD_BREAK cursor movements should stop at the nearest word boundaries.
-// LINE_BREAK cursor movements should stop at the text ends as shown on screen.
-enum BreakType {
-  CHARACTER_BREAK,
-  WORD_BREAK,
-  LINE_BREAK,
-};
-
-// Horizontal text alignment styles.
-enum HorizontalAlignment {
-  ALIGN_LEFT,
-  ALIGN_CENTER,
-  ALIGN_RIGHT,
-};
-
 // RenderText represents an abstract model of styled text and its corresponding
 // visual layout. Support is built in for a cursor, a selection, simple styling,
 // complex scripts, and bi-directional text. Implementations provide mechanisms
@@ -117,7 +101,7 @@ class UI_EXPORT RenderText {
   virtual ~RenderText();
 
   // Creates a platform-specific RenderText instance.
-  static RenderText* CreateRenderText();
+  static RenderText* CreateInstance();
 
   const string16& text() const { return text_; }
   void SetText(const string16& text);
@@ -129,6 +113,7 @@ class UI_EXPORT RenderText {
 
   const FontList& font_list() const { return font_list_; }
   void SetFontList(const FontList& font_list);
+  void SetFont(const Font& font);
 
   // Set the font size to |size| in pixels.
   void SetFontSize(int size);
@@ -167,6 +152,9 @@ class UI_EXPORT RenderText {
 
   bool focused() const { return focused_; }
   void set_focused(bool focused) { focused_ = focused; }
+
+  bool clip_to_display_rect() const { return clip_to_display_rect_; }
+  void set_clip_to_display_rect(bool clip) { clip_to_display_rect_ = clip; }
 
   const StyleRange& default_style() const { return default_style_; }
   void set_default_style(const StyleRange& style) { default_style_ = style; }
@@ -224,9 +212,15 @@ class UI_EXPORT RenderText {
   // Returns true if the local point is over selected text.
   bool IsPointInSelection(const Point& point);
 
-  // Selects no text, all text, or the word at the current cursor position.
+  // Selects no text, keeping the current cursor position and caret affinity.
   void ClearSelection();
-  void SelectAll();
+
+  // Select the entire text range. If |reversed| is true, the range will end at
+  // the logical beginning of the text; this generally shows the leading portion
+  // of text that overflows its display area.
+  void SelectAll(bool reversed);
+
+  // Selects the word at the current cursor position.
   void SelectWord();
 
   const ui::Range& GetCompositionRange() const;
@@ -238,19 +232,24 @@ class UI_EXPORT RenderText {
   // Apply |default_style_| over the entire text range.
   void ApplyDefaultStyle();
 
-  // Returns the dominant direction of the current text.
-  virtual base::i18n::TextDirection GetTextDirection() = 0;
+  // Set the text directionality mode and get the text direction yielded.
+  void SetDirectionalityMode(DirectionalityMode mode);
+  base::i18n::TextDirection GetTextDirection();
 
   // Returns the visual movement direction corresponding to the logical end
   // of the text, considering only the dominant direction returned by
   // |GetTextDirection()|, not the direction of a particular run.
   VisualCursorDirection GetVisualDirectionOfLogicalEnd();
 
-  // Get the size in pixels of the entire string. For the height, this will
+  // Returns the size in pixels of the entire string. For the height, this will
   // return the maximum height among the different fonts in the text runs.
   // Note that this returns the raw size of the string, which does not include
   // the margin area of text shadows.
   virtual Size GetStringSize() = 0;
+
+  // Returns the common baseline of the text. The returned value is the vertical
+  // offset from the top of |display_rect| to the text baseline, in pixels.
+  virtual int GetBaseline() = 0;
 
   void Draw(Canvas* canvas);
 
@@ -427,6 +426,13 @@ class UI_EXPORT RenderText {
   // Horizontal alignment of the text with respect to |display_rect_|.
   HorizontalAlignment horizontal_alignment_;
 
+  // The text directionality mode, defaults to DIRECTIONALITY_FROM_TEXT.
+  DirectionalityMode directionality_mode_;
+
+  // The cached text direction, potentially computed from the text or UI locale.
+  // Use GetTextDirection(), do not use this potentially invalid value directly!
+  base::i18n::TextDirection text_direction_;
+
   // A list of fonts used to render |text_|.
   FontList font_list_;
 
@@ -479,6 +485,12 @@ class UI_EXPORT RenderText {
 
   // The local display area for rendering the text.
   Rect display_rect_;
+
+  // Flag to work around a Skia bug with the PDF path (http://crbug.com/133548)
+  // that results in incorrect clipping when drawing to the document margins.
+  // This field allows disabling clipping to work around the issue.
+  // TODO(asvitkine): Remove this when the underlying Skia bug is fixed.
+  bool clip_to_display_rect_;
 
   // The offset for the text to be drawn, relative to the display area.
   // Get this point with GetUpdatedDisplayOffset (or risk using a stale value).

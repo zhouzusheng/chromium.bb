@@ -4,7 +4,6 @@
 
 #ifndef UI_GL_GL_INTERFACE_H_
 #define UI_GL_GL_INTERFACE_H_
-#pragma once
 
 // This file implements glue to a GL interface so we can mock it for unit
 // testing. It has to be Desktop GL, not GLES2 as it is used to test the service
@@ -273,6 +272,12 @@ class GL_EXPORT GLInterface {
 
   virtual void GetIntegerv(GLenum pname, GLint* params) = 0;
 
+  virtual void GetProgramBinary(GLuint program,
+                                GLsizei bufSize,
+                                GLsizei* length,
+                                GLenum* binaryFormat,
+                                GLvoid* binary) = 0;
+
   virtual void GetProgramiv(GLuint program, GLenum pname, GLint* params) = 0;
 
   // TODO(gman): Implement this
@@ -395,7 +400,16 @@ class GL_EXPORT GLInterface {
 
   virtual void PixelStorei(GLenum pname, GLint param) = 0;
 
+  virtual void PointParameteri(GLenum pname, GLint param) = 0;
+
   virtual void PolygonOffset(GLfloat factor, GLfloat units) = 0;
+
+  virtual void ProgramBinary(GLuint program,
+                             GLenum binaryFormat,
+                             const GLvoid* binary,
+                             GLsizei length) = 0;
+
+  virtual void ProgramParameteri(GLuint program, GLenum pname, GLint value) = 0;
 
   virtual void QueryCounter(GLuint id, GLenum target) = 0;
 

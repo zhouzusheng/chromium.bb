@@ -115,6 +115,7 @@ public:
 
     void reload(bool endToEndReload = false);
     void reloadWithOverrideEncoding(const String& overrideEncoding);
+    void reloadWithOverrideURL(const KURL& overrideUrl, bool endToEndReload = false);
 
     void open(CachedFrameBase&);
     void loadItem(HistoryItem*, FrameLoadType);
@@ -129,7 +130,8 @@ public:
     void stopLoading(UnloadEventPolicy);
     bool closeURL();
     void cancelAndClear();
-    void clear(bool clearWindowProperties = true, bool clearScriptObjects = true, bool clearFrameView = true);
+    // FIXME: clear() is trying to do too many things. We should break it down into smaller functions (ideally with fewer raw Boolean parameters).
+    void clear(Document* newDocument, bool clearWindowProperties = true, bool clearScriptObjects = true, bool clearFrameView = true);
 
     bool isLoading() const;
     bool frameHasLoaded() const;
@@ -219,6 +221,8 @@ public:
     bool checkIfDisplayInsecureContent(SecurityOrigin* context, const KURL&);
     bool checkIfRunInsecureContent(SecurityOrigin* context, const KURL&);
 
+    bool checkIfFormActionAllowedByCSP(const KURL&) const;
+
     Frame* opener();
     void setOpener(Frame*);
 
@@ -282,6 +286,8 @@ public:
 
     NetworkingContext* networkingContext() const;
 
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
 private:
     bool allChildrenAreComplete() const; // immediate children, not all descendants
 
@@ -344,6 +350,8 @@ private:
     void loadURL(const KURL&, const String& referrer, const String& frameName,          // Called by loadFrameRequest, calls loadWithNavigationAction or dispatches to navigation policy delegate
         bool lockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>);                                                         
 
+    void reloadWithRequest(const ResourceRequest&, bool endToEndReload);
+
     bool shouldReload(const KURL& currentURL, const KURL& destinationURL);
 
     void requestFromDelegate(ResourceRequest&, unsigned long& identifier, ResourceError&);
@@ -375,6 +383,9 @@ private:
     mutable SubframeLoader m_subframeLoader;
     mutable FrameLoaderStateMachine m_stateMachine;
     mutable IconController m_icon;
+
+    class FrameProgressTracker;
+    OwnPtr<FrameProgressTracker> m_progressTracker;
 
     FrameState m_state;
     FrameLoadType m_loadType;

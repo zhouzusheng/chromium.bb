@@ -13,12 +13,12 @@
 #include "base/synchronization/lock.h"
 #include "media/base/byte_queue.h"
 #include "media/base/demuxer.h"
+#include "media/base/ranges.h"
 #include "media/base/stream_parser.h"
 #include "media/filters/source_buffer_stream.h"
 
 namespace media {
 
-class ChunkDemuxerClient;
 class ChunkDemuxerStream;
 class FFmpegURLProtocol;
 
@@ -32,9 +32,14 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
     kReachedIdLimit,  // Reached ID limit. We can't handle any more IDs.
   };
 
-  typedef std::vector<std::pair<base::TimeDelta, base::TimeDelta> > Ranges;
+  typedef base::Callback<void(scoped_array<uint8> init_data,
+                              int init_data_size)> NeedKeyCB;
 
-  explicit ChunkDemuxer(ChunkDemuxerClient* client);
+  // |open_cb| Run when Initialize() is called to signal that the demuxer
+  //   is ready to receive media data via AppenData().
+  // |need_key_cb| Run when the demuxer determines that an encryption key is
+  //   needed to decrypt the content.
+  ChunkDemuxer(const base::Closure& open_cb, const NeedKeyCB& need_key_cb);
 
   // Demuxer implementation.
   virtual void Initialize(DemuxerHost* host,
@@ -45,10 +50,10 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   virtual scoped_refptr<DemuxerStream> GetStream(
       DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
-  virtual int GetBitrate() OVERRIDE;
 
   // Methods used by an external object to control this demuxer.
   void StartWaitingForSeek();
+  void CancelPendingSeek();
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
@@ -65,10 +70,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   void RemoveId(const std::string& id);
 
   // Gets the currently buffered ranges for the specified ID.
-  // Returns true if data is buffered & |ranges_out| is set to the
-  // time ranges currently buffered.
-  // Returns false if no data is buffered.
-  bool GetBufferedRanges(const std::string& id, Ranges* ranges_out) const;
+  Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
 
   // Appends media data to the source buffer associated with |id|. Returns
   // false if this method is called in an invalid state.
@@ -77,6 +79,16 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // Aborts parsing the current segment and reset the parser to a state where
   // it can accept a new segment.
   void Abort(const std::string& id);
+
+  // Notifies the demuxer that the duration of the media has changed to
+  // |duration|.
+  void SetDuration(base::TimeDelta duration);
+
+  // Sets a time |offset| to be applied to subsequent buffers appended to the
+  // source buffer assicated with |id|. Returns true if the offset is set
+  // properly, false if the offset cannot be applied because we're in the
+  // middle of parsing a media segment.
+  bool SetTimestampOffset(const std::string& id, base::TimeDelta offset);
 
   // Signals an EndOfStream request.
   // Returns false if called in an unexpected state or if there is a gap between
@@ -120,34 +132,61 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   bool OnNeedKey(scoped_array<uint8> init_data, int init_data_size);
   void OnNewMediaSegment(const std::string& source_id,
                          base::TimeDelta start_timestamp);
+  void OnEndOfMediaSegment(const std::string& source_id);
 
-  // Helper functions for calculating GetBufferedRanges().
-  bool CopyIntoRanges(
-      const SourceBufferStream::TimespanList& timespans,
-      Ranges* ranges_out) const;
-  void AddIntersectionRange(
-      SourceBufferStream::Timespan timespan_a,
-      SourceBufferStream::Timespan timespan_b,
-      bool last_range_after_ended,
-      Ranges* ranges_out) const;
+  // Computes the intersection between the video & audio
+  // buffered ranges.
+  Ranges<base::TimeDelta> ComputeIntersection() const;
+
+  // Applies |time_offset| to the timestamps of |buffers|.
+  void AdjustBufferTimestamps(const StreamParser::BufferQueue& buffers,
+                              base::TimeDelta timestamp_offset);
+
+  // Returns true if |source_id| is valid, false otherwise.
+  bool IsValidId(const std::string& source_id) const;
+
+  // Increases |duration_| if the newly appended |buffers| exceed the current
+  // |duration_|. The |duration_| is set to the end buffered timestamp of
+  // |stream|.
+  void IncreaseDurationIfNecessary(
+      const StreamParser::BufferQueue& buffers,
+      const scoped_refptr<ChunkDemuxerStream>& stream);
+
+  // Decreases |duration_| if the buffered region is less than |duration_| when
+  // EndOfStream() is called.
+  void DecreaseDurationIfNecessary();
+
+  // Sets |duration_| to |new_duration| and notifies |host_|.
+  void UpdateDuration(base::TimeDelta new_duration);
+
+  // Returns the ranges representing the buffered data in the demuxer.
+  Ranges<base::TimeDelta> GetBufferedRanges() const;
 
   mutable base::Lock lock_;
   State state_;
 
   DemuxerHost* host_;
-  ChunkDemuxerClient* client_;
+  base::Closure open_cb_;
+  NeedKeyCB need_key_cb_;
+
   PipelineStatusCB init_cb_;
   PipelineStatusCB seek_cb_;
 
   scoped_refptr<ChunkDemuxerStream> audio_;
   scoped_refptr<ChunkDemuxerStream> video_;
 
-  int64 buffered_bytes_;
-
   base::TimeDelta duration_;
 
   typedef std::map<std::string, StreamParser*> StreamParserMap;
   StreamParserMap stream_parser_map_;
+
+  // Contains state belonging to a source id.
+  struct SourceInfo {
+    base::TimeDelta timestamp_offset;
+    bool can_update_offset;
+  };
+  typedef std::map<std::string, SourceInfo> SourceInfoMap;
+  SourceInfoMap source_info_map_;
 
   // Used to ensure that (1) config data matches the type and codec provided in
   // AddId(), (2) only 1 audio and 1 video sources are added, and (3) ids may be

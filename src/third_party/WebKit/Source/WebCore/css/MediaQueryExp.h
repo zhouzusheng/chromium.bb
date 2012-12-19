@@ -72,6 +72,8 @@ public:
 
     PassOwnPtr<MediaQueryExp> copy() const { return adoptPtr(new MediaQueryExp(*this)); }
 
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
 private:
     MediaQueryExp(const AtomicString& mediaFeature, CSSParserValueList* values);
 

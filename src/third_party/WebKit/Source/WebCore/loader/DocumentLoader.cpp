@@ -48,12 +48,13 @@
 #include "Logging.h"
 #include "MainResourceLoader.h"
 #include "Page.h"
-#include "PlatformString.h"
 #include "Settings.h"
 #include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/Assertions.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/WTFString.h>
 #include <wtf/unicode/Unicode.h>
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
@@ -335,7 +336,10 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
             m_frame->document()->setBaseURLOverride(m_archive->mainResource()->url());
 #endif
 
-        frameLoader()->receivedFirstData();
+        // Call receivedFirstData() exactly once per load. We should only reach this point multiple times
+        // for multipart loads, and isReplacing() will be true after the first time.
+        if (!m_mainResourceLoader || !m_mainResourceLoader->isLoadingMultipartContent() || !frameLoader()->isReplacing())
+            frameLoader()->receivedFirstData();
 
         bool userChosen = true;
         String encoding = overrideEncoding();
@@ -353,6 +357,31 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
     m_writer.addData(bytes, length);
 }
 
+void DocumentLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
+    info.addMember(m_frame);
+    info.addMember(m_mainResourceLoader);
+    info.addInstrumentedHashSet(m_subresourceLoaders);
+    info.addInstrumentedHashSet(m_multipartSubresourceLoaders);
+    info.addInstrumentedHashSet(m_plugInStreamLoaders);
+    info.addMember(m_substituteData);
+    info.addMember(m_pageTitle.string());
+    info.addMember(m_overrideEncoding);
+    info.addVector(m_responses);
+    info.addMember(m_originalRequest);
+    info.addMember(m_originalRequestCopy);
+    info.addMember(m_request);
+    info.addMember(m_response);
+    info.addMember(m_lastCheckedRequest);
+    info.addInstrumentedVector(m_responses);
+    info.addHashMap(m_pendingSubstituteResources);
+    info.addInstrumentedHashSet(m_resourcesClientKnowsAbout);
+    info.addVector(m_resourcesLoadedFromMemoryCacheForClientNotification);
+    info.addMember(m_clientRedirectSourceForHistory);
+    info.addMember(m_mainResourceData);
+}
+
 bool DocumentLoader::doesProgressiveLoad(const String& MIMEType) const
 {
     return !frameLoader()->isReplacing() || MIMEType == "text/html";
@@ -366,7 +395,7 @@ void DocumentLoader::receivedData(const char* data, int length)
 
 void DocumentLoader::setupForReplaceByMIMEType(const String& newMIMEType)
 {
-    if (!m_gotFirstByte)
+    if (!mainResourceData())
         return;
     
     String oldMIMEType = m_response.mimeType();
@@ -401,9 +430,7 @@ void DocumentLoader::checkLoadComplete()
     if (!m_frame || isLoading())
         return;
     ASSERT(this == frameLoader()->activeDocumentLoader());
-
-    if (DOMWindow* window = m_frame->existingDOMWindow())
-        window->finishedLoading();
+    m_frame->document()->domWindow()->finishedLoading();
 }
 
 void DocumentLoader::setFrame(Frame* frame)

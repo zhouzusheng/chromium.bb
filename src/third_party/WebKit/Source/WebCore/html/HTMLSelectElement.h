@@ -34,7 +34,6 @@
 namespace WebCore {
 
 class HTMLOptionElement;
-class HTMLOptionsCollection;
 
 class HTMLSelectElement : public HTMLFormControlElementWithState {
 public:
@@ -63,11 +62,13 @@ public:
     String value() const;
     void setValue(const String&);
 
-    HTMLOptionsCollection* options();
+    PassRefPtr<HTMLOptionsCollection> options();
+    PassRefPtr<HTMLCollection> selectedOptions();
 
     void optionElementChildrenChanged();
 
     void setRecalcListItems();
+    void invalidateSelectedItems();
     void updateListItemSelectedStates();
 
     const Vector<HTMLElement*>& listItems() const;
@@ -120,8 +121,8 @@ private:
     virtual bool isEnumeratable() const { return true; }
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual bool saveFormControlState(String& value) const;
-    virtual void restoreFormControlState(const String&);
+    virtual FormControlState saveFormControlState() const OVERRIDE;
+    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
 
     virtual void parseAttribute(const Attribute&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -164,6 +165,7 @@ private:
     bool platformHandleKeydownEvent(KeyboardEvent*);
     void listBoxDefaultEventHandler(Event*);
     void setOptionsChangedOnRenderer();
+    size_t searchOptionsForValue(const String&, size_t listIndexStart, size_t listIndexEnd) const;
 
     enum SkipDirection {
         SkipBackwards = -1,
@@ -177,8 +179,7 @@ private:
     int nextSelectableListIndexPageAway(int startIndex, SkipDirection) const;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-
-    OwnPtr<HTMLOptionsCollection> m_optionsCollection;
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
     mutable Vector<HTMLElement*> m_listItems;
@@ -197,25 +198,24 @@ private:
     mutable bool m_shouldRecalcListItems;
 };
 
-HTMLSelectElement* toHTMLSelectElement(Node*);
-const HTMLSelectElement* toHTMLSelectElement(const Node*);
-void toHTMLSelectElement(const HTMLSelectElement*); // This overload will catch anyone doing an unnecessary cast.
-
-#ifdef NDEBUG
-
-// The debug versions of these, with assertions, are not inlined.
+inline bool isHTMLSelectElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::selectTag);
+}
 
 inline HTMLSelectElement* toHTMLSelectElement(Node* node)
 {
+    ASSERT(!node || isHTMLSelectElement(node));
     return static_cast<HTMLSelectElement*>(node);
 }
 
 inline const HTMLSelectElement* toHTMLSelectElement(const Node* node)
 {
+    ASSERT(!node || isHTMLSelectElement(node));
     return static_cast<const HTMLSelectElement*>(node);
 }
 
-#endif
+void toHTMLSelectElement(const HTMLSelectElement*); // This overload will catch anyone doing an unnecessary cast.
 
 } // namespace
 

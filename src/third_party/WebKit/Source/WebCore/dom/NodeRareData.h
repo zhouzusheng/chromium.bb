@@ -25,10 +25,10 @@
 #include "ChildNodeList.h"
 #include "DOMSettableTokenList.h"
 #include "DynamicNodeList.h"
+#include "MutationObserver.h"
 #include "MutationObserverRegistration.h"
 #include "QualifiedName.h"
 #include "TagNodeList.h"
-#include "WebKitMutationObserver.h"
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -129,7 +129,7 @@ public:
         return m_atomicNameCaches.isEmpty() && m_nameCaches.isEmpty() && m_tagNodeListCacheNS.isEmpty();
     }
 
-    void adoptTreeScope(TreeScope* oldTreeScope, TreeScope* newTreeScope, Document* oldDocument, Document* newDocument)
+    void adoptTreeScope(Document* oldDocument, Document* newDocument)
     {
         invalidateCaches();
 
@@ -137,25 +137,25 @@ public:
             NodeListAtomicNameCacheMap::const_iterator atomicNameCacheEnd = m_atomicNameCaches.end();
             for (NodeListAtomicNameCacheMap::const_iterator it = m_atomicNameCaches.begin(); it != atomicNameCacheEnd; ++it) {
                 DynamicSubtreeNodeList* list = it->second;
-                if (list->isRootedAtDocument()) {
-                    oldDocument->unregisterDynamicSubtreeNodeList(list);
-                    newDocument->registerDynamicSubtreeNodeList(list);
-                }
+                oldDocument->unregisterNodeListCache(list);
+                newDocument->registerNodeListCache(list);
             }
 
             NodeListNameCacheMap::const_iterator nameCacheEnd = m_nameCaches.end();
             for (NodeListNameCacheMap::const_iterator it = m_nameCaches.begin(); it != nameCacheEnd; ++it) {
                 DynamicSubtreeNodeList* list = it->second;
-                if (list->isRootedAtDocument()) {
-                    oldDocument->unregisterDynamicSubtreeNodeList(list);
-                    newDocument->registerDynamicSubtreeNodeList(list);
-                }
+                oldDocument->unregisterNodeListCache(list);
+                newDocument->registerNodeListCache(list);
+            }
+
+            TagNodeListCacheNS::const_iterator tagEnd = m_tagNodeListCacheNS.end();
+            for (TagNodeListCacheNS::const_iterator it = m_tagNodeListCacheNS.begin(); it != tagEnd; ++it) {
+                DynamicSubtreeNodeList* list = it->second;
+                ASSERT(!list->isRootedAtDocument());
+                oldDocument->unregisterNodeListCache(list);
+                newDocument->registerNodeListCache(list);
             }
         }
-
-        if (oldTreeScope)
-            oldTreeScope->removeNodeListCache();
-        newTreeScope->addNodeListCache();
     }
 
 private:
@@ -186,9 +186,6 @@ public:
         , m_tabIndexWasSetExplicitly(false)
         , m_isFocused(false)
         , m_needsFocusAppearanceUpdateSoonAfterAttach(false)
-#if ENABLE(STYLE_SCOPED)
-        , m_numberOfScopedHTMLStyleChildren(0)
-#endif
     {
     }
 
@@ -215,13 +212,17 @@ public:
     void clearNodeLists() { m_nodeLists.clear(); }
     void setNodeLists(PassOwnPtr<NodeListsNodeData> lists) { m_nodeLists = lists; }
     NodeListsNodeData* nodeLists() const { return m_nodeLists.get(); }
-    NodeListsNodeData* ensureNodeLists(Node* node)
+    NodeListsNodeData* ensureNodeLists()
     {
         if (!m_nodeLists)
-            createNodeLists(node);
+            setNodeLists(NodeListsNodeData::create());
         return m_nodeLists.get();
     }
-    void clearChildNodeListCache();
+    void clearChildNodeListCache()
+    {
+        if (m_childNodeList)
+            m_childNodeList->invalidateCache();
+    }
 
     ChildNodeList* childNodeList() const { return m_childNodeList; }
     void setChildNodeList(ChildNodeList* list) { m_childNodeList = list; }
@@ -305,38 +306,6 @@ public:
 
         m_itemType->setValue(value);
     }
-
-    HTMLPropertiesCollection* properties(Node* node)
-    {
-        if (!m_properties)
-            m_properties = HTMLPropertiesCollection::create(node);
-
-        return m_properties.get();
-    }
-#endif
-
-#if ENABLE(STYLE_SCOPED)
-    void registerScopedHTMLStyleChild()
-    {
-        ++m_numberOfScopedHTMLStyleChildren;
-    }
-
-    void unregisterScopedHTMLStyleChild()
-    {
-        ASSERT(m_numberOfScopedHTMLStyleChildren > 0);
-        if (m_numberOfScopedHTMLStyleChildren > 0)
-            --m_numberOfScopedHTMLStyleChildren;
-    }
-
-    bool hasScopedHTMLStyleChild() const
-    {
-        return m_numberOfScopedHTMLStyleChildren;
-    }
-
-    size_t numberOfScopedHTMLStyleChildren() const
-    {
-        return m_numberOfScopedHTMLStyleChildren;
-    }
 #endif
 
     bool isFocused() const { return m_isFocused; }
@@ -348,7 +317,6 @@ protected:
     void setNeedsFocusAppearanceUpdateSoonAfterAttach(bool needs) { m_needsFocusAppearanceUpdateSoonAfterAttach = needs; }
 
 private:
-    void createNodeLists(Node*);
 
     TreeScope* m_treeScope;
     OwnPtr<NodeListsNodeData> m_nodeLists;
@@ -368,11 +336,6 @@ private:
     mutable RefPtr<DOMSettableTokenList> m_itemProp;
     mutable RefPtr<DOMSettableTokenList> m_itemRef;
     mutable RefPtr<DOMSettableTokenList> m_itemType;
-    mutable OwnPtr<HTMLPropertiesCollection> m_properties;
-#endif
-
-#if ENABLE(STYLE_SCOPED)
-    size_t m_numberOfScopedHTMLStyleChildren;
 #endif
 };
 

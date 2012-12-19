@@ -29,6 +29,7 @@
 #include "HTMLOListElement.h"
 #include "RenderListMarker.h"
 #include "RenderView.h"
+#include "StyleInheritedData.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringBuilder.h>
 
@@ -74,6 +75,20 @@ void RenderListItem::willBeDestroyed()
         m_marker = 0;
     }
     RenderBlock::willBeDestroyed();
+}
+
+void RenderListItem::insertedIntoTree()
+{
+    RenderBlock::insertedIntoTree();
+
+    updateListMarkerNumbers();
+}
+
+void RenderListItem::willBeRemovedFromTree()
+{
+    RenderBlock::willBeRemovedFromTree();
+
+    updateListMarkerNumbers();
 }
 
 static bool isList(Node* node)
@@ -189,7 +204,7 @@ static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* ma
         if (currChild->isInline() && (!currChild->isRenderInline() || curr->generatesLineBoxesForInlineChild(currChild)))
             return curr;
 
-        if (currChild->isFloating() || currChild->isPositioned())
+        if (currChild->isFloating() || currChild->isOutOfFlowPositioned())
             continue;
 
         if (currChild->isTable() || !currChild->isRenderBlock() || (currChild->isBox() && toRenderBox(currChild)->isWritingModeRoot()))

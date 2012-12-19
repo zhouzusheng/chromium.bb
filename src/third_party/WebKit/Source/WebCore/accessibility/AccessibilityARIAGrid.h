@@ -40,10 +40,12 @@ class AccessibilityTableHeaderContainer;
 class AccessibilityARIAGrid : public AccessibilityTable {
     
 private:
-    AccessibilityARIAGrid(RenderObject*);
+    explicit AccessibilityARIAGrid(RenderObject*);
 public:
     static PassRefPtr<AccessibilityARIAGrid> create(RenderObject*);
     virtual ~AccessibilityARIAGrid();
+
+    virtual void init();
     
     virtual bool isAriaTable() const { return true; }    
     

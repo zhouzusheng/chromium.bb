@@ -109,6 +109,8 @@ static String unavailablePluginReplacementText(RenderEmbeddedObject::PluginUnava
         return missingPluginText();
     case RenderEmbeddedObject::PluginCrashed:
         return crashedPluginText();
+    case RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy:
+        return blockedPluginByContentSecurityPolicyText();
     case RenderEmbeddedObject::InsecurePluginVersion:
         return insecurePluginVersionText();
     }
@@ -228,8 +230,8 @@ void RenderEmbeddedObject::layout()
 {
     ASSERT(needsLayout());
 
-    computeLogicalWidth();
-    computeLogicalHeight();
+    updateLogicalWidth();
+    updateLogicalHeight();
 
     RenderPart::layout();
 
@@ -263,16 +265,16 @@ void RenderEmbeddedObject::viewCleared()
     }
 }
 
-bool RenderEmbeddedObject::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool RenderEmbeddedObject::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    if (!RenderPart::nodeAtPoint(request, result, pointInContainer, accumulatedOffset, hitTestAction))
+    if (!RenderPart::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
         return false;
 
     if (!widget() || !widget()->isPluginViewBase())
         return true;
 
     PluginViewBase* view = static_cast<PluginViewBase*>(widget());
-    IntPoint roundedPoint = roundedIntPoint(pointInContainer);
+    IntPoint roundedPoint = locationInContainer.roundedPoint();
 
     if (Scrollbar* horizontalScrollbar = view->horizontalScrollbar()) {
         if (horizontalScrollbar->shouldParticipateInHitTesting() && horizontalScrollbar->frameRect().contains(roundedPoint)) {

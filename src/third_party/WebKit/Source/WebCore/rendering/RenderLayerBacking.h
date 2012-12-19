@@ -74,8 +74,8 @@ public:
     GraphicsLayer* graphicsLayer() const { return m_graphicsLayer.get(); }
 
     // Layer to clip children
-    bool hasClippingLayer() const { return m_clippingLayer != 0; }
-    GraphicsLayer* clippingLayer() const { return m_clippingLayer.get(); }
+    bool hasClippingLayer() const { return (m_containmentLayer && !m_usingTiledCacheLayer); }
+    GraphicsLayer* clippingLayer() const { return !m_usingTiledCacheLayer ? m_containmentLayer.get() : 0; }
 
     // Layer to get clipped by ancestor
     bool hasAncestorClippingLayer() const { return m_ancestorClippingLayer != 0; }
@@ -83,10 +83,14 @@ public:
 
     bool hasContentsLayer() const { return m_foregroundLayer != 0; }
     GraphicsLayer* foregroundLayer() const { return m_foregroundLayer.get(); }
+
+    bool hasScrollingLayer() const { return m_scrollingLayer; }
+    GraphicsLayer* scrollingLayer() const { return m_scrollingLayer.get(); }
+    GraphicsLayer* scrollingContentsLayer() const { return m_scrollingContentsLayer.get(); }
     
     bool hasMaskLayer() const { return m_maskLayer != 0; }
 
-    GraphicsLayer* parentForSublayers() const { return m_clippingLayer ? m_clippingLayer.get() : m_graphicsLayer.get(); }
+    GraphicsLayer* parentForSublayers() const;
     GraphicsLayer* childForSuperlayers() const { return m_ancestorClippingLayer ? m_ancestorClippingLayer.get() : m_graphicsLayer.get(); }
 
     // RenderLayers with backing normally short-circuit paintLayer() because
@@ -127,9 +131,11 @@ public:
     void updateCompositedBounds();
     
     void updateAfterWidgetResize();
+    void positionOverflowControlsLayers(const IntSize& offsetFromRoot);
 
     // GraphicsLayerClient interface
     virtual bool shouldUseTileCache(const GraphicsLayer*) const;
+    virtual bool usingTileCache(const GraphicsLayer*) const { return m_usingTiledCacheLayer; }
     virtual void notifyAnimationStarted(const GraphicsLayer*, double startTime);
     virtual void notifySyncRequired(const GraphicsLayer*);
 
@@ -160,10 +166,14 @@ public:
 #endif
 
     // Return an estimate of the backing store area (in pixels) allocated by this object's GraphicsLayers.
-    double backingStoreArea() const;
+    double backingStoreMemoryEstimate() const;
 
     String nameForLayer() const;
     
+#if ENABLE(CSS_COMPOSITING)
+    void setBlendMode(BlendMode);
+#endif
+
 private:
     void createPrimaryGraphicsLayer();
     void destroyGraphicsLayers();
@@ -181,6 +191,7 @@ private:
     bool requiresHorizontalScrollbarLayer() const;
     bool requiresVerticalScrollbarLayer() const;
     bool requiresScrollCornerLayer() const;
+    bool updateScrollingLayers(bool scrollingLayers);
 
     GraphicsLayerPaintingPhase paintingPhaseForPrimaryLayer() const;
     
@@ -190,12 +201,14 @@ private:
     // Result is perspective origin in pixels.
     FloatPoint computePerspectiveOrigin(const IntRect& borderBox) const;
 
-    void updateLayerOpacity(const RenderStyle*);
-    void updateLayerTransform(const RenderStyle*);
+    void updateOpacity(const RenderStyle*);
+    void updateTransform(const RenderStyle*);
 #if ENABLE(CSS_FILTERS)
-    void updateLayerFilters(const RenderStyle*);
+    void updateFilters(const RenderStyle*);
 #endif
-
+#if ENABLE(CSS_COMPOSITING)
+    void updateLayerBlendMode(const RenderStyle*);
+#endif
     // Return the opacity value that this layer should use for compositing.
     float compositingOpacity(float rendererOpacity) const;
     
@@ -220,6 +233,9 @@ private:
 
     bool shouldClipCompositedBounds() const;
 
+    bool hasTileCacheFlatteningLayer() const { return (m_containmentLayer && m_usingTiledCacheLayer); }
+    GraphicsLayer* tileCacheFlatteningLayer() const { return m_usingTiledCacheLayer ? m_containmentLayer.get() : 0; }
+
     void paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect, PaintBehavior, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
 
     static CSSPropertyID graphicsLayerToCSSProperty(AnimatedPropertyID);
@@ -230,12 +246,15 @@ private:
     OwnPtr<GraphicsLayer> m_ancestorClippingLayer; // only used if we are clipped by an ancestor which is not a stacking context
     OwnPtr<GraphicsLayer> m_graphicsLayer;
     OwnPtr<GraphicsLayer> m_foregroundLayer;       // only used in cases where we need to draw the foreground separately
-    OwnPtr<GraphicsLayer> m_clippingLayer;         // only used if we have clipping on a stacking context, with compositing children
+    OwnPtr<GraphicsLayer> m_containmentLayer; // Only used if we have clipping on a stacking context with compositing children, or if the layer has a tile cache.
     OwnPtr<GraphicsLayer> m_maskLayer;             // only used if we have a mask
 
     OwnPtr<GraphicsLayer> m_layerForHorizontalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
     OwnPtr<GraphicsLayer> m_layerForScrollCorner;
+
+    OwnPtr<GraphicsLayer> m_scrollingLayer; // only used if the layer is using composited scrolling.
+    OwnPtr<GraphicsLayer> m_scrollingContentsLayer; // only used if the layer is using composited scrolling.
 
     IntRect m_compositedBounds;
 
@@ -246,6 +265,8 @@ private:
 #if ENABLE(CSS_FILTERS)
     bool m_canCompositeFilters;
 #endif
+
+    static bool m_creatingPrimaryGraphicsLayer;
 };
 
 } // namespace WebCore

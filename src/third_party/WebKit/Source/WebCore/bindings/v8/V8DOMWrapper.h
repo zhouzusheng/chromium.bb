@@ -33,18 +33,17 @@
 
 #include "DOMDataStore.h"
 #include "Event.h"
-#include "IsolatedWorld.h"
 #include "Node.h"
 #include "NodeFilter.h"
-#include "PlatformString.h"
 #include "V8CustomXPathNSResolver.h"
 #include "V8DOMMap.h"
-#include "V8IsolatedContext.h"
+#include "V8DOMWindowShell.h"
 #include "V8Utilities.h"
 #include "WrapperTypeInfo.h"
 #include <v8.h>
 #include <wtf/MainThread.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -52,10 +51,8 @@ namespace WebCore {
     class EventTarget;
     class Frame;
     class Node;
-    class V8BindingPerContextData;
-    class V8Proxy;
+    class V8PerContextData;
     class WorkerContext;
-    class XPathResolver;
 
     enum ListenerLookupType {
         ListenerFindOnly,
@@ -84,57 +81,44 @@ namespace WebCore {
 
         static WrapperTypeInfo* domWrapperType(v8::Handle<v8::Object>);
 
-        static v8::Handle<v8::Value> convertEventTargetToV8Object(PassRefPtr<EventTarget> eventTarget, v8::Isolate* isolate = 0)
+        static v8::Handle<v8::Value> convertEventTargetToV8Object(PassRefPtr<EventTarget> eventTarget, v8::Handle<v8::Object> creationContext = v8::Handle<v8::Object>(), v8::Isolate* isolate = 0)
         {
-            return convertEventTargetToV8Object(eventTarget.get(), isolate);
+            return convertEventTargetToV8Object(eventTarget.get(), creationContext, isolate);
         }
 
-        static v8::Handle<v8::Value> convertEventTargetToV8Object(EventTarget*, v8::Isolate* = 0);
+        static v8::Handle<v8::Value> convertEventTargetToV8Object(EventTarget*, v8::Handle<v8::Object> creationContext = v8::Handle<v8::Object>(), v8::Isolate* = 0);
 
         static PassRefPtr<EventListener> getEventListener(v8::Local<v8::Value> value, bool isAttribute, ListenerLookupType lookup);
-
-        // XPath-related utilities
-        static RefPtr<XPathNSResolver> getXPathNSResolver(v8::Handle<v8::Value> value, V8Proxy* proxy = 0);
 
         // Wrap JS node filter in C++.
         static PassRefPtr<NodeFilter> wrapNativeNodeFilter(v8::Handle<v8::Value>);
 
-        static v8::Local<v8::Function> constructorForType(WrapperTypeInfo*, DOMWindow*);
-#if ENABLE(WORKERS)
-        static v8::Local<v8::Function> constructorForType(WrapperTypeInfo*, WorkerContext*);
-#endif
-
-        template<typename T> static void setJSWrapperForDOMObject(PassRefPtr<T>, v8::Persistent<v8::Object>, v8::Isolate* = 0);
-        template<typename T> static void setJSWrapperForActiveDOMObject(PassRefPtr<T>, v8::Persistent<v8::Object>, v8::Isolate* = 0);
-        static void setJSWrapperForDOMNode(PassRefPtr<Node>, v8::Persistent<v8::Object>, v8::Isolate* = 0);
-        static void setJSWrapperForActiveDOMNode(PassRefPtr<Node>, v8::Persistent<v8::Object>, v8::Isolate* = 0);
+        template<typename T>
+        static v8::Persistent<v8::Object> setJSWrapperForDOMObject(PassRefPtr<T>, v8::Handle<v8::Object>, v8::Isolate* = 0);
+        template<typename T>
+        static v8::Persistent<v8::Object> setJSWrapperForActiveDOMObject(PassRefPtr<T>, v8::Handle<v8::Object>, v8::Isolate* = 0);
+        static v8::Persistent<v8::Object> setJSWrapperForDOMNode(PassRefPtr<Node>, v8::Handle<v8::Object>, v8::Isolate* = 0);
+        static v8::Persistent<v8::Object> setJSWrapperForActiveDOMNode(PassRefPtr<Node>, v8::Handle<v8::Object>, v8::Isolate* = 0);
 
         static bool isValidDOMObject(v8::Handle<v8::Value>);
 
         // Check whether a V8 value is a wrapper of type |classType|.
         static bool isWrapperOfType(v8::Handle<v8::Value>, WrapperTypeInfo*);
 
-        // Proper object lifetime support.
-        //
-        // Helper functions to make sure the child object stays alive
-        // while the parent is alive. Using the name more than once
-        // overwrites previous references making it possible to free
-        // old children.
         static void setNamedHiddenReference(v8::Handle<v8::Object> parent, const char* name, v8::Handle<v8::Value> child);
-        static void setNamedHiddenWindowReference(Frame*, const char*, v8::Handle<v8::Value>);
 
-        static v8::Local<v8::Object> instantiateV8Object(V8Proxy* proxy, WrapperTypeInfo*, void* impl);
+        static v8::Local<v8::Object> instantiateV8Object(Document*, WrapperTypeInfo*, void*);
 
         static v8::Handle<v8::Object> getCachedWrapper(Node* node)
         {
             ASSERT(isMainThread());
-            if (LIKELY(!IsolatedWorld::count())) {
+            if (LIKELY(!DOMWrapperWorld::isolatedWorldsExist())) {
                 v8::Persistent<v8::Object>* wrapper = node->wrapper();
                 if (LIKELY(!!wrapper))
                     return *wrapper;
             }
 
-            V8IsolatedContext* context = V8IsolatedContext::getEntered();
+            V8DOMWindowShell* context = V8DOMWindowShell::getEntered();
             if (LIKELY(!context)) {
                 v8::Persistent<v8::Object>* wrapper = node->wrapper();
                 if (!wrapper)
@@ -145,27 +129,26 @@ namespace WebCore {
             DOMNodeMapping& domNodeMap = node->isActiveNode() ? store->activeDomNodeMap() : store->domNodeMap();
             return domNodeMap.get(node);
         }
-    private:
-        static V8BindingPerContextData* perContextData(V8Proxy*);
-#if ENABLE(WORKERS)
-        static V8BindingPerContextData* perContextData(WorkerContext*);
-#endif
     };
 
     template<typename T>
-    void V8DOMWrapper::setJSWrapperForDOMObject(PassRefPtr<T> object, v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate)
+    v8::Persistent<v8::Object> V8DOMWrapper::setJSWrapperForDOMObject(PassRefPtr<T> object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
     {
-        ASSERT(maybeDOMWrapper(wrapper));
-        ASSERT(!domWrapperType(wrapper)->toActiveDOMObjectFunction);
-        getDOMObjectMap(isolate).set(object.leakRef(), wrapper);
+        v8::Persistent<v8::Object> wrapperHandle = v8::Persistent<v8::Object>::New(wrapper);
+        ASSERT(maybeDOMWrapper(wrapperHandle));
+        ASSERT(!domWrapperType(wrapperHandle)->toActiveDOMObjectFunction);
+        getDOMObjectMap(isolate).set(object.leakRef(), wrapperHandle);
+        return wrapperHandle;
     }
 
     template<typename T>
-    void V8DOMWrapper::setJSWrapperForActiveDOMObject(PassRefPtr<T> object, v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate)
+    v8::Persistent<v8::Object> V8DOMWrapper::setJSWrapperForActiveDOMObject(PassRefPtr<T> object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
     {
-        ASSERT(maybeDOMWrapper(wrapper));
-        ASSERT(domWrapperType(wrapper)->toActiveDOMObjectFunction);
-        getActiveDOMObjectMap(isolate).set(object.leakRef(), wrapper);
+        v8::Persistent<v8::Object> wrapperHandle = v8::Persistent<v8::Object>::New(wrapper);
+        ASSERT(maybeDOMWrapper(wrapperHandle));
+        ASSERT(domWrapperType(wrapperHandle)->toActiveDOMObjectFunction);
+        getActiveDOMObjectMap(isolate).set(object.leakRef(), wrapperHandle);
+        return wrapperHandle;
     }
 }
 

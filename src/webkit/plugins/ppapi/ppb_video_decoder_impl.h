@@ -39,13 +39,16 @@ class PPB_VideoDecoder_Impl : public ::ppapi::PPB_VideoDecoder_Shared,
                             PP_VideoDecoder_Profile profile);
 
   // PPB_VideoDecoder_API implementation.
-  virtual int32_t Decode(const PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
-                         PP_CompletionCallback callback) OVERRIDE;
+  virtual int32_t Decode(
+      const PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
+      scoped_refptr< ::ppapi::TrackedCallback> callback) OVERRIDE;
   virtual void AssignPictureBuffers(
       uint32_t no_of_buffers, const PP_PictureBuffer_Dev* buffers) OVERRIDE;
   virtual void ReusePictureBuffer(int32_t picture_buffer_id) OVERRIDE;
-  virtual int32_t Flush(PP_CompletionCallback callback) OVERRIDE;
-  virtual int32_t Reset(PP_CompletionCallback callback) OVERRIDE;
+  virtual int32_t Flush(
+      scoped_refptr< ::ppapi::TrackedCallback> callback) OVERRIDE;
+  virtual int32_t Reset(
+      scoped_refptr< ::ppapi::TrackedCallback> callback) OVERRIDE;
   virtual void Destroy() OVERRIDE;
 
   // media::VideoDecodeAccelerator::Client implementation.
@@ -70,7 +73,7 @@ class PPB_VideoDecoder_Impl : public ::ppapi::PPB_VideoDecoder_Shared,
 
   // This is NULL before initialization, and if this PPB_VideoDecoder_Impl is
   // swapped with another.
-  scoped_refptr<PluginDelegate::PlatformVideoDecoder> platform_video_decoder_;
+  scoped_ptr<PluginDelegate::PlatformVideoDecoder> platform_video_decoder_;
 
   // Reference to the plugin requesting this interface.
   const PPP_VideoDecoder_Dev* ppp_videodecoder_;

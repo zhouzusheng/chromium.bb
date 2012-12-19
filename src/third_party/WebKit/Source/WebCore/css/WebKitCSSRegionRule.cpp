@@ -108,6 +108,15 @@ void WebKitCSSRegionRule::reattach(StyleRuleRegion* rule)
     }
 }
 
+void WebKitCSSRegionRule::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    CSSRule::reportBaseClassMemoryUsage(memoryObjectInfo);
+    info.addMember(m_regionRule);
+    info.addInstrumentedVector(m_childRuleCSSOMWrappers);
+    info.addMember(m_ruleListCSSOMWrapper);
+}
+
 } // namespace WebCore
 
 #endif

@@ -28,6 +28,7 @@
 #define DocumentEventQueue_h
 
 #include "EventQueue.h"
+#include <wtf/Forward.h>
 #include <wtf/HashSet.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/OwnPtr.h>
@@ -57,6 +58,8 @@ public:
     virtual void close() OVERRIDE;
 
     void enqueueOrDispatchScrollEvent(PassRefPtr<Node>, ScrollEventTargetType);
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     explicit DocumentEventQueue(ScriptExecutionContext*);

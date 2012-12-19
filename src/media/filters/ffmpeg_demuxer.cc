@@ -21,9 +21,8 @@
 #include "media/base/media_switches.h"
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
-#include "media/filters/bitstream_converter.h"
 #include "media/filters/ffmpeg_glue.h"
-#include "media/filters/ffmpeg_h264_bitstream_converter.h"
+#include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
 
 namespace media {
 
@@ -36,9 +35,9 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     : demuxer_(demuxer),
       stream_(stream),
       type_(UNKNOWN),
-      discontinuous_(false),
       stopped_(false),
-      last_packet_timestamp_(kNoTimestamp()) {
+      last_packet_timestamp_(kNoTimestamp()),
+      bitstream_converter_enabled_(false) {
   DCHECK(demuxer_);
 
   // Determine our media format.
@@ -58,10 +57,15 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
 
   // Calculate the duration.
   duration_ = ConvertStreamTimestamp(stream->time_base, stream->duration);
+
+  if (stream_->codec->codec_id == CODEC_ID_H264) {
+    bitstream_converter_.reset(
+        new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
+  }
 }
 
 bool FFmpegDemuxerStream::HasPendingReads() {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK(!stopped_ || read_queue_.empty())
       << "Read queue should have been emptied if demuxing stream is stopped";
@@ -70,7 +74,7 @@ bool FFmpegDemuxerStream::HasPendingReads() {
 
 void FFmpegDemuxerStream::EnqueuePacket(
     scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> packet) {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
 
   base::AutoLock auto_lock(lock_);
   if (stopped_) {
@@ -83,7 +87,7 @@ void FFmpegDemuxerStream::EnqueuePacket(
     buffer = DecoderBuffer::CreateEOSBuffer();
   } else {
     // Convert the packet if there is a bitstream filter.
-    if (packet->data && bitstream_converter_.get() &&
+    if (packet->data && bitstream_converter_enabled_ &&
         !bitstream_converter_->ConvertPacket(packet.get())) {
       LOG(ERROR) << "Format converstion failed.";
     }
@@ -112,7 +116,7 @@ void FFmpegDemuxerStream::EnqueuePacket(
 }
 
 void FFmpegDemuxerStream::FlushBuffers() {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK(read_queue_.empty()) << "Read requests should be empty";
   buffer_queue_.clear();
@@ -120,12 +124,13 @@ void FFmpegDemuxerStream::FlushBuffers() {
 }
 
 void FFmpegDemuxerStream::Stop() {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   buffer_queue_.clear();
   for (ReadQueue::iterator it = read_queue_.begin();
        it != read_queue_.end(); ++it) {
-    it->Run(scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
+    it->Run(DemuxerStream::kOk,
+            scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
   }
   read_queue_.clear();
   stopped_ = true;
@@ -148,7 +153,8 @@ void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
   //
   // TODO(scherkus): it would be cleaner if we replied with an error message.
   if (stopped_) {
-    read_cb.Run(scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
+    read_cb.Run(DemuxerStream::kOk,
+                scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
     return;
   }
 
@@ -164,18 +170,19 @@ void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
   // Send the oldest buffer back.
   scoped_refptr<DecoderBuffer> buffer = buffer_queue_.front();
   buffer_queue_.pop_front();
-  read_cb.Run(buffer);
+  read_cb.Run(DemuxerStream::kOk, buffer);
 }
 
 void FFmpegDemuxerStream::ReadTask(const ReadCB& read_cb) {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
 
   base::AutoLock auto_lock(lock_);
   // Don't accept any additional reads if we've been told to stop.
   //
   // TODO(scherkus): it would be cleaner if we replied with an error message.
   if (stopped_) {
-    read_cb.Run(scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
+    read_cb.Run(DemuxerStream::kOk,
+                scoped_refptr<DecoderBuffer>(DecoderBuffer::CreateEOSBuffer()));
     return;
   }
 
@@ -190,7 +197,7 @@ void FFmpegDemuxerStream::ReadTask(const ReadCB& read_cb) {
 }
 
 void FFmpegDemuxerStream::FulfillPendingRead() {
-  DCHECK_EQ(MessageLoop::current(), demuxer_->message_loop());
+  DCHECK(demuxer_->message_loop()->BelongsToCurrentThread());
   lock_.AssertAcquired();
   if (buffer_queue_.empty() || read_queue_.empty()) {
     return;
@@ -203,26 +210,13 @@ void FFmpegDemuxerStream::FulfillPendingRead() {
   read_queue_.pop_front();
 
   // Execute the callback.
-  read_cb.Run(buffer);
+  read_cb.Run(DemuxerStream::kOk, buffer);
 }
 
 void FFmpegDemuxerStream::EnableBitstreamConverter() {
-  // Called by hardware decoder to require different bitstream converter.
-  // Currently we assume that converter is determined by codec_id;
-  DCHECK(stream_);
-
-  if (stream_->codec->codec_id == CODEC_ID_H264) {
-    // Use Chromium bitstream converter in case of H.264
-    bitstream_converter_.reset(
-        new FFmpegH264BitstreamConverter(stream_->codec));
-    CHECK(bitstream_converter_->Initialize());
-  } else if (stream_->codec->codec_id == CODEC_ID_MPEG4) {
-    bitstream_converter_.reset(
-        new FFmpegBitstreamConverter("mpeg4video_es", stream_->codec));
-    CHECK(bitstream_converter_->Initialize());
-  } else {
-    NOTREACHED() << "Unsupported bitstream format.";
-  }
+  base::AutoLock auto_lock(lock_);
+  CHECK(bitstream_converter_.get());
+  bitstream_converter_enabled_ = true;
 }
 
 const AudioDecoderConfig& FFmpegDemuxerStream::audio_decoder_config() {
@@ -246,7 +240,7 @@ base::TimeDelta FFmpegDemuxerStream::GetElapsedTime() const {
   return ConvertStreamTimestamp(stream_->time_base, stream_->cur_dts);
 }
 
-Ranges<base::TimeDelta> FFmpegDemuxerStream::GetBufferedRanges() {
+Ranges<base::TimeDelta> FFmpegDemuxerStream::GetBufferedRanges() const {
   base::AutoLock auto_lock(lock_);
   return buffered_ranges_;
 }
@@ -264,7 +258,7 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 // FFmpegDemuxer
 //
 FFmpegDemuxer::FFmpegDemuxer(
-    MessageLoop* message_loop,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     const scoped_refptr<DataSource>& data_source)
     : host_(NULL),
       message_loop_(message_loop),
@@ -332,7 +326,12 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
 
 scoped_refptr<DemuxerStream> FFmpegDemuxer::GetStream(
     DemuxerStream::Type type) {
-  StreamVector::iterator iter;
+  return GetFFmpegStream(type);
+}
+
+scoped_refptr<FFmpegDemuxerStream> FFmpegDemuxer::GetFFmpegStream(
+    DemuxerStream::Type type) const {
+  StreamVector::const_iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
     if (*iter && (*iter)->type() == type) {
       return *iter;
@@ -412,7 +411,7 @@ bool FFmpegDemuxer::IsStreaming() {
   return data_source_->IsStreaming();
 }
 
-MessageLoop* FFmpegDemuxer::message_loop() {
+scoped_refptr<base::MessageLoopProxy> FFmpegDemuxer::message_loop() {
   return message_loop_;
 }
 
@@ -454,7 +453,7 @@ static int CalculateBitrate(
 
 void FFmpegDemuxer::InitializeTask(DemuxerHost* host,
                                    const PipelineStatusCB& status_cb) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   host_ = host;
 
   // TODO(scherkus): DataSource should have a host by this point,
@@ -572,14 +571,8 @@ void FFmpegDemuxer::InitializeTask(DemuxerHost* host,
   status_cb.Run(PIPELINE_OK);
 }
 
-
-int FFmpegDemuxer::GetBitrate() {
-  DCHECK(format_context_) << "Initialize() has not been called";
-  return bitrate_;
-}
-
 void FFmpegDemuxer::SeekTask(base::TimeDelta time, const PipelineStatusCB& cb) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // Tell streams to flush buffers due to seeking.
   StreamVector::iterator iter;
@@ -606,7 +599,7 @@ void FFmpegDemuxer::SeekTask(base::TimeDelta time, const PipelineStatusCB& cb) {
 }
 
 void FFmpegDemuxer::DemuxTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // Make sure we have work to do before demuxing.
   if (!StreamsHavePendingReads()) {
@@ -665,7 +658,7 @@ void FFmpegDemuxer::DemuxTask() {
 }
 
 void FFmpegDemuxer::StopTask(const base::Closure& callback) {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
     if (*iter)
@@ -679,7 +672,7 @@ void FFmpegDemuxer::StopTask(const base::Closure& callback) {
 }
 
 void FFmpegDemuxer::DisableAudioStreamTask() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   audio_disabled_ = true;
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
@@ -690,7 +683,7 @@ void FFmpegDemuxer::DisableAudioStreamTask() {
 }
 
 bool FFmpegDemuxer::StreamsHavePendingReads() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
     if (*iter && (*iter)->HasPendingReads()) {
@@ -701,7 +694,7 @@ bool FFmpegDemuxer::StreamsHavePendingReads() {
 }
 
 void FFmpegDemuxer::StreamHasEnded() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
     if (!*iter ||
@@ -724,11 +717,12 @@ void FFmpegDemuxer::SignalReadCompleted(int size) {
 }
 
 void FFmpegDemuxer::NotifyBufferingChanged() {
-  DCHECK_EQ(MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   Ranges<base::TimeDelta> buffered;
-  scoped_refptr<DemuxerStream> audio =
-      audio_disabled_ ? NULL : GetStream(DemuxerStream::AUDIO);
-  scoped_refptr<DemuxerStream> video = GetStream(DemuxerStream::VIDEO);
+  scoped_refptr<FFmpegDemuxerStream> audio =
+      audio_disabled_ ? NULL : GetFFmpegStream(DemuxerStream::AUDIO);
+  scoped_refptr<FFmpegDemuxerStream> video =
+      GetFFmpegStream(DemuxerStream::VIDEO);
   if (audio && video) {
     buffered = audio->GetBufferedRanges().IntersectionWith(
         video->GetBufferedRanges());

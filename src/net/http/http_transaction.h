@@ -4,11 +4,11 @@
 
 #ifndef NET_HTTP_HTTP_TRANSACTION_H_
 #define NET_HTTP_HTTP_TRANSACTION_H_
-#pragma once
 
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/upload_progress.h"
 
 namespace net {
 
@@ -18,7 +18,6 @@ struct HttpRequestInfo;
 class HttpResponseInfo;
 class IOBuffer;
 class X509Certificate;
-class SSLHostInfo;
 
 // Represents a single HTTP transaction (i.e., a single request/response pair).
 // HTTP redirects are not followed and authentication challenges are not
@@ -110,12 +109,7 @@ class NET_EXPORT_PRIVATE HttpTransaction {
 
   // Returns the upload progress in bytes.  If there is no upload data,
   // zero will be returned.  This does not include the request headers.
-  virtual uint64 GetUploadProgress() const = 0;
-
-  // SetSSLHostInfo sets a object which reads and writes public information
-  // about an SSL server. It's used to implement Snap Start.
-  // TODO(agl): remove this.
-  virtual void SetSSLHostInfo(SSLHostInfo*) { };
+  virtual UploadProgress GetUploadProgress() const = 0;
 };
 
 }  // namespace net

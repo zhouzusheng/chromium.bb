@@ -41,6 +41,7 @@ class HttpResponseHeaders;
 }
 
 namespace webkit_glue {
+class ResourceRequestBody;
 
 // Structure containing timing information for the request. It addresses
 // http://groups.google.com/group/http-archive-specification/web/har-1-1-spec
@@ -274,8 +275,8 @@ class ResourceLoaderBridge {
     SyncLoadResponse();
     ~SyncLoadResponse();
 
-    // The response status.
-    net::URLRequestStatus status;
+    // The response error code.
+    int error_code;
 
     // The final URL of the response.  This may differ from the request URL in
     // the case of a server redirect.
@@ -334,9 +335,10 @@ class ResourceLoaderBridge {
     virtual void OnReceivedCachedMetadata(const char* data, int len) { }
 
     // Called when the response is complete.  This method signals completion of
-    // the resource load.ff
+    // the resource load.
     virtual void OnCompletedRequest(
-        const net::URLRequestStatus& status,
+        int error_code,
+        bool was_ignored_by_handler,
         const std::string& security_info,
         const base::TimeTicks& completion_time) = 0;
 
@@ -348,32 +350,9 @@ class ResourceLoaderBridge {
   // anybody can delete at any time, INCLUDING during processing of callbacks.
   WEBKIT_GLUE_EXPORT virtual ~ResourceLoaderBridge();
 
-  // Call this method before calling Start() to append a chunk of binary data
-  // to the request body.  May only be used with HTTP(S) POST requests.
-  virtual void AppendDataToUpload(const char* data, int data_len) = 0;
-
-  // Call this method before calling Start() to append the contents of a file
-  // to the request body.  May only be used with HTTP(S) POST requests.
-  void AppendFileToUpload(const FilePath& file_path) {
-    AppendFileRangeToUpload(file_path, 0, kuint64max, base::Time());
-  }
-
-  // Call this method before calling Start() to append the contents of a file
-  // to the request body.  May only be used with HTTP(S) POST requests.
-  virtual void AppendFileRangeToUpload(
-      const FilePath& file_path,
-      uint64 offset,
-      uint64 length,
-      const base::Time& expected_modification_time) = 0;
-
-  // Call this method before calling Start() to append the contents of a blob
-  // to the request body.  May only be used with HTTP(S) POST requests.
-  virtual void AppendBlobToUpload(const GURL& blob_url) = 0;
-
-  // Call this method before calling Start() to assign an upload identifier to
-  // this request.  This is used to enable caching of POST responses.  A value
-  // of 0 implies the unspecified identifier.
-  virtual void SetUploadIdentifier(int64 identifier) = 0;
+  // Call this method before calling Start() to set the request body.
+  // May only be used with HTTP(S) POST requests.
+  virtual void SetRequestBody(ResourceRequestBody* request_body) = 0;
 
   // Call this method to initiate the request.  If this method succeeds, then
   // the peer's methods will be called asynchronously to report various events.

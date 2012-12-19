@@ -22,6 +22,7 @@
 #include "grit/webkit_strings.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_filter.h"
 #include "skia/ext/bitmap_platform_device.h"
@@ -43,7 +44,6 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 #include "webkit/glue/glue_serialize.h"
-#include "webkit/glue/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
 #include "webkit/tools/test_shell/notification_presenter.h"
@@ -54,6 +54,8 @@
 #include "webkit/tools/test_shell/test_shell_request_context.h"
 #include "webkit/tools/test_shell/test_shell_switches.h"
 #include "webkit/tools/test_shell/test_webview_delegate.h"
+#include "webkit/user_agent/user_agent.h"
+#include "webkit/user_agent/user_agent_util.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebFrame;
@@ -82,19 +84,23 @@ const int kSVGTestWindowHeight = 360;
 // URLRequestTestShellFileJob is used to serve the inspector
 class URLRequestTestShellFileJob : public net::URLRequestFileJob {
  public:
-  static net::URLRequestJob* InspectorFactory(net::URLRequest* request,
-                                              const std::string& scheme) {
+  static net::URLRequestJob* InspectorFactory(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const std::string& scheme) {
     FilePath path;
     PathService::Get(base::DIR_EXE, &path);
     path = path.AppendASCII("resources");
     path = path.AppendASCII("inspector");
     path = path.AppendASCII(request->url().path().substr(1));
-    return new URLRequestTestShellFileJob(request, path);
+    return new URLRequestTestShellFileJob(request, network_delegate, path);
   }
 
  private:
-  URLRequestTestShellFileJob(net::URLRequest* request, const FilePath& path)
-      : net::URLRequestFileJob(request, path) {
+  URLRequestTestShellFileJob(net::URLRequest* request,
+                             net::NetworkDelegate* network_delegate,
+                             const FilePath& path)
+      : net::URLRequestFileJob(request, network_delegate, path) {
   }
   virtual ~URLRequestTestShellFileJob() { }
 
@@ -118,6 +124,11 @@ std::vector<std::string> TestShell::js_flags_;
 bool TestShell::accelerated_2d_canvas_enabled_ = false;
 bool TestShell::accelerated_compositing_enabled_ = false;
 
+TestShell::TestParams::TestParams()
+    : dump_tree(true),
+      dump_pixels(false) {
+}
+
 TestShell::TestShell()
     : m_mainWnd(NULL),
       m_editWnd(NULL),
@@ -136,7 +147,6 @@ TestShell::TestShell()
       dump_stats_table_on_exit_(false) {
     delegate_.reset(new TestWebViewDelegate(this));
     popup_delegate_.reset(new TestWebViewDelegate(this));
-    layout_test_controller_.reset(new LayoutTestController(this));
     navigation_controller_.reset(new TestNavigationController(this));
     notification_presenter_.reset(new TestNotificationPresenter(this));
 
@@ -403,14 +413,6 @@ void TestShell::Show(WebNavigationPolicy policy) {
   delegate_->show(policy);
 }
 
-void TestShell::BindJSObjectsToWindow(WebFrame* frame) {
-  // Only bind the test classes if we're running tests.
-  if (layout_test_mode_) {
-    layout_test_controller_->BindToJavascript(frame, "layoutTestController");
-    layout_test_controller_->BindToJavascript(frame, "testRunner");
-  }
-}
-
 void TestShell::DumpBackForwardEntry(int index, string16* result) {
   int current_index = navigation_controller_->GetLastCommittedEntryIndex();
 
@@ -442,8 +444,8 @@ void TestShell::CallJSGC() {
 
 WebView* TestShell::CreateWebView() {
   // If we're running layout tests, only open a new window if the test has
-  // called layoutTestController.setCanOpenWindows()
-  if (layout_test_mode_ && !layout_test_controller_->CanOpenWindows())
+  // called testRunner.setCanOpenWindows()
+  if (layout_test_mode_)
     return NULL;
 
   TestShell* new_win;
@@ -492,7 +494,6 @@ void TestShell::SizeToDefault() {
 }
 
 void TestShell::ResetTestController() {
-  layout_test_controller_->Reset();
   notification_presenter_->Reset();
   delegate_->Reset();
   if (geolocation_client_mock_.get())

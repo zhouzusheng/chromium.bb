@@ -89,7 +89,7 @@ static inline void getDecorationRootAndDecoratedRoot(HTMLInputElement* input, Sh
     if (newRoot)
         newRoot->removeChild(newRoot->firstChild());
     else
-        newRoot = ShadowRoot::create(input, ShadowRoot::CreatingUserAgentShadowRoot, ASSERT_NO_EXCEPTION).get();
+        newRoot = ShadowRoot::create(input, ShadowRoot::UserAgentShadowRoot, ASSERT_NO_EXCEPTION).get();
     decorationRoot = newRoot;
     decoratedRoot = existingRoot;
 }
@@ -196,6 +196,15 @@ void TextFieldDecorationElement::defaultEventHandler(Event* event)
 
     if (!event->defaultHandled())
         HTMLDivElement::defaultEventHandler(event);
+}
+
+bool TextFieldDecorationElement::willRespondToMouseClickEvents()
+{
+    const HTMLInputElement* input = hostInput();
+    if (!input->disabled() && !input->readOnly())
+        return true;
+
+    return HTMLDivElement::willRespondToMouseClickEvents();
 }
 
 } // namespace WebCore

@@ -41,6 +41,7 @@ class IDBBackingStore;
 class IDBDatabase;
 class IDBFactoryBackendImpl;
 class IDBObjectStoreBackendImpl;
+class IDBTransactionBackendImpl;
 class IDBTransactionBackendInterface;
 class IDBTransactionCoordinator;
 
@@ -54,46 +55,50 @@ public:
     static const int64_t InvalidId = 0;
     int64_t id() const { return m_id; }
 
-    void registerFrontendCallbacks(PassRefPtr<IDBDatabaseCallbacks>);
-    void openConnection(PassRefPtr<IDBCallbacks>);
+    void openConnection(PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>);
+    void openConnectionWithVersion(PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>, int64_t version);
     void deleteDatabase(PassRefPtr<IDBCallbacks>);
 
-    virtual String name() const { return m_name; }
-    virtual String version() const { return m_version; }
-    virtual PassRefPtr<DOMStringList> objectStoreNames() const;
-
+    // IDBDatabaseBackendInterface
+    virtual IDBDatabaseMetadata metadata() const;
     virtual PassRefPtr<IDBObjectStoreBackendInterface> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, IDBTransactionBackendInterface*, ExceptionCode&);
     virtual void deleteObjectStore(const String& name, IDBTransactionBackendInterface*, ExceptionCode&);
     virtual void setVersion(const String& version, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>, ExceptionCode&);
     virtual PassRefPtr<IDBTransactionBackendInterface> transaction(DOMStringList* objectStoreNames, unsigned short mode, ExceptionCode&);
     virtual void close(PassRefPtr<IDBDatabaseCallbacks>);
 
-    PassRefPtr<IDBObjectStoreBackendInterface> objectStore(const String& name);
+    PassRefPtr<IDBObjectStoreBackendImpl> objectStore(const String& name);
     IDBTransactionCoordinator* transactionCoordinator() const { return m_transactionCoordinator.get(); }
-    void transactionStarted(PassRefPtr<IDBTransactionBackendInterface>);
-    void transactionFinished(PassRefPtr<IDBTransactionBackendInterface>);
+    void transactionStarted(PassRefPtr<IDBTransactionBackendImpl>);
+    void transactionFinished(PassRefPtr<IDBTransactionBackendImpl>);
+    void transactionFinishedAndCompleteFired(PassRefPtr<IDBTransactionBackendImpl>);
+    void transactionFinishedAndAbortFired(PassRefPtr<IDBTransactionBackendImpl>);
 
 private:
     IDBDatabaseBackendImpl(const String& name, IDBBackingStore* database, IDBTransactionCoordinator*, IDBFactoryBackendImpl*, const String& uniqueIdentifier);
 
     bool openInternal();
+    void runIntVersionChangeTransaction(int64_t requestedVersion, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>);
     void loadObjectStores();
-    int32_t connectionCount();
+    size_t connectionCount();
     void processPendingCalls();
 
-    static void createObjectStoreInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>, PassRefPtr<IDBTransactionBackendInterface>);
-    static void deleteObjectStoreInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>, PassRefPtr<IDBTransactionBackendInterface>);
-    static void setVersionInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, const String& version, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBTransactionBackendInterface>);
+    static void createObjectStoreInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>, PassRefPtr<IDBTransactionBackendImpl>);
+    static void deleteObjectStoreInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>, PassRefPtr<IDBTransactionBackendImpl>);
+    static void setVersionInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, const String& version, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBTransactionBackendImpl>);
+    static void setIntVersionInternal(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, int64_t version, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBTransactionBackendInterface>);
 
     // These are used as setVersion transaction abort tasks.
     static void removeObjectStoreFromMap(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>);
     static void addObjectStoreToMap(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, PassRefPtr<IDBObjectStoreBackendImpl>);
     static void resetVersion(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, const String& version);
+    static void resetIntVersion(ScriptExecutionContext*, PassRefPtr<IDBDatabaseBackendImpl>, int64_t intVersion);
 
     RefPtr<IDBBackingStore> m_backingStore;
     int64_t m_id;
     String m_name;
     String m_version;
+    int64_t m_intVersion;
 
     String m_identifier;
     // This might not need to be a RefPtr since the factory's lifetime is that of the page group, but it's better to be conservitive than sorry.
@@ -103,9 +108,9 @@ private:
     ObjectStoreMap m_objectStores;
 
     RefPtr<IDBTransactionCoordinator> m_transactionCoordinator;
-    RefPtr<IDBTransactionBackendInterface> m_runningVersionChangeTransaction;
+    RefPtr<IDBTransactionBackendImpl> m_runningVersionChangeTransaction;
 
-    typedef HashSet<IDBTransactionBackendInterface*> TransactionSet;
+    typedef HashSet<IDBTransactionBackendImpl*> TransactionSet;
     TransactionSet m_transactions;
 
     class PendingSetVersionCall;
@@ -114,12 +119,12 @@ private:
     class PendingOpenCall;
     Deque<RefPtr<PendingOpenCall> > m_pendingOpenCalls;
 
+    class PendingOpenWithVersionCall;
+    Deque<RefPtr<PendingOpenWithVersionCall> > m_pendingOpenWithVersionCalls;
+    Deque<RefPtr<PendingOpenWithVersionCall> > m_pendingSecondHalfOpenWithVersionCalls;
+
     class PendingDeleteCall;
     Deque<RefPtr<PendingDeleteCall> > m_pendingDeleteCalls;
-
-    // FIXME: Eliminate the limbo state between openConnection() and registerFrontendCallbacks()
-    // that this counter tracks.
-    int32_t m_pendingConnectionCount;
 
     typedef ListHashSet<RefPtr<IDBDatabaseCallbacks> > DatabaseCallbacksSet;
     DatabaseCallbacksSet m_databaseCallbacksSet;

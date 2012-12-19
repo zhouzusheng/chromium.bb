@@ -51,6 +51,18 @@ ContextFeatures* ContextFeatures::defaultSwitch()
     return instance.get();
 }
 
+bool ContextFeatures::dialogElementEnabled(Document* document)
+{
+#if ENABLE(DIALOG_ELEMENT)
+    if (!document)
+        return RuntimeEnabledFeatures::dialogElementEnabled();
+    return document->contextFeatures()->isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
+#else
+    UNUSED_PARAM(document);
+    return false;
+#endif
+}
+
 bool ContextFeatures::shadowDOMEnabled(Document* document)
 {
 #if ENABLE(SHADOW_DOM)
@@ -85,6 +97,26 @@ bool ContextFeatures::pagePopupEnabled(Document* document)
     UNUSED_PARAM(document);
     return false;
 #endif
+}
+
+bool ContextFeatures::htmlNotificationsEnabled(Document* document)
+{
+#if ENABLE(LEGACY_NOTIFICATIONS)
+    if (!document)
+        return false;
+    return document->contextFeatures()->isEnabled(document, HTMLNotifications, false);
+#else
+    UNUSED_PARAM(document);
+    return false;
+#endif
+}
+
+bool ContextFeatures::mutationEventsEnabled(Document* document)
+{
+    ASSERT(document);
+    if (!document)
+        return true;
+    return document->contextFeatures()->isEnabled(document, MutationEvents, true);
 }
 
 void provideContextFeaturesTo(Page* page, ContextFeaturesClient* client)

@@ -8,6 +8,7 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_UTILS_H_
 #define GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_UTILS_H_
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -19,13 +20,15 @@ namespace gles2 {
 
 // Does a multiply and checks for overflow.  If the multiply did not overflow
 // returns true.
-template <typename T>
-inline bool SafeMultiply(T a, T b, T* dst) {
+
+// Multiplies 2 32 bit unsigned numbers checking for overflow.
+// If there was no overflow returns true.
+inline bool SafeMultiplyUint32(uint32 a, uint32 b, uint32* dst) {
   if (b == 0) {
     *dst = 0;
     return true;
   }
-  T v = a * b;
+  uint32 v = a * b;
   if (v / b != a) {
     *dst = 0;
     return false;
@@ -34,14 +37,8 @@ inline bool SafeMultiply(T a, T b, T* dst) {
   return true;
 }
 
-// A wrapper for SafeMultiply to remove the need to cast.
-inline bool SafeMultiplyUint32(uint32 a, uint32 b, uint32* dst) {
-  return SafeMultiply(a, b, dst);
-}
-
 // Does an add checking for overflow.  If there was no overflow returns true.
-template <typename T>
-inline bool SafeAdd(T a, T b, T* dst) {
+inline bool SafeAddUint32(uint32 a, uint32 b, uint32* dst) {
   if (a + b < a) {
     *dst = 0;
     return false;
@@ -50,9 +47,13 @@ inline bool SafeAdd(T a, T b, T* dst) {
   return true;
 }
 
-// A wrapper for SafeAdd to remove the need to cast.
-inline bool SafeAddUint32(uint32 a, uint32 b, uint32* dst) {
-  return SafeAdd(a, b, dst);
+// Does an add checking for overflow.  If there was no overflow returns true.
+inline bool SafeAddInt32(int32 a, int32 b, int32* dst) {
+  int64 sum64 = static_cast<int64>(a) + b;
+  int32 sum32 = static_cast<int32>(sum64);
+  bool safe = sum64 == static_cast<int64>(sum32);
+  *dst = safe ? sum32 : 0;
+  return safe;
 }
 
 // Utilties for GLES2 support.
@@ -146,9 +147,18 @@ class GLES2_UTILS_EXPORT GLES2Util {
   static std::string GetStringBool(uint32 value);
   static std::string GetStringError(uint32 value);
 
-  static int32 SwizzleLocation(int32 unswizzled_location);
-  static int32 UnswizzleLocation(int32 swizzled_location);
-  static int32 MakeFakeLocation(int32 index, int32 element);
+  // Parses a uniform name.
+  //   array_pos: the position of the last '[' character in name.
+  //   element_index: the index of the array element specifed in the name.
+  //   getting_array: True if name refers to array.
+  // returns true of parsing was successful. Returing true does NOT mean
+  // it's a valid uniform name. On the otherhand, returning false does mean
+  // it's an invalid uniform name.
+  static bool ParseUniformName(
+      const std::string& name,
+      size_t* array_pos,
+      int* element_index,
+      bool* getting_array);
 
   #include "../common/gles2_cmd_utils_autogen.h"
 

@@ -49,6 +49,9 @@ class MessagesNode(GroupingNode):
     elif t == 'js_map_format':
       from grit.format import js_map_format
       return js_map_format.StringTable()
+    elif t == 'android':
+      from grit.format import android_xml
+      return android_xml.ResourcesElement()
 
 
 class StructuresNode(GroupingNode):

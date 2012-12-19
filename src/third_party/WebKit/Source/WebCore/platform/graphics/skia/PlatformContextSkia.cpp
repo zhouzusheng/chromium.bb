@@ -122,7 +122,11 @@ PlatformContextSkia::State::State()
     , m_lineJoin(SkPaint::kDefault_Join)
     , m_dash(0)
     , m_textDrawingMode(TextModeFill)
+#if USE(LOW_QUALITY_IMAGE_INTERPOLATION)
+    , m_interpolationQuality(InterpolationLow)
+#else
     , m_interpolationQuality(InterpolationHigh)
+#endif
 {
 }
 
@@ -182,6 +186,7 @@ PlatformContextSkia::PlatformContextSkia(SkCanvas* canvas)
     , m_trackOpaqueRegion(false)
     , m_printing(false)
     , m_accelerated(false)
+    , m_deferred(false)
     , m_drawingToImageBuffer(false)
 {
     m_stateStack.append(State());
@@ -212,8 +217,6 @@ bool PlatformContextSkia::isDrawingToImageBuffer() const
 
 void PlatformContextSkia::save()
 {
-    ASSERT(!hasImageResamplingHint());
-
     m_stateStack.append(m_state->cloneInheritedProperties());
     m_state = &m_stateStack.last();
 
@@ -281,17 +284,12 @@ void PlatformContextSkia::beginLayerClippedToImage(const FloatRect& rect,
     }
 
     // Copy off the image as |imageBuffer| may be deleted before restore is invoked.
-    if (!bitmap->pixelRef()) {
-        // The bitmap owns it's pixels. This happens when we've allocated the
-        // pixels in some way and assigned them directly to the bitmap (as
-        // happens when we allocate a DIB). In this case the assignment operator
-        // does not copy the pixels, rather the copied bitmap ends up
-        // referencing the same pixels. As the pixels may not live as long as we
-        // need it to, we copy the image.
-        bitmap->copyTo(&m_state->m_imageBufferClip, SkBitmap::kARGB_8888_Config);
-    } else {
-        // If there is a pixel ref, we can safely use the assignment operator.
+    if (bitmap->isImmutable())
         m_state->m_imageBufferClip = *bitmap;
+    else {
+        // We need to make a deep-copy of the pixels themselves, so they don't
+        // change on us between now and when we want to apply them in restore()
+        bitmap->copyTo(&m_state->m_imageBufferClip, SkBitmap::kARGB_8888_Config);
     }
 }
 
@@ -531,9 +529,6 @@ SkXfermode::Mode PlatformContextSkia::getXfermodeMode() const
 
 void PlatformContextSkia::setTextDrawingMode(TextDrawingModeFlags mode)
 {
-    // TextModeClip is never used, so we assert that it isn't set:
-    // https://bugs.webkit.org/show_bug.cgi?id=21898
-    ASSERT(!(mode & TextModeClip));
     m_state->m_textDrawingMode = mode;
 }
 
@@ -585,7 +580,7 @@ void PlatformContextSkia::paintSkPaint(const SkRect& rect,
 const SkBitmap* PlatformContextSkia::bitmap() const
 {
 #if PLATFORM(CHROMIUM)
-    TRACE_EVENT("PlatformContextSkia::bitmap", this, 0);
+    TRACE_EVENT0("skia", "PlatformContextSkia::bitmap");
 #endif
     return &m_canvas->getDevice()->accessBitmap(false);
 }
@@ -599,29 +594,6 @@ bool PlatformContextSkia::isNativeFontRenderingAllowed()
         return false;
     return skia::SupportsPlatformPaint(m_canvas);
 #endif
-}
-
-void PlatformContextSkia::getImageResamplingHint(IntSize* srcSize, FloatSize* dstSize) const
-{
-    *srcSize = m_imageResamplingHintSrcSize;
-    *dstSize = m_imageResamplingHintDstSize;
-}
-
-void PlatformContextSkia::setImageResamplingHint(const IntSize& srcSize, const FloatSize& dstSize)
-{
-    m_imageResamplingHintSrcSize = srcSize;
-    m_imageResamplingHintDstSize = dstSize;
-}
-
-void PlatformContextSkia::clearImageResamplingHint()
-{
-    m_imageResamplingHintSrcSize = IntSize();
-    m_imageResamplingHintDstSize = FloatSize();
-}
-
-bool PlatformContextSkia::hasImageResamplingHint() const
-{
-    return !m_imageResamplingHintSrcSize.isEmpty() && !m_imageResamplingHintDstSize.isEmpty();
 }
 
 void PlatformContextSkia::applyClipFromImage(const SkRect& rect, const SkBitmap& imageBuffer)

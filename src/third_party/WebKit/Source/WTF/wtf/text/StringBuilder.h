@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2010, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -124,11 +124,21 @@ public:
         } else
             append(&c, 1);
     }
-    
+
     void append(char c)
     {
         append(static_cast<LChar>(c));
     }
+
+    template<unsigned charactersCount>
+    ALWAYS_INLINE void appendLiteral(const char (&characters)[charactersCount]) { append(characters, charactersCount - 1); }
+
+    WTF_EXPORT_PRIVATE void appendNumber(int);
+    WTF_EXPORT_PRIVATE void appendNumber(unsigned int);
+    WTF_EXPORT_PRIVATE void appendNumber(long);
+    WTF_EXPORT_PRIVATE void appendNumber(unsigned long);
+    WTF_EXPORT_PRIVATE void appendNumber(long long);
+    WTF_EXPORT_PRIVATE void appendNumber(unsigned long long);
 
     String toString()
     {
@@ -151,8 +161,11 @@ public:
             return AtomicString();
 
         // If the buffer is sufficiently over-allocated, make a new AtomicString from a copy so its buffer is not so large.
-        if (canShrink())
-            return AtomicString(characters(), length());
+        if (canShrink()) {
+            if (is8Bit())
+                return AtomicString(characters8(), length());
+            return AtomicString(characters16(), length());            
+        }
 
         if (!m_string.isNull())
             return AtomicString(m_string);

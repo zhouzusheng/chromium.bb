@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_H_
 #define NET_URL_REQUEST_URL_REQUEST_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -24,6 +23,8 @@
 #include "net/base/net_log.h"
 #include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
+#include "net/base/upload_progress.h"
+#include "net/cookies/canonical_cookie.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
@@ -31,12 +32,10 @@
 class FilePath;
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
-class AutoUpdateInterceptor;
 class ChildProcessSecurityPolicyTest;
 class ComponentUpdateInterceptor;
 class TestAutomationProvider;
 class URLRequestAutomationJob;
-class UserScriptListenerTest;
 
 namespace base {
 namespace debug {
@@ -56,6 +55,13 @@ class AppCacheURLRequestJobTest;
 // interface.
 namespace content {
 class ResourceDispatcherHostTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace extensions {
+class AutoUpdateInterceptor;
+class UserScriptListenerTest;
 }
 
 // Temporary layering violation to allow existing users of a deprecated
@@ -80,7 +86,6 @@ class BlobURLRequestJobTest;
 
 namespace net {
 
-class CookieList;
 class CookieOptions;
 class HostPortPair;
 class IOBuffer;
@@ -115,6 +120,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // factories to be queried.  If no factory handles the request, then the
   // default job will be used.
   typedef URLRequestJob* (ProtocolFactory)(URLRequest* request,
+                                           NetworkDelegate* network_delegate,
                                            const std::string& scheme);
 
   // HTTP request/response header IDs (via some preprocessor fun) for use with
@@ -149,7 +155,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     // Called for every request made.  Should return a new job to handle the
     // request if it should be intercepted, or NULL to allow the request to
     // be handled in the normal manner.
-    virtual URLRequestJob* MaybeIntercept(URLRequest* request) = 0;
+    virtual URLRequestJob* MaybeIntercept(
+        URLRequest* request, NetworkDelegate* network_delegate) = 0;
 
     // Called after having received a redirect response, but prior to the
     // the request delegate being informed of the redirect. Can return a new
@@ -157,8 +164,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     // to allow the normal handling to continue. If a new job is provided,
     // the delegate never sees the original redirect response, instead the
     // response produced by the intercept job will be returned.
-    virtual URLRequestJob* MaybeInterceptRedirect(URLRequest* request,
-                                                  const GURL& location);
+    virtual URLRequestJob* MaybeInterceptRedirect(
+        URLRequest* request,
+        NetworkDelegate* network_delegate,
+        const GURL& location);
 
     // Called after having received a final response, but prior to the
     // the request delegate being informed of the response. This is also
@@ -168,7 +177,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     // continue. If a new job is provided, the delegate never sees the original
     // response, instead the response produced by the intercept job will be
     // returned.
-    virtual URLRequestJob* MaybeInterceptResponse(URLRequest* request);
+    virtual URLRequestJob* MaybeInterceptResponse(
+        URLRequest* request, NetworkDelegate* network_delegate);
   };
 
   // Deprecated interfaces in net::URLRequest. They have been moved to
@@ -177,11 +187,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   class NET_EXPORT Deprecated {
    private:
     // TODO(willchan): Kill off these friend declarations.
-    friend class ::AutoUpdateInterceptor;
+    friend class extensions::AutoUpdateInterceptor;
     friend class ::ChildProcessSecurityPolicyTest;
     friend class ::ComponentUpdateInterceptor;
     friend class ::TestAutomationProvider;
-    friend class ::UserScriptListenerTest;
     friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
     friend class URLRequestFilter;
@@ -189,6 +198,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     friend class appcache::AppCacheRequestHandlerTest;
     friend class appcache::AppCacheURLRequestJobTest;
     friend class content::ResourceDispatcherHostTest;
+    friend class extensions::UserScriptListenerTest;
     friend class fileapi::FileSystemDirURLRequestJobTest;
     friend class fileapi::FileSystemURLRequestJobTest;
     friend class fileapi::FileWriterDelegateTest;
@@ -303,8 +313,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual ~Delegate() {}
   };
 
+  // TODO(shalev): Get rid of this constructor in favour of the one below it.
   // Initialize an URL request.
-  URLRequest(const GURL& url, Delegate* delegate);
+  URLRequest(const GURL& url,
+             Delegate* delegate,
+             const URLRequestContext* context);
+
+  URLRequest(const GURL& url,
+             Delegate* delegate,
+             const URLRequestContext* context,
+             NetworkDelegate* network_delegate);
 
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
@@ -340,6 +358,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // The URL that should be consulted for the third-party cookie blocking
   // policy.
+  //
+  // WARNING: This URL must only be used for the third-party cookie blocking
+  //          policy. It MUST NEVER be used for any kind of SECURITY check.
+  //
+  //          For example, if a top-level navigation is redirected, the
+  //          first-party for cookies will be the URL of the first URL in the
+  //          redirect chain throughout the whole redirect. If it was used for
+  //          a security check, an attacker might try to get around this check
+  //          by starting from some page that redirects to the
+  //          host-to-be-attacked.
   const GURL& first_party_for_cookies() const {
     return first_party_for_cookies_;
   }
@@ -397,7 +425,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void set_upload(UploadData* upload);
 
   // Get the upload data directly.
-  UploadData* get_upload();
+  const UploadData* get_upload() const;
+  UploadData* get_upload_mutable();
 
   // Returns true if the request has a non-empty message body to upload.
   bool has_upload() const;
@@ -427,7 +456,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   }
 
   // Returns the current upload progress in bytes.
-  uint64 GetUploadProgress() const;
+  UploadProgress GetUploadProgress() const;
 
   // Get response header(s) by ID or name.  These methods may only be called
   // once the delegate's OnResponseStarted method has been called.  Headers
@@ -590,7 +619,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Used to specify the context (cookie store, cache) for this request.
   const URLRequestContext* context() const;
-  void set_context(const URLRequestContext* context);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -713,10 +741,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void SetBlockedOnDelegate();
   void SetUnblockedOnDelegate();
 
-  // Contextual information used for this request (can be NULL). This contains
+  // Contextual information used for this request. Cannot be NULL. This contains
   // most of the dependencies which are shared between requests (disk cache,
   // cookie store, socket pool, etc.)
   const URLRequestContext* context_;
+
+  NetworkDelegate* network_delegate_;
 
   // Tracks the time spent in various load states throughout this request.
   BoundNetLog net_log_;
@@ -756,7 +786,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Cached value for use after we've orphaned the job handling the
   // first transaction in a request involving redirects.
-  uint64 final_upload_progress_;
+  UploadProgress final_upload_progress_;
 
   // The priority level for this request.  Objects like ClientSocketPool use
   // this to determine which URLRequest to allocate sockets to first.

@@ -32,6 +32,7 @@
 #include "Document.h"
 #include "DocumentFragment.h"
 #include "DocumentType.h"
+#include "Element.h"
 #include "Frame.h"
 // FIXME: Why are we including HTML entity information in the XML parser?
 #include "HTMLEntitySearch.h"
@@ -82,11 +83,11 @@ XMLTreeBuilder::XMLTreeBuilder(NewXMLDocumentParser* parser, DocumentFragment* f
         element = nodeStack.last();
         if (element->hasAttributes()) {
             for (size_t i = 0; i < element->attributeCount(); ++i) {
-                Attribute* attr = element->attributeItem(i);
-                if (attr->localName() == xmlnsAtom)
-                    stackItem.setNamespaceURI(attr->value());
-                else if (attr->prefix() == xmlnsAtom)
-                    stackItem.setNamespaceURI(attr->localName(), attr->value());
+                const Attribute* attribute = element->attributeItem(i);
+                if (attribute->localName() == xmlnsAtom)
+                    stackItem.setNamespaceURI(attribute->value());
+                else if (attribute->prefix() == xmlnsAtom)
+                    stackItem.setNamespaceURI(attribute->localName(), attribute->value());
             }
         }
     }
@@ -334,11 +335,11 @@ void XMLTreeBuilder::processXMLEntity(const AtomicXMLToken& token)
     DEFINE_STATIC_LOCAL(AtomicString, gt, ("gt"));
     DEFINE_STATIC_LOCAL(AtomicString, lt, ("lt"));
     DEFINE_STATIC_LOCAL(AtomicString, quot, ("quot"));
-    DEFINE_STATIC_LOCAL(String, ampS, ("&"));
-    DEFINE_STATIC_LOCAL(String, aposS, ("'"));
-    DEFINE_STATIC_LOCAL(String, gtS, (">"));
-    DEFINE_STATIC_LOCAL(String, ltS, ("<"));
-    DEFINE_STATIC_LOCAL(String, quotS, ("\""));
+    DEFINE_STATIC_LOCAL(String, ampS, (ASCIILiteral("&")));
+    DEFINE_STATIC_LOCAL(String, aposS, (ASCIILiteral("'")));
+    DEFINE_STATIC_LOCAL(String, gtS, (ASCIILiteral(">")));
+    DEFINE_STATIC_LOCAL(String, ltS, (ASCIILiteral("<")));
+    DEFINE_STATIC_LOCAL(String, quotS, (ASCIILiteral("\"")));
 
     if (token.name() == amp)
         appendToText(ampS.characters(), 1);

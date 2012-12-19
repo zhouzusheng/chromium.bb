@@ -28,6 +28,7 @@
 namespace WebCore {
 
 class MouseEvent;
+class TextRun;
 
 // Renderer for embeds and objects, often, but not always, rendered via plug-ins.
 // For example, <embed src="foo.html"> does not invoke a plug-in.
@@ -39,6 +40,7 @@ public:
     enum PluginUnavailabilityReason {
         PluginMissing,
         PluginCrashed,
+        PluginBlockedByContentSecurityPolicy,
         InsecurePluginVersion
     };
     void setPluginUnavailabilityReason(PluginUnavailabilityReason);
@@ -69,7 +71,7 @@ private:
     virtual void layout();
     virtual void viewCleared();
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
     virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier, Node** stopNode);
     virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier, Node** stopNode);
@@ -90,7 +92,7 @@ private:
 
 inline RenderEmbeddedObject* toRenderEmbeddedObject(RenderObject* object)
 {
-    ASSERT(!object || !strcmp(object->renderName(), "RenderEmbeddedObject"));
+    ASSERT(!object || object->isEmbeddedObject());
     return static_cast<RenderEmbeddedObject*>(object);
 }
 

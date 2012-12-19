@@ -38,16 +38,30 @@
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
+#include "InputTypeNames.h"
 #include "KeyboardEvent.h"
 #include "MouseEvent.h"
 #include "PlatformMouseEvent.h"
 #include "RenderSlider.h"
+#include "ScopedEventQueue.h"
 #include "ShadowRoot.h"
 #include "SliderThumbElement.h"
 #include "StepRange.h"
 #include <limits>
 #include <wtf/MathExtras.h>
 #include <wtf/PassOwnPtr.h>
+
+#if ENABLE(TOUCH_EVENTS)
+#include "Touch.h"
+#include "TouchEvent.h"
+#include "TouchList.h"
+#endif
+
+#if ENABLE(DATALIST_ELEMENT)
+#include "HTMLDataListElement.h"
+#include "HTMLOptionElement.h"
+#include <wtf/NonCopyingSort.h>
+#endif
 
 namespace WebCore {
 
@@ -70,6 +84,14 @@ PassOwnPtr<InputType> RangeInputType::create(HTMLInputElement* element)
     return adoptPtr(new RangeInputType(element));
 }
 
+RangeInputType::RangeInputType(HTMLInputElement* element)
+    : InputType(element)
+#if ENABLE(DATALIST_ELEMENT)
+    , m_tickMarkValuesDirty(true)
+#endif
+{
+}
+
 bool RangeInputType::isRangeControl() const
 {
     return true;
@@ -88,6 +110,11 @@ double RangeInputType::valueAsDouble() const
 void RangeInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionCode&) const
 {
     element()->setValue(serialize(newValue), eventBehavior);
+}
+
+bool RangeInputType::typeMismatchFor(const String& value) const
+{
+    return !value.isEmpty() && !isfinite(parseToDoubleForNumberType(value));
 }
 
 bool RangeInputType::supportsRequired() const
@@ -126,13 +153,41 @@ void RangeInputType::handleMouseDownEvent(MouseEvent* event)
     if (event->button() != LeftButton || !targetNode)
         return;
     ASSERT(element()->shadow());
-    if (targetNode != element() && !targetNode->isDescendantOf(element()->shadow()->oldestShadowRoot()))
+    if (targetNode != element() && !targetNode->isDescendantOf(element()->userAgentShadowRoot()))
         return;
     SliderThumbElement* thumb = sliderThumbElementOf(element());
     if (targetNode == thumb)
         return;
     thumb->dragFrom(event->absoluteLocation());
 }
+
+#if ENABLE(TOUCH_EVENTS)
+#if ENABLE(TOUCH_SLIDER)
+void RangeInputType::handleTouchEvent(TouchEvent* event)
+{
+    if (element()->disabled() || element()->readOnly())
+        return;
+
+    if (event->type() == eventNames().touchendEvent) {
+        event->setDefaultHandled();
+        return;
+    }
+
+    TouchList* touches = event->targetTouches();
+    if (touches->length() == 1) {
+        Touch* touch = touches->item(0);
+        SliderThumbElement* thumb = sliderThumbElementOf(element());
+        thumb->setPositionFromPoint(touch->absoluteLocation());
+        event->setDefaultHandled();
+    }
+}
+
+bool RangeInputType::hasTouchEventHandler() const
+{
+    return true;
+}
+#endif
+#endif
 
 void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
 {
@@ -181,12 +236,13 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
     newValue = stepRange.clampValue(newValue);
 
     if (newValue != current) {
+        EventQueueScope scope;
         ExceptionCode ec;
         TextFieldEventBehavior eventBehavior = DispatchChangeEvent;
         setValueAsDecimal(newValue, eventBehavior, ec);
 
         if (AXObjectCache::accessibilityEnabled())
-            element()->document()->axObjectCache()->postNotification(element()->renderer(), AXObjectCache::AXValueChanged, true);
+            element()->document()->axObjectCache()->postNotification(element(), AXObjectCache::AXValueChanged, true);
         element()->dispatchFormControlChangeEvent();
     }
 
@@ -205,7 +261,7 @@ void RangeInputType::createShadowSubtree()
     RefPtr<HTMLElement> container = SliderContainerElement::create(document);
     container->appendChild(track.release(), ec);
     container->appendChild(TrackLimiterElement::create(document), ec);
-    element()->shadow()->oldestShadowRoot()->appendChild(container.release(), ec);
+    element()->userAgentShadowRoot()->appendChild(container.release(), ec);
 }
 
 RenderObject* RangeInputType::createRenderer(RenderArena* arena, RenderStyle*) const
@@ -271,5 +327,84 @@ bool RangeInputType::shouldRespectListAttribute()
 {
     return InputType::themeSupportsDataListUI(this);
 }
+
+HTMLElement* RangeInputType::sliderThumbElement() const
+{
+    return sliderThumbElementOf(element());
+}
+
+HTMLElement* RangeInputType::sliderTrackElement() const
+{
+    return sliderTrackElementOf(element());
+}
+
+#if ENABLE(DATALIST_ELEMENT)
+void RangeInputType::listAttributeTargetChanged()
+{
+    m_tickMarkValuesDirty = true;
+    element()->setNeedsStyleRecalc();
+}
+
+static bool decimalCompare(const Decimal& a, const Decimal& b)
+{
+    return a < b;
+}
+
+void RangeInputType::updateTickMarkValues()
+{
+    if (!m_tickMarkValuesDirty)
+        return;
+    m_tickMarkValues.clear();
+    m_tickMarkValuesDirty = false;
+    HTMLDataListElement* dataList = element()->dataList();
+    if (!dataList)
+        return;
+    RefPtr<HTMLCollection> options = dataList->options();
+    m_tickMarkValues.reserveCapacity(options->length());
+    for (unsigned i = 0; i < options->length(); ++i) {
+        Node* node = options->item(i);
+        HTMLOptionElement* optionElement = toHTMLOptionElement(node);
+        String optionValue = optionElement->value();
+        if (!element()->isValidValue(optionValue))
+            continue;
+        m_tickMarkValues.append(parseToNumber(optionValue, Decimal::nan()));
+    }
+    m_tickMarkValues.shrinkToFit();
+    nonCopyingSort(m_tickMarkValues.begin(), m_tickMarkValues.end(), decimalCompare);
+}
+
+Decimal RangeInputType::findClosestTickMarkValue(const Decimal& value)
+{
+    updateTickMarkValues();
+    if (!m_tickMarkValues.size())
+        return Decimal::nan();
+
+    size_t left = 0;
+    size_t right = m_tickMarkValues.size();
+    size_t middle;
+    while (true) {
+        ASSERT(left <= right);
+        middle = left + (right - left) / 2;
+        if (!middle)
+            break;
+        if (middle == m_tickMarkValues.size() - 1 && m_tickMarkValues[middle] < value) {
+            middle++;
+            break;
+        }
+        if (m_tickMarkValues[middle - 1] <= value && m_tickMarkValues[middle] >= value)
+            break;
+
+        if (m_tickMarkValues[middle] < value)
+            left = middle;
+        else
+            right = middle;
+    }
+    const Decimal closestLeft = middle ? m_tickMarkValues[middle - 1] : Decimal::infinity(Decimal::Negative);
+    const Decimal closestRight = middle != m_tickMarkValues.size() ? m_tickMarkValues[middle] : Decimal::infinity(Decimal::Positive);
+    if (closestRight - value < value - closestLeft)
+        return closestRight;
+    return closestLeft;
+}
+#endif
 
 } // namespace WebCore

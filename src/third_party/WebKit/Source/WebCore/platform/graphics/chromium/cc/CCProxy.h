@@ -26,6 +26,7 @@
 #define CCProxy_h
 
 #include "IntRect.h"
+#include <public/WebCompositorOutputSurface.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
@@ -33,10 +34,9 @@
 
 namespace WebCore {
 
-class CCFontAtlas;
 class CCThread;
-class CCGraphicsContext;
-struct LayerRendererCapabilities;
+struct CCRenderingStats;
+struct RendererCapabilities;
 
 // Abstract class responsible for proxying commands from the main-thread side of
 // the compositor over to the compositor implementation.
@@ -64,7 +64,7 @@ public:
     virtual bool isStarted() const = 0;
 
     // Attempts to initialize a context to use for rendering. Returns false if the context could not be created.
-    // The context will not be used and no frames may be produced until initializeLayerRenderer() is called.
+    // The context will not be used and no frames may be produced until initializeRenderer() is called.
     virtual bool initializeContext() = 0;
 
     // Indicates that the compositing surface associated with our context is ready to use.
@@ -73,15 +73,15 @@ public:
     virtual void setVisible(bool) = 0;
 
     // Attempts to initialize the layer renderer. Returns false if the context isn't usable for compositing.
-    virtual bool initializeLayerRenderer() = 0;
+    virtual bool initializeRenderer() = 0;
 
     // Attempts to recreate the context and layer renderer after a context lost. Returns false if the renderer couldn't be
     // reinitialized.
     virtual bool recreateContext() = 0;
 
-    virtual int compositorIdentifier() const = 0;
+    virtual void implSideRenderingStats(CCRenderingStats&) = 0;
 
-    virtual const LayerRendererCapabilities& layerRendererCapabilities() const = 0;
+    virtual const RendererCapabilities& rendererCapabilities() const = 0;
 
     virtual void setNeedsAnimate() = 0;
     virtual void setNeedsCommit() = 0;
@@ -103,8 +103,6 @@ public:
 
     virtual void acquireLayerTextures() = 0;
 
-    virtual void setFontAtlas(PassOwnPtr<CCFontAtlas>) = 0;
-
     // Debug hooks
 #ifndef NDEBUG
     static bool isMainThread();
@@ -112,9 +110,6 @@ public:
     static bool isMainThreadBlocked();
     static void setMainThreadBlocked(bool);
 #endif
-
-    // Temporary hack while render_widget still does scheduling for CCLayerTreeHostMainThreadI
-    virtual CCGraphicsContext* context() = 0;
 
     // Testing hooks
     virtual void loseContext() = 0;

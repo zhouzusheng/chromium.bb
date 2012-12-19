@@ -111,6 +111,12 @@ public:
     bool m_inRemovedLastRefFunction;
 #endif
 
+    void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+    {
+        MemoryClassInfo info(memoryObjectInfo, this);
+        info.addMember(m_parent);
+    }
+
 private:
 #ifndef NDEBUG
     friend void adopted<>(TreeShared<NodeType, ParentNodeType>*);

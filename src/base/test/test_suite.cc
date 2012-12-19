@@ -24,11 +24,19 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
+#if defined(OS_IOS)
+#include "base/test/test_listener_ios.h"
+#else
 #include "base/test/mock_chrome_application_mac.h"
-#endif
+#endif  // OS_IOS
+#endif  // OS_MACOSX
 
 #if defined(OS_ANDROID)
 #include "base/test/test_support_android.h"
+#endif
+
+#if defined(OS_IOS)
+#include "base/test/test_support_ios.h"
 #endif
 
 #if defined(TOOLKIT_GTK)
@@ -102,9 +110,9 @@ void TestSuite::PreInitialize(int argc, char** argv,
   gtk_init_check(&argc, &argv);
 #endif  // defined(TOOLKIT_GTK)
 
-  // On Android when building tests as apks, AtExitManager is created in
+  // On Android, AtExitManager is created in
   // testing/android/native_test_wrapper.cc before main() is called.
-#if !defined(ANDROID_APK_TEST_TARGET)
+#if !defined(OS_ANDROID)
   if (create_at_exit_manager)
     at_exit_manager_.reset(new base::AtExitManager);
 #endif
@@ -185,6 +193,9 @@ int TestSuite::Run() {
   // Check to see if we are being run as a client process.
   if (!client_func.empty())
     return multi_process_function_list::InvokeChildProcessTest(client_func);
+#if defined(OS_IOS)
+  base::test_listener_ios::RegisterTestEndListener();
+#endif
   int result = RUN_ALL_TESTS();
 
   // If there are failed tests, see if we should ignore the failures.
@@ -232,14 +243,26 @@ void TestSuite::SuppressErrorDialogs() {
   // http://blogs.msdn.com/oldnewthing/archive/2004/07/27/198410.aspx
   UINT existing_flags = SetErrorMode(new_flags);
   SetErrorMode(existing_flags | new_flags);
+
+#if defined(_DEBUG) && defined(_HAS_EXCEPTIONS) && (_HAS_EXCEPTIONS == 1)
+  // Suppress the "Debug Assertion Failed" dialog.
+  // TODO(hbono): remove this code when gtest has it.
+  // http://groups.google.com/d/topic/googletestframework/OjuwNlXy5ac/discussion
+  _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+  _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif  // defined(_DEBUG) && defined(_HAS_EXCEPTIONS) && (_HAS_EXCEPTIONS == 1)
 #endif  // defined(OS_WIN)
 }
 
 void TestSuite::Initialize() {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(OS_IOS)
   // Some of the app unit tests spin runloops.
   mock_cr_app::RegisterMockCrApp();
 #endif
+
+#if defined(OS_IOS)
+  InitIOSTestMessageLoop();
+#endif  // OS_IOS
 
 #if defined(OS_ANDROID)
   InitAndroidTest();

@@ -6,6 +6,9 @@
 
 #include "base/logging.h"
 #include "ppapi/shared_impl/platform_file.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
@@ -40,12 +43,8 @@ PPB_Broker_API* PPB_Broker_Impl::AsPPB_Broker_API() {
   return this;
 }
 
-int32_t PPB_Broker_Impl::Connect(PP_CompletionCallback connect_callback) {
-  if (!connect_callback.func) {
-    // Synchronous calls are not supported.
-    return PP_ERROR_BLOCKS_MAIN_THREAD;
-  }
-
+int32_t PPB_Broker_Impl::Connect(
+    scoped_refptr<TrackedCallback> connect_callback) {
   // TODO(ddorwin): Return PP_ERROR_FAILED if plugin is in-process.
 
   if (broker_) {
@@ -61,7 +60,7 @@ int32_t PPB_Broker_Impl::Connect(PP_CompletionCallback connect_callback) {
   // and BrokerConnected is called before ConnectToBroker returns.
   // Because it must be created now, it must be aborted and cleared if
   // ConnectToBroker fails.
-  connect_callback_ = new TrackedCallback(this, connect_callback);
+  connect_callback_ = connect_callback;
 
   broker_ = plugin_instance->delegate()->ConnectToBroker(this);
   if (!broker_) {
@@ -77,6 +76,11 @@ int32_t PPB_Broker_Impl::GetHandle(int32_t* handle) {
     return PP_ERROR_FAILED;  // Handle not set yet.
   *handle = pipe_handle_;
   return PP_OK;
+}
+
+GURL PPB_Broker_Impl::GetDocumentUrl() {
+  PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
+  return plugin_instance->container()->element().document().url();
 }
 
 // Transfers ownership of the handle to the plugin.

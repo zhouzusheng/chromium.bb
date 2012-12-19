@@ -15,6 +15,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/url_request_context.h"
 #include "webkit/appcache/appcache_group.h"
 #include "webkit/appcache/appcache_histograms.h"
 
@@ -97,15 +98,14 @@ AppCacheUpdateJob::URLFetcher::URLFetcher(
       fetch_type_(fetch_type),
       retry_503_attempts_(0),
       buffer_(new net::IOBuffer(kBufferSize)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          request_(new net::URLRequest(url, this))) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(request_(
+          job->service_->request_context()->CreateRequest(url, this))) {
 }
 
 AppCacheUpdateJob::URLFetcher::~URLFetcher() {
 }
 
 void AppCacheUpdateJob::URLFetcher::Start() {
-  request_->set_context(job_->service_->request_context());
   request_->set_first_party_for_cookies(job_->manifest_url_);
   request_->set_load_flags(request_->load_flags() |
                            net::LOAD_DISABLE_INTERCEPT);
@@ -287,7 +287,7 @@ bool AppCacheUpdateJob::URLFetcher::MaybeRetryRequest() {
     return false;
   }
   ++retry_503_attempts_;
-  request_.reset(new net::URLRequest(url_, this));
+  request_.reset(job_->service_->request_context()->CreateRequest(url_, this));
   Start();
   return true;
 }

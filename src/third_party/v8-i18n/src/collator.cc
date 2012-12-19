@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,16 +14,32 @@
 
 #include "src/collator.h"
 
+#include "src/utils.h"
 #include "unicode/coll.h"
 #include "unicode/locid.h"
 #include "unicode/ucol.h"
 
 namespace v8_i18n {
 
-v8::Persistent<v8::FunctionTemplate> Collator::collator_template_;
+static icu::Collator* InitializeCollator(
+    v8::Handle<v8::String>, v8::Handle<v8::Object>, v8::Handle<v8::Object>);
+
+static icu::Collator* CreateICUCollator(
+    const icu::Locale&, v8::Handle<v8::Object>);
+
+static bool SetBooleanAttribute(
+    UColAttribute, const char*, v8::Handle<v8::Object>, icu::Collator*);
+
+static void SetResolvedSettings(
+    const icu::Locale&, icu::Collator*, v8::Handle<v8::Object>);
+
+static void SetBooleanSetting(
+    UColAttribute, icu::Collator*, const char*, v8::Handle<v8::Object>);
 
 icu::Collator* Collator::UnpackCollator(v8::Handle<v8::Object> obj) {
-  if (collator_template_->HasInstance(obj)) {
+  v8::HandleScope handle_scope;
+
+  if (obj->HasOwnProperty(v8::String::New("collator"))) {
     return static_cast<icu::Collator*>(obj->GetPointerFromInternalField(0));
   }
 
@@ -52,46 +68,27 @@ static v8::Handle<v8::Value> ThrowUnexpectedObjectError() {
                       "that is not a Collator.")));
 }
 
-// Extract a boolean option named in |option| and set it to |result|.
-// Return true if it's specified. Otherwise, return false.
-static bool ExtractBooleanOption(const v8::Local<v8::Object>& options,
-                                 const char* option,
-                                 bool* result) {
-  v8::HandleScope handle_scope;
-  v8::TryCatch try_catch;
-  v8::Handle<v8::Value> value = options->Get(v8::String::New(option));
-  if (try_catch.HasCaught()) {
-    return false;
-  }
-  // No need to check if |value| is empty because it's taken care of
-  // by TryCatch above.
-  if (!value->IsUndefined() && !value->IsNull()) {
-    if (value->IsBoolean()) {
-      *result = value->BooleanValue();
-      return true;
-    }
-  }
-  return false;
-}
-
 // When there's an ICU error, throw a JavaScript error with |message|.
 static v8::Handle<v8::Value> ThrowExceptionForICUError(const char* message) {
   return v8::ThrowException(v8::Exception::Error(v8::String::New(message)));
 }
 
-v8::Handle<v8::Value> Collator::CollatorCompare(const v8::Arguments& args) {
-  if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsString()) {
+// static
+v8::Handle<v8::Value> Collator::JSInternalCompare(
+    const v8::Arguments& args) {
+  if (args.Length() != 3 || !args[0]->IsObject() ||
+      !args[1]->IsString() || !args[2]->IsString()) {
     return v8::ThrowException(v8::Exception::SyntaxError(
-        v8::String::New("Two string arguments are required.")));
+        v8::String::New("Collator and two string arguments are required.")));
   }
 
-  icu::Collator* collator = UnpackCollator(args.Holder());
+  icu::Collator* collator = UnpackCollator(args[0]->ToObject());
   if (!collator) {
     return ThrowUnexpectedObjectError();
   }
 
-  v8::String::Value string_value1(args[0]);
-  v8::String::Value string_value2(args[1]);
+  v8::String::Value string_value1(args[1]);
+  v8::String::Value string_value2(args[2]);
   const UChar* string1 = reinterpret_cast<const UChar*>(*string_value1);
   const UChar* string2 = reinterpret_cast<const UChar*>(*string_value2);
   UErrorCode status = U_ZERO_ERROR;
@@ -100,109 +97,246 @@ v8::Handle<v8::Value> Collator::CollatorCompare(const v8::Arguments& args) {
 
   if (U_FAILURE(status)) {
     return ThrowExceptionForICUError(
-        "Unexpected failure in Collator.compare.");
+        "Internal error. Unexpected failure in Collator.compare.");
   }
 
   return v8::Int32::New(result);
 }
 
-v8::Handle<v8::Value> Collator::JSCollator(const v8::Arguments& args) {
+v8::Handle<v8::Value> Collator::JSCreateCollator(
+    const v8::Arguments& args) {
   v8::HandleScope handle_scope;
 
-  if (args.Length() != 2 || !args[0]->IsString() || !args[1]->IsObject()) {
+  if (args.Length() != 3 ||
+      !args[0]->IsString() ||
+      !args[1]->IsObject() ||
+      !args[2]->IsObject()) {
     return v8::ThrowException(v8::Exception::SyntaxError(
-        v8::String::New("Locale and collation options are required.")));
+        v8::String::New("Internal error, wrong parameters.")));
   }
 
-  v8::String::AsciiValue locale(args[0]);
-  icu::Locale icu_locale(*locale);
+  v8::Persistent<v8::ObjectTemplate> intl_collator_template =
+      Utils::GetTemplate();
 
+  // Create an empty object wrapper.
+  v8::Local<v8::Object> local_object = intl_collator_template->NewInstance();
+  v8::Persistent<v8::Object> wrapper =
+      v8::Persistent<v8::Object>::New(local_object);
+
+  // Set collator as internal field of the resulting JS object.
+  icu::Collator* collator = InitializeCollator(
+      args[0]->ToString(), args[1]->ToObject(), args[2]->ToObject());
+
+  if (!collator) {
+    return v8::ThrowException(v8::Exception::Error(v8::String::New(
+        "Internal error. Couldn't create ICU collator.")));
+  } else {
+    wrapper->SetPointerInInternalField(0, collator);
+
+    // Make it safer to unpack later on.
+    v8::TryCatch try_catch;
+    wrapper->Set(v8::String::New("collator"), v8::String::New("valid"));
+    if (try_catch.HasCaught()) {
+      return v8::ThrowException(v8::Exception::Error(
+          v8::String::New("Internal error, couldn't set property.")));
+    }
+  }
+
+  // Make object handle weak so we can delete iterator once GC kicks in.
+  wrapper.MakeWeak(NULL, DeleteCollator);
+
+  return wrapper;
+}
+
+static icu::Collator* InitializeCollator(v8::Handle<v8::String> locale,
+                                         v8::Handle<v8::Object> options,
+                                         v8::Handle<v8::Object> resolved) {
+  v8::HandleScope handle_scope;
+
+  // Convert BCP47 into ICU locale format.
+  UErrorCode status = U_ZERO_ERROR;
+  icu::Locale icu_locale;
+  char icu_result[ULOC_FULLNAME_CAPACITY];
+  int icu_length = 0;
+  v8::String::AsciiValue bcp47_locale(locale);
+  if (bcp47_locale.length() != 0) {
+    uloc_forLanguageTag(*bcp47_locale, icu_result, ULOC_FULLNAME_CAPACITY,
+                        &icu_length, &status);
+    if (U_FAILURE(status) || icu_length == 0) {
+      return NULL;
+    }
+    icu_locale = icu::Locale(icu_result);
+  }
+
+  icu::Collator* collator = CreateICUCollator(icu_locale, options);
+  if (!collator) {
+    // Remove extensions and try again.
+    icu::Locale no_extension_locale(icu_locale.getBaseName());
+    collator = CreateICUCollator(no_extension_locale, options);
+
+    // Set resolved settings (pattern, numbering system).
+    SetResolvedSettings(no_extension_locale, collator, resolved);
+  } else {
+    SetResolvedSettings(icu_locale, collator, resolved);
+  }
+
+  return collator;
+}
+
+static icu::Collator* CreateICUCollator(
+    const icu::Locale& icu_locale, v8::Handle<v8::Object> options) {
+  // Make collator from options.
   icu::Collator* collator = NULL;
   UErrorCode status = U_ZERO_ERROR;
   collator = icu::Collator::createInstance(icu_locale, status);
 
   if (U_FAILURE(status)) {
     delete collator;
-    return ThrowExceptionForICUError("Failed to create collator.");
+    return NULL;
   }
 
-  v8::Local<v8::Object> options(args[1]->ToObject());
+  // Set flags first, and then override them with sensitivity if necessary.
+  SetBooleanAttribute(UCOL_NUMERIC_COLLATION, "numeric", options, collator);
+  SetBooleanAttribute(
+      UCOL_NORMALIZATION_MODE, "normalization", options, collator);
 
-  // Below, we change collation options that are explicitly specified
-  // by a caller in JavaScript. Otherwise, we don't touch because
-  // we don't want to change the locale-dependent default value.
-  // The three options below are very likely to have the same default
-  // across locales, but I haven't checked them all. Others we may add
-  // in the future have certainly locale-dependent default (e.g.
-  // caseFirst is upperFirst for Danish while is off for most other locales).
-
-  bool ignore_case, ignore_accents, numeric;
-
-  if (ExtractBooleanOption(options, "ignoreCase", &ignore_case)) {
-    // We need to explicitly set the level to secondary to get case ignored.
-    // The default L3 ignores UCOL_CASE_LEVEL == UCOL_OFF !
-    if (ignore_case) {
-      collator->setStrength(icu::Collator::SECONDARY);
-    }
-    collator->setAttribute(UCOL_CASE_LEVEL, ignore_case ? UCOL_OFF : UCOL_ON,
-                           status);
-    if (U_FAILURE(status)) {
-      delete collator;
-      return ThrowExceptionForICUError("Failed to set ignoreCase.");
-    }
-  }
-
-  // Accents are taken into account with strength secondary or higher.
-  if (ExtractBooleanOption(options, "ignoreAccents", &ignore_accents)) {
-    if (!ignore_accents) {
-      collator->setStrength(icu::Collator::SECONDARY);
+  icu::UnicodeString case_first;
+  if (Utils::ExtractStringSetting(options, "caseFirst", &case_first)) {
+    if (case_first == UNICODE_STRING_SIMPLE("upper")) {
+      collator->setAttribute(UCOL_CASE_FIRST, UCOL_UPPER_FIRST, status);
+    } else if (case_first == UNICODE_STRING_SIMPLE("lower")) {
+      collator->setAttribute(UCOL_CASE_FIRST, UCOL_LOWER_FIRST, status);
     } else {
+      // Default (false/off).
+      collator->setAttribute(UCOL_CASE_FIRST, UCOL_OFF, status);
+    }
+  }
+
+  icu::UnicodeString sensitivity;
+  if (Utils::ExtractStringSetting(options, "sensitivity", &sensitivity)) {
+    if (sensitivity == UNICODE_STRING_SIMPLE("base")) {
       collator->setStrength(icu::Collator::PRIMARY);
+    } else if (sensitivity == UNICODE_STRING_SIMPLE("accent")) {
+      collator->setStrength(icu::Collator::SECONDARY);
+    } else if (sensitivity == UNICODE_STRING_SIMPLE("case")) {
+      collator->setStrength(icu::Collator::PRIMARY);
+      collator->setAttribute(UCOL_CASE_LEVEL, UCOL_ON, status);
+    } else {
+      // variant (default)
+      collator->setStrength(icu::Collator::TERTIARY);
     }
   }
 
-  if (ExtractBooleanOption(options, "numeric", &numeric)) {
-    collator->setAttribute(UCOL_NUMERIC_COLLATION,
-                           numeric ? UCOL_ON : UCOL_OFF, status);
+  bool ignore;
+  if (Utils::ExtractBooleanSetting(options, "ignorePunctuation", &ignore)) {
+    if (ignore) {
+      collator->setAttribute(UCOL_ALTERNATE_HANDLING, UCOL_SHIFTED, status);
+    }
+  }
+
+  return collator;
+}
+
+static bool SetBooleanAttribute(UColAttribute attribute,
+                                const char* name,
+                                v8::Handle<v8::Object> options,
+                                icu::Collator* collator) {
+  UErrorCode status = U_ZERO_ERROR;
+  bool result;
+  if (Utils::ExtractBooleanSetting(options, name, &result)) {
+    collator->setAttribute(attribute, result ? UCOL_ON : UCOL_OFF, status);
     if (U_FAILURE(status)) {
-      delete collator;
-      return ThrowExceptionForICUError("Failed to set numeric sort option.");
+      return false;
     }
   }
 
-  if (collator_template_.IsEmpty()) {
-    v8::Local<v8::FunctionTemplate> raw_template(v8::FunctionTemplate::New());
-    raw_template->SetClassName(v8::String::New("v8Locale.Collator"));
+  return true;
+}
 
-    // Define internal field count on instance template.
-    v8::Local<v8::ObjectTemplate> object_template =
-        raw_template->InstanceTemplate();
+static void SetResolvedSettings(const icu::Locale& icu_locale,
+                                icu::Collator* collator,
+                                v8::Handle<v8::Object> resolved) {
+  v8::HandleScope handle_scope;
 
-    // Set aside internal fields for icu collator.
-    object_template->SetInternalFieldCount(1);
+  SetBooleanSetting(UCOL_NUMERIC_COLLATION, collator, "numeric", resolved);
+  SetBooleanSetting(
+      UCOL_NORMALIZATION_MODE, collator, "normalization", resolved);
 
-    // Define all of the prototype methods on prototype template.
-    v8::Local<v8::ObjectTemplate> proto = raw_template->PrototypeTemplate();
-    proto->Set(v8::String::New("compare"),
-               v8::FunctionTemplate::New(CollatorCompare));
+  UErrorCode status = U_ZERO_ERROR;
 
-    collator_template_ =
-        v8::Persistent<v8::FunctionTemplate>::New(raw_template);
+  switch (collator->getAttribute(UCOL_CASE_FIRST, status)) {
+    case UCOL_LOWER_FIRST:
+      resolved->Set(v8::String::New("caseFirst"), v8::String::New("lower"));
+      break;
+    case UCOL_UPPER_FIRST:
+      resolved->Set(v8::String::New("caseFirst"), v8::String::New("upper"));
+      break;
+    default:
+      resolved->Set(v8::String::New("caseFirst"), v8::String::New("false"));
   }
 
-  // Create an empty object wrapper.
-  v8::Local<v8::Object> local_object =
-      collator_template_->GetFunction()->NewInstance();
-  v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(local_object);
+  switch (collator->getAttribute(UCOL_STRENGTH, status)) {
+    case UCOL_PRIMARY: {
+      resolved->Set(v8::String::New("strength"), v8::String::New("primary"));
 
-  // Set collator as internal field of the resulting JS object.
-  wrapper->SetPointerInInternalField(0, collator);
+      // case level: true + s1 -> case, s1 -> base.
+      if (UCOL_ON == collator->getAttribute(UCOL_CASE_LEVEL, status)) {
+        resolved->Set(v8::String::New("sensitivity"), v8::String::New("case"));
+      } else {
+        resolved->Set(v8::String::New("sensitivity"), v8::String::New("base"));
+      }
+      break;
+    }
+    case UCOL_SECONDARY:
+      resolved->Set(v8::String::New("strength"), v8::String::New("secondary"));
+      resolved->Set(v8::String::New("sensitivity"), v8::String::New("accent"));
+      break;
+    case UCOL_TERTIARY:
+      resolved->Set(v8::String::New("strength"), v8::String::New("tertiary"));
+      resolved->Set(v8::String::New("sensitivity"), v8::String::New("variant"));
+      break;
+    case UCOL_QUATERNARY:
+      // We shouldn't get quaternary and identical from ICU, but if we do
+      // put them into variant.
+      resolved->Set(v8::String::New("strength"), v8::String::New("quaternary"));
+      resolved->Set(v8::String::New("sensitivity"), v8::String::New("variant"));
+      break;
+    default:
+      resolved->Set(v8::String::New("strength"), v8::String::New("identical"));
+      resolved->Set(v8::String::New("sensitivity"), v8::String::New("variant"));
+  }
 
-  // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(NULL, DeleteCollator);
+  if (UCOL_SHIFTED == collator->getAttribute(UCOL_ALTERNATE_HANDLING, status)) {
+    resolved->Set(v8::String::New("ignorePunctuation"),
+                  v8::Boolean::New(true));
+  } else {
+    resolved->Set(v8::String::New("ignorePunctuation"),
+                  v8::Boolean::New(false));
+  }
 
-  return wrapper;
+  // Set the locale
+  char result[ULOC_FULLNAME_CAPACITY];
+  status = U_ZERO_ERROR;
+  uloc_toLanguageTag(
+      icu_locale.getName(), result, ULOC_FULLNAME_CAPACITY, FALSE, &status);
+  if (U_SUCCESS(status)) {
+    resolved->Set(v8::String::New("locale"), v8::String::New(result));
+  } else {
+    // This would never happen, since we got the locale from ICU.
+    resolved->Set(v8::String::New("locale"), v8::String::New("und"));
+  }
+}
+
+static void SetBooleanSetting(UColAttribute attribute,
+                              icu::Collator* collator,
+                              const char* property,
+                              v8::Handle<v8::Object> resolved) {
+  UErrorCode status = U_ZERO_ERROR;
+  if (UCOL_ON == collator->getAttribute(attribute, status)) {
+    resolved->Set(v8::String::New(property), v8::Boolean::New(true));
+  } else {
+    resolved->Set(v8::String::New(property), v8::Boolean::New(false));
+  }
 }
 
 }  // namespace v8_i18n

@@ -34,49 +34,56 @@
 
 #if USE(ACCELERATED_COMPOSITING)
 
+#include "LayerPainterChromium.h"
 #include "TiledLayerChromium.h"
-#include "cc/CCTiledLayerImpl.h"
 
 class SkCanvas;
 
 namespace WebCore {
 
-class GraphicsContext;
+class ContentLayerChromiumClient;
+class FloatRect;
 class IntRect;
 class LayerTextureUpdater;
 
-class ContentLayerDelegate {
+class ContentLayerPainter : public LayerPainterChromium {
+    WTF_MAKE_NONCOPYABLE(ContentLayerPainter);
 public:
-    virtual void paintContents(SkCanvas*, const IntRect& clip, IntRect& opaque) = 0;
+    static PassOwnPtr<ContentLayerPainter> create(ContentLayerChromiumClient*);
 
-protected:
-    virtual ~ContentLayerDelegate() { }
+    virtual void paint(SkCanvas*, const IntRect& contentRect, FloatRect& opaque) OVERRIDE;
+
+private:
+    explicit ContentLayerPainter(ContentLayerChromiumClient*);
+
+    ContentLayerChromiumClient* m_client;
 };
 
 // A layer that renders its contents into an SkCanvas.
 class ContentLayerChromium : public TiledLayerChromium {
 public:
-    static PassRefPtr<ContentLayerChromium> create(ContentLayerDelegate*);
+    static PassRefPtr<ContentLayerChromium> create(ContentLayerChromiumClient*);
 
     virtual ~ContentLayerChromium();
 
-    void clearDelegate() { m_delegate = 0; }
+    void clearClient() { m_client = 0; }
 
     virtual bool drawsContent() const OVERRIDE;
-    virtual void update(CCTextureUpdater&, const CCOcclusionTracker*) OVERRIDE;
-    virtual void idleUpdate(CCTextureUpdater&, const CCOcclusionTracker*) OVERRIDE;
+    virtual void setTexturePriorities(const CCPriorityCalculator&) OVERRIDE;
+    virtual void update(CCTextureUpdateQueue&, const CCOcclusionTracker*, CCRenderingStats&) OVERRIDE;
+    virtual bool needMoreUpdates() OVERRIDE;
 
     virtual void setOpaque(bool) OVERRIDE;
 
 protected:
-    explicit ContentLayerChromium(ContentLayerDelegate*);
+    explicit ContentLayerChromium(ContentLayerChromiumClient*);
 
 
 private:
     virtual LayerTextureUpdater* textureUpdater() const OVERRIDE { return m_textureUpdater.get(); }
     virtual void createTextureUpdaterIfNeeded() OVERRIDE;
 
-    ContentLayerDelegate* m_delegate;
+    ContentLayerChromiumClient* m_client;
     RefPtr<LayerTextureUpdater> m_textureUpdater;
 };
 

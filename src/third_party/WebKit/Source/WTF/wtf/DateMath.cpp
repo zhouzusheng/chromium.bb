@@ -86,6 +86,10 @@
 #include <time.h>
 #include <wtf/text/StringBuilder.h>
 
+#if OS(WINDOWS)
+#include <windows.h>
+#endif
+
 #if HAVE(ERRNO_H)
 #include <errno.h>
 #endif
@@ -96,6 +100,11 @@
 
 #if HAVE(SYS_TIMEB_H)
 #include <sys/timeb.h>
+#endif
+
+#if OS(QNX)
+// qnx6 defines timegm in nbutil.h
+#include <nbutil.h>
 #endif
 
 using namespace WTF;
@@ -122,6 +131,19 @@ static const int firstDayOfMonth[2][12] = {
     {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334},
     {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335}
 };
+
+#if !OS(WINCE)
+static inline void getLocalTime(const time_t* localTime, struct tm* localTM)
+{
+#if COMPILER(MSVC7_OR_LOWER) || COMPILER(MINGW)
+    *localTM = *localtime(localTime);
+#elif COMPILER(MSVC)
+    localtime_s(localTM, localTime);
+#else
+    localtime_r(localTime, localTM);
+#endif
+}
+#endif
 
 bool isLeapYear(int year)
 {
@@ -282,9 +304,9 @@ int dayInMonthFromDayInYear(int dayInYear, bool leapYear)
     return d - step;
 }
 
-static inline int monthToDayInYear(int month, bool isLeapYear)
+int dayInYear(int year, int month, int day)
 {
-    return firstDayOfMonth[isLeapYear][month];
+    return firstDayOfMonth[isLeapYear(year)][month] + day - 1;
 }
 
 double dateToDaysFrom1970(int year, int month, int day)
@@ -299,9 +321,7 @@ double dateToDaysFrom1970(int year, int month, int day)
 
     double yearday = floor(daysFrom1970ToYear(year));
     ASSERT((year >= 1970 && yearday >= 0) || (year < 1970 && yearday < 0));
-    int monthday = monthToDayInYear(month, isLeapYear(year));
-
-    return yearday + monthday + day - 1;
+    return yearday + dayInYear(year, month, day);
 }
 
 // There is a hard limit at 2038 that we currently do not have a workaround
@@ -356,6 +376,12 @@ int equivalentYearForDST(int year)
 
 int32_t calculateUTCOffset()
 {
+#if OS(WINDOWS)
+    TIME_ZONE_INFORMATION timeZoneInformation;
+    GetTimeZoneInformation(&timeZoneInformation);
+    int32_t bias = timeZoneInformation.Bias + timeZoneInformation.StandardBias;
+    return -bias * 60 * 1000;
+#else
     time_t localTime = time(0);
     tm localt;
     getLocalTime(&localTime, &localt);
@@ -376,7 +402,7 @@ int32_t calculateUTCOffset()
 #if HAVE(TM_ZONE)
     localt.tm_zone = 0;
 #endif
-    
+
 #if HAVE(TIMEGM)
     time_t utcOffset = timegm(&localt) - mktime(&localt);
 #else
@@ -386,6 +412,7 @@ int32_t calculateUTCOffset()
 #endif
 
     return static_cast<int32_t>(utcOffset * 1000);
+#endif
 }
 
 /*
@@ -393,6 +420,11 @@ int32_t calculateUTCOffset()
  */
 static double calculateDSTOffsetSimple(double localTimeSeconds, double utcOffset)
 {
+#if OS(WINCE)
+    UNUSED_PARAM(localTimeSeconds);
+    UNUSED_PARAM(utcOffset);
+    return 0;
+#else
     if (localTimeSeconds > maxUnixTime)
         localTimeSeconds = maxUnixTime;
     else if (localTimeSeconds < 0) // Go ahead a day to make localtime work (does not work with 0)
@@ -417,6 +449,7 @@ static double calculateDSTOffsetSimple(double localTimeSeconds, double utcOffset
         diff += secondsPerDay;
 
     return (diff * msPerSecond);
+#endif
 }
 
 // Get the DST offset, given a time in UTC
@@ -1039,13 +1072,13 @@ String makeRFC2822DateString(unsigned dayOfWeek, unsigned day, unsigned month, u
 {
     StringBuilder stringBuilder;
     stringBuilder.append(weekdayName[dayOfWeek]);
-    stringBuilder.append(", ");
-    stringBuilder.append(String::number(day));
-    stringBuilder.append(" ");
+    stringBuilder.appendLiteral(", ");
+    stringBuilder.appendNumber(day);
+    stringBuilder.append(' ');
     stringBuilder.append(monthName[month]);
-    stringBuilder.append(" ");
-    stringBuilder.append(String::number(year));
-    stringBuilder.append(" ");
+    stringBuilder.append(' ');
+    stringBuilder.appendNumber(year);
+    stringBuilder.append(' ');
 
     stringBuilder.append(twoDigitStringFromNumber(hours));
     stringBuilder.append(':');
@@ -1054,7 +1087,7 @@ String makeRFC2822DateString(unsigned dayOfWeek, unsigned day, unsigned month, u
     stringBuilder.append(twoDigitStringFromNumber(seconds));
     stringBuilder.append(' ');
 
-    stringBuilder.append(utcOffset > 0 ? "+" : "-");
+    stringBuilder.append(utcOffset > 0 ? '+' : '-');
     int absoluteUTCOffset = abs(utcOffset);
     stringBuilder.append(twoDigitStringFromNumber(absoluteUTCOffset / 60));
     stringBuilder.append(twoDigitStringFromNumber(absoluteUTCOffset % 60));

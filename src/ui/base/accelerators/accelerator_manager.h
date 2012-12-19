@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_ACCELERATORS_ACCELERATOR_MANAGER_H_
 #define UI_BASE_ACCELERATORS_ACCELERATOR_MANAGER_H_
-#pragma once
 
 #include <list>
 #include <map>
@@ -12,7 +11,7 @@
 
 #include "base/basictypes.h"
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/base/events.h"
+#include "ui/base/events/event_constants.h"
 #include "ui/base/ui_export.h"
 
 namespace ui {

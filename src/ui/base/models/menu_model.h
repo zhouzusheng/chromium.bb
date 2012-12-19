@@ -4,10 +4,10 @@
 
 #ifndef UI_BASE_MODELS_MENU_MODEL_H_
 #define UI_BASE_MODELS_MENU_MODEL_H_
-#pragma once
 
 #include "base/string16.h"
 #include "ui/base/models/menu_model_delegate.h"
+#include "ui/base/models/menu_separator_types.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
@@ -15,7 +15,7 @@
 
 namespace gfx {
 class Font;
-class ImageSkia;
+class Image;
 }
 
 namespace ui {
@@ -58,6 +58,9 @@ class UI_EXPORT MenuModel {
   // Returns the type of item at the specified index.
   virtual ItemType GetTypeAt(int index) const = 0;
 
+  // Returns the separator type at the specified index.
+  virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const = 0;
+
   // Returns the command id of the item at the specified index.
   virtual int GetCommandIdAt(int index) const = 0;
 
@@ -88,7 +91,7 @@ class UI_EXPORT MenuModel {
 
   // Gets the icon for the item at the specified index, returning true if there
   // is an icon, false otherwise.
-  virtual bool GetIconAt(int index, gfx::ImageSkia* icon) = 0;
+  virtual bool GetIconAt(int index, gfx::Image* icon) = 0;
 
   // Returns the model for a menu item with a line of buttons at |index|.
   virtual ButtonMenuItemModel* GetButtonMenuItemAt(int index) const = 0;

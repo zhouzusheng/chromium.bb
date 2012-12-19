@@ -6,7 +6,6 @@
 '''The <structure> element.
 '''
 
-import codecs
 import os
 
 from grit import exception
@@ -295,9 +294,10 @@ class StructureNode(base.Node):
         # b) the substitution values are language-dependent
         file_contents = self.GetRoot().GetSubstituter().Substitute(file_contents)
 
-      with codecs.open(filename, 'wb',
-                       self.attrs['output_encoding']) as file_object:
-        file_object.write(file_contents)
+      with open(filename, 'wb') as file_object:
+        output_stream = util.WrapOutputStream(file_object,
+                                              self.attrs['output_encoding'])
+        output_stream.write(file_contents)
 
       if self.attrs['run_command']:
         # Run arbitrary commands after translation is complete so that it

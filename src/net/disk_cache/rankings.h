@@ -6,7 +6,6 @@
 
 #ifndef NET_DISK_CACHE_RANKINGS_H_
 #define NET_DISK_CACHE_RANKINGS_H_
-#pragma once
 
 #include <list>
 
@@ -65,10 +64,9 @@ class Rankings {
   // iterators that may go stale.
   class ScopedRankingsBlock : public scoped_ptr<CacheRankingsBlock> {
    public:
-    ScopedRankingsBlock() : rankings_(NULL) {}
-    explicit ScopedRankingsBlock(Rankings* rankings) : rankings_(rankings) {}
-    ScopedRankingsBlock(Rankings* rankings, CacheRankingsBlock* node)
-        : scoped_ptr<CacheRankingsBlock>(node), rankings_(rankings) {}
+    ScopedRankingsBlock();
+    explicit ScopedRankingsBlock(Rankings* rankings);
+    ScopedRankingsBlock(Rankings* rankings, CacheRankingsBlock* node);
 
     ~ScopedRankingsBlock() {
       rankings_->FreeRankingsBlock(get());
@@ -181,6 +179,13 @@ class Rankings {
   // and the addresses of the last nodes visited.
   int CheckListSection(List list, Addr end1, Addr end2, bool forward,
                        Addr* last, Addr* second_last, int* num_items);
+  int CheckListSegment(Addr start, bool forward, Addr* last, int* num_items);
+  void DetailedCheck(List list);
+  static int ExplodedSanityCheck(CacheRankingsBlock* node);
+  void QuickListCheck();
+
+  // Returns an error code as appropriate.
+  int CheckHeadAndTail(List list);
 
   // Returns true if addr is the head or tail of any list. When there is a
   // match |list| will contain the list number for |addr|.

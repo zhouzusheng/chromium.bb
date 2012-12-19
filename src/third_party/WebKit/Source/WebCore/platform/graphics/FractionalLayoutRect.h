@@ -31,6 +31,7 @@
 #ifndef FractionalLayoutRect_h
 #define FractionalLayoutRect_h
 
+#include "FractionalLayoutBoxExtent.h"
 #include "FractionalLayoutPoint.h"
 #include "IntRect.h"
 #include <wtf/Vector.h>
@@ -99,6 +100,11 @@ public:
     void move(FractionalLayoutUnit dx, FractionalLayoutUnit dy) { m_location.move(dx, dy); } 
 
     void expand(const FractionalLayoutSize& size) { m_size += size; }
+    void expand(const FractionalLayoutBoxExtent& box)
+    {
+        m_location.move(-box.left(), -box.top());
+        m_size.expand(box.left() + box.right(), box.top() + box.bottom());
+    }
     void expand(FractionalLayoutUnit dw, FractionalLayoutUnit dh) { m_size.expand(dw, dh); }
     void contract(const FractionalLayoutSize& size) { m_size -= size; }
     void contract(FractionalLayoutUnit dw, FractionalLayoutUnit dh) { m_size.expand(-dw, -dh); }
@@ -159,7 +165,11 @@ public:
 
     FractionalLayoutRect transposedRect() const { return FractionalLayoutRect(m_location.transposedPoint(), m_size.transposedSize()); }
 
-    static FractionalLayoutRect infiniteRect() {return FractionalLayoutRect(FractionalLayoutUnit::min() / 2, FractionalLayoutUnit::min() / 2, FractionalLayoutUnit::max(), FractionalLayoutUnit::max()); }
+    static FractionalLayoutRect infiniteRect()
+    {
+        // Return a rect that is slightly smaller than the true max rect to allow pixelSnapping to round up to the nearest IntRect without overflowing.
+        return FractionalLayoutRect(FractionalLayoutUnit::nearlyMin() / 2, FractionalLayoutUnit::nearlyMin() / 2, FractionalLayoutUnit::nearlyMax(), FractionalLayoutUnit::nearlyMax());
+    }
 
 #if PLATFORM(QT)
     explicit FractionalLayoutRect(const QRect&);
@@ -201,9 +211,9 @@ inline bool operator!=(const FractionalLayoutRect& a, const FractionalLayoutRect
 inline IntRect pixelSnappedIntRect(const FractionalLayoutRect& rect)
 {
 #if ENABLE(SUBPIXEL_LAYOUT)
-    IntPoint roundedLocation = roundedIntPoint(rect.location());
-    return IntRect(roundedLocation, IntSize((rect.x() + rect.width()).round() - roundedLocation.x(),
-                                            (rect.y() + rect.height()).round() - roundedLocation.y()));
+    return IntRect(roundedIntPoint(rect.location()), IntSize(snapSizeToPixel(rect.width(), rect.x()),
+                                                             snapSizeToPixel(rect.height(), rect.y())));
+
 #else
     return IntRect(rect);
 #endif

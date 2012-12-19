@@ -196,6 +196,18 @@ bool Range::collapsed(ExceptionCode& ec) const
     return m_start == m_end;
 }
 
+static inline bool checkForDifferentRootContainer(const RangeBoundaryPoint& start, const RangeBoundaryPoint& end)
+{
+    Node* endRootContainer = end.container();
+    while (endRootContainer->parentNode())
+        endRootContainer = endRootContainer->parentNode();
+    Node* startRootContainer = start.container();
+    while (startRootContainer->parentNode())
+        startRootContainer = startRootContainer->parentNode();
+
+    return startRootContainer != endRootContainer || (Range::compareBoundaryPoints(start, end, ASSERT_NO_EXCEPTION) > 0);
+}
+
 void Range::setStart(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
 {
     if (!m_start.container()) {
@@ -208,9 +220,10 @@ void Range::setStart(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
         return;
     }
 
+    bool didMoveDocument = false;
     if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
-        return;
+        setDocument(refNode->document());
+        didMoveDocument = true;
     }
 
     ec = 0;
@@ -220,20 +233,8 @@ void Range::setStart(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
 
     m_start.set(refNode, offset, childNode);
 
-    // check if different root container
-    Node* endRootContainer = m_end.container();
-    while (endRootContainer->parentNode())
-        endRootContainer = endRootContainer->parentNode();
-    Node* startRootContainer = m_start.container();
-    while (startRootContainer->parentNode())
-        startRootContainer = startRootContainer->parentNode();
-    if (startRootContainer != endRootContainer)
+    if (didMoveDocument || checkForDifferentRootContainer(m_start, m_end))
         collapse(true, ec);
-    // check if new start after end
-    else if (compareBoundaryPoints(m_start, m_end, ec) > 0) {
-        ASSERT(!ec);
-        collapse(true, ec);
-    }
 }
 
 void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
@@ -248,9 +249,10 @@ void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
         return;
     }
 
+    bool didMoveDocument = false;
     if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
-        return;
+        setDocument(refNode->document());
+        didMoveDocument = true;
     }
 
     ec = 0;
@@ -260,20 +262,8 @@ void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
 
     m_end.set(refNode, offset, childNode);
 
-    // check if different root container
-    Node* endRootContainer = m_end.container();
-    while (endRootContainer->parentNode())
-        endRootContainer = endRootContainer->parentNode();
-    Node* startRootContainer = m_start.container();
-    while (startRootContainer->parentNode())
-        startRootContainer = startRootContainer->parentNode();
-    if (startRootContainer != endRootContainer)
+    if (didMoveDocument || checkForDifferentRootContainer(m_start, m_end))
         collapse(false, ec);
-    // check if new end before start
-    if (compareBoundaryPoints(m_start, m_end, ec) > 0) {
-        ASSERT(!ec);
-        collapse(false, ec);
-    }
 }
 
 void Range::setStart(const Position& start, ExceptionCode& ec)
@@ -313,13 +303,7 @@ bool Range::isPointInRange(Node* refNode, int offset, ExceptionCode& ec)
         return false;
     }
 
-    if (!refNode->attached()) {
-        // Firefox doesn't throw an exception for this case; it returns false.
-        return false;
-    }
-
-    if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
+    if (!refNode->attached() || refNode->document() != m_ownerDocument) {
         return false;
     }
 
@@ -1253,11 +1237,6 @@ void Range::setStartAfter(Node* refNode, ExceptionCode& ec)
         return;
     }
 
-    if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
-        return;
-    }
-
     ec = 0;
     checkNodeBA(refNode, ec);
     if (ec)
@@ -1275,11 +1254,6 @@ void Range::setEndBefore(Node* refNode, ExceptionCode& ec)
 
     if (!refNode) {
         ec = NOT_FOUND_ERR;
-        return;
-    }
-
-    if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
         return;
     }
 
@@ -1303,18 +1277,12 @@ void Range::setEndAfter(Node* refNode, ExceptionCode& ec)
         return;
     }
 
-    if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
-        return;
-    }
-
     ec = 0;
     checkNodeBA(refNode, ec);
     if (ec)
         return;
 
     setEnd(refNode->parentNode(), refNode->nodeIndex() + 1, ec);
-
 }
 
 void Range::selectNode(Node* refNode, ExceptionCode& ec)
@@ -1529,11 +1497,6 @@ void Range::setStartBefore(Node* refNode, ExceptionCode& ec)
         return;
     }
 
-    if (refNode->document() != m_ownerDocument) {
-        ec = WRONG_DOCUMENT_ERR;
-        return;
-    }
-
     ec = 0;
     checkNodeBA(refNode, ec);
     if (ec)
@@ -1613,7 +1576,7 @@ Node* Range::pastLastNode() const
     return m_end.container()->traverseNextSibling();
 }
 
-IntRect Range::boundingBox()
+IntRect Range::boundingBox() const
 {
     IntRect result;
     Vector<IntRect> rects;
@@ -1624,7 +1587,7 @@ IntRect Range::boundingBox()
     return result;
 }
 
-void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight, RangeInFixedPosition* inFixed)
+void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight, RangeInFixedPosition* inFixed) const
 {
     Node* startContainer = m_start.container();
     Node* endContainer = m_end.container();
@@ -1689,31 +1652,30 @@ void Range::textQuads(Vector<FloatQuad>& quads, bool useSelectionHeight, RangeIn
 }
 
 #ifndef NDEBUG
-#define FormatBufferSize 1024
 void Range::formatForDebugger(char* buffer, unsigned length) const
 {
-    String result;
+    StringBuilder result;
     String s;
-    
+
     if (!m_start.container() || !m_end.container())
-        result = "<empty>";
+        result.appendLiteral("<empty>");
     else {
+        const int FormatBufferSize = 1024;
         char s[FormatBufferSize];
-        result += "from offset ";
-        result += String::number(m_start.offset());
-        result += " of ";
+        result.appendLiteral("from offset ");
+        result.appendNumber(m_start.offset());
+        result.appendLiteral(" of ");
         m_start.container()->formatForDebugger(s, FormatBufferSize);
-        result += s;
-        result += " to offset ";
-        result += String::number(m_end.offset());
-        result += " of ";
+        result.append(s);
+        result.appendLiteral(" to offset ");
+        result.appendNumber(m_end.offset());
+        result.appendLiteral(" of ");
         m_end.container()->formatForDebugger(s, FormatBufferSize);
-        result += s;
+        result.append(s);
     }
-          
-    strncpy(buffer, result.utf8().data(), length - 1);
+
+    strncpy(buffer, result.toString().utf8().data(), length - 1);
 }
-#undef FormatBufferSize
 #endif
 
 bool areRangesEqual(const Range* a, const Range* b)
@@ -1979,7 +1941,6 @@ void Range::getBorderAndTextQuads(Vector<FloatQuad>& quads) const
     }
 }
 
-    
 FloatRect Range::boundingRect() const
 {
     if (!m_start.container())

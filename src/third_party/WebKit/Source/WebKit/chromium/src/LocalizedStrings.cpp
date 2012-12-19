@@ -34,11 +34,9 @@
 #include "IntSize.h"
 #include "NotImplemented.h"
 
-#include "WebKit.h"
-#include "platform/WebKitPlatformSupport.h"
-#include "platform/WebString.h"
-
+#include <public/Platform.h>
 #include <public/WebLocalizedString.h>
+#include <public/WebString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 
@@ -204,6 +202,58 @@ String AXMenuListActionVerb()
     return String();
 }
     
+#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+String AXAMPMFieldText()
+{
+    return query(WebLocalizedString::AXAMPMFieldText);
+}
+
+String AXDayOfMonthFieldText()
+{
+    return query(WebLocalizedString::AXDayOfMonthFieldText);
+}
+
+String AXDateTimeFieldEmptyValueText()
+{
+    return query(WebLocalizedString::AXDateTimeFieldEmptyValueText);
+}
+
+String AXHourFieldText()
+{
+    return query(WebLocalizedString::AXHourFieldText);
+}
+
+String AXMillisecondFieldText()
+{
+    return query(WebLocalizedString::AXMillisecondFieldText);
+}
+
+String AXMinuteFieldText()
+{
+    return query(WebLocalizedString::AXMinuteFieldText);
+}
+
+String AXMonthFieldText()
+{
+    return query(WebLocalizedString::AXMonthFieldText);
+}
+
+String AXSecondFieldText()
+{
+    return query(WebLocalizedString::AXSecondFieldText);
+}
+
+String AXWeekOfYearFieldText()
+{
+    return query(WebLocalizedString::AXWeekOfYearFieldText);
+}
+
+String AXYearFieldText()
+{
+    return query(WebLocalizedString::AXYearFieldText);
+}
+#endif
+
 String missingPluginText()
 {
     return query(WebLocalizedString::MissingPluginText);
@@ -213,6 +263,12 @@ String crashedPluginText()
 {
     notImplemented();
     return String("Plug-in Failure");
+}
+
+String blockedPluginByContentSecurityPolicyText()
+{
+    notImplemented();
+    return String();
 }
 
 String insecurePluginVersionText()

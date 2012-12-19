@@ -29,6 +29,7 @@
 
 #include "FilterEffectRenderer.h"
 
+#include "ColorSpace.h"
 #include "Document.h"
 #include "FEColorMatrix.h"
 #include "FEComponentTransfer.h"
@@ -42,11 +43,21 @@
 #include <wtf/MathExtras.h>
 
 #if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+#include "CustomFilterGlobalContext.h"
 #include "CustomFilterProgram.h"
 #include "CustomFilterOperation.h"
+#include "CustomFilterValidatedProgram.h"
 #include "FECustomFilter.h"
-#include "FrameView.h"
+#include "RenderView.h"
 #include "Settings.h"
+#endif
+
+#if ENABLE(SVG)
+#include "CachedSVGDocument.h"
+#include "CachedSVGDocumentReference.h"
+#include "SVGElement.h"
+#include "SVGFilterPrimitiveStandardAttributes.h"
+#include "SourceAlpha.h"
 #endif
 
 namespace WebCore {
@@ -81,6 +92,26 @@ static bool isCSSCustomFilterEnabled(Document* document)
     Settings* settings = document->settings();
     return settings && settings->isCSSCustomFilterEnabled() && settings->webGLEnabled();
 }
+
+static PassRefPtr<FECustomFilter> createCustomFilterEffect(Filter* filter, Document* document, CustomFilterOperation* operation)
+{
+    if (!isCSSCustomFilterEnabled(document))
+        return 0;
+    
+    RefPtr<CustomFilterProgram> program = operation->program();
+    if (!program->isLoaded())
+        return 0;
+
+    CustomFilterGlobalContext* globalContext = document->renderView()->customFilterGlobalContext();
+    globalContext->prepareContextIfNeeded(document->view()->hostWindow());
+    RefPtr<CustomFilterValidatedProgram> validatedProgram = globalContext->getValidatedProgram(program->programInfo());
+    if (!validatedProgram->isInitialized())
+        return 0;
+
+    return FECustomFilter::create(filter, globalContext, validatedProgram, operation->parameters(),
+                                  operation->meshRows(), operation->meshColumns(),
+                                  operation->meshBoxType(), operation->meshType());
+}
 #endif
 
 FilterEffectRenderer::FilterEffectRenderer()
@@ -107,6 +138,60 @@ GraphicsContext* FilterEffectRenderer::inputContext()
     return sourceImage() ? sourceImage()->context() : 0;
 }
 
+PassRefPtr<FilterEffect> FilterEffectRenderer::buildReferenceFilter(Document* document, PassRefPtr<FilterEffect> previousEffect, ReferenceFilterOperation* op)
+{
+#if ENABLE(SVG)
+    CachedSVGDocumentReference* cachedSVGDocumentReference = static_cast<CachedSVGDocumentReference*>(op->data());
+    CachedSVGDocument* cachedSVGDocument = cachedSVGDocumentReference ? cachedSVGDocumentReference->document() : 0;
+
+    // If we have an SVG document, this is an external reference. Otherwise
+    // we look up the referenced node in the current document.
+    if (cachedSVGDocument)
+        document = cachedSVGDocument->document();
+
+    if (!document)
+        return 0;
+
+    Element* filter = document->getElementById(op->fragment());
+    if (!filter)
+        return 0;
+
+    RefPtr<FilterEffect> effect;
+
+    // FIXME: Figure out what to do with SourceAlpha. Right now, we're
+    // using the alpha of the original input layer, which is obviously
+    // wrong. We should probably be extracting the alpha from the 
+    // previousEffect, but this requires some more processing.  
+    // This may need a spec clarification.
+    RefPtr<SVGFilterBuilder> builder = SVGFilterBuilder::create(previousEffect, SourceAlpha::create(this));
+
+    for (Node* node = filter->firstChild(); node; node = node->nextSibling()) {
+        if (!node->isSVGElement())
+            continue;
+
+        SVGElement* element = static_cast<SVGElement*>(node);
+        if (!element->isFilterEffect())
+            continue;
+
+        SVGFilterPrimitiveStandardAttributes* effectElement = static_cast<SVGFilterPrimitiveStandardAttributes*>(element);
+
+        effect = effectElement->build(builder.get(), this);
+        if (!effect)
+            continue;
+
+        effectElement->setStandardAttributes(effect.get());
+        builder->add(effectElement->result(), effect);
+        m_effects.append(effect);
+    }
+    return effect;
+#else
+    UNUSED_PARAM(document);
+    UNUSED_PARAM(previousEffect);
+    UNUSED_PARAM(op);
+    return 0;
+#endif
+}
+
 bool FilterEffectRenderer::build(Document* document, const FilterOperations& operations)
 {
 #if !ENABLE(CSS_SHADERS) || !ENABLE(WEBGL)
@@ -119,16 +204,19 @@ bool FilterEffectRenderer::build(Document* document, const FilterOperations& ope
     m_hasFilterThatMovesPixels = operations.hasFilterThatMovesPixels();
     if (m_hasFilterThatMovesPixels)
         operations.getOutsets(m_topOutset, m_rightOutset, m_bottomOutset, m_leftOutset);
-    m_effects.clear();
+    
+    // Keep the old effects on the stack until we've created the new effects.
+    // New FECustomFilters can reuse cached resources from old FECustomFilters.
+    FilterEffectList oldEffects;
+    m_effects.swap(oldEffects);
 
-    RefPtr<FilterEffect> previousEffect;
+    RefPtr<FilterEffect> previousEffect = m_sourceGraphic;
     for (size_t i = 0; i < operations.operations().size(); ++i) {
         RefPtr<FilterEffect> effect;
         FilterOperation* filterOperation = operations.operations().at(i).get();
         switch (filterOperation->getOperationType()) {
         case FilterOperation::REFERENCE: {
-            // FIXME: Not yet implemented.
-            // https://bugs.webkit.org/show_bug.cgi?id=72443
+            effect = buildReferenceFilter(document, previousEffect, static_cast<ReferenceFilterOperation*>(filterOperation));
             break;
         }
         case FilterOperation::GRAYSCALE: {
@@ -262,21 +350,12 @@ bool FilterEffectRenderer::build(Document* document, const FilterOperations& ope
                                                 dropShadowOperation->x(), dropShadowOperation->y(), dropShadowOperation->color(), 1);
             break;
         }
-#if ENABLE(CSS_SHADERS)
+#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
         case FilterOperation::CUSTOM: {
-#if ENABLE(WEBGL)
-            if (!isCSSCustomFilterEnabled(document))
-                continue;
-            
             CustomFilterOperation* customFilterOperation = static_cast<CustomFilterOperation*>(filterOperation);
-            RefPtr<CustomFilterProgram> program = customFilterOperation->program();
-            if (program->isLoaded()) {
-                effect = FECustomFilter::create(this, document->view()->root()->hostWindow(), program, customFilterOperation->parameters(),
-                                                customFilterOperation->meshRows(), customFilterOperation->meshColumns(),
-                                                customFilterOperation->meshBoxType(), customFilterOperation->meshType());
+            effect = createCustomFilterEffect(this, document, customFilterOperation);
+            if (effect)
                 m_hasCustomShaderFilter = true;
-            }
-#endif
             break;
         }
 #endif
@@ -287,19 +366,20 @@ bool FilterEffectRenderer::build(Document* document, const FilterOperations& ope
         if (effect) {
             // Unlike SVG, filters applied here should not clip to their primitive subregions.
             effect->setClipsToBounds(false);
+            effect->setColorSpace(ColorSpaceDeviceRGB);
             
-            if (previousEffect)
+            if (filterOperation->getOperationType() != FilterOperation::REFERENCE) {
                 effect->inputEffects().append(previousEffect);
-            m_effects.append(effect);
+                m_effects.append(effect);
+            }
             previousEffect = effect.release();
         }
     }
 
     // If we didn't make any effects, tell our caller we are not valid
-    if (!previousEffect)
+    if (!m_effects.size())
         return false;
 
-    m_effects.first()->inputEffects().append(m_sourceGraphic);
     setMaxEffectRects(m_sourceDrawingRegion);
     
     return true;
@@ -340,6 +420,10 @@ void FilterEffectRenderer::clearIntermediateResults()
 void FilterEffectRenderer::apply()
 {
     lastEffect()->apply();
+
+#if !USE(CG)
+    output()->transformColorSpace(lastEffect()->colorSpace(), ColorSpaceDeviceRGB);
+#endif
 }
 
 LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect)

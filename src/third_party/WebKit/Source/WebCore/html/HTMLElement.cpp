@@ -31,6 +31,7 @@
 #include "CSSValueKeywords.h"
 #include "CSSValuePool.h"
 #include "ChildListMutationScope.h"
+#include "DOMSettableTokenList.h"
 #include "DocumentFragment.h"
 #include "Event.h"
 #include "EventListener.h"
@@ -56,6 +57,7 @@
 #include <wtf/text/CString.h>
 
 #if ENABLE(MICRODATA)
+#include "HTMLPropertiesCollection.h"
 #include "MicroDataItemValue.h"
 #endif
 
@@ -626,6 +628,11 @@ void HTMLElement::applyAlignmentAttributeToStyle(const Attribute& attribute, Sty
         addPropertyToAttributeStyle(style, CSSPropertyVerticalAlign, verticalAlignValue);
 }
 
+bool HTMLElement::hasCustomFocusLogic() const
+{
+    return false;
+}
+
 bool HTMLElement::supportsFocus() const
 {
     return Element::supportsFocus() || (rendererIsEditable() && parentNode() && !parentNode()->rendererIsEditable());
@@ -745,7 +752,7 @@ void HTMLElement::setTranslate(bool enable)
 }
 
 
-HTMLCollection* HTMLElement::children()
+PassRefPtr<HTMLCollection> HTMLElement::children()
 {
     return ensureCachedHTMLCollection(NodeChildren);
 }
@@ -986,6 +993,52 @@ String HTMLElement::itemValueText() const
 void HTMLElement::setItemValueText(const String& value, ExceptionCode& ec)
 {
     setTextContent(value, ec);
+}
+
+PassRefPtr<HTMLPropertiesCollection> HTMLElement::properties()
+{
+    return static_cast<HTMLPropertiesCollection*>(ensureCachedHTMLCollection(ItemProperties).get());
+}
+
+void HTMLElement::getItemRefElements(Vector<HTMLElement*>& itemRefElements)
+{
+    if (!fastHasAttribute(itemscopeAttr))
+        return;
+
+    if (!fastHasAttribute(itemrefAttr) || !itemRef()->length()) {
+        itemRefElements.append(this);
+        return;
+    }
+
+    DOMSettableTokenList* itemRefs = itemRef();
+    RefPtr<DOMSettableTokenList> processedItemRef = DOMSettableTokenList::create();
+
+    Node* rootNode;
+    if (inDocument())
+        rootNode = document();
+    else {
+        rootNode = this;
+        while (Node* parent = rootNode->parentNode())
+            rootNode = parent;
+    }
+
+    for (Node* current = rootNode; current; current = current->traverseNextNode(rootNode)) {
+        if (!current->isHTMLElement())
+            continue;
+        HTMLElement* element = toHTMLElement(current);
+
+        if (element == this) {
+            itemRefElements.append(element);
+            continue;
+        }
+
+        const AtomicString& id = element->getIdAttribute();
+        if (!processedItemRef->tokens().contains(id) && itemRefs->tokens().contains(id)) {
+            processedItemRef->setValue(id);
+            if (!element->isDescendantOf(this))
+                itemRefElements.append(element);
+        }
+    }
 }
 #endif
 

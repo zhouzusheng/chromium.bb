@@ -45,9 +45,20 @@ class WebString;
 
 class WebMediaStreamSource {
 public:
+    class ExtraData {
+    public:
+        virtual ~ExtraData() { }
+    };
+
     enum Type {
         TypeAudio,
         TypeVideo
+    };
+
+    enum ReadyState {
+        ReadyStateLive = 0,
+        ReadyStateMuted = 1,
+        ReadyStateEnded = 2
     };
 
     WebMediaStreamSource() { }
@@ -69,6 +80,16 @@ public:
     WEBKIT_EXPORT WebString id() const;
     WEBKIT_EXPORT Type type() const;
     WEBKIT_EXPORT WebString name() const;
+
+    WEBKIT_EXPORT void setReadyState(ReadyState);
+    WEBKIT_EXPORT ReadyState readyState() const;
+
+    // Extra data associated with this object.
+    // If non-null, the extra data pointer will be deleted when the object is destroyed.
+    // Setting the extra data pointer will cause any existing non-null
+    // extra data pointer to be deleted.
+    WEBKIT_EXPORT ExtraData* extraData() const;
+    WEBKIT_EXPORT void setExtraData(ExtraData*);
 
 #if WEBKIT_IMPLEMENTATION
     WebMediaStreamSource(const WTF::PassRefPtr<WebCore::MediaStreamSource>&);

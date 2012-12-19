@@ -31,6 +31,7 @@
 #define InspectorDebuggerAgent_h
 
 #if ENABLE(JAVASCRIPT_DEBUGGER) && ENABLE(INSPECTOR)
+#include "ConsoleTypes.h"
 #include "InjectedScript.h"
 #include "InspectorBaseAgent.h"
 #include "InspectorFrontend.h"
@@ -67,7 +68,7 @@ public:
 
     virtual void causesRecompilation(ErrorString*, bool*);
     virtual void canSetScriptSource(ErrorString*, bool*);
-    virtual void supportsNativeBreakpoints(ErrorString*, bool*);
+    virtual void supportsSeparateScriptCompilationAndExecution(ErrorString*, bool*);
 
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
@@ -78,6 +79,7 @@ public:
 
     void didClearMainFrameWindowObject();
     bool isPaused();
+    void addMessageToConsole(MessageSource, MessageType);
 
     // Part of the protocol.
     virtual void setBreakpointsActive(ErrorString*, bool active);
@@ -89,11 +91,9 @@ public:
 
     virtual void searchInContent(ErrorString*, const String& scriptId, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> >&);
     virtual void setScriptSource(ErrorString*, const String& scriptId, const String& newContent, const bool* preview, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<InspectorObject>& result);
+    virtual void restartFrame(ErrorString*, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<InspectorObject>& result);
     virtual void getScriptSource(ErrorString*, const String& scriptId, String* scriptSource);
     virtual void getFunctionDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::FunctionDetails>&);
-    void schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<InspectorObject> data);
-    void cancelPauseOnNextStatement();
-    void breakProgram(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<InspectorObject> data);
     virtual void pause(ErrorString*);
     virtual void resume(ErrorString*);
     virtual void stepOver(ErrorString*);
@@ -109,6 +109,14 @@ public:
                              const bool* returnByValue,
                              RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
                              TypeBuilder::OptOutput<bool>* wasThrown);
+    void compileScript(ErrorString*, const String& expression, const String& sourceURL, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage);
+    void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown);
+    virtual void setOverlayMessage(ErrorString*, const String*);
+
+    void schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<InspectorObject> data);
+    void cancelPauseOnNextStatement();
+    void breakProgram(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<InspectorObject> data);
+    virtual void scriptExecutionBlockedByCSP(const String& directiveText);
 
     class Listener {
     public:
@@ -127,18 +135,21 @@ protected:
     virtual void stopListeningScriptDebugServer() = 0;
     virtual void muteConsole() = 0;
     virtual void unmuteConsole() = 0;
+    InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
+
+    virtual void disable();
+    virtual void didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception);
+    virtual void didContinue();
 
 private:
     void enable();
-    void disable();
     bool enabled();
 
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();
 
     virtual void didParseSource(const String& scriptId, const Script&);
     virtual void failedToParseSource(const String& url, const String& data, int firstLine, int errorLine, const String& errorMessage);
-    virtual void didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception);
-    virtual void didContinue();
 
     void setPauseOnExceptionsImpl(ErrorString*, int);
 

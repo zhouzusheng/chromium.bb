@@ -72,12 +72,8 @@ bool IsPreviewMetafile(const SkCanvas& canvas) {
 }
 #endif
 
-bool PlatformDevice::IsNativeFontRenderingAllowed() {
+bool PlatformDevice::SupportsPlatformPaint() {
   return true;
-}
-
-bool PlatformDevice::AlphaBlendUsed() const {
-  return false;
 }
 
 }  // namespace skia

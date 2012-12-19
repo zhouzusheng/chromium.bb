@@ -34,14 +34,14 @@
 
 namespace WebCore {
 
-class DeviceOrientation;
+class DeviceOrientationData;
 class DeviceOrientationClient;
 
 class DeviceOrientationController : public Supplement<Page> {
 public:
     ~DeviceOrientationController();
 
-    static PassOwnPtr<DeviceOrientationController> create(DeviceOrientationClient*);
+    static PassOwnPtr<DeviceOrientationController> create(Page*, DeviceOrientationClient*);
 
     void addListener(DOMWindow*);
     void removeListener(DOMWindow*);
@@ -50,7 +50,7 @@ public:
     void suspendEventsForAllListeners(DOMWindow*);
     void resumeEventsForAllListeners(DOMWindow*);
 
-    void didChangeDeviceOrientation(DeviceOrientation*);
+    void didChangeDeviceOrientation(DeviceOrientationData*);
 
     bool isActive() { return !m_listeners.isEmpty(); }
 
@@ -61,11 +61,12 @@ public:
     static bool isActiveAt(Page*);
 
 private:
-    DeviceOrientationController(DeviceOrientationClient*);
+    explicit DeviceOrientationController(Page*, DeviceOrientationClient*);
 
     void timerFired(Timer<DeviceOrientationController>*);
 
     DeviceOrientationClient* m_client;
+    Page* m_page;
     typedef HashCountedSet<RefPtr<DOMWindow> > ListenersCountedSet;
     ListenersCountedSet m_listeners;
     ListenersCountedSet m_suspendedListeners;

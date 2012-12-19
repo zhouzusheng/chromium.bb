@@ -16,34 +16,22 @@
 #include "SkTrace.h"
 #include "SkXfermode.h"
 
-namespace {
+SK_DEFINE_INST_COUNT(GrGLProgram)
 
-enum {
-    /// Used to mark a StageUniLocation field that should be bound
-    /// to a uniform during getUniformLocationsAndInitCache().
-    kUseUniform = 2000
-};
-
-}  // namespace
+#define GL_CALL(X) GR_GL_CALL(fContextInfo.interface(), X)
+#define GL_CALL_RET(R, X) GR_GL_CALL_RET(fContextInfo.interface(), R, X)
 
 #define PRINT_SHADERS 0
 
-typedef GrGLProgram::ProgramDesc::StageDesc StageDesc;
-
-#define VIEW_MATRIX_NAME "uViewM"
+typedef GrGLProgram::Desc::StageDesc StageDesc;
 
 #define POS_ATTR_NAME "aPosition"
 #define COL_ATTR_NAME "aColor"
 #define COV_ATTR_NAME "aCoverage"
 #define EDGE_ATTR_NAME "aEdge"
-#define COL_UNI_NAME "uColor"
-#define COV_UNI_NAME "uCoverage"
-#define COL_FILTER_UNI_NAME "uColorFilter"
-#define COL_MATRIX_UNI_NAME "uColorMatrix"
-#define COL_MATRIX_VEC_UNI_NAME "uColorMatrixVec"
 
 namespace {
-inline void tex_attr_name(int coordIdx, GrStringBuilder* s) {
+inline void tex_attr_name(int coordIdx, SkString* s) {
     *s = "aTexCoord";
     s->appendS32(coordIdx);
 }
@@ -58,116 +46,89 @@ inline const char* vector_all_coords(int count) {
     return ALL[count];
 }
 
-inline const char* all_ones_vec(int count) {
-    static const char* ONESVEC[] = {"ERROR", "1.0", "vec2(1,1)",
-                                    "vec3(1,1,1)", "vec4(1,1,1,1)"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(ONESVEC));
-    return ONESVEC[count];
-}
-
-inline const char* all_zeros_vec(int count) {
-    static const char* ZEROSVEC[] = {"ERROR", "0.0", "vec2(0,0)",
-                                    "vec3(0,0,0)", "vec4(0,0,0,0)"};
-    GrAssert(count >= 1 && count < (int)GR_ARRAY_COUNT(ZEROSVEC));
-    return ZEROSVEC[count];
-}
-
 inline const char* declared_color_output_name() { return "fsColorOut"; }
 inline const char* dual_source_output_name() { return "dualSourceOut"; }
 
-inline void tex_matrix_name(int stage, GrStringBuilder* s) {
-    *s = "uTexM";
-    s->appendS32(stage);
 }
 
-inline void sampler_name(int stage, GrStringBuilder* s) {
-    *s = "uSampler";
-    s->appendS32(stage);
+GrGLProgram* GrGLProgram::Create(const GrGLContextInfo& gl,
+                                 const Desc& desc,
+                                 const GrCustomStage** customStages) {
+    GrGLProgram* program = SkNEW_ARGS(GrGLProgram, (gl, desc, customStages));
+    if (!program->succeeded()) {
+        delete program;
+        program = NULL;
+    }
+    return program;
 }
 
-inline void tex_domain_name(int stage, GrStringBuilder* s) {
-    *s = "uTexDom";
-    s->appendS32(stage);
-}
-}
+GrGLProgram::GrGLProgram(const GrGLContextInfo& gl,
+                         const Desc& desc,
+                         const GrCustomStage** customStages)
+: fContextInfo(gl)
+, fUniformManager(gl) {
+    fDesc = desc;
+    fVShaderID = 0;
+    fGShaderID = 0;
+    fFShaderID = 0;
+    fProgramID = 0;
 
-GrGLProgram::GrGLProgram() {
+    fViewMatrix = GrMatrix::InvalidMatrix();
+    fViewportSize.set(-1, -1);
+    fColor = GrColor_ILLEGAL;
+    fColorFilterColor = GrColor_ILLEGAL;
+
+    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
+        fProgramStage[s] = NULL;
+        fTextureMatrices[s] = GrMatrix::InvalidMatrix();
+        // this is arbitrary, just initialize to something
+        fTextureOrientation[s] = GrGLTexture::kBottomUp_Orientation;
+    }
+
+    this->genProgram(customStages);
 }
 
 GrGLProgram::~GrGLProgram() {
+    if (fVShaderID) {
+        GL_CALL(DeleteShader(fVShaderID));
+    }
+    if (fGShaderID) {
+        GL_CALL(DeleteShader(fGShaderID));
+    }
+    if (fFShaderID) {
+        GL_CALL(DeleteShader(fFShaderID));
+    }
+    if (fProgramID) {
+        GL_CALL(DeleteProgram(fProgramID));
+    }
+
+    for (int i = 0; i < GrDrawState::kNumStages; ++i) {
+        delete fProgramStage[i];
+    }
+}
+
+void GrGLProgram::abandon() {
+    fVShaderID = 0;
+    fGShaderID = 0;
+    fFShaderID = 0;
+    fProgramID = 0;
 }
 
 void GrGLProgram::overrideBlend(GrBlendCoeff* srcCoeff,
                                 GrBlendCoeff* dstCoeff) const {
-    switch (fProgramDesc.fDualSrcOutput) {
-        case ProgramDesc::kNone_DualSrcOutput:
+    switch (fDesc.fDualSrcOutput) {
+        case Desc::kNone_DualSrcOutput:
             break;
         // the prog will write a coverage value to the secondary
         // output and the dst is blended by one minus that value.
-        case ProgramDesc::kCoverage_DualSrcOutput:
-        case ProgramDesc::kCoverageISA_DualSrcOutput:
-        case ProgramDesc::kCoverageISC_DualSrcOutput:
+        case Desc::kCoverage_DualSrcOutput:
+        case Desc::kCoverageISA_DualSrcOutput:
+        case Desc::kCoverageISC_DualSrcOutput:
         *dstCoeff = (GrBlendCoeff)GrGpu::kIS2C_GrBlendCoeff;
         break;
         default:
             GrCrash("Unexpected dual source blend output");
             break;
-    }
-}
-
-// assigns modulation of two vars to an output var
-// vars can be vec4s or floats (or one of each)
-// result is always vec4
-// if either var is "" then assign to the other var
-// if both are "" then assign all ones
-static inline void modulate_helper(const char* outputVar,
-                                   const char* var0,
-                                   const char* var1,
-                                   GrStringBuilder* code) {
-    GrAssert(NULL != outputVar);
-    GrAssert(NULL != var0);
-    GrAssert(NULL != var1);
-    GrAssert(NULL != code);
-
-    bool has0 = '\0' != *var0;
-    bool has1 = '\0' != *var1;
-
-    if (!has0 && !has1) {
-        code->appendf("\t%s = %s;\n", outputVar, all_ones_vec(4));
-    } else if (!has0) {
-        code->appendf("\t%s = vec4(%s);\n", outputVar, var1);
-    } else if (!has1) {
-        code->appendf("\t%s = vec4(%s);\n", outputVar, var0);
-    } else {
-        code->appendf("\t%s = vec4(%s * %s);\n", outputVar, var0, var1);
-    }
-}
-
-// assigns addition of two vars to an output var
-// vars can be vec4s or floats (or one of each)
-// result is always vec4
-// if either var is "" then assign to the other var
-// if both are "" then assign all zeros
-static inline void add_helper(const char* outputVar,
-                              const char* var0,
-                              const char* var1,
-                              GrStringBuilder* code) {
-    GrAssert(NULL != outputVar);
-    GrAssert(NULL != var0);
-    GrAssert(NULL != var1);
-    GrAssert(NULL != code);
-
-    bool has0 = '\0' != *var0;
-    bool has1 = '\0' != *var1;
-
-    if (!has0 && !has1) {
-        code->appendf("\t%s = %s;\n", outputVar, all_zeros_vec(4));
-    } else if (!has0) {
-        code->appendf("\t%s = vec4(%s);\n", outputVar, var1);
-    } else if (!has1) {
-        code->appendf("\t%s = vec4(%s);\n", outputVar, var0);
-    } else {
-        code->appendf("\t%s = vec4(%s + %s);\n", outputVar, var0, var1);
     }
 }
 
@@ -215,7 +176,7 @@ static inline void needBlendInputs(SkXfermode::Coeff srcCoeff,
  * Create a blend_coeff * value string to be used in shader code. Sets empty
  * string if result is trivially zero.
  */
-static void blendTermString(GrStringBuilder* str, SkXfermode::Coeff coeff,
+static void blendTermString(SkString* str, SkXfermode::Coeff coeff,
                              const char* src, const char* dst,
                              const char* value) {
     switch (coeff) {
@@ -229,13 +190,13 @@ static void blendTermString(GrStringBuilder* str, SkXfermode::Coeff coeff,
         str->printf("(%s * %s)", src, value);
         break;
     case SkXfermode::kISC_Coeff:
-        str->printf("((%s - %s) * %s)", all_ones_vec(4), src, value);
+        str->printf("((%s - %s) * %s)", GrGLSLOnesVecf(4), src, value);
         break;
     case SkXfermode::kDC_Coeff:
         str->printf("(%s * %s)", dst, value);
         break;
     case SkXfermode::kIDC_Coeff:
-        str->printf("((%s - %s) * %s)", all_ones_vec(4), dst, value);
+        str->printf("((%s - %s) * %s)", GrGLSLOnesVecf(4), dst, value);
         break;
     case SkXfermode::kSA_Coeff:      /** src alpha */
         str->printf("(%s.a * %s)", src, value);
@@ -258,47 +219,36 @@ static void blendTermString(GrStringBuilder* str, SkXfermode::Coeff coeff,
  * Adds a line to the fragment shader code which modifies the color by
  * the specified color filter.
  */
-static void addColorFilter(GrStringBuilder* fsCode, const char * outputVar,
+static void addColorFilter(SkString* fsCode, const char * outputVar,
                            SkXfermode::Coeff uniformCoeff,
                            SkXfermode::Coeff colorCoeff,
+                           const char* filterColor,
                            const char* inColor) {
-    GrStringBuilder colorStr, constStr;
-    blendTermString(&colorStr, colorCoeff, COL_FILTER_UNI_NAME,
-                    inColor, inColor);
-    blendTermString(&constStr, uniformCoeff, COL_FILTER_UNI_NAME,
-                    inColor, COL_FILTER_UNI_NAME);
+    SkString colorStr, constStr;
+    blendTermString(&colorStr, colorCoeff, filterColor, inColor, inColor);
+    blendTermString(&constStr, uniformCoeff, filterColor, inColor, filterColor);
 
-    add_helper(outputVar, colorStr.c_str(), constStr.c_str(), fsCode);
-}
-/**
- * Adds code to the fragment shader code which modifies the color by
- * the specified color matrix.
- */
-static void addColorMatrix(GrStringBuilder* fsCode, const char * outputVar,
-                           const char* inColor) {
-    fsCode->appendf("\t%s = %s * vec4(%s.rgb / %s.a, %s.a) + %s;\n", outputVar, COL_MATRIX_UNI_NAME, inColor, inColor, inColor, COL_MATRIX_VEC_UNI_NAME);
-    fsCode->appendf("\t%s.rgb *= %s.a;\n", outputVar, outputVar);
+    fsCode->appendf("\t%s = ", outputVar);
+    GrGLSLAdd4f(fsCode, colorStr.c_str(), constStr.c_str());
+    fsCode->append(";\n");
 }
 
-void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
-                                  GrVertexLayout layout,
-                                  CachedData* programData,
-                                  GrStringBuilder* coverageVar,
+bool GrGLProgram::genEdgeCoverage(SkString* coverageVar,
                                   GrGLShaderBuilder* segments) const {
-    if (layout & GrDrawTarget::kEdge_VertexLayoutBit) {
+    if (fDesc.fVertexLayout & GrDrawTarget::kEdge_VertexLayoutBit) {
         const char *vsName, *fsName;
         segments->addVarying(kVec4f_GrSLType, "Edge", &vsName, &fsName);
         segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
             GrGLShaderVar::kAttribute_TypeModifier, EDGE_ATTR_NAME);
         segments->fVSCode.appendf("\t%s = " EDGE_ATTR_NAME ";\n", vsName);
-        switch (fProgramDesc.fVertexEdgeType) {
+        switch (fDesc.fVertexEdgeType) {
         case GrDrawState::kHairLine_EdgeType:
             segments->fFSCode.appendf("\tfloat edgeAlpha = abs(dot(vec3(gl_FragCoord.xy,1), %s.xyz));\n", fsName);
             segments->fFSCode.append("\tedgeAlpha = max(1.0 - edgeAlpha, 0.0);\n");
             break;
         case GrDrawState::kQuad_EdgeType:
             segments->fFSCode.append("\tfloat edgeAlpha;\n");
-            // keep the derivative instructions outside the conditional 
+            // keep the derivative instructions outside the conditional
             segments->fFSCode.appendf("\tvec2 duvdx = dFdx(%s.xy);\n", fsName);
             segments->fFSCode.appendf("\tvec2 duvdy = dFdy(%s.xy);\n", fsName);
             segments->fFSCode.appendf("\tif (%s.z > 0.0 && %s.w > 0.0) {\n", fsName, fsName);
@@ -311,7 +261,7 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
             segments->fFSCode.appendf("\t\tedgeAlpha = (%s.x*%s.x - %s.y);\n", fsName, fsName, fsName);
             segments->fFSCode.append("\t\tedgeAlpha = clamp(0.5 - edgeAlpha / length(gF), 0.0, 1.0);\n"
                                       "\t}\n");
-            if (kES2_GrGLBinding == gl.binding()) {
+            if (kES2_GrGLBinding == fContextInfo.binding()) {
                 segments->fHeader.printf("#extension GL_OES_standard_derivatives: enable\n");
             }
             break;
@@ -324,7 +274,7 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
             segments->fFSCode.appendf("\tfloat edgeAlpha = (%s.x*%s.x - %s.y);\n", fsName, fsName, fsName);
             segments->fFSCode.append("\tedgeAlpha = sqrt(edgeAlpha*edgeAlpha / dot(gF, gF));\n");
             segments->fFSCode.append("\tedgeAlpha = max(1.0 - edgeAlpha, 0.0);\n");
-            if (kES2_GrGLBinding == gl.binding()) {
+            if (kES2_GrGLBinding == fContextInfo.binding()) {
                 segments->fHeader.printf("#extension GL_OES_standard_derivatives: enable\n");
             }
             break;
@@ -340,37 +290,35 @@ void GrGLProgram::genEdgeCoverage(const GrGLContextInfo& gl,
             break;
         }
         *coverageVar = "edgeAlpha";
+        return true;
     } else {
         coverageVar->reset();
+        return false;
     }
 }
 
-namespace {
-
-void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
-                   GrGLProgram::CachedData* programData,
-                   GrGLShaderBuilder* segments,
-                   GrStringBuilder* inColor) {
-    switch (colorInput) {
-        case GrGLProgram::ProgramDesc::kAttribute_ColorInput: {
-            segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
+void GrGLProgram::genInputColor(GrGLShaderBuilder* builder, SkString* inColor) {
+    switch (fDesc.fColorInput) {
+        case GrGLProgram::Desc::kAttribute_ColorInput: {
+            builder->fVSAttrs.push_back().set(kVec4f_GrSLType,
                 GrGLShaderVar::kAttribute_TypeModifier,
                 COL_ATTR_NAME);
             const char *vsName, *fsName;
-            segments->addVarying(kVec4f_GrSLType, "Color", &vsName, &fsName);
-            segments->fVSCode.appendf("\t%s = " COL_ATTR_NAME ";\n", vsName);
+            builder->addVarying(kVec4f_GrSLType, "Color", &vsName, &fsName);
+            builder->fVSCode.appendf("\t%s = " COL_ATTR_NAME ";\n", vsName);
             *inColor = fsName;
             } break;
-        case GrGLProgram::ProgramDesc::kUniform_ColorInput:
-            segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-                                 kVec4f_GrSLType, COL_UNI_NAME);
-            programData->fUniLocations.fColorUni = kUseUniform;
-            *inColor = COL_UNI_NAME;
+        case GrGLProgram::Desc::kUniform_ColorInput: {
+            const char* name;
+            fUniforms.fColorUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                      kVec4f_GrSLType, "Color", &name);
+            *inColor = name;
             break;
-        case GrGLProgram::ProgramDesc::kTransBlack_ColorInput:
+        }
+        case GrGLProgram::Desc::kTransBlack_ColorInput:
             GrAssert(!"needComputedColor should be false.");
             break;
-        case GrGLProgram::ProgramDesc::kSolidWhite_ColorInput:
+        case GrGLProgram::Desc::kSolidWhite_ColorInput:
             break;
         default:
             GrCrash("Unknown color type.");
@@ -378,8 +326,22 @@ void genInputColor(GrGLProgram::ProgramDesc::ColorInput colorInput,
     }
 }
 
-void genAttributeCoverage(GrGLShaderBuilder* segments,
-                          GrStringBuilder* inOutCoverage) {
+void GrGLProgram::genUniformCoverage(GrGLShaderBuilder* builder, SkString* inOutCoverage) {
+    const char* covUniName;
+    fUniforms.fCoverageUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                 kVec4f_GrSLType, "Coverage", &covUniName);
+    if (inOutCoverage->size()) {
+        builder->fFSCode.appendf("\tvec4 uniCoverage = %s * %s;\n",
+                                  covUniName, inOutCoverage->c_str());
+        *inOutCoverage = "uniCoverage";
+    } else {
+        *inOutCoverage = covUniName;
+    }
+}
+
+namespace {
+void gen_attribute_coverage(GrGLShaderBuilder* segments,
+                            SkString* inOutCoverage) {
     segments->fVSAttrs.push_back().set(kVec4f_GrSLType,
                                        GrGLShaderVar::kAttribute_TypeModifier,
                                        COV_ATTR_NAME);
@@ -394,35 +356,18 @@ void genAttributeCoverage(GrGLShaderBuilder* segments,
         *inOutCoverage = fsName;
     }
 }
-    
-void genUniformCoverage(GrGLShaderBuilder* segments,
-                        GrGLProgram::CachedData* programData,
-                        GrStringBuilder* inOutCoverage) {
-    segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-                         kVec4f_GrSLType, COV_UNI_NAME);
-    programData->fUniLocations.fCoverageUni = kUseUniform;
-    if (inOutCoverage->size()) {
-        segments->fFSCode.appendf("\tvec4 uniCoverage = %s * %s;\n",
-                                  COV_UNI_NAME, inOutCoverage->c_str());
-        *inOutCoverage = "uniCoverage";
-    } else {
-        *inOutCoverage = COV_UNI_NAME;
-    }
 }
 
-}
-
-void GrGLProgram::genGeometryShader(const GrGLContextInfo& gl,
-                                    GrGLShaderBuilder* segments) const {
+void GrGLProgram::genGeometryShader(GrGLShaderBuilder* segments) const {
 #if GR_GL_EXPERIMENTAL_GS
-    if (fProgramDesc.fExperimentalGS) {
-        GrAssert(gl.glslGeneration() >= k150_GrGLSLGeneration);
+    if (fDesc.fExperimentalGS) {
+        GrAssert(fContextInfo.glslGeneration() >= k150_GrGLSLGeneration);
         segments->fGSHeader.append("layout(triangles) in;\n"
                                    "layout(triangle_strip, max_vertices = 6) out;\n");
         segments->fGSCode.append("void main() {\n"
                                  "\tfor (int i = 0; i < 3; ++i) {\n"
                                   "\t\tgl_Position = gl_in[i].gl_Position;\n");
-        if (this->fProgramDesc.fEmitsPointSize) {
+        if (fDesc.fEmitsPointSize) {
             segments->fGSCode.append("\t\tgl_PointSize = 1.0;\n");
         }
         GrAssert(segments->fGSInputs.count() == segments->fGSOutputs.count());
@@ -440,46 +385,138 @@ void GrGLProgram::genGeometryShader(const GrGLContextInfo& gl,
 #endif
 }
 
-const char* GrGLProgram::adjustInColor(const GrStringBuilder& inColor) const {
+const char* GrGLProgram::adjustInColor(const SkString& inColor) const {
     if (inColor.size()) {
           return inColor.c_str();
     } else {
-        if (ProgramDesc::kSolidWhite_ColorInput == fProgramDesc.fColorInput) {
-            return all_ones_vec(4);
+        if (Desc::kSolidWhite_ColorInput == fDesc.fColorInput) {
+            return GrGLSLOnesVecf(4);
         } else {
-            return all_zeros_vec(4);
+            return GrGLSLZerosVecf(4);
         }
     }
 }
 
-// If this destructor is in the header file, we must include GrGLProgramStage
-// instead of just forward-declaring it.
-GrGLProgram::CachedData::~CachedData() {
-    for (int i = 0; i < GrDrawState::kNumStages; ++i) {
-        delete fCustomStage[i];
+namespace {
+// prints a shader using params similar to glShaderSource
+void print_shader(GrGLint stringCnt,
+                  const GrGLchar** strings,
+                  GrGLint* stringLengths) {
+    for (int i = 0; i < stringCnt; ++i) {
+        if (NULL == stringLengths || stringLengths[i] < 0) {
+            GrPrintf(strings[i]);
+        } else {
+            GrPrintf("%.*s", stringLengths[i], strings[i]);
+        }
     }
 }
 
+// Compiles a GL shader, returns shader ID or 0 if failed params have same meaning as glShaderSource
+GrGLuint compile_shader(const GrGLContextInfo& gl,
+                        GrGLenum type,
+                        int stringCnt,
+                        const char** strings,
+                        int* stringLengths) {
+    SK_TRACE_EVENT1("GrGLProgram::CompileShader",
+                    "stringCount", SkStringPrintf("%i", stringCnt).c_str());
 
-bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
-                             GrCustomStage** customStages,
-                             GrGLProgram::CachedData* programData) const {
-    GrGLShaderBuilder segments;
-    const uint32_t& layout = fProgramDesc.fVertexLayout;
+    GrGLuint shader;
+    GR_GL_CALL_RET(gl.interface(), shader, CreateShader(type));
+    if (0 == shader) {
+        return 0;
+    }
 
-    programData->fUniLocations.reset();
+    const GrGLInterface* gli = gl.interface();
+    GrGLint compiled = GR_GL_INIT_ZERO;
+    GR_GL_CALL(gli, ShaderSource(shader, stringCnt, strings, stringLengths));
+    GR_GL_CALL(gli, CompileShader(shader));
+    GR_GL_CALL(gli, GetShaderiv(shader, GR_GL_COMPILE_STATUS, &compiled));
+
+    if (!compiled) {
+        GrGLint infoLen = GR_GL_INIT_ZERO;
+        GR_GL_CALL(gli, GetShaderiv(shader, GR_GL_INFO_LOG_LENGTH, &infoLen));
+        SkAutoMalloc log(sizeof(char)*(infoLen+1)); // outside if for debugger
+        if (infoLen > 0) {
+            // retrieve length even though we don't need it to workaround bug in chrome cmd buffer
+            // param validation.
+            GrGLsizei length = GR_GL_INIT_ZERO;
+            GR_GL_CALL(gli, GetShaderInfoLog(shader, infoLen+1,
+                                             &length, (char*)log.get()));
+            print_shader(stringCnt, strings, stringLengths);
+            GrPrintf("\n%s", log.get());
+        }
+        GrAssert(!"Shader compilation failed!");
+        GR_GL_CALL(gli, DeleteShader(shader));
+        return 0;
+    }
+    return shader;
+}
+
+// helper version of above for when shader is already flattened into a single SkString
+GrGLuint compile_shader(const GrGLContextInfo& gl, GrGLenum type, const SkString& shader) {
+    const GrGLchar* str = shader.c_str();
+    int length = shader.size();
+    return compile_shader(gl, type, 1, &str, &length);
+}
+
+}
+
+// compiles all the shaders from builder and stores the shader IDs
+bool GrGLProgram::compileShaders(const GrGLShaderBuilder& builder) {
+
+    SkString shader;
+
+    builder.getShader(GrGLShaderBuilder::kVertex_ShaderType, &shader);
+#if PRINT_SHADERS
+    GrPrintf(shader.c_str());
+    GrPrintf("\n");
+#endif
+    if (!(fVShaderID = compile_shader(fContextInfo, GR_GL_VERTEX_SHADER, shader))) {
+        return false;
+    }
+
+    if (builder.fUsesGS) {
+        builder.getShader(GrGLShaderBuilder::kGeometry_ShaderType, &shader);
+#if PRINT_SHADERS
+        GrPrintf(shader.c_str());
+        GrPrintf("\n");
+#endif
+        if (!(fGShaderID = compile_shader(fContextInfo, GR_GL_GEOMETRY_SHADER, shader))) {
+            return false;
+        }
+    } else {
+        fGShaderID = 0;
+    }
+
+    builder.getShader(GrGLShaderBuilder::kFragment_ShaderType, &shader);
+#if PRINT_SHADERS
+    GrPrintf(shader.c_str());
+    GrPrintf("\n");
+#endif
+    if (!(fFShaderID = compile_shader(fContextInfo, GR_GL_FRAGMENT_SHADER, shader))) {
+        return false;
+    }
+
+    return true;
+}
+
+bool GrGLProgram::genProgram(const GrCustomStage** customStages) {
+    GrAssert(0 == fProgramID);
+
+    GrGLShaderBuilder builder(fContextInfo, fUniformManager);
+    const uint32_t& layout = fDesc.fVertexLayout;
 
 #if GR_GL_EXPERIMENTAL_GS
-    segments.fUsesGS = fProgramDesc.fExperimentalGS;
+    builder.fUsesGS = fDesc.fExperimentalGS;
 #endif
 
     SkXfermode::Coeff colorCoeff, uniformCoeff;
-    bool applyColorMatrix = SkToBool(fProgramDesc.fColorMatrixEnabled);
+    bool applyColorMatrix = SkToBool(fDesc.fColorMatrixEnabled);
     // The rest of transfer mode color filters have not been implemented
-    if (fProgramDesc.fColorFilterXfermode < SkXfermode::kCoeffModesCnt) {
+    if (fDesc.fColorFilterXfermode < SkXfermode::kCoeffModesCnt) {
         GR_DEBUGCODE(bool success =)
             SkXfermode::ModeAsCoeff(static_cast<SkXfermode::Mode>
-                                    (fProgramDesc.fColorFilterXfermode),
+                                    (fDesc.fColorFilterXfermode),
                                     &uniformCoeff, &colorCoeff);
         GR_DEBUGASSERT(success);
     } else {
@@ -490,7 +527,7 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     // no need to do the color filter / matrix at all if coverage is 0. The
     // output color is scaled by the coverage. All the dual source outputs are
     // scaled by the coverage as well.
-    if (ProgramDesc::kTransBlack_ColorInput == fProgramDesc.fCoverageInput) {
+    if (Desc::kTransBlack_ColorInput == fDesc.fCoverageInput) {
         colorCoeff = SkXfermode::kZero_Coeff;
         uniformCoeff = SkXfermode::kZero_Coeff;
         applyColorMatrix = false;
@@ -499,7 +536,7 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     // If we know the final color is going to be all zeros then we can
     // simplify the color filter coeffecients. needComputedColor will then
     // come out false below.
-    if (ProgramDesc::kTransBlack_ColorInput == fProgramDesc.fColorInput) {
+    if (Desc::kTransBlack_ColorInput == fDesc.fColorInput) {
         colorCoeff = SkXfermode::kZero_Coeff;
         if (SkXfermode::kDC_Coeff == uniformCoeff ||
             SkXfermode::kDA_Coeff == uniformCoeff) {
@@ -518,62 +555,53 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     // the dual source output has no canonical var name, have to
     // declare an output, which is incompatible with gl_FragColor/gl_FragData.
     bool dualSourceOutputWritten = false;
-    segments.fHeader.printf(GrGetGLSLVersionDecl(gl.binding(),
-                                                 gl.glslGeneration()));
+    builder.fHeader.append(GrGetGLSLVersionDecl(fContextInfo.binding(),
+                                                fContextInfo.glslGeneration()));
 
     GrGLShaderVar colorOutput;
-    bool isColorDeclared = GrGLSLSetupFSColorOuput(gl.glslGeneration(),
+    bool isColorDeclared = GrGLSLSetupFSColorOuput(fContextInfo.glslGeneration(),
                                                    declared_color_output_name(),
                                                    &colorOutput);
     if (isColorDeclared) {
-        segments.fFSOutputs.push_back(colorOutput);
+        builder.fFSOutputs.push_back(colorOutput);
     }
 
-    segments.addUniform(GrGLShaderBuilder::kVertex_VariableLifetime,
-                        kMat33f_GrSLType, VIEW_MATRIX_NAME);
-    programData->fUniLocations.fViewMatrixUni = kUseUniform;
+    const char* viewMName;
+    fUniforms.fViewMatrixUni = builder.addUniform(GrGLShaderBuilder::kVertex_ShaderType,
+                                                  kMat33f_GrSLType, "ViewM", &viewMName);
 
-    segments.fVSAttrs.push_back().set(kVec2f_GrSLType,
-        GrGLShaderVar::kAttribute_TypeModifier, POS_ATTR_NAME);
+    builder.fVSAttrs.push_back().set(kVec2f_GrSLType,
+                                     GrGLShaderVar::kAttribute_TypeModifier,
+                                     POS_ATTR_NAME);
 
-    segments.fVSCode.append(
-        "void main() {\n"
-            "\tvec3 pos3 = " VIEW_MATRIX_NAME " * vec3("POS_ATTR_NAME", 1);\n"
-            "\tgl_Position = vec4(pos3.xy, 0, pos3.z);\n");
+    builder.fVSCode.appendf("void main() {\n"
+                              "\tvec3 pos3 = %s * vec3("POS_ATTR_NAME", 1);\n"
+                              "\tgl_Position = vec4(pos3.xy, 0, pos3.z);\n",
+                            viewMName);
 
     // incoming color to current stage being processed.
-    GrStringBuilder inColor;
+    SkString inColor;
 
     if (needComputedColor) {
-        genInputColor((ProgramDesc::ColorInput) fProgramDesc.fColorInput,
-                      programData, &segments, &inColor);
+        this->genInputColor(&builder, &inColor);
     }
 
     // we output point size in the GS if present
-    if (fProgramDesc.fEmitsPointSize && !segments.fUsesGS){
-        segments.fVSCode.append("\tgl_PointSize = 1.0;\n");
+    if (fDesc.fEmitsPointSize && !builder.fUsesGS){
+        builder.fVSCode.append("\tgl_PointSize = 1.0;\n");
     }
 
-    segments.fFSCode.append("void main() {\n");
+    builder.fFSCode.append("void main() {\n");
 
     // add texture coordinates that are used to the list of vertex attr decls
-    GrStringBuilder texCoordAttrs[GrDrawState::kMaxTexCoords];
+    SkString texCoordAttrs[GrDrawState::kMaxTexCoords];
     for (int t = 0; t < GrDrawState::kMaxTexCoords; ++t) {
         if (GrDrawTarget::VertexUsesTexCoordIdx(t, layout)) {
             tex_attr_name(t, texCoordAttrs + t);
-            segments.fVSAttrs.push_back().set(kVec2f_GrSLType,
+            builder.fVSAttrs.push_back().set(kVec2f_GrSLType,
                 GrGLShaderVar::kAttribute_TypeModifier,
                 texCoordAttrs[t].c_str());
         }
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    // We need to convert generic effect representations to GL-specific
-    // backends so they can be accesseed in genStageCode() and in subsequent,
-    // uses of programData, but it's safest to do so below when we're *sure*
-    // we need them.
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        programData->fCustomStage[s] = NULL;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -582,42 +610,34 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     // if we have color stages string them together, feeding the output color
     // of each to the next and generating code for each stage.
     if (needComputedColor) {
-        GrStringBuilder outColor;
-        for (int s = 0; s < fProgramDesc.fFirstCoverageStage; ++s) {
-            if (fProgramDesc.fStages[s].isEnabled()) {
+        SkString outColor;
+        for (int s = 0; s < fDesc.fFirstCoverageStage; ++s) {
+            if (fDesc.fStages[s].isEnabled()) {
                 // create var to hold stage result
                 outColor = "color";
                 outColor.appendS32(s);
-                segments.fFSCode.appendf("\tvec4 %s;\n", outColor.c_str());
+                builder.fFSCode.appendf("\tvec4 %s;\n", outColor.c_str());
 
                 const char* inCoords;
                 // figure out what our input coords are
-                if (GrDrawTarget::StagePosAsTexCoordVertexLayoutBit(s) &
-                    layout) {
+                int tcIdx = GrDrawTarget::VertexTexCoordsForStage(s, layout);
+                if (tcIdx < 0) {
                     inCoords = POS_ATTR_NAME;
                 } else {
-                    int tcIdx = GrDrawTarget::VertexTexCoordsForStage(s, layout);
-                     // we better have input tex coordinates if stage is enabled.
-                    GrAssert(tcIdx >= 0);
+                    // must have input tex coordinates if stage is enabled.
                     GrAssert(texCoordAttrs[tcIdx].size());
                     inCoords = texCoordAttrs[tcIdx].c_str();
                 }
 
-                if (NULL != customStages[s]) {
-                    const GrProgramStageFactory& factory =
-                        customStages[s]->getFactory();
-                    programData->fCustomStage[s] =
-                        factory.createGLInstance(*customStages[s]);
-                }
-                this->genStageCode(gl,
-                                   s,
-                                   fProgramDesc.fStages[s],
-                                   inColor.size() ? inColor.c_str() : NULL,
-                                   outColor.c_str(),
-                                   inCoords,
-                                   &segments,
-                                   &programData->fUniLocations.fStages[s],
-                                   programData->fCustomStage[s]);
+                builder.setCurrentStage(s);
+                fProgramStage[s] = GenStageCode(customStages[s],
+                                                fDesc.fStages[s],
+                                                &fUniforms.fStages[s],
+                                                inColor.size() ? inColor.c_str() : NULL,
+                                                outColor.c_str(),
+                                                inCoords,
+                                                &builder);
+                builder.setNonStage();
                 inColor = outColor;
             }
         }
@@ -626,7 +646,7 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
     // if have all ones or zeros for the "dst" input to the color filter then we
     // may be able to make additional optimizations.
     if (needColorFilterUniform && needComputedColor && !inColor.size()) {
-        GrAssert(ProgramDesc::kSolidWhite_ColorInput == fProgramDesc.fColorInput);
+        GrAssert(Desc::kSolidWhite_ColorInput == fDesc.fColorInput);
         bool uniformCoeffIsZero = SkXfermode::kIDC_Coeff == uniformCoeff ||
                                   SkXfermode::kIDA_Coeff == uniformCoeff;
         if (uniformCoeffIsZero) {
@@ -636,128 +656,127 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                             &needColorFilterUniform, &bogus);
         }
     }
+    const char* colorFilterColorUniName = NULL;
     if (needColorFilterUniform) {
-        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-                            kVec4f_GrSLType, COL_FILTER_UNI_NAME);
-        programData->fUniLocations.fColorFilterUni = kUseUniform;
+        fUniforms.fColorFilterUni = builder.addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                       kVec4f_GrSLType, "FilterColor",
+                                                       &colorFilterColorUniName);
     }
     bool wroteFragColorZero = false;
     if (SkXfermode::kZero_Coeff == uniformCoeff &&
         SkXfermode::kZero_Coeff == colorCoeff &&
         !applyColorMatrix) {
-        segments.fFSCode.appendf("\t%s = %s;\n",
-                                 colorOutput.getName().c_str(),
-                                 all_zeros_vec(4));
+        builder.fFSCode.appendf("\t%s = %s;\n",
+                                colorOutput.getName().c_str(),
+                                GrGLSLZerosVecf(4));
         wroteFragColorZero = true;
-    } else if (SkXfermode::kDst_Mode != fProgramDesc.fColorFilterXfermode) {
-        segments.fFSCode.append("\tvec4 filteredColor;\n");
+    } else if (SkXfermode::kDst_Mode != fDesc.fColorFilterXfermode) {
+        builder.fFSCode.append("\tvec4 filteredColor;\n");
         const char* color = adjustInColor(inColor);
-        addColorFilter(&segments.fFSCode, "filteredColor", uniformCoeff,
-                       colorCoeff, color);
+        addColorFilter(&builder.fFSCode, "filteredColor", uniformCoeff,
+                       colorCoeff, colorFilterColorUniName, color);
         inColor = "filteredColor";
     }
     if (applyColorMatrix) {
-        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-                            kMat44f_GrSLType, COL_MATRIX_UNI_NAME);
-        segments.addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-                            kVec4f_GrSLType, COL_MATRIX_VEC_UNI_NAME);
-        programData->fUniLocations.fColorMatrixUni = kUseUniform;
-        programData->fUniLocations.fColorMatrixVecUni = kUseUniform;
-        segments.fFSCode.append("\tvec4 matrixedColor;\n");
+        const char* colMatrixName;
+        const char* colMatrixVecName;
+        fUniforms.fColorMatrixUni = builder.addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                       kMat44f_GrSLType, "ColorMatrix",
+                                                       &colMatrixName);
+        fUniforms.fColorMatrixVecUni = builder.addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                          kVec4f_GrSLType, "ColorMatrixVec",
+                                                          &colMatrixVecName);
         const char* color = adjustInColor(inColor);
-        addColorMatrix(&segments.fFSCode, "matrixedColor", color);
+        builder.fFSCode.appendf("\tvec4 matrixedColor = %s * vec4(%s.rgb / %s.a, %s.a) + %s;\n",
+                                colMatrixName, color, color, color, colMatrixVecName);
+        builder.fFSCode.append("\tmatrixedColor.rgb *= matrixedColor.a;\n");
+
         inColor = "matrixedColor";
     }
 
     ///////////////////////////////////////////////////////////////////////////
     // compute the partial coverage (coverage stages and edge aa)
 
-    GrStringBuilder inCoverage;
-    bool coverageIsZero = ProgramDesc::kTransBlack_ColorInput ==
-                          fProgramDesc.fCoverageInput;
+    SkString inCoverage;
+    bool coverageIsZero = Desc::kTransBlack_ColorInput == fDesc.fCoverageInput;
     // we don't need to compute coverage at all if we know the final shader
     // output will be zero and we don't have a dual src blend output.
-    if (!wroteFragColorZero ||
-        ProgramDesc::kNone_DualSrcOutput != fProgramDesc.fDualSrcOutput) {
+    if (!wroteFragColorZero || Desc::kNone_DualSrcOutput != fDesc.fDualSrcOutput) {
 
         if (!coverageIsZero) {
-            this->genEdgeCoverage(gl,
-                                  layout,
-                                  programData,
-                                  &inCoverage,
-                                  &segments);
+            bool inCoverageIsScalar  = this->genEdgeCoverage(&inCoverage, &builder);
 
-            switch (fProgramDesc.fCoverageInput) {
-                case ProgramDesc::kSolidWhite_ColorInput:
+            switch (fDesc.fCoverageInput) {
+                case Desc::kSolidWhite_ColorInput:
                     // empty string implies solid white
                     break;
-                case ProgramDesc::kAttribute_ColorInput:
-                    genAttributeCoverage(&segments, &inCoverage);
+                case Desc::kAttribute_ColorInput:
+                    gen_attribute_coverage(&builder, &inCoverage);
+                    inCoverageIsScalar = false;
                     break;
-                case ProgramDesc::kUniform_ColorInput:
-                    genUniformCoverage(&segments, programData, &inCoverage);
+                case Desc::kUniform_ColorInput:
+                    this->genUniformCoverage(&builder, &inCoverage);
+                    inCoverageIsScalar = false;
                     break;
                 default:
                     GrCrash("Unexpected input coverage.");
             }
 
-            GrStringBuilder outCoverage;
-            const int& startStage = fProgramDesc.fFirstCoverageStage;
+            SkString outCoverage;
+            const int& startStage = fDesc.fFirstCoverageStage;
             for (int s = startStage; s < GrDrawState::kNumStages; ++s) {
-                if (fProgramDesc.fStages[s].isEnabled()) {
+                if (fDesc.fStages[s].isEnabled()) {
                     // create var to hold stage output
                     outCoverage = "coverage";
                     outCoverage.appendS32(s);
-                    segments.fFSCode.appendf("\tvec4 %s;\n",
-                                             outCoverage.c_str());
+                    builder.fFSCode.appendf("\tvec4 %s;\n", outCoverage.c_str());
 
                     const char* inCoords;
                     // figure out what our input coords are
-                    if (GrDrawTarget::StagePosAsTexCoordVertexLayoutBit(s) &
-                        layout) {
+                    int tcIdx =
+                        GrDrawTarget::VertexTexCoordsForStage(s, layout);
+                    if (tcIdx < 0) {
                         inCoords = POS_ATTR_NAME;
                     } else {
-                        int tcIdx =
-                            GrDrawTarget::VertexTexCoordsForStage(s, layout);
-                        // we better have input tex coordinates if stage is
+                        // must have input tex coordinates if stage is
                         // enabled.
-                        GrAssert(tcIdx >= 0);
                         GrAssert(texCoordAttrs[tcIdx].size());
                         inCoords = texCoordAttrs[tcIdx].c_str();
                     }
 
-                    if (NULL != customStages[s]) {
-                        const GrProgramStageFactory& factory =
-                            customStages[s]->getFactory();
-                        programData->fCustomStage[s] =
-                            factory.createGLInstance(*customStages[s]);
+                    // stages don't know how to deal with a scalar input. (Maybe they should. We
+                    // could pass a GrGLShaderVar)
+                    if (inCoverageIsScalar) {
+                        builder.fFSCode.appendf("\tvec4 %s4 = vec4(%s);\n",
+                                                inCoverage.c_str(), inCoverage.c_str());
+                        inCoverage.append("4");
                     }
-                    this->genStageCode(gl, s,
-                        fProgramDesc.fStages[s],
-                        inCoverage.size() ? inCoverage.c_str() : NULL,
-                        outCoverage.c_str(),
-                        inCoords,
-                        &segments,
-                        &programData->fUniLocations.fStages[s],
-                        programData->fCustomStage[s]);
+                    builder.setCurrentStage(s);
+                    fProgramStage[s] = GenStageCode(customStages[s],
+                                                    fDesc.fStages[s],
+                                                    &fUniforms.fStages[s],
+                                                    inCoverage.size() ? inCoverage.c_str() : NULL,
+                                                    outCoverage.c_str(),
+                                                    inCoords,
+                                                    &builder);
+                    builder.setNonStage();
                     inCoverage = outCoverage;
                 }
             }
         }
-        if (ProgramDesc::kNone_DualSrcOutput != fProgramDesc.fDualSrcOutput) {
-            segments.fFSOutputs.push_back().set(kVec4f_GrSLType,
-                GrGLShaderVar::kOut_TypeModifier,
-                dual_source_output_name());
+
+        if (Desc::kNone_DualSrcOutput != fDesc.fDualSrcOutput) {
+            builder.fFSOutputs.push_back().set(kVec4f_GrSLType,
+                                               GrGLShaderVar::kOut_TypeModifier,
+                                               dual_source_output_name());
             bool outputIsZero = coverageIsZero;
-            GrStringBuilder coeff;
+            SkString coeff;
             if (!outputIsZero &&
-                ProgramDesc::kCoverage_DualSrcOutput !=
-                fProgramDesc.fDualSrcOutput && !wroteFragColorZero) {
+                Desc::kCoverage_DualSrcOutput != fDesc.fDualSrcOutput && !wroteFragColorZero) {
                 if (!inColor.size()) {
                     outputIsZero = true;
                 } else {
-                    if (fProgramDesc.fDualSrcOutput ==
-                        ProgramDesc::kCoverageISA_DualSrcOutput) {
+                    if (Desc::kCoverageISA_DualSrcOutput == fDesc.fDualSrcOutput) {
                         coeff.printf("(1 - %s.a)", inColor.c_str());
                     } else {
                         coeff.printf("(vec4(1,1,1,1) - %s)", inColor.c_str());
@@ -765,14 +784,13 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
                 }
             }
             if (outputIsZero) {
-                segments.fFSCode.appendf("\t%s = %s;\n",
-                                         dual_source_output_name(),
-                                         all_zeros_vec(4));
+                builder.fFSCode.appendf("\t%s = %s;\n",
+                                        dual_source_output_name(),
+                                        GrGLSLZerosVecf(4));
             } else {
-                modulate_helper(dual_source_output_name(),
-                                coeff.c_str(),
-                                inCoverage.c_str(),
-                                &segments.fFSCode);
+                builder.fFSCode.appendf("\t%s =", dual_source_output_name());
+                GrGLSLModulate4f(&builder.fFSCode, coeff.c_str(), inCoverage.c_str());
+                builder.fFSCode.append(";\n");
             }
             dualSourceOutputWritten = true;
         }
@@ -783,555 +801,193 @@ bool GrGLProgram::genProgram(const GrGLContextInfo& gl,
 
     if (!wroteFragColorZero) {
         if (coverageIsZero) {
-            segments.fFSCode.appendf("\t%s = %s;\n",
-                                     colorOutput.getName().c_str(),
-                                     all_zeros_vec(4));
+            builder.fFSCode.appendf("\t%s = %s;\n",
+                                    colorOutput.getName().c_str(),
+                                    GrGLSLZerosVecf(4));
         } else {
-            modulate_helper(colorOutput.getName().c_str(),
-                            inColor.c_str(),
-                            inCoverage.c_str(),
-                            &segments.fFSCode);
-        }
-        if (ProgramDesc::kUnpremultiplied_RoundDown_OutputConfig ==
-            fProgramDesc.fOutputConfig) {
-            segments.fFSCode.appendf("\t%s = %s.a <= 0.0 ? vec4(0,0,0,0) : vec4(floor(%s.rgb / %s.a * 255.0)/255.0, %s.a);\n",
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str());
-        } else if (ProgramDesc::kUnpremultiplied_RoundUp_OutputConfig ==
-                   fProgramDesc.fOutputConfig) {
-            segments.fFSCode.appendf("\t%s = %s.a <= 0.0 ? vec4(0,0,0,0) : vec4(ceil(%s.rgb / %s.a * 255.0)/255.0, %s.a);\n",
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str(),
-                                        colorOutput.getName().c_str());
+            builder.fFSCode.appendf("\t%s = ", colorOutput.getName().c_str());
+            GrGLSLModulate4f(&builder.fFSCode, inColor.c_str(), inCoverage.c_str());
+            builder.fFSCode.append(";\n");
         }
     }
 
-    segments.fVSCode.append("}\n");
-    segments.fFSCode.append("}\n");
+    builder.fVSCode.append("}\n");
+    builder.fFSCode.append("}\n");
 
     ///////////////////////////////////////////////////////////////////////////
     // insert GS
 #if GR_DEBUG
-    this->genGeometryShader(gl, &segments);
+    this->genGeometryShader(&builder);
 #endif
 
     ///////////////////////////////////////////////////////////////////////////
     // compile and setup attribs and unis
 
-    if (!CompileShaders(gl, segments, programData)) {
+    if (!this->compileShaders(builder)) {
         return false;
     }
 
-    if (!this->bindOutputsAttribsAndLinkProgram(gl, texCoordAttrs,
+    if (!this->bindOutputsAttribsAndLinkProgram(texCoordAttrs,
                                                 isColorDeclared,
-                                                dualSourceOutputWritten,
-                                                programData)) {
+                                                dualSourceOutputWritten)) {
         return false;
     }
 
-    this->getUniformLocationsAndInitCache(gl, programData);
+    builder.finished(fProgramID);
+    this->initSamplerUniforms();
 
     return true;
 }
 
-namespace {
-
-inline void expand_decls(const VarArray& vars,
-                         const GrGLContextInfo& gl,
-                         GrStringBuilder* string) {
-    const int count = vars.count();
-    for (int i = 0; i < count; ++i) {
-        vars[i].appendDecl(gl, string);
-    }
-}
-
-inline void print_shader(int stringCnt,
-                         const char** strings,
-                         int* stringLengths) {
-    for (int i = 0; i < stringCnt; ++i) {
-        if (NULL == stringLengths || stringLengths[i] < 0) {
-            GrPrintf(strings[i]);
-        } else {
-            GrPrintf("%.*s", stringLengths[i], strings[i]);
-        }
-    }
-}
-
-typedef SkTArray<const char*, true>         StrArray;
-#define PREALLOC_STR_ARRAY(N) SkSTArray<(N), const char*, true>
-
-typedef SkTArray<int, true>                 LengthArray;
-#define PREALLOC_LENGTH_ARRAY(N) SkSTArray<(N), int, true>
-
-// these shouldn't relocate
-typedef GrTAllocator<GrStringBuilder>       TempArray;
-#define PREALLOC_TEMP_ARRAY(N) GrSTAllocator<(N), GrStringBuilder>
-
-inline void append_string(const GrStringBuilder& str,
-                          StrArray* strings,
-                          LengthArray* lengths) {
-    int length = (int) str.size();
-    if (length) {
-        strings->push_back(str.c_str());
-        lengths->push_back(length);
-    }
-    GrAssert(strings->count() == lengths->count());
-}
-
-inline void append_decls(const VarArray& vars,
-                         const GrGLContextInfo& gl,
-                         StrArray* strings,
-                         LengthArray* lengths,
-                         TempArray* temp) {
-    expand_decls(vars, gl, &temp->push_back());
-    append_string(temp->back(), strings, lengths);
-}
-
-}
-
-bool GrGLProgram::CompileShaders(const GrGLContextInfo& gl,
-                                 const GrGLShaderBuilder& segments,
-                                 CachedData* programData) {
-    enum { kPreAllocStringCnt = 8 };
-
-    PREALLOC_STR_ARRAY(kPreAllocStringCnt)    strs;
-    PREALLOC_LENGTH_ARRAY(kPreAllocStringCnt) lengths;
-    PREALLOC_TEMP_ARRAY(kPreAllocStringCnt)   temps;
-
-    GrStringBuilder unis;
-    GrStringBuilder inputs;
-    GrStringBuilder outputs;
-
-    append_string(segments.fHeader, &strs, &lengths);
-    append_decls(segments.fVSUnis, gl, &strs, &lengths, &temps);
-    append_decls(segments.fVSAttrs, gl, &strs, &lengths, &temps);
-    append_decls(segments.fVSOutputs, gl, &strs, &lengths, &temps);
-    append_string(segments.fVSCode, &strs, &lengths);
-
-#if PRINT_SHADERS
-    print_shader(strs.count(), &strs[0], &lengths[0]);
-    GrPrintf("\n");
-#endif
-
-    programData->fVShaderID =
-        CompileShader(gl, GR_GL_VERTEX_SHADER, strs.count(),
-                      &strs[0], &lengths[0]);
-
-    if (!programData->fVShaderID) {
-        return false;
-    }
-    if (segments.fUsesGS) {
-        strs.reset();
-        lengths.reset();
-        temps.reset();
-        append_string(segments.fHeader, &strs, &lengths);
-        append_string(segments.fGSHeader, &strs, &lengths);
-        append_decls(segments.fGSInputs, gl, &strs, &lengths, &temps);
-        append_decls(segments.fGSOutputs, gl, &strs, &lengths, &temps);
-        append_string(segments.fGSCode, &strs, &lengths);
-#if PRINT_SHADERS
-        print_shader(strs.count(), &strs[0], &lengths[0]);
-        GrPrintf("\n");
-#endif
-        programData->fGShaderID =
-            CompileShader(gl, GR_GL_GEOMETRY_SHADER, strs.count(),
-                          &strs[0], &lengths[0]);
-    } else {
-        programData->fGShaderID = 0;
-    }
-
-    strs.reset();
-    lengths.reset();
-    temps.reset();
-
-    append_string(segments.fHeader, &strs, &lengths);
-    GrStringBuilder precisionStr(GrGetGLSLShaderPrecisionDecl(gl.binding()));
-    append_string(precisionStr, &strs, &lengths);
-    append_decls(segments.fFSUnis, gl, &strs, &lengths, &temps);
-    append_decls(segments.fFSInputs, gl, &strs, &lengths, &temps);
-    // We shouldn't have declared outputs on 1.10
-    GrAssert(k110_GrGLSLGeneration != gl.glslGeneration() ||
-             segments.fFSOutputs.empty());
-    append_decls(segments.fFSOutputs, gl, &strs, &lengths, &temps);
-    append_string(segments.fFSFunctions, &strs, &lengths);
-    append_string(segments.fFSCode, &strs, &lengths);
-
-#if PRINT_SHADERS
-    print_shader(strs.count(), &strs[0], &lengths[0]);
-    GrPrintf("\n");
-#endif
-
-    programData->fFShaderID =
-        CompileShader(gl, GR_GL_FRAGMENT_SHADER, strs.count(),
-                      &strs[0], &lengths[0]);
-
-    if (!programData->fFShaderID) {
+bool GrGLProgram::bindOutputsAttribsAndLinkProgram(SkString texCoordAttrNames[],
+                                                   bool bindColorOut,
+                                                   bool bindDualSrcOut) {
+    GL_CALL_RET(fProgramID, CreateProgram());
+    if (!fProgramID) {
         return false;
     }
 
-    return true;
-}
-
-#define GL_CALL(X) GR_GL_CALL(gl.interface(), X)
-#define GL_CALL_RET(R, X) GR_GL_CALL_RET(gl.interface(), R, X)
-
-GrGLuint GrGLProgram::CompileShader(const GrGLContextInfo& gl,
-                                    GrGLenum type,
-                                    int stringCnt,
-                                    const char** strings,
-                                    int* stringLengths) {
-    SK_TRACE_EVENT1("GrGLProgram::CompileShader",
-                    "stringCount", SkStringPrintf("%i", stringCnt).c_str());
-
-    GrGLuint shader;
-    GL_CALL_RET(shader, CreateShader(type));
-    if (0 == shader) {
-        return 0;
+    GL_CALL(AttachShader(fProgramID, fVShaderID));
+    if (fGShaderID) {
+        GL_CALL(AttachShader(fProgramID, fGShaderID));
     }
-
-    GrGLint compiled = GR_GL_INIT_ZERO;
-    GL_CALL(ShaderSource(shader, stringCnt, strings, stringLengths));
-    GL_CALL(CompileShader(shader));
-    GL_CALL(GetShaderiv(shader, GR_GL_COMPILE_STATUS, &compiled));
-
-    if (!compiled) {
-        GrGLint infoLen = GR_GL_INIT_ZERO;
-        GL_CALL(GetShaderiv(shader, GR_GL_INFO_LOG_LENGTH, &infoLen));
-        SkAutoMalloc log(sizeof(char)*(infoLen+1)); // outside if for debugger
-        if (infoLen > 0) {
-            // retrieve length even though we don't need it to workaround
-            // bug in chrome cmd buffer param validation.
-            GrGLsizei length = GR_GL_INIT_ZERO;
-            GL_CALL(GetShaderInfoLog(shader, infoLen+1, 
-                                         &length, (char*)log.get()));
-            print_shader(stringCnt, strings, stringLengths);
-            GrPrintf("\n%s", log.get());
-        }
-        GrAssert(!"Shader compilation failed!");
-        GL_CALL(DeleteShader(shader));
-        return 0;
-    }
-    return shader;
-}
-
-bool GrGLProgram::bindOutputsAttribsAndLinkProgram(
-                                        const GrGLContextInfo& gl,
-                                        GrStringBuilder texCoordAttrNames[],
-                                        bool bindColorOut,
-                                        bool bindDualSrcOut,
-                                        CachedData* programData) const {
-    GL_CALL_RET(programData->fProgramID, CreateProgram());
-    if (!programData->fProgramID) {
-        return false;
-    }
-    const GrGLint& progID = programData->fProgramID;
-
-    GL_CALL(AttachShader(progID, programData->fVShaderID));
-    if (programData->fGShaderID) {
-        GL_CALL(AttachShader(progID, programData->fGShaderID));
-    }
-    GL_CALL(AttachShader(progID, programData->fFShaderID));
+    GL_CALL(AttachShader(fProgramID, fFShaderID));
 
     if (bindColorOut) {
-        GL_CALL(BindFragDataLocation(programData->fProgramID,
-                                     0, declared_color_output_name()));
+        GL_CALL(BindFragDataLocation(fProgramID, 0, declared_color_output_name()));
     }
     if (bindDualSrcOut) {
-        GL_CALL(BindFragDataLocationIndexed(programData->fProgramID,
-                                            0, 1, dual_source_output_name()));
+        GL_CALL(BindFragDataLocationIndexed(fProgramID, 0, 1, dual_source_output_name()));
     }
 
     // Bind the attrib locations to same values for all shaders
-    GL_CALL(BindAttribLocation(progID, PositionAttributeIdx(), POS_ATTR_NAME));
+    GL_CALL(BindAttribLocation(fProgramID, PositionAttributeIdx(), POS_ATTR_NAME));
     for (int t = 0; t < GrDrawState::kMaxTexCoords; ++t) {
         if (texCoordAttrNames[t].size()) {
-            GL_CALL(BindAttribLocation(progID,
+            GL_CALL(BindAttribLocation(fProgramID,
                                        TexCoordAttributeIdx(t),
                                        texCoordAttrNames[t].c_str()));
         }
     }
 
-    GL_CALL(BindAttribLocation(progID, ColorAttributeIdx(), COL_ATTR_NAME));
-    GL_CALL(BindAttribLocation(progID, CoverageAttributeIdx(), COV_ATTR_NAME));
-    GL_CALL(BindAttribLocation(progID, EdgeAttributeIdx(), EDGE_ATTR_NAME));
+    GL_CALL(BindAttribLocation(fProgramID, ColorAttributeIdx(), COL_ATTR_NAME));
+    GL_CALL(BindAttribLocation(fProgramID, CoverageAttributeIdx(), COV_ATTR_NAME));
+    GL_CALL(BindAttribLocation(fProgramID, EdgeAttributeIdx(), EDGE_ATTR_NAME));
 
-    GL_CALL(LinkProgram(progID));
+    GL_CALL(LinkProgram(fProgramID));
 
     GrGLint linked = GR_GL_INIT_ZERO;
-    GL_CALL(GetProgramiv(progID, GR_GL_LINK_STATUS, &linked));
+    GL_CALL(GetProgramiv(fProgramID, GR_GL_LINK_STATUS, &linked));
     if (!linked) {
         GrGLint infoLen = GR_GL_INIT_ZERO;
-        GL_CALL(GetProgramiv(progID, GR_GL_INFO_LOG_LENGTH, &infoLen));
+        GL_CALL(GetProgramiv(fProgramID, GR_GL_INFO_LOG_LENGTH, &infoLen));
         SkAutoMalloc log(sizeof(char)*(infoLen+1));  // outside if for debugger
         if (infoLen > 0) {
             // retrieve length even though we don't need it to workaround
             // bug in chrome cmd buffer param validation.
             GrGLsizei length = GR_GL_INIT_ZERO;
-            GL_CALL(GetProgramInfoLog(progID,
+            GL_CALL(GetProgramInfoLog(fProgramID,
                                       infoLen+1,
                                       &length,
                                       (char*)log.get()));
             GrPrintf((char*)log.get());
         }
         GrAssert(!"Error linking program");
-        GL_CALL(DeleteProgram(progID));
-        programData->fProgramID = 0;
+        GL_CALL(DeleteProgram(fProgramID));
+        fProgramID = 0;
         return false;
     }
     return true;
 }
 
-void GrGLProgram::getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
-                                                  CachedData* programData) const {
-    const GrGLint& progID = programData->fProgramID;
-
-    if (kUseUniform == programData->fUniLocations.fViewMatrixUni) {
-        GL_CALL_RET(programData->fUniLocations.fViewMatrixUni,
-                    GetUniformLocation(progID, VIEW_MATRIX_NAME));
-        GrAssert(kUnusedUniform != programData->fUniLocations.fViewMatrixUni);
-    }
-    if (kUseUniform == programData->fUniLocations.fColorUni) {
-        GL_CALL_RET(programData->fUniLocations.fColorUni,
-                    GetUniformLocation(progID, COL_UNI_NAME));
-        GrAssert(kUnusedUniform != programData->fUniLocations.fColorUni);
-    }
-    if (kUseUniform == programData->fUniLocations.fColorFilterUni) {
-        GL_CALL_RET(programData->fUniLocations.fColorFilterUni, 
-                    GetUniformLocation(progID, COL_FILTER_UNI_NAME));
-        GrAssert(kUnusedUniform != programData->fUniLocations.fColorFilterUni);
-    }
-
-    if (kUseUniform == programData->fUniLocations.fColorMatrixUni) {
-        GL_CALL_RET(programData->fUniLocations.fColorMatrixUni,
-                    GetUniformLocation(progID, COL_MATRIX_UNI_NAME));
-    }
-
-    if (kUseUniform == programData->fUniLocations.fColorMatrixVecUni) {
-        GL_CALL_RET(programData->fUniLocations.fColorMatrixVecUni,
-                    GetUniformLocation(progID, COL_MATRIX_VEC_UNI_NAME));
-    }
-    if (kUseUniform == programData->fUniLocations.fCoverageUni) {
-        GL_CALL_RET(programData->fUniLocations.fCoverageUni,
-                    GetUniformLocation(progID, COV_UNI_NAME));
-        GrAssert(kUnusedUniform != programData->fUniLocations.fCoverageUni);
-    }
-
+void GrGLProgram::initSamplerUniforms() {
+    GL_CALL(UseProgram(fProgramID));
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        StageUniLocations& locations = programData->fUniLocations.fStages[s];
-        if (fProgramDesc.fStages[s].isEnabled()) {
-            if (kUseUniform == locations.fTextureMatrixUni) {
-                GrStringBuilder texMName;
-                tex_matrix_name(s, &texMName);
-                GL_CALL_RET(locations.fTextureMatrixUni,
-                            GetUniformLocation(progID, texMName.c_str()));
-                GrAssert(kUnusedUniform != locations.fTextureMatrixUni);
-            }
-
-            if (kUseUniform == locations.fSamplerUni) {
-                GrStringBuilder samplerName;
-                sampler_name(s, &samplerName);
-                GL_CALL_RET(locations.fSamplerUni,
-                            GetUniformLocation(progID,samplerName.c_str()));
-                GrAssert(kUnusedUniform != locations.fSamplerUni);
-            }
-
-            if (kUseUniform == locations.fTexDomUni) {
-                GrStringBuilder texDomName;
-                tex_domain_name(s, &texDomName);
-                GL_CALL_RET(locations.fTexDomUni,
-                            GetUniformLocation(progID, texDomName.c_str()));
-                GrAssert(kUnusedUniform != locations.fTexDomUni);
-            }
-
-            if (NULL != programData->fCustomStage[s]) {
-                programData->fCustomStage[s]->
-                    initUniforms(gl.interface(), progID);
+        int count = fUniforms.fStages[s].fSamplerUniforms.count();
+        // FIXME: We're still always reserving one texture per stage. After GrTextureParams are
+        // expressed by the custom stage rather than the GrSamplerState we can move texture binding
+        // into GrGLProgram and it should be easier to fix this.
+        GrAssert(count <= 1);
+        for (int t = 0; t < count; ++t) {
+            UniformHandle uh = fUniforms.fStages[s].fSamplerUniforms[t];
+            if (GrGLUniformManager::kInvalidUniformHandle != uh) {
+                fUniformManager.setSampler(uh, s);
             }
         }
     }
-    GL_CALL(UseProgram(progID));
-
-    // init sampler unis and set bogus values for state tracking
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        if (kUnusedUniform != programData->fUniLocations.fStages[s].fSamplerUni) {
-            GL_CALL(Uniform1i(programData->fUniLocations.fStages[s].fSamplerUni, s));
-        }
-        programData->fTextureMatrices[s] = GrMatrix::InvalidMatrix();
-        programData->fTextureDomain[s].setEmpty();
-        // this is arbitrary, just initialize to something
-        programData->fTextureOrientation[s] =
-            GrGLTexture::kBottomUp_Orientation;
-        // Must not reset fStageOverride[] here.
-    }
-    programData->fViewMatrix = GrMatrix::InvalidMatrix();
-    programData->fViewportSize.set(-1, -1);
-    programData->fColor = GrColor_ILLEGAL;
-    programData->fColorFilterColor = GrColor_ILLEGAL;
 }
 
-//============================================================================
+///////////////////////////////////////////////////////////////////////////////
 // Stage code generation
-//============================================================================
 
-void GrGLProgram::genStageCode(const GrGLContextInfo& gl,
-                               int stageNum,
-                               const GrGLProgram::StageDesc& desc,
-                               const char* fsInColor, // NULL means no incoming color
-                               const char* fsOutColor,
-                               const char* vsInCoord,
-                               GrGLShaderBuilder* segments,
-                               StageUniLocations* locations,
-                               GrGLProgramStage* customStage) const {
+// TODO: Move this function to GrGLShaderBuilder
+GrGLProgramStage* GrGLProgram::GenStageCode(const GrCustomStage* stage,
+                                            const StageDesc& desc,
+                                            StageUniforms* uniforms,
+                                            const char* fsInColor, // NULL means no incoming color
+                                            const char* fsOutColor,
+                                            const char* vsInCoord,
+                                            GrGLShaderBuilder* builder) {
 
-    GrAssert(stageNum >= 0 && stageNum <= GrDrawState::kNumStages);
-    GrAssert((desc.fInConfigFlags & StageDesc::kInConfigBitMask) ==
-             desc.fInConfigFlags);
+    GrGLProgramStage* glStage = stage->getFactory().createGLInstance(*stage);
 
     /// Vertex Shader Stuff
 
-    // decide whether we need a matrix to transform texture coords
-    // and whether the varying needs a perspective coord.
+    // decide whether we need a matrix to transform texture coords and whether the varying needs a
+    // perspective coord.
     const char* matName = NULL;
+    GrSLType texCoordVaryingType;
     if (desc.fOptFlags & StageDesc::kIdentityMatrix_OptFlagBit) {
-        segments->fVaryingDims = segments->fCoordDims;
+        texCoordVaryingType = kVec2f_GrSLType;
     } else {
-        GrStringBuilder texMatName;
-        tex_matrix_name(stageNum, &texMatName);
-        const GrGLShaderVar* mat = &segments->addUniform(
-            GrGLShaderBuilder::kVertex_VariableLifetime, kMat33f_GrSLType,
-            texMatName.c_str());
-        // Can't use texMatName.c_str() because it's on the stack!
-        matName = mat->getName().c_str();
-        locations->fTextureMatrixUni = kUseUniform;
+        uniforms->fTextureMatrixUni = builder->addUniform(GrGLShaderBuilder::kVertex_ShaderType,
+                                                         kMat33f_GrSLType, "TexM", &matName);
+        builder->getUniformVariable(uniforms->fTextureMatrixUni);
 
         if (desc.fOptFlags & StageDesc::kNoPerspective_OptFlagBit) {
-            segments->fVaryingDims = segments->fCoordDims;
+            texCoordVaryingType = kVec2f_GrSLType;
         } else {
-            segments->fVaryingDims = segments->fCoordDims + 1;
+            texCoordVaryingType = kVec3f_GrSLType;
         }
     }
-    GrAssert(segments->fVaryingDims > 0);
-
-    // Must setup variables after computing segments->fVaryingDims
-    if (NULL != customStage) {
-        customStage->setupVariables(segments, stageNum);
-    }
-
-    GrStringBuilder samplerName;
-    sampler_name(stageNum, &samplerName);
-    // const GrGLShaderVar* sampler = &
-        segments->addUniform(GrGLShaderBuilder::kFragment_VariableLifetime,
-        kSampler2D_GrSLType, samplerName.c_str());
-    locations->fSamplerUni = kUseUniform;
-
     const char *varyingVSName, *varyingFSName;
-    segments->addVarying(GrSLFloatVectorType(segments->fVaryingDims),
-                         "Stage",
-                        stageNum,
+    builder->addVarying(texCoordVaryingType,
+                        "Stage",
                         &varyingVSName,
                         &varyingFSName);
+    builder->setupTextureAccess(varyingFSName, texCoordVaryingType);
+
+    // Must setup variables after calling setupTextureAccess
+    glStage->setupVariables(builder);
+
+    int numTextures = stage->numTextures();
+    SkSTArray<8, GrGLShaderBuilder::TextureSampler> textureSamplers;
+
+    textureSamplers.push_back_n(numTextures);
+
+    for (int i = 0; i < numTextures; ++i) {
+        textureSamplers[i].init(builder, &stage->textureAccess(i));
+        uniforms->fSamplerUniforms.push_back(textureSamplers[i].fSamplerUniform);
+    }
 
     if (!matName) {
-        GrAssert(segments->fVaryingDims == segments->fCoordDims);
-        segments->fVSCode.appendf("\t%s = %s;\n", varyingVSName, vsInCoord);
+        GrAssert(kVec2f_GrSLType == texCoordVaryingType);
+        builder->fVSCode.appendf("\t%s = %s;\n", varyingVSName, vsInCoord);
     } else {
         // varying = texMatrix * texCoord
-        segments->fVSCode.appendf("\t%s = (%s * vec3(%s, 1))%s;\n",
+        builder->fVSCode.appendf("\t%s = (%s * vec3(%s, 1))%s;\n",
                                   varyingVSName, matName, vsInCoord,
-                                  vector_all_coords(segments->fVaryingDims));
+                                  vector_all_coords(GrSLTypeToVecLength(texCoordVaryingType)));
     }
 
-    // GrGLShaderVar* kernel = NULL;
-    // const char* imageIncrementName = NULL;
-    if (NULL != customStage) {
-        segments->fVSCode.appendf("\t{ // stage %d %s\n",
-                                  stageNum, customStage->name());
-        customStage->emitVS(segments, varyingVSName);
-        segments->fVSCode.appendf("\t}\n");
-    }
+    builder->fVSCode.appendf("\t{ // %s\n", glStage->name());
+    glStage->emitVS(builder, varyingVSName);
+    builder->fVSCode.appendf("\t}\n");
 
-    /// Fragment Shader Stuff
+    // Enclose custom code in a block to avoid namespace conflicts
+    builder->fFSCode.appendf("\t{ // %s \n", glStage->name());
+    glStage->emitFS(builder, fsOutColor, fsInColor, textureSamplers);
+    builder->fFSCode.appendf("\t}\n");
 
-    segments->fSampleCoords = varyingFSName;
-
-    GrGLShaderBuilder::SamplerMode sampleMode =
-        GrGLShaderBuilder::kExplicitDivide_SamplerMode;
-    if (desc.fOptFlags & (StageDesc::kIdentityMatrix_OptFlagBit |
-                          StageDesc::kNoPerspective_OptFlagBit)) {
-        sampleMode = GrGLShaderBuilder::kDefault_SamplerMode;
-    } else if (NULL == customStage) {
-        sampleMode = GrGLShaderBuilder::kProj_SamplerMode;
-    }
-    segments->setupTextureAccess(sampleMode, stageNum);
-
-    segments->computeSwizzle(desc.fInConfigFlags);
-    segments->computeModulate(fsInColor);
-
-    static const uint32_t kMulByAlphaMask =
-        (StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag |
-         StageDesc::kMulRGBByAlpha_RoundDown_InConfigFlag);
-
-    if (desc.fOptFlags & StageDesc::kCustomTextureDomain_OptFlagBit) {
-        GrStringBuilder texDomainName;
-        tex_domain_name(stageNum, &texDomainName);
-        // const GrGLShaderVar* texDomain = &
-            segments->addUniform(
-                GrGLShaderBuilder::kFragment_VariableLifetime,
-                kVec4f_GrSLType, texDomainName.c_str());
-        GrStringBuilder coordVar("clampCoord");
-        segments->fFSCode.appendf("\t%s %s = clamp(%s, %s.xy, %s.zw);\n",
-                                  float_vector_type_str(segments->fCoordDims),
-                                  coordVar.c_str(),
-                                  segments->fSampleCoords.c_str(),
-                                  texDomainName.c_str(),
-                                  texDomainName.c_str());
-        segments->fSampleCoords = coordVar;
-        locations->fTexDomUni = kUseUniform;
-    }
-
-    // NOTE: GrGLProgramStages are now responsible for fetching
-    if (NULL == customStage) {
-        if (desc.fInConfigFlags & kMulByAlphaMask) {
-            // only one of the mul by alpha flags should be set
-            GrAssert(GrIsPow2(kMulByAlphaMask & desc.fInConfigFlags));
-            GrAssert(!(desc.fInConfigFlags & 
-                       StageDesc::kSmearAlpha_InConfigFlag));
-            GrAssert(!(desc.fInConfigFlags & 
-                       StageDesc::kSmearRed_InConfigFlag));
-            segments->fFSCode.appendf("\t%s = %s(%s, %s)%s;\n",
-                                      fsOutColor,
-                                      segments->fTexFunc.c_str(), 
-                                      samplerName.c_str(),
-                                      segments->fSampleCoords.c_str(),
-                                      segments->fSwizzle.c_str());
-            if (desc.fInConfigFlags &
-                StageDesc::kMulRGBByAlpha_RoundUp_InConfigFlag) {
-                segments->fFSCode.appendf("\t%s = vec4(ceil(%s.rgb*%s.a*255.0)/255.0,%s.a)%s;\n",
-                                          fsOutColor, fsOutColor, fsOutColor,
-                                          fsOutColor, segments->fModulate.c_str());
-            } else {
-                segments->fFSCode.appendf("\t%s = vec4(floor(%s.rgb*%s.a*255.0)/255.0,%s.a)%s;\n",
-                                          fsOutColor, fsOutColor, fsOutColor,
-                                          fsOutColor, segments->fModulate.c_str());
-            }
-        } else {
-            segments->emitDefaultFetch(fsOutColor, samplerName.c_str());
-        }
-    }
-
-    if (NULL != customStage) {
-        // Enclose custom code in a block to avoid namespace conflicts
-        segments->fFSCode.appendf("\t{ // stage %d %s \n",
-                                  stageNum, customStage->name());
-        customStage->emitFS(segments, fsOutColor, fsInColor,
-                            samplerName.c_str());
-        segments->fFSCode.appendf("\t}\n");
-    }
+    return glStage;
 }
-
-

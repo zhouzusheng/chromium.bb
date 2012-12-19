@@ -26,11 +26,11 @@
 #ifndef StorageMap_h
 #define StorageMap_h
 
-#include "PlatformString.h"
 #include <wtf/HashMap.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/text/StringHash.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -54,7 +54,7 @@ namespace WebCore {
         static const unsigned noQuota = UINT_MAX;
 
     private:
-        StorageMap(unsigned quota);
+        explicit StorageMap(unsigned quota);
         PassRefPtr<StorageMap> copy();
         void invalidateIterator();
         void setIteratorToIndex(unsigned);

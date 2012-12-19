@@ -165,8 +165,22 @@ namespace WebCore {
     String AXMenuListPopupActionVerb();
     String AXLinkActionVerb();
 
+#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+    String AXAMPMFieldText();
+    String AXDayOfMonthFieldText();
+    String AXDateTimeFieldEmptyValueText();
+    String AXHourFieldText();
+    String AXMillisecondFieldText();
+    String AXMinuteFieldText();
+    String AXMonthFieldText();
+    String AXSecondFieldText();
+    String AXWeekOfYearFieldText();
+    String AXYearFieldText();
+#endif
+
     String missingPluginText();
     String crashedPluginText();
+    String blockedPluginByContentSecurityPolicyText();
     String insecurePluginVersionText();
     String multipleFileUploadText(unsigned numberOfFiles);
     String unknownFileSizeText();
@@ -218,6 +232,9 @@ namespace WebCore {
     String dateFormatYearText();
     String dateFormatMonthText();
     String dateFormatDayInMonthText();
+#endif
+#if USE(SOUP)
+    String unacceptableTLSCertificate();
 #endif
 
 #if !PLATFORM(CHROMIUM)

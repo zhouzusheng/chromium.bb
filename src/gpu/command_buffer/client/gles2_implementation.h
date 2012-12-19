@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "../common/debug_marker_manager.h"
 #include "../common/gles2_cmd_utils.h"
 #include "../common/scoped_ptr.h"
 #include "../client/ref_counted.h"
@@ -75,6 +76,10 @@
     GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(ptr && \
         (ptr[0] == static_cast<type>(0) || ptr[0] == static_cast<type>(-1)));
 
+#define GPU_CLIENT_VALIDATE_DESTINATION_OPTIONAL_INITALIZATION(type, ptr) \
+    GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(!ptr || \
+        (ptr[0] == static_cast<type>(0) || ptr[0] == static_cast<type>(-1)));
+
 struct GLUniformDefinitionCHROMIUM;
 
 namespace gpu {
@@ -103,22 +108,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation {
 
   // Stores client side cached GL state.
   struct GLCachedState {
-    struct IntState {
-      IntState()
-          : max_combined_texture_image_units(0),
-            max_cube_map_texture_size(0),
-            max_fragment_uniform_vectors(0),
-            max_renderbuffer_size(0),
-            max_texture_image_units(0),
-            max_texture_size(0),
-            max_varying_vectors(0),
-            max_vertex_attribs(0),
-            max_vertex_texture_image_units(0),
-            max_vertex_uniform_vectors(0),
-            num_compressed_texture_formats(0),
-            num_shader_binary_formats(0) {
-      }
-
+    struct GLES2_IMPL_EXPORT IntState {
+      IntState();
       GLint max_combined_texture_image_units;
       GLint max_cube_map_texture_size;
       GLint max_fragment_uniform_vectors;
@@ -198,9 +189,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation {
 
   // The GLES2CmdHelper being used by this GLES2Implementation. You can use
   // this to issue cmds at a lower level for certain kinds of optimization.
-  GLES2CmdHelper* helper() const {
-    return helper_;
-  }
+  GLES2CmdHelper* helper() const;
+
+  // Gets client side generated errors.
+  GLenum GetClientSideGLError();
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
@@ -372,6 +364,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation {
 
   // Sets our wrapper for the GLError.
   void SetGLError(GLenum error, const char* function_name, const char* msg);
+  void SetGLErrorInvalidEnum(
+      const char* function_name, GLenum value, const char* label);
 
   // Returns the last error and clears it. Useful for debugging.
   const std::string& GetLastError() {
@@ -476,10 +470,19 @@ class GLES2_IMPL_EXPORT GLES2Implementation {
 
   void FinishHelper();
 
+  // Asserts that the context is lost.
+  // NOTE: This is an expensive call and should only be called
+  // for error checking.
+  bool MustBeContextLost();
+
+  const std::string& GetLogPrefix() const;
+
   GLES2Util util_;
   GLES2CmdHelper* helper_;
   TransferBufferInterface* transfer_buffer_;
   std::string last_error_;
+  DebugMarkerManager debug_marker_manager_;
+  std::string this_in_hex_;
 
   std::queue<int32> swap_buffers_tokens_;
   std::queue<int32> rate_limit_tokens_;

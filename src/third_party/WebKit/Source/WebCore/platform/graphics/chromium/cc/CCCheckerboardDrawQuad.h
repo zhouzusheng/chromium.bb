@@ -26,19 +26,23 @@
 #ifndef CCCheckerboardDrawQuad_h
 #define CCCheckerboardDrawQuad_h
 
-#include "cc/CCDrawQuad.h"
+#include "CCDrawQuad.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
+#pragma pack(push, 4)
+
 class CCCheckerboardDrawQuad : public CCDrawQuad {
-    WTF_MAKE_NONCOPYABLE(CCCheckerboardDrawQuad);
 public:
     static PassOwnPtr<CCCheckerboardDrawQuad> create(const CCSharedQuadState*, const IntRect&);
 
+    static const CCCheckerboardDrawQuad* materialCast(const CCDrawQuad*);
 private:
     CCCheckerboardDrawQuad(const CCSharedQuadState*, const IntRect&);
 };
+
+#pragma pack(pop)
 
 }
 

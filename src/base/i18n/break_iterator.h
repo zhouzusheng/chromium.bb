@@ -4,7 +4,6 @@
 
 #ifndef BASE_I18N_BREAK_ITERATOR_H_
 #define BASE_I18N_BREAK_ITERATOR_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/string16.h"
@@ -66,6 +65,7 @@ class BASE_I18N_EXPORT BreakIterator {
     // implement it separately.
     BREAK_SPACE = BREAK_LINE,
     BREAK_NEWLINE,
+    BREAK_CHARACTER,
   };
 
   // Requires |str| to live as long as the BreakIterator does.

@@ -56,6 +56,7 @@
 #include "InspectorIndexedDBAgent.h"
 #include "InspectorInstrumentation.h"
 #include "InspectorMemoryAgent.h"
+#include "InspectorOverlay.h"
 #include "InspectorPageAgent.h"
 #include "InspectorProfilerAgent.h"
 #include "InspectorResourceAgent.h"
@@ -78,6 +79,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     : m_instrumentingAgents(adoptPtr(new InstrumentingAgents()))
     , m_injectedScriptManager(InjectedScriptManager::createForPage())
     , m_state(adoptPtr(new InspectorState(inspectorClient)))
+    , m_overlay(InspectorOverlay::create(page, inspectorClient))
     , m_page(page)
     , m_inspectorClient(inspectorClient)
 {
@@ -85,12 +87,12 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_inspectorAgent = inspectorAgentPtr.get();
     m_agents.append(inspectorAgentPtr.release());
 
-    OwnPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(m_instrumentingAgents.get(), page, m_inspectorAgent, m_state.get(), m_injectedScriptManager.get(), inspectorClient));
+    OwnPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(m_instrumentingAgents.get(), page, m_inspectorAgent, m_state.get(), m_injectedScriptManager.get(), inspectorClient, m_overlay.get()));
     InspectorPageAgent* pageAgent = pageAgentPtr.get();
     m_pageAgent = pageAgentPtr.get();
     m_agents.append(pageAgentPtr.release());
 
-    OwnPtr<InspectorDOMAgent> domAgentPtr(InspectorDOMAgent::create(m_instrumentingAgents.get(), pageAgent, inspectorClient, m_state.get(), m_injectedScriptManager.get()));
+    OwnPtr<InspectorDOMAgent> domAgentPtr(InspectorDOMAgent::create(m_instrumentingAgents.get(), pageAgent, m_state.get(), m_injectedScriptManager.get(), m_overlay.get()));
     m_domAgent = domAgentPtr.get();
     m_agents.append(domAgentPtr.release());
 
@@ -112,7 +114,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     OwnPtr<InspectorDOMStorageAgent> domStorageAgentPtr(InspectorDOMStorageAgent::create(m_instrumentingAgents.get(), m_state.get()));
     InspectorDOMStorageAgent* domStorageAgent = domStorageAgentPtr.get();
     m_agents.append(domStorageAgentPtr.release());
-    m_agents.append(InspectorMemoryAgent::create(m_instrumentingAgents.get(), m_state.get(), m_page, m_domAgent));
+    m_agents.append(InspectorMemoryAgent::create(m_instrumentingAgents.get(), m_state.get(), m_page, domStorageAgent));
     m_agents.append(InspectorTimelineAgent::create(m_instrumentingAgents.get(), pageAgent, m_state.get(), InspectorTimelineAgent::PageInspector,
        inspectorClient));
     m_agents.append(InspectorApplicationCacheAgent::create(m_instrumentingAgents.get(), m_state.get(), pageAgent));
@@ -130,7 +132,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_agents.append(consoleAgentPtr.release());
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
-    OwnPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), page, m_injectedScriptManager.get()));
+    OwnPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), page, m_injectedScriptManager.get(), m_overlay.get()));
     m_debuggerAgent = debuggerAgentPtr.get();
     m_agents.append(debuggerAgentPtr.release());
 
@@ -146,7 +148,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 #endif
 
 #if ENABLE(WEBGL)
-    m_agents.append(InspectorWebGLAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get()));
+    m_agents.append(InspectorWebGLAgent::create(m_instrumentingAgents.get(), m_state.get(), page, m_injectedScriptManager.get()));
 #endif
 
     ASSERT_ARG(inspectorClient, inspectorClient);
@@ -163,6 +165,8 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 #if ENABLE(JAVASCRIPT_DEBUGGER)
     runtimeAgent->setScriptDebugServer(&m_debuggerAgent->scriptDebugServer());
 #endif
+
+    InspectorInstrumentation::registerInstrumentingAgents(m_instrumentingAgents.get());
 }
 
 InspectorController::~InspectorController()
@@ -181,6 +185,7 @@ PassOwnPtr<InspectorController> InspectorController::create(Page* page, Inspecto
 void InspectorController::inspectedPageDestroyed()
 {
     disconnectFrontend();
+    InspectorInstrumentation::unregisterInstrumentingAgents(m_instrumentingAgents.get());
     m_injectedScriptManager->disconnect();
     m_inspectorClient->inspectorDestroyed();
     m_inspectorClient = 0;
@@ -208,9 +213,11 @@ void InspectorController::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWo
         m_inspectorFrontendClient->windowObjectCleared();
 }
 
-void InspectorController::connectFrontend()
+void InspectorController::connectFrontend(InspectorFrontendChannel* frontendChannel)
 {
-    m_inspectorFrontend = adoptPtr(new InspectorFrontend(m_inspectorClient));
+    ASSERT(frontendChannel);
+
+    m_inspectorFrontend = adoptPtr(new InspectorFrontend(frontendChannel));
     // We can reconnect to existing front-end -> unmute state.
     m_state->unmute();
 
@@ -223,7 +230,7 @@ void InspectorController::connectFrontend()
     InspectorInstrumentation::frontendCreated();
 
     ASSERT(m_inspectorClient);
-    m_inspectorBackendDispatcher = InspectorBackendDispatcher::create(m_inspectorClient);
+    m_inspectorBackendDispatcher = InspectorBackendDispatcher::create(frontendChannel);
 
     InspectorBackendDispatcher* dispatcher = m_inspectorBackendDispatcher.get();
     for (Agents::iterator it = m_agents.begin(); it != m_agents.end(); ++it)
@@ -259,8 +266,9 @@ void InspectorController::show()
     if (m_inspectorFrontend)
         m_inspectorClient->bringFrontendToFront();
     else {
-        m_inspectorClient->openInspectorFrontend(this);
-        connectFrontend();
+        InspectorFrontendChannel* frontendChannel = m_inspectorClient->openInspectorFrontend(this);
+        if (frontendChannel)
+            connectFrontend(frontendChannel);
     }
 }
 
@@ -272,10 +280,10 @@ void InspectorController::close()
     m_inspectorClient->closeInspectorFrontend();
 }
 
-void InspectorController::restoreInspectorStateFromCookie(const String& inspectorStateCookie)
+void InspectorController::reconnectFrontend(InspectorFrontendChannel* frontendChannel, const String& inspectorStateCookie)
 {
     ASSERT(!m_inspectorFrontend);
-    connectFrontend();
+    connectFrontend(frontendChannel);
     m_state->loadFromCookie(inspectorStateCookie);
 
     for (Agents::iterator it = m_agents.begin(); it != m_agents.end(); ++it)
@@ -294,12 +302,12 @@ void InspectorController::evaluateForTestInFrontend(long callId, const String& s
 
 void InspectorController::drawHighlight(GraphicsContext& context) const
 {
-    m_domAgent->drawHighlight(context);
+    m_overlay->paint(context);
 }
 
 void InspectorController::getHighlight(Highlight* highlight) const
 {
-    m_domAgent->getHighlight(highlight);
+    m_overlay->getHighlight(highlight);
 }
 
 void InspectorController::inspect(Node* node)
@@ -341,7 +349,7 @@ void InspectorController::hideHighlight()
 
 Node* InspectorController::highlightedNode() const
 {
-    return m_domAgent->highlightedNode();
+    return m_overlay->highlightedNode();
 }
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)

@@ -12,7 +12,7 @@
 #include "base/synchronization/lock.h"
 #include "googleurl/src/gurl.h"
 #include "media/base/data_source.h"
-#include "media/base/pipeline_status.h"
+#include "media/base/ranges.h"
 #include "webkit/media/buffered_resource_loader.h"
 #include "webkit/media/preload.h"
 
@@ -40,14 +40,15 @@ class BufferedDataSource : public media::DataSource {
                      media::MediaLog* media_log,
                      const DownloadingCB& downloading_cb);
 
-  // Initialize this object using |url| and |cors_mode|, and call |status_cb|
-  // when initialization has completed.
+  // Initialize this object using |url| and |cors_mode|, executing |init_cb|
+  // with the result of initialization when it has completed.
   //
   // Method called on the render thread.
+  typedef base::Callback<void(bool)> InitializeCB;
   void Initialize(
       const GURL& url,
       BufferedResourceLoader::CORSMode cors_mode,
-      const media::PipelineStatusCB& status_cb);
+      const InitializeCB& init_cb);
 
   // Adjusts the buffering algorithm based on the given preload value.
   void SetPreload(Preload preload);
@@ -95,13 +96,10 @@ class BufferedDataSource : public media::DataSource {
   // Task posted to perform actual reading on the render thread.
   void ReadTask(int64 position, int read_size, uint8* read_buffer);
 
-  // Task posted when Stop() is called. Stops |watch_dog_timer_| and
-  // |loader_|, reset Read() variables, and set |stopped_on_render_loop_|
-  // to signal any remaining tasks to stop.
+  // Task posted when Stop() is called. Stops |loader_|, resets Read()
+  // variables, and sets |stopped_on_render_loop_| to signal any remaining
+  // tasks to stop.
   void CleanupTask();
-
-  // Restart resource loading on render thread.
-  void RestartLoadingTask();
 
   // This task uses the current playback rate with the previous playback rate
   // to determine whether we are going from pause to play and play to pause,
@@ -120,30 +118,21 @@ class BufferedDataSource : public media::DataSource {
   // kReadError.
   void DoneRead_Locked(int bytes_read);
 
-  // Calls |initialize_cb_| and reset it.
-  void DoneInitialization_Locked(media::PipelineStatus status);
+  // BufferedResourceLoader::Start() callback for initial load.
+  void StartCallback(BufferedResourceLoader::Status status);
 
-  // Callback method for |loader_| if URL for the resource requested is using
-  // HTTP protocol. This method is called when response for initial request is
-  // received.
-  void HttpInitialStartCallback(BufferedResourceLoader::Status status);
-
-  // Callback method for |loader_| if URL for the resource requested is using
-  // a non-HTTP protocol, e.g. local files. This method is called when response
-  // for initial request is received.
-  void NonHttpInitialStartCallback(BufferedResourceLoader::Status status);
-
-  // Callback method to be passed to BufferedResourceLoader during range
-  // request. Once a resource request has started, this method will be called
-  // with the error code. This method will be executed on the thread
-  // BufferedResourceLoader lives, i.e. render thread.
+  // BufferedResourceLoader::Start() callback for subsequent loads (i.e.,
+  // when accessing ranges that are outside initial buffered region).
   void PartialReadStartCallback(BufferedResourceLoader::Status status);
 
-  // Callback method for making a read request to BufferedResourceLoader.
+  // BufferedResourceLoader callbacks.
   void ReadCallback(BufferedResourceLoader::Status status, int bytes_read);
+  void LoadingStateChangedCallback(BufferedResourceLoader::LoadingState state);
+  void ProgressCallback(int64 position);
 
-  // Callback method when a network event is received.
-  void NetworkEventCallback();
+  // Report a buffered byte range [start,end] or queue it for later
+  // reporting if set_host() hasn't been called yet.
+  void ReportOrQueueBufferedBytes(int64 start, int64 end);
 
   void UpdateHostState_Locked();
 
@@ -152,12 +141,14 @@ class BufferedDataSource : public media::DataSource {
   // crossorigin attribute on the corresponding HTML media element, if any.
   BufferedResourceLoader::CORSMode cors_mode_;
 
-  // Members for total bytes of the requested object. It is written once on
-  // render thread but may be read from any thread. However reading of this
-  // member is guaranteed to happen after it is first written, so we don't
-  // need to protect it.
+  // The total size of the resource. Set during StartCallback() if the size is
+  // known, otherwise it will remain kPositionNotSpecified until the size is
+  // determined by reaching EOF.
   int64 total_bytes_;
-  int64 buffered_bytes_;
+
+  // Some resources are assumed to be fully buffered (i.e., file://) so we don't
+  // need to report what |loader_| has buffered.
+  bool assume_fully_buffered_;
 
   // This value will be true if this data source can only support streaming.
   // i.e. range request is not supported.
@@ -169,11 +160,8 @@ class BufferedDataSource : public media::DataSource {
   // A resource loader for the media resource.
   scoped_ptr<BufferedResourceLoader> loader_;
 
-  // True if |loader| is downloading data.
-  bool is_downloading_data_;
-
   // Callback method from the pipeline for initialization.
-  media::PipelineStatusCB initialize_cb_;
+  InitializeCB init_cb_;
 
   // Read parameters received from the Read() method call.
   media::DataSource::ReadCB read_cb_;
@@ -199,7 +187,7 @@ class BufferedDataSource : public media::DataSource {
   MessageLoop* render_loop_;
 
   // Protects |stop_signal_received_|, |stopped_on_render_loop_| and
-  // |initialize_cb_|.
+  // |init_cb_|.
   base::Lock lock_;
 
   // Stop signal to suppressing activities. This variable is set on the pipeline
@@ -226,6 +214,9 @@ class BufferedDataSource : public media::DataSource {
 
   // Current playback rate.
   float playback_rate_;
+
+  // Buffered byte ranges awaiting set_host() being called to report to host().
+  media::Ranges<int64> queued_buffered_byte_ranges_;
 
   scoped_refptr<media::MediaLog> media_log_;
 

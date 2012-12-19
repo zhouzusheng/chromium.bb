@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,8 @@
 
 class ResourceType {
  public:
+  // Used in histograms, so please add new types at the end, and rename unused
+  // entries to RESOURCETYPE_UNUSED_0, etc...
   enum Type {
     MAIN_FRAME = 0,  // top level page
     SUB_FRAME,       // frame or iframe
@@ -25,7 +27,6 @@ class ResourceType {
     WORKER,          // the main resource of a dedicated worker.
     SHARED_WORKER,   // the main resource of a shared worker.
     PREFETCH,        // an explicitly requested prefetch
-    PRERENDER,       // an explicitly requested prerender
     FAVICON,         // a favicon
     XHR,             // a XMLHttpRequest
     LAST_TYPE        // Place holder so we don't need to change ValidType

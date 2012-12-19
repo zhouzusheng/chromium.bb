@@ -37,6 +37,7 @@
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
+#include "InputTypeNames.h"
 #include "KeyboardEvent.h"
 #include "LocalizedNumber.h"
 #include "RenderTextControl.h"
@@ -200,11 +201,6 @@ void NumberInputType::handleKeydownEvent(KeyboardEvent* event)
         TextFieldInputType::handleKeydownEvent(event);
 }
 
-void NumberInputType::handleWheelEvent(WheelEvent* event)
-{
-    handleWheelEventForSpinButton(event);
-}
-
 Decimal NumberInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
 {
     return parseToDecimalForNumberType(src, defaultValue);
@@ -224,7 +220,7 @@ void NumberInputType::handleBlurEvent()
 
     // We need to reset the renderer value explicitly because an unacceptable
     // renderer value should be purged before style calculation.
-    element()->updateInnerTextValue();
+    updateInnerTextValue();
 }
 
 static bool isE(UChar ch)
@@ -239,13 +235,7 @@ String NumberInputType::localizeValue(const String& proposedValue) const
     // We don't localize scientific notations.
     if (proposedValue.find(isE) != notFound)
         return proposedValue;
-    // FIXME: The following three lines should be removed when we
-    // remove the second argument of convertToLocalizedNumber().
-    // Note: parseToDoubleForNumberTypeWithDecimalPlaces set zero to decimalPlaces
-    // if currentValue isn't valid floating pointer number.
-    unsigned decimalPlace;
-    parseToDoubleForNumberTypeWithDecimalPlaces(proposedValue, &decimalPlace);
-    return convertToLocalizedNumber(proposedValue, decimalPlace);
+    return convertToLocalizedNumber(proposedValue);
 }
 
 String NumberInputType::visibleValue() const

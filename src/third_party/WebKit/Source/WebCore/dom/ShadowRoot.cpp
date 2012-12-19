@@ -35,9 +35,12 @@
 #include "Element.h"
 #include "ElementShadow.h"
 #include "HTMLContentElement.h"
+#include "HTMLInputElement.h"
 #include "HTMLNames.h"
+#include "HTMLTextAreaElement.h"
 #include "InsertionPoint.h"
 #include "NodeRareData.h"
+#include "RuntimeEnabledFeatures.h"
 #include "SVGNames.h"
 #include "StyleResolver.h"
 #include "markup.h"
@@ -75,34 +78,19 @@ ShadowRoot::~ShadowRoot()
 
 static bool allowsAuthorShadowRoot(Element* element)
 {
-    // FIXME: MEDIA recreates shadow root dynamically.
-    // https://bugs.webkit.org/show_bug.cgi?id=77936
-    if (element->hasTagName(HTMLNames::videoTag) || element->hasTagName(HTMLNames::audioTag))
-        return false;
-
-    // FIXME: ValidationMessage recreates shadow root dynamically.
-    // https://bugs.webkit.org/show_bug.cgi?id=77937
-    // Especially, INPUT recreates shadow root dynamically.
-    // https://bugs.webkit.org/show_bug.cgi?id=77930
-    if (element->isFormControlElement())
-        return false;
-
-    // FIXME: We disable multiple shadow subtrees for SVG for while, because there will be problems to support it.
-    // https://bugs.webkit.org/show_bug.cgi?id=78205
-    // Especially SVG TREF recreates shadow root dynamically.
-    // https://bugs.webkit.org/show_bug.cgi?id=77938
-    if (element->isSVGElement())
-        return false;
-
-    return true;
+#if ENABLE(SHADOW_DOM)
+    if (RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled())
+        return true;
+#endif
+    return element->areAuthorShadowsAllowed();
 }
 
 PassRefPtr<ShadowRoot> ShadowRoot::create(Element* element, ExceptionCode& ec)
 {
-    return create(element, CreatingAuthorShadowRoot, ec);
+    return create(element, AuthorShadowRoot, ec);
 }
 
-PassRefPtr<ShadowRoot> ShadowRoot::create(Element* element, ShadowRootCreationPurpose purpose, ExceptionCode& ec)
+PassRefPtr<ShadowRoot> ShadowRoot::create(Element* element, ShadowRootType type, ExceptionCode& ec)
 {
     if (!element) {
         ec = HIERARCHY_REQUEST_ERR;
@@ -111,15 +99,18 @@ PassRefPtr<ShadowRoot> ShadowRoot::create(Element* element, ShadowRootCreationPu
 
     // Since some elements recreates shadow root dynamically, multiple shadow subtrees won't work well in that element.
     // Until they are fixed, we disable adding author shadow root for them.
-    if (purpose == CreatingAuthorShadowRoot && !allowsAuthorShadowRoot(element)) {
+    if (type == AuthorShadowRoot && !allowsAuthorShadowRoot(element)) {
         ec = HIERARCHY_REQUEST_ERR;
         return 0;
     }
 
     RefPtr<ShadowRoot> shadowRoot = adoptRef(new ShadowRoot(element->document()));
+#ifndef NDEBUG
+    shadowRoot->m_type = type;
+#endif
 
     ec = 0;
-    element->ensureShadow()->addShadowRoot(element, shadowRoot, ec);
+    element->ensureShadow()->addShadowRoot(element, shadowRoot, type, ec);
     if (ec)
         return 0;
     ASSERT(element == shadowRoot->host());
@@ -136,6 +127,17 @@ PassRefPtr<Node> ShadowRoot::cloneNode(bool)
 {
     // ShadowRoot should not be arbitrarily cloned.
     return 0;
+}
+
+PassRefPtr<Node> ShadowRoot::cloneNode(bool deep, ExceptionCode& ec)
+{
+    RefPtr<Node> clone = cloneNode(deep);
+    if (!clone) {
+        ec = DATA_CLONE_ERR;
+        return 0;
+    }
+
+    return clone;
 }
 
 String ShadowRoot::innerHTML() const

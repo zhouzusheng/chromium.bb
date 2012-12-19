@@ -26,6 +26,7 @@
 #include "config.h"
 #include "TreeScope.h"
 
+#include "ComposedShadowTreeWalker.h"
 #include "ContainerNode.h"
 #include "ContextFeatures.h"
 #include "DOMSelection.h"
@@ -38,6 +39,8 @@
 #include "HTMLFrameOwnerElement.h"
 #include "HTMLMapElement.h"
 #include "HTMLNames.h"
+#include "IdTargetObserverRegistry.h"
+#include "InsertionPoint.h"
 #include "Page.h"
 #include "ShadowRoot.h"
 #include "TreeScopeAdopter.h"
@@ -52,7 +55,7 @@ using namespace HTMLNames;
 TreeScope::TreeScope(ContainerNode* rootNode)
     : m_rootNode(rootNode)
     , m_parentTreeScope(0)
-    , m_numNodeListCaches(0)
+    , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
     ASSERT(rootNode);
 }
@@ -91,11 +94,13 @@ Element* TreeScope::getElementById(const AtomicString& elementId) const
 void TreeScope::addElementById(const AtomicString& elementId, Element* element)
 {
     m_elementsById.add(elementId.impl(), element);
+    m_idTargetObserverRegistry->notifyObservers(elementId);
 }
 
 void TreeScope::removeElementById(const AtomicString& elementId, Element* element)
 {
     m_elementsById.remove(elementId.impl(), element);
+    m_idTargetObserverRegistry->notifyObservers(elementId);
 }
 
 Node* TreeScope::ancestorInThisScope(Node* node) const
@@ -224,25 +229,31 @@ Node* TreeScope::focusedNode()
         node = focusedFrameOwnerElement(document->page()->focusController()->focusedFrame(), document->frame());
     if (!node)
         return 0;
-
-    TreeScope* treeScope = node->treeScope();
-
-    while (treeScope != this && treeScope != document) {
-        node = toShadowRoot(treeScope->rootNode())->host();
-        treeScope = node->treeScope();
+    Vector<Node*> targetStack;
+    Node* last = 0;
+    for (ComposedShadowTreeParentWalker walker(node); walker.get(); walker.parentIncludingInsertionPointAndShadowRoot()) {
+        Node* node = walker.get();
+        if (targetStack.isEmpty())
+            targetStack.append(node);
+        else if (isInsertionPoint(node) && toInsertionPoint(node)->contains(last))
+            targetStack.append(targetStack.last());
+        if (node == rootNode())
+            return targetStack.last();
+        last = node;
+        if (node->isShadowRoot()) {
+            ASSERT(!targetStack.isEmpty());
+            targetStack.removeLast();
+        }
     }
-    if (this != treeScope)
-        return 0;
-
-    return node;
+    return 0;
 }
 
 static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)
 {
     while (true) {
         treeScopes.append(node->treeScope());
-        Node* ancestor = node->shadowAncestorNode();
-        if (node == ancestor)
+        Element* ancestor = node->shadowHost();
+        if (!ancestor)
             break;
         node = ancestor;
     }

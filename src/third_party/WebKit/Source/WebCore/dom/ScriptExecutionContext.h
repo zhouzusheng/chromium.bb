@@ -31,7 +31,6 @@
 #include "ActiveDOMObject.h"
 #include "ConsoleTypes.h"
 #include "KURL.h"
-#include "ScriptCallStack.h"
 #include "SecurityContext.h"
 #include "Supplementable.h"
 #include <wtf/Forward.h>
@@ -54,6 +53,7 @@ class EventListener;
 class EventQueue;
 class EventTarget;
 class MessagePort;
+class ScriptCallStack;
 
 #if ENABLE(BLOB)
 class PublicURLManager;
@@ -79,7 +79,7 @@ public:
 
     virtual String userAgent(const KURL&) const = 0;
 
-    virtual void disableEval() = 0;
+    virtual void disableEval(const String& errorMessage) = 0;
 
     bool sanitizeScriptError(String& errorMessage, int& lineNumber, String& sourceURL);
     void reportException(const String& errorMessage, int lineNumber, const String& sourceURL, PassRefPtr<ScriptCallStack>);

@@ -9,6 +9,8 @@
 #ifndef GrGLCaps_DEFINED
 #define GrGLCaps_DEFINED
 
+#include "SkTArray.h"
+#include "SkTDArray.h"
 #include "GrGLStencilBuffer.h"
 
 class GrGLContextInfo;
@@ -47,7 +49,7 @@ public:
         /**
          * no support for MSAA FBOs
          */
-        kNone_MSFBOType = 0,  
+        kNone_MSFBOType = 0,
         /**
          * GL3.0-style MSAA FBO (GL_ARB_framebuffer_object)
          */
@@ -139,7 +141,7 @@ public:
      * Reports the maximum number of samples supported.
      */
     int maxSampleCount() const { return fMaxSampleCount; }
-    
+
     /**
      * Reports the type of coverage sample AA support.
      */
@@ -214,6 +216,11 @@ public:
     /// Is GL_ARB_IMAGING supported
     bool imagingSupport() const { return fImagingSupport; }
 
+    // Does ReadPixels support the provided format/type combo?
+    bool readPixelsSupported(const GrGLInterface* intf,
+                             GrGLenum format,
+                             GrGLenum type) const;
+
 private:
     /**
      * Maintains a bit per GrPixelConfig. It is used to avoid redundantly
@@ -285,6 +292,7 @@ private:
     bool fTexStorageSupport : 1;
     bool fTextureRedSupport : 1;
     bool fImagingSupport  : 1;
+    bool fTwoFormatLimit : 1;
 };
 
 #endif

@@ -32,12 +32,12 @@
 #define EditingStyle_h
 
 #include "CSSPropertyNames.h"
-#include "PlatformString.h"
 #include "WritingDirection.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -150,8 +150,8 @@ private:
     EditingStyle();
     EditingStyle(Node*, PropertiesToInclude);
     EditingStyle(const Position&, PropertiesToInclude);
-    EditingStyle(const StylePropertySet*);
-    EditingStyle(const CSSStyleDeclaration*);
+    explicit EditingStyle(const StylePropertySet*);
+    explicit EditingStyle(const CSSStyleDeclaration*);
     EditingStyle(CSSPropertyID, const String& value);
     void init(Node*, PropertiesToInclude);
     void removeTextFillAndStrokeColorsIfNeeded(RenderStyle*);

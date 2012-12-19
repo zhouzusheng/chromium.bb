@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_DISPLAY_H_
 #define UI_GFX_DISPLAY_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -19,22 +18,26 @@ namespace gfx {
 // system, not in backing pixels.
 class UI_EXPORT Display {
  public:
+  // Creates a display with kInvalidDisplayID as default.
+  Display();
+  explicit Display(int64 id);
+  Display(int64 id, const Rect& bounds);
+  ~Display();
+
   // Returns the forced device scale factor, which is given by
   // "--force-device-scale-factor".
   static float GetForcedDeviceScaleFactor();
 
-  // Creates a display with invalid id(-1) as default.
-  Display();
-  explicit Display(int id);
-  Display(int id, const Rect& bounds);
-  ~Display();
+  // Returns 64-bit persistent ID for the specified manufacturer's ID and
+  // serial#.
+  static int64 GetID(uint16 manufacturer_id, uint32 serial_number);
 
   // Sets/Gets unique identifier associated with the display.
-  int id() const { return id_; }
-  void set_id(int id) { id_ = id; }
+  // -1 means invalid display and it doesn't not exit.
+  int64 id() const { return id_; }
+  void set_id(int64 id) { id_ = id; }
 
   // Gets/Sets the display's bounds in gfx::Screen's coordinates.
-  // -1 means invalid display and it doesn't not exit.
   const Rect& bounds() const { return bounds_; }
   void set_bounds(const Rect& bounds) { bounds_ = bounds; }
 
@@ -75,9 +78,8 @@ class UI_EXPORT Display {
   gfx::Size GetSizeInPixel() const;
 
 #if defined(USE_AURA)
-  // TODO(oshima): |bounds()| on ash is not screen's coordinate and
-  // this is an workaround for this. This will be removed when ash
-  // has true multi display support. crbug.com/119268.
+  // TODO(oshima|skuhne): Eliminate the use of bounds_in_pixel in events_x.cc
+  // and remove bounds_in_pixel from gfx::Display.
   // Returns the display's bounds in pixel coordinates.
   const Rect& bounds_in_pixel() const { return bounds_in_pixel_; }
 #endif
@@ -85,8 +87,13 @@ class UI_EXPORT Display {
   // Returns a string representation of the display;
   std::string ToString() const;
 
+  // True if the display contains valid display id.
+  bool is_valid() const { return id_ != kInvalidDisplayID; }
+
+  static const int64 kInvalidDisplayID;
+
  private:
-  int id_;
+  int64 id_;
   Rect bounds_;
   Rect work_area_;
 #if defined(USE_AURA)

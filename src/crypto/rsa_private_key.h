@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CRYPTO_RSA_PRIVATE_KEY_H_
 #define CRYPTO_RSA_PRIVATE_KEY_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -15,6 +14,8 @@ typedef struct evp_pkey_st EVP_PKEY;
 // Forward declaration.
 struct SECKEYPrivateKeyStr;
 struct SECKEYPublicKeyStr;
+#elif defined(OS_IOS)
+#include <Security/Security.h>
 #elif defined(OS_MACOSX)
 #include <Security/cssm.h>
 #endif
@@ -218,6 +219,9 @@ class CRYPTO_EXPORT RSAPrivateKey {
 #elif defined(OS_WIN)
   HCRYPTPROV provider() { return provider_; }
   HCRYPTKEY key() { return key_; }
+#elif defined(OS_IOS)
+  SecKeyRef key() { return key_; }
+  SecKeyRef public_key() { return public_key_; }
 #elif defined(OS_MACOSX)
   CSSM_KEY_PTR key() { return &key_; }
   CSSM_KEY_PTR public_key() { return &public_key_; }
@@ -264,6 +268,9 @@ class CRYPTO_EXPORT RSAPrivateKey {
 
   ScopedHCRYPTPROV provider_;
   ScopedHCRYPTKEY key_;
+#elif defined(OS_IOS)
+  SecKeyRef key_;
+  SecKeyRef public_key_;
 #elif defined(OS_MACOSX)
   CSSM_KEY key_;
   CSSM_KEY public_key_;

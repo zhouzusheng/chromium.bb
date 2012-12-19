@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_TEST_UTIL_H_
 #define NET_URL_REQUEST_URL_REQUEST_TEST_UTIL_H_
-#pragma once
 
 #include <stdlib.h>
 
@@ -38,6 +37,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context_storage.h"
+#include "net/url_request/url_request_job_factory.h"
 
 using base::TimeDelta;
 
@@ -94,11 +94,9 @@ class TestURLRequestContextGetter : public net::URLRequestContextGetter {
 
 class TestURLRequest : public net::URLRequest {
  public:
-  TestURLRequest(const GURL& url, Delegate* delegate);
+  TestURLRequest(
+      const GURL& url, Delegate* delegate, TestURLRequestContext* context);
   virtual ~TestURLRequest();
-
- private:
-  const scoped_ptr<net::URLRequestContext> context_;
 };
 
 //-----------------------------------------------------------------------------
@@ -190,7 +188,6 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   enum Options {
     NO_GET_COOKIES = 1 << 0,
     NO_SET_COOKIE  = 1 << 1,
-    FORCE_SESSION  = 1 << 2,
   };
 
   TestNetworkDelegate();
@@ -249,6 +246,8 @@ class TestNetworkDelegate : public net::NetworkDelegate {
   virtual int OnBeforeSocketStreamConnect(
       net::SocketStream* stream,
       const net::CompletionCallback& callback) OVERRIDE;
+  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
+                                        RequestWaitState state) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
 
@@ -296,6 +295,29 @@ class ScopedCustomUrlRequestTestHttpHost {
   const std::string new_value_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedCustomUrlRequestTestHttpHost);
+};
+
+//-----------------------------------------------------------------------------
+
+// A simple Interceptor that returns a pre-built URLRequestJob only once.
+class TestJobInterceptor : public net::URLRequestJobFactory::Interceptor {
+ public:
+  TestJobInterceptor();
+
+  virtual net::URLRequestJob* MaybeIntercept(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
+  virtual net::URLRequestJob* MaybeInterceptRedirect(
+      const GURL& location,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
+  virtual net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
+  void set_main_intercept_job(net::URLRequestJob* job);
+
+ private:
+  mutable net::URLRequestJob* main_intercept_job_;
 };
 
 #endif  // NET_URL_REQUEST_URL_REQUEST_TEST_UTIL_H_

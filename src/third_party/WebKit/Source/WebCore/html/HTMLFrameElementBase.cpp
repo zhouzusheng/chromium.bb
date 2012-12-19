@@ -157,13 +157,14 @@ Node::InsertionNotificationRequest HTMLFrameElementBase::insertedInto(ContainerN
 {
     HTMLFrameOwnerElement::insertedInto(insertionPoint);
     if (insertionPoint->inDocument())
-        return InsertionShouldCallDidNotifyDescendantInsertions;
+        return InsertionShouldCallDidNotifySubtreeInsertions;
     return InsertionDone;
 }
 
-void HTMLFrameElementBase::didNotifyDescendantInsertions(ContainerNode* insertionPoint)
+void HTMLFrameElementBase::didNotifySubtreeInsertions(ContainerNode*)
 {
-    ASSERT_UNUSED(insertionPoint, insertionPoint->inDocument());
+    if (!inDocument())
+        return;
 
     // DocumentFragments don't kick of any loads.
     if (!document()->frame())
@@ -245,12 +246,5 @@ int HTMLFrameElementBase::height()
         return 0;
     return renderBox()->height();
 }
-
-#if ENABLE(FULLSCREEN_API)
-bool HTMLFrameElementBase::allowFullScreen() const
-{
-    return hasAttribute(webkitallowfullscreenAttr);
-}
-#endif
 
 } // namespace WebCore

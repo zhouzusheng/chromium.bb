@@ -4,7 +4,6 @@
 
 #ifndef NET_PROXY_DHCP_PROXY_SCRIPT_FETCHER_WIN_H_
 #define NET_PROXY_DHCP_PROXY_SCRIPT_FETCHER_WIN_H_
-#pragma once
 
 #include <set>
 #include <string>
@@ -84,7 +83,7 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
   // Virtual methods introduced to allow unit testing.
   virtual DhcpProxyScriptAdapterFetcher* ImplCreateAdapterFetcher();
   virtual AdapterQuery* ImplCreateAdapterQuery();
-  virtual int ImplGetMaxWaitMs();
+  virtual base::TimeDelta ImplGetMaxWait();
   virtual void ImplOnGetCandidateAdapterNamesDone() {}
 
  private:

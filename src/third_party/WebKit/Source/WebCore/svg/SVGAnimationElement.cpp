@@ -39,6 +39,7 @@
 #include "SVGNames.h"
 #include "SVGParserUtilities.h"
 #include "SVGStyledElement.h"
+#include <wtf/MathExtras.h>
 
 namespace WebCore {
 
@@ -55,6 +56,8 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document*
     , m_fromPropertyValueType(RegularPropertyValue)
     , m_toPropertyValueType(RegularPropertyValue)
     , m_animationValid(false)
+    , m_attributeType(AttributeTypeAuto)
+    , m_hasInvalidCSSAttributeType(false)
 {
     registerAnimatedPropertiesForSVGAnimationElement();
 }
@@ -145,6 +148,7 @@ bool SVGAnimationElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::keyTimesAttr);
         supportedAttributes.add(SVGNames::keyPointsAttr);
         supportedAttributes.add(SVGNames::keySplinesAttr);
+        supportedAttributes.add(SVGNames::attributeTypeAttr);
     }
     return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
 }
@@ -182,6 +186,11 @@ void SVGAnimationElement::parseAttribute(const Attribute& attribute)
 
     if (attribute.name() == SVGNames::keySplinesAttr) {
         parseKeySplines(attribute.value(), m_keySplines);
+        return;
+    }
+
+    if (attribute.name() == SVGNames::attributeTypeAttr) {
+        setAttributeType(attribute.value());
         return;
     }
 
@@ -232,6 +241,8 @@ void SVGAnimationElement::beginElement()
 
 void SVGAnimationElement::beginElementAt(float offset)
 {
+    if (isnan(offset))
+        return;
     SMILTime elapsed = this->elapsed();
     addBeginTime(elapsed, elapsed + offset, SMILTimeWithOrigin::ScriptOrigin);
 }
@@ -243,6 +254,8 @@ void SVGAnimationElement::endElement()
 
 void SVGAnimationElement::endElementAt(float offset)
 {
+    if (isnan(offset))
+        return;
     SMILTime elapsed = this->elapsed();
     addEndTime(elapsed, elapsed + offset, SMILTimeWithOrigin::ScriptOrigin);
 }
@@ -281,16 +294,17 @@ CalcMode SVGAnimationElement::calcMode() const
     return hasTagName(SVGNames::animateMotionTag) ? CalcModePaced : CalcModeLinear;
 }
 
-SVGAnimationElement::AttributeType SVGAnimationElement::attributeType() const
-{    
+void SVGAnimationElement::setAttributeType(const AtomicString& attributeType)
+{
     DEFINE_STATIC_LOCAL(const AtomicString, css, ("CSS"));
     DEFINE_STATIC_LOCAL(const AtomicString, xml, ("XML"));
-    const AtomicString& value = fastGetAttribute(SVGNames::attributeTypeAttr);
-    if (value == css)
-        return AttributeTypeCSS;
-    if (value == xml)
-        return AttributeTypeXML;
-    return AttributeTypeAuto;
+    if (attributeType == css)
+        m_attributeType = AttributeTypeCSS;
+    else if (attributeType == xml)
+        m_attributeType = AttributeTypeXML;
+    else
+        m_attributeType = AttributeTypeAuto;
+    checkInvalidCSSAttributeType(targetElement(DoNotResolveNewTarget));
 }
 
 String SVGAnimationElement::toValue() const
@@ -574,8 +588,9 @@ void SVGAnimationElement::updateAnimation(float percent, unsigned repeatCount, S
         return;
 
     float effectivePercent;
-    CalcMode mode = calcMode();
-    if (animationMode() == ValuesAnimation) {
+    CalcMode calcMode = this->calcMode();
+    AnimationMode animationMode = this->animationMode();
+    if (animationMode == ValuesAnimation) {
         String from;
         String to;
         currentValuesForValuesAnimation(percent, effectivePercent, from, to);
@@ -586,11 +601,11 @@ void SVGAnimationElement::updateAnimation(float percent, unsigned repeatCount, S
             m_lastValuesAnimationFrom = from;
             m_lastValuesAnimationTo = to;
         }
-    } else if (!m_keyPoints.isEmpty() && mode != CalcModePaced)
+    } else if (!m_keyPoints.isEmpty() && calcMode != CalcModePaced)
         effectivePercent = calculatePercentFromKeyPoints(percent);
-    else if (m_keyPoints.isEmpty() && mode == CalcModeSpline && m_keyTimes.size() > 1)
+    else if (m_keyPoints.isEmpty() && calcMode == CalcModeSpline && m_keyTimes.size() > 1)
         effectivePercent = calculatePercentForSpline(percent, calculateKeyTimesIndex(percent));
-    else if (animationMode() == FromToAnimation || animationMode() == ToAnimation)
+    else if (animationMode == FromToAnimation || animationMode == ToAnimation)
         effectivePercent = calculatePercentForFromTo(percent);
     else
         effectivePercent = percent;
@@ -645,6 +660,25 @@ void SVGAnimationElement::determinePropertyValueTypes(const String& from, const 
         m_fromPropertyValueType = InheritValue;
     if (inheritsFromProperty(targetElement, attributeName, to))
         m_toPropertyValueType = InheritValue;
+}
+
+void SVGAnimationElement::targetElementWillChange(SVGElement* currentTarget, SVGElement* newTarget)
+{
+    SVGSMILElement::targetElementWillChange(currentTarget, newTarget);
+
+    checkInvalidCSSAttributeType(newTarget);
+}
+
+void SVGAnimationElement::setAttributeName(const QualifiedName& attributeName)
+{
+    SVGSMILElement::setAttributeName(attributeName);
+
+    checkInvalidCSSAttributeType(targetElement(DoNotResolveNewTarget));
+}
+
+void SVGAnimationElement::checkInvalidCSSAttributeType(SVGElement* target)
+{
+    m_hasInvalidCSSAttributeType = target && hasValidAttributeName() && attributeType() == AttributeTypeCSS && !isTargetAttributeCSSProperty(target, attributeName());
 }
 
 }

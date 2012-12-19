@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,31 +15,27 @@
 #ifndef V8_I18N_SRC_LOCALE_H_
 #define V8_I18N_SRC_LOCALE_H_
 
+#include "unicode/uversion.h"
 #include "v8/include/v8.h"
 
 namespace v8_i18n {
 
-class Locale {
- public:
-  Locale() {}
+// Canonicalizes the BCP47 language tag using BCP47 rules.
+// Returns 'invalid-tag' in case input was not well formed.
+v8::Handle<v8::Value> JSCanonicalizeLanguageTag(const v8::Arguments& args);
 
-  // Implementations of window.Locale methods.
-  static v8::Handle<v8::Value> JSLocale(const v8::Arguments& args);
+// Returns a list of available locales for collator, date or number formatter.
+v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args);
 
-  // Infers region id given the locale id, or uses user specified region id.
-  // Result is canonicalized.
-  // Returns status of ICU operation (maximizing locale or get region call).
-  static bool GetBestMatchForRegionID(
-      const char* locale_id, v8::Handle<v8::Value> regions, char* result);
+// Returns default ICU locale.
+v8::Handle<v8::Value> JSGetDefaultICULocale(const v8::Arguments& args);
 
- private:
-  // Key name for localeID parameter.
-  static const char* const kLocaleID;
-  // Key name for regionID parameter.
-  static const char* const kRegionID;
-  // Key name for the icuLocaleID result.
-  static const char* const kICULocaleID;
-};
+// Returns an array of objects, that have maximized and base names of inputs.
+// Unicode extensions are dropped from both.
+// Input: ['zh-TW-u-nu-thai', 'sr']
+// Output: [{maximized: 'zh-Hant-TW', base: 'zh-TW'},
+//          {maximized: 'sr-Cyrl-RS', base: 'sr'}]
+v8::Handle<v8::Value> JSGetLanguageTagVariants(const v8::Arguments& args);
 
 }  // namespace v8_i18n
 

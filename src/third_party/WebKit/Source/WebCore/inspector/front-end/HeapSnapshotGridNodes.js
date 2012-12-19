@@ -91,7 +91,7 @@ WebInspector.HeapSnapshotGridNode.prototype = {
                 node.dispose();
     },
 
-    hasHoverMessage: false,
+    _reachableFromWindow: false,
 
     queryObjectContent: function(callback)
     {
@@ -356,12 +356,12 @@ WebInspector.HeapSnapshotGenericObjectNode = function(tree, node)
     this.snapshotNodeId = node.id;
     this.snapshotNodeIndex = node.nodeIndex;
     if (this._type === "string")
-        this.hasHoverMessage = true;
+        this._reachableFromWindow = true;
     else if (this._type === "object" && this.isWindow(this._name)) {
         this._name = this.shortenWindowURL(this._name, false);
-        this.hasHoverMessage = true;
+        this._reachableFromWindow = true;
     } else if (node.flags & tree.snapshot.nodeFlags.canBeQueried)
-        this.hasHoverMessage = true;
+        this._reachableFromWindow = true;
     if (node.flags & tree.snapshot.nodeFlags.detachedDOMTreeNode)
         this.detachedDOMTreeNode = true;
 };
@@ -435,7 +435,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
                 value += "[]";
             break;
         };
-        if (this.hasHoverMessage)
+        if (this._reachableFromWindow)
             valueStyle += " highlight";
         if (value === "Object")
             value = "";
@@ -542,7 +542,7 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
         var showHiddenData = WebInspector.settings.showHeapSnapshotObjectsHiddenProperties.get();
         var filter = "function(edge) {\n" +
                      "    return !edge.isInvisible()\n" +
-                     "        && (" + !tree.showRetainingEdges + " || (edge.node().id() !== 1 && !edge.node().isSynthetic()))\n" +
+                     "        && (" + !tree.showRetainingEdges + " || (edge.node().id() !== 1 && !edge.node().isSynthetic() && !edge.isWeak()))\n" +
                      "        && (" + showHiddenData + " || (!edge.isHidden() && !edge.node().isHidden()));\n" +
                      "}\n";
         var snapshot = this._isFromBaseSnapshot ? tree.baseSnapshot : tree.snapshot;

@@ -13,9 +13,9 @@
 #include "GrGLContextInfo.h"
 #include "GrGLSL.h"
 #include "GrGLTexture.h"
-#include "GrStringBuilder.h"
-#include "GrGpu.h"
+#include "GrGLUniformManager.h"
 
+#include "SkString.h"
 #include "SkXfermode.h"
 
 class GrBinHashKeyBuilder;
@@ -35,27 +35,27 @@ class GrGLShaderBuilder;
  * Uniforms are program-local so we can't rely on fHWState to hold the
  * previous uniform state after a program change.
  */
-class GrGLProgram {
+class GrGLProgram : public GrRefCnt {
 public:
+    SK_DECLARE_INST_COUNT(GrGLProgram)
 
-    class CachedData;
+    struct Desc;
 
-    GrGLProgram();
-    ~GrGLProgram();
+    static GrGLProgram* Create(const GrGLContextInfo& gl,
+                               const Desc& desc,
+                               const GrCustomStage** customStages);
+
+    virtual ~GrGLProgram();
+
+    /** Call to abandon GL objects owned by this program */
+    void abandon();
 
     /**
-     *  This is the heavy initilization routine for building a GLProgram.
-     *  The result of heavy init is not stored in datamembers of GrGLProgam,
-     *  but in a separate cacheable container.
+     * The shader may modify the blend coeffecients. Params are in/out
      */
-    bool genProgram(const GrGLContextInfo& gl,
-                    GrCustomStage** customStages,
-                    CachedData* programData) const;
+    void overrideBlend(GrBlendCoeff* srcCoeff, GrBlendCoeff* dstCoeff) const;
 
-     /**
-      * The shader may modify the blend coeffecients. Params are in/out
-      */
-     void overrideBlend(GrBlendCoeff* srcCoeff, GrBlendCoeff* dstCoeff) const;
+    const Desc& getDesc() { return fDesc; }
 
     /**
      * Attribute indices. These should not overlap. Matrices consume 3 slots.
@@ -75,97 +75,33 @@ public:
         return 7 + GrDrawState::kMaxTexCoords + 3 * stage;
     }
 
-public:
-
     // Parameters that affect code generation
     // These structs should be kept compact; they are the input to an
     // expensive hash key generator.
-    struct ProgramDesc {
-        ProgramDesc() {
+    struct Desc {
+        Desc() {
             // since we use this as part of a key we can't have any unitialized
             // padding
-            memset(this, 0, sizeof(ProgramDesc));
+            memset(this, 0, sizeof(Desc));
         }
 
-        enum OutputConfig {
-            // PM-color OR color with no alpha channel
-            kPremultiplied_OutputConfig,
-            // nonPM-color with alpha channel. Round components up after
-            // dividing by alpha. Assumes output is 8 bits for r, g, and b
-            kUnpremultiplied_RoundUp_OutputConfig,
-            // nonPM-color with alpha channel. Round components down after
-            // dividing by alpha. Assumes output is 8 bits for r, g, and b
-            kUnpremultiplied_RoundDown_OutputConfig,
-
-            kOutputConfigCnt
-        };
+        // returns this as a uint32_t array to be used as a key in the program cache
+        const uint32_t* asKey() const {
+            return reinterpret_cast<const uint32_t*>(this);
+        }
 
         struct StageDesc {
             enum OptFlagBits {
                 kNoPerspective_OptFlagBit       = 1 << 0,
                 kIdentityMatrix_OptFlagBit      = 1 << 1,
-                kCustomTextureDomain_OptFlagBit = 1 << 2,
                 kIsEnabled_OptFlagBit           = 1 << 7
             };
 
-            /**
-              Flags set based on a src texture's pixel config. The operations
-              described are performed after reading a texel.
-             */
-            enum InConfigFlags {
-                kNone_InConfigFlag                      = 0x00,
-
-                /**
-                  Swap the R and B channels. This is incompatible with
-                  kSmearAlpha. It is prefereable to perform the swizzle outside
-                  the shader using GL_ARB_texture_swizzle if possible rather
-                  than setting this flag.
-                 */
-                kSwapRAndB_InConfigFlag                 = 0x01,
-
-                /**
-                 Smear alpha across all four channels. This is incompatible with
-                 kSwapRAndB, kMulRGBByAlpha* and kSmearRed. It is prefereable 
-                 to perform the smear outside the shader using 
-                 GL_ARB_texture_swizzle if possible rather than setting this 
-                 flag.
-                */
-                kSmearAlpha_InConfigFlag                = 0x02,
-
-                /**
-                 Smear the red channel across all four channels. This flag is 
-                 incompatible with kSwapRAndB, kMulRGBByAlpha*and kSmearAlpha. 
-                 It is preferable to use GL_ARB_texture_swizzle instead of this 
-                 flag.
-                */
-                kSmearRed_InConfigFlag                  = 0x04,
-
-                /**
-                 Multiply r,g,b by a after texture reads. This flag incompatible
-                 with kSmearAlpha.
-
-                 It is assumed the src texture has 8bit color components. After
-                 reading the texture one version rounds up to the next multiple
-                 of 1/255.0 and the other rounds down. At most one of these
-                 flags may be set.
-                 */
-                kMulRGBByAlpha_RoundUp_InConfigFlag     =  0x08,
-                kMulRGBByAlpha_RoundDown_InConfigFlag   =  0x10,
-
-                kDummyInConfigFlag,
-                kInConfigBitMask = (kDummyInConfigFlag-1) |
-                                   (kDummyInConfigFlag-2)
-            };
-
             uint8_t fOptFlags;
-            uint8_t fInConfigFlags; // bitfield of InConfigFlags values
 
             /** Non-zero if user-supplied code will write the stage's
                 contribution to the fragment shader. */
-            uint16_t fCustomStageKey;
-
-            GR_STATIC_ASSERT((InConfigFlags)(uint8_t)kInConfigBitMask ==
-                             kInConfigBitMask);
+            GrProgramStageFactory::StageKey fCustomStageKey;
 
             inline bool isEnabled() const {
                 return SkToBool(fOptFlags & kIsEnabled_OptFlagBit);
@@ -216,172 +152,123 @@ public:
 
         uint8_t fColorInput;        // casts to enum ColorInput
         uint8_t fCoverageInput;     // casts to enum CoverageInput
-        uint8_t fOutputConfig;      // casts to enum OutputConfig
         uint8_t fDualSrcOutput;     // casts to enum DualSrcOutput
         int8_t fFirstCoverageStage;
         SkBool8 fEmitsPointSize;
         SkBool8 fColorMatrixEnabled;
 
         uint8_t fColorFilterXfermode;  // casts to enum SkXfermode::Mode
-        int8_t fPadding[1];
-
-    } fProgramDesc;
-    GR_STATIC_ASSERT(!(sizeof(ProgramDesc) % 4));
+    };
+    GR_STATIC_ASSERT(!(sizeof(Desc) % 4));
 
     // for code readability
-    typedef ProgramDesc::StageDesc StageDesc;
+    typedef Desc::StageDesc StageDesc;
 
 private:
+    struct StageUniforms;
 
-    const ProgramDesc& getDesc() { return fProgramDesc; }
-    const char* adjustInColor(const GrStringBuilder& inColor) const;
+    GrGLProgram(const GrGLContextInfo& gl,
+                const Desc& desc,
+                const GrCustomStage** customStages);
 
-public:
-    enum {
-        kUnusedUniform = -1,
-    };
+    bool succeeded() const { return 0 != fProgramID; }
 
-    struct StageUniLocations {
-        GrGLint fTextureMatrixUni;
-        GrGLint fSamplerUni;
-        GrGLint fTexDomUni;
-        void reset() {
-            fTextureMatrixUni = kUnusedUniform;
-            fSamplerUni = kUnusedUniform;
-            fTexDomUni = kUnusedUniform;
+    /**
+     *  This is the heavy initilization routine for building a GLProgram.
+     */
+    bool genProgram(const GrCustomStage** customStages);
+
+    void genInputColor(GrGLShaderBuilder* builder, SkString* inColor);
+
+    static GrGLProgramStage* GenStageCode(const GrCustomStage* stage,
+                                          const StageDesc& desc, // TODO: Eliminate this
+                                          StageUniforms* stageUniforms, // TODO: Eliminate this
+                                          const char* fsInColor, // NULL means no incoming color
+                                          const char* fsOutColor,
+                                          const char* vsInCoord,
+                                          GrGLShaderBuilder* builder);
+
+    void genGeometryShader(GrGLShaderBuilder* segments) const;
+
+    typedef GrGLUniformManager::UniformHandle UniformHandle;
+
+    void genUniformCoverage(GrGLShaderBuilder* segments, SkString* inOutCoverage);
+
+    // generates code to compute coverage based on edge AA. Returns true if edge coverage was
+    // inserted in which case coverageVar will be updated to refer to a scalar. Otherwise,
+    // coverageVar is set to an empty string.
+    bool genEdgeCoverage(SkString* coverageVar, GrGLShaderBuilder* builder) const;
+
+    // Creates a GL program ID, binds shader attributes to GL vertex attrs, and links the program
+    bool bindOutputsAttribsAndLinkProgram(SkString texCoordAttrNames[GrDrawState::kMaxTexCoords],
+                                          bool bindColorOut,
+                                          bool bindDualSrcOut);
+
+    // Sets the texture units for samplers
+    void initSamplerUniforms();
+
+    bool compileShaders(const GrGLShaderBuilder& builder);
+
+    const char* adjustInColor(const SkString& inColor) const;
+
+    struct StageUniforms {
+        UniformHandle fTextureMatrixUni;
+        SkTArray<UniformHandle, true> fSamplerUniforms;
+        StageUniforms() {
+            fTextureMatrixUni = GrGLUniformManager::kInvalidUniformHandle;
         }
     };
 
-    struct UniLocations {
-        GrGLint fViewMatrixUni;
-        GrGLint fColorUni;
-        GrGLint fCoverageUni;
-        GrGLint fColorFilterUni;
-        GrGLint fColorMatrixUni;
-        GrGLint fColorMatrixVecUni;
-        StageUniLocations fStages[GrDrawState::kNumStages];
-        void reset() {
-            fViewMatrixUni = kUnusedUniform;
-            fColorUni = kUnusedUniform;
-            fCoverageUni = kUnusedUniform;
-            fColorFilterUni = kUnusedUniform;
-            fColorMatrixUni = kUnusedUniform;
-            fColorMatrixVecUni = kUnusedUniform;
-            for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-                fStages[s].reset();
-            }
+    struct Uniforms {
+        UniformHandle fViewMatrixUni;
+        UniformHandle fColorUni;
+        UniformHandle fCoverageUni;
+        UniformHandle fColorFilterUni;
+        UniformHandle fColorMatrixUni;
+        UniformHandle fColorMatrixVecUni;
+        StageUniforms fStages[GrDrawState::kNumStages];
+        Uniforms() {
+            fViewMatrixUni = GrGLUniformManager::kInvalidUniformHandle;
+            fColorUni = GrGLUniformManager::kInvalidUniformHandle;
+            fCoverageUni = GrGLUniformManager::kInvalidUniformHandle;
+            fColorFilterUni = GrGLUniformManager::kInvalidUniformHandle;
+            fColorMatrixUni = GrGLUniformManager::kInvalidUniformHandle;
+            fColorMatrixVecUni = GrGLUniformManager::kInvalidUniformHandle;
         }
     };
 
-    class CachedData : public ::GrNoncopyable {
-    public:
-        CachedData() {
-            for (int i = 0; i < GrDrawState::kNumStages; ++i) {
-                fCustomStage[i] = NULL;
-            }
-        }
+    // IDs
+    GrGLuint    fVShaderID;
+    GrGLuint    fGShaderID;
+    GrGLuint    fFShaderID;
+    GrGLuint    fProgramID;
 
-        ~CachedData();
+    // The matrix sent to GL is determined by both the client's matrix and
+    // the size of the viewport.
+    GrMatrix  fViewMatrix;
+    SkISize   fViewportSize;
 
-        void copyAndTakeOwnership(CachedData& other) {
-            memcpy(this, &other, sizeof(*this));
-            for (int i = 0; i < GrDrawState::kNumStages; ++i) {
-                other.fCustomStage[i] = NULL;
-            }
-        }
+    // these reflect the current values of uniforms
+    // (GL uniform values travel with program)
+    GrColor                     fColor;
+    GrColor                     fCoverage;
+    GrColor                     fColorFilterColor;
+    /// When it is sent to GL, the texture matrix will be flipped if the texture orientation
+    /// (below) requires.
+    GrMatrix                    fTextureMatrices[GrDrawState::kNumStages];
+    GrGLTexture::Orientation    fTextureOrientation[GrDrawState::kNumStages];
 
-    public:
+    GrGLProgramStage*           fProgramStage[GrDrawState::kNumStages];
 
-        // IDs
-        GrGLuint    fVShaderID;
-        GrGLuint    fGShaderID;
-        GrGLuint    fFShaderID;
-        GrGLuint    fProgramID;
-        // shader uniform locations (-1 if shader doesn't use them)
-        UniLocations fUniLocations;
+    Desc fDesc;
+    const GrGLContextInfo&      fContextInfo;
 
-        // The matrix sent to GL is determined by both the client's matrix and
-        // the size of the viewport.
-        GrMatrix  fViewMatrix;
-        SkISize   fViewportSize;
+    GrGLUniformManager          fUniformManager;
+    Uniforms                    fUniforms;
 
-        // these reflect the current values of uniforms
-        // (GL uniform values travel with program)
-        GrColor                     fColor;
-        GrColor                     fCoverage;
-        GrColor                     fColorFilterColor;
-        GrMatrix                    fTextureMatrices[GrDrawState::kNumStages];
-        GrRect                      fTextureDomain[GrDrawState::kNumStages];
-        // The texture domain and texture matrix sent to GL depend upon the
-        // orientation.
-        GrGLTexture::Orientation    fTextureOrientation[GrDrawState::kNumStages];
+    friend class GrGpuGL; // TODO: remove this by adding getters and moving functionality.
 
-        GrGLProgramStage*           fCustomStage[GrDrawState::kNumStages];
-
-    private:
-        enum Constants {
-            kUniLocationPreAllocSize = 8
-        };
-
-    }; // CachedData
-
-    enum Constants {
-        kProgramKeySize = sizeof(ProgramDesc)
-    };
-
-    // Provide an opaque ProgramDesc
-    const uint32_t* keyData() const{
-        return reinterpret_cast<const uint32_t*>(&fProgramDesc);
-    }
-
-private:
-
-    // Determines which uniforms will need to be bound.
-    void genStageCode(const GrGLContextInfo& gl,
-                      int stageNum,
-                      const ProgramDesc::StageDesc& desc,
-                      const char* fsInColor, // NULL means no incoming color
-                      const char* fsOutColor,
-                      const char* vsInCoord,
-                      GrGLShaderBuilder* segments,
-                      StageUniLocations* locations,
-                      GrGLProgramStage* override) const;
-
-    void genGeometryShader(const GrGLContextInfo& gl,
-                           GrGLShaderBuilder* segments) const;
-
-    // generates code to compute coverage based on edge AA.
-    void genEdgeCoverage(const GrGLContextInfo& gl,
-                         GrVertexLayout layout,
-                         CachedData* programData,
-                         GrStringBuilder* coverageVar,
-                         GrGLShaderBuilder* segments) const;
-
-    static bool CompileShaders(const GrGLContextInfo& gl,
-                               const GrGLShaderBuilder& segments, 
-                               CachedData* programData);
-
-    // Compiles a GL shader, returns shader ID or 0 if failed
-    // params have same meaning as glShaderSource
-    static GrGLuint CompileShader(const GrGLContextInfo& gl,
-                                  GrGLenum type, int stringCnt,
-                                  const char** strings,
-                                  int* stringLengths);
-
-    // Creates a GL program ID, binds shader attributes to GL vertex attrs, and
-    // links the program
-    bool bindOutputsAttribsAndLinkProgram(
-                const GrGLContextInfo& gl,
-                GrStringBuilder texCoordAttrNames[GrDrawState::kMaxTexCoords],
-                bool bindColorOut,
-                bool bindDualSrcOut,
-                CachedData* programData) const;
-
-    // Binds uniforms; initializes cache to invalid values.
-    void getUniformLocationsAndInitCache(const GrGLContextInfo& gl,
-                                         CachedData* programData) const;
-
-    friend class GrGpuGL;
+    typedef GrRefCnt INHERITED;
 };
 
 #endif

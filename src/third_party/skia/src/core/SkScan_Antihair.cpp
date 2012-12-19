@@ -106,7 +106,7 @@ static SkFixed hline(int x, int stopx, SkFixed fy, SkFixed /*slope*/,
     if (ma) {
         call_hline_blitter(blitter, x, y - 1, count, ma);
     }
-    
+
     return fy - SK_Fixed1/2;
 }
 
@@ -145,7 +145,7 @@ static SkFixed horish(int x, int stopx, SkFixed fy, SkFixed dy,
         }
         fy += dy;
     } while (++x < stopx);
-    
+
     return fy - SK_Fixed1/2;
 }
 
@@ -165,7 +165,7 @@ static SkFixed vline(int y, int stopy, SkFixed fx, SkFixed /*slope*/,
     if (ma) {
         blitter->blitV(x - 1, y, stopy - y, ApplyGamma(gGammaTable, ma));
     }
-    
+
     return fx - SK_Fixed1/2;
 }
 
@@ -235,6 +235,25 @@ static bool canConvertFDot6ToFixed(SkFDot6 x) {
     return SkAbs32(x) <= maxDot6;
 }
 
+/*
+ *  We want the fractional part of ordinate, but we want multiples of 64 to
+ *  return 64, not 0, so we can't just say (ordinate & 63).
+ *  We basically want to compute those bits, and if they're 0, return 64.
+ *  We can do that w/o a branch with an extra sub and add.
+ */
+static int contribution_64(SkFDot6 ordinate) {
+#if 0
+    int result = ordinate & 63;
+    if (0 == result) {
+        result = 64;
+    }
+#else
+    int result = ((ordinate - 1) & 63) + 1;
+#endif
+    SkASSERT(result > 0 && result <= 64);
+    return result;
+}
+
 static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
                              const SkIRect* clip, SkBlitter* blitter) {
     // check for integer NaN (0x80000000) which we can't handle (can't negate it)
@@ -267,7 +286,7 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
 
     int         scaleStart, scaleStop;
     int         istart, istop;
-    SkFixed     fstart, slope; 
+    SkFixed     fstart, slope;
     LineProc    proc;
 
     if (SkAbs32(x1 - x0) > SkAbs32(y1 - y0)) {   // mostly horizontal
@@ -288,9 +307,10 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
             fstart += (slope * (32 - (x0 & 63)) + 32) >> 6;
             proc = horish;
         }
-        
+
         SkASSERT(istop > istart);
         if (istop - istart == 1) {
+            // we are within a single pixel
             scaleStart = x1 - x0;
             SkASSERT(scaleStart >= 0 && scaleStart <= 64);
             scaleStop = 0;
@@ -307,6 +327,11 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
                 fstart += slope * (clip->fLeft - istart);
                 istart = clip->fLeft;
                 scaleStart = 64;
+                if (istop - istart == 1) {
+                    // we are within a single pixel
+                    scaleStart = contribution_64(x1);
+                    scaleStop = 0;
+                }
             }
             if (istop > clip->fRight) {
                 istop = clip->fRight;
@@ -361,6 +386,7 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
 
         SkASSERT(istop > istart);
         if (istop - istart == 1) {
+            // we are within a single pixel
             scaleStart = y1 - y0;
             SkASSERT(scaleStart >= 0 && scaleStart <= 64);
             scaleStop = 0;
@@ -368,7 +394,7 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
             scaleStart = 64 - (y0 & 63);
             scaleStop = y1 & 63;
         }
-        
+
         if (clip) {
             if (istart >= clip->fBottom || istop <= clip->fTop) {
                 return;
@@ -377,6 +403,11 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
                 fstart += slope * (clip->fTop - istart);
                 istart = clip->fTop;
                 scaleStart = 64;
+                if (istop - istart == 1) {
+                    // we are within a single pixel
+                    scaleStart = contribution_64(y1);
+                    scaleStop = 0;
+                }
             }
             if (istop > clip->fBottom) {
                 istop = clip->fBottom;
@@ -414,7 +445,14 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
         rectClipper.init(blitter, *clip);
         blitter = &rectClipper;
     }
-    
+
+#ifdef SK_DEBUG
+    if (scaleStart > 0 && scaleStop > 0) {
+        // be sure we don't draw twice in the same pixel
+        SkASSERT(istart < istop - 1);
+    }
+#endif
+
     fstart = proc(istart, istart + 1, fstart, slope, blitter, scaleStart);
     istart += 1;
     int fullSpans = istop - istart - (scaleStop > 0);
@@ -471,7 +509,7 @@ void SkScan::AntiHairLineRgn(const SkPoint& pt0, const SkPoint& pt1,
             return;
         }
     }
-        
+
     SkFDot6 x0 = SkScalarToFDot6(pts[0].fX);
     SkFDot6 y0 = SkScalarToFDot6(pts[0].fY);
     SkFDot6 x1 = SkScalarToFDot6(pts[1].fX);
@@ -533,14 +571,14 @@ static inline FDot8 SkFixedToFDot8(SkFixed x) {
 static void do_scanline(FDot8 L, int top, FDot8 R, U8CPU alpha,
                         SkBlitter* blitter) {
     SkASSERT(L < R);
-    
+
     if ((L >> 8) == ((R - 1) >> 8)) {  // 1x1 pixel
         blitter->blitV(L >> 8, top, 1, SkAlphaMul(alpha, R - L));
         return;
     }
-    
+
     int left = L >> 8;
-    
+
     if (L & 0xFF) {
         blitter->blitV(left, top, 1, SkAlphaMul(alpha, 256 - (L & 0xFF)));
         left += 1;
@@ -567,12 +605,12 @@ static void antifilldot8(FDot8 L, FDot8 T, FDot8 R, FDot8 B, SkBlitter* blitter,
         do_scanline(L, top, R, B - T - 1, blitter);
         return;
     }
-    
+
     if (T & 0xFF) {
         do_scanline(L, top, R, 256 - (T & 0xFF), blitter);
         top += 1;
     }
-    
+
     int bot = B >> 8;
     int height = bot - top;
     if (height > 0) {
@@ -594,7 +632,7 @@ static void antifilldot8(FDot8 L, FDot8 T, FDot8 R, FDot8 B, SkBlitter* blitter,
             }
         }
     }
-    
+
     if (B & 0xFF) {
         do_scanline(L, bot, R, B & 0xFF, blitter);
     }
@@ -632,10 +670,10 @@ void SkScan::AntiFillXRect(const SkXRect& xr, const SkRegion* clip,
         } else {
             SkRegion::Cliperator clipper(*clip, outerBounds);
             const SkIRect&       rr = clipper.rect();
-            
+
             while (!clipper.done()) {
                 SkXRect  tmpR;
-                
+
                 // this keeps our original edges fractional
                 XRect_set(&tmpR, rr);
                 if (tmpR.intersect(xr)) {
@@ -674,7 +712,7 @@ void SkScan::AntiFillXRect(const SkXRect& xr, const SkRasterClip& clip,
 */
 static void antifillrect(const SkRect& r, SkBlitter* blitter) {
     SkXRect xr;
-    
+
     XRect_set(&xr, r);
     antifillrect(xr, blitter);
 }
@@ -682,7 +720,7 @@ static void antifillrect(const SkRect& r, SkBlitter* blitter) {
 /*  We repeat the clipping logic of AntiFillXRect because the float rect might
     overflow if we blindly converted it to an XRect. This sucks that we have to
     repeat the clipping logic, but I don't see how to share the code/logic.
- 
+
     We clip r (as needed) into one or more (smaller) float rects, and then pass
     those to our version of antifillrect, which converts it into an XRect and
     then calls the blit.
@@ -698,7 +736,7 @@ void SkScan::AntiFillRect(const SkRect& origR, const SkRegion* clip,
 
         SkIRect outerBounds;
         newR.roundOut(&outerBounds);
-        
+
         if (clip->isRect()) {
             antifillrect(newR, blitter);
         } else {
@@ -765,24 +803,24 @@ static inline U8CPU InvAlphaMul(U8CPU a, U8CPU b) {
 static void inner_scanline(FDot8 L, int top, FDot8 R, U8CPU alpha,
                            SkBlitter* blitter) {
     SkASSERT(L < R);
-    
+
     if ((L >> 8) == ((R - 1) >> 8)) {  // 1x1 pixel
         blitter->blitV(L >> 8, top, 1, InvAlphaMul(alpha, R - L));
         return;
     }
-    
+
     int left = L >> 8;
     if (L & 0xFF) {
         blitter->blitV(left, top, 1, InvAlphaMul(alpha, L & 0xFF));
         left += 1;
     }
-    
+
     int rite = R >> 8;
     int width = rite - left;
     if (width > 0) {
         call_hline_blitter(blitter, left, top, width, alpha);
     }
-    
+
     if (R & 0xFF) {
         blitter->blitV(rite, top, 1, InvAlphaMul(alpha, ~R & 0xFF));
     }
@@ -801,12 +839,12 @@ static void innerstrokedot8(FDot8 L, FDot8 T, FDot8 R, FDot8 B,
         }
         return;
     }
-    
+
     if (T & 0xFF) {
         inner_scanline(L, top, R, T & 0xFF, blitter);
         top += 1;
     }
-    
+
     int bot = B >> 8;
     int height = bot - top;
     if (height > 0) {
@@ -817,7 +855,7 @@ static void innerstrokedot8(FDot8 L, FDot8 T, FDot8 R, FDot8 B,
             blitter->blitV(R >> 8, top, height, ~R & 0xFF);
         }
     }
-    
+
     if (B & 0xFF) {
         inner_scanline(L, bot, R, ~B & 0xFF, blitter);
     }
@@ -850,7 +888,7 @@ void SkScan::AntiFrameRect(const SkRect& r, const SkPoint& strokeSize,
         }
         // now we can ignore clip for the rest of the function
     }
-    
+
     // stroke the outer hull
     antifilldot8(L, T, R, B, blitter, false);
 

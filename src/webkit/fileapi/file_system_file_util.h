@@ -7,12 +7,17 @@
 
 #include "base/file_path.h"
 #include "base/file_util_proxy.h"
+#include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
+#include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/fileapi_export.h"
-#include "webkit/fileapi/file_system_path.h"
 
 namespace base {
 class Time;
+}
+
+namespace webkit_blob {
+class ShareableFileReference;
 }
 
 namespace fileapi {
@@ -41,22 +46,36 @@ class FILEAPI_EXPORT FileSystemFileUtil {
     virtual bool IsDirectory() = 0;
   };
 
+  // A policy flag for CreateSnapshotFile.
+  enum SnapshotFilePolicy {
+    kSnapshotFileUnknown,
+
+    // The implementation just uses the local file as the snapshot file.
+    // The FileAPI backend does nothing on the returned file.
+    kSnapshotFileLocal,
+
+    // The implementation returns a temporary file as the snapshot file.
+    // The FileAPI backend takes care of the lifetime of the returned file
+    // and will delete when the last reference of the file is dropped.
+    kSnapshotFileTemporary,
+  };
+
   class EmptyFileEnumerator : public AbstractFileEnumerator {
-    virtual FilePath Next() OVERRIDE { return FilePath(); }
-    virtual int64 Size() OVERRIDE { return 0; }
-    virtual base::Time LastModifiedTime() OVERRIDE { return base::Time(); }
-    virtual bool IsDirectory() OVERRIDE { return false; }
+    virtual FilePath Next() OVERRIDE;
+    virtual int64 Size() OVERRIDE;
+    virtual base::Time LastModifiedTime() OVERRIDE;
+    virtual bool IsDirectory() OVERRIDE;
   };
 
   virtual ~FileSystemFileUtil() {}
 
   // Creates or opens a file with the given flags.
   // If PLATFORM_FILE_CREATE is set in |file_flags| it always tries to create
-  // a new file at the given |path| and calls back with
-  // PLATFORM_FILE_ERROR_FILE_EXISTS if the |path| already exists.
+  // a new file at the given |url| and calls back with
+  // PLATFORM_FILE_ERROR_FILE_EXISTS if the |url| already exists.
   virtual PlatformFileError CreateOrOpen(
       FileSystemOperationContext* context,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       int file_flags,
       PlatformFile* file_handle,
       bool* created) = 0;
@@ -66,9 +85,9 @@ class FILEAPI_EXPORT FileSystemFileUtil {
       FileSystemOperationContext* context,
       PlatformFile file) = 0;
 
-  // Ensures that the given |path| exist.  This creates a empty new file
-  // at |path| if the |path| does not exist.
-  // If a new file han not existed and is created at the |path|,
+  // Ensures that the given |url| exist.  This creates a empty new file
+  // at |url| if the |url| does not exist.
+  // If a new file han not existed and is created at the |url|,
   // |created| is set true and |error code|
   // is set PLATFORM_FILE_OK.
   // If the file already exists, |created| is set false and |error code|
@@ -77,20 +96,20 @@ class FILEAPI_EXPORT FileSystemFileUtil {
   // reasons, |created| is set false and |error code| indicates the error.
   virtual PlatformFileError EnsureFileExists(
       FileSystemOperationContext* context,
-      const FileSystemPath& path, bool* created) = 0;
+      const FileSystemURL& url, bool* created) = 0;
 
-  // Creates directory at given path. It's an error to create
+  // Creates directory at given url. It's an error to create
   // if |exclusive| is true and dir already exists.
   virtual PlatformFileError CreateDirectory(
       FileSystemOperationContext* context,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       bool exclusive,
       bool recursive) = 0;
 
   // Retrieves the information about a file.
   virtual PlatformFileError GetFileInfo(
       FileSystemOperationContext* context,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
       FilePath* platform_path) = 0;
 
@@ -103,23 +122,23 @@ class FILEAPI_EXPORT FileSystemFileUtil {
   // instance.
   virtual AbstractFileEnumerator* CreateFileEnumerator(
       FileSystemOperationContext* context,
-      const FileSystemPath& root_path,
+      const FileSystemURL& root_url,
       bool recursive) = 0;
 
-  // Maps |virtual_path| given |context| into |local_file_path| which represents
-  // physical file location on the host OS.
+  // Maps |file_system_url| given |context| into |local_file_path|
+  // which represents physical file location on the host OS.
   // This may not always make sense for all subclasses.
   virtual PlatformFileError GetLocalFilePath(
       FileSystemOperationContext* context,
-      const FileSystemPath& file_system_path,
+      const FileSystemURL& file_system_url,
       FilePath* local_file_path) = 0;
 
   // Updates the file metadata information.  Unlike posix's touch, it does
-  // not create a file even if |path| does not exist, but instead fails
+  // not create a file even if |url| does not exist, but instead fails
   // with PLATFORM_FILE_ERROR_NOT_FOUND.
   virtual PlatformFileError Touch(
       FileSystemOperationContext* context,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       const base::Time& last_access_time,
       const base::Time& last_modified_time) = 0;
 
@@ -127,50 +146,57 @@ class FILEAPI_EXPORT FileSystemFileUtil {
   // current length of the file, the file will be extended with zeroes.
   virtual PlatformFileError Truncate(
       FileSystemOperationContext* context,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       int64 length) = 0;
 
-  // Returns true if a given |path| exists.
-  virtual bool PathExists(
-      FileSystemOperationContext* context,
-      const FileSystemPath& path) = 0;
-
-  // Returns true if a given |path| exists and is a directory.
-  virtual bool DirectoryExists(
-      FileSystemOperationContext* context,
-      const FileSystemPath& path) = 0;
-
-  // Returns true if a given |path| is an empty directory.
+  // Returns true if a given |url| is an empty directory.
   virtual bool IsDirectoryEmpty(
       FileSystemOperationContext* context,
-      const FileSystemPath& path) = 0;
+      const FileSystemURL& url) = 0;
 
-  // Copies or moves a single file from |src_path| to |dest_path|.
+  // Copies or moves a single file from |src_url| to |dest_url|.
   virtual PlatformFileError CopyOrMoveFile(
       FileSystemOperationContext* context,
-      const FileSystemPath& src_path,
-      const FileSystemPath& dest_path,
+      const FileSystemURL& src_url,
+      const FileSystemURL& dest_url,
       bool copy) = 0;
 
-  // Copies in a single file from a different filesystem.  The
-  // |underlying_src_path| is a local path which can be handled by the
-  // underlying filesystem.
+  // Copies in a single file from a different filesystem.
   virtual PlatformFileError CopyInForeignFile(
         FileSystemOperationContext* context,
         const FilePath& src_file_path,
-        const FileSystemPath& dest_path) = 0;
+        const FileSystemURL& dest_url) = 0;
 
   // Deletes a single file.
-  // It assumes the given path points a file.
+  // It assumes the given url points a file.
   virtual PlatformFileError DeleteFile(
       FileSystemOperationContext* context,
-      const FileSystemPath& path) = 0;
+      const FileSystemURL& url) = 0;
 
   // Deletes a single empty directory.
-  // It assumes the given path points an empty directory.
+  // It assumes the given url points an empty directory.
   virtual PlatformFileError DeleteSingleDirectory(
       FileSystemOperationContext* context,
-      const FileSystemPath& path) = 0;
+      const FileSystemURL& url) = 0;
+
+  // Creates a local snapshot file for a given |url| and returns the
+  // metadata and platform path of the snapshot file via |callback|.
+  // In regular filesystem cases the implementation may simply return
+  // the metadata of the file itself (as well as GetMetadata does),
+  // while in non-regular filesystem case the backend may create a
+  // temporary snapshot file which holds the file data and return
+  // the metadata of the temporary file.
+  //
+  // |file_info| is the metadata of the snapshot file created.
+  // |platform_path| is the path to the snapshot file created.
+  // |policy| should indicate the policy how the fileapi backend
+  // should handle the returned file.
+  virtual base::PlatformFileError CreateSnapshotFile(
+      FileSystemOperationContext* context,
+      const FileSystemURL& url,
+      base::PlatformFileInfo* file_info,
+      FilePath* platform_path,
+      SnapshotFilePolicy* policy) = 0;
 
  protected:
   FileSystemFileUtil() {}

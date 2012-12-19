@@ -39,6 +39,7 @@
 namespace WebKit {
 
 class WebIDBCallbacks;
+class IDBDatabaseCallbacksProxy;
 
 class IDBCallbacksProxy : public WebCore::IDBCallbacks {
 public:
@@ -47,19 +48,25 @@ public:
 
     virtual void onError(PassRefPtr<WebCore::IDBDatabaseError>);
     virtual void onSuccess(PassRefPtr<WebCore::DOMStringList>);
-    virtual void onSuccess(PassRefPtr<WebCore::IDBCursorBackendInterface>);
+    virtual void onSuccess(PassRefPtr<WebCore::IDBCursorBackendInterface>, PassRefPtr<WebCore::IDBKey>, PassRefPtr<WebCore::IDBKey> primaryKey, PassRefPtr<WebCore::SerializedScriptValue>);
     virtual void onSuccess(PassRefPtr<WebCore::IDBDatabaseBackendInterface>);
     virtual void onSuccess(PassRefPtr<WebCore::IDBKey>);
     virtual void onSuccess(PassRefPtr<WebCore::IDBTransactionBackendInterface>);
     virtual void onSuccess(PassRefPtr<WebCore::SerializedScriptValue>);
-    virtual void onSuccessWithContinuation();
+    virtual void onSuccess(PassRefPtr<WebCore::SerializedScriptValue>, PassRefPtr<WebCore::IDBKey>, const WebCore::IDBKeyPath&);
+    virtual void onSuccess(PassRefPtr<WebCore::IDBKey>, PassRefPtr<WebCore::IDBKey> primaryKey, PassRefPtr<WebCore::SerializedScriptValue>);
     virtual void onSuccessWithPrefetch(const Vector<RefPtr<WebCore::IDBKey> >& keys, const Vector<RefPtr<WebCore::IDBKey> >& primaryKeys, const Vector<RefPtr<WebCore::SerializedScriptValue> >& values);
     virtual void onBlocked();
+    virtual void onBlocked(int64_t existingVersion);
+    virtual void onUpgradeNeeded(int64_t oldVersion, PassRefPtr<WebCore::IDBTransactionBackendInterface>, PassRefPtr<WebCore::IDBDatabaseBackendInterface>);
+
+    void setDatabaseCallbacks(PassRefPtr<IDBDatabaseCallbacksProxy>);
 
 private:
     IDBCallbacksProxy(PassOwnPtr<WebIDBCallbacks>);
 
     OwnPtr<WebIDBCallbacks> m_callbacks;
+    RefPtr<IDBDatabaseCallbacksProxy> m_databaseCallbacks;
 };
 
 } // namespace WebKit

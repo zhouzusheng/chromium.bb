@@ -31,45 +31,38 @@
 #include "config.h"
 #include "V8HTMLImageElementConstructor.h"
 
-#include "HTMLImageElement.h"
+#include "BindingState.h"
 #include "Document.h"
 #include "Frame.h"
+#include "HTMLImageElement.h"
 #include "HTMLNames.h"
 #include "V8Binding.h"
 #include "V8Document.h"
 #include "V8HTMLImageElement.h"
-#include "V8Proxy.h"
-
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-WrapperTypeInfo V8HTMLImageElementConstructor::info = { V8HTMLImageElementConstructor::GetTemplate, 0, 0, 0, WrapperTypeObjectPrototype };
+WrapperTypeInfo V8HTMLImageElementConstructor::info = { V8HTMLImageElementConstructor::GetTemplate, 0, 0, 0, 0, WrapperTypeObjectPrototype };
 
 static v8::Handle<v8::Value> v8HTMLImageElementConstructorCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.HTMLImageElement.Contructor");
 
     if (!args.IsConstructCall())
-        return V8Proxy::throwTypeError("DOM object constructor cannot be called as a function.", args.GetIsolate());
+        return throwTypeError("DOM object constructor cannot be called as a function.", args.GetIsolate());
 
     if (ConstructorMode::current() == ConstructorMode::WrapExistingObject)
         return args.Holder();
 
-    Frame* frame = V8Proxy::retrieveFrameForCurrentContext();
-    if (!frame)
-        return V8Proxy::throwError(V8Proxy::ReferenceError, "Image constructor associated frame is unavailable", args.GetIsolate());
-
-    Document* document = frame->document();
-    if (!document)
-        return V8Proxy::throwError(V8Proxy::ReferenceError, "Image constructor associated document is unavailable", args.GetIsolate());
+    Document* document = currentDocument(BindingState::instance());
 
     // Make sure the document is added to the DOM Node map. Otherwise, the HTMLImageElement instance
-    // may end up being the only node in the map and get garbage-ccollected prematurely.
+    // may end up being the only node in the map and get garbage-collected prematurely.
     // FIXME: The correct way to do this would be to make HTMLImageElement derive from
     // ActiveDOMObject and use its interface to keep its wrapper alive. Then we would
     // remove this code and the special case in isObservableThroughDOM.
-    toV8(document, args.GetIsolate());
+    toV8(document, args.Holder(), args.GetIsolate());
 
     int width;
     int height;
@@ -85,9 +78,10 @@ static v8::Handle<v8::Value> v8HTMLImageElementConstructorCallback(const v8::Arg
     }
 
     RefPtr<HTMLImageElement> image = HTMLImageElement::createForJSConstructor(document, optionalWidth, optionalHeight);
-    V8DOMWrapper::setDOMWrapper(args.Holder(), &V8HTMLImageElementConstructor::info, image.get());
-    V8DOMWrapper::setJSWrapperForDOMNode(image.release(), v8::Persistent<v8::Object>::New(args.Holder()));
-    return args.Holder();
+    v8::Handle<v8::Object> wrapper = args.Holder();
+    V8DOMWrapper::setDOMWrapper(wrapper, &V8HTMLImageElementConstructor::info, image.get());
+    V8DOMWrapper::setJSWrapperForDOMNode(image.release(), wrapper);
+    return wrapper;
 }
 
 v8::Persistent<v8::FunctionTemplate> V8HTMLImageElementConstructor::GetTemplate()

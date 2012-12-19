@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/message_loop_proxy.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
@@ -25,6 +25,8 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/c/private/ppb_flash.h"
+#include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/shared_impl/dir_contents.h"
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -61,19 +63,22 @@ class PPB_X509Certificate_Fields;
 struct DeviceRefData;
 struct HostPortPair;
 struct Preferences;
+
+namespace thunk {
+class ResourceCreationAPI;
 }
+
+}  // namespace ppapi
 
 namespace skia {
 class PlatformCanvas;
 }
 
 namespace WebKit {
-class WebFileChooserCompletion;
 class WebGamepads;
 class WebPlugin;
 struct WebCompositionUnderline;
 struct WebCursorInfo;
-struct WebFileChooserParams;
 }
 
 namespace webkit_glue {
@@ -266,7 +271,7 @@ class PluginDelegate {
   // Interface for PlatformVideoDecoder is directly inherited from general media
   // VideoDecodeAccelerator interface.
   class PlatformVideoDecoder : public media::VideoDecodeAccelerator {
-   protected:
+   public:
     virtual ~PlatformVideoDecoder() {}
   };
 
@@ -295,12 +300,10 @@ class PluginDelegate {
   // Provides access to the ppapi broker.
   class Broker {
    public:
-    virtual void Connect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
-
     // Decrements the references to the broker.
     // When there are no more references, this renderer's dispatcher is
     // destroyed, allowing the broker to shutdown if appropriate.
-    // Callers should not reference this object after calling Disconnect.
+    // Callers should not reference this object after calling Disconnect().
     virtual void Disconnect(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
    protected:
@@ -343,6 +346,10 @@ class PluginDelegate {
   // from this call.
   virtual void InstanceDeleted(PluginInstance* instance) = 0;
 
+  // Creates the resource creation API for the given instance.
+  virtual scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
+      CreateResourceCreationAPI(PluginInstance* instance) = 0;
+
   // Returns a pointer (ownership not transferred) to the bitmap to paint the
   // sad plugin screen with. Returns NULL on failure.
   virtual SkBitmap* GetSadPluginBitmap() = 0;
@@ -357,6 +364,9 @@ class PluginDelegate {
 
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
+
+  // Set that the context will now present to the delegate.
+  virtual void ReparentContext(PlatformContext3D*) = 0;
 
   // If |device_id| is empty, the default video capture device will be used. The
   // user can start using the returned object to capture video right away.
@@ -396,7 +406,7 @@ class PluginDelegate {
 
   // A pointer is returned immediately, but it is not ready to be used until
   // BrokerConnected has been called.
-  // The caller is responsible for calling Release() on the returned pointer
+  // The caller is responsible for calling Disconnect() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
   virtual Broker* ConnectToBroker(webkit::ppapi::PPB_Broker_Impl* client) = 0;
 
@@ -408,24 +418,32 @@ class PluginDelegate {
   // Notifies that the index of the currently selected item has been updated.
   virtual void SelectedFindResultChanged(int identifier, int index) = 0;
 
-  // Runs a file chooser.
-  virtual bool RunFileChooser(
-      const WebKit::WebFileChooserParams& params,
-      WebKit::WebFileChooserCompletion* chooser_completion) = 0;
-
-  // Sends an async IPC to open a file.
+  // Sends an async IPC to open a local file.
   typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
       AsyncOpenFileCallback;
   virtual bool AsyncOpenFile(const FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback) = 0;
+
+  // Sends an async IPC to open a file through filesystem API.
+  // When a file is successfully opened, |callback| is invoked with
+  // PLATFORM_FILE_OK, the opened file handle, and a callback function for
+  // notifying that the file is closed. When the users of this function
+  // finished using the file, they must close the file handle and then must call
+  // the supplied callback function.
+  typedef base::Callback<void (base::PlatformFileError)>
+      NotifyCloseFileCallback;
+  typedef base::Callback<
+      void (base::PlatformFileError,
+            base::PassPlatformFile,
+            const NotifyCloseFileCallback&)> AsyncOpenFileSystemURLCallback;
   virtual bool AsyncOpenFileSystemURL(
       const GURL& path,
       int flags,
-      const AsyncOpenFileCallback& callback) = 0;
+      const AsyncOpenFileSystemURLCallback& callback) = 0;
 
   virtual bool OpenFileSystem(
-      const GURL& url,
+      const GURL& origin_url,
       fileapi::FileSystemType type,
       long long size,
       fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
@@ -510,6 +528,10 @@ class PluginDelegate {
 
   // For PPB_UDPSocket_Private.
   virtual uint32 UDPSocketCreate() = 0;
+  virtual void UDPSocketSetBoolSocketFeature(PPB_UDPSocket_Private_Impl* socket,
+                                             uint32 socket_id,
+                                             int32_t name,
+                                             bool value) = 0;
   virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
                              uint32 socket_id,
                              const PP_NetAddress_Private& addr) = 0;
@@ -586,9 +608,6 @@ class PluginDelegate {
   // Tells the browser to bring up SaveAs dialog to save specified URL.
   virtual void SaveURLAs(const GURL& url) = 0;
 
-  // Creates P2PTransport object.
-  virtual webkit_glue::P2PTransport* CreateP2PTransport() = 0;
-
   virtual double GetLocalTimeZoneOffset(base::Time t) = 0;
 
   // Create an anonymous shared memory segment of size |size| bytes, and return
@@ -643,12 +662,20 @@ class PluginDelegate {
   // callback will be the same as the return value.
   virtual int EnumerateDevices(PP_DeviceType_Dev type,
                                const EnumerateDevicesCallback& callback) = 0;
+  // Stop enumerating devices of the specified |request_id|. The |request_id|
+  // is the return value of EnumerateDevicesCallback.
+  virtual void StopEnumerateDevices(int request_id) = 0;
   // Create a ClipboardClient for writing to the clipboard. The caller will own
   // the pointer to this.
   virtual webkit_glue::ClipboardClient* CreateClipboardClient() const = 0;
 
   // Returns a Device ID
   virtual std::string GetDeviceID() = 0;
+
+  // Returns restrictions on local data handled by the plug-in.
+  virtual PP_FlashLSORestrictions GetLocalDataRestrictions(
+      const GURL& document_url,
+      const GURL& plugin_url) = 0;
 };
 
 }  // namespace ppapi

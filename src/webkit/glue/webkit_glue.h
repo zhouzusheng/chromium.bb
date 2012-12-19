@@ -71,21 +71,10 @@ int NumberOfPages(WebKit::WebFrame* web_frame,
 string16 DumpFrameScrollPosition(WebKit::WebFrame* web_frame, bool recursive);
 
 // Returns a dump of the given history state suitable for implementing the
-// dumpBackForwardList command of the layoutTestController.
+// dumpBackForwardList command of the testRunner.
 WEBKIT_GLUE_EXPORT string16 DumpHistoryState(const std::string& history_state,
                                              int indent,
                                              bool is_current);
-
-// Sets the user agent.  Pass true for overriding if this is a custom
-// user agent instead of the default one (in order to turn off any browser
-// sniffing workarounds). This must be called before GetUserAgent() can
-// be called.
-WEBKIT_GLUE_EXPORT void SetUserAgent(const std::string& user_agent,
-                                     bool overriding);
-
-// Returns the user agent to use for the given URL. SetUserAgent() must
-// be called prior to calling this function.
-WEBKIT_GLUE_EXPORT const std::string& GetUserAgent(const GURL& url);
 
 // Creates serialized state for the specified URL. This is a variant of
 // HistoryItemToString (in glue_serialize) that is used during session restore

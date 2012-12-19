@@ -53,13 +53,6 @@ static const int kMaxBufferCapacity = 20 * kMegabyte;
 // location and will instead reset the request.
 static const int kForwardWaitThreshold = 2 * kMegabyte;
 
-// The lower bound on our buffer (expressed as a fraction of the buffer size)
-// where we'll disable deferring and continue downloading data.
-//
-// TODO(scherkus): refer to http://crbug.com/124719 for more discussion on
-// how we could improve our buffering logic.
-static const double kDisableDeferThreshold = 0.9;
-
 // Computes the suggested backward and forward capacity for the buffer
 // if one wants to play at |playback_rate| * the natural playback speed.
 // Use a value of 0 for |bitrate| if it is unknown.
@@ -144,17 +137,21 @@ BufferedResourceLoader::~BufferedResourceLoader() {}
 
 void BufferedResourceLoader::Start(
     const StartCB& start_cb,
-    const base::Closure& event_cb,
+    const LoadingStateChangedCB& loading_cb,
+    const ProgressCB& progress_cb,
     WebFrame* frame) {
   // Make sure we have not started.
   DCHECK(start_cb_.is_null());
-  DCHECK(event_cb_.is_null());
+  DCHECK(loading_cb_.is_null());
+  DCHECK(progress_cb_.is_null());
   DCHECK(!start_cb.is_null());
-  DCHECK(!event_cb.is_null());
+  DCHECK(!loading_cb.is_null());
+  DCHECK(!progress_cb.is_null());
   CHECK(frame);
 
   start_cb_ = start_cb;
-  event_cb_ = event_cb;
+  loading_cb_ = loading_cb;
+  progress_cb_ = progress_cb;
 
   if (first_byte_position_ != kPositionNotSpecified) {
     // TODO(hclam): server may not support range request so |offset_| may not
@@ -203,12 +200,14 @@ void BufferedResourceLoader::Start(
   // Start the resource loading.
   loader->loadAsynchronously(request, this);
   active_loader_.reset(new ActiveLoader(loader.Pass()));
+  loading_cb_.Run(kLoading);
 }
 
 void BufferedResourceLoader::Stop() {
   // Reset callbacks.
   start_cb_.Reset();
-  event_cb_.Reset();
+  loading_cb_.Reset();
+  progress_cb_.Reset();
   read_cb_.Reset();
 
   // Cancel and reset any active loaders.
@@ -300,21 +299,15 @@ void BufferedResourceLoader::Read(
     }
 
     // Make sure we stop deferring now that there's additional capacity.
-    if (active_loader_->deferred())
-      SetDeferred(false);
-
-    DCHECK(!ShouldEnableDefer())
+    DCHECK(!ShouldDefer())
         << "Capacity was not adjusted properly to prevent deferring.";
+    UpdateDeferBehavior();
 
     return;
   }
 
   // Make a callback to report failure.
   DoneRead(kCacheMiss, 0);
-}
-
-int64 BufferedResourceLoader::GetBufferedPosition() {
-  return offset_ + buffer_.forward_bytes() - 1;
 }
 
 int64 BufferedResourceLoader::content_length() {
@@ -327,14 +320,6 @@ int64 BufferedResourceLoader::instance_size() {
 
 bool BufferedResourceLoader::range_supported() {
   return range_supported_;
-}
-
-bool BufferedResourceLoader::is_downloading_data() {
-  return active_loader_.get() && !active_loader_->deferred();
-}
-
-const GURL& BufferedResourceLoader::url() {
-  return url_;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -477,8 +462,8 @@ void BufferedResourceLoader::didReceiveData(
     offset_ += first_offset_ + excess;
   }
 
-  // Notify that we have received some data.
-  NotifyNetworkEvent();
+  // Notify latest progress and buffered offset.
+  progress_cb_.Run(offset_ + buffer_.forward_bytes() - 1);
   Log();
 }
 
@@ -503,7 +488,7 @@ void BufferedResourceLoader::didFinishLoading(
 
   // We're done with the loader.
   active_loader_.reset();
-  NotifyNetworkEvent();
+  loading_cb_.Run(kLoadingFinished);
 
   // If we didn't know the |instance_size_| we do now.
   if (instance_size_ == kPositionNotSpecified) {
@@ -518,8 +503,7 @@ void BufferedResourceLoader::didFinishLoading(
     return;
   }
 
-  // If there is a pending read but the request has ended, return with what
-  // we have.
+  // Don't leave read callbacks hanging around.
   if (HasPendingRead()) {
     // Try to fulfill with what is in the buffer.
     if (CanFulfillRead())
@@ -527,9 +511,6 @@ void BufferedResourceLoader::didFinishLoading(
     else
       DoneRead(kCacheMiss, 0);
   }
-
-  // There must not be any outstanding read request.
-  DCHECK(!HasPendingRead());
 }
 
 void BufferedResourceLoader::didFail(
@@ -547,7 +528,7 @@ void BufferedResourceLoader::didFail(
   // Keep it alive until we exit this method so that |error| remains valid.
   scoped_ptr<ActiveLoader> active_loader = active_loader_.Pass();
   loader_failed_ = true;
-  NotifyNetworkEvent();
+  loading_cb_.Run(kLoadingFailed);
 
   // Don't leave start callbacks hanging around.
   if (!start_cb_.is_null()) {
@@ -577,7 +558,7 @@ bool BufferedResourceLoader::DidPassCORSAccessCheck() const {
 
 void BufferedResourceLoader::UpdateDeferStrategy(DeferStrategy strategy) {
   if (!might_be_reused_from_cache_in_future_ && strategy == kNeverDefer)
-    strategy = kThresholdDefer;
+    strategy = kCapacityDefer;
   defer_strategy_ = strategy;
   UpdateDeferBehavior();
 }
@@ -619,67 +600,31 @@ void BufferedResourceLoader::UpdateDeferBehavior() {
   if (!active_loader_.get())
     return;
 
-  // If necessary, toggle defer state and continue/pause downloading data
-  // accordingly.
-  if (ShouldEnableDefer() || ShouldDisableDefer())
-    SetDeferred(!active_loader_->deferred());
+  SetDeferred(ShouldDefer());
 }
 
 void BufferedResourceLoader::SetDeferred(bool deferred) {
+  if (active_loader_->deferred() == deferred)
+    return;
+
   active_loader_->SetDeferred(deferred);
-  NotifyNetworkEvent();
+  loading_cb_.Run(deferred ? kLoadingDeferred : kLoading);
 }
 
-bool BufferedResourceLoader::ShouldEnableDefer() const {
-  // If we're already deferring, then enabling makes no sense.
-  if (active_loader_->deferred())
-    return false;
-
+bool BufferedResourceLoader::ShouldDefer() const {
   switch(defer_strategy_) {
-    // Never defer at all, so never enable defer.
     case kNeverDefer:
       return false;
 
-    // Defer if nothing is being requested.
     case kReadThenDefer:
+      DCHECK(read_cb_.is_null() || last_offset_ > buffer_.forward_bytes())
+          << "We shouldn't stop deferring if we can fulfill the read";
       return read_cb_.is_null();
 
-    // Defer if we've reached the max capacity of the threshold.
-    case kThresholdDefer:
+    case kCapacityDefer:
       return buffer_.forward_bytes() >= buffer_.forward_capacity();
   }
-  // Otherwise don't enable defer.
-  return false;
-}
-
-bool BufferedResourceLoader::ShouldDisableDefer() const {
-  // If we're not deferring, then disabling makes no sense.
-  if (!active_loader_->deferred())
-    return false;
-
-  switch(defer_strategy_) {
-    // Always disable deferring.
-    case kNeverDefer:
-      return true;
-
-    // We have an outstanding read request, and we have not buffered enough
-    // yet to fulfill the request; disable defer to get more data.
-    case kReadThenDefer:
-      return !read_cb_.is_null() && last_offset_ > buffer_.forward_bytes();
-
-    // Disable deferring whenever our forward-buffered amount falls beneath our
-    // threshold.
-    //
-    // TODO(scherkus): refer to http://crbug.com/124719 for more discussion on
-    // how we could improve our buffering logic.
-    case kThresholdDefer: {
-      int buffered = buffer_.forward_bytes();
-      int threshold = buffer_.forward_capacity() * kDisableDeferThreshold;
-      return buffered < threshold;
-    }
-  }
-
-  // Otherwise keep deferring.
+  NOTREACHED();
   return false;
 }
 
@@ -842,11 +787,6 @@ void BufferedResourceLoader::DoneRead(Status status, int bytes_read) {
 
 void BufferedResourceLoader::DoneStart(Status status) {
   base::ResetAndReturn(&start_cb_).Run(status);
-}
-
-void BufferedResourceLoader::NotifyNetworkEvent() {
-  if (!event_cb_.is_null())
-    event_cb_.Run();
 }
 
 bool BufferedResourceLoader::IsRangeRequest() const {

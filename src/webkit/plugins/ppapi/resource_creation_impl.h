@@ -8,13 +8,15 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ppapi/thunk/resource_creation_api.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 namespace webkit {
 namespace ppapi {
 
 class PluginInstance;
 
-class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
+class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
+    : public NON_EXPORTED_BASE(::ppapi::thunk::ResourceCreationAPI) {
  public:
   explicit ResourceCreationImpl(PluginInstance* instance);
   virtual ~ResourceCreationImpl();
@@ -41,10 +43,6 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
   virtual PP_Resource CreateDirectoryReader(PP_Resource directory_ref) OVERRIDE;
-  virtual PP_Resource CreateFileChooser(
-      PP_Instance instance,
-      PP_FileChooserMode_Dev mode,
-      const char* accept_types) OVERRIDE;
   virtual PP_Resource CreateFileIO(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFileRef(PP_Resource file_system,
                                     const char* path) OVERRIDE;
@@ -68,6 +66,10 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
                                       PP_ImageDataFormat format,
                                       const PP_Size& size,
                                       PP_Bool init_to_zero) OVERRIDE;
+  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
+                                          PP_ImageDataFormat format,
+                                          const PP_Size& size,
+                                          PP_Bool init_to_zero) OVERRIDE;
   virtual PP_Resource CreateIMEInputEvent(PP_Instance instance,
                                           PP_InputEvent_Type type,
                                           PP_TimeTicks time_stamp,
@@ -93,6 +95,11 @@ class ResourceCreationImpl : public ::ppapi::thunk::ResourceCreationAPI {
       const PP_Point* mouse_position,
       int32_t click_count,
       const PP_Point* mouse_movement) OVERRIDE;
+  virtual PP_Resource CreateTouchInputEvent(
+      PP_Instance instance,
+      PP_InputEvent_Type type,
+      PP_TimeTicks time_stamp,
+      uint32_t modifiers) OVERRIDE;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
       PPB_NetworkMonitor_Callback callback,

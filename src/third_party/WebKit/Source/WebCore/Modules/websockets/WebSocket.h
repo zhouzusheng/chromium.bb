@@ -38,6 +38,7 @@
 #include "EventNames.h"
 #include "EventTarget.h"
 #include "KURL.h"
+#include "WebSocketChannel.h"
 #include "WebSocketChannelClient.h"
 #include <wtf/Forward.h>
 #include <wtf/OwnPtr.h>
@@ -70,9 +71,12 @@ public:
 
     bool send(const String& message, ExceptionCode&);
     bool send(ArrayBuffer*, ExceptionCode&);
+    bool send(ArrayBufferView*, ExceptionCode&);
     bool send(Blob*, ExceptionCode&);
 
     void close(int code, const String& reason, ExceptionCode&);
+    void close(ExceptionCode& ec) { close(WebSocketChannel::CloseEventCodeNotSpecified, String(), ec); }
+    void close(int code, ExceptionCode& ec) { close(code, String(), ec); }
 
     const KURL& url() const;
     State readyState() const;
@@ -113,7 +117,7 @@ public:
     virtual void didClose(unsigned long unhandledBufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
 
 private:
-    WebSocket(ScriptExecutionContext*);
+    explicit WebSocket(ScriptExecutionContext*);
 
     virtual void refEventTarget() { ref(); }
     virtual void derefEventTarget() { deref(); }
@@ -135,7 +139,6 @@ private:
     unsigned long m_bufferedAmount;
     unsigned long m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
-    bool m_useHixie76Protocol;
     String m_subprotocol;
     String m_extensions;
 };

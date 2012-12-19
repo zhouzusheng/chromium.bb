@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
 
@@ -40,18 +41,35 @@ UDPSocketPrivateImpl::AsPPB_UDPSocket_Private_API() {
   return this;
 }
 
+int32_t UDPSocketPrivateImpl::SetSocketFeature(PP_UDPSocketFeature_Private name,
+                                               PP_Var value) {
+  if (bound_ || closed_)
+    return PP_ERROR_FAILED;
+
+  switch (name) {
+    case PP_UDPSOCKETFEATURE_ADDRESS_REUSE:
+    case PP_UDPSOCKETFEATURE_BROADCAST:
+      if (value.type != PP_VARTYPE_BOOL)
+        return PP_ERROR_BADARGUMENT;
+      SendBoolSocketFeature(static_cast<int32_t>(name),
+                            PP_ToBool(value.value.as_bool));
+      break;
+    default:
+      return PP_ERROR_BADARGUMENT;
+  }
+  return PP_OK;
+}
+
 int32_t UDPSocketPrivateImpl::Bind(const PP_NetAddress_Private* addr,
-                                   PP_CompletionCallback callback) {
-  if (!addr || !callback.func)
+                                   scoped_refptr<TrackedCallback> callback) {
+  if (!addr)
     return PP_ERROR_BADARGUMENT;
   if (bound_ || closed_)
     return PP_ERROR_FAILED;
   if (TrackedCallback::IsPending(bind_callback_))
     return PP_ERROR_INPROGRESS;
-  // TODO(dmichael): use some other strategy for determining if an
-  // operation is in progress
 
-  bind_callback_ = new TrackedCallback(this, callback);
+  bind_callback_ = callback;
 
   // Send the request, the browser will call us back via BindACK.
   SendBind(*addr);
@@ -66,10 +84,11 @@ PP_Bool UDPSocketPrivateImpl::GetBoundAddress(PP_NetAddress_Private* addr) {
   return PP_TRUE;
 }
 
-int32_t UDPSocketPrivateImpl::RecvFrom(char* buffer,
-                                       int32_t num_bytes,
-                                       PP_CompletionCallback callback) {
-  if (!buffer || num_bytes <= 0 || !callback.func)
+int32_t UDPSocketPrivateImpl::RecvFrom(
+    char* buffer,
+    int32_t num_bytes,
+    scoped_refptr<TrackedCallback> callback) {
+  if (!buffer || num_bytes <= 0)
     return PP_ERROR_BADARGUMENT;
   if (!bound_)
     return PP_ERROR_FAILED;
@@ -78,7 +97,7 @@ int32_t UDPSocketPrivateImpl::RecvFrom(char* buffer,
 
   read_buffer_ = buffer;
   bytes_to_read_ = std::min(num_bytes, kMaxReadSize);
-  recvfrom_callback_ = new TrackedCallback(this, callback);
+  recvfrom_callback_ = callback;
 
   // Send the request, the browser will call us back via RecvFromACK.
   SendRecvFrom(bytes_to_read_);
@@ -96,8 +115,8 @@ PP_Bool UDPSocketPrivateImpl::GetRecvFromAddress(PP_NetAddress_Private* addr) {
 int32_t UDPSocketPrivateImpl::SendTo(const char* buffer,
                                      int32_t num_bytes,
                                      const PP_NetAddress_Private* addr,
-                                     PP_CompletionCallback callback) {
-  if (!buffer || num_bytes <= 0 || !addr || !callback.func)
+                                     scoped_refptr<TrackedCallback> callback) {
+  if (!buffer || num_bytes <= 0 || !addr)
     return PP_ERROR_BADARGUMENT;
   if (!bound_)
     return PP_ERROR_FAILED;
@@ -107,7 +126,7 @@ int32_t UDPSocketPrivateImpl::SendTo(const char* buffer,
   if (num_bytes > kMaxWriteSize)
     num_bytes = kMaxWriteSize;
 
-  sendto_callback_ = new TrackedCallback(this, callback);
+  sendto_callback_ = callback;
 
   // Send the request, the browser will call us back via SendToACK.
   SendSendTo(std::string(buffer, num_bytes), *addr);

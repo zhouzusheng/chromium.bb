@@ -4,12 +4,11 @@
 
 #ifndef UI_BASE_GESTURES_GESTURE_RECOGNIZER_H_
 #define UI_BASE_GESTURES_GESTURE_RECOGNIZER_H_
-#pragma once
 
 #include <vector>
 
 #include "base/memory/scoped_vector.h"
-#include "ui/base/events.h"
+#include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ui_export.h"
 

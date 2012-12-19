@@ -26,12 +26,12 @@
 #define Cache_h
 
 #include "CachedResource.h"
-#include "PlatformString.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
 #include <wtf/text/StringHash.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore  {
 
@@ -167,6 +167,8 @@ public:
     unsigned capacity() const { return m_capacity; }
     unsigned liveSize() const { return m_liveSize; }
     unsigned deadSize() const { return m_deadSize; }
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     MemoryCache();

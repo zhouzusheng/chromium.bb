@@ -7,7 +7,6 @@
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_STATUS_H_
 #define NET_URL_REQUEST_URL_REQUEST_STATUS_H_
-#pragma once
 
 namespace net {
 
@@ -22,11 +21,6 @@ class URLRequestStatus {
     // An IO request is pending, and the caller will be informed when it is
     // completed.
     IO_PENDING,
-
-    // Request was successful but was handled by an external program, so there
-    // is no response data. This usually means the current page should not be
-    // navigated, but no error should be displayed. |error_| will be 0.
-    HANDLED_EXTERNALLY,
 
     // Request was cancelled programatically.
     CANCELED,
@@ -45,9 +39,7 @@ class URLRequestStatus {
   void set_error(int e) { error_ = e; }
 
   // Returns true if the status is success, which makes some calling code more
-  // convenient because this is the most common test. Note that we do NOT treat
-  // HANDLED_EXTERNALLY as success. For everything except user notifications,
-  // this value should be handled like an error (processing should stop).
+  // convenient because this is the most common test.
   bool is_success() const {
     return status_ == SUCCESS || status_ == IO_PENDING;
   }

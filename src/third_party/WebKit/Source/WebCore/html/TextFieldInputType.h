@@ -32,22 +32,22 @@
 #define TextFieldInputType_h
 
 #include "InputType.h"
+#include "SpinButtonElement.h"
+#include "TextControlInnerElements.h"
 
 namespace WebCore {
 
 class FormDataList; 
-class SpinButtonElement;
 
 // The class represents types of which UI contain text fields.
 // It supports not only the types for BaseTextInputType but also type=number.
-class TextFieldInputType : public InputType {
+class TextFieldInputType : public InputType, private SpinButtonElement::SpinButtonOwner {
 protected:
     TextFieldInputType(HTMLInputElement*);
     virtual ~TextFieldInputType();
     virtual bool canSetSuggestedValue() OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     void handleKeydownEventForSpinButton(KeyboardEvent*);
-    void handleWheelEventForSpinButton(WheelEvent*);
 
     virtual HTMLElement* containerElement() const OVERRIDE;
     virtual HTMLElement* innerBlockElement() const OVERRIDE;
@@ -65,8 +65,11 @@ protected:
     virtual void disabledAttributeChanged() OVERRIDE;
     virtual void readonlyAttributeChanged() OVERRIDE;
     virtual void handleBlurEvent() OVERRIDE;
+    virtual void updateInnerTextValue() OVERRIDE;
 
 private:
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE;
+    virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool isTextField() const OVERRIDE;
     virtual bool valueMissing(const String&) const OVERRIDE;
     virtual void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) OVERRIDE;
@@ -81,6 +84,13 @@ private:
     virtual void updatePlaceholderText() OVERRIDE;
     virtual bool appendFormData(FormDataList&, bool multipart) const OVERRIDE;
     virtual void attach() OVERRIDE;
+
+    // SpinButtonElement::SpinButtonOwner functions.
+    virtual void focusAndSelectSpinButtonOwner() OVERRIDE;
+    virtual bool shouldSpinButtonRespondToMouseEvents() OVERRIDE;
+    virtual bool shouldSpinButtonRespondToWheelEvents() OVERRIDE;
+    virtual void spinButtonStepDown() OVERRIDE;
+    virtual void spinButtonStepUp() OVERRIDE;
 
     RefPtr<HTMLElement> m_container;
     RefPtr<HTMLElement> m_innerBlock;

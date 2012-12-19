@@ -61,6 +61,11 @@ Connection::StatementRef::StatementRef()
       stmt_(NULL) {
 }
 
+Connection::StatementRef::StatementRef(sqlite3_stmt* stmt)
+    : connection_(NULL),
+      stmt_(stmt) {
+}
+
 Connection::StatementRef::StatementRef(Connection* connection,
                                        sqlite3_stmt* stmt)
     : connection_(connection),
@@ -76,6 +81,14 @@ Connection::StatementRef::~StatementRef() {
 
 void Connection::StatementRef::Close() {
   if (stmt_) {
+    // Call to AssertIOAllowed() cannot go at the beginning of the function
+    // because Close() is called unconditionally from destructor to clean
+    // connection_. And if this is inactive statement this won't cause any
+    // disk access and destructor most probably will be called on thread
+    // not allowing disk access.
+    // TODO(paivanof@gmail.com): This should move to the beginning
+    // of the function. http://crbug.com/136655.
+    AssertIOAllowed();
     sqlite3_finalize(stmt_);
     stmt_ = NULL;
   }
@@ -88,7 +101,8 @@ Connection::Connection()
       cache_size_(0),
       exclusive_locking_(false),
       transaction_nesting_(0),
-      needs_rollback_(false) {
+      needs_rollback_(false),
+      in_memory_(false) {
 }
 
 Connection::~Connection() {
@@ -104,6 +118,7 @@ bool Connection::Open(const FilePath& path) {
 }
 
 bool Connection::OpenInMemory() {
+  in_memory_ = true;
   return OpenInternal(":memory:");
 }
 
@@ -125,6 +140,13 @@ void Connection::Close() {
   ClearCache();
 
   if (db_) {
+    // Call to AssertIOAllowed() cannot go at the beginning of the function
+    // because Close() must be called from destructor to clean
+    // statement_cache_, it won't cause any disk access and it most probably
+    // will happen on thread not allowing disk access.
+    // TODO(paivanof@gmail.com): This should move to the beginning
+    // of the function. http://crbug.com/136655.
+    AssertIOAllowed();
     // TODO(shess): Histogram for failure.
     sqlite3_close(db_);
     db_ = NULL;
@@ -132,6 +154,8 @@ void Connection::Close() {
 }
 
 void Connection::Preload() {
+  AssertIOAllowed();
+
   if (!db_) {
     DLOG(FATAL) << "Cannot preload null db";
     return;
@@ -156,6 +180,8 @@ void Connection::Preload() {
 // Create an in-memory database with the existing database's page
 // size, then backup that database over the existing database.
 bool Connection::Raze() {
+  AssertIOAllowed();
+
   if (!db_) {
     DLOG(FATAL) << "Cannot raze null db";
     return false;
@@ -174,12 +200,27 @@ bool Connection::Raze() {
 
   // Get the page size from the current connection, then propagate it
   // to the null database.
-  Statement s(GetUniqueStatement("PRAGMA page_size"));
-  if (!s.Step())
-    return false;
-  const std::string sql = StringPrintf("PRAGMA page_size=%d", s.ColumnInt(0));
-  if (!null_db.Execute(sql.c_str()))
-    return false;
+  {
+    Statement s(GetUniqueStatement("PRAGMA page_size"));
+    if (!s.Step())
+      return false;
+    const std::string sql = StringPrintf("PRAGMA page_size=%d",
+                                         s.ColumnInt(0));
+    if (!null_db.Execute(sql.c_str()))
+      return false;
+  }
+
+  // Get the value of auto_vacuum from the current connection, then propagate it
+  // to the null database.
+  {
+    Statement s(GetUniqueStatement("PRAGMA auto_vacuum"));
+    if (!s.Step())
+      return false;
+    const std::string sql = StringPrintf("PRAGMA auto_vacuum=%d",
+                                         s.ColumnInt(0));
+    if (!null_db.Execute(sql.c_str()))
+      return false;
+  }
 
   // The page size doesn't take effect until a database has pages, and
   // at this point the null database has none.  Changing the schema
@@ -292,6 +333,7 @@ bool Connection::CommitTransaction() {
 }
 
 int Connection::ExecuteAndReturnErrorCode(const char* sql) {
+  AssertIOAllowed();
   if (!db_)
     return false;
   return sqlite3_exec(db_, sql, NULL, NULL, NULL);
@@ -342,19 +384,37 @@ scoped_refptr<Connection::StatementRef> Connection::GetCachedStatement(
 
 scoped_refptr<Connection::StatementRef> Connection::GetUniqueStatement(
     const char* sql) {
+  AssertIOAllowed();
+
   if (!db_)
-    return new StatementRef(this, NULL);  // Return inactive statement.
+    return new StatementRef();  // Return inactive statement.
 
   sqlite3_stmt* stmt = NULL;
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, NULL) != SQLITE_OK) {
     // This is evidence of a syntax error in the incoming SQL.
     DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
-    return new StatementRef(this, NULL);
+    return new StatementRef();
   }
   return new StatementRef(this, stmt);
 }
 
+scoped_refptr<Connection::StatementRef> Connection::GetUntrackedStatement(
+    const char* sql) const {
+  if (!db_)
+    return new StatementRef();  // Return inactive statement.
+
+  sqlite3_stmt* stmt = NULL;
+  int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    // This is evidence of a syntax error in the incoming SQL.
+    DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
+    return new StatementRef();
+  }
+  return new StatementRef(stmt);
+}
+
 bool Connection::IsSQLValid(const char* sql) {
+  AssertIOAllowed();
   sqlite3_stmt* stmt = NULL;
   if (sqlite3_prepare_v2(db_, sql, -1, &stmt, NULL) != SQLITE_OK)
     return false;
@@ -373,11 +433,8 @@ bool Connection::DoesIndexExist(const char* index_name) const {
 
 bool Connection::DoesTableOrIndexExist(
     const char* name, const char* type) const {
-  // GetUniqueStatement can't be const since statements may modify the
-  // database, but we know ours doesn't modify it, so the cast is safe.
-  Statement statement(const_cast<Connection*>(this)->GetUniqueStatement(
-      "SELECT name FROM sqlite_master "
-      "WHERE type=? AND name=?"));
+  const char* kSql = "SELECT name FROM sqlite_master WHERE type=? AND name=?";
+  Statement statement(GetUntrackedStatement(kSql));
   statement.BindString(0, type);
   statement.BindString(1, name);
 
@@ -390,10 +447,7 @@ bool Connection::DoesColumnExist(const char* table_name,
   sql.append(table_name);
   sql.append(")");
 
-  // Our SQL is non-mutating, so this cast is OK.
-  Statement statement(const_cast<Connection*>(this)->GetUniqueStatement(
-      sql.c_str()));
-
+  Statement statement(GetUntrackedStatement(sql.c_str()));
   while (statement.Step()) {
     if (!statement.ColumnString(1).compare(column_name))
       return true;
@@ -441,6 +495,8 @@ const char* Connection::GetErrorMessage() const {
 }
 
 bool Connection::OpenInternal(const std::string& file_name) {
+  AssertIOAllowed();
+
   if (db_) {
     DLOG(FATAL) << "sql::Connection is already open.";
     return false;

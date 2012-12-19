@@ -162,9 +162,13 @@ void WebTransformationMatrix::applyPerspective(double p)
     m_private.applyPerspective(p);
 }
 
-void WebTransformationMatrix::blend(const WebTransformationMatrix& from, double progress)
+bool WebTransformationMatrix::blend(const WebTransformationMatrix& from, double progress)
 {
+    WebCore::TransformationMatrix::DecomposedType dummy;
+    if (!m_private.decompose(dummy) || !from.m_private.decompose(dummy))
+        return false;
     m_private.blend(from.m_private, progress);
+    return true;
 }
 
 bool WebTransformationMatrix::hasPerspective() const
@@ -420,41 +424,6 @@ void WebTransformationMatrix::setF(double f)
 TransformationMatrix WebTransformationMatrix::toWebCoreTransform() const
 {
     return m_private;
-}
-
-FloatRect WebTransformationMatrix::mapRect(const FloatRect& rect) const
-{
-    return m_private.mapRect(rect);
-}
-
-IntRect WebTransformationMatrix::mapRect(const IntRect& rect) const
-{
-    return m_private.mapRect(rect);
-}
-
-FloatPoint3D WebTransformationMatrix::mapPoint(const FloatPoint3D& p) const
-{
-    return m_private.mapPoint(p);
-}
-
-FloatPoint WebTransformationMatrix::mapPoint(const FloatPoint& p) const
-{
-    return m_private.mapPoint(p);
-}
-
-IntPoint WebTransformationMatrix::mapPoint(const IntPoint& p) const
-{
-    return m_private.mapPoint(p);
-}
-
-FloatQuad WebTransformationMatrix::mapQuad(const FloatQuad& quad) const
-{
-    return m_private.mapQuad(quad);
-}
-
-FloatPoint WebTransformationMatrix::projectPoint(const FloatPoint& p, bool* clamped) const
-{
-    return m_private.projectPoint(p, clamped);
 }
 
 } // namespace WebKit

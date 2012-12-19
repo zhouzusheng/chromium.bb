@@ -76,17 +76,22 @@ class SharedBuffer;
 class Pasteboard {
     WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
 public:
+    enum SmartReplaceOption {
+        CanSmartReplace,
+        CannotSmartReplace
+    };
+
 #if PLATFORM(MAC)
     // This is required to support OS X services.
     void writeSelectionForTypes(const Vector<String>& pasteboardTypes, bool canSmartCopyOrDelete, Frame*);
-    Pasteboard(const String& pasteboardName);
+    explicit Pasteboard(const String& pasteboardName);
     static String getStringSelection(Frame*);
     static PassRefPtr<SharedBuffer> getDataSelection(Frame*, const String& pasteboardType);
 #endif
     
     static Pasteboard* generalPasteboard();
     void writeSelection(Range*, bool canSmartCopyOrDelete, Frame*);
-    void writePlainText(const String&);
+    void writePlainText(const String&, SmartReplaceOption);
     void writeURL(const KURL&, const String&, Frame* = 0);
     void writeImage(Node*, const KURL&, const String& title);
     void writeClipboard(Clipboard*);
@@ -95,9 +100,12 @@ public:
     PassRefPtr<DocumentFragment> documentFragment(Frame*, PassRefPtr<Range>, bool allowPlainText, bool& chosePlainText);
     String plainText(Frame* = 0);
     
-#if PLATFORM(QT) || PLATFORM(CHROMIUM)
+#if PLATFORM(QT) || PLATFORM(CHROMIUM) || PLATFORM(GTK)
     bool isSelectionMode() const;
-    void setSelectionMode(bool selectionMode);
+    void setSelectionMode(bool);
+#else
+    bool isSelectionMode() const { return false; }
+    void setSelectionMode(bool) { }
 #endif
 
 #if PLATFORM(GTK)

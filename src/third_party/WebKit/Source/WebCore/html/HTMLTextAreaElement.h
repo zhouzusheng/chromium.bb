@@ -66,6 +66,7 @@ private:
     enum WrapMethod { NoWrap, SoftWrap, HardWrap };
 
     void createShadowSubtree();
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) const;
     static String sanitizeUserInputValue(const String&, unsigned maxLength);
@@ -90,8 +91,8 @@ private:
 
     virtual const AtomicString& formControlType() const;
 
-    virtual bool saveFormControlState(String& value) const;
-    virtual void restoreFormControlState(const String&);
+    virtual FormControlState saveFormControlState() const OVERRIDE;
+    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
 
     virtual bool isTextFormControl() const { return true; }
 
@@ -102,6 +103,7 @@ private:
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool appendFormData(FormDataList&, bool);
     virtual void reset();
+    virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool isMouseFocusable() const;
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual void updateFocusAppearance(bool restorePreviousSelection);
@@ -117,11 +119,16 @@ private:
     int m_rows;
     int m_cols;
     WrapMethod m_wrap;
-    RefPtr<HTMLElement> m_placeholder;
+    HTMLElement* m_placeholder;
     mutable String m_value;
     mutable bool m_isDirty;
     mutable bool m_wasModifiedByUser;
 };
+
+inline bool isHTMLTextAreaElement(Node* node)
+{
+    return node->hasTagName(HTMLNames::textareaTag);
+}
 
 } //namespace
 

@@ -133,6 +133,15 @@ String.prototype.trimURL = function(baseURLDomain)
     return result;
 }
 
+/**
+ * @param {string} href
+ * @return {string}
+ */
+function sanitizeHref(href)
+{
+    return href && href.trim().toLowerCase().startsWith("javascript:") ? "" : href;
+}
+
 String.prototype.removeURLFragment = function()
 {
     var fragmentIndex = this.indexOf("#");
@@ -229,6 +238,22 @@ Object.defineProperty(Array.prototype, "upperBound",
               count = step;
         }
         return first;
+    }
+});
+
+Object.defineProperty(Array.prototype, "rotate",
+{
+    /**
+     * @this {Array.<*>}
+     * @param {number} index
+     * @return {Array.<*>}
+     */
+    value: function(index)
+    {
+        var result = [];
+        for (var i = index; i < index + this.length; ++i)
+            result.push(this[i % this.length]);
+        return result;
     }
 });
 
@@ -365,6 +390,22 @@ Object.defineProperty(Array.prototype, "binaryIndexOf",
     {
         var result = binarySearch(value, this, comparator);
         return result >= 0 ? result : -1;
+    }
+});
+
+Object.defineProperty(Array.prototype, "select",
+{
+    /**
+     * @this {Array.<*>}
+     * @param {string} field
+     * @return {Array.<*>}
+     */
+    value: function(field)
+    {
+        var result = new Array(this.length);
+        for (var i = 0; i < this.length; ++i)
+            result[i] = this[i][field];
+        return result;
     }
 });
 
@@ -590,7 +631,7 @@ function createSearchRegex(query, caseSensitive, isRegex)
 /**
  * @param {string} query
  * @param {string=} flags
- * @return {RegExp}
+ * @return {!RegExp}
  */
 function createPlainTextSearchRegex(query, flags)
 {
@@ -643,6 +684,7 @@ function numberToStringWithSpacesPadding(value, symbolsCount)
 var Map = function()
 {
     this._map = {};
+    this._size = 0;
 }
 
 Map._lastObjectIdentifier = 0;
@@ -658,38 +700,169 @@ Map.prototype = {
             objectIdentifier = ++Map._lastObjectIdentifier;
             key.__identifier = objectIdentifier;
         }
-        this._map[objectIdentifier] = value;
+        if (!this._map[objectIdentifier])
+            ++this._size;
+        this._map[objectIdentifier] = [key, value];
     },
     
     /**
      * @param {Object} key
-     * @return {Object} value
      */
     remove: function(key)
     {
         var result = this._map[key.__identifier];
         delete this._map[key.__identifier];
-        return result;
+        --this._size;
+        return result ? result[1] : undefined;
     },
-    
+
+    /**
+     * @return {Array.<Object>}
+     */
+    keys: function()
+    {
+        return this._list(0);
+    },
+
     values: function()
     {
-        var result = [];
+        return this._list(1);
+    },
+
+    /**
+     * @param {number} index
+     */
+    _list: function(index)
+    {
+        var result = new Array(this._size);
+        var i = 0;
         for (var objectIdentifier in this._map)
-            result.push(this._map[objectIdentifier]);
+            result[i++] = this._map[objectIdentifier][index];
         return result;
     },
-    
+
     /**
      * @param {Object} key
      */
     get: function(key)
     {
-        return this._map[key.__identifier];
+        var entry = this._map[key.__identifier];
+        return entry ? entry[1] : undefined;
     },
-    
+
+    size: function()
+    {
+        return this._size;
+    },
+
     clear: function()
     {
         this._map = {};
+        this._size = 0;
     }
-};
+}
+/**
+ * @param {string} url
+ * @param {boolean=} async
+ * @param {function(?string)=} callback
+ * @return {?string}
+ */
+function loadXHR(url, async, callback) 
+{
+    function onReadyStateChanged() 
+    {
+        if (xhr.readyState !== XMLHttpRequest.DONE)
+            return;
+
+        if (xhr.status === 200) {
+            callback(xhr.responseText);
+            return;
+        }
+
+        callback(null); 
+   }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, async);
+    if (async)
+        xhr.onreadystatechange = onReadyStateChanged;        
+    xhr.send(null);
+
+    if (!async) {
+        if (xhr.status === 200) 
+            return xhr.responseText;
+        return null;
+    }
+    return null;
+}
+
+/**
+ * @constructor
+ */
+function StringPool()
+{
+    this.reset();
+}
+
+StringPool.prototype = {
+    /**
+     * @param {string} string
+     * @return {string}
+     */
+    intern: function(string)
+    {
+        // Do not mess with setting __proto__ to anything but null, just handle it explicitly.
+        if (string === "__proto__")
+            return "__proto__";
+        var result = this._strings[string];
+        if (result === undefined) {
+            this._strings[string] = string;
+            result = string;
+        }
+        return result;
+    },
+
+    reset: function()
+    {
+        this._strings = Object.create(null);
+    },
+
+    /**
+     * @param {Object} obj
+     * @param {number=} depthLimit
+     */
+    internObjectStrings: function(obj, depthLimit)
+    {
+        if (typeof depthLimit !== "number")
+            depthLimit = 100;
+        else if (--depthLimit < 0)
+            throw "recursion depth limit reached in StringPool.deepIntern(), perhaps attempting to traverse cyclical references?";
+
+        for (var field in obj) {
+            switch (typeof obj[field]) {
+            case "string":
+                obj[field] = this.intern(obj[field]);
+                break;
+            case "object":
+                this.internObjectStrings(obj[field], depthLimit);
+                break;
+            }
+        }
+    }
+}
+
+var _importedScripts = {};
+
+/**
+ * @param {string} scriptName
+ */
+function importScript(scriptName)
+{
+    if (_importedScripts[scriptName])
+        return;
+    _importedScripts[scriptName] = true;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", scriptName, false);
+    xhr.send(null);
+    window.eval(xhr.responseText + "\n//@ sourceURL=" + scriptName);
+}

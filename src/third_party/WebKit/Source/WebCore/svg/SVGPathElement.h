@@ -93,11 +93,11 @@ public:
 
     SVGPathByteStream* pathByteStream() const;
 
-    void pathSegListChanged(SVGPathSegRole);
-
-    static const SVGPropertyInfo* dPropertyInfo();
+    void pathSegListChanged(SVGPathSegRole, ListModification = ListModificationUnknown);
 
     virtual FloatRect getBBox(StyleUpdateStrategy = AllowStyleUpdate);
+
+    static const SVGPropertyInfo* dPropertyInfo();
 
     bool isAnimValObserved() const { return m_isAnimValObserved; }
 

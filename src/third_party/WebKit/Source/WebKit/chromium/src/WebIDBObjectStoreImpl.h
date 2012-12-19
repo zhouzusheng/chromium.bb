@@ -45,14 +45,10 @@ public:
     WebIDBObjectStoreImpl(WTF::PassRefPtr<WebCore::IDBObjectStoreBackendInterface>);
     ~WebIDBObjectStoreImpl();
 
-    WebString name() const;
-    WebIDBKeyPath keyPath() const;
-    WebDOMStringList indexNames() const;
-    bool autoIncrement() const;
-
     void get(const WebIDBKeyRange&, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
-    void put(const WebSerializedScriptValue&, const WebIDBKey&, PutMode, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
-    void deleteFunction(const WebIDBKey&, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
+    void putWithIndexKeys(const WebSerializedScriptValue&, const WebIDBKey&, PutMode, WebIDBCallbacks*, const WebIDBTransaction&, const WebVector<WebString>&, const WebVector<WebIndexKeys>&, WebExceptionCode&);
+    void setIndexKeys(const WebIDBKey&, const WebVector<WebString>& indexNames, const WebVector<WebIndexKeys>&, const WebIDBTransaction&);
+    void setIndexesReady(const WebVector<WebString>&, const WebIDBTransaction&);
     void deleteFunction(const WebIDBKeyRange&, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
     void clear(WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
 
@@ -60,7 +56,7 @@ public:
     WebIDBIndex* index(const WebString& name, WebExceptionCode&);
     void deleteIndex(const WebString& name, const WebIDBTransaction&, WebExceptionCode&);
 
-    void openCursor(const WebIDBKeyRange&, unsigned short direction, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
+    void openCursor(const WebIDBKeyRange&, WebIDBCursor::Direction, WebIDBCallbacks*, WebIDBTransaction::TaskType, const WebIDBTransaction&, WebExceptionCode&);
     void count(const WebIDBKeyRange&, WebIDBCallbacks*, const WebIDBTransaction&, WebExceptionCode&);
 
  private:

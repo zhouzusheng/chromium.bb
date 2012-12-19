@@ -9,32 +9,22 @@ namespace ui {
 GestureEventDetails::GestureEventDetails(ui::EventType type,
                                          float delta_x,
                                          float delta_y)
-    : type_(type) {
+    : type_(type),
+      touch_points_(1) {
   switch (type_) {
     case ui::ET_GESTURE_SCROLL_UPDATE:
-      data.scroll.x = delta_x;
-      data.scroll.y = delta_y;
+      data.scroll_update.x = delta_x;
+      data.scroll_update.y = delta_y;
       break;
 
     case ui::ET_SCROLL_FLING_START:
-      data.velocity.x = delta_x;
-      data.velocity.y = delta_y;
-      break;
-
-    case ui::ET_GESTURE_TAP:
-      data.radius.x = delta_x;
-      data.radius.y = delta_y;
+      data.fling_velocity.x = delta_x;
+      data.fling_velocity.y = delta_y;
       break;
 
     case ui::ET_GESTURE_LONG_PRESS:
       data.touch_id = static_cast<int>(delta_x);
       CHECK_EQ(0.f, delta_y) << "Unknown data in delta_y for long press.";
-      break;
-
-    case ui::ET_GESTURE_BEGIN:
-    case ui::ET_GESTURE_END:
-      data.touch_points = static_cast<int>(delta_x);
-      CHECK_EQ(0.f, delta_y) << "Unknown data in delta_y for begin/end";
       break;
 
     case ui::ET_GESTURE_PINCH_UPDATE:
@@ -49,15 +39,25 @@ GestureEventDetails::GestureEventDetails(ui::EventType type,
       data.swipe.down = delta_y > 0;
       break;
 
+    case ui::ET_GESTURE_TAP:
+      data.tap_count = static_cast<int>(delta_x);
+      CHECK_EQ(0.f, delta_y) << "Unknown data in delta_y for tap.";
+      break;
+
     default:
-      data.generic.delta_x = delta_x;
-      data.generic.delta_y = delta_y;
       if (delta_x != 0.f || delta_y != 0.f) {
         DLOG(WARNING) << "A gesture event (" << type << ") had unknown data: ("
                       << delta_x << "," << delta_y;
       }
       break;
   }
+}
+
+void GestureEventDetails::SetScrollVelocity(float velocity_x,
+                                            float velocity_y) {
+  CHECK_EQ(ui::ET_GESTURE_SCROLL_UPDATE, type_);
+  data.scroll_update.velocity_x = velocity_x;
+  data.scroll_update.velocity_y = velocity_y;
 }
 
 }  // namespace ui

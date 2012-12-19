@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_IME_TEXT_INPUT_CLIENT_H_
 #define UI_BASE_IME_TEXT_INPUT_CLIENT_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/i18n/rtl.h"
@@ -128,6 +127,10 @@ class UI_EXPORT TextInputClient {
   // Returns false if the operation is not supported.
   virtual bool ChangeTextDirectionAndLayoutAlignment(
       base::i18n::TextDirection direction) = 0;
+
+  // Deletes the current selection plus the specified number of characters
+  // before and after the selection or caret.
+  virtual void ExtendSelectionAndDelete(size_t before, size_t after) = 0;
 };
 
 }  // namespace ui

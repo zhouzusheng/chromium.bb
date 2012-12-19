@@ -8,8 +8,10 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "grit/ui_resources_standard.h"
+#include "base/memory/scoped_ptr.h"
+#include "grit/ui_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
+#include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/canvas.h"
@@ -55,7 +57,7 @@ const SkColor kCheckboxGradientHoveredColors[] = {
     SkColorSetRGB(0xe0, 0xe0, 0xe0) };
 const SkColor kCheckboxGradientDisabledColors[] = {
     SkColorSetARGB(0xB3, 0xed, 0xed, 0xed),
-    SkColorSetARGB(0xB3, 0xde, 0xde, 0xde) };
+    SkColorSetARGB(0xB3, 0xed, 0xed, 0xed) };
 const SkColor kCheckboxBorderColor = SkColorSetARGB(0x40, 0, 0, 0);
 const SkColor kCheckboxBorderHoveredColor = SkColorSetARGB(0x4D, 0, 0, 0);
 const SkColor kCheckboxBorderDisabledColor = SkColorSetARGB(0x30, 0, 0, 0);
@@ -467,15 +469,11 @@ void NativeThemeBase::PaintScrollbarThumb(SkCanvas* canvas,
 }
 
 bool NativeThemeBase::IsNewCheckboxStyleEnabled(SkCanvas* canvas) const {
-  // Mostly this new style is experimental behind a flag.
-  // TODO(rbyers): Enable new style by default.  http://crbug.com/125773
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kNewCheckboxStyle))
-    return true;
-
-  // Also enable explicitly when high-DPI is being used (since this is the only
-  // way we have to get nice looking widgets in high-DPI.
-  if (canvas->getTotalMatrix().getScaleX() > 1)
+  // The new style is now the default.
+  // TODO(rbyers): Remove this flag once we're sure the new behavior is fine.
+  // http://crbug.com/133991
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kOldCheckboxStyle))
     return true;
 
   return false;
@@ -522,10 +520,18 @@ SkRect NativeThemeBase::PaintCheckboxRadioNewCommon(
 
   SkRect skrect = gfx::RectToSkRect(rect);
 
+  // Use the largest square that fits inside the provided rectangle.
+  // No other browser seems to support non-square widget, so accidentally
+  // having non-square sizes is common (eg. amazon and webkit dev tools).
+  if (skrect.width() != skrect.height()) {
+    SkScalar size = SkMinScalar(skrect.width(), skrect.height());
+    skrect.inset((skrect.width() - size) / 2, (skrect.height() - size) / 2);
+  }
+
   // If the rectangle is too small then paint only a rectangle.  We don't want
   // to have to worry about '- 1' and '+ 1' calculations below having overflow
   // or underflow.
-  if (rect.width() <= 2 || rect.height() <= 2) {
+  if (skrect.width() <= 2) {
     SkPaint paint;
     paint.setColor(kCheckboxTinyColor);
     paint.setStyle(SkPaint::kFill_Style);
@@ -1011,18 +1017,32 @@ bool NativeThemeBase::IntersectsClipRectInt(SkCanvas* canvas,
 }
 
 void NativeThemeBase::DrawImageInt(
-    SkCanvas* canvas, const gfx::ImageSkia& image,
+    SkCanvas* sk_canvas, const gfx::ImageSkia& image,
     int src_x, int src_y, int src_w, int src_h,
     int dest_x, int dest_y, int dest_w, int dest_h) const {
-  gfx::Canvas(canvas).DrawImageInt(image, src_x, src_y, src_w, src_h,
+  // TODO(pkotwicz): Do something better and don't infer device
+  // scale factor from canvas scale.
+  SkMatrix m = sk_canvas->getTotalMatrix();
+  ui::ScaleFactor device_scale_factor = ui::GetScaleFactorFromScale(
+      SkScalarAbs(m.getScaleX()));
+  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
+      sk_canvas, device_scale_factor));
+  canvas->DrawImageInt(image, src_x, src_y, src_w, src_h,
       dest_x, dest_y, dest_w, dest_h, true);
 }
 
-void NativeThemeBase::DrawTiledImage(SkCanvas* canvas,
+void NativeThemeBase::DrawTiledImage(SkCanvas* sk_canvas,
     const gfx::ImageSkia& image,
     int src_x, int src_y, float tile_scale_x, float tile_scale_y,
     int dest_x, int dest_y, int w, int h) const {
-  gfx::Canvas(canvas).TileImageInt(image, src_x, src_y, tile_scale_x,
+  // TODO(pkotwicz): Do something better and don't infer device
+  // scale factor from canvas scale.
+  SkMatrix m = sk_canvas->getTotalMatrix();
+  ui::ScaleFactor device_scale_factor = ui::GetScaleFactorFromScale(
+      SkScalarAbs(m.getScaleX()));
+  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
+      sk_canvas, device_scale_factor));
+  canvas->TileImageInt(image, src_x, src_y, tile_scale_x,
       tile_scale_y, dest_x, dest_y, w, h);
 }
 

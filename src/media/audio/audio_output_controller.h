@@ -68,23 +68,23 @@ class MEDIA_EXPORT AudioOutputController
     : public base::RefCountedThreadSafe<AudioOutputController>,
       public AudioOutputStream::AudioSourceCallback {
  public:
-  // Value sent by the controller to the renderer in low-latency mode
-  // indicating that the stream is paused.
-  static const int kPauseMark;
-
   // An event handler that receives events from the AudioOutputController. The
   // following methods are called on the audio manager thread.
   class MEDIA_EXPORT EventHandler {
    public:
-    virtual ~EventHandler() {}
     virtual void OnCreated(AudioOutputController* controller) = 0;
     virtual void OnPlaying(AudioOutputController* controller) = 0;
     virtual void OnPaused(AudioOutputController* controller) = 0;
     virtual void OnError(AudioOutputController* controller, int error_code) = 0;
+
+   protected:
+    virtual ~EventHandler() {}
   };
 
   // A synchronous reader interface used by AudioOutputController for
   // synchronous reading.
+  // TODO(crogers): find a better name for this class and the Read() method
+  // now that it can handle synchronized I/O.
   class SyncReader {
    public:
     virtual ~SyncReader() {}
@@ -94,9 +94,10 @@ class MEDIA_EXPORT AudioOutputController
     // prepare more data and perform synchronization.
     virtual void UpdatePendingBytes(uint32 bytes) = 0;
 
-    // Read certain amount of data into |data|. This method returns if some
-    // data is available.
-    virtual uint32 Read(void* data, uint32 size) = 0;
+    // Attempt to completely fill |dest|, return the actual number of
+    // frames that could be read.
+    // |source| may optionally be provided for input data.
+    virtual int Read(AudioBus* source, AudioBus* dest) = 0;
 
     // Close this synchronous reader.
     virtual void Close() = 0;
@@ -146,9 +147,11 @@ class MEDIA_EXPORT AudioOutputController
 
   ///////////////////////////////////////////////////////////////////////////
   // AudioSourceCallback methods.
-  virtual uint32 OnMoreData(uint8* dest,
-                            uint32 max_size,
-                            AudioBuffersState buffers_state) OVERRIDE;
+  virtual int OnMoreData(AudioBus* dest,
+                         AudioBuffersState buffers_state) OVERRIDE;
+  virtual int OnMoreIOData(AudioBus* source,
+                           AudioBus* dest,
+                           AudioBuffersState buffers_state) OVERRIDE;
   virtual void OnError(AudioOutputStream* stream, int code) OVERRIDE;
   virtual void WaitTillDataReady() OVERRIDE;
 
@@ -174,10 +177,11 @@ class MEDIA_EXPORT AudioOutputController
   static const int kPollPauseInMilliseconds;
 
   AudioOutputController(EventHandler* handler,
-                        SyncReader* sync_reader);
+                        SyncReader* sync_reader,
+                        const AudioParameters& params);
 
   // The following methods are executed on the audio manager thread.
-  void DoCreate(AudioManager* audio_manager, const AudioParameters& params);
+  void DoCreate(AudioManager* audio_manager);
   void DoPlay();
   void PollAndStartIfDataReady();
   void DoPause();
@@ -218,6 +222,8 @@ class MEDIA_EXPORT AudioOutputController
   // When starting stream we wait for data to become available.
   // Number of times left.
   int number_polling_attempts_left_;
+
+  AudioParameters params_;
 
   // Used to post delayed tasks to ourselves that we can cancel.
   // We don't want the tasks to hold onto a reference as it will slow down

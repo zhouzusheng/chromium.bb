@@ -26,33 +26,16 @@
 #ifndef CCGraphicsContext_h
 #define CCGraphicsContext_h
 
-#include "GraphicsContext3D.h"
-#include <wtf/PassRefPtr.h>
+#include <public/WebCompositorOutputSurface.h>
+#include <public/WebGraphicsContext3D.h>
+#include <wtf/Noncopyable.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
-class GraphicsContext3D;
-
-class CCGraphicsContext : public RefCounted<CCGraphicsContext> {
-public:
-    static PassRefPtr<CCGraphicsContext> create2D()
-    {
-        return adoptRef(new CCGraphicsContext());
-    }
-    static PassRefPtr<CCGraphicsContext> create3D(PassRefPtr<GraphicsContext3D> context3D)
-    {
-        return adoptRef(new CCGraphicsContext(context3D));
-    }
-
-    GraphicsContext3D* context3D() { return m_context3D.get(); }
-
-private:
-    CCGraphicsContext() { }
-    explicit CCGraphicsContext(PassRefPtr<GraphicsContext3D> context3D)
-        : m_context3D(context3D) { }
-
-    RefPtr<GraphicsContext3D> m_context3D;
-};
+// FIXME: rename fully to CCOutputSurface.
+typedef WebKit::WebCompositorOutputSurface CCGraphicsContext;
 
 }
 

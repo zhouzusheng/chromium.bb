@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,18 +26,21 @@
 #ifndef CCTileDrawQuad_h
 #define CCTileDrawQuad_h
 
+#include "CCDrawQuad.h"
 #include "GraphicsTypes3D.h"
-#include "cc/CCDrawQuad.h"
+#include "IntPoint.h"
+#include "IntSize.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
-class CCTileDrawQuad : public CCDrawQuad {
-    WTF_MAKE_NONCOPYABLE(CCTileDrawQuad);
-public:
-    static PassOwnPtr<CCTileDrawQuad> create(const CCSharedQuadState*, const IntRect& quadRect, const IntRect& opaqueRect, Platform3DObject textureId, const IntPoint& textureOffset, const IntSize& textureSize, GC3Dint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
+#pragma pack(push, 4)
 
-    Platform3DObject textureId() const { return m_textureId; }
+class CCTileDrawQuad : public CCDrawQuad {
+public:
+    static PassOwnPtr<CCTileDrawQuad> create(const CCSharedQuadState*, const IntRect& quadRect, const IntRect& opaqueRect, unsigned resourceId, const IntPoint& textureOffset, const IntSize& textureSize, GC3Dint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
+
+    unsigned resourceId() const { return m_resourceId; }
     IntPoint textureOffset() const { return m_textureOffset; }
     IntSize textureSize() const { return m_textureSize; }
     GC3Dint textureFilter() const { return m_textureFilter; }
@@ -50,10 +53,11 @@ public:
 
     bool isAntialiased() const { return leftEdgeAA() || topEdgeAA() || rightEdgeAA() || bottomEdgeAA(); }
 
+    static const CCTileDrawQuad* materialCast(const CCDrawQuad*);
 private:
-    CCTileDrawQuad(const CCSharedQuadState*, const IntRect& quadRect, const IntRect& opaqueRect, Platform3DObject textureId, const IntPoint& textureOffset, const IntSize& textureSize, GC3Dint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
+     CCTileDrawQuad(const CCSharedQuadState*, const IntRect& quadRect, const IntRect& opaqueRect, unsigned resourceId, const IntPoint& textureOffset, const IntSize& textureSize, GC3Dint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
 
-    Platform3DObject m_textureId;
+    unsigned m_resourceId;
     IntPoint m_textureOffset;
     IntSize m_textureSize;
     GC3Dint m_textureFilter;
@@ -63,6 +67,8 @@ private:
     bool m_rightEdgeAA;
     bool m_bottomEdgeAA;
 };
+
+#pragma pack(pop)
 
 }
 

@@ -9,9 +9,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_stream_writer.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/file_system_url.h"
+#include "webkit/fileapi/fileapi_export.h"
+#include "webkit/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/quota/quota_types.h"
 
 namespace fileapi {
@@ -23,14 +25,16 @@ class LocalFileStreamWriter;
 class FILEAPI_EXPORT_PRIVATE SandboxFileStreamWriter : public FileStreamWriter {
  public:
   SandboxFileStreamWriter(FileSystemContext* file_system_context,
-                          const GURL& url,
-                          int64 initial_offset);
+                          const FileSystemURL& url,
+                          int64 initial_offset,
+                          const UpdateObserverList& observers);
   virtual ~SandboxFileStreamWriter();
 
   // FileStreamWriter overrides.
   virtual int Write(net::IOBuffer* buf, int buf_len,
                     const net::CompletionCallback& callback) OVERRIDE;
   virtual int Cancel(const net::CompletionCallback& callback) OVERRIDE;
+  virtual int Flush(const net::CompletionCallback& callback) OVERRIDE;
 
   // Used only by tests.
   void set_default_quota(int64 quota) {
@@ -61,17 +65,13 @@ class FILEAPI_EXPORT_PRIVATE SandboxFileStreamWriter : public FileStreamWriter {
   // if there's a pending cancel request.
   bool CancelIfRequested();
 
-  FileSystemQuotaUtil* quota_util() const;
-
   scoped_refptr<FileSystemContext> file_system_context_;
-  const GURL url_;
+  FileSystemURL url_;
   int64 initial_offset_;
   scoped_ptr<LocalFileStreamWriter> local_file_writer_;
   net::CompletionCallback cancel_callback_;
 
-  GURL origin_;
-  FileSystemType file_system_type_;
-  FilePath virtual_path_;
+  UpdateObserverList observers_;
 
   FilePath file_path_;
   int64 file_size_;

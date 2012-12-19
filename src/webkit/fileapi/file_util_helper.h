@@ -15,43 +15,53 @@ namespace fileapi {
 
 class FileSystemFileUtil;
 class FileSystemOperationContext;
-class FileSystemPath;
+class FileSystemURL;
 
 // A collection of static methods that are usually called by
 // FileSystemFileUtilProxy.  The method should be called on FILE thread.
 class FILEAPI_EXPORT_PRIVATE FileUtilHelper {
  public:
+  static bool PathExists(
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemURL& url);
+
+  static bool DirectoryExists(
+      FileSystemOperationContext* context,
+      FileSystemFileUtil* file_util,
+      const FileSystemURL& url);
+
   static base::PlatformFileError Copy(
       FileSystemOperationContext* context,
       FileSystemFileUtil* src_file_util,
       FileSystemFileUtil* dest_file_utile,
-      const FileSystemPath& src_root_path,
-      const FileSystemPath& dest_root_path);
+      const FileSystemURL& src_root_url,
+      const FileSystemURL& dest_root_url);
 
   static base::PlatformFileError Move(
       FileSystemOperationContext* context,
       FileSystemFileUtil* src_file_util,
       FileSystemFileUtil* dest_file_utile,
-      const FileSystemPath& src_root_path,
-      const FileSystemPath& dest_root_path);
+      const FileSystemURL& src_root_url,
+      const FileSystemURL& dest_root_url);
 
   static base::PlatformFileError Delete(
       FileSystemOperationContext* context,
       FileSystemFileUtil* file_util,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       bool recursive);
 
   static base::PlatformFileError ReadDirectory(
       FileSystemOperationContext* context,
       FileSystemFileUtil* file_util,
-      const FileSystemPath& path,
+      const FileSystemURL& url,
       std::vector<base::FileUtilProxy::Entry>* entries);
 
  private:
   static base::PlatformFileError DeleteDirectoryRecursive(
       FileSystemOperationContext* context,
       FileSystemFileUtil* file_util,
-      const FileSystemPath& path);
+      const FileSystemURL& url);
 };
 
 }  // namespace fileapi

@@ -33,26 +33,31 @@
 #define ChromeClientImpl_h
 
 #include "ChromeClientChromium.h"
+#include "NavigatorContentUtilsClient.h"
 #include "PopupMenu.h"
 #include "SearchPopupMenu.h"
 #include "WebNavigationPolicy.h"
+#include <public/WebColor.h>
+#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 class AccessibilityObject;
-#if ENABLE(INPUT_TYPE_COLOR)
 class ColorChooser;
 class ColorChooserClient;
-#endif
 class Element;
 class FileChooser;
 class PopupContainer;
 class PopupMenuClient;
 class RenderBox;
 class SecurityOrigin;
+class DateTimeChooser;
+class DateTimeChooserClient;
 struct WindowFeatures;
 }
 
 namespace WebKit {
+class WebColorChooser;
+class WebColorChooserClient;
 class WebViewImpl;
 struct WebCursorInfo;
 struct WebPopupMenuInfo;
@@ -107,9 +112,6 @@ public:
     virtual bool shouldInterruptJavaScript();
     virtual WebCore::KeyboardUIMode keyboardUIMode();
     virtual WebCore::IntRect windowResizerRect() const;
-#if ENABLE(REGISTER_PROTOCOL_HANDLER)
-    virtual void registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title);
-#endif
     virtual void invalidateRootView(const WebCore::IntRect&, bool);
     virtual void invalidateContentsAndRootView(const WebCore::IntRect&, bool);
     virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&, bool);
@@ -136,9 +138,16 @@ public:
         WebCore::Frame*, const WTF::String& databaseName);
     virtual void reachedMaxAppCacheSize(int64_t spaceNeeded);
     virtual void reachedApplicationCacheOriginQuota(WebCore::SecurityOrigin*, int64_t totalSpaceNeeded);
+#if ENABLE(WIDGET_REGION)
+    virtual void dashboardRegionsChanged();
+#endif
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&);
 #if ENABLE(INPUT_TYPE_COLOR)
     virtual PassOwnPtr<WebCore::ColorChooser> createColorChooser(WebCore::ColorChooserClient*, const WebCore::Color&) OVERRIDE;
+    PassOwnPtr<WebColorChooser> createWebColorChooser(WebColorChooserClient*, const WebColor&);
+#endif
+#if ENABLE(CALENDAR_PICKER)
+    virtual PassOwnPtr<WebCore::DateTimeChooser> openDateTimeChooser(WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&) OVERRIDE;
 #endif
     virtual void runOpenPanel(WebCore::Frame*, PassRefPtr<WebCore::FileChooser>);
     virtual void loadIconForFiles(const Vector<WTF::String>&, WebCore::FileIconLoader*);
@@ -149,8 +158,7 @@ public:
     virtual void setCursorHiddenUntilMouseMoves(bool);
     virtual void formStateDidChange(const WebCore::Node*);
 #if ENABLE(TOUCH_EVENTS)
-    // FIXME: All touch events are forwarded regardless of whether or not they are needed.
-    virtual void needTouchEvents(bool needTouchEvents) { }
+    virtual void needTouchEvents(bool needTouchEvents) OVERRIDE;
 #endif
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -198,6 +206,8 @@ public:
 #if ENABLE(PAGE_POPUP)
     virtual WebCore::PagePopup* openPagePopup(WebCore::PagePopupClient*, const WebCore::IntRect&) OVERRIDE;
     virtual void closePagePopup(WebCore::PagePopup*) OVERRIDE;
+    virtual void setPagePopupDriver(WebCore::PagePopupDriver*) OVERRIDE;
+    virtual void resetPagePopupDriver() OVERRIDE;
 #endif
     virtual bool willAddTextFieldDecorationsTo(WebCore::HTMLInputElement*) OVERRIDE;
     virtual void addTextFieldDecorationsTo(WebCore::HTMLInputElement*) OVERRIDE;
@@ -206,7 +216,6 @@ public:
 
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const;
     virtual void numWheelEventHandlersChanged(unsigned);
-    virtual void numTouchEventHandlersChanged(unsigned);
 
 #if ENABLE(POINTER_LOCK)
     virtual bool requestPointerLock();
@@ -228,6 +237,22 @@ private:
 
     // The policy for how the next webview to be created will be shown.
     WebNavigationPolicy m_nextNewWindowNavigationPolicy;
+#if ENABLE(PAGE_POPUP)
+    WebCore::PagePopupDriver* m_pagePopupDriver;
+#endif
+};
+
+class NavigatorContentUtilsClientImpl : public WebCore::NavigatorContentUtilsClient {
+public:
+    static PassOwnPtr<NavigatorContentUtilsClientImpl> create(WebViewImpl*);
+    ~NavigatorContentUtilsClientImpl() { }
+
+    virtual void registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title) OVERRIDE;
+
+private:
+    explicit NavigatorContentUtilsClientImpl(WebViewImpl*);
+
+    WebViewImpl* m_webView;
 };
 
 } // namespace WebKit

@@ -51,12 +51,12 @@ public:
     String vAlign() const;
     void setVAlign(const String&);
 
-    HTMLCollection* rows();
+    PassRefPtr<HTMLCollection> rows();
 
 private:
     HTMLTableSectionElement(const QualifiedName& tagName, Document*);
 
-    virtual StylePropertySet* additionalAttributeStyle() OVERRIDE;
+    virtual const StylePropertySet* additionalAttributeStyle() OVERRIDE;
 };
 
 } //namespace

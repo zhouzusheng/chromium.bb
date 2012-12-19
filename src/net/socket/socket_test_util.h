@@ -4,7 +4,6 @@
 
 #ifndef NET_SOCKET_SOCKET_TEST_UTIL_H_
 #define NET_SOCKET_SOCKET_TEST_UTIL_H_
-#pragma once
 
 #include <cstring>
 #include <deque>
@@ -50,7 +49,6 @@ class AsyncSocket;
 class MockClientSocket;
 class ServerBoundCertService;
 class SSLClientSocket;
-class SSLHostInfo;
 class StreamSocket;
 
 enum IoMode {
@@ -74,48 +72,65 @@ struct MockConnect {
   IPEndPoint peer_addr;
 };
 
-struct MockRead {
+// MockRead and MockWrite shares the same interface and members, but we'd like
+// to have distinct types because we don't want to have them used
+// interchangably. To do this, a struct template is defined, and MockRead and
+// MockWrite are instantiated by using this template. Template parameter |type|
+// is not used in the struct definition (it purely exists for creating a new
+// type).
+//
+// |data| in MockRead and MockWrite has different meanings: |data| in MockRead
+// is the data returned from the socket when MockTCPClientSocket::Read() is
+// attempted, while |data| in MockWrite is the expected data that should be
+// given in MockTCPClientSocket::Write().
+enum MockReadWriteType {
+  MOCK_READ,
+  MOCK_WRITE
+};
+
+template <MockReadWriteType type>
+struct MockReadWrite {
   // Flag to indicate that the message loop should be terminated.
   enum {
     STOPLOOP = 1 << 31
   };
 
   // Default
-  MockRead() : mode(SYNCHRONOUS), result(0), data(NULL), data_len(0),
+  MockReadWrite() : mode(SYNCHRONOUS), result(0), data(NULL), data_len(0),
       sequence_number(0), time_stamp(base::Time::Now()) {}
 
-  // Read failure (no data).
-  MockRead(IoMode io_mode, int result) : mode(io_mode), result(result),
+  // Read/write failure (no data).
+  MockReadWrite(IoMode io_mode, int result) : mode(io_mode), result(result),
       data(NULL), data_len(0), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
-  // Read failure (no data), with sequence information.
-  MockRead(IoMode io_mode, int result, int seq) : mode(io_mode),
+  // Read/write failure (no data), with sequence information.
+  MockReadWrite(IoMode io_mode, int result, int seq) : mode(io_mode),
       result(result), data(NULL), data_len(0), sequence_number(seq),
       time_stamp(base::Time::Now()) { }
 
-  // Asynchronous read success (inferred data length).
-  explicit MockRead(const char* data) : mode(ASYNC),  result(0), data(data),
-      data_len(strlen(data)), sequence_number(0),
-      time_stamp(base::Time::Now()) { }
-
-  // Read success (inferred data length).
-  MockRead(IoMode io_mode, const char* data) : mode(io_mode), result(0),
+  // Asynchronous read/write success (inferred data length).
+  explicit MockReadWrite(const char* data) : mode(ASYNC),  result(0),
       data(data), data_len(strlen(data)), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
-  // Read success.
-  MockRead(IoMode io_mode, const char* data, int data_len) : mode(io_mode),
+  // Read/write success (inferred data length).
+  MockReadWrite(IoMode io_mode, const char* data) : mode(io_mode), result(0),
+      data(data), data_len(strlen(data)), sequence_number(0),
+      time_stamp(base::Time::Now()) { }
+
+  // Read/write success.
+  MockReadWrite(IoMode io_mode, const char* data, int data_len) : mode(io_mode),
       result(0), data(data), data_len(data_len), sequence_number(0),
       time_stamp(base::Time::Now()) { }
 
-  // Read success (inferred data length) with sequence information.
-  MockRead(IoMode io_mode, int seq, const char* data) : mode(io_mode),
+  // Read/write success (inferred data length) with sequence information.
+  MockReadWrite(IoMode io_mode, int seq, const char* data) : mode(io_mode),
       result(0), data(data), data_len(strlen(data)), sequence_number(seq),
       time_stamp(base::Time::Now()) { }
 
-  // Read success with sequence information.
-  MockRead(IoMode io_mode, const char* data, int data_len, int seq) :
+  // Read/write success with sequence information.
+  MockReadWrite(IoMode io_mode, const char* data, int data_len, int seq) :
       mode(io_mode), result(0), data(data), data_len(data_len),
       sequence_number(seq), time_stamp(base::Time::Now()) { }
 
@@ -132,11 +147,8 @@ struct MockRead {
   base::Time time_stamp;    // The time stamp at which the operation occurred.
 };
 
-// MockWrite uses the same member fields as MockRead, but with different
-// meanings. The expected input to MockTCPClientSocket::Write() is given
-// by {data, data_len}, and the return value of Write() is controlled by
-// {async, result}.
-typedef MockRead MockWrite;
+typedef MockReadWrite<MOCK_READ> MockRead;
+typedef MockReadWrite<MOCK_WRITE> MockWrite;
 
 struct MockWriteResult {
   MockWriteResult(IoMode io_mode, int result)
@@ -287,7 +299,7 @@ struct SSLSocketDataProvider {
   bool client_cert_sent;
   SSLCertRequestInfo* cert_request_info;
   scoped_refptr<X509Certificate> cert;
-  SSLClientCertType domain_bound_cert_type;
+  bool channel_id_sent;
   ServerBoundCertService* server_bound_cert_service;
 };
 
@@ -299,7 +311,6 @@ class DelayedSocketData : public StaticSocketDataProvider {
   //               a MockRead to complete.
   // |reads| the list of MockRead completions.
   // |writes| the list of MockWrite completions.
-  // Note: All MockReads and MockWrites must be async.
   // Note: For stream sockets, the MockRead list must end with a EOF, e.g., a
   //       MockRead(true, 0, 0);
   DelayedSocketData(int write_delay,
@@ -311,7 +322,6 @@ class DelayedSocketData : public StaticSocketDataProvider {
   // |write_delay| the number of MockWrites to complete before allowing
   //               a MockRead to complete.
   // |writes| the list of MockWrite completions.
-  // Note: All MockReads and MockWrites must be async.
   // Note: For stream sockets, the MockRead list must end with a EOF, e.g., a
   //       MockRead(true, 0, 0);
   DelayedSocketData(const MockConnect& connect, int write_delay,
@@ -441,13 +451,13 @@ class DeterministicMockTCPClientSocket;
 // For examples of how to use this class, see:
 //   deterministic_socket_data_unittests.cc
 class DeterministicSocketData
-    : public StaticSocketDataProvider,
-      public base::RefCounted<DeterministicSocketData> {
+    : public StaticSocketDataProvider {
  public:
   // |reads| the list of MockRead completions.
   // |writes| the list of MockWrite completions.
   DeterministicSocketData(MockRead* reads, size_t reads_count,
                           MockWrite* writes, size_t writes_count);
+  virtual ~DeterministicSocketData();
 
   // Consume all the data up to the give stop point (via SetStop()).
   void Run();
@@ -463,7 +473,7 @@ class DeterministicSocketData
   bool stopped() const { return stopped_; }
   void SetStopped(bool val) { stopped_ = val; }
   MockRead& current_read() { return current_read_; }
-  MockRead& current_write() { return current_write_; }
+  MockWrite& current_write() { return current_write_; }
   int sequence_number() const { return sequence_number_; }
   void set_socket(base::WeakPtr<DeterministicMockTCPClientSocket> socket) {
     socket_ = socket;
@@ -482,16 +492,14 @@ class DeterministicSocketData
   virtual void Reset() OVERRIDE;
   virtual void CompleteRead() OVERRIDE {}
 
- protected:
-  virtual ~DeterministicSocketData();
-
  private:
-  friend class base::RefCounted<DeterministicSocketData>;
-
   // Invoke the read and write callbacks, if the timing is appropriate.
   void InvokeCallbacks();
 
   void NextStep();
+
+  void VerifyCorrectSequenceNumbers(MockRead* reads, size_t reads_count,
+                                    MockWrite* writes, size_t writes_count);
 
   int sequence_number_;
   MockRead current_read_;
@@ -569,7 +577,6 @@ class MockClientSocketFactory : public ClientSocketFactory {
       ClientSocketHandle* transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      SSLHostInfo* ssl_host_info,
       const SSLClientSocketContext& context) OVERRIDE;
   virtual void ClearSSLSessionCache() OVERRIDE;
 
@@ -580,6 +587,9 @@ class MockClientSocketFactory : public ClientSocketFactory {
 
 class MockClientSocket : public SSLClientSocket {
  public:
+  // Value returned by GetTLSUniqueChannelBinding().
+  static const char kTlsUnique[];
+
   // TODO(ajwong): Why do we need net::NetLog?
   explicit MockClientSocket(net::NetLog* net_log);
 
@@ -603,7 +613,6 @@ class MockClientSocket : public SSLClientSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE {}
 
   // SSLClientSocket implementation.
-  virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual int ExportKeyingMaterial(const base::StringPiece& label,
@@ -611,6 +620,7 @@ class MockClientSocket : public SSLClientSocket {
                                    const base::StringPiece& context,
                                    unsigned char* out,
                                    unsigned int outlen) OVERRIDE;
+  virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
   virtual NextProtoStatus GetNextProto(std::string* proto,
                                        std::string* server_protos) OVERRIDE;
   virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
@@ -655,6 +665,8 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+  virtual bool WasNpnNegotiated() const OVERRIDE;
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // AsyncSocket:
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
@@ -682,9 +694,10 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   bool was_used_to_convey_data_;
 };
 
-class DeterministicMockTCPClientSocket : public MockClientSocket,
-    public AsyncSocket,
-    public base::SupportsWeakPtr<DeterministicMockTCPClientSocket> {
+class DeterministicMockTCPClientSocket
+    : public MockClientSocket,
+      public AsyncSocket,
+      public base::SupportsWeakPtr<DeterministicMockTCPClientSocket> {
  public:
   DeterministicMockTCPClientSocket(net::NetLog* net_log,
                                    DeterministicSocketData* data);
@@ -712,6 +725,8 @@ class DeterministicMockTCPClientSocket : public MockClientSocket,
   virtual bool UsingTCPFastOpen() const OVERRIDE;
   virtual int64 NumBytesRead() const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+  virtual bool WasNpnNegotiated() const OVERRIDE;
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // AsyncSocket:
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
@@ -737,7 +752,6 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
       ClientSocketHandle* transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      SSLHostInfo* ssl_host_info,
       SSLSocketDataProvider* socket);
   virtual ~MockSSLClientSocket();
 
@@ -756,14 +770,14 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   virtual int64 NumBytesRead() const OVERRIDE;
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+  virtual bool WasNpnNegotiated() const OVERRIDE;
+  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // SSLClientSocket implementation.
-  virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
   virtual NextProtoStatus GetNextProto(std::string* proto,
                                        std::string* server_protos) OVERRIDE;
-  virtual bool was_npn_negotiated() const OVERRIDE;
   virtual bool set_was_npn_negotiated(bool negotiated) OVERRIDE;
   virtual void set_protocol_negotiated(
       NextProto protocol_negotiated) OVERRIDE;
@@ -772,10 +786,8 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   // This MockSocket does not implement the manual async IO feature.
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
 
-  virtual bool WasDomainBoundCertSent() const OVERRIDE;
-  virtual SSLClientCertType domain_bound_cert_type() const OVERRIDE;
-  virtual SSLClientCertType set_domain_bound_cert_type(
-      SSLClientCertType type) OVERRIDE;
+  virtual bool WasChannelIDSent() const OVERRIDE;
+  virtual void set_channel_id_sent(bool channel_id_sent) OVERRIDE;
   virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
 
  private:
@@ -787,13 +799,13 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   SSLSocketDataProvider* data_;
   bool is_npn_state_set_;
   bool new_npn_value_;
-  bool was_used_to_convey_data_;
   bool is_protocol_negotiated_set_;
   NextProto protocol_negotiated_;
 };
 
-class MockUDPClientSocket : public DatagramClientSocket,
-    public AsyncSocket {
+class MockUDPClientSocket
+    : public DatagramClientSocket,
+      public AsyncSocket {
  public:
   MockUDPClientSocket(SocketDataProvider* data, net::NetLog* net_log);
   virtual ~MockUDPClientSocket();
@@ -1007,7 +1019,6 @@ class DeterministicMockClientSocketFactory : public ClientSocketFactory {
       ClientSocketHandle* transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      SSLHostInfo* ssl_host_info,
       const SSLClientSocketContext& context) OVERRIDE;
   virtual void ClearSSLSessionCache() OVERRIDE;
 

@@ -60,11 +60,6 @@ public:
     {
         return adoptRef(new HTMLDocumentParser(document, reportErrors));
     }
-    static PassRefPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, FragmentScriptingPermission permission)
-    {
-        return adoptRef(new HTMLDocumentParser(fragment, contextElement, permission));
-    }
-
     virtual ~HTMLDocumentParser();
 
     // Exposed for HTMLParserScheduler
@@ -95,6 +90,11 @@ protected:
     HTMLTreeBuilder* treeBuilder() const { return m_treeBuilder.get(); }
 
 private:
+    static PassRefPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, FragmentScriptingPermission permission)
+    {
+        return adoptRef(new HTMLDocumentParser(fragment, contextElement, permission));
+    }
+
     // DocumentParser
     virtual void detach();
     virtual bool hasInsertionPoint();
@@ -124,10 +124,9 @@ private:
     void pumpTokenizer(SynchronousMode);
     void pumpTokenizerIfPossible(SynchronousMode);
 
-    bool runScriptsForPausedTreeBuilder();
+    void runScriptsForPausedTreeBuilder();
     void resumeParsingAfterScriptExecution();
 
-    void begin();
     void attemptToEnd();
     void endIfDelayed();
     void attemptToRunDeferredScriptsAndEnd();
@@ -137,8 +136,6 @@ private:
     bool isScheduledForResume() const;
     bool inPumpSession() const { return m_pumpSessionNestingLevel > 0; }
     bool shouldDelayEnd() const { return inPumpSession() || isWaitingForScripts() || isScheduledForResume() || isExecutingScript(); }
-
-    ScriptController* script() const;
 
     HTMLInputStream m_input;
 

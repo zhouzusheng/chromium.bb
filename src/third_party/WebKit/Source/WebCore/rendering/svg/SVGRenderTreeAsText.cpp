@@ -134,10 +134,10 @@ static void writeIfNotDefault(TextStream& ts, const char* name, ValueType value,
 
 TextStream& operator<<(TextStream& ts, const FloatRect& r)
 {
-    ts << "at (" << formatNumberRespectingIntegers(r.x()); 
-    ts << "," << formatNumberRespectingIntegers(r.y());
-    ts << ") size " << formatNumberRespectingIntegers(r.width());
-    ts << "x" << formatNumberRespectingIntegers(r.height());
+    ts << "at (" << TextStream::FormatNumberRespectingIntegers(r.x());
+    ts << "," << TextStream::FormatNumberRespectingIntegers(r.y());
+    ts << ") size " << TextStream::FormatNumberRespectingIntegers(r.width());
+    ts << "x" << TextStream::FormatNumberRespectingIntegers(r.height());
     return ts;
 }
 
@@ -387,7 +387,7 @@ static void writeRenderSVGTextBox(TextStream& ts, const RenderSVGText& text)
     if (!box)
         return;
 
-    ts << " " << enclosingIntRect(FloatRect(text.x(), text.y(), box->logicalWidth(), box->logicalHeight()));
+    ts << " " << enclosingIntRect(FloatRect(text.location(), FloatSize(box->logicalWidth(), box->logicalHeight())));
     
     // FIXME: Remove this hack, once the new text layout engine is completly landed. We want to preserve the old layout test results for now.
     ts << " contains 1 chunk(s)";

@@ -25,7 +25,7 @@
 
 #include "CSSRule.h"
 #include "MediaList.h"
-#include "PlatformString.h" // needed so bindings will compile
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -51,6 +51,8 @@ public:
     CSSRule* item(unsigned index) const;
 
     void reattach(StyleRuleMedia*);
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSMediaRule(StyleRuleMedia*, CSSStyleSheet*);

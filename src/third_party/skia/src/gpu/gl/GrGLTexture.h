@@ -16,8 +16,9 @@
  * A ref counted tex id that deletes the texture in its destructor.
  */
 class GrGLTexID : public GrRefCnt {
-
 public:
+    SK_DECLARE_INST_COUNT(GrGLTexID)
+
     GrGLTexID(const GrGLInterface* gl, GrGLuint texID, bool ownsID)
         : fGL(gl)
         , fTexID(texID)
@@ -37,6 +38,8 @@ private:
     const GrGLInterface* fGL;
     GrGLuint             fTexID;
     bool                 fOwnsID;
+
+    typedef GrRefCnt INHERITED;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -80,7 +83,7 @@ public:
 
     virtual void invalidateCachedState() SK_OVERRIDE { fTexParams.invalidate(); }
 
-    // these functions 
+    // these functions
     const TexParams& getCachedTexParams(GrGpu::ResetTimestamp* timestamp) const {
         *timestamp = fTexParamsTimestamp;
         return fTexParams;
@@ -101,8 +104,6 @@ public:
     // (FBO or externally imported texture) will be updside down
     // and it is up to the GrGpuGL derivative to handle y-mirroing.
     Orientation orientation() const { return fOrientation; }
-
-    static const GrGLenum* WrapMode2GLWrap();
 
 protected:
 

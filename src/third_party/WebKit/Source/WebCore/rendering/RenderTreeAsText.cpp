@@ -79,21 +79,6 @@ using namespace HTMLNames;
 
 static void writeLayers(TextStream&, const RenderLayer* rootLayer, RenderLayer*, const LayoutRect& paintDirtyRect, int indent = 0, RenderAsTextBehavior = RenderAsTextBehaviorNormal);
 
-static inline bool hasFractions(double val)
-{
-    static const double s_epsilon = 0.0001;
-    int ival = static_cast<int>(val);
-    double dval = static_cast<double>(ival);
-    return fabs(val - dval) > s_epsilon;
-}
-
-String formatNumberRespectingIntegers(double value)
-{
-    if (!hasFractions(value))
-        return String::number(static_cast<int>(value));
-    return String::number(value, ShouldRoundDecimalPlaces, 2);
-}
-
 TextStream& operator<<(TextStream& ts, const IntRect& r)
 {
     return ts << "at (" << r.x() << "," << r.y() << ") size " << r.width() << "x" << r.height();
@@ -112,16 +97,16 @@ TextStream& operator<<(TextStream& ts, const FractionalLayoutPoint& p)
 
 TextStream& operator<<(TextStream& ts, const FloatPoint& p)
 {
-    ts << "(" << formatNumberRespectingIntegers(p.x());
-    ts << "," << formatNumberRespectingIntegers(p.y());
+    ts << "(" << TextStream::FormatNumberRespectingIntegers(p.x());
+    ts << "," << TextStream::FormatNumberRespectingIntegers(p.y());
     ts << ")";
     return ts;
 }
 
 TextStream& operator<<(TextStream& ts, const FloatSize& s)
 {
-    ts << "width=" << formatNumberRespectingIntegers(s.width());
-    ts << " height=" << formatNumberRespectingIntegers(s.height());
+    ts << "width=" << TextStream::FormatNumberRespectingIntegers(s.width());
+    ts << " height=" << TextStream::FormatNumberRespectingIntegers(s.height());
     return ts;
 }
 
@@ -315,19 +300,16 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
         if (box.borderTop() || box.borderRight() || box.borderBottom() || box.borderLeft()) {
             ts << " [border:";
 
-            BorderValue prevBorder;
-            if (o.style()->borderTop() != prevBorder) {
-                prevBorder = o.style()->borderTop();
-                if (!box.borderTop())
-                    ts << " none";
-                else {
-                    ts << " (" << box.borderTop() << "px ";
-                    printBorderStyle(ts, o.style()->borderTopStyle());
-                    Color col = o.style()->borderTopColor();
-                    if (!col.isValid())
-                        col = o.style()->color();
-                    ts << col.nameForRenderTreeAsText() << ")";
-                }
+            BorderValue prevBorder = o.style()->borderTop();
+            if (!box.borderTop())
+                ts << " none";
+            else {
+                ts << " (" << box.borderTop() << "px ";
+                printBorderStyle(ts, o.style()->borderTopStyle());
+                Color col = o.style()->borderTopColor();
+                if (!col.isValid())
+                    col = o.style()->color();
+                ts << col.nameForRenderTreeAsText() << ")";
             }
 
             if (o.style()->borderRight() != prevBorder) {
@@ -398,7 +380,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
         ts << " [r=" << c.rowIndex() << " c=" << c.col() << " rs=" << c.rowSpan() << " cs=" << c.colSpan() << "]";
     }
 
-#if ENABLE(DETAILS)
+#if ENABLE(DETAILS_ELEMENT)
     if (o.isDetailsMarker()) {
         ts << ": ";
         switch (toRenderDetailsMarker(&o)->orientation()) {
@@ -448,14 +430,14 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 ts << " id=\"" + static_cast<Element*>(node)->getIdAttribute() + "\"";
 
             if (node->hasClass()) {
+                ts << " class=\"";
                 StyledElement* styledElement = static_cast<StyledElement*>(node);
-                String classes;
                 for (size_t i = 0; i < styledElement->classNames().size(); ++i) {
                     if (i > 0)
-                        classes += " ";
-                    classes += styledElement->classNames()[i];
+                        ts << " ";
+                    ts << styledElement->classNames()[i];
                 }
-                ts << " class=\"" + classes + "\"";
+                ts << "\"";
             }
         }
     }
@@ -702,16 +684,18 @@ static void writeRenderNamedFlowThreads(TextStream& ts, RenderView* renderView, 
                 RenderRegion* renderRegion = *itRR;
                 writeIndent(ts, indent + 2);
                 ts << "RenderRegion";
-                if (renderRegion->node()) {
-                    String tagName = getTagName(renderRegion->node());
+                if (renderRegion->generatingNode()) {
+                    String tagName = getTagName(renderRegion->generatingNode());
                     if (!tagName.isEmpty())
                         ts << " {" << tagName << "}";
-                    if (renderRegion->node()->isElementNode() && renderRegion->node()->hasID()) {
-                        Element* element = static_cast<Element*>(renderRegion->node());
+                    if (renderRegion->generatingNode()->isElementNode() && renderRegion->generatingNode()->hasID()) {
+                        Element* element = static_cast<Element*>(renderRegion->generatingNode());
                         ts << " #" << element->idForStyleResolution();
                     }
                     if (renderRegion->hasCustomRegionStyle())
                         ts << " region style: 1";
+                    if (renderRegion->hasAutoLogicalHeight())
+                        ts << " hasAutoLogicalHeight";
                 }
                 if (!renderRegion->isValid())
                     ts << " invalid";
@@ -792,29 +776,36 @@ static void writeLayers(TextStream& ts, const RenderLayer* rootLayer, RenderLaye
 
 static String nodePosition(Node* node)
 {
-    String result;
+    StringBuilder result;
 
     Element* body = node->document()->body();
     Node* parent;
     for (Node* n = node; n; n = parent) {
         parent = n->parentOrHostNode();
         if (n != node)
-            result += " of ";
+            result.appendLiteral(" of ");
         if (parent) {
             if (body && n == body) {
                 // We don't care what offset body may be in the document.
-                result += "body";
+                result.appendLiteral("body");
                 break;
             }
-            if (n->isShadowRoot())
-                result += "{" + getTagName(n) + "}";
-            else
-                result += "child " + String::number(n->nodeIndex()) + " {" + getTagName(n) + "}";
+            if (n->isShadowRoot()) {
+                result.append('{');
+                result.append(getTagName(n));
+                result.append('}');
+            } else {
+                result.appendLiteral("child ");
+                result.appendNumber(n->nodeIndex());
+                result.appendLiteral(" {");
+                result.append(getTagName(n));
+                result.append('}');
+            }
         } else
-            result += "document";
+            result.appendLiteral("document");
     }
 
-    return result;
+    return result.toString();
 }
 
 static void writeSelection(TextStream& ts, const RenderObject* o)

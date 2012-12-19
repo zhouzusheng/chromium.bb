@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/context_group.h"
 
+#include <algorithm>
 #include <string>
 
 #include "base/command_line.h"
@@ -14,6 +15,7 @@
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/shader_manager.h"
@@ -26,8 +28,10 @@ namespace gles2 {
 
 ContextGroup::ContextGroup(
     MailboxManager* mailbox_manager,
+    MemoryTracker* memory_tracker,
     bool bind_generates_resource)
     : mailbox_manager_(mailbox_manager ? mailbox_manager : new MailboxManager),
+      memory_tracker_(memory_tracker),
       num_contexts_(0),
       enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnforceGLMinimums)),
@@ -39,6 +43,7 @@ ContextGroup::ContextGroup(
       max_fragment_uniform_vectors_(0u),
       max_varying_vectors_(0u),
       max_vertex_uniform_vectors_(0u),
+      program_cache_(NULL),
       feature_info_(new FeatureInfo()) {
   {
     TransferBufferManager* manager = new TransferBufferManager();
@@ -88,12 +93,13 @@ bool ContextGroup::Initialize(const DisallowedFeatures& disallowed_features,
     glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
   }
 
-  buffer_manager_.reset(new BufferManager());
+  buffer_manager_.reset(new BufferManager(memory_tracker_));
   framebuffer_manager_.reset(new FramebufferManager());
-  renderbuffer_manager_.reset(new RenderbufferManager(
-      max_renderbuffer_size, max_samples));
+  renderbuffer_manager_.reset(new RenderbufferManager(memory_tracker_,
+                                                      max_renderbuffer_size,
+                                                      max_samples));
   shader_manager_.reset(new ShaderManager());
-  program_manager_.reset(new ProgramManager());
+  program_manager_.reset(new ProgramManager(program_cache_));
 
   // Lookup GL things we need to know.
   const GLint kGLES2RequiredMinimumVertexAttribs = 8u;
@@ -128,18 +134,28 @@ bool ContextGroup::Initialize(const DisallowedFeatures& disallowed_features,
     return false;
   }
 
-  // Limit Intel on Mac to 512.
+  // Limit Intel on Mac to 4096 max tex size and 512 max cube map tex size.
+  // Limit AMD on Mac to 4096 max tex size and max cube map tex size.
   // TODO(gman): Update this code to check for a specific version of
   // the drivers above which we no longer need this fix.
 #if defined(OS_MACOSX)
-  if (feature_info_->feature_flags().is_intel) {
-    max_texture_size = std::min(
-        static_cast<GLint>(4096), max_texture_size);
-    max_cube_map_texture_size = std::min(
-        static_cast<GLint>(512), max_cube_map_texture_size);
+  if (!feature_info_->feature_flags().disable_workarounds) {
+    if (feature_info_->feature_flags().is_intel) {
+      max_texture_size = std::min(
+          static_cast<GLint>(4096), max_texture_size);
+      max_cube_map_texture_size = std::min(
+          static_cast<GLint>(512), max_cube_map_texture_size);
+    }
+    if (feature_info_->feature_flags().is_amd) {
+      max_texture_size = std::min(
+          static_cast<GLint>(4096), max_texture_size);
+      max_cube_map_texture_size = std::min(
+          static_cast<GLint>(4096), max_cube_map_texture_size);
+    }
   }
 #endif
-  texture_manager_.reset(new TextureManager(feature_info_.get(),
+  texture_manager_.reset(new TextureManager(memory_tracker_,
+                                            feature_info_.get(),
                                             max_texture_size,
                                             max_cube_map_texture_size));
 
@@ -230,6 +246,8 @@ void ContextGroup::Destroy(bool have_context) {
     shader_manager_->Destroy(have_context);
     shader_manager_.reset();
   }
+
+  memory_tracker_ = NULL;
 }
 
 IdAllocatorInterface* ContextGroup::GetIdAllocator(unsigned namespace_id) {
@@ -291,5 +309,3 @@ bool ContextGroup::QueryGLFeatureU(
 
 }  // namespace gles2
 }  // namespace gpu
-
-

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 Ericsson AB. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,44 +34,60 @@
 
 #if ENABLE(MEDIA_STREAM)
 
-#include "PlatformString.h"
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class MediaStreamSource : public RefCounted<MediaStreamSource> {
 public:
+    class Observer {
+    public:
+        virtual ~Observer() { }
+        virtual void sourceChangedState() = 0;
+    };
+
+    class ExtraData : public RefCounted<ExtraData> {
+    public:
+        virtual ~ExtraData() { }
+    };
+
     enum Type {
         TypeAudio,
         TypeVideo
     };
 
-    static PassRefPtr<MediaStreamSource> create(const String& id, Type type, const String& name)
-    {
-        return adoptRef(new MediaStreamSource(id, type, name));
-    }
+    enum ReadyState {
+        ReadyStateLive = 0,
+        ReadyStateMuted = 1,
+        ReadyStateEnded = 2
+    };
+
+    static PassRefPtr<MediaStreamSource> create(const String& id, Type, const String& name, ReadyState = ReadyStateLive);
 
     const String& id() const { return m_id; }
     Type type() const { return m_type; }
     const String& name() const { return m_name; }
 
-    bool muted() const { return m_muted; }
-    void setMuted(bool muted) { m_muted = muted; }
+    void setReadyState(ReadyState);
+    ReadyState readyState() const { return m_readyState; }
+
+    void addObserver(Observer*);
+    void removeObserver(Observer*);
+
+    PassRefPtr<ExtraData> extraData() const { return m_extraData; }
+    void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
 private:
-    MediaStreamSource(const String& id, Type type, const String& name)
-        : m_id(id)
-        , m_type(type)
-        , m_name(name)
-        , m_muted(false)
-    {
-    }
+    MediaStreamSource(const String& id, Type, const String& name, ReadyState);
 
     String m_id;
     Type m_type;
     String m_name;
-    bool m_muted;
+    ReadyState m_readyState;
+    Vector<Observer*> m_observers;
+    RefPtr<ExtraData> m_extraData;
 };
 
 typedef Vector<RefPtr<MediaStreamSource> > MediaStreamSourceVector;

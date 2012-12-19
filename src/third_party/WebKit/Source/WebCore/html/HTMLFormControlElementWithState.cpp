@@ -62,22 +62,20 @@ bool HTMLFormControlElementWithState::shouldSaveAndRestoreFormControlState() con
     return attached() && shouldAutocomplete();
 }
 
+FormControlState HTMLFormControlElementWithState::saveFormControlState() const
+{
+    return FormControlState();
+}
+
 void HTMLFormControlElementWithState::finishParsingChildren()
 {
     HTMLFormControlElement::finishParsingChildren();
+    document()->formController()->restoreControlStateFor(*this);
+}
 
-    // We don't save state of a control with shouldSaveAndRestoreFormControlState()=false.
-    // But we need to skip restoring process too because a control in another
-    // form might have the same pair of name and type and saved its state.
-    if (!shouldSaveAndRestoreFormControlState())
-        return;
-
-    Document* doc = document();
-    if (doc->formController()->hasStateForNewFormElements()) {
-        String state;
-        if (doc->formController()->takeStateForFormElement(name().impl(), type().impl(), state))
-            restoreFormControlState(state);
-    }
+bool HTMLFormControlElementWithState::isFormControlElementWithState() const
+{
+    return true;
 }
 
 } // namespace Webcore

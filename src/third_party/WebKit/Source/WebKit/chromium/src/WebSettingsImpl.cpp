@@ -47,12 +47,13 @@ namespace WebKit {
 
 WebSettingsImpl::WebSettingsImpl(Settings* settings)
     : m_settings(settings)
-    , m_forceSoftwareCompositing(false)
     , m_showFPSCounter(false)
     , m_showPlatformLayerTree(false)
     , m_showPaintRects(false)
+    , m_renderVSyncEnabled(true)
     , m_viewportEnabled(false)
     , m_applyDefaultDeviceScaleFactorInCompositor(false)
+    , m_gestureTapHighlightEnabled(true)
     , m_defaultTileSize(WebSize(256, 256))
     , m_maxUntiledLayerSize(WebSize(512, 512))
 {
@@ -139,9 +140,22 @@ void WebSettingsImpl::setApplyDefaultDeviceScaleFactorInCompositor(bool applyDef
     m_applyDefaultDeviceScaleFactorInCompositor = applyDefaultDeviceScaleFactorInCompositor;
 }
 
-void WebSettingsImpl::setFontBoostingEnabled(bool enabled)
+void WebSettingsImpl::setTextAutosizingEnabled(bool enabled)
 {
-    m_settings->setFontBoostingEnabled(enabled);
+#if ENABLE(TEXT_AUTOSIZING)
+    m_settings->setTextAutosizingEnabled(enabled);
+#else
+    UNUSED_PARAM(enabled);
+#endif
+}
+
+void WebSettingsImpl::setTextAutosizingFontScaleFactor(float fontScaleFactor)
+{
+#if ENABLE(TEXT_AUTOSIZING)
+    m_settings->setTextAutosizingFontScaleFactor(fontScaleFactor);
+#else
+    UNUSED_PARAM(fontScaleFactor);
+#endif
 }
 
 void WebSettingsImpl::setDefaultTextEncodingName(const WebString& encoding)
@@ -323,6 +337,11 @@ void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
     m_settings->setWebGLEnabled(enabled);
 }
 
+void WebSettingsImpl::setCSSStickyPositionEnabled(bool enabled)
+{
+    m_settings->setCSSStickyPositionEnabled(enabled);
+}
+
 void WebSettingsImpl::setExperimentalCSSRegionsEnabled(bool enabled)
 {
     m_settings->setCSSRegionsEnabled(enabled);
@@ -338,6 +357,11 @@ void WebSettingsImpl::setExperimentalCSSCustomFilterEnabled(bool enabled)
     m_settings->setCSSCustomFilterEnabled(enabled);
 }
 
+void WebSettingsImpl::setExperimentalCSSVariablesEnabled(bool enabled)
+{
+    m_settings->setCSSVariablesEnabled(enabled);
+}
+
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 {
     m_settings->setOpenGLMultisamplingEnabled(enabled);
@@ -346,6 +370,11 @@ void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 void WebSettingsImpl::setPrivilegedWebGLExtensionsEnabled(bool enabled)
 {
     m_settings->setPrivilegedWebGLExtensionsEnabled(enabled);
+}
+
+void WebSettingsImpl::setRenderVSyncEnabled(bool enabled)
+{
+    m_renderVSyncEnabled = enabled;
 }
 
 void WebSettingsImpl::setWebGLErrorsToConsoleEnabled(bool enabled)
@@ -389,11 +418,6 @@ void WebSettingsImpl::setForceCompositingMode(bool enabled)
     m_settings->setForceCompositingMode(enabled);
 }
 
-void WebSettingsImpl::setForceSoftwareCompositing(bool enabled)
-{
-    m_forceSoftwareCompositing = enabled;
-}
-
 void WebSettingsImpl::setMockScrollbarsEnabled(bool enabled)
 {
     m_settings->setMockScrollbarsEnabled(enabled);
@@ -407,6 +431,12 @@ void WebSettingsImpl::setAcceleratedCompositingFor3DTransformsEnabled(bool enabl
 void WebSettingsImpl::setAcceleratedCompositingForVideoEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForVideoEnabled(enabled);
+}
+
+void WebSettingsImpl::setAcceleratedCompositingForOverflowScrollEnabled(
+    bool enabled)
+{
+    m_settings->setAcceleratedCompositingForOverflowScrollEnabled(enabled);
 }
 
 void WebSettingsImpl::setAcceleratedCompositingForPluginsEnabled(bool enabled)
@@ -546,15 +576,6 @@ bool WebSettingsImpl::scrollAnimatorEnabled() const
 #endif
 }
 
-void WebSettingsImpl::setHixie76WebSocketProtocolEnabled(bool enabled)
-{
-#if ENABLE(WEB_SOCKETS)
-    m_settings->setUseHixie76WebSocketProtocol(enabled);
-#else
-    UNUSED_PARAM(enabled);
-#endif
-}
-
 void WebSettingsImpl::setVisualWordMovementEnabled(bool enabled)
 {
     m_settings->setVisualWordMovementEnabled(enabled);
@@ -622,5 +643,14 @@ void WebSettingsImpl::setSyncXHRInDocumentsEnabled(bool enabled)
     m_settings->setSyncXHRInDocumentsEnabled(enabled);
 }
 
+void WebSettingsImpl::setCookieEnabled(bool enabled)
+{
+    m_settings->setCookieEnabled(enabled);
+}
+
+void WebSettingsImpl::setGestureTapHighlightEnabled(bool enableHighlight)
+{
+    m_gestureTapHighlightEnabled = enableHighlight;
+}
 
 } // namespace WebKit

@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_GESTURES_GESTURE_RECOGNIZER_IMPL_H_
 #define UI_BASE_GESTURES_GESTURE_RECOGNIZER_IMPL_H_
-#pragma once
 
 #include <map>
 #include <queue>
@@ -12,7 +11,7 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/events.h"
+#include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/point.h"
@@ -47,6 +46,15 @@ class UI_EXPORT GestureRecognizerImpl : public GestureRecognizer {
   virtual GestureSequence* GetGestureSequenceForConsumer(GestureConsumer* c);
 
  private:
+  // Sets up the target consumer for gestures based on the touch-event.
+  void SetupTargets(const TouchEvent& event, GestureConsumer* consumer);
+
+  // Processes the next queued touch-event (and discards the touch-event). The
+  // called must take ownership of the returned gestures and free them when they
+  // are not needed anymore.
+  Gestures* AdvanceTouchQueueByOne(GestureConsumer* consumer,
+                                   ui::TouchStatus status);
+
   // Overridden from GestureRecognizer
   virtual Gestures* ProcessTouchEventForGesture(
       const TouchEvent& event,

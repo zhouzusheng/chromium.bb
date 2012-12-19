@@ -28,11 +28,11 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
-#include "webkit/plugins/npapi/plugin_group.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/plugin_stream_url.h"
+#include "webkit/plugins/npapi/plugin_utils.h"
 #include "webkit/plugins/npapi/webplugin.h"
 #include "webkit/plugins/npapi/webplugin_ime_win.h"
 
@@ -255,12 +255,13 @@ std::wstring GetKeyPath(HKEY key) {
 }
 
 int GetPluginMajorVersion(const WebPluginInfo& plugin_info) {
-  scoped_ptr<Version> plugin_version(PluginGroup::CreateVersionFromString(
-      plugin_info.version));
+  Version plugin_version;
+  webkit::npapi::CreateVersionFromString(plugin_info.version, &plugin_version);
+
   int major_version = 0;
-  if (plugin_version.get()) {
-    major_version = plugin_version->components()[0];
-  }
+  if (plugin_version.IsValid())
+    major_version = plugin_version.components()[0];
+
   return major_version;
 }
 

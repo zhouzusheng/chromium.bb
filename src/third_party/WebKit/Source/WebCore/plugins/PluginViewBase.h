@@ -49,6 +49,7 @@ public:
 #endif
 
     virtual JSC::JSObject* scriptObject(JSC::JSGlobalObject*) { return 0; }
+    virtual void storageBlockingStateChanged() { }
     virtual void privateBrowsingStateChanged(bool) { }
     virtual bool getFormValue(String&) { return false; }
     virtual bool scroll(ScrollDirection, ScrollGranularity) { return false; }
@@ -59,9 +60,10 @@ public:
 
     // FIXME: This is a hack that works around the fact that the WebKit2 PluginView isn't a ScrollableArea.
     virtual bool wantsWheelEvents() { return false; }
+    virtual bool supportsKeyboardFocus() const { return false; }
 
 protected:
-    PluginViewBase(PlatformWidget widget = 0) : Widget(widget) { }
+    explicit PluginViewBase(PlatformWidget widget = 0) : Widget(widget) { }
     
 private:
     virtual bool isPluginViewBase() const { return true; }

@@ -67,7 +67,7 @@ typedef int CFHTTPCookieStorageAcceptPolicy;
 typedef struct OpaqueCFHTTPCookieStorage* CFHTTPCookieStorageRef;
 #endif
 
-#if USE(CFURLSTORAGESESSIONS) && (defined(BUILDING_ON_SNOW_LEOPARD) || defined(BUILDING_ON_LEOPARD))
+#if USE(CFURLSTORAGESESSIONS) && PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED <= 1060
 typedef struct __CFURLStorageSession* CFURLStorageSessionRef;
 #elif USE(CFURLSTORAGESESSIONS)
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
@@ -168,6 +168,9 @@ public:
 
 #if USE(SOUP)
     static SoupSession* defaultSession();
+    static void setHostAllowsAnyHTTPSCertificate(const String&);
+    static void setClientCertificate(const String& host, GTlsCertificate*);
+    static void setIgnoreSSLErrors(bool);
 #endif
 
     // Used to work around the fact that you don't get any more NSURLConnection callbacks until you return from the one you're in.

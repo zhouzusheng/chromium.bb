@@ -27,7 +27,7 @@ public:
     GrGpuGL(const GrGLContextInfo& ctxInfo);
     virtual ~GrGpuGL();
 
-    const GrGLInterface* glInterface() const { 
+    const GrGLInterface* glInterface() const {
         return fGLContextInfo.interface();
     }
     GrGLBinding glBinding() const { return fGLContextInfo.binding(); }
@@ -48,8 +48,6 @@ public:
                                     GrPixelConfig config,
                                     size_t rowBytes) const SK_OVERRIDE;
     virtual bool fullReadPixelsIsFasterThanPartial() const SK_OVERRIDE;
-
-    virtual bool canPreserveReadWriteUnpremulPixels() SK_OVERRIDE;
 
     virtual void abandonResources() SK_OVERRIDE;
 
@@ -84,9 +82,9 @@ protected:
     virtual void onForceRenderTargetFlush() SK_OVERRIDE;
 
     virtual bool onReadPixels(GrRenderTarget* target,
-                              int left, int top, 
+                              int left, int top,
                               int width, int height,
-                              GrPixelConfig, 
+                              GrPixelConfig,
                               void* buffer,
                               size_t rowBytes,
                               bool invertY) SK_OVERRIDE;
@@ -98,7 +96,6 @@ protected:
 
     virtual void onResolveRenderTarget(GrRenderTarget* target) SK_OVERRIDE;
 
-
     virtual void onGpuDrawIndexed(GrPrimitiveType type,
                                   uint32_t startVertex,
                                   uint32_t startIndex,
@@ -107,9 +104,12 @@ protected:
     virtual void onGpuDrawNonIndexed(GrPrimitiveType type,
                                      uint32_t vertexCount,
                                      uint32_t numVertices) SK_OVERRIDE;
-    virtual void onGpuStencilPath(const GrPath&, GrPathFill) SK_OVERRIDE;
-    virtual void enableScissoring(const GrIRect& rect) SK_OVERRIDE;
-    virtual void disableScissor() SK_OVERRIDE;
+
+    virtual void setStencilPathSettings(const GrPath&,
+                                        GrPathFill,
+                                        GrStencilSettings* settings)
+                                        SK_OVERRIDE;
+    virtual void onGpuStencilPath(const GrPath*, GrPathFill) SK_OVERRIDE;
 
     virtual void clearStencil() SK_OVERRIDE;
     virtual void clearStencilClip(const GrIRect& rect,
@@ -160,41 +160,45 @@ private:
     static bool BlendCoeffReferencesConstant(GrBlendCoeff coeff);
 
     // for readability of function impls
-    typedef GrGLProgram::ProgramDesc ProgramDesc;
+    typedef GrGLProgram::Desc        ProgramDesc;
     typedef ProgramDesc::StageDesc   StageDesc;
-    typedef GrGLProgram::CachedData  CachedData;
 
     class ProgramCache : public ::GrNoncopyable {
     public:
         ProgramCache(const GrGLContextInfo& gl);
-        ~ProgramCache();
 
         void abandon();
-        CachedData* getProgramData(const GrGLProgram& desc,
-                                   GrCustomStage** stages);
+        GrGLProgram* getProgram(const GrGLProgram::Desc& desc, const GrCustomStage** stages);
     private:
         enum {
-            kKeySize = GrGLProgram::kProgramKeySize,
-            // We may actually have kMaxEntries+1 shaders in the GL context
-            // because we create a new shader before evicting from the cache.
+            kKeySize = sizeof(ProgramDesc),
+            // We may actually have kMaxEntries+1 shaders in the GL context because we create a new
+            // shader before evicting from the cache.
             kMaxEntries = 32
         };
 
         class Entry;
-        typedef GrBinHashKey<Entry, kKeySize> ProgramHashKey;
+        // The value of the hash key is based on the ProgramDesc.
+        typedef GrTBinHashKey<Entry, kKeySize> ProgramHashKey;
 
         class Entry : public ::GrNoncopyable {
         public:
-            Entry() {}
-            void copyAndTakeOwnership(Entry& entry);
+            Entry() : fProgram(NULL), fLRUStamp(0) {}
+            Entry& operator = (const Entry& entry) {
+                GrSafeRef(entry.fProgram.get());
+                fProgram.reset(entry.fProgram.get());
+                fKey = entry.fKey;
+                fLRUStamp = entry.fLRUStamp;
+                return *this;
+            }
             int compare(const ProgramHashKey& key) const {
                 return fKey.compare(key);
             }
 
         public:
-            CachedData      fProgramData;
-            ProgramHashKey  fKey;
-            unsigned int    fLRUStamp;
+            SkAutoTUnref<GrGLProgram>   fProgram;
+            ProgramHashKey              fKey;
+            unsigned int                fLRUStamp; // Move outside entry?
         };
 
         GrTHashTable<Entry, ProgramHashKey, 8> fHashCache;
@@ -206,10 +210,17 @@ private:
     };
 
     // binds the texture and sets its texture params
+    // This may also perform a downsample on the src texture which may or may
+    // not modify the scissor test and rect. So in flushGraphicsState a
+    // call to flushScissor must occur after all textures have been flushed via
+    // this function.
     void flushBoundTextureAndParams(int stage);
+    void flushBoundTextureAndParams(int stage,
+                                    const GrTextureParams& params,
+                                    GrGLTexture* nextTexture);
 
-    // sets the texture matrix and domain for the currently bound program
-    void flushTextureMatrixAndDomain(int stage);
+    // sets the texture matrix for the currently bound program
+    void flushTextureMatrix(int stage);
 
     // sets the color specified by GrDrawState::setColor()
     void flushColor(GrColor color);
@@ -218,7 +229,7 @@ private:
     void flushCoverage(GrColor color);
 
     // sets the MVP matrix uniform for currently bound program
-    void flushViewMatrix();
+    void flushViewMatrix(DrawType type);
 
     // flushes the parameters to two point radial gradient
     void flushRadial2(int stage);
@@ -232,13 +243,15 @@ private:
     // flushes dithering, color-mask, and face culling stat
     void flushMiscFixedFunctionState();
 
-    static void DeleteProgram(const GrGLInterface* gl,
-                              CachedData* programData);
+    // flushes the scissor. see the note on flushBoundTextureAndParams about
+    // flushing the scissor after that function is called.
+    void flushScissor();
 
     void buildProgram(bool isPoints,
                       BlendOptFlags blendOpts,
                       GrBlendCoeff dstCoeff,
-                      GrCustomStage** customStages);
+                      const GrCustomStage** customStages,
+                      ProgramDesc* desc);
 
     // Inits GrDrawTarget::Caps, sublcass may enable additional caps.
     void initCaps();
@@ -262,8 +275,8 @@ private:
     // bound is region that may be modified and therefore has to be resolved.
     // NULL means whole target. Can be an empty rect.
     void flushRenderTarget(const GrIRect* bound);
-    void flushStencil();
-    void flushAAState(bool isLines);
+    void flushStencil(DrawType);
+    void flushAAState(DrawType);
 
     bool configToGLFormats(GrPixelConfig config,
                            bool getSizedInternal,
@@ -293,8 +306,7 @@ private:
 
     // GL program-related state
     ProgramCache*               fProgramCache;
-    CachedData*                 fProgramData;
-    GrGLProgram                 fCurrentProgram;
+    SkAutoTUnref<GrGLProgram>   fCurrentProgram;
 
     ///////////////////////////////////////////////////////////////////////////
     ///@name Caching of GL State
@@ -304,18 +316,23 @@ private:
     GrColor                     fHWConstAttribColor;
     GrColor                     fHWConstAttribCoverage;
 
-    // last scissor / viewport scissor state seen by the GL.
-    struct {
-        bool        fScissorEnabled;
-        GrGLIRect   fScissorRect;
-        GrGLIRect   fViewportRect;
-    } fHWBounds;
-
     enum TriState {
         kNo_TriState,
         kYes_TriState,
         kUnknown_TriState
     };
+
+    // last scissor / viewport scissor state seen by the GL.
+    struct {
+        TriState    fEnabled;
+        GrGLIRect   fRect;
+        void invalidate() {
+            fEnabled = kUnknown_TriState;
+            fRect.invalidate();
+        }
+    } fHWScissorSettings;
+
+    GrGLIRect   fHWViewport;
 
     struct {
         size_t                  fVertexOffset;
@@ -349,8 +366,17 @@ private:
         }
     } fHWAAState;
 
-    GrClipMaskManager::StencilClipMode     fHWStencilClipMode;
-    GrStencilSettings                      fHWStencilSettings;
+    struct {
+        GrMatrix    fViewMatrix;
+        SkISize     fRTSize;
+        void invalidate() {
+            fViewMatrix = GrMatrix::InvalidMatrix();
+            fRTSize.fWidth = -1; // just make the first value compared illegal.
+        }
+    } fHWPathMatrixState;
+
+    GrStencilSettings       fHWStencilSettings;
+    TriState                fHWStencilTestEnabled;
 
     GrDrawState::DrawFace   fHWDrawFace;
     TriState                fHWWriteToColor;
@@ -362,17 +388,6 @@ private:
     // we record what stencil format worked last time to hopefully exit early
     // from our loop that tries stencil formats and calls check fb status.
     int fLastSuccessfulStencilFmtIdx;
-
-    enum UnpremulConversion {
-        kUpOnWrite_DownOnRead_UnpremulConversion,
-        kDownOnWrite_UpOnRead_UnpremulConversion
-    } fUnpremulConversion;
-
-    enum CanPreserveUnpremulRoundtrip {
-        kUnknown_CanPreserveUnpremulRoundtrip,
-        kNo_CanPreserveUnpremulRoundtrip,
-        kYes_CanPreserveUnpremulRoundtrip,
-    } fCanPreserveUnpremulRoundtrip;
 
     bool fPrintedCaps;
 

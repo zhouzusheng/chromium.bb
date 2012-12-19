@@ -374,9 +374,9 @@ LoadState HttpNetworkTransaction::GetLoadState() const {
   }
 }
 
-uint64 HttpNetworkTransaction::GetUploadProgress() const {
+UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   if (!stream_.get())
-    return 0;
+    return UploadProgress();
 
   return stream_->GetUploadProgress();
 }
@@ -747,7 +747,7 @@ int HttpNetworkTransaction::DoBuildRequest() {
   request_body_.reset(NULL);
   if (request_->upload_data) {
     request_body_.reset(new UploadDataStream(request_->upload_data));
-    const int error_code = request_body_->Init();
+    const int error_code = request_body_->InitSync();
     if (error_code != OK) {
       request_body_.reset(NULL);
       return error_code;
@@ -920,8 +920,13 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
     // TODO(mbelshe): The keepalive property is really a property of
     //    the stream.  No need to compute it here just to pass back
     //    to the stream's Close function.
-    if (stream_->CanFindEndOfResponse())
-      keep_alive = GetResponseHeaders()->IsKeepAlive();
+    // TODO(rtenneti): CanFindEndOfResponse should return false if there are no
+    // ResponseHeaders.
+    if (stream_->CanFindEndOfResponse()) {
+      HttpResponseHeaders* headers = GetResponseHeaders();
+      if (headers)
+        keep_alive = headers->IsKeepAlive();
+    }
   }
 
   // Clean up connection if we are done.

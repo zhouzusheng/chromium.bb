@@ -28,16 +28,17 @@
 
 #include "EventListener.h"
 #include "MessagePort.h"
-#include "PlatformString.h"
 #include "ScriptValue.h"
 #include <v8.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Vector.h>
 #include <wtf/text/AtomicString.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
+class ArrayValue;
 class DOMWindow;
 class IDBKeyRange;
 class MediaKeyError;
@@ -51,7 +52,7 @@ class TrackBase;
 class Dictionary {
 public:
     Dictionary();
-    Dictionary(const v8::Local<v8::Value>& options);
+    Dictionary(const v8::Local<v8::Value>& options, v8::Isolate*);
     ~Dictionary();
 
     Dictionary& operator=(const Dictionary&);
@@ -86,7 +87,10 @@ public:
     bool get(const String&, HashSet<AtomicString>&) const;
     bool get(const String&, Dictionary&) const;
     bool get(const String&, Vector<String>&) const;
-    bool getOwnPropertiesAsStringHashMap(WTF::HashMap<String, String>&) const;
+    bool get(const String&, ArrayValue&) const;
+
+    bool getOwnPropertiesAsStringHashMap(HashMap<String, String>&) const;
+    bool getOwnPropertyNames(Vector<String>&) const;
 
     bool getWithUndefinedOrNullCheck(const String&, String&) const;
 
@@ -101,6 +105,7 @@ private:
     static void operator delete(void *);
 
     v8::Local<v8::Value> m_options;
+    v8::Isolate* m_isolate;
 };
 
 }

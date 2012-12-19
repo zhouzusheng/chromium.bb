@@ -9,7 +9,7 @@
 
 #include "SkPathEffect.h"
 #include "SkPath.h"
-#include "SkBuffer.h"
+#include "SkFlattenableBuffers.h"
 #include "SkPaintDefaults.h"
 
 // must be < 0, since ==0 means hairline, and >0 means normal stroke
@@ -110,6 +110,8 @@ bool SkStrokeRec::applyToPath(SkPath* dst, const SkPath& src) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+SK_DEFINE_INST_COUNT(SkPathEffect)
+
 void SkPathEffect::computeFastBounds(SkRect* dst, const SkRect& src) {
     *dst = src;
 }
@@ -139,8 +141,8 @@ void SkPairPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
 }
 
 SkPairPathEffect::SkPairPathEffect(SkFlattenableReadBuffer& buffer) {
-    fPE0 = (SkPathEffect*)buffer.readFlattenable();
-    fPE1 = (SkPathEffect*)buffer.readFlattenable();
+    fPE0 = buffer.readFlattenableT<SkPathEffect>();
+    fPE1 = buffer.readFlattenableT<SkPathEffect>();
     // either of these may fail, so we have to check for nulls later on
 }
 

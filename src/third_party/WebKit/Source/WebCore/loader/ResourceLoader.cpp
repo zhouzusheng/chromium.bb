@@ -214,6 +214,11 @@ void ResourceLoader::clearResourceData()
         m_resourceData->clear();
 }
 
+bool ResourceLoader::isSubresourceLoader()
+{
+    return false;
+}
+
 void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
     // Protect this in this delegate method since the additional processing can do
@@ -288,18 +293,19 @@ void ResourceLoader::willStopBufferingData(const char* data, int length)
 
 void ResourceLoader::didFinishLoading(double finishTime)
 {
-    // If load has been cancelled after finishing (which could happen with a 
-    // JavaScript that changes the window location), do nothing.
+    didFinishLoadingOnePart(finishTime);
+
+    // If the load has been cancelled by a delegate in response to didFinishLoad(), do not release
+    // the resources a second time, they have been released by cancel.
     if (m_cancelled)
         return;
-    ASSERT(!m_reachedTerminalState);
-
-    didFinishLoadingOnePart(finishTime);
     releaseResources();
 }
 
 void ResourceLoader::didFinishLoadingOnePart(double finishTime)
 {
+    // If load has been cancelled after finishing (which could happen with a
+    // JavaScript that changes the window location), do nothing.
     if (m_cancelled)
         return;
     ASSERT(!m_reachedTerminalState);
@@ -425,7 +431,7 @@ void ResourceLoader::didReceiveResponse(ResourceHandle*, const ResourceResponse&
 
 void ResourceLoader::didReceiveData(ResourceHandle*, const char* data, int length, int encodedDataLength)
 {
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(m_frame.get(), identifier());
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(m_frame.get(), identifier(), encodedDataLength);
     didReceiveData(data, length, encodedDataLength, false);
     InspectorInstrumentation::didReceiveResourceData(cookie);
 }
@@ -526,5 +532,18 @@ AsyncFileStream* ResourceLoader::createAsyncFileStream(FileStreamClient* client)
     return AsyncFileStream::create(m_frame->document()->scriptExecutionContext(), client).get();
 }
 #endif
+
+void ResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
+    info.addMember(m_handle.get());
+    info.addMember(m_frame);
+    info.addMember(m_documentLoader);
+    info.addMember(m_request);
+    info.addMember(m_originalRequest);
+    info.addMember(m_resourceData);
+    info.addMember(m_deferredRequest);
+    info.addMember(m_options);
+}
 
 }

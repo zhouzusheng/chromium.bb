@@ -27,8 +27,9 @@
 #define KURL_h
 
 #include "KURLWTFURLImpl.h"
-#include "PlatformString.h"
+#include <wtf/Forward.h>
 #include <wtf/HashMap.h>
+#include <wtf/text/WTFString.h>
 
 #if USE(CF)
 typedef const struct __CFURL* CFURLRef;
@@ -48,10 +49,6 @@ QT_END_NAMESPACE
 #include "KURLGooglePrivate.h"
 #endif
 
-#if USE(JSC)
-#include <runtime/UString.h>
-#endif
-
 namespace WebCore {
 
 class TextEncoding;
@@ -69,11 +66,11 @@ public:
     // It is usually best to avoid repeatedly parsing a string, unless memory saving outweigh the possible slow-downs.
     KURL(ParsedURLStringTag, const String&);
 #if USE(GOOGLEURL)
-    KURL(WTF::HashTableDeletedValueType) : m_url(WTF::HashTableDeletedValue) { }
+    explicit KURL(WTF::HashTableDeletedValueType) : m_url(WTF::HashTableDeletedValue) { }
 #elif USE(WTFURL)
-    KURL(WTF::HashTableDeletedValueType) : m_urlImpl(WTF::HashTableDeletedValue) { }
+    explicit KURL(WTF::HashTableDeletedValueType) : m_urlImpl(WTF::HashTableDeletedValue) { }
 #else
-    KURL(WTF::HashTableDeletedValueType) : m_string(WTF::HashTableDeletedValue) { }
+    explicit KURL(WTF::HashTableDeletedValueType) : m_string(WTF::HashTableDeletedValue) { }
 #endif
 #if !USE(WTFURL)
     bool isHashTableDeletedValue() const { return string().isHashTableDeletedValue(); }
@@ -228,6 +225,8 @@ public:
 #ifndef NDEBUG
     void print() const;
 #endif
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     void invalidate();

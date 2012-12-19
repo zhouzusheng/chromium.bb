@@ -4,7 +4,6 @@
 
 #ifndef NET_TEST_LOCAL_TEST_SERVER_H_
 #define NET_TEST_LOCAL_TEST_SERVER_H_
-#pragma once
 
 #include <string>
 
@@ -30,9 +29,10 @@ class LocalTestServer : public BaseTestServer {
                   const std::string& host,
                   const FilePath& document_root);
 
-  // Initialize a HTTPS TestServer with a specific set of HTTPSOptions.
+  // Initialize a TestServer with a specific set of SSLOptions.
   // |document_root| must be a relative path under the root tree.
-  LocalTestServer(const HTTPSOptions& https_options,
+  LocalTestServer(Type type,
+                  const SSLOptions& ssl_options,
                   const FilePath& document_root);
 
   virtual ~LocalTestServer();

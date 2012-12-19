@@ -30,7 +30,7 @@
 #ifndef FECustomFilter_h
 #define FECustomFilter_h
 
-#if ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+#if ENABLE(CSS_SHADERS) && USE(3D_GRAPHICS)
 
 #include "CustomFilterOperation.h"
 #include "Filter.h"
@@ -45,19 +45,21 @@ class Uint8ClampedArray;
 namespace WebCore {
 
 class CachedShader;
+class CustomFilterArrayParameter;
+class CustomFilterCompiledProgram;
+class CustomFilterGlobalContext;
 class CustomFilterMesh;
 class CustomFilterNumberParameter;
 class CustomFilterProgram;
-class CustomFilterShader;
+class CustomFilterTransformParameter;
+class CustomFilterValidatedProgram;
 class DrawingBuffer;
 class GraphicsContext3D;
-class HostWindow;
 class IntSize;
-class Texture;
 
 class FECustomFilter : public FilterEffect {
 public:
-    static PassRefPtr<FECustomFilter> create(Filter*, HostWindow*, PassRefPtr<CustomFilterProgram>, const CustomFilterParameterList&,
+    static PassRefPtr<FECustomFilter> create(Filter*, CustomFilterGlobalContext*, PassRefPtr<CustomFilterValidatedProgram>, const CustomFilterParameterList&,
                    unsigned meshRows, unsigned meshColumns, CustomFilterOperation::MeshBoxType, 
                    CustomFilterOperation::MeshType);
 
@@ -67,30 +69,64 @@ public:
     virtual TextStream& externalRepresentation(TextStream&, int indention) const;
 
 private:
-    FECustomFilter(Filter*, HostWindow*, PassRefPtr<CustomFilterProgram>, const CustomFilterParameterList&,
+    FECustomFilter(Filter*, CustomFilterGlobalContext*, PassRefPtr<CustomFilterValidatedProgram>, const CustomFilterParameterList&,
                    unsigned meshRows, unsigned meshColumns, CustomFilterOperation::MeshBoxType, 
                    CustomFilterOperation::MeshType);
     ~FECustomFilter();
     
-    void initializeContext();
-    void deleteRenderBuffers();
-    void resizeContext(const IntSize& newContextSize);
-    void bindVertexAttribute(int attributeLocation, unsigned size, unsigned& offset);
-    void bindProgramNumberParameters(int uniformLocation, CustomFilterNumberParameter*);
-    void bindProgramParameters();
-    void bindProgramAndBuffers(Uint8ClampedArray* srcPixelArray);
+    bool applyShader();
+    void clearShaderResult();
+    bool initializeContext();
     
-    HostWindow* m_hostWindow;
+    enum CustomFilterDrawType {
+        NEEDS_INPUT_TEXTURE,
+        NO_INPUT_TEXTURE
+    };
+    bool prepareForDrawing(CustomFilterDrawType = NEEDS_INPUT_TEXTURE);
+
+    void drawFilterMesh(Platform3DObject inputTexture);
+    bool programNeedsInputTexture() const;
+    bool ensureInputTexture();
+    void uploadInputTexture(Uint8ClampedArray* srcPixelArray);
+    bool resizeContextIfNeeded(const IntSize&);
+    bool resizeContext(const IntSize&);
+
+    bool canUseMultisampleBuffers() const;
+    bool createMultisampleBuffer();
+    bool resizeMultisampleBuffers(const IntSize&);
+    void resolveMultisampleBuffer();
+    void deleteMultisampleRenderBuffers();
+
+    bool ensureFrameBuffer();
+    void deleteRenderBuffers();
+
+    void bindVertexAttribute(int attributeLocation, unsigned size, unsigned offset);
+    void unbindVertexAttribute(int attributeLocation);
+    void bindProgramArrayParameters(int uniformLocation, CustomFilterArrayParameter*);
+    void bindProgramNumberParameters(int uniformLocation, CustomFilterNumberParameter*);
+    void bindProgramTransformParameter(int uniformLocation, CustomFilterTransformParameter*);
+    void bindProgramParameters();
+    void bindProgramAndBuffers(Platform3DObject inputTexture);
+    void unbindVertexAttributes();
+    
+    // No need to keep a reference here. It is owned by the RenderView.
+    CustomFilterGlobalContext* m_globalContext;
     
     RefPtr<GraphicsContext3D> m_context;
-    RefPtr<Texture> m_inputTexture;
-    RefPtr<CustomFilterShader> m_shader;
+    RefPtr<CustomFilterValidatedProgram> m_validatedProgram;
+    RefPtr<CustomFilterCompiledProgram> m_compiledProgram;
     RefPtr<CustomFilterMesh> m_mesh;
     IntSize m_contextSize;
 
+    Platform3DObject m_inputTexture;
     Platform3DObject m_frameBuffer;
     Platform3DObject m_depthBuffer;
     Platform3DObject m_destTexture;
+
+    bool m_triedMultisampleBuffer;
+    Platform3DObject m_multisampleFrameBuffer;
+    Platform3DObject m_multisampleRenderBuffer;
+    Platform3DObject m_multisampleDepthBuffer;
 
     RefPtr<CustomFilterProgram> m_program;
     CustomFilterParameterList m_parameters;
@@ -102,6 +138,6 @@ private:
 
 } // namespace WebCore
 
-#endif // ENABLE(CSS_SHADERS) && ENABLE(WEBGL)
+#endif // ENABLE(CSS_SHADERS) && USE(3D_GRAPHICS)
 
 #endif // FECustomFilter_h

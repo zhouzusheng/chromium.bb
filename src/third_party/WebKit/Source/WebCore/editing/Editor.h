@@ -64,6 +64,7 @@ class SimpleFontData;
 class SpellChecker;
 class SpellCheckRequest;
 class AlternativeTextController;
+class SharedBuffer;
 class StylePropertySet;
 class Text;
 class TextCheckerClient;
@@ -86,7 +87,7 @@ enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSe
 
 class Editor : public FrameDestructionObserver {
 public:
-    Editor(Frame*);
+    explicit Editor(Frame*);
     ~Editor();
 
     EditorClient* client() const;
@@ -295,6 +296,7 @@ public:
     void cancelComposition();
     PassRefPtr<Range> compositionRange() const;
     bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
+    bool setSelectionOffsets(int selectionStart, int selectionEnd);
 
     // getting international text input composition state (for use by InlineTextBox)
     Text* compositionNode() const { return m_compositionNode.get(); }
@@ -421,7 +423,8 @@ private:
     PassRefPtr<Clipboard> newGeneralClipboard(ClipboardAccessPolicy, Frame*);
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*, bool allowPlainText);
-    void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded);
+
+    void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
     void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtr<Range>& firstMisspellingRange);
     TextCheckingTypeMask resolveTextCheckingTypeMask(TextCheckingTypeMask);
 

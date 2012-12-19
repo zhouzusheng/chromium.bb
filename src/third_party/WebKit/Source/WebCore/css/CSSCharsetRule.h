@@ -23,7 +23,7 @@
 #define CSSCharsetRule_h
 
 #include "CSSRule.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -38,6 +38,8 @@ public:
     void setEncoding(const String& encoding, ExceptionCode&) { m_encoding = encoding; }
 
     String cssText() const;
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSCharsetRule(CSSStyleSheet* parent, const String& encoding);

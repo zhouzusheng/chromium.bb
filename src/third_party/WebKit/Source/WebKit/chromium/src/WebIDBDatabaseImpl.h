@@ -28,6 +28,7 @@
 
 #if ENABLE(INDEXED_DATABASE)
 
+#include "IDBDatabaseCallbacksProxy.h"
 #include "platform/WebCommon.h"
 #include "WebExceptionCode.h"
 #include "WebIDBDatabase.h"
@@ -38,29 +39,25 @@ namespace WebCore { class IDBDatabaseBackendInterface; }
 
 namespace WebKit {
 
-class IDBDatabaseCallbacksProxy;
 class WebIDBDatabaseCallbacks;
+class WebIDBDatabaseMetadata;
 class WebIDBObjectStore;
 class WebIDBTransaction;
 
 // See comment in WebIDBFactory for a high level overview these classes.
 class WebIDBDatabaseImpl : public WebIDBDatabase {
 public:
-    WebIDBDatabaseImpl(WTF::PassRefPtr<WebCore::IDBDatabaseBackendInterface>);
+    WebIDBDatabaseImpl(WTF::PassRefPtr<WebCore::IDBDatabaseBackendInterface>, WTF::PassRefPtr<IDBDatabaseCallbacksProxy>);
     virtual ~WebIDBDatabaseImpl();
 
-    virtual WebString name() const;
-    virtual WebString version() const;
-    virtual WebDOMStringList objectStoreNames() const;
+    virtual WebIDBMetadata metadata() const;
 
     virtual WebIDBObjectStore* createObjectStore(const WebString& name, const WebIDBKeyPath&, bool autoIncrement, const WebIDBTransaction&, WebExceptionCode&);
     virtual void deleteObjectStore(const WebString& name, const WebIDBTransaction&, WebExceptionCode&);
     virtual void setVersion(const WebString& version, WebIDBCallbacks*, WebExceptionCode&);
     virtual WebIDBTransaction* transaction(const WebDOMStringList& names, unsigned short mode, WebExceptionCode&);
+    virtual void forceClose();
     virtual void close();
-
-    // FIXME: Rename "open" to registerFrontendCallbacks.
-    virtual void open(WebIDBDatabaseCallbacks*);
 
 private:
     WTF::RefPtr<WebCore::IDBDatabaseBackendInterface> m_databaseBackend;

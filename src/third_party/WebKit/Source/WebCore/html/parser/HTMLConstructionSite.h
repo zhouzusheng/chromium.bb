@@ -44,14 +44,6 @@ struct HTMLConstructionSiteTask {
     {
     }
 
-    void take(HTMLConstructionSiteTask& other)
-    {
-        parent = other.parent.release();
-        nextChild = other.nextChild.release();
-        child = other.child.release();
-        selfClosing = other.selfClosing;
-    }
-
     RefPtr<ContainerNode> parent;
     RefPtr<Node> nextChild;
     RefPtr<Node> child;
@@ -87,26 +79,25 @@ public:
     void detach();
     void executeQueuedTasks();
 
-    void insertDoctype(AtomicHTMLToken&);
-    void insertComment(AtomicHTMLToken&);
-    void insertCommentOnDocument(AtomicHTMLToken&);
-    void insertCommentOnHTMLHtmlElement(AtomicHTMLToken&);
-    void insertHTMLElement(AtomicHTMLToken&);
-    void insertSelfClosingHTMLElement(AtomicHTMLToken&);
-    void insertFormattingElement(AtomicHTMLToken&);
-    void insertHTMLHeadElement(AtomicHTMLToken&);
-    void insertHTMLBodyElement(AtomicHTMLToken&);
-    void insertHTMLFormElement(AtomicHTMLToken&, bool isDemoted = false);
-    void insertScriptElement(AtomicHTMLToken&);
+    void insertDoctype(AtomicHTMLToken*);
+    void insertComment(AtomicHTMLToken*);
+    void insertCommentOnDocument(AtomicHTMLToken*);
+    void insertCommentOnHTMLHtmlElement(AtomicHTMLToken*);
+    void insertHTMLElement(AtomicHTMLToken*);
+    void insertSelfClosingHTMLElement(AtomicHTMLToken*);
+    void insertFormattingElement(AtomicHTMLToken*);
+    void insertHTMLHeadElement(AtomicHTMLToken*);
+    void insertHTMLBodyElement(AtomicHTMLToken*);
+    void insertHTMLFormElement(AtomicHTMLToken*, bool isDemoted = false);
+    void insertScriptElement(AtomicHTMLToken*);
     void insertTextNode(const String&, WhitespaceMode = WhitespaceUnknown);
-    void insertForeignElement(AtomicHTMLToken&, const AtomicString& namespaceURI);
+    void insertForeignElement(AtomicHTMLToken*, const AtomicString& namespaceURI);
 
-    void insertHTMLHtmlStartTagBeforeHTML(AtomicHTMLToken&);
-    void insertHTMLHtmlStartTagInBody(AtomicHTMLToken&);
-    void insertHTMLBodyStartTagInBody(AtomicHTMLToken&);
+    void insertHTMLHtmlStartTagBeforeHTML(AtomicHTMLToken*);
+    void insertHTMLHtmlStartTagInBody(AtomicHTMLToken*);
+    void insertHTMLBodyStartTagInBody(AtomicHTMLToken*);
 
-    PassRefPtr<Element> createHTMLElement(AtomicHTMLToken&);
-    PassRefPtr<Element> createHTMLElementFromElementRecord(HTMLElementStack::ElementRecord*);
+    PassRefPtr<HTMLStackItem> createElementFromSavedToken(HTMLStackItem*);
 
     bool shouldFosterParent() const;
     void fosterParent(PassRefPtr<Node>);
@@ -118,14 +109,17 @@ public:
     void generateImpliedEndTagsWithExclusion(const AtomicString& tagName);
 
     bool isEmpty() const { return !m_openElements.stackDepth(); }
+    HTMLElementStack::ElementRecord* currentElementRecord() const { return m_openElements.topRecord(); }
     Element* currentElement() const { return m_openElements.top(); }
     ContainerNode* currentNode() const { return m_openElements.topNode(); }
-    Element* oneBelowTop() const { return m_openElements.oneBelowTop(); }
+    HTMLStackItem* currentStackItem() const { return m_openElements.topStackItem(); }
+    HTMLStackItem* oneBelowTop() const { return m_openElements.oneBelowTop(); }
 
     HTMLElementStack* openElements() const { return &m_openElements; }
     HTMLFormattingElementList* activeFormattingElements() const { return &m_activeFormattingElements; }
 
-    Element* head() const { return m_head.get(); }
+    Element* head() const { return m_head->element(); }
+    HTMLStackItem* headStackItem() const { return m_head.get(); }
 
     void setForm(HTMLFormElement*);
     HTMLFormElement* form() const { return m_form.get(); }
@@ -160,10 +154,10 @@ private:
 
     void findFosterSite(HTMLConstructionSiteTask&);
 
-    PassRefPtr<Element> createHTMLElementFromSavedElement(Element*);
-    PassRefPtr<Element> createElement(AtomicHTMLToken&, const AtomicString& namespaceURI);
+    PassRefPtr<Element> createHTMLElement(AtomicHTMLToken*);
+    PassRefPtr<Element> createElement(AtomicHTMLToken*, const AtomicString& namespaceURI);
 
-    void mergeAttributesFromTokenIntoElement(AtomicHTMLToken&, Element*);
+    void mergeAttributesFromTokenIntoElement(AtomicHTMLToken*, Element*);
     void dispatchDocumentElementAvailableIfNeeded();
 
     Document* m_document;
@@ -173,7 +167,7 @@ private:
     // and a Document in all other cases.
     ContainerNode* m_attachmentRoot;
     
-    RefPtr<Element> m_head;
+    RefPtr<HTMLStackItem> m_head;
     RefPtr<HTMLFormElement> m_form;
     mutable HTMLElementStack m_openElements;
     mutable HTMLFormattingElementList m_activeFormattingElements;

@@ -27,7 +27,7 @@ namespace v8_i18n {
 
 class Collator {
  public:
-  static v8::Handle<v8::Value> JSCollator(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSCreateCollator(const v8::Arguments& args);
 
   // Helper methods for various bindings.
 
@@ -40,12 +40,10 @@ class Collator {
 
   // Compare two strings and returns -1, 0 and 1 depending on
   // whether string1 is smaller than, equal to or larger than string2.
-  static v8::Handle<v8::Value> CollatorCompare(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSInternalCompare(const v8::Arguments& args);
 
  private:
   Collator() {}
-
-  static v8::Persistent<v8::FunctionTemplate> collator_template_;
 };
 
 }  // namespace v8_i18n

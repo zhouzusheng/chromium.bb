@@ -5,6 +5,7 @@
 #include "media/ffmpeg/ffmpeg_common.h"
 
 #include "base/logging.h"
+#include "media/base/video_util.h"
 
 namespace media {
 
@@ -33,12 +34,18 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
     case CODEC_ID_PCM_S16LE:
     case CODEC_ID_PCM_S24LE:
       return kCodecPCM;
+    case CODEC_ID_PCM_S16BE:
+      return kCodecPCM_S16BE;
+    case CODEC_ID_PCM_S24BE:
+      return kCodecPCM_S24BE;
     case CODEC_ID_FLAC:
       return kCodecFLAC;
     case CODEC_ID_AMR_NB:
       return kCodecAMR_NB;
     case CODEC_ID_AMR_WB:
       return kCodecAMR_WB;
+    case CODEC_ID_GSM_MS:
+      return kCodecGSM_MS;
     case CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
     default:
@@ -66,6 +73,10 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
           DVLOG(1) << "Unsupported bits per channel: " << bits_per_channel;
       }
       break;
+    case kCodecPCM_S16BE:
+      return CODEC_ID_PCM_S16BE;
+    case kCodecPCM_S24BE:
+      return CODEC_ID_PCM_S24BE;
     case kCodecVorbis:
       return CODEC_ID_VORBIS;
     case kCodecFLAC:
@@ -74,6 +85,8 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return CODEC_ID_AMR_NB;
     case kCodecAMR_WB:
       return CODEC_ID_AMR_WB;
+    case kCodecGSM_MS:
+      return CODEC_ID_GSM_MS;
     case kCodecPCM_MULAW:
       return CODEC_ID_PCM_MULAW;
     default:
@@ -247,16 +260,17 @@ void AVStreamToVideoDecoderConfig(
   else if (stream->codec->sample_aspect_ratio.num)
     aspect_ratio = stream->codec->sample_aspect_ratio;
 
-  config->Initialize(CodecIDToVideoCodec(stream->codec->codec_id),
-                     ProfileIDToVideoCodecProfile(stream->codec->profile),
+  VideoCodec codec = CodecIDToVideoCodec(stream->codec->codec_id);
+  VideoCodecProfile profile = (codec == kCodecVP8) ? VP8PROFILE_MAIN :
+      ProfileIDToVideoCodecProfile(stream->codec->profile);
+  gfx::Size natural_size = GetNaturalSize(
+      visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
+  config->Initialize(codec,
+                     profile,
                      PixelFormatToVideoFormat(stream->codec->pix_fmt),
-                     coded_size, visible_rect,
-                     stream->r_frame_rate.num,
-                     stream->r_frame_rate.den,
-                     aspect_ratio.num,
-                     aspect_ratio.den,
-                     stream->codec->extradata,
-                     stream->codec->extradata_size,
+                     coded_size, visible_rect, natural_size,
+                     stream->codec->extradata, stream->codec->extradata_size,
+                     false,
                      true);
 }
 
@@ -351,14 +365,6 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
       DVLOG(1) << "Unsupported VideoFrame::Format: " << video_format;
   }
   return PIX_FMT_NONE;
-}
-
-base::TimeDelta GetFrameDuration(const VideoDecoderConfig& config) {
-  AVRational time_base = {
-    config.frame_rate_denominator(),
-    config.frame_rate_numerator()
-  };
-  return ConvertFromTimeBase(time_base, 1);
 }
 
 void DestroyAVFormatContext(AVFormatContext* format_context) {

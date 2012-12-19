@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,15 +14,17 @@
 
 namespace net {
 
-URLRequestAboutJob::URLRequestAboutJob(URLRequest* request)
-    : URLRequestJob(request),
+URLRequestAboutJob::URLRequestAboutJob(URLRequest* request,
+                                       NetworkDelegate* network_delegate)
+    : URLRequestJob(request, network_delegate),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 // static
 URLRequestJob* URLRequestAboutJob::Factory(URLRequest* request,
+                                           NetworkDelegate* network_delegate,
                                            const std::string& scheme) {
-  return new URLRequestAboutJob(request);
+  return new URLRequestAboutJob(request, network_delegate);
 }
 
 void URLRequestAboutJob::Start() {

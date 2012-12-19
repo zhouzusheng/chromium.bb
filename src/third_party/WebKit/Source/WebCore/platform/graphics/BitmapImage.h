@@ -31,6 +31,7 @@
 #include "Image.h"
 #include "Color.h"
 #include "ImageOrientation.h"
+#include "ImageSource.h"
 #include "IntSize.h"
 
 #if PLATFORM(MAC)
@@ -74,6 +75,7 @@ public:
         , m_haveMetadata(false)
         , m_isComplete(false)
         , m_hasAlpha(true) 
+        , m_frameBytes(0)
     {
     }
 
@@ -85,6 +87,7 @@ public:
     // Clear the cached image data on the frame, and (optionally) the metadata.
     // Returns whether there was cached image data to clear.
     bool clear(bool clearMetadata);
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     NativeImagePtr m_frame;
     ImageOrientation m_orientation;
@@ -92,6 +95,7 @@ public:
     bool m_haveMetadata : 1;
     bool m_isComplete : 1;
     bool m_hasAlpha : 1;
+    unsigned m_frameBytes;
 };
 
 // =================================================
@@ -112,7 +116,7 @@ public:
     {
         return adoptRef(new BitmapImage(observer));
     }
-    ~BitmapImage();
+    virtual ~BitmapImage();
     
     virtual bool isBitmapImage() const;
 
@@ -169,15 +173,18 @@ public:
 #endif
 
     virtual NativeImagePtr nativeImageForCurrentFrame();
-    bool frameHasAlphaAtIndex(size_t);
     virtual bool currentFrameHasAlpha();
 
     ImageOrientation currentFrameOrientation();
-    ImageOrientation frameOrientationAtIndex(size_t);
 
 #if !ASSERT_DISABLED
     virtual bool notSolidColor();
 #endif
+
+    void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+private:
+    void updateSize() const;
 
 protected:
     enum RepetitionCountStatus {
@@ -196,7 +203,9 @@ protected:
     virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, ColorSpace styleColorSpace, CompositeOperator);
 #endif
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator);
-    void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, RespectImageOrientationEnum);
+#if USE(CG)
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, RespectImageOrientationEnum);
+#endif
 
 #if (OS(WINCE) && !PLATFORM(QT))
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
@@ -208,6 +217,8 @@ protected:
     NativeImagePtr frameAtIndex(size_t);
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);
+    bool frameHasAlphaAtIndex(size_t);
+    ImageOrientation frameOrientationAtIndex(size_t);
 
     // Decodes and caches a frame. Never accessed except internally.
     void cacheFrame(size_t index);
@@ -228,8 +239,8 @@ protected:
 
     // Generally called by destroyDecodedData(), destroys whole-image metadata
     // and notifies observers that the memory footprint has (hopefully)
-    // decreased by |framesCleared| times the size (in bytes) of a frame.
-    void destroyMetadataAndNotify(int framesCleared);
+    // decreased by |frameBytesCleared|.
+    void destroyMetadataAndNotify(unsigned frameBytesCleared);
 
     // Whether or not size is available yet.    
     bool isSizeAvailable();
@@ -269,8 +280,8 @@ protected:
     mutable IntSize m_sizeRespectingOrientation;
     
     size_t m_currentFrame; // The index of the current frame of animation.
-    Vector<FrameData> m_frames; // An array of the cached frames of the animation. We have to ref frames to pin them in the cache.
-    
+    Vector<FrameData, 1> m_frames; // An array of the cached frames of the animation. We have to ref frames to pin them in the cache.
+
     Timer<BitmapImage>* m_frameTimer;
     int m_repetitionCount; // How many total animation loops we should do.  This will be cAnimationNone if this image type is incapable of animation.
     RepetitionCountStatus m_repetitionCountStatus;

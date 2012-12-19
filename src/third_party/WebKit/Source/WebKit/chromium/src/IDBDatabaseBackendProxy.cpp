@@ -31,6 +31,7 @@
 #include "DOMStringList.h"
 #include "IDBCallbacks.h"
 #include "IDBDatabaseCallbacks.h"
+#include "IDBMetadata.h"
 #include "IDBObjectStoreBackendProxy.h"
 #include "IDBTransactionBackendProxy.h"
 #include "WebDOMStringList.h"
@@ -60,19 +61,9 @@ IDBDatabaseBackendProxy::~IDBDatabaseBackendProxy()
 {
 }
 
-String IDBDatabaseBackendProxy::name() const
+IDBDatabaseMetadata IDBDatabaseBackendProxy::metadata() const
 {
-    return m_webIDBDatabase->name();
-}
-
-String IDBDatabaseBackendProxy::version() const
-{
-    return m_webIDBDatabase->version();
-}
-
-PassRefPtr<DOMStringList> IDBDatabaseBackendProxy::objectStoreNames() const
-{
-    return m_webIDBDatabase->objectStoreNames();
+    return m_webIDBDatabase->metadata();
 }
 
 PassRefPtr<IDBObjectStoreBackendInterface> IDBDatabaseBackendProxy::createObjectStore(const String& name, const IDBKeyPath& keyPath, bool autoIncrement, IDBTransactionBackendInterface* transaction, ExceptionCode& ec)
@@ -96,6 +87,7 @@ void IDBDatabaseBackendProxy::deleteObjectStore(const String& name, IDBTransacti
 
 void IDBDatabaseBackendProxy::setVersion(const String& version, PassRefPtr<IDBCallbacks> callbacks, PassRefPtr<IDBDatabaseCallbacks> databaseCallbacks, ExceptionCode& ec)
 {
+    ASSERT(m_webIDBDatabase);
     m_webIDBDatabase->setVersion(version, new WebIDBCallbacksImpl(callbacks), ec);
 }
 
@@ -113,11 +105,6 @@ PassRefPtr<IDBTransactionBackendInterface> IDBDatabaseBackendProxy::transaction(
 void IDBDatabaseBackendProxy::close(PassRefPtr<IDBDatabaseCallbacks>)
 {
     m_webIDBDatabase->close();
-}
-
-void IDBDatabaseBackendProxy::registerFrontendCallbacks(PassRefPtr<IDBDatabaseCallbacks> databaseCallbacks)
-{
-    m_webIDBDatabase->open(new WebIDBDatabaseCallbacksImpl(databaseCallbacks));
 }
 
 } // namespace WebKit

@@ -11,7 +11,6 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/shader_manager.h"
@@ -19,6 +18,8 @@
 
 namespace gpu {
 namespace gles2 {
+class ProgramCache;
+class FeatureInfo;
 
 // Tracks the Programs.
 //
@@ -26,6 +27,8 @@ namespace gles2 {
 // need to be shared by multiple GLES2Decoders.
 class GPU_EXPORT ProgramManager {
  public:
+  typedef std::map<std::string, GLint> LocationMap;
+
   // This is used to track which attributes a particular program needs
   // so we can verify at glDrawXXX time that every attribute is either disabled
   // or if enabled that it points to a valid source.
@@ -36,10 +39,15 @@ class GPU_EXPORT ProgramManager {
     static const int kMaxAttachedShaders = 2;
 
     struct UniformInfo {
+      UniformInfo();
       UniformInfo(
           GLsizei _size, GLenum _type, GLint _fake_location_base,
           const std::string& _name);
       ~UniformInfo();
+
+      bool IsValid() const {
+        return size != 0;
+      }
 
       bool IsSampler() const {
         return type == GL_SAMPLER_2D || type == GL_SAMPLER_2D_RECT_ARB ||
@@ -103,10 +111,7 @@ class GPU_EXPORT ProgramManager {
       return NULL;
     }
 
-    const UniformInfo* GetUniformInfo(GLint index) const {
-      return (static_cast<size_t>(index) < uniform_infos_.size()) ?
-         &uniform_infos_[index] : NULL;
-    }
+    const UniformInfo* GetUniformInfo(GLint index) const;
 
     // If the original name is not found, return NULL.
     const std::string* GetAttribMappedName(
@@ -148,7 +153,10 @@ class GPU_EXPORT ProgramManager {
     bool CanLink() const;
 
     // Performs glLinkProgram and related activities.
-    bool Link();
+    bool Link(ShaderManager* manager,
+              ShaderTranslator* vertex_translator,
+              ShaderTranslator* fragment_shader,
+              FeatureInfo* feature_info);
 
     // Performs glValidateProgram and related activities.
     void Validate();
@@ -163,15 +171,23 @@ class GPU_EXPORT ProgramManager {
     }
 
     // Sets attribute-location binding from a glBindAttribLocation() call.
-    void SetAttribLocationBinding(const std::string& attrib,
-                                  GLint location) {
+    void SetAttribLocationBinding(const std::string& attrib, GLint location) {
       bind_attrib_location_map_[attrib] = location;
     }
+
+    // Sets uniform-location binding from a glBindUniformLocationCHROMIUM call.
+    // returns false if error.
+    bool SetUniformLocationBinding(const std::string& name, GLint location);
 
     // Detects if there are attribute location conflicts from
     // glBindAttribLocation() calls.
     // We only consider the declared attributes in the program.
     bool DetectAttribLocationBindingConflicts() const;
+
+    // Visible for testing
+    const LocationMap& bind_attrib_location_map() const {
+      return bind_attrib_location_map_;
+    }
 
    private:
     friend class base::RefCounted<ProgramInfo>;
@@ -219,9 +235,10 @@ class GPU_EXPORT ProgramManager {
     // translated.
     void ExecuteBindAttribLocationCalls();
 
-    const UniformInfo* AddUniformInfo(
-        GLsizei size, GLenum type, GLint location,
-        const std::string& name, const std::string& original_name);
+    bool AddUniformInfo(
+        GLsizei size, GLenum type, GLint location, GLint fake_base_location,
+        const std::string& name, const std::string& original_name,
+        size_t* next_available_index);
 
     void GetCorrectedVariableInfo(
         bool use_uniforms, const std::string& name, std::string* corrected_name,
@@ -277,14 +294,21 @@ class GPU_EXPORT ProgramManager {
     // True if the uniforms have been cleared.
     bool uniforms_cleared_;
 
+    // This is different than uniform_infos_.size() because
+    // that is a sparce array.
+    GLint num_uniforms_;
+
     // Log info
     scoped_ptr<std::string> log_info_;
 
     // attribute-location binding map from glBindAttribLocation() calls.
-    std::map<std::string, GLint> bind_attrib_location_map_;
+    LocationMap bind_attrib_location_map_;
+
+    // uniform-location binding map from glBindUniformLocationCHROMIUM() calls.
+    LocationMap bind_uniform_location_map_;
   };
 
-  ProgramManager();
+  explicit ProgramManager(ProgramCache* program_cache);
   ~ProgramManager();
 
   // Must call before destruction.
@@ -298,6 +322,9 @@ class GPU_EXPORT ProgramManager {
 
   // Gets a client id for a given service id.
   bool GetClientId(GLuint service_id, GLuint* client_id) const;
+
+  // Gets the shader cache
+  ProgramCache* program_cache() const;
 
   // Marks a program as deleted. If it is not used the info will be deleted.
   void MarkAsDeleted(ShaderManager* shader_manager, ProgramInfo* info);
@@ -316,6 +343,20 @@ class GPU_EXPORT ProgramManager {
 
   // Check if a ProgramInfo is owned by this ProgramManager.
   bool IsOwned(ProgramInfo* info);
+
+  static int32 MakeFakeLocation(int32 index, int32 element);
+
+  // Cache-aware shader compiling.  If no cache or if the shader wasn't
+  // previously compiled, ForceCompileShader is called
+  void DoCompileShader(ShaderManager::ShaderInfo* info,
+                       ShaderTranslator* translator,
+                       FeatureInfo* feature_info);
+
+  // Actually compiles the shader
+  void ForceCompileShader(const std::string* source,
+                          ShaderManager::ShaderInfo* info,
+                          ShaderTranslator* translator,
+                          FeatureInfo* feature_info);
 
  private:
   void StartTracking(ProgramInfo* info);
@@ -336,6 +377,8 @@ class GPU_EXPORT ProgramManager {
 
   // Used to clear uniforms.
   std::vector<uint8> zero_;
+
+  ProgramCache* program_cache_;
 
   void RemoveProgramInfoIfUnused(
       ShaderManager* shader_manager, ProgramInfo* info);

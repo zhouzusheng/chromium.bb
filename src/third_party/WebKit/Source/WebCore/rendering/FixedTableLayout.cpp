@@ -145,7 +145,7 @@ int FixedTableLayout::calcWidthArray(int)
         unsigned span = cell->colSpan();
         int fixedBorderBoxLogicalWidth = 0;
         if (logicalWidth.isFixed() && logicalWidth.isPositive()) {
-            fixedBorderBoxLogicalWidth = cell->computeBorderBoxLogicalWidth(logicalWidth.value());
+            fixedBorderBoxLogicalWidth = cell->adjustBorderBoxLogicalWidthForBoxSizing(logicalWidth.value());
             logicalWidth.setValue(fixedBorderBoxLogicalWidth);
         }
 
@@ -207,6 +207,15 @@ void FixedTableLayout::layout()
 {
     int tableLogicalWidth = m_table->logicalWidth() - m_table->bordersPaddingAndSpacingInRowDirection();
     unsigned nEffCols = m_table->numEffCols();
+
+    // FIXME: It is possible to be called without having properly updated our internal representation.
+    // This means that our preferred logical widths were not recomputed as expected.
+    if (nEffCols != m_width.size()) {
+        calcWidthArray(tableLogicalWidth);
+        // FIXME: Table layout shouldn't modify our table structure (but does due to columns and column-groups).
+        nEffCols = m_table->numEffCols();
+    }
+
     Vector<int> calcWidth(nEffCols, 0);
 
     unsigned numAuto = 0;

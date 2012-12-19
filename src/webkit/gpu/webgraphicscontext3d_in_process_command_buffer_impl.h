@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 #define WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
-#pragma once
 
 #if defined(ENABLE_GPU)
 
@@ -27,6 +26,7 @@ class GLES2Implementation;
 
 using WebKit::WebGLId;
 
+using WebKit::WGC3Dbyte;
 using WebKit::WGC3Dchar;
 using WebKit::WGC3Denum;
 using WebKit::WGC3Dboolean;
@@ -475,9 +475,24 @@ class WebGraphicsContext3DInProcessCommandBufferImpl
   virtual void getQueryObjectuivEXT(
       WebGLId query, WGC3Denum pname, WGC3Duint* params);
 
-  virtual void copyTextureCHROMIUM(WGC3Denum target, WebGLId source_id,
-                                   WebGLId dest_id, WGC3Dint level,
+  virtual void copyTextureCHROMIUM(WGC3Denum target, WGC3Duint source_id,
+                                   WGC3Duint dest_id, WGC3Dint level,
                                    WGC3Denum internal_format);
+
+  virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location,
+                                           const WGC3Dchar* uniform);
+
+  virtual void shallowFlushCHROMIUM();
+
+  virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox);
+  virtual void produceTextureCHROMIUM(WGC3Denum target,
+                                      const WGC3Dbyte* mailbox);
+  virtual void consumeTextureCHROMIUM(WGC3Denum target,
+                                      const WGC3Dbyte* mailbox);
+
+  virtual void insertEventMarkerEXT(const WGC3Dchar* marker);
+  virtual void pushGroupMarkerEXT(const WGC3Dchar* marker);
+  virtual void popGroupMarkerEXT();
 
  protected:
   virtual GrGLInterface* onCreateGrGLInterface();

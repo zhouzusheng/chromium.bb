@@ -37,8 +37,6 @@ using namespace WTF;
 
 namespace WebCore {
 
-namespace {
-
 static const UChar windowsLatin1ExtensionArray[32] = {
     0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, // 80-87
     0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F, // 88-8F
@@ -46,7 +44,7 @@ static const UChar windowsLatin1ExtensionArray[32] = {
     0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178, // 98-9F
 };
 
-inline bool isAlphaNumeric(UChar cc)
+static inline bool isAlphaNumeric(UChar cc)
 {
     return (cc >= '0' && cc <= '9') || (cc >= 'a' && cc <= 'z') || (cc >= 'A' && cc <= 'Z');
 }
@@ -89,7 +87,7 @@ public:
         StringBuilder consumedCharacters;
         HTMLEntitySearch entitySearch;
         while (!source.isEmpty()) {
-            cc = *source;
+            cc = source.currentChar();
             entitySearch.advance(cc);
             if (!entitySearch.isEntityPrefix())
                 break;
@@ -116,13 +114,13 @@ public:
             const int length = entitySearch.mostRecentMatch()->length;
             const UChar* reference = entitySearch.mostRecentMatch()->entity;
             for (int i = 0; i < length; ++i) {
-                cc = *source;
+                cc = source.currentChar();
                 ASSERT_UNUSED(reference, cc == *reference++);
                 consumedCharacters.append(cc);
                 source.advanceAndASSERT(cc);
                 ASSERT(!source.isEmpty());
             }
-            cc = *source;
+            cc = source.currentChar();
         }
         if (entitySearch.mostRecentMatch()->lastCharacter() == ';'
             || !additionalAllowedCharacter
@@ -136,8 +134,6 @@ public:
         return false;
     }
 };
-
-}
 
 bool consumeHTMLEntity(SegmentedString& source, StringBuilder& decodedEntity, bool& notEnoughCharacters, UChar additionalAllowedCharacter)
 {

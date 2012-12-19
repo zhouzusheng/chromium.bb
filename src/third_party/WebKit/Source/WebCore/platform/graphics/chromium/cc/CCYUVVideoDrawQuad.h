@@ -26,8 +26,8 @@
 #ifndef CCYUVVideoDrawQuad_h
 #define CCYUVVideoDrawQuad_h
 
-#include "cc/CCDrawQuad.h"
-#include "cc/CCVideoLayerImpl.h"
+#include "CCDrawQuad.h"
+#include "CCVideoLayerImpl.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
@@ -41,6 +41,7 @@ public:
     const CCVideoLayerImpl::FramePlane& uPlane() const { return m_uPlane; }
     const CCVideoLayerImpl::FramePlane& vPlane() const { return m_vPlane; }
 
+    static const CCYUVVideoDrawQuad* materialCast(const CCDrawQuad*);
 private:
     CCYUVVideoDrawQuad(const CCSharedQuadState*, const IntRect&, const CCVideoLayerImpl::FramePlane& yPlane, const CCVideoLayerImpl::FramePlane& uPlane, const CCVideoLayerImpl::FramePlane& vPlane);
 

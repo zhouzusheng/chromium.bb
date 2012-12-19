@@ -16,7 +16,8 @@ namespace dom_storage {
 DomStorageSession::DomStorageSession(DomStorageContext* context)
     : context_(context),
       namespace_id_(context->AllocateSessionId()),
-      persistent_namespace_id_(context->AllocatePersistentSessionId()) {
+      persistent_namespace_id_(context->AllocatePersistentSessionId()),
+      should_persist_(false) {
   context->task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&DomStorageContext::CreateSessionNamespace,
@@ -27,11 +28,20 @@ DomStorageSession::DomStorageSession(DomStorageContext* context,
                                      const std::string& persistent_namespace_id)
     : context_(context),
       namespace_id_(context->AllocateSessionId()),
-      persistent_namespace_id_(persistent_namespace_id) {
+      persistent_namespace_id_(persistent_namespace_id),
+      should_persist_(false) {
   context->task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&DomStorageContext::CreateSessionNamespace,
                  context_, namespace_id_, persistent_namespace_id_));
+}
+
+void DomStorageSession::SetShouldPersist(bool should_persist) {
+  should_persist_ = should_persist;
+}
+
+bool DomStorageSession::IsFromContext(DomStorageContext* context) {
+  return context_.get() == context;
 }
 
 DomStorageSession* DomStorageSession::Clone() {
@@ -55,7 +65,8 @@ DomStorageSession::DomStorageSession(DomStorageContext* context,
                                      const std::string& persistent_namespace_id)
     : context_(context),
       namespace_id_(namespace_id),
-      persistent_namespace_id_(persistent_namespace_id) {
+      persistent_namespace_id_(persistent_namespace_id),
+      should_persist_(false) {
   // This ctor is intended for use by the Clone() method.
 }
 
@@ -63,7 +74,7 @@ DomStorageSession::~DomStorageSession() {
   context_->task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&DomStorageContext::DeleteSessionNamespace,
-                 context_, namespace_id_));
+                 context_, namespace_id_, should_persist_));
 }
 
 }  // namespace dom_storage

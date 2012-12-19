@@ -61,6 +61,7 @@ def Validate(lines, file):
   with_match = WITH_PATTERN.search(lines)
   if with_match:
     raise ("With statements disallowed in natives: %s" % file)
+  return lines
 
 
 HEADER_TEMPLATE = """\
@@ -86,12 +87,12 @@ const char* Natives::GetScriptSource() {
 """
 
 
-def JS2C(source_files, target_file):
+def JS2C(source_files, target_file, combined_js_files):
   all_lines = []
   for source in source_files:
     filename = str(source)
     lines = ReadFile(filename)
-    Validate(lines, filename)
+    lines = Validate(lines, filename)
     all_lines.extend(lines)
   data = ToCArray(all_lines)
 
@@ -100,11 +101,15 @@ def JS2C(source_files, target_file):
   output.write(HEADER_TEMPLATE % data)
   output.close()
 
+  combined = open(combined_js_files, "w")
+  combined.write(''.join(all_lines))
+  combined.close()
 
 def main():
   target_file = sys.argv[1]
-  source_files = sys.argv[2:]
-  JS2C(source_files, target_file)
+  combined_js_files = sys.argv[2]
+  source_files = sys.argv[3:]
+  JS2C(source_files, target_file, combined_js_files)
 
 
 if __name__ == "__main__":

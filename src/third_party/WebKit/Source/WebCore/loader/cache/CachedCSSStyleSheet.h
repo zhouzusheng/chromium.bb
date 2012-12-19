@@ -46,25 +46,23 @@ namespace WebCore {
 
         virtual void didAddClient(CachedResourceClient*);
         
-        virtual void allClientsRemoved();
-
         virtual void setEncoding(const String&);
         virtual String encoding() const;
         virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-        virtual void error(CachedResource::Status);
-
         virtual void destroyDecodedData() OVERRIDE;
-
-        void checkNotify();
 
         PassRefPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
         void saveParsedStyleSheet(PassRefPtr<StyleSheetContents>);
     
+        virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
     private:
         bool canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const;
         virtual PurgePriority purgePriority() const { return PurgeLast; }
 
     protected:
+        virtual void checkNotify();
+
         RefPtr<TextResourceDecoder> m_decoder;
         String m_decodedSheetText;
 

@@ -63,7 +63,7 @@ public:
 
     WEBKIT_EXPORT static void enableApplicationCache(bool);
     WEBKIT_EXPORT static bool isApplicationCacheEnabled();
-    
+
     WEBKIT_EXPORT static void enableDataTransferItems(bool);
     WEBKIT_EXPORT static bool isDataTransferItemsEnabled();
 
@@ -76,6 +76,7 @@ public:
     WEBKIT_EXPORT static void enableWebAudio(bool);
     WEBKIT_EXPORT static bool isWebAudioEnabled();
 
+    // TODO: Remove these (since they're no-ops) once Chromium code stops calling them.
     WEBKIT_EXPORT static void enablePushState(bool);
     WEBKIT_EXPORT static bool isPushStateEnabled(bool);
 
@@ -99,7 +100,7 @@ public:
 
     WEBKIT_EXPORT static void enableFileSystem(bool);
     WEBKIT_EXPORT static bool isFileSystemEnabled();
-    
+
     WEBKIT_EXPORT static void enableJavaScriptI18NAPI(bool);
     WEBKIT_EXPORT static bool isJavaScriptI18NAPIEnabled();
 
@@ -111,6 +112,8 @@ public:
 
     WEBKIT_EXPORT static void enablePeerConnection(bool);
     WEBKIT_EXPORT static bool isPeerConnectionEnabled();
+    WEBKIT_EXPORT static void enableDeprecatedPeerConnection(bool);
+    WEBKIT_EXPORT static bool isDeprecatedPeerConnectionEnabled();
 
     WEBKIT_EXPORT static void enableFullScreenAPI(bool);
     WEBKIT_EXPORT static bool isFullScreenAPIEnabled();
@@ -138,6 +141,27 @@ public:
 
     WEBKIT_EXPORT static void enableInputTypeDate(bool);
     WEBKIT_EXPORT static bool isInputTypeDateEnabled();
+
+    WEBKIT_EXPORT static void enableInputTypeDateTime(bool);
+    WEBKIT_EXPORT static bool isInputTypeDateTimeEnabled();
+
+    WEBKIT_EXPORT static void enableInputTypeDateTimeLocal(bool);
+    WEBKIT_EXPORT static bool isInputTypeDateTimeLocalEnabled();
+
+    WEBKIT_EXPORT static void enableInputTypeMonth(bool);
+    WEBKIT_EXPORT static bool isInputTypeMonthEnabled();
+
+    WEBKIT_EXPORT static void enableInputTypeTime(bool);
+    WEBKIT_EXPORT static bool isInputTypeTimeEnabled();
+
+    WEBKIT_EXPORT static void enableInputTypeWeek(bool);
+    WEBKIT_EXPORT static bool isInputTypeWeekEnabled();
+
+    WEBKIT_EXPORT static void enableDialogElement(bool);
+    WEBKIT_EXPORT static bool isDialogElementEnabled();
+
+    WEBKIT_EXPORT static void enableCSSExclusions(bool);
+    WEBKIT_EXPORT static bool isCSSExclusionsEnabled();
 
 private:
     WebRuntimeFeatures();

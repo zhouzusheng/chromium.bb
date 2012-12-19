@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stringprintf.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/win/windows_version.h"
 
 namespace base {
@@ -36,6 +37,8 @@ int64 SysInfo::AmountOfPhysicalMemory() {
 
 // static
 int64 SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
+  base::ThreadRestrictions::AssertIOAllowed();
+
   ULARGE_INTEGER available, total, free;
   if (!GetDiskFreeSpaceExW(path.value().c_str(), &available, &total, &free)) {
     return -1;
@@ -74,6 +77,11 @@ std::string SysInfo::OperatingSystemVersion() {
 std::string SysInfo::CPUArchitecture() {
   // TODO: Make this vary when we support any other architectures.
   return "x86";
+}
+
+// static
+std::string SysInfo::CPUModelName() {
+  return win::OSInfo::GetInstance()->processor_model_name();
 }
 
 // static

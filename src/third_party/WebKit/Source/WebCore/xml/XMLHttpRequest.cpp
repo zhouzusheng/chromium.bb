@@ -38,6 +38,7 @@
 #include "HTMLDocument.h"
 #include "HTTPParsers.h"
 #include "HTTPValidation.h"
+#include "HistogramSupport.h"
 #include "InspectorInstrumentation.h"
 #include "MemoryCache.h"
 #include "ResourceError.h"
@@ -54,6 +55,7 @@
 #include "XMLHttpRequestUpload.h"
 #include "markup.h"
 #include <wtf/ArrayBuffer.h>
+#include <wtf/ArrayBufferView.h>
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/UnusedParam.h>
@@ -69,6 +71,13 @@
 namespace WebCore {
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, xmlHttpRequestCounter, ("XMLHttpRequest"));
+
+// Histogram enum to see when we can deprecate xhr.send(ArrayBuffer).
+enum XMLHttpRequestSendArrayBufferOrView {
+    XMLHttpRequestSendArrayBuffer,
+    XMLHttpRequestSendArrayBufferView,
+    XMLHttpRequestSendArrayBufferOrViewMax,
+};
 
 struct XMLHttpRequestStaticData {
     WTF_MAKE_NONCOPYABLE(XMLHttpRequestStaticData); WTF_MAKE_FAST_ALLOCATED;
@@ -345,7 +354,7 @@ void XMLHttpRequest::setResponseType(const String& responseType, ExceptionCode& 
     else if (responseType == "arraybuffer")
         m_responseTypeCode = ResponseTypeArrayBuffer;
     else
-        ec = SYNTAX_ERR;
+        logConsoleError(scriptExecutionContext(), "XMLHttpRequest.responseType \"" + responseType + "\" is not supported.");
 }
 
 String XMLHttpRequest::responseType()
@@ -385,17 +394,16 @@ void XMLHttpRequest::callReadyStateChangeListener()
     if (!scriptExecutionContext())
         return;
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willChangeXHRReadyState(scriptExecutionContext(), this);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRReadyStateChangeEvent(scriptExecutionContext(), this);
 
     if (m_async || (m_state <= OPENED || m_state == DONE))
         m_progressEventThrottle.dispatchReadyStateChangeEvent(XMLHttpRequestProgressEvent::create(eventNames().readystatechangeEvent), m_state == DONE ? FlushProgressEvent : DoNotFlushProgressEvent);
 
-    InspectorInstrumentation::didChangeXHRReadyState(cookie);
-
+    InspectorInstrumentation::didDispatchXHRReadyStateChangeEvent(cookie);
     if (m_state == DONE && !m_error) {
-        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willLoadXHR(scriptExecutionContext(), this);
+        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRLoadEvent(scriptExecutionContext(), this);
         m_progressEventThrottle.dispatchEvent(XMLHttpRequestProgressEvent::create(eventNames().loadEvent));
-        InspectorInstrumentation::didLoadXHR(cookie);
+        InspectorInstrumentation::didDispatchXHRLoadEvent(cookie);
         m_progressEventThrottle.dispatchEvent(XMLHttpRequestProgressEvent::create(eventNames().loadendEvent));
     }
 }
@@ -472,7 +480,7 @@ void XMLHttpRequest::open(const String& method, const KURL& url, bool async, Exc
     }
 
     if (!async && scriptExecutionContext()->isDocument()) {
-        if (!document()->settings()->syncXHRInDocumentsEnabled()) {
+        if (document()->settings() && !document()->settings()->syncXHRInDocumentsEnabled()) {
             logConsoleError(scriptExecutionContext(), "Synchronous XMLHttpRequests are disabled for this page.");
             ec = INVALID_ACCESS_ERR;
             return;
@@ -635,8 +643,7 @@ void XMLHttpRequest::send(DOMFormData* body, ExceptionCode& ec)
 
         String contentType = getRequestHeader("Content-Type");
         if (contentType.isEmpty()) {
-            contentType = "multipart/form-data; boundary=";
-            contentType += m_requestEntityBody->boundary().data();
+            contentType = makeString("multipart/form-data; boundary=", m_requestEntityBody->boundary().data());
             setRequestHeaderInternal("Content-Type", contentType);
         }
     }
@@ -646,16 +653,40 @@ void XMLHttpRequest::send(DOMFormData* body, ExceptionCode& ec)
 
 void XMLHttpRequest::send(ArrayBuffer* body, ExceptionCode& ec)
 {
+    String consoleMessage("ArrayBuffer is deprecated in XMLHttpRequest.send(). Use ArrayBufferView instead.");
+    scriptExecutionContext()->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
+
+    HistogramSupport::histogramEnumeration("WebCore.XHR.send.ArrayBufferOrView", XMLHttpRequestSendArrayBuffer, XMLHttpRequestSendArrayBufferOrViewMax);
+
+    sendBytesData(body->data(), body->byteLength(), ec);
+}
+
+void XMLHttpRequest::send(ArrayBufferView* body, ExceptionCode& ec)
+{
+    HistogramSupport::histogramEnumeration("WebCore.XHR.send.ArrayBufferOrView", XMLHttpRequestSendArrayBufferView, XMLHttpRequestSendArrayBufferOrViewMax);
+
+    sendBytesData(body->baseAddress(), body->byteLength(), ec);
+}
+
+void XMLHttpRequest::sendBytesData(const void* data, size_t length, ExceptionCode& ec)
+{
     if (!initSend(ec))
         return;
 
     if (m_method != "GET" && m_method != "HEAD" && m_url.protocolIsInHTTPFamily()) {
-        m_requestEntityBody = FormData::create(body->data(), body->byteLength());
+        m_requestEntityBody = FormData::create(data, length);
         if (m_upload)
             m_requestEntityBody->setAlwaysStream(true);
     }
 
     createRequest(ec);
+}
+
+void XMLHttpRequest::sendFromInspector(PassRefPtr<FormData> formData, ExceptionCode& ec)
+{
+    m_requestEntityBody = formData ? formData->deepCopy() : 0;
+    createRequest(ec);
+    m_exceptionCode = ec;
 }
 
 void XMLHttpRequest::createRequest(ExceptionCode& ec)
@@ -691,6 +722,8 @@ void XMLHttpRequest::createRequest(ExceptionCode& ec)
 #if PLATFORM(CHROMIUM) || PLATFORM(BLACKBERRY)
     request.setTargetType(ResourceRequest::TargetIsXHR);
 #endif
+
+    InspectorInstrumentation::willLoadXHR(scriptExecutionContext(), this, m_method, m_url, m_async, m_requestEntityBody ? m_requestEntityBody->deepCopy() : 0, m_requestHeaders, m_includeCredentials);
 
     if (m_requestEntityBody) {
         ASSERT(m_method != "GET");
@@ -784,6 +817,8 @@ void XMLHttpRequest::internalAbort()
 
     m_decoder = 0;
 
+    InspectorInstrumentation::didFailXHRLoading(scriptExecutionContext(), this);
+
     if (hadLoader)
         dropProtection();
 }
@@ -851,8 +886,8 @@ void XMLHttpRequest::dropProtection()
     // out. But it is protected from GC while loading, so this
     // can't be recouped until the load is done, so only
     // report the extra cost at that point.
-    JSC::JSLock lock(JSC::SilenceAssertionsOnly);
     JSC::JSGlobalData* globalData = scriptExecutionContext()->globalData();
+    JSC::JSLockHolder lock(globalData);
     globalData->heap.reportExtraMemoryCost(m_responseBuilder.length() * 2);
 #endif
 
@@ -894,7 +929,7 @@ void XMLHttpRequest::setRequestHeaderInternal(const AtomicString& name, const St
 {
     HTTPHeaderMap::AddResult result = m_requestHeaders.add(name, value);
     if (!result.isNewEntry)
-        result.iterator->second += ", " + value;
+        result.iterator->second.append(", " + value);
 }
 
 String XMLHttpRequest::getRequestHeader(const AtomicString& name) const
@@ -1049,7 +1084,7 @@ void XMLHttpRequest::didFinishLoading(unsigned long identifier, double)
 
     m_responseBuilder.shrinkToFit();
 
-    InspectorInstrumentation::resourceRetrievedByXMLHttpRequest(scriptExecutionContext(), identifier, m_responseBuilder.toStringPreserveCapacity(), m_url, m_lastSendURL, m_lastSendLineNumber);
+    InspectorInstrumentation::didFinishXHRLoading(scriptExecutionContext(), this, identifier, m_responseBuilder.toStringPreserveCapacity(), m_url, m_lastSendURL, m_lastSendLineNumber);
 
     bool hadLoader = m_loader;
     m_loader = 0;

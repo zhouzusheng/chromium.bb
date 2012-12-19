@@ -36,17 +36,22 @@
 namespace WebCore {
 
 #define V8_HIDDEN_PROPERTIES(V) \
-    V(listener) \
     V(attributeListener) \
-    V(scriptState) \
-    V(sleepFunction) \
-    V(toStringString) \
-    V(event) \
-    V(state) \
+    V(document) \
     V(domStringMap) \
     V(domTokenList) \
+    V(domTransactionData) \
+    V(event) \
+    V(listener) \
     V(ownerNode) \
-    V(textTracks)
+    V(perContextData) \
+    V(scriptState) \
+    V(sleepFunction) \
+    V(state) \
+    V(textTracks) \
+    V(toStringString)
+
+    enum V8HiddenPropertyCreationType { NewSymbol, NewString };
 
     class V8HiddenPropertyName {
     public:
@@ -55,7 +60,7 @@ namespace WebCore {
         V8_HIDDEN_PROPERTIES(V8_DECLARE_PROPERTY);
 #undef V8_DECLARE_PROPERTY
 
-        static v8::Handle<v8::String> hiddenReferenceName(const char* name);
+        static v8::Handle<v8::String> hiddenReferenceName(const char*, unsigned, V8HiddenPropertyCreationType = NewSymbol);
 
     private:
         static v8::Persistent<v8::String> createString(const char* key);

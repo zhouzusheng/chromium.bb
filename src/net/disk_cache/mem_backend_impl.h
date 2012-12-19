@@ -6,7 +6,6 @@
 
 #ifndef NET_DISK_CACHE_MEM_BACKEND_IMPL_H__
 #define NET_DISK_CACHE_MEM_BACKEND_IMPL_H__
-#pragma once
 
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
@@ -63,6 +62,7 @@ class NET_EXPORT_PRIVATE MemBackendImpl : public Backend {
   void RemoveFromRankingList(MemEntryImpl* entry);
 
   // Backend interface.
+  virtual net::CacheType GetCacheType() const OVERRIDE;
   virtual int32 GetEntryCount() const OVERRIDE;
   virtual int OpenEntry(const std::string& key, Entry** entry,
                         const CompletionCallback& callback) OVERRIDE;

@@ -30,11 +30,11 @@
 
 #include "CachedResourceLoader.h"
 #include "Document.h"
-#include "InputType.h"
 #include "HTMLDocumentParser.h"
 #include "HTMLTokenizer.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
+#include "InputTypeNames.h"
 #include "LinkRelAttribute.h"
 #include "MediaList.h"
 #include "MediaQueryEvaluator.h"
@@ -42,8 +42,6 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-
-namespace {
 
 class PreloadTask {
 public:
@@ -150,8 +148,6 @@ private:
     bool m_linkMediaAttributeIsScreen;
     bool m_inputIsImage;
 };
-
-} // namespace
 
 HTMLPreloadScanner::HTMLPreloadScanner(Document* document)
     : m_document(document)

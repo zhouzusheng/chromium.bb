@@ -136,6 +136,13 @@ WebNodeList WebNode::childNodes()
     return WebNodeList(m_private->childNodes());
 }
 
+bool WebNode::appendChild(const WebNode& child) 
+{
+    ExceptionCode exceptionCode = 0;
+    m_private->appendChild(child, exceptionCode);
+    return !exceptionCode;
+}
+
 WebString WebNode::createMarkup() const
 {
     return WebCore::createMarkup(m_private.get());
@@ -153,7 +160,7 @@ bool WebNode::isTextNode() const
 
 bool WebNode::isFocusable() const
 {
-    m_private->document()->updateLayout();
+    m_private->document()->updateLayoutIgnorePendingStylesheets();
     return m_private->isFocusable();
 }
 
@@ -213,8 +220,14 @@ WebElement WebNode::rootEditableElement() const
     return WebElement(m_private->rootEditableElement());
 }
 
+bool WebNode::focused() const
+{
+    return m_private->focused();
+}
+
 bool WebNode::hasNonEmptyBoundingBox() const
 {
+    m_private->document()->updateLayoutIgnorePendingStylesheets();
     return m_private->hasNonEmptyBoundingBox();
 }
 

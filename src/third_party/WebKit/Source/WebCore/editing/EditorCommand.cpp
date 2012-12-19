@@ -49,6 +49,7 @@
 #include "InsertListCommand.h"
 #include "KillRing.h"
 #include "Page.h"
+#include "Pasteboard.h"
 #include "RenderBox.h"
 #include "ReplaceSelectionCommand.h"
 #include "Scrollbar.h"
@@ -139,7 +140,7 @@ static bool executeToggleStyleInList(Frame* frame, EditorCommandSource source, E
         return false;
 
     RefPtr<CSSValue> selectedCSSValue = selectionStyle->style()->getPropertyCSSValue(propertyID);
-    String newStyle = "none";
+    String newStyle = ASCIILiteral("none");
     if (selectedCSSValue->isValueList()) {
         RefPtr<CSSValueList> selectedCSSValueList = static_cast<CSSValueList*>(selectedCSSValue.get());
         if (!selectedCSSValueList->removeAll(value))
@@ -916,6 +917,20 @@ static bool executePaste(Frame* frame, Event*, EditorCommandSource source, const
     return true;
 }
 
+static bool executePasteGlobalSelection(Frame* frame, Event*, EditorCommandSource source, const String&)
+{
+    if (!frame->editor()->client()->supportsGlobalSelection())
+        return false;
+    ASSERT_UNUSED(source, source == CommandFromMenuOrKeyBinding);
+    UserTypingGestureIndicator typingGestureIndicator(frame);
+
+    bool oldSelectionMode = Pasteboard::generalPasteboard()->isSelectionMode();
+    Pasteboard::generalPasteboard()->setSelectionMode(true);
+    frame->editor()->paste();
+    Pasteboard::generalPasteboard()->setSelectionMode(oldSelectionMode);
+    return true;
+}
+
 static bool executePasteAndMatchStyle(Frame* frame, Event*, EditorCommandSource source, const String&)
 {
     if (source == CommandFromMenuOrKeyBinding) {
@@ -1233,9 +1248,8 @@ static bool enabledInEditableText(Frame* frame, Event* event, EditorCommandSourc
 static bool enabledDelete(Frame* frame, Event* event, EditorCommandSource source)
 {
     switch (source) {
-    case CommandFromMenuOrKeyBinding:
-        // "Delete" from menu only affects selected range, just like Cut but without affecting pasteboard
-        return enabledCut(frame, event, source);
+    case CommandFromMenuOrKeyBinding:    
+        return frame->editor()->canDelete();
     case CommandFromDOM:
     case CommandFromDOMWithUserInterface:
         // "Delete" from DOM is like delete/backspace keypress, affects selected range if non-empty,
@@ -1545,6 +1559,7 @@ static const CommandMap& createCommandMap()
         { "Paste", { executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteAndMatchStyle", { executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteAsPlainText", { executePasteAsPlainText, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "PasteGlobalSelection", { executePasteGlobalSelection, supportedFromMenuOrKeyBinding, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "Print", { executePrint, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Redo", { executeRedo, supported, enabledRedo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "RemoveFormat", { executeRemoveFormat, supported, enabledRangeInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },

@@ -23,56 +23,57 @@
 #define FormController_h
 
 #include "CheckedRadioButtons.h"
+#include <wtf/Deque.h>
 #include <wtf/Forward.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class FormAssociatedElement;
+class FormKeyGenerator;
 class HTMLFormControlElementWithState;
+class HTMLFormElement;
+class SavedFormState;
 
-class FormElementKey {
+class FormControlState {
 public:
-    FormElementKey(AtomicStringImpl* = 0, AtomicStringImpl* = 0);
-    ~FormElementKey();
-    FormElementKey(const FormElementKey&);
-    FormElementKey& operator=(const FormElementKey&);
+    FormControlState() : m_type(TypeSkip) { }
+    explicit FormControlState(const String& value) : m_type(TypeRestore) { m_values.append(value); }
+    static FormControlState deserialize(const Vector<String>& stateVector, size_t& index);
+    FormControlState(const FormControlState& another) : m_type(another.m_type), m_values(another.m_values) { }
+    FormControlState& operator=(const FormControlState&);
 
-    AtomicStringImpl* name() const { return m_name; }
-    AtomicStringImpl* type() const { return m_type; }
-
-    // Hash table deleted values, which are only constructed and never copied or destroyed.
-    FormElementKey(WTF::HashTableDeletedValueType) : m_name(hashTableDeletedValue()) { }
-    bool isHashTableDeletedValue() const { return m_name == hashTableDeletedValue(); }
+    bool isFailure() const { return m_type == TypeFailure; }
+    size_t valueSize() const { return m_values.size(); }
+    const String& operator[](size_t i) const { return m_values[i]; }
+    void append(const String&);
+    void serializeTo(Vector<String>& stateVector) const;
 
 private:
-    void ref() const;
-    void deref() const;
+    enum Type { TypeSkip, TypeRestore, TypeFailure };
+    explicit FormControlState(Type type) : m_type(type) { }
 
-    static AtomicStringImpl* hashTableDeletedValue() { return reinterpret_cast<AtomicStringImpl*>(-1); }
-
-    AtomicStringImpl* m_name;
-    AtomicStringImpl* m_type;
+    Type m_type;
+    Vector<String> m_values;
 };
 
-inline bool operator==(const FormElementKey& a, const FormElementKey& b)
+inline FormControlState& FormControlState::operator=(const FormControlState& another)
 {
-    return a.name() == b.name() && a.type() == b.type();
+    m_type = another.m_type;
+    m_values = another.m_values;
+    return *this;
 }
 
-struct FormElementKeyHash {
-    static unsigned hash(const FormElementKey&);
-    static bool equal(const FormElementKey& a, const FormElementKey& b) { return a == b; }
-    static const bool safeToCompareToEmptyOrDeleted = true;
-};
-
-struct FormElementKeyHashTraits : WTF::GenericHashTraits<FormElementKey> {
-    static void constructDeletedValue(FormElementKey& slot) { new (NotNull, &slot) FormElementKey(WTF::HashTableDeletedValue); }
-    static bool isDeletedValue(const FormElementKey& value) { return value.isHashTableDeletedValue(); }
-};
+inline void FormControlState::append(const String& value)
+{
+    m_type = TypeRestore;
+    m_values.append(value);
+}
 
 class FormController {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<FormController> create()
     {
@@ -88,26 +89,25 @@ public:
     Vector<String> formElementsState() const;
     // This should be callled only by Document::setStateForNewFormElements().
     void setStateForNewFormElements(const Vector<String>&);
-    bool hasStateForNewFormElements() const;
-    bool takeStateForFormElement(AtomicStringImpl* name, AtomicStringImpl* type, String& state);
+    void willDeleteForm(HTMLFormElement*);
+    void restoreControlStateFor(HTMLFormControlElementWithState&);
+    void restoreControlStateIn(HTMLFormElement&);
 
-    void registerFormElementWithFormAttribute(FormAssociatedElement*);
-    void unregisterFormElementWithFormAttribute(FormAssociatedElement*);
-    void resetFormElementsOwner();
+    static Vector<String> getReferencedFilePaths(const Vector<String>& stateVector);
 
 private:
+    typedef ListHashSet<HTMLFormControlElementWithState*, 64> FormElementListHashSet;
+    typedef HashMap<RefPtr<AtomicStringImpl>, OwnPtr<SavedFormState> > SavedFormStateMap;
+
     FormController();
+    static PassOwnPtr<SavedFormStateMap> createSavedFormStateMap(const FormElementListHashSet&);
+    FormControlState takeStateForFormElement(const HTMLFormControlElementWithState&);
+    static void formStatesFromStateVector(const Vector<String>&, SavedFormStateMap&);
 
     CheckedRadioButtons m_checkedRadioButtons;
-
-    typedef ListHashSet<HTMLFormControlElementWithState*, 64> FormElementListHashSet;
     FormElementListHashSet m_formElementsWithState;
-    typedef ListHashSet<RefPtr<FormAssociatedElement>, 32> FormAssociatedElementListHashSet;
-    FormAssociatedElementListHashSet m_formElementsWithFormAttribute;
-
-    typedef HashMap<FormElementKey, Vector<String>, FormElementKeyHash, FormElementKeyHashTraits> FormElementStateMap;
-    FormElementStateMap m_stateForNewFormElements;
-    
+    SavedFormStateMap m_savedFormStateMap;
+    OwnPtr<FormKeyGenerator> m_formKeyGenerator;
 };
 
 } // namespace WebCore

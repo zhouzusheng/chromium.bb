@@ -10,10 +10,11 @@
 #ifndef SkFontHost_DEFINED
 #define SkFontHost_DEFINED
 
-#include "SkScalerContext.h"
 #include "SkTypeface.h"
 
 class SkDescriptor;
+class SkScalerContext;
+struct SkScalerContextRec;
 class SkStream;
 class SkWStream;
 
@@ -167,7 +168,7 @@ public:
 
         A lazy (but valid) fonthost can do nothing in its FilterRec routine.
      */
-    static void FilterRec(SkScalerContext::Rec* rec);
+    static void FilterRec(SkScalerContextRec* rec);
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -224,15 +225,6 @@ public:
      */
     static size_t GetTableData(SkFontID fontID, SkFontTableTag tag,
                                size_t offset, size_t length, void* data);
-
-    ///////////////////////////////////////////////////////////////////////////
-
-    /** DEPRECATED -- only called by SkFontHost_FreeType internally
-
-        Return NULL or a pointer to 256 bytes for the black (table[0]) and
-        white (table[1]) gamma tables.
-    */
-    static void GetGammaTables(const uint8_t* tables[2]);
 
     ///////////////////////////////////////////////////////////////////////////
 

@@ -53,11 +53,15 @@
 #include "OfflineAudioCompletionEvent.h"
 #include "OfflineAudioDestinationNode.h"
 #include "Oscillator.h"
-#include "PlatformString.h"
 #include "RealtimeAnalyserNode.h"
 #include "ScriptCallStack.h"
 #include "WaveShaperNode.h"
 #include "WaveTable.h"
+
+#if ENABLE(MEDIA_STREAM)
+#include "MediaStream.h"
+#include "MediaStreamAudioSourceNode.h"
+#endif
 
 #if ENABLE(VIDEO)
 #include "HTMLMediaElement.h"
@@ -78,6 +82,7 @@
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 // FIXME: check the proper way to reference an undefined thread ID
 const int UndefinedThreadIdentifier = 0xffffffff;
@@ -196,7 +201,7 @@ void AudioContext::constructCommon()
 AudioContext::~AudioContext()
 {
 #if DEBUG_AUDIONODE_REFERENCES
-    printf("%p: AudioContext::~AudioContext()\n", this);
+    fprintf(stderr, "%p: AudioContext::~AudioContext()\n", this);
 #endif
     // AudioNodes keep a reference to their context, so there should be no way to be in the destructor if there are still AudioNodes around.
     ASSERT(!m_nodesToDelete.size());
@@ -378,6 +383,37 @@ PassRefPtr<MediaElementAudioSourceNode> AudioContext::createMediaElementSource(H
     RefPtr<MediaElementAudioSourceNode> node = MediaElementAudioSourceNode::create(this, mediaElement);
 
     mediaElement->setAudioSourceNode(node.get());
+
+    refNode(node.get()); // context keeps reference until node is disconnected
+    return node;
+}
+#endif
+
+#if ENABLE(MEDIA_STREAM)
+PassRefPtr<MediaStreamAudioSourceNode> AudioContext::createMediaStreamSource(MediaStream* mediaStream, ExceptionCode& ec)
+{
+    ASSERT(mediaStream);
+    if (!mediaStream) {
+        ec = INVALID_STATE_ERR;
+        return 0;
+    }
+
+    ASSERT(isMainThread());
+    lazyInitialize();
+
+    AudioSourceProvider* provider = 0;
+
+    if (mediaStream->isLocal() && mediaStream->audioTracks()->length())
+        provider = destination()->localAudioInputProvider();
+    else {
+        // FIXME: get a provider for non-local MediaStreams (like from a remote peer).
+        provider = 0;
+    }
+
+    RefPtr<MediaStreamAudioSourceNode> node = MediaStreamAudioSourceNode::create(this, mediaStream, provider);
+
+    // FIXME: Only stereo streams are supported right now. We should be able to accept multi-channel streams.
+    node->setFormat(2, sampleRate());
 
     refNode(node.get()); // context keeps reference until node is disconnected
     return node;

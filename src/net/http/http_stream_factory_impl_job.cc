@@ -241,12 +241,26 @@ void HttpStreamFactoryImpl::Job::GetSSLInfo() {
 }
 
 HostPortProxyPair HttpStreamFactoryImpl::Job::GetSpdySessionKey() const {
+  // In the case that we're using an HTTPS proxy for an HTTP url,
+  // we look for a SPDY session *to* the proxy, instead of to the
+  // origin server.
   if (IsHttpsProxyAndHttpUrl()) {
     return HostPortProxyPair(proxy_info_.proxy_server().host_port_pair(),
                              ProxyServer::Direct());
   } else {
     return HostPortProxyPair(origin_, proxy_info_.proxy_server());
   }
+}
+
+bool HttpStreamFactoryImpl::Job::CanUseExistingSpdySession() const {
+  // We need to make sure that if a spdy session was created for
+  // https://somehost/ that we don't use that session for http://somehost:443/.
+  // The only time we can use an existing session is if the request URL is
+  // https (the normal case) or if we're connection to a SPDY proxy, or
+  // if we're running with force_spdy_always_.  crbug.com/133176
+  return request_info_.url.SchemeIs("https") ||
+         proxy_info_.proxy_server().is_https() ||
+         force_spdy_always_;
 }
 
 void HttpStreamFactoryImpl::Job::OnStreamReadyCallback() {
@@ -351,7 +365,7 @@ void HttpStreamFactoryImpl::Job::OnPreconnectsComplete() {
 // static
 int HttpStreamFactoryImpl::Job::OnHostResolution(
     SpdySessionPool* spdy_session_pool,
-    const HostPortProxyPair spdy_session_key,
+    const HostPortProxyPair& spdy_session_key,
     const AddressList& addresses,
     const BoundNetLog& net_log) {
   // It is OK to dereference spdy_session_pool, because the
@@ -547,7 +561,7 @@ int HttpStreamFactoryImpl::Job::StartInternal() {
 int HttpStreamFactoryImpl::Job::DoStart() {
   int port = request_info_.url.EffectiveIntPort();
   origin_ = HostPortPair(request_info_.url.HostNoBrackets(), port);
-  origin_url_ = HttpStreamFactory::ApplyHostMappingRules(
+  origin_url_ = stream_factory_->ApplyHostMappingRules(
       request_info_.url, &origin_);
   http_pipelining_key_.reset(new HttpPipelinedHost::Key(origin_));
 
@@ -651,7 +665,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   HostPortProxyPair spdy_session_key = GetSpdySessionKey();
   scoped_refptr<SpdySession> spdy_session =
       session_->spdy_session_pool()->GetIfExists(spdy_session_key, net_log_);
-  if (spdy_session) {
+  if (spdy_session && CanUseExistingSpdySession()) {
     // If we're preconnecting, but we already have a SpdySession, we don't
     // actually need to preconnect any sockets, so we're done.
     if (IsPreconnecting())
@@ -724,15 +738,17 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
         net_log_,
         num_streams_);
   } else {
+    // If we can't use a SPDY session, don't both checking for one after
+    // the hostname is resolved.
+    OnHostResolutionCallback resolution_callback = CanUseExistingSpdySession() ?
+        base::Bind(&Job::OnHostResolution, session_->spdy_session_pool(),
+                   GetSpdySessionKey()) :
+        OnHostResolutionCallback();
     return InitSocketHandleForHttpRequest(
         origin_url_, request_info_.extra_headers, request_info_.load_flags,
         request_info_.priority, session_, proxy_info_, ShouldForceSpdySSL(),
         want_spdy_over_npn, server_ssl_config_, proxy_ssl_config_, net_log_,
-        connection_.get(),
-        //OnHostResolutionCallback(),
-        base::Bind(&Job::OnHostResolution, session_->spdy_session_pool(),
-                   GetSpdySessionKey()),
-        io_callback_);
+        connection_.get(), resolution_callback, io_callback_);
   }
 }
 
@@ -784,7 +800,7 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
   if (ssl_started && (result == OK || IsCertificateError(result))) {
     SSLClientSocket* ssl_socket =
       static_cast<SSLClientSocket*>(connection_->socket());
-    if (ssl_socket->was_npn_negotiated()) {
+    if (ssl_socket->WasNpnNegotiated()) {
       was_npn_negotiated_ = true;
       std::string proto;
       std::string server_protos;
@@ -1190,7 +1206,7 @@ int HttpStreamFactoryImpl::Job::HandleCertificateError(int error) {
   server_ssl_config_.allowed_bad_certs.push_back(bad_cert);
 
   int load_flags = request_info_.load_flags;
-  if (HttpStreamFactory::ignore_certificate_errors())
+  if (session_->params().ignore_certificate_errors)
     load_flags |= LOAD_IGNORE_ALL_CERT_ERRORS;
   if (ssl_socket->IgnoreCertError(error, load_flags))
     return OK;
@@ -1252,7 +1268,7 @@ bool HttpStreamFactoryImpl::Job::IsRequestEligibleForPipelining() {
   if (session_->force_http_pipelining()) {
     return true;
   }
-  if (!HttpStreamFactory::http_pipelining_enabled()) {
+  if (!session_->params().http_pipelining_enabled) {
     return false;
   }
   if (using_ssl_) {

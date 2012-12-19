@@ -26,7 +26,7 @@
 
 #include "config.h"
 
-#if ENABLE(WEBGL)
+#if USE(3D_GRAPHICS)
 
 #include "GraphicsContext3D.h"
 
@@ -85,9 +85,9 @@ bool GraphicsContext3D::computeFormatAndTypeParameters(GC3Denum format,
 {
     switch (format) {
     case GraphicsContext3D::ALPHA:
-        *componentsPerPixel = 1;
-        break;
     case GraphicsContext3D::LUMINANCE:
+    case GraphicsContext3D::DEPTH_COMPONENT:
+    case GraphicsContext3D::DEPTH_STENCIL:
         *componentsPerPixel = 1;
         break;
     case GraphicsContext3D::LUMINANCE_ALPHA:
@@ -107,11 +107,20 @@ bool GraphicsContext3D::computeFormatAndTypeParameters(GC3Denum format,
     case GraphicsContext3D::UNSIGNED_BYTE:
         *bytesPerComponent = sizeof(GC3Dubyte);
         break;
+    case GraphicsContext3D::UNSIGNED_SHORT:
+        *bytesPerComponent = sizeof(GC3Dushort);
+        break;
     case GraphicsContext3D::UNSIGNED_SHORT_5_6_5:
     case GraphicsContext3D::UNSIGNED_SHORT_4_4_4_4:
     case GraphicsContext3D::UNSIGNED_SHORT_5_5_5_1:
         *componentsPerPixel = 1;
         *bytesPerComponent = sizeof(GC3Dushort);
+        break;
+#if !PLATFORM(BLACKBERRY)
+    case GraphicsContext3D::UNSIGNED_INT_24_8:
+#endif
+    case GraphicsContext3D::UNSIGNED_INT:
+        *bytesPerComponent = sizeof(GC3Duint);
         break;
     case GraphicsContext3D::FLOAT: // OES_texture_float
         *bytesPerComponent = sizeof(GC3Dfloat);
@@ -1824,7 +1833,6 @@ unsigned GraphicsContext3D::getChannelBitsByFormat(GC3Denum format)
     }
 }
 
-
 } // namespace WebCore
 
-#endif // ENABLE(WEBGL)
+#endif // USE(3D_GRAPHICS)

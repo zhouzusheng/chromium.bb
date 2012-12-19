@@ -667,6 +667,39 @@ std::string GLES2Util::GetQualifiedEnumString(
   return GetStringEnum(value);
 }
 
+bool GLES2Util::ParseUniformName(
+    const std::string& name,
+    size_t* array_pos,
+    int* element_index,
+    bool* getting_array) {
+  bool getting_array_location = false;
+  size_t open_pos = std::string::npos;
+  int index = 0;
+  if (name[name.size() - 1] == ']') {
+    if (name.size() < 3) {
+      return false;
+    }
+    open_pos = name.find_last_of('[');
+    if (open_pos == std::string::npos ||
+        open_pos >= name.size() - 2) {
+      return false;
+    }
+    size_t last = name.size() - 1;
+    for (size_t pos = open_pos + 1; pos < last; ++pos) {
+      int8 digit = name[pos] - '0';
+      if (digit < 0 || digit > 9) {
+        return false;
+      }
+      index = index * 10 + digit;
+    }
+    getting_array_location = true;
+  }
+  *getting_array = getting_array_location;
+  *element_index = index;
+  *array_pos = open_pos;
+  return true;
+}
+
 ContextCreationAttribParser::ContextCreationAttribParser()
   : alpha_size_(-1),
     blue_size_(-1),
@@ -756,29 +789,6 @@ bool ContextCreationAttribParser::Parse(const std::vector<int32>& attribs) {
   }
 
   return true;
-}
-
-// Swizzles the locations to prevent developers from assuming they
-// can do math on uniforms. According to the OpenGL ES 2.0 spec
-// the location of "someuniform[1]" is not '1' more than "someuniform[0]".
-static int32 Swizzle(int32 location) {
-  return (location & 0xF0000000U) |
-         ((location & 0x0AAAAAAAU) >> 1) |
-         ((location & 0x05555555U) << 1);
-}
-
-// Adds uniform_swizzle_ to prevent developers from assuming that locations are
-// always the same across GPUs and drivers.
-int32 GLES2Util::SwizzleLocation(int32 v) {
-  return v < 0 ? v : Swizzle(v);
-}
-
-int32 GLES2Util::UnswizzleLocation(int32 v) {
-  return v < 0 ? v : Swizzle(v);
-}
-
-int32 GLES2Util::MakeFakeLocation(int32 index, int32 element) {
-  return index + element * 0x10000;
 }
 
 #include "../common/gles2_cmd_utils_implementation_autogen.h"

@@ -28,9 +28,18 @@
 
 #include "PropertySetCSSStyleDeclaration.h"
 #include "StylePropertySet.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include "WebKitCSSKeyframesRule.h"
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
+
+StylePropertySet* StyleKeyframe::mutableProperties()
+{
+    if (!m_properties->isMutable())
+        m_properties = m_properties->copy();
+    return m_properties.get();
+}
     
 void StyleKeyframe::setProperties(PassRefPtr<StylePropertySet> properties)
 {
@@ -69,13 +78,22 @@ void StyleKeyframe::parseKeyString(const String& s, Vector<float>& keys)
 
 String StyleKeyframe::cssText() const
 {
-    String result = keyText();
+    StringBuilder result;
+    result.append(keyText());
+    result.appendLiteral(" { ");
+    String decls = m_properties->asText();
+    result.append(decls);
+    if (!decls.isEmpty())
+        result.append(' ');
+    result.append('}');
+    return result.toString();
+}
 
-    result += " { ";
-    result += m_properties->asText();
-    result += "}";
-
-    return result;
+void StyleKeyframe::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    info.addMember(m_properties);
+    info.addMember(m_key);
 }
 
 WebKitCSSKeyframeRule::WebKitCSSKeyframeRule(StyleKeyframe* keyframe, WebKitCSSKeyframesRule* parent)
@@ -94,8 +112,16 @@ WebKitCSSKeyframeRule::~WebKitCSSKeyframeRule()
 CSSStyleDeclaration* WebKitCSSKeyframeRule::style() const
 {
     if (!m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_keyframe->properties(), const_cast<WebKitCSSKeyframeRule*>(this));
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_keyframe->mutableProperties(), const_cast<WebKitCSSKeyframeRule*>(this));
     return m_propertiesCSSOMWrapper.get();
+}
+
+void WebKitCSSKeyframeRule::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    CSSRule::reportBaseClassMemoryUsage(memoryObjectInfo);
+    info.addMember(m_keyframe);
+    info.addMember(m_propertiesCSSOMWrapper);
 }
 
 } // namespace WebCore

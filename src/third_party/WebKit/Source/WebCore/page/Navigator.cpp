@@ -34,7 +34,6 @@
 #include "Language.h"
 #include "Page.h"
 #include "PluginData.h"
-#include "PointerLock.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "StorageNamespace.h"
@@ -115,8 +114,8 @@ bool Navigator::cookieEnabled() const
 {
     if (!m_frame)
         return false;
-        
-    if (m_frame->page() && !m_frame->page()->cookieEnabled())
+
+    if (m_frame->page() && !m_frame->page()->settings()->cookieEnabled())
         return false;
 
     return cookiesEnabled(m_frame->document());
@@ -134,15 +133,6 @@ bool Navigator::javaEnabled() const
 
     return true;
 }
-
-#if ENABLE(POINTER_LOCK)
-PointerLock* Navigator::webkitPointer() const
-{
-    if (!m_pointer && m_frame && m_frame->page())
-        m_pointer = PointerLock::create(m_frame);
-    return m_pointer.get();
-}
-#endif
 
 void Navigator::getStorageUpdates()
 {

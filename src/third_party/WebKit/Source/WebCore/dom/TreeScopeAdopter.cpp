@@ -26,16 +26,13 @@
 #include "TreeScopeAdopter.h"
 
 #include "Document.h"
+#include "ElementRareData.h"
 #include "ElementShadow.h"
 #include "NodeRareData.h"
+#include "RenderStyle.h"
 #include "ShadowRoot.h"
 
 namespace WebCore {
-
-static inline ElementShadow* shadowFor(Node* node)
-{
-    return node->isElementNode() ? toElement(node)->shadow() : 0;
-}
 
 void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
 {
@@ -52,9 +49,12 @@ void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
         oldDocument->incDOMTreeVersion();
 
     for (Node* node = root; node; node = node->traverseNextNode(root)) {
-        NodeRareData* rareData = node->setTreeScope(newDocument == m_newScope ? 0 : m_newScope);
-        if (rareData && rareData->nodeLists())
-            rareData->nodeLists()->adoptTreeScope(m_oldScope, m_newScope, oldDocument, newDocument);
+        if (NodeRareData* rareData = node->setTreeScope(newDocument == m_newScope ? 0 : m_newScope)) {
+            if (rareData->nodeLists())
+                rareData->nodeLists()->adoptTreeScope(oldDocument, newDocument);
+            if (node->isElementNode())
+                static_cast<ElementRareData*>(rareData)->adoptTreeScope(oldDocument, newDocument);
+        }
 
         if (willMoveToNewDocument)
             moveNodeToNewDocument(node, oldDocument, newDocument);

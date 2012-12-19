@@ -117,6 +117,7 @@ static bool hasTransparentBackgroundColor(StylePropertySet*);
 static PassRefPtr<CSSValue> backgroundColorInEffect(Node*);
 
 class HTMLElementEquivalent {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<HTMLElementEquivalent> create(CSSPropertyID propertyID, int primitiveValue, const QualifiedName& tagName)
     {
@@ -368,6 +369,16 @@ static inline RGBA32 getRGBAFontColor(StylePropertySet* style)
     return cssValueToRGBA(style->getPropertyCSSValue(CSSPropertyColor).get());
 }
 
+static inline RGBA32 getRGBABackgroundColor(CSSStyleDeclaration* style)
+{
+    return cssValueToRGBA(style->getPropertyCSSValueInternal(CSSPropertyBackgroundColor).get());
+}
+
+static inline RGBA32 getRGBABackgroundColor(StylePropertySet* style)
+{
+    return cssValueToRGBA(style->getPropertyCSSValue(CSSPropertyBackgroundColor).get());
+}
+
 static inline RGBA32 rgbaBackgroundColorInEffect(Node* node)
 {
     return cssValueToRGBA(backgroundColorInEffect(node).get());
@@ -529,7 +540,7 @@ void EditingStyle::overrideWithStyle(const StylePropertySet* style)
         return;
     if (!m_mutableStyle)
         m_mutableStyle = StylePropertySet::create();
-    m_mutableStyle->merge(style);
+    m_mutableStyle->mergeAndOverrideOnConflict(style);
     extractFontSizeDelta();
 }
 
@@ -1066,7 +1077,7 @@ static PassRefPtr<StylePropertySet> styleFromMatchedRulesForElement(Element* ele
     if (matchedRules) {
         for (unsigned i = 0; i < matchedRules->length(); i++) {
             if (matchedRules->item(i)->type() == CSSRule::STYLE_RULE)
-                style->merge(static_cast<CSSStyleRule*>(matchedRules->item(i))->styleRule()->properties(), true);
+                style->mergeAndOverrideOnConflict(static_cast<CSSStyleRule*>(matchedRules->item(i))->styleRule()->properties());
         }
     }
     
@@ -1080,7 +1091,7 @@ void EditingStyle::mergeStyleFromRules(StyledElement* element)
     // Styles from the inline style declaration, held in the variable "style", take precedence 
     // over those from matched rules.
     if (m_mutableStyle)
-        styleFromMatchedRules->merge(m_mutableStyle.get());
+        styleFromMatchedRules->mergeAndOverrideOnConflict(m_mutableStyle.get());
 
     clear();
     m_mutableStyle = styleFromMatchedRules;
@@ -1108,7 +1119,7 @@ void EditingStyle::mergeStyleFromRulesForSerialization(StyledElement* element)
             }
         }
     }
-    m_mutableStyle->merge(fromComputedStyle.get());
+    m_mutableStyle->mergeAndOverrideOnConflict(fromComputedStyle.get());
 }
 
 static void removePropertiesInStyle(StylePropertySet* styleToRemovePropertiesFrom, StylePropertySet* style)
@@ -1504,6 +1515,9 @@ PassRefPtr<StylePropertySet> getPropertiesNotIn(StylePropertySet* styleWithRedun
     if (baseStyle->getPropertyCSSValueInternal(CSSPropertyTextAlign)
         && textAlignResolvingStartAndEnd(result.get()) == textAlignResolvingStartAndEnd(baseStyle))
         result->removeProperty(CSSPropertyTextAlign);
+
+    if (baseStyle->getPropertyCSSValueInternal(CSSPropertyBackgroundColor) && getRGBABackgroundColor(result.get()) == getRGBABackgroundColor(baseStyle))
+        result->removeProperty(CSSPropertyBackgroundColor);
 
     return result;
 }

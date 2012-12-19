@@ -4,12 +4,12 @@
 
 #ifndef NET_SPDY_SPDY_HTTP_UTILS_H_
 #define NET_SPDY_SPDY_HTTP_UTILS_H_
-#pragma once
 
 #include "googleurl/src/gurl.h"
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/spdy/spdy_header_block.h"
 
 namespace net {
 

@@ -14,18 +14,17 @@
 #include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_types.h"
 
-class GURL;
-
 namespace webkit_blob {
 class FileStreamReader;
 }
 
 namespace fileapi {
 
+class FileSystemURL;
 class FileStreamWriter;
 class FileSystemContext;
 class FileSystemFileUtil;
-class FileSystemOperationInterface;
+class FileSystemOperation;
 class FileSystemQuotaUtil;
 class RemoteFileSystemProxyInterface;
 
@@ -36,6 +35,8 @@ class FILEAPI_EXPORT FileSystemMountPointProvider {
   // Callback for ValidateFileSystemRoot.
   typedef base::Callback<void(base::PlatformFileError error)>
       ValidateFileSystemCallback;
+  typedef base::Callback<void(base::PlatformFileError error)>
+      DeleteFileSystemCallback;
   virtual ~FileSystemMountPointProvider() {}
 
   // Validates the filesystem for the given |origin_url| and |type|.
@@ -60,16 +61,14 @@ class FILEAPI_EXPORT FileSystemMountPointProvider {
       bool create) = 0;
 
   // Checks if access to |virtual_path| is allowed from |origin_url|.
-  virtual bool IsAccessAllowed(const GURL& origin_url,
-                               FileSystemType type,
-                               const FilePath& virtual_path) = 0;
+  virtual bool IsAccessAllowed(const FileSystemURL& url) = 0;
 
   // Checks if a given |name| contains any restricted names/chars in it.
   // Callable on any thread.
   virtual bool IsRestrictedFileName(const FilePath& filename) const = 0;
 
   // Returns the specialized FileSystemFileUtil for this mount point.
-  virtual FileSystemFileUtil* GetFileUtil() = 0;
+  virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) = 0;
 
   // Returns file path we should use to check access permissions for
   // |virtual_path|.
@@ -78,14 +77,14 @@ class FILEAPI_EXPORT FileSystemMountPointProvider {
 
   // Returns a new instance of the specialized FileSystemOperation for this
   // mount point based on the given triplet of |origin_url|, |file_system_type|
-  // and |virtual_path|.
+  // and |virtual_path|. On failure to create a file system operation, set
+  // |error_code| correspondingly.
   // This method is usually dispatched by
   // FileSystemContext::CreateFileSystemOperation.
-  virtual FileSystemOperationInterface* CreateFileSystemOperation(
-      const GURL& origin_url,
-      FileSystemType file_system_type,
-      const FilePath& virtual_path,
-      FileSystemContext* context) const = 0;
+  virtual FileSystemOperation* CreateFileSystemOperation(
+      const FileSystemURL& url,
+      FileSystemContext* context,
+      base::PlatformFileError* error_code) const = 0;
 
   // Creates a new file stream reader for a given filesystem URL |url| with an
   // offset |offset|.
@@ -93,7 +92,7 @@ class FILEAPI_EXPORT FileSystemMountPointProvider {
   // This method itself does *not* check if the given path exists and is a
   // regular file.
   virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
-    const GURL& url,
+    const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const = 0;
 
@@ -103,13 +102,20 @@ class FILEAPI_EXPORT FileSystemMountPointProvider {
   // This method itself does *not* check if the given path exists and is a
   // regular file.
   virtual FileStreamWriter* CreateFileStreamWriter(
-      const GURL& url,
+      const FileSystemURL& url,
       int64 offset,
       FileSystemContext* context) const = 0;
 
   // Returns the specialized FileSystemQuotaUtil for this mount point.
   // This could return NULL if this mount point does not support quota.
   virtual FileSystemQuotaUtil* GetQuotaUtil() = 0;
+
+  // Deletes the filesystem for the given |origin_url| and |type|.
+  virtual void DeleteFileSystem(
+      const GURL& origin_url,
+      FileSystemType type,
+      FileSystemContext* context,
+      const DeleteFileSystemCallback& callback) = 0;
 };
 
 // An interface to control external file system access permissions.
@@ -120,25 +126,28 @@ class ExternalFileSystemMountPointProvider
   // provider. This list is used to set appropriate child process file access
   // permissions.
   virtual std::vector<FilePath> GetRootDirectories() const = 0;
-  // Grant access to all external file system from extension identified with
+  // Grants access to all external file system from extension identified with
   // |extension_id|.
   virtual void GrantFullAccessToExtension(const std::string& extension_id) = 0;
   // Grants access to |virtual_path| from |origin_url|.
   virtual void GrantFileAccessToExtension(
       const std::string& extension_id,
       const FilePath& virtual_path) = 0;
-  // Revoke file access from extension identified with |extension_id|.
+  // Revokes file access from extension identified with |extension_id|.
   virtual void RevokeAccessForExtension(
         const std::string& extension_id) = 0;
   // Checks if a given |mount_point| already exists.
   virtual bool HasMountPoint(const FilePath& mount_point) = 0;
   // Adds a new local mount point.
   virtual void AddLocalMountPoint(const FilePath& mount_point) = 0;
+  // Adds a new local mount point that will be accessible only by extensions
+  // that have been granted full acess for all external file systems.
+  virtual void AddRestrictedLocalMountPoint(const FilePath& mount_point) = 0;
   // Adds a new remote mount point.
   virtual void AddRemoteMountPoint(
       const FilePath& mount_point,
       RemoteFileSystemProxyInterface* remote_proxy) = 0;
-  // Remove a mount point.
+  // Removes a mount point.
   virtual void RemoveMountPoint(const FilePath& mount_point) = 0;
   // Gets virtual path by known filesystem path. Returns false when filesystem
   // path is not exposed by this provider.

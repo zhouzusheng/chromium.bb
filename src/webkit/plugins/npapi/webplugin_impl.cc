@@ -275,6 +275,7 @@ bool WebPluginImpl::initialize(WebPluginContainer* container) {
       return false;
 
     container->setPlugin(replacement_plugin);
+    destroy();
     return true;
   }
 
@@ -289,6 +290,9 @@ void WebPluginImpl::destroy() {
 }
 
 NPObject* WebPluginImpl::scriptableObject() {
+  if (!delegate_)
+    return NULL;
+
   return delegate_->GetPluginScriptableObject();
 }
 
@@ -466,6 +470,10 @@ void WebPluginImpl::didFailLoadingFrameRequest(
   // See comment in didFinishLoadingFrameRequest about the cast here.
   delegate_->DidFinishLoadWithReason(
       url, reason, reinterpret_cast<intptr_t>(notify_data));
+}
+
+bool WebPluginImpl::isPlaceholder() {
+  return false;
 }
 
 // -----------------------------------------------------------------------------

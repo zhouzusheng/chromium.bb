@@ -68,12 +68,13 @@ struct SerializeObject {
 // 10: Adds support for blob
 // 11: Adds support for pageScaleFactor
 // 12: Adds support for hasPasswordData in HTTP body
+// 13: Adds support for URL (FileSystem URL)
 // Should be const, but unit tests may modify it.
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See CreateHistoryStateForURL.
 //
-int kVersion = 12;
+int kVersion = 13;
 
 // A bunch of convenience functions to read/write to SerializeObjects.
 // The serializers assume the input data is in the correct format and so does
@@ -258,8 +259,13 @@ void WriteFormData(const WebHTTPBody& http_body, SerializeObject* obj) {
       WriteInteger64(element.fileStart, obj);
       WriteInteger64(element.fileLength, obj);
       WriteReal(element.modificationTime, obj);
+    } else if (element.type == WebHTTPBody::Element::TypeURL) {
+      WriteGURL(element.url, obj);
+      WriteInteger64(element.fileStart, obj);
+      WriteInteger64(element.fileLength, obj);
+      WriteReal(element.modificationTime, obj);
     } else {
-      WriteGURL(element.blobURL, obj);
+      WriteGURL(element.url, obj);
     }
   }
   WriteInteger64(http_body.identifier(), obj);
@@ -299,6 +305,16 @@ WebHTTPBody ReadFormData(const SerializeObject* obj) {
       }
       http_body.appendFileRange(file_path, file_start, file_length,
                                 modification_time);
+    } else if (type == WebHTTPBody::Element::TypeURL) {
+      GURL url = ReadGURL(obj);
+      long long file_start = 0;
+      long long file_length = -1;
+      double modification_time = 0.0;
+      file_start = ReadInteger64(obj);
+      file_length = ReadInteger64(obj);
+      modification_time = ReadReal(obj);
+      http_body.appendURLRange(url, file_start, file_length,
+                               modification_time);
     } else if (obj->version >= 10) {
       GURL blob_url = ReadGURL(obj);
       http_body.appendBlob(blob_url);
@@ -548,15 +564,9 @@ std::vector<FilePath> FilePathsFromHistoryState(
     // Couldn't parse the string.
     return to_return;
   }
-  const WebHTTPBody& http_body = item.httpBody();
-  if (!http_body.isNull()) {
-    WebHTTPBody::Element element;
-    for (size_t i = 0; i < http_body.elementCount(); ++i) {
-      http_body.elementAt(i, element);
-      if (element.type == WebHTTPBody::Element::TypeFile)
-        to_return.push_back(WebStringToFilePath(element.filePath));
-    }
-  }
+  const WebVector<WebString> file_paths = item.getReferencedFilePaths();
+  for (size_t i = 0; i < file_paths.size(); ++i)
+    to_return.push_back(WebStringToFilePath(file_paths[i]));
   return to_return;
 }
 

@@ -36,6 +36,10 @@
 #include <wtf/Atomics.h>
 #include <wtf/MainThread.h>
 
+#if DEBUG_AUDIONODE_REFERENCES
+#include <stdio.h>
+#endif
+
 namespace WebCore {
 
 AudioNode::AudioNode(AudioContext* context, float sampleRate)
@@ -62,7 +66,7 @@ AudioNode::~AudioNode()
 {
 #if DEBUG_AUDIONODE_REFERENCES
     --s_nodeCount[nodeType()];
-    printf("%p: %d: AudioNode::~AudioNode() %d %d\n", this, nodeType(), m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %d: AudioNode::~AudioNode() %d %d\n", this, nodeType(), m_normalRefCount, m_connectionRefCount);
 #endif
 }
 
@@ -316,7 +320,7 @@ void AudioNode::ref(RefType refType)
     }
 
 #if DEBUG_AUDIONODE_REFERENCES
-    printf("%p: %d: AudioNode::ref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %d: AudioNode::ref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
 #endif
 
     // See the disabling code in finishDeref() below. This handles the case where a node
@@ -379,7 +383,7 @@ void AudioNode::finishDeref(RefType refType)
     }
     
 #if DEBUG_AUDIONODE_REFERENCES
-    printf("%p: %d: AudioNode::deref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %d: AudioNode::deref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
 #endif
 
     if (!m_connectionRefCount) {
@@ -405,15 +409,15 @@ int AudioNode::s_nodeCount[NodeTypeEnd];
 
 void AudioNode::printNodeCounts()
 {
-    printf("\n\n");
-    printf("===========================\n");
-    printf("AudioNode: reference counts\n");
-    printf("===========================\n");
+    fprintf(stderr, "\n\n");
+    fprintf(stderr, "===========================\n");
+    fprintf(stderr, "AudioNode: reference counts\n");
+    fprintf(stderr, "===========================\n");
 
     for (unsigned i = 0; i < NodeTypeEnd; ++i)
-        printf("%d: %d\n", i, s_nodeCount[i]);
+        fprintf(stderr, "%d: %d\n", i, s_nodeCount[i]);
 
-    printf("===========================\n\n\n");
+    fprintf(stderr, "===========================\n\n\n");
 }
 
 #endif // DEBUG_AUDIONODE_REFERENCES

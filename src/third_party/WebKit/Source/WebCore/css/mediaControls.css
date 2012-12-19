@@ -81,6 +81,10 @@ audio::-webkit-media-controls-mute-button, video::-webkit-media-controls-mute-bu
     color: inherit;
 }
 
+audio::-webkit-media-controls-overlay-play-button, video::-webkit-media-controls-overlay-play-button {
+    display: none;
+}
+
 audio::-webkit-media-controls-play-button, video::-webkit-media-controls-play-button {
     -webkit-appearance: media-play-button;
     display: -webkit-box;
@@ -249,7 +253,4 @@ video::-webkit-media-text-track-future-nodes {
 video::-webkit-media-text-track-display {
     position: absolute;
     color: rgba(255, 255, 255, 1);
-
-    top: 100%;
-    -webkit-transform: translate(0%, -100%);
 }

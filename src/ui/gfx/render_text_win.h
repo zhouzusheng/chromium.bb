@@ -4,7 +4,6 @@
 
 #ifndef UI_GFX_RENDER_TEXT_WIN_H_
 #define UI_GFX_RENDER_TEXT_WIN_H_
-#pragma once
 
 #include <usp10.h>
 
@@ -67,8 +66,8 @@ class RenderTextWin : public RenderText {
   virtual ~RenderTextWin();
 
   // Overridden from RenderText:
-  virtual base::i18n::TextDirection GetTextDirection() OVERRIDE;
   virtual Size GetStringSize() OVERRIDE;
+  virtual int GetBaseline() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
   virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
@@ -93,15 +92,14 @@ class RenderTextWin : public RenderText {
  private:
   void ItemizeLogicalText();
   void LayoutVisualText();
+  void LayoutTextRun(internal::TextRun* run);
 
-  // Helper function to update the font on a text run after font substitution.
-  void ApplySubstituteFont(internal::TextRun* run, const Font& font);
+  // Helper function that calls |ScriptShape()| on the run, which has logic to
+  // handle E_OUTOFMEMORY return codes.
+  HRESULT ShapeTextRunWithFont(internal::TextRun* run, const Font& font);
 
-  // Returns whether |run| contains missing glyphs.
-  bool HasMissingGlyphs(internal::TextRun* run) const;
-
-  // Returns a vector of linked fonts corresponding to |font|.
-  const std::vector<Font>* GetLinkedFonts(const Font& font) const;
+  // Returns the number of characters in |run| that have missing glyphs.
+  int CountCharsWithMissingGlyphs(internal::TextRun* run) const;
 
   // Return the run index that contains the argument; or the length of the
   // |runs_| vector if argument exceeds the text length or width.
@@ -117,13 +115,8 @@ class RenderTextWin : public RenderText {
   // Cached HDC for performing Uniscribe API calls.
   static HDC cached_hdc_;
 
-  // Cached map from font names to vectors of linked fonts.
-  static std::map<std::string, std::vector<Font> > cached_linked_fonts_;
-
-  // Cached map of system fonts, from file names to font families.
-  static std::map<std::string, std::string> cached_system_fonts_;
-
   // Cached map from font name to the last successful substitute font used.
+  // TODO(asvitkine): Move the caching logic to font_fallback_win.cc.
   static std::map<std::string, Font> successful_substitute_fonts_;
 
   SCRIPT_CONTROL script_control_;

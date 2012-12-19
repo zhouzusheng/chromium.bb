@@ -39,8 +39,6 @@
 #include "SQLResultSet.h"
 #include "SQLValue.h"
 #include "V8Binding.h"
-#include "V8BindingMacros.h"
-#include "V8Proxy.h"
 #include "V8SQLResultSet.h"
 #include <wtf/Vector.h>
 
@@ -53,7 +51,7 @@ v8::Handle<v8::Value> V8SQLTransactionSync::executeSqlCallback(const v8::Argumen
     INC_STATS("DOM.SQLTransactionSync.executeSql()");
 
     if (!args.Length())
-        return throwError(SYNTAX_ERR, args.GetIsolate());
+        return setDOMException(SYNTAX_ERR, args.GetIsolate());
 
     STRING_TO_V8PARAMETER_EXCEPTION_BLOCK(V8Parameter<>, statement, args[0]);
 
@@ -61,7 +59,7 @@ v8::Handle<v8::Value> V8SQLTransactionSync::executeSqlCallback(const v8::Argumen
 
     if (args.Length() > 1 && !isUndefinedOrNull(args[1])) {
         if (!args[1]->IsObject())
-            return throwError(TYPE_MISMATCH_ERR, args.GetIsolate());
+            return setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
 
         uint32_t sqlArgsLength = 0;
         v8::Local<v8::Object> sqlArgsObject = args[1]->ToObject();
@@ -73,7 +71,7 @@ v8::Handle<v8::Value> V8SQLTransactionSync::executeSqlCallback(const v8::Argumen
             sqlArgsLength = length->Uint32Value();
 
         for (unsigned int i = 0; i < sqlArgsLength; ++i) {
-            v8::Local<v8::Integer> key = v8::Integer::New(i);
+            v8::Handle<v8::Integer> key = v8Integer(i, args.GetIsolate());
             EXCEPTION_BLOCK(v8::Local<v8::Value>, value, sqlArgsObject->Get(key));
 
             if (value.IsEmpty() || value->IsNull())
@@ -91,8 +89,8 @@ v8::Handle<v8::Value> V8SQLTransactionSync::executeSqlCallback(const v8::Argumen
     SQLTransactionSync* transaction = V8SQLTransactionSync::toNative(args.Holder());
 
     ExceptionCode ec = 0;
-    v8::Handle<v8::Value> result = toV8(transaction->executeSQL(statement, sqlValues, ec), args.GetIsolate());
-    V8Proxy::setDOMException(ec, args.GetIsolate());
+    v8::Handle<v8::Value> result = toV8(transaction->executeSQL(statement, sqlValues, ec), args.Holder(), args.GetIsolate());
+    setDOMException(ec, args.GetIsolate());
 
     return result;
 }

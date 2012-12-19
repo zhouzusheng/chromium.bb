@@ -7,6 +7,7 @@
  */
 #include "SkPictureFlat.h"
 
+#include "SkChecksum.h"
 #include "SkColorFilter.h"
 #include "SkDrawLooper.h"
 #include "SkMaskFilter.h"
@@ -15,22 +16,24 @@
 #include "SkTypeface.h"
 #include "SkXfermode.h"
 
+SK_DEFINE_INST_COUNT(SkFlatController)
+
 ///////////////////////////////////////////////////////////////////////////////
 
-SkRefCntPlayback::SkRefCntPlayback() : fCount(0), fArray(NULL) {}
+SkTypefacePlayback::SkTypefacePlayback() : fCount(0), fArray(NULL) {}
 
-SkRefCntPlayback::~SkRefCntPlayback() {
+SkTypefacePlayback::~SkTypefacePlayback() {
     this->reset(NULL);
 }
 
-void SkRefCntPlayback::reset(const SkRefCntSet* rec) {
+void SkTypefacePlayback::reset(const SkRefCntSet* rec) {
     for (int i = 0; i < fCount; i++) {
         SkASSERT(fArray[i]);
         fArray[i]->unref();
     }
     SkDELETE_ARRAY(fArray);
-    
-    if (rec) {
+
+    if (rec!= NULL && rec->count() > 0) {
         fCount = rec->count();
         fArray = SkNEW_ARRAY(SkRefCnt*, fCount);
         rec->copyToArray(fArray);
@@ -43,15 +46,15 @@ void SkRefCntPlayback::reset(const SkRefCntSet* rec) {
     }
 }
 
-void SkRefCntPlayback::setCount(int count) {
+void SkTypefacePlayback::setCount(int count) {
     this->reset(NULL);
-    
+
     fCount = count;
     fArray = SkNEW_ARRAY(SkRefCnt*, count);
     sk_bzero(fArray, count * sizeof(SkRefCnt*));
 }
 
-SkRefCnt* SkRefCntPlayback::set(int index, SkRefCnt* obj) {
+SkRefCnt* SkTypefacePlayback::set(int index, SkRefCnt* obj) {
     SkASSERT((unsigned)index < (unsigned)fCount);
     SkRefCnt_SafeAssign(fArray[index], obj);
     return obj;
@@ -59,49 +62,87 @@ SkRefCnt* SkRefCntPlayback::set(int index, SkRefCnt* obj) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SkFlatData* SkFlatData::Create(SkChunkAlloc* heap, const void* obj,
-        int index, void (*flattenProc)(SkOrderedWriteBuffer&, const void*),
-        SkRefCntSet* refCntRecorder, SkRefCntSet* faceRecorder,
-        uint32_t writeBufferflags) {
+SkFlatController::SkFlatController()
+: fBitmapHeap(NULL)
+, fTypefaceSet(NULL)
+, fTypefacePlayback(NULL)
+, fFactorySet(NULL)
+, fWriteBufferFlags(0) {}
 
+SkFlatController::~SkFlatController() {
+    SkSafeUnref(fBitmapHeap);
+    SkSafeUnref(fTypefaceSet);
+    SkSafeUnref(fFactorySet);
+}
+
+void SkFlatController::setBitmapHeap(SkBitmapHeap* heap) {
+    SkRefCnt_SafeAssign(fBitmapHeap, heap);
+}
+
+void SkFlatController::setTypefaceSet(SkRefCntSet *set) {
+    SkRefCnt_SafeAssign(fTypefaceSet, set);
+}
+
+void SkFlatController::setTypefacePlayback(SkTypefacePlayback* playback) {
+    fTypefacePlayback = playback;
+}
+
+SkNamedFactorySet* SkFlatController::setNamedFactorySet(SkNamedFactorySet* set) {
+    SkRefCnt_SafeAssign(fFactorySet, set);
+    return set;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+SkFlatData* SkFlatData::Create(SkFlatController* controller, const void* obj,
+        int index, void (*flattenProc)(SkOrderedWriteBuffer&, const void*)) {
     // a buffer of 256 bytes should be sufficient for most paints, regions,
     // and matrices.
     intptr_t storage[256];
     SkOrderedWriteBuffer buffer(256, storage, sizeof(storage));
-    if (refCntRecorder) {
-        buffer.setRefCntRecorder(refCntRecorder);
-    }
-    if (faceRecorder) {
-        buffer.setTypefaceRecorder(faceRecorder);
-    }
-    buffer.setFlags(writeBufferflags);
+
+    buffer.setBitmapHeap(controller->getBitmapHeap());
+    buffer.setTypefaceRecorder(controller->getTypefaceSet());
+    buffer.setNamedFactoryRecorder(controller->getNamedFactorySet());
+    buffer.setFlags(controller->getWriteBufferFlags());
 
     flattenProc(buffer, obj);
     uint32_t size = buffer.size();
+    SkASSERT(SkIsAlign4(size));
 
-    // allocate the enough memory to hold both SkFlatData and the serialized
-    // contents
-    SkFlatData* result = (SkFlatData*) heap->allocThrow(size + sizeof(SkFlatData));
+    /**
+     *  Allocate enough memory to hold
+     *  1. SkFlatData struct
+     *  2. flattenProc's data (4-byte aligned)
+     *  3. 4-byte sentinel
+     */
+    size_t allocSize = sizeof(SkFlatData) + size + sizeof(uint32_t);
+    SkFlatData* result = (SkFlatData*) controller->allocThrow(allocSize);
+
     result->fIndex = index;
-    result->fAllocSize = size;
+    result->fFlatSize = size;
 
     // put the serialized contents into the data section of the new allocation
-    buffer.flatten(result->data());
+    buffer.writeToMemory(result->data());
+    result->fChecksum = SkChecksum::Compute(result->data32(), size);
+    result->setSentinelAsCandidate();
     return result;
 }
 
 void SkFlatData::unflatten(void* result,
         void (*unflattenProc)(SkOrderedReadBuffer&, void*),
-        SkRefCntPlayback* refCntPlayback,
+        SkBitmapHeap* bitmapHeap,
         SkTypefacePlayback* facePlayback) const {
 
-    SkOrderedReadBuffer buffer(this->data(), fAllocSize);
-    if (refCntPlayback) {
-        refCntPlayback->setupBuffer(buffer);
+    SkOrderedReadBuffer buffer(this->data(), fFlatSize);
+
+    if (bitmapHeap) {
+        buffer.setBitmapStorage(bitmapHeap);
     }
     if (facePlayback) {
         facePlayback->setupBuffer(buffer);
     }
+
     unflattenProc(buffer, result);
-    SkASSERT(fAllocSize == (int32_t)buffer.offset());
+    SkASSERT(fFlatSize == (int32_t)buffer.offset());
 }

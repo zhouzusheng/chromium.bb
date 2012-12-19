@@ -37,6 +37,8 @@ OBJC_CLASS NSWindow;
 
 typedef uint32_t PlatformDisplayID;
 
+typedef WTF::Vector<char> ColorProfile;
+
 namespace WebCore {
 
     class FloatRect;
@@ -50,6 +52,7 @@ namespace WebCore {
 
     FloatRect screenRect(Widget*);
     FloatRect screenAvailableRect(Widget*);
+    void screenColorProfile(ColorProfile&);
 
 #if PLATFORM(MAC)
     NSScreen *screenForWindow(NSWindow *);

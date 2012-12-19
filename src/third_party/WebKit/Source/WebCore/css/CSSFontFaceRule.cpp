@@ -24,6 +24,8 @@
 
 #include "StylePropertySet.h"
 #include "StyleRule.h"
+#include "WebCoreMemoryInstrumentation.h"
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -48,11 +50,14 @@ CSSStyleDeclaration* CSSFontFaceRule::style() const
 
 String CSSFontFaceRule::cssText() const
 {
-    String result("@font-face");
-    result += " { ";
-    result += m_fontFaceRule->properties()->asText();
-    result += "}";
-    return result;
+    StringBuilder result;
+    result.appendLiteral("@font-face { ");
+    String descs = m_fontFaceRule->properties()->asText();
+    result.append(descs);
+    if (!descs.isEmpty())
+        result.append(' ');
+    result.append('}');
+    return result.toString();
 }
 
 void CSSFontFaceRule::reattach(StyleRuleFontFace* rule)
@@ -61,6 +66,14 @@ void CSSFontFaceRule::reattach(StyleRuleFontFace* rule)
     m_fontFaceRule = rule;
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_fontFaceRule->mutableProperties());
+}
+
+void CSSFontFaceRule::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    CSSRule::reportBaseClassMemoryUsage(memoryObjectInfo);
+    info.addMember(m_fontFaceRule);
+    info.addMember(m_propertiesCSSOMWrapper);
 }
 
 } // namespace WebCore

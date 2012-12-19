@@ -26,15 +26,16 @@
 #ifndef CCLayerImpl_h
 #define CCLayerImpl_h
 
-#include "Color.h"
+#include "CCInputHandler.h"
+#include "CCLayerAnimationController.h"
+#include "CCRenderSurface.h"
+#include "CCResourceProvider.h"
+#include "CCSharedQuadState.h"
 #include "FloatRect.h"
 #include "IntRect.h"
 #include "Region.h"
+#include "SkColor.h"
 #include "TextStream.h"
-#include "cc/CCInputHandler.h"
-#include "cc/CCLayerAnimationController.h"
-#include "cc/CCRenderSurface.h"
-#include "cc/CCSharedQuadState.h"
 #include <public/WebFilterOperations.h>
 #include <public/WebTransformationMatrix.h>
 #include <wtf/OwnPtr.h>
@@ -44,12 +45,15 @@
 
 namespace WebCore {
 
-class CCGraphicsContext;
 class CCLayerSorter;
 class CCLayerTreeHostImpl;
-class CCQuadCuller;
+class CCQuadSink;
 class CCRenderer;
+class CCScrollbarAnimationController;
+class CCScrollbarLayerImpl;
 class LayerChromium;
+
+struct CCAppendQuadsData;
 
 class CCLayerImpl : public CCLayerAnimationControllerClient {
 public:
@@ -80,6 +84,10 @@ public:
     void setReplicaLayer(PassOwnPtr<CCLayerImpl>);
     CCLayerImpl* replicaLayer() const { return m_replicaLayer.get(); }
 
+    bool hasMask() const { return m_maskLayer; }
+    bool hasReplica() const { return m_replicaLayer; }
+    bool replicaHasMask() const { return m_replicaLayer && (m_maskLayer || m_replicaLayer->m_maskLayer); }
+
     CCLayerTreeHostImpl* layerTreeHostImpl() const { return m_layerTreeHostImpl; }
     void setLayerTreeHostImpl(CCLayerTreeHostImpl* hostImpl) { m_layerTreeHostImpl = hostImpl; }
 
@@ -88,12 +96,11 @@ public:
     // didDraw is guaranteed to be called before another willDraw or before
     // the layer is destroyed. To enforce this, any class that overrides
     // willDraw/didDraw must call the base class version.
-    virtual void willDraw(CCRenderer*, CCGraphicsContext*);
-    virtual void appendQuads(CCQuadCuller&, const CCSharedQuadState*, bool& hadMissingTiles) { }
-    virtual void didDraw();
-    void appendDebugBorderQuad(CCQuadCuller&, const CCSharedQuadState*) const;
+    virtual void willDraw(CCResourceProvider*);
+    virtual void appendQuads(CCQuadSink&, CCAppendQuadsData&) { }
+    virtual void didDraw(CCResourceProvider*);
 
-    virtual unsigned contentsTextureId() const;
+    virtual CCResourceProvider::ResourceId contentsResourceId() const;
 
     // Returns true if this layer has content to draw.
     void setDrawsContent(bool);
@@ -111,8 +118,8 @@ public:
     void setAnchorPointZ(float);
     float anchorPointZ() const { return m_anchorPointZ; }
 
-    void setBackgroundColor(const Color&);
-    Color backgroundColor() const { return m_backgroundColor; }
+    void setBackgroundColor(SkColor);
+    SkColor backgroundColor() const { return m_backgroundColor; }
 
     void setFilters(const WebKit::WebFilterOperations&);
     const WebKit::WebFilterOperations& filters() const { return m_filters; }
@@ -141,18 +148,18 @@ public:
     void setPreserves3D(bool);
     bool preserves3D() const { return m_preserves3D; }
 
-    void setUsesLayerClipping(bool usesLayerClipping) { m_usesLayerClipping = usesLayerClipping; }
-    bool usesLayerClipping() const { return m_usesLayerClipping; }
+    void setUseParentBackfaceVisibility(bool useParentBackfaceVisibility) { m_useParentBackfaceVisibility = useParentBackfaceVisibility; }
+    bool useParentBackfaceVisibility() const { return m_useParentBackfaceVisibility; }
 
-    void setIsNonCompositedContent(bool isNonCompositedContent) { m_isNonCompositedContent = isNonCompositedContent; }
-    bool isNonCompositedContent() const { return m_isNonCompositedContent; }
+    void setUseLCDText(bool useLCDText) { m_useLCDText = useLCDText; }
+    bool useLCDText() const { return m_useLCDText; }
 
     void setSublayerTransform(const WebKit::WebTransformationMatrix&);
     const WebKit::WebTransformationMatrix& sublayerTransform() const { return m_sublayerTransform; }
 
     // Debug layer border - visual effect only, do not change geometry/clipping/etc.
-    void setDebugBorderColor(Color);
-    Color debugBorderColor() const { return m_debugBorderColor; }
+    void setDebugBorderColor(SkColor);
+    SkColor debugBorderColor() const { return m_debugBorderColor; }
     void setDebugBorderWidth(float);
     float debugBorderWidth() const { return m_debugBorderWidth; }
     bool hasDebugBorders() const;
@@ -171,15 +178,8 @@ public:
     bool drawOpacityIsAnimating() const { return m_drawOpacityIsAnimating; }
     void setDrawOpacityIsAnimating(bool drawOpacityIsAnimating) { m_drawOpacityIsAnimating = drawOpacityIsAnimating; }
 
-    // Usage: if this->usesLayerClipping() is false, then this clipRect should not be used.
-    const IntRect& clipRect() const { return m_clipRect; }
-    void setClipRect(const IntRect& rect) { m_clipRect = rect; }
-
-    const IntRect& scissorRect() const { return m_scissorRect; }
-    void setScissorRect(const IntRect& rect) { m_scissorRect = rect; }
-
-    CCRenderSurface* targetRenderSurface() const { return m_targetRenderSurface; }
-    void setTargetRenderSurface(CCRenderSurface* surface) { m_targetRenderSurface = surface; }
+    CCLayerImpl* renderTarget() const { ASSERT(!m_renderTarget || m_renderTarget->renderSurface()); return m_renderTarget; }
+    void setRenderTarget(CCLayerImpl* target) { m_renderTarget = target; }
 
     void setBounds(const IntSize&);
     const IntSize& bounds() const { return m_bounds; }
@@ -191,7 +191,7 @@ public:
     void setScrollPosition(const IntPoint&);
 
     const IntSize& maxScrollPosition() const {return m_maxScrollPosition; }
-    void setMaxScrollPosition(const IntSize& maxScrollPosition) { m_maxScrollPosition = maxScrollPosition; }
+    void setMaxScrollPosition(const IntSize&);
 
     const FloatSize& scrollDelta() const { return m_scrollDelta; }
     void setScrollDelta(const FloatSize&);
@@ -221,14 +221,11 @@ public:
 
     CCInputHandlerClient::ScrollStatus tryScroll(const IntPoint& viewportPoint, CCInputHandlerClient::ScrollInputType) const;
 
-    const IntRect& visibleLayerRect() const { return m_visibleLayerRect; }
-    void setVisibleLayerRect(const IntRect& visibleLayerRect) { m_visibleLayerRect = visibleLayerRect; }
+    const IntRect& visibleContentRect() const { return m_visibleContentRect; }
+    void setVisibleContentRect(const IntRect& visibleContentRect) { m_visibleContentRect = visibleContentRect; }
 
     bool doubleSided() const { return m_doubleSided; }
     void setDoubleSided(bool);
-
-    // Returns the rect containtaining this layer in the current view's coordinate system.
-    const IntRect getDrawRect() const;
 
     void setTransform(const WebKit::WebTransformationMatrix&);
     bool transformIsAnimating() const;
@@ -252,8 +249,12 @@ public:
 
     void setStackingOrderChanged(bool);
 
-    bool layerPropertyChanged() const { return m_layerPropertyChanged; }
+    bool layerPropertyChanged() const { return m_layerPropertyChanged || layerIsAlwaysDamaged(); }
+    bool layerSurfacePropertyChanged() const;
+
     void resetAllChangeTrackingForSubtree();
+
+    virtual bool layerIsAlwaysDamaged() const { return false; }
 
     CCLayerAnimationController* layerAnimationController() { return m_layerAnimationController.get(); }
 
@@ -264,14 +265,21 @@ public:
     // until the new context has been created successfully.
     virtual void didLoseContext();
 
+    CCScrollbarAnimationController* scrollbarAnimationController() const { return m_scrollbarAnimationController.get(); }
+
+    CCScrollbarLayerImpl* horizontalScrollbarLayer() const;
+    void setHorizontalScrollbarLayer(CCScrollbarLayerImpl*);
+
+    CCScrollbarLayerImpl* verticalScrollbarLayer() const;
+    void setVerticalScrollbarLayer(CCScrollbarLayerImpl*);
+
 protected:
     explicit CCLayerImpl(int);
 
+    void appendDebugBorderQuad(CCQuadSink&, const CCSharedQuadState*, CCAppendQuadsData&) const;
+
     virtual void dumpLayerProperties(TextStream&, int indent) const;
     static void writeIndent(TextStream&, int indent);
-
-    // Transformation used to transform quads provided in appendQuads.
-    virtual WebKit::WebTransformationMatrix quadTransform() const;
 
 private:
     void setParent(CCLayerImpl* parent) { m_parent = parent; }
@@ -308,7 +316,7 @@ private:
     bool m_shouldScrollOnMainThread;
     bool m_haveWheelEventHandlers;
     Region m_nonFastScrollableRegion;
-    Color m_backgroundColor;
+    SkColor m_backgroundColor;
 
     // Whether the "back" of this layer should draw.
     bool m_doubleSided;
@@ -316,18 +324,24 @@ private:
     // Tracks if drawing-related properties have changed since last redraw.
     bool m_layerPropertyChanged;
 
+    // Indicates that a property has changed on this layer that would not
+    // affect the pixels on its target surface, but would require redrawing
+    // but would require redrawing the targetSurface onto its ancestor targetSurface.
+    // For layers that do not own a surface this flag acts as m_layerPropertyChanged.
+    bool m_layerSurfacePropertyChanged;
+
     // Uses layer's content space.
-    IntRect m_visibleLayerRect;
+    IntRect m_visibleContentRect;
     bool m_masksToBounds;
     bool m_opaque;
     float m_opacity;
     FloatPoint m_position;
     bool m_preserves3D;
+    bool m_useParentBackfaceVisibility;
     bool m_drawCheckerboardForMissingTiles;
     WebKit::WebTransformationMatrix m_sublayerTransform;
     WebKit::WebTransformationMatrix m_transform;
-    bool m_usesLayerClipping;
-    bool m_isNonCompositedContent;
+    bool m_useLCDText;
 
     bool m_drawsContent;
     bool m_forceRenderSurface;
@@ -342,11 +356,10 @@ private:
     IntSize m_maxScrollPosition;
     float m_pageScaleDelta;
 
-    // Render surface this layer draws into. This is a surface that can belong
-    // either to this layer (if m_targetRenderSurface == m_renderSurface) or
-    // to an ancestor of this layer. The target render surface determines the
-    // coordinate system the layer's transforms are relative to.
-    CCRenderSurface* m_targetRenderSurface;
+    // The layer whose coordinate space this layer draws into. This can be
+    // either the same layer (m_renderTarget == this) or an ancestor of this
+    // layer.
+    CCLayerImpl* m_renderTarget;
 
     // The global depth value of the center of the layer. This value is used
     // to sort layers from back to front.
@@ -355,7 +368,7 @@ private:
     bool m_drawOpacityIsAnimating;
 
     // Debug borders.
-    Color m_debugBorderColor;
+    SkColor m_debugBorderColor;
     float m_debugBorderWidth;
 
     // Debug layer name.
@@ -373,16 +386,6 @@ private:
     bool m_betweenWillDrawAndDidDraw;
 #endif
 
-    // The rect that contributes to the scissor when this layer is drawn.
-    // Inherited by the parent layer and further restricted if this layer masks
-    // to bounds.
-    // Uses target surface's space.
-    IntRect m_clipRect;
-
-    // During drawing, identifies the region outside of which nothing should be drawn.
-    // Uses target surface's space.
-    IntRect m_scissorRect;
-
     // Render surface associated with this layer. The layer and its descendants
     // will render to this surface.
     OwnPtr<CCRenderSurface> m_renderSurface;
@@ -398,6 +401,9 @@ private:
 
     // Manages animations for this layer.
     OwnPtr<CCLayerAnimationController> m_layerAnimationController;
+
+    // Manages scrollbars for this layer
+    OwnPtr<CCScrollbarAnimationController> m_scrollbarAnimationController;
 };
 
 void sortLayers(Vector<CCLayerImpl*>::iterator first, Vector<CCLayerImpl*>::iterator end, CCLayerSorter*);

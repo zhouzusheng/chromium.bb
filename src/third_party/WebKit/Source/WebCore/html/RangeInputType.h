@@ -42,15 +42,22 @@ public:
     static PassOwnPtr<InputType> create(HTMLInputElement*);
 
 private:
-    RangeInputType(HTMLInputElement* element) : InputType(element) { }
+    RangeInputType(HTMLInputElement*);
     virtual bool isRangeControl() const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual double valueAsDouble() const OVERRIDE;
     virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionCode&) const OVERRIDE;
+    virtual bool typeMismatchFor(const String&) const OVERRIDE;
     virtual bool supportsRequired() const OVERRIDE;
     virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;
     virtual bool isSteppable() const OVERRIDE;
     virtual void handleMouseDownEvent(MouseEvent*) OVERRIDE;
+#if ENABLE(TOUCH_EVENTS)
+#if ENABLE(TOUCH_SLIDER)
+    virtual void handleTouchEvent(TouchEvent*) OVERRIDE;
+    virtual bool hasTouchEventHandler() const OVERRIDE;
+#endif
+#endif
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
@@ -62,6 +69,16 @@ private:
     virtual String fallbackValue() const OVERRIDE;
     virtual String sanitizeValue(const String& proposedValue) const OVERRIDE;
     virtual bool shouldRespectListAttribute() OVERRIDE;
+    virtual HTMLElement* sliderThumbElement() const OVERRIDE;
+    virtual HTMLElement* sliderTrackElement() const OVERRIDE;
+#if ENABLE(DATALIST_ELEMENT)
+    virtual void listAttributeTargetChanged() OVERRIDE;
+    void updateTickMarkValues();
+    virtual Decimal findClosestTickMarkValue(const Decimal&) OVERRIDE;
+
+    bool m_tickMarkValuesDirty;
+    Vector<Decimal> m_tickMarkValues;
+#endif
 };
 
 } // namespace WebCore

@@ -168,9 +168,6 @@
 #include <wtf/DynamicAnnotations.h>
 #include <wtf/text/CString.h>
 
-// Issues begin trace event here and end trace event when the current scope ends.
-#define TRACE_EVENT(name, id, extra) TRACE_EVENT2("webkit", name, "id", id, "extra", extra)
-
 // By default, const char* argument values are assumed to have long-lived scope
 // and will not be copied. Use this macro to force a const char* to be copied.
 #define TRACE_STR_COPY(str) \
@@ -406,18 +403,18 @@
 // ASYNC_BEGIN event above. The |step| param identifies this step within the
 // async event. This should be called at the beginning of the next phase of an
 // asynchronous operation.
-#define TRACE_EVENT_ASYNC_BEGIN_STEP0(category, name, id, step) \
+#define TRACE_EVENT_ASYNC_STEP0(category, name, id, step) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category, name, id, TRACE_EVENT_FLAG_NONE, "step", step)
-#define TRACE_EVENT_ASYNC_BEGIN_STEP1(category, name, id, step, \
+#define TRACE_EVENT_ASYNC_STEP1(category, name, id, step, \
                                       arg1_name, arg1_val) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category, name, id, TRACE_EVENT_FLAG_NONE, "step", step, \
         arg1_name, arg1_val)
-#define TRACE_EVENT_COPY_ASYNC_BEGIN_STEP0(category, name, id, step) \
+#define TRACE_EVENT_COPY_ASYNC_STEP0(category, name, id, step) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category, name, id, TRACE_EVENT_FLAG_COPY, "step", step)
-#define TRACE_EVENT_COPY_ASYNC_BEGIN_STEP1(category, name, id, step, \
+#define TRACE_EVENT_COPY_ASYNC_STEP1(category, name, id, step, \
         arg1_name, arg1_val) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
         category, name, id, TRACE_EVENT_FLAG_COPY, "step", step, \

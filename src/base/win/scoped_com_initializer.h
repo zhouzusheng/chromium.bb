@@ -4,7 +4,6 @@
 
 #ifndef BASE_WIN_SCOPED_COM_INITIALIZER_H_
 #define BASE_WIN_SCOPED_COM_INITIALIZER_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -51,6 +50,19 @@ class ScopedCOMInitializer {
     thread_id_ = GetCurrentThreadId();
 #endif
     hr_ = CoInitializeEx(NULL, init);
+#ifndef NDEBUG
+    switch (hr_) {
+      case S_FALSE:
+        LOG(ERROR) << "Multiple CoInitialize() called for thread "
+                   << thread_id_;
+        break;
+      case RPC_E_CHANGED_MODE:
+        DCHECK(false) << "Invalid COM thread model change";
+        break;
+      default:
+        break;
+    }
+#endif
   }
 
   HRESULT hr_;

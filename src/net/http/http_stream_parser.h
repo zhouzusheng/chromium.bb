@@ -4,7 +4,6 @@
 
 #ifndef NET_HTTP_HTTP_STREAM_PARSER_H_
 #define NET_HTTP_HTTP_STREAM_PARSER_H_
-#pragma once
 
 #include <string>
 
@@ -15,6 +14,7 @@
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/upload_data_stream.h"
+#include "net/base/upload_progress.h"
 #include "net/http/http_chunked_decoder.h"
 
 namespace net {
@@ -58,7 +58,7 @@ class NET_EXPORT_PRIVATE HttpStreamParser  : public ChunkCallback {
 
   void Close(bool not_reusable);
 
-  uint64 GetUploadProgress() const;
+  UploadProgress GetUploadProgress() const;
 
   HttpResponseInfo* GetResponseInfo();
 

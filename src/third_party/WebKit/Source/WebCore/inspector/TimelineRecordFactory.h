@@ -32,7 +32,7 @@
 #define TimelineRecordFactory_h
 
 #include "LayoutTypes.h"
-#include "PlatformString.h"
+#include <wtf/Forward.h>
 
 namespace WebCore {
 
@@ -71,11 +71,17 @@ namespace WebCore {
 
         static PassRefPtr<InspectorObject> createResourceReceiveResponseData(const String& requestId, const ResourceResponse&);
 
-        static PassRefPtr<InspectorObject> createReceiveResourceData(const String& requestId);
+        static PassRefPtr<InspectorObject> createReceiveResourceData(const String& requestId, int length);
 
         static PassRefPtr<InspectorObject> createResourceFinishData(const String& requestId, bool didFail, double finishTime);
 
         static PassRefPtr<InspectorObject> createPaintData(const LayoutRect&);
+
+        static void addRectData(InspectorObject*, const LayoutRect&);
+
+        static PassRefPtr<InspectorObject> createDecodeImageData(const String& imageType);
+
+        static PassRefPtr<InspectorObject> createResizeImageData(bool shouldCache);
 
         static PassRefPtr<InspectorObject> createParseHTMLData(unsigned int length, unsigned int startLine);
 

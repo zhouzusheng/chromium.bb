@@ -168,8 +168,19 @@ base::TimeDelta SpdyProxyClientSocket::GetConnectTimeMicros() const {
   return base::TimeDelta::FromMicroseconds(-1);
 }
 
+bool SpdyProxyClientSocket::WasNpnNegotiated() const {
+  return false;
+}
+
 NextProto SpdyProxyClientSocket::GetNegotiatedProtocol() const {
   return kProtoUnknown;
+}
+
+bool SpdyProxyClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
+  bool was_npn_negotiated;
+  NextProto protocol_negotiated;
+  return spdy_stream_->GetSSLInfo(ssl_info, &was_npn_negotiated,
+                                  &protocol_negotiated);
 }
 
 int SpdyProxyClientSocket::Read(IOBuffer* buf, int buf_len,
@@ -286,6 +297,13 @@ int SpdyProxyClientSocket::GetLocalAddress(IPEndPoint* address) const {
   return spdy_stream_->GetLocalAddress(address);
 }
 
+void SpdyProxyClientSocket::LogBlockedTunnelResponse() const {
+  ProxyClientSocket::LogBlockedTunnelResponse(
+      response_.headers->response_code(),
+      request_.url,
+      /* is_https_proxy = */ true);
+}
+
 void SpdyProxyClientSocket::OnIOComplete(int result) {
   DCHECK_NE(STATE_DISCONNECTED, next_state_);
   int rv = DoLoop(result);
@@ -372,7 +390,7 @@ int SpdyProxyClientSocket::DoSendRequest() {
                  &request_line));
 
   request_.extra_headers.MergeFrom(request_headers);
-  linked_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
+  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
   CreateSpdyHeadersFromHttpRequest(request_, request_headers, headers.get(),
                                    spdy_stream_->GetProtocolVersion(), true);
   // Reset the URL to be the endpoint of the connection
@@ -383,7 +401,7 @@ int SpdyProxyClientSocket::DoSendRequest() {
     (*headers)["url"] = endpoint_.ToString();
     headers->erase("scheme");
   }
-  spdy_stream_->set_spdy_headers(headers);
+  spdy_stream_->set_spdy_headers(headers.Pass());
 
   return spdy_stream_->SendRequest(true);
 }
@@ -408,26 +426,43 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
   if (response_.headers->GetParsedHttpVersion() < HttpVersion(1, 0))
     return ERR_TUNNEL_CONNECTION_FAILED;
 
-  next_state_ = STATE_OPEN;
   net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS,
       base::Bind(&HttpResponseHeaders::NetLogCallback, response_.headers));
 
-  if (response_.headers->response_code() == 200) {
-    return OK;
-  } else if (response_.headers->response_code() == 407) {
-    return HandleProxyAuthChallenge(auth_, &response_, net_log_);
-  } else {
-    // Immediately hand off our SpdyStream to a newly created SpdyHttpStream
-    // so that any subsequent SpdyFrames are processed in the context of
-    // the HttpStream, not the socket.
-    DCHECK(spdy_stream_);
-    SpdyStream* stream = spdy_stream_;
-    spdy_stream_ = NULL;
-    response_stream_.reset(new SpdyHttpStream(NULL, false));
-    response_stream_->InitializeWithExistingStream(stream);
-    next_state_ = STATE_DISCONNECTED;
-    return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+  switch (response_.headers->response_code()) {
+    case 200:  // OK
+      next_state_ = STATE_OPEN;
+      return OK;
+
+    case 302:  // Found / Moved Temporarily
+      // Try to return a sanitized response so we can follow auth redirects.
+      // If we can't, fail the tunnel connection.
+      if (SanitizeProxyRedirect(&response_, request_.url)) {
+        // Immediately hand off our SpdyStream to a newly created
+        // SpdyHttpStream so that any subsequent SpdyFrames are processed in
+        // the context of the HttpStream, not the socket.
+        DCHECK(spdy_stream_);
+        SpdyStream* stream = spdy_stream_;
+        spdy_stream_ = NULL;
+        response_stream_.reset(new SpdyHttpStream(NULL, false));
+        response_stream_->InitializeWithExistingStream(stream);
+        next_state_ = STATE_DISCONNECTED;
+        return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+      } else {
+        LogBlockedTunnelResponse();
+        return ERR_TUNNEL_CONNECTION_FAILED;
+      }
+
+    case 407:  // Proxy Authentication Required
+      next_state_ = STATE_OPEN;
+      return HandleProxyAuthChallenge(auth_, &response_, net_log_);
+
+    default:
+      // Ignore response to avoid letting the proxy impersonate the target
+      // server.  (See http://crbug.com/137891.)
+      LogBlockedTunnelResponse();
+      return ERR_TUNNEL_CONNECTION_FAILED;
   }
 }
 
@@ -477,8 +512,13 @@ int SpdyProxyClientSocket::OnResponseReceived(
   return OK;
 }
 
+void SpdyProxyClientSocket::OnHeadersSent() {
+  // Proxy client sockets don't send any HEADERS frame.
+  NOTREACHED();
+}
+
 // Called when data is received.
-void SpdyProxyClientSocket::OnDataReceived(const char* data, int length) {
+int SpdyProxyClientSocket::OnDataReceived(const char* data, int length) {
   if (length > 0) {
     // Save the received data.
     scoped_refptr<IOBuffer> io_buffer(new IOBuffer(length));
@@ -494,6 +534,7 @@ void SpdyProxyClientSocket::OnDataReceived(const char* data, int length) {
     user_buffer_ = NULL;
     c.Run(rv);
   }
+  return OK;
 }
 
 void SpdyProxyClientSocket::OnDataSent(int length)  {
@@ -545,9 +586,6 @@ void SpdyProxyClientSocket::OnClose(int status)  {
   // This may have been deleted by read_callback_, so check first.
   if (weak_ptr && !write_callback.is_null())
     write_callback.Run(ERR_CONNECTION_CLOSED);
-}
-
-void SpdyProxyClientSocket::set_chunk_callback(ChunkCallback* /*callback*/) {
 }
 
 }  // namespace net

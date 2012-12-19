@@ -49,23 +49,6 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-VisiblePosition RenderTextControlInnerBlock::positionForPoint(const LayoutPoint& point)
-{
-    LayoutPoint contentsPoint(point);
-
-    // Multiline text controls have the scroll on shadowAncestorNode, so we need to take that
-    // into account here.
-    if (m_multiLine) {
-        RenderTextControl* renderer = toRenderTextControl(node()->shadowAncestorNode()->renderer());
-        if (renderer->hasOverflowClip())
-            contentsPoint += renderer->scrolledContentOffset();
-    }
-
-    return RenderBlock::positionForPoint(contentsPoint);
-}
-
-// ----------------------------
-
 RenderTextControlSingleLine::RenderTextControlSingleLine(Node* node)
     : RenderTextControl(node)
     , m_shouldDrawCapsLockIndicator(false)
@@ -124,11 +107,17 @@ void RenderTextControlSingleLine::layout()
     // and type=search if the text height is taller than the contentHeight()
     // because of compability.
 
-    RenderBlock::layoutBlock(false);
-
     RenderBox* innerTextRenderer = innerTextElement()->renderBox();
     ASSERT(innerTextRenderer);
     RenderBox* innerBlockRenderer = innerBlockElement() ? innerBlockElement()->renderBox() : 0;
+
+    // To ensure consistency between layouts, we need to reset any conditionally overriden height.
+    innerTextRenderer->style()->setHeight(Length(Auto));
+    if (innerBlockRenderer)
+        innerBlockRenderer->style()->setHeight(Length(Auto));
+
+    RenderBlock::layoutBlock(false);
+
     HTMLElement* container = containerElement();
     RenderBox* containerRenderer = container ? container->renderBox() : 0;
 
@@ -203,9 +192,9 @@ void RenderTextControlSingleLine::layout()
     }
 }
 
-bool RenderTextControlSingleLine::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool RenderTextControlSingleLine::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    if (!RenderTextControl::nodeAtPoint(request, result, pointInContainer, accumulatedOffset, hitTestAction))
+    if (!RenderTextControl::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
         return false;
 
     // Say that we hit the inner text element if
@@ -214,7 +203,7 @@ bool RenderTextControlSingleLine::nodeAtPoint(const HitTestRequest& request, Hit
     //  - we hit regions not in any decoration buttons.
     HTMLElement* container = containerElement();
     if (result.innerNode()->isDescendantOf(innerTextElement()) || result.innerNode() == node() || (container && container == result.innerNode())) {
-        LayoutPoint pointInParent = pointInContainer;
+        LayoutPoint pointInParent = locationInContainer.point();
         if (container && innerBlockElement()) {
             if (innerBlockElement()->renderBox())
                 pointInParent -= toLayoutSize(innerBlockElement()->renderBox()->location());
@@ -353,7 +342,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
     adjustInnerTextStyle(startStyle, textBlockStyle.get());
 
     textBlockStyle->setWhiteSpace(PRE);
-    textBlockStyle->setWordWrap(NormalWordWrap);
+    textBlockStyle->setOverflowWrap(NormalOverflowWrap);
     textBlockStyle->setOverflowX(OHIDDEN);
     textBlockStyle->setOverflowY(OHIDDEN);
     textBlockStyle->setTextOverflow(textShouldBeTruncated() ? TextOverflowEllipsis : TextOverflowClip);
@@ -362,7 +351,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
         textBlockStyle->setHeight(Length(m_desiredInnerTextHeight, Fixed));
     // Do not allow line-height to be smaller than our default.
     if (textBlockStyle->fontMetrics().lineSpacing() > lineHeight(true, HorizontalLine, PositionOfInteriorLineBoxes))
-        textBlockStyle->setLineHeight(Length(-100.0f, Percent));
+        textBlockStyle->setLineHeight(RenderStyle::initialLineHeight());
 
     textBlockStyle->setDisplay(BLOCK);
 

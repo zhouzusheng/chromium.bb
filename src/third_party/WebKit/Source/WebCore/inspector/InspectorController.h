@@ -31,10 +31,10 @@
 #ifndef InspectorController_h
 #define InspectorController_h
 
-#include "PlatformString.h"
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -50,7 +50,9 @@ class InspectorClient;
 class InspectorDOMAgent;
 class InspectorDebuggerAgent;
 class InspectorFrontend;
+class InspectorFrontendChannel;
 class InspectorFrontendClient;
+class InspectorOverlay;
 class InspectorPageAgent;
 class InspectorProfilerAgent;
 class InspectorResourceAgent;
@@ -85,9 +87,9 @@ public:
     void dispatchMessageFromFrontend(const String& message);
 
     bool hasFrontend() const { return m_inspectorFrontend; }
-    void connectFrontend();
+    void connectFrontend(InspectorFrontendChannel*);
     void disconnectFrontend();
-    void restoreInspectorStateFromCookie(const String& inspectorCookie);
+    void reconnectFrontend(InspectorFrontendChannel*, const String& inspectorStateCookie);
     void setProcessId(long);
 
     void inspect(Node*);
@@ -119,6 +121,7 @@ private:
     OwnPtr<InstrumentingAgents> m_instrumentingAgents;
     OwnPtr<InjectedScriptManager> m_injectedScriptManager;
     OwnPtr<InspectorState> m_state;
+    OwnPtr<InspectorOverlay> m_overlay;
 
     InspectorAgent* m_inspectorAgent;
     InspectorDOMAgent* m_domAgent;

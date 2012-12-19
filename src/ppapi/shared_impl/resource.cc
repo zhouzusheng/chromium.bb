@@ -12,7 +12,7 @@ namespace ppapi {
 
 Resource::Resource(ResourceObjectType type, PP_Instance instance)
     : host_resource_(HostResource::MakeInstanceOnly(instance)) {
-  // The instance should always be valid (nonzero).
+  // The instance should be valid (nonzero).
   DCHECK(instance);
 
   pp_resource_ = PpapiGlobals::Get()->GetResourceTracker()->AddResource(this);
@@ -40,6 +40,10 @@ Resource::Resource(ResourceObjectType type, const HostResource& host_resource)
   }
 }
 
+Resource::Resource(Untracked) {
+  pp_resource_ = PpapiGlobals::Get()->GetResourceTracker()->AddResource(this);
+}
+
 Resource::~Resource() {
   PpapiGlobals::Get()->GetResourceTracker()->RemoveResource(this);
 }
@@ -54,6 +58,11 @@ void Resource::LastPluginRefWasDeleted() {
 
 void Resource::InstanceWasDeleted() {
   host_resource_ = HostResource();
+}
+
+void Resource::OnReplyReceived(const proxy::ResourceMessageReplyParams& params,
+                               const IPC::Message& msg) {
+  NOTREACHED();
 }
 
 void Resource::Log(PP_LogLevel_Dev level, const std::string& message) {

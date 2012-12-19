@@ -31,14 +31,15 @@
 #include "config.h"
 #include "WebKit.h"
 
+#include "LayoutTestSupport.h"
 #include "Logging.h"
+#include "MutationObserver.h"
 #include "Page.h"
 #include "RuntimeEnabledFeatures.h"
 #include "Settings.h"
 #include "TextEncoding.h"
 #include "V8Binding.h"
 #include "V8RecursionScope.h"
-#include "WebKitMutationObserver.h"
 #include "WebMediaPlayerClientImpl.h"
 #include "WebSocket.h"
 #include "WorkerContextExecutionProxy.h"
@@ -50,6 +51,7 @@
 #include <wtf/Assertions.h>
 #include <wtf/MainThread.h>
 #include <wtf/Threading.h>
+#include <wtf/UnusedParam.h>
 #include <wtf/text/AtomicString.h>
 
 #if OS(DARWIN)
@@ -66,7 +68,7 @@ public:
     virtual void willProcessTask() { }
     virtual void didProcessTask()
     {
-        WebCore::WebKitMutationObserver::deliverAllMutations();
+        WebCore::MutationObserver::deliverAllMutations();
     }
 };
 
@@ -80,7 +82,6 @@ static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 static bool s_webKitInitialized = false;
 
 static WebKitPlatformSupport* s_webKitPlatformSupport = 0;
-static bool s_layoutTestMode = false;
 
 static bool generateEntropy(unsigned char* buffer, size_t length)
 {
@@ -104,7 +105,7 @@ void initialize(WebKitPlatformSupport* webKitPlatformSupport)
 
     v8::V8::SetEntropySource(&generateEntropy);
     v8::V8::Initialize();
-    WebCore::V8BindingPerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
+    WebCore::V8PerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
 
 #if ENABLE(MUTATION_OBSERVERS)
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
@@ -175,19 +176,23 @@ WebKitPlatformSupport* webKitPlatformSupport()
 
 void setLayoutTestMode(bool value)
 {
-    s_layoutTestMode = value;
+    WebCore::setIsRunningLayoutTest(value);
 }
 
 bool layoutTestMode()
 {
-    return s_layoutTestMode;
+    return WebCore::isRunningLayoutTest();
 }
 
 void enableLogChannel(const char* name)
 {
+#if !LOG_DISABLED
     WTFLogChannel* channel = WebCore::getChannelFromName(name);
     if (channel)
         channel->state = WTFLogChannelOn;
+#else
+    UNUSED_PARAM(name);
+#endif // !LOG_DISABLED
 }
 
 void resetPluginCache(bool reloadPages)

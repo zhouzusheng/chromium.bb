@@ -33,6 +33,7 @@
 
 #include "DOMWindow.h"
 #include "FloatRect.h"
+#include "InspectorInstrumentation.h"
 #include "NotImplemented.h"
 #include "Page.h"
 #include "WebDevToolsAgentImpl.h"
@@ -41,6 +42,7 @@
 #include "platform/WebURLRequest.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include <public/Platform.h>
 #include <wtf/Vector.h>
 
 using namespace WebCore;
@@ -63,10 +65,11 @@ void InspectorClientImpl::inspectorDestroyed()
         agent->inspectorDestroyed();
 }
 
-void InspectorClientImpl::openInspectorFrontend(InspectorController* controller)
+InspectorFrontendChannel* InspectorClientImpl::openInspectorFrontend(InspectorController* controller)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->openInspectorFrontend(controller);
+        return agent->openInspectorFrontend(controller);
+    return 0;
 }
 
 void InspectorClientImpl::closeInspectorFrontend()
@@ -130,14 +133,12 @@ void InspectorClientImpl::clearBrowserCookies()
 
 void InspectorClientImpl::startMainThreadMonitoring()
 {
-    if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->startMainThreadMonitoring();
+    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
 }
 
 void InspectorClientImpl::stopMainThreadMonitoring()
 {
-    if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->stopMainThreadMonitoring();
+    WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
 }
 
 bool InspectorClientImpl::canOverrideDeviceMetrics()
@@ -160,6 +161,16 @@ void InspectorClientImpl::autoZoomPageToFitWidth()
 bool InspectorClientImpl::supportsFrameInstrumentation()
 {
     return true;
+}
+
+void InspectorClientImpl::willProcessTask()
+{
+    InspectorInstrumentation::willProcessTask(m_inspectedWebView->page());
+}
+
+void InspectorClientImpl::didProcessTask()
+{
+    InspectorInstrumentation::didProcessTask(m_inspectedWebView->page());
 }
 
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()

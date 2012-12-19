@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef GraphicsContext3D_h
@@ -29,11 +29,11 @@
 #include "IntRect.h"
 #include "GraphicsLayer.h"
 #include "GraphicsTypes3D.h"
-#include "PlatformString.h"
 #include <wtf/HashMap.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 // FIXME: Find a better way to avoid the name confliction for NO_ERROR.
 #if ((PLATFORM(CHROMIUM) && OS(WINDOWS)) || PLATFORM(WIN) || (PLATFORM(QT) && OS(WINDOWS)))
@@ -43,7 +43,7 @@
 #undef VERSION
 #endif
 
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL) || PLATFORM(BLACKBERRY)
 #include "ANGLEWebKitBridge.h"
 #endif
 
@@ -68,18 +68,13 @@ typedef unsigned int GLuint;
 #if PLATFORM(MAC)
 typedef CGLContextObj PlatformGraphicsContext3D;
 #elif PLATFORM(QT)
-#if HAVE(QT5)
 typedef QOpenGLContext* PlatformGraphicsContext3D;
 typedef QSurface* PlatformGraphicsSurface3D;
-#else
-typedef QGLContext* PlatformGraphicsContext3D;
-typedef QGLWidget* PlatformGraphicsSurface3D;
-#endif
 #else
 typedef void* PlatformGraphicsContext3D;
 #endif
 
-#if PLATFORM(CHROMIUM) && USE(SKIA)
+#if (PLATFORM(CHROMIUM) || PLATFORM(BLACKBERRY)) && USE(SKIA)
 class GrContext;
 #endif
 
@@ -94,7 +89,9 @@ const Platform3DObject NullPlatform3DObject = 0;
 namespace WebCore {
 class DrawingBuffer;
 class Extensions3D;
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
+#if USE(OPENGL_ES_2)
+class Extensions3DOpenGLES;
+#else
 class Extensions3DOpenGL;
 #endif
 #if PLATFORM(QT)
@@ -108,6 +105,8 @@ class IntRect;
 class IntSize;
 #if USE(CAIRO)
 class PlatformContextCairo;
+#elif PLATFORM(BLACKBERRY)
+class GraphicsContext;
 #endif
 
 struct ActiveInfo {
@@ -251,6 +250,7 @@ public:
         ALPHA = 0x1906,
         RGB = 0x1907,
         RGBA = 0x1908,
+        BGRA = 0x80E1,
         LUMINANCE = 0x1909,
         LUMINANCE_ALPHA = 0x190A,
         UNSIGNED_SHORT_4_4_4_4 = 0x8033,
@@ -459,7 +459,8 @@ public:
 
     enum RenderStyle {
         RenderOffscreen,
-        RenderDirectlyToHostWindow
+        RenderDirectlyToHostWindow,
+        RenderToCurrentGLContext
     };
 
     class ContextLostCallback {
@@ -478,13 +479,14 @@ public:
     void setErrorMessageCallback(PassOwnPtr<ErrorMessageCallback>);
 
     static PassRefPtr<GraphicsContext3D> create(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
+    static PassRefPtr<GraphicsContext3D> createForCurrentGLContext();
     ~GraphicsContext3D();
 
 #if PLATFORM(MAC)
     PlatformGraphicsContext3D platformGraphicsContext3D() const { return m_contextObj; }
     Platform3DObject platformTexture() const { return m_compositorTexture; }
     CALayer* platformLayer() const { return reinterpret_cast<CALayer*>(m_webGLLayer.get()); }
-#elif PLATFORM(CHROMIUM)
+#elif PLATFORM(CHROMIUM) || PLATFORM(BLACKBERRY)
     PlatformGraphicsContext3D platformGraphicsContext3D() const;
     Platform3DObject platformTexture() const;
 #if USE(SKIA)
@@ -506,7 +508,7 @@ public:
     PlatformLayer* platformLayer() const;
 #endif
 #elif PLATFORM(EFL)
-    PlatformGraphicsContext3D platformGraphicsContext3D() const;
+    PlatformGraphicsContext3D platformGraphicsContext3D();
     Platform3DObject platformTexture() const { return m_texture; }
 #if USE(ACCELERATED_COMPOSITING)
     PlatformLayer* platformLayer() const;
@@ -520,10 +522,13 @@ public:
 #endif
     bool makeContextCurrent();
 
-#if PLATFORM(MAC) || PLATFORM(CHROMIUM) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
+#if PLATFORM(MAC) || PLATFORM(CHROMIUM) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL) || PLATFORM(BLACKBERRY)
     // With multisampling on, blit from multisampleFBO to regular FBO.
     void prepareTexture();
 #endif
+
+    // Equivalent to ::glTexImage2D(). Allows pixels==0 with no allocation.
+    void texImage2DDirect(GC3Denum target, GC3Dint level, GC3Denum internalformat, GC3Dsizei width, GC3Dsizei height, GC3Dint border, GC3Denum format, GC3Denum type, const void* pixels);
 
     // Helper to texImage2D with pixel==0 case: pixels are initialized to 0.
     // Return true if no GL error is synthesized.
@@ -549,7 +554,7 @@ public:
     // return the suggested GL error indicating the cause of the failure:
     //   INVALID_VALUE if width/height is negative or overflow happens.
     //   INVALID_ENUM if format/type is illegal.
-    GC3Denum computeImageSizeInBytes(GC3Denum format,
+    static GC3Denum computeImageSizeInBytes(GC3Denum format,
                                      GC3Denum type,
                                      GC3Dsizei width,
                                      GC3Dsizei height,
@@ -561,7 +566,7 @@ public:
     // packing the pixel data according to the given format and type,
     // and obeying the flipY, premultiplyAlpha, and ignoreGammaAndColorProfile
     // flags. Returns true upon success.
-    bool extractImageData(Image* image,
+    static bool extractImageData(Image*,
                           GC3Denum format,
                           GC3Denum type,
                           bool flipY,
@@ -573,7 +578,7 @@ public:
     // packing the pixel data according to the given format and type,
     // and obeying the flipY and premultiplyAlpha flags. Returns true
     // upon success.
-    bool extractImageData(ImageData*,
+    static bool extractImageData(ImageData*,
                           GC3Denum format,
                           GC3Denum type,
                           bool flipY,
@@ -585,7 +590,7 @@ public:
     // If the data is not tightly packed according to the passed
     // unpackAlignment, the output data will be tightly packed.
     // Returns true if successful, false if any error occurred.
-    bool extractTextureData(unsigned int width, unsigned int height,
+    static bool extractTextureData(unsigned int width, unsigned int height,
                             GC3Denum format, GC3Denum type,
                             unsigned int unpackAlignment,
                             bool flipY, bool premultiplyAlpha,
@@ -593,7 +598,7 @@ public:
                             Vector<uint8_t>& data);
 
     // Flips the given image data vertically, in-place.
-    void flipVertically(void* imageData,
+    static void flipVertically(void* imageData,
                         unsigned int width,
                         unsigned int height,
                         unsigned int bytesPerPixel,
@@ -801,6 +806,9 @@ public:
 #elif PLATFORM(QT)
     void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
                        int canvasWidth, int canvasHeight, QPainter* context);
+#elif PLATFORM(BLACKBERRY)
+    void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
+                       int canvasWidth, int canvasHeight, GraphicsContext*);
 #endif
 
     void markContextChanged();
@@ -810,6 +818,10 @@ public:
     void paintRenderingResultsToCanvas(ImageBuffer*, DrawingBuffer*);
     PassRefPtr<ImageData> paintRenderingResultsToImageData(DrawingBuffer*);
     bool paintCompositedResultsToCanvas(ImageBuffer*);
+
+#if PLATFORM(BLACKBERRY)
+    bool paintsIntoCanvasBuffer() const;
+#endif
 
     // Support for buffer creation and deletion
     Platform3DObject createBuffer();
@@ -861,7 +873,7 @@ public:
     static unsigned getChannelBitsByFormat(GC3Denum);
 
   private:
-    GraphicsContext3D(Attributes attrs, HostWindow* hostWindow, bool renderDirectlyToHostWindow);
+    GraphicsContext3D(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
 
     // Each platform must provide an implementation of this method.
     //
@@ -882,7 +894,7 @@ public:
     //
     // No vertical flip of the image data is performed by this
     // method.
-    bool getImageData(Image* image,
+    static bool getImageData(Image*,
                       GC3Denum format,
                       GC3Denum type,
                       bool premultiplyAlpha,
@@ -903,7 +915,7 @@ public:
     // A sourceUnpackAlignment of zero indicates that the source
     // data is tightly packed. Non-zero values may take a slow path.
     // Destination data will have no gaps between rows.
-    bool packPixels(const uint8_t* sourceData,
+    static bool packPixels(const uint8_t* sourceData,
                     SourceDataFormat sourceDataFormat,
                     unsigned int width,
                     unsigned int height,
@@ -913,17 +925,23 @@ public:
                     AlphaOp alphaOp,
                     void* destinationData);
 
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL) || PLATFORM(BLACKBERRY)
     // Take into account the user's requested context creation attributes,
     // in particular stencil and antialias, and determine which could or
     // could not be honored based on the capabilities of the OpenGL
     // implementation.
+    void validateDepthStencil(const char* packedDepthStencilExtension);
     void validateAttributes();
 
     // Read rendering results into a pixel array with the same format as the
     // backbuffer.
     void readRenderingResults(unsigned char* pixels, int pixelsSize);
     void readPixelsAndConvertToBGRAIfNecessary(int x, int y, int width, int height, unsigned char* pixels);
+#endif
+
+#if PLATFORM(BLACKBERRY)
+    void logFrameBufferStatus(int line);
+    void readPixelsIMG(GC3Dint x, GC3Dint y, GC3Dsizei width, GC3Dsizei height, GC3Denum format, GC3Denum type, void* data);
 #endif
 
     bool reshapeFBOs(const IntSize&);
@@ -938,27 +956,48 @@ public:
 #if PLATFORM(MAC)
     CGLContextObj m_contextObj;
     RetainPtr<WebGLLayer> m_webGLLayer;
+#elif PLATFORM(BLACKBERRY)
+#if USE(ACCELERATED_COMPOSITING)
+    RefPtr<PlatformLayer> m_compositingLayer;
+#endif
+    void* m_context;
 #endif
 
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
-    typedef struct {
+#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL) || PLATFORM(BLACKBERRY)
+    struct ShaderSourceEntry {
         String source;
         String log;
         bool isValid;
-    } ShaderSourceEntry;
+        ShaderSourceEntry()
+            : isValid(0)
+        {
+        }
+    };
     HashMap<Platform3DObject, ShaderSourceEntry> m_shaderSourceMap;
 
     ANGLEWebKitBridge m_compiler;
+#endif
 
+#if PLATFORM(BLACKBERRY) || (PLATFORM(QT) && defined(QT_OPENGL_ES_2))
+    friend class Extensions3DOpenGLES;
+    OwnPtr<Extensions3DOpenGLES> m_extensions;
+#elif !PLATFORM(CHROMIUM)
     friend class Extensions3DOpenGL;
     OwnPtr<Extensions3DOpenGL> m_extensions;
+#endif
+    friend class Extensions3DOpenGLCommon;
 
     Attributes m_attrs;
+    RenderStyle m_renderStyle;
     Vector<Vector<float> > m_vertexArray;
 
-    GC3Duint m_texture, m_compositorTexture;
+    GC3Duint m_texture;
+#if !PLATFORM(BLACKBERRY)
+    GC3Duint m_compositorTexture;
+#endif
     GC3Duint m_fbo;
-#if USE(OPENGL_ES_2)
+
+#if !PLATFORM(BLACKBERRY)
     GC3Duint m_depthBuffer;
     GC3Duint m_stencilBuffer;
 #endif
@@ -979,10 +1018,16 @@ public:
 
     // Errors raised by synthesizeGLError().
     ListHashSet<GC3Denum> m_syntheticErrors;
+
+#if PLATFORM(BLACKBERRY)
+    bool m_isImaginationHardware;
 #endif
 
+#if !PLATFORM(BLACKBERRY)
     friend class GraphicsContext3DPrivate;
     OwnPtr<GraphicsContext3DPrivate> m_private;
+#endif
+    bool systemAllowsMultisamplingOnATICards() const;
 };
 
 } // namespace WebCore

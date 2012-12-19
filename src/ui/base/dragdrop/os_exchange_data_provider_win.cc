@@ -75,7 +75,7 @@ class FormatEtcEnumerator : public IEnumFORMATETC {
  private:
   // This can only be called from |CloneFromOther|, since it initializes the
   // contents_ from the other enumerator's contents.
-  FormatEtcEnumerator() : ref_count_(0) {
+  FormatEtcEnumerator() : cursor_(0), ref_count_(0) {
   }
 
   // Clone a new FormatEtc from another instance of this enumeration.
@@ -791,7 +791,7 @@ HRESULT DataObjectImpl::QueryInterface(const IID& iid, void** object) {
   if (IsEqualIID(iid, IID_IDataObject) || IsEqualIID(iid, IID_IUnknown)) {
     *object = static_cast<IDataObject*>(this);
   } else if (in_async_mode_ &&
-             IsEqualIID(iid, IID_IDataObjectAsyncCapability)) {
+             IsEqualIID(iid, __uuidof(IDataObjectAsyncCapability))) {
     *object = static_cast<IDataObjectAsyncCapability*>(this);
   } else {
     *object = NULL;

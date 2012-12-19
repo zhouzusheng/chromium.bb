@@ -28,6 +28,7 @@
 
 #if ENABLE(INDEXED_DATABASE)
 
+#include "IDBObjectStoreBackendInterface.h"
 #include "IDBTransaction.h"
 #include "IDBTransactionCallbacksProxy.h"
 #include "WebIDBObjectStoreImpl.h"
@@ -46,17 +47,17 @@ WebIDBTransactionImpl::~WebIDBTransactionImpl()
 {
 }
 
-int WebIDBTransactionImpl::mode() const
-{
-    return m_backend->mode();
-}
-
 WebIDBObjectStore* WebIDBTransactionImpl::objectStore(const WebString& name, ExceptionCode& ec)
 {
     RefPtr<IDBObjectStoreBackendInterface> objectStore = m_backend->objectStore(name, ec);
     if (!objectStore)
         return 0;
     return new WebIDBObjectStoreImpl(objectStore);
+}
+
+void WebIDBTransactionImpl::commit()
+{
+    m_backend->commit();
 }
 
 void WebIDBTransactionImpl::abort()

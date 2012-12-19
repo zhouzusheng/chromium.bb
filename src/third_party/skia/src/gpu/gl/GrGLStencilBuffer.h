@@ -23,10 +23,10 @@ public:
         bool      fPacked;
     };
 
-    GrGLStencilBuffer(GrGpu* gpu, GrGLint rbid, 
+    GrGLStencilBuffer(GrGpu* gpu, GrGLint rbid,
                       int width, int height,
                       int sampleCnt,
-                      const Format& format) 
+                      const Format& format)
         : GrStencilBuffer(gpu, width, height, format.fStencilBits, sampleCnt)
         , fFormat(format)
         , fRenderbufferID(rbid) {
@@ -34,7 +34,7 @@ public:
 
     virtual ~GrGLStencilBuffer();
 
-    virtual size_t sizeInBytes() const;
+    virtual size_t sizeInBytes() const SK_OVERRIDE;
 
     GrGLuint renderbufferID() const {
         return fRenderbufferID;
@@ -43,9 +43,9 @@ public:
     const Format& format() const { return fFormat; }
 
 protected:
-    virtual void onRelease();
-
-    virtual void onAbandon();
+    // overrides of GrResource
+    virtual void onRelease() SK_OVERRIDE;
+    virtual void onAbandon() SK_OVERRIDE;
 
 private:
     Format fFormat;

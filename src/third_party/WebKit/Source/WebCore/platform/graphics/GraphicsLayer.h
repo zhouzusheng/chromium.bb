@@ -38,50 +38,11 @@
 #include "FloatSize.h"
 #include "GraphicsLayerClient.h"
 #include "IntRect.h"
+#include "PlatformLayer.h"
 #include "TransformationMatrix.h"
 #include "TransformOperations.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
-
-#if PLATFORM(MAC)
-OBJC_CLASS CALayer;
-typedef CALayer PlatformLayer;
-#elif PLATFORM(WIN)
-typedef struct _CACFLayer PlatformLayer;
-#elif PLATFORM(QT)
-#if USE(TEXTURE_MAPPER)
-namespace WebCore {
-class TextureMapperPlatformLayer;
-typedef TextureMapperPlatformLayer PlatformLayer;
-};
-#else
-QT_BEGIN_NAMESPACE
-class QGraphicsObject;
-QT_END_NAMESPACE
-namespace WebCore {
-typedef QGraphicsObject PlatformLayer;
-}
-#endif
-#elif PLATFORM(CHROMIUM)
-namespace WebCore {
-class LayerChromium;
-typedef LayerChromium PlatformLayer;
-}
-#elif PLATFORM(GTK)
-#if USE(TEXTURE_MAPPER_CAIRO) || USE(TEXTURE_MAPPER_GL)
-namespace WebCore {
-class TextureMapperPlatformLayer;
-typedef TextureMapperPlatformLayer PlatformLayer;
-};
-#elif USE(CLUTTER)
-typedef struct _ClutterActor ClutterActor;
-namespace WebCore {
-typedef ClutterActor PlatformLayer;
-};
-#endif
-#else
-typedef void* PlatformLayer;
-#endif
 
 enum LayerTreeAsTextBehaviorFlags {
     LayerTreeAsTextBehaviorNormal = 0,
@@ -102,6 +63,7 @@ class TimingFunction;
 // represent values for properties being animated via the GraphicsLayer,
 // without pulling in style-related data from outside of the platform directory.
 class AnimationValue {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     AnimationValue(float keyTime, PassRefPtr<TimingFunction> timingFunction = 0)
         : m_keyTime(keyTime)
@@ -407,8 +369,8 @@ public:
     virtual void setMaintainsPixelAlignment(bool maintainsAlignment) { m_maintainsPixelAlignment = maintainsAlignment; }
     virtual bool maintainsPixelAlignment() const { return m_maintainsPixelAlignment; }
     
-    void setAppliesPageScale(bool appliesScale = true) { m_appliesPageScale = appliesScale; }
-    bool appliesPageScale() const { return m_appliesPageScale; }
+    virtual void setAppliesPageScale(bool appliesScale = true) { m_appliesPageScale = appliesScale; }
+    virtual bool appliesPageScale() const { return m_appliesPageScale; }
 
     float pageScaleFactor() const { return m_client ? m_client->pageScaleFactor() : 1; }
     float deviceScaleFactor() const { return m_client ? m_client->deviceScaleFactor() : 1; }
@@ -426,14 +388,14 @@ public:
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeAsTextBehavior = LayerTreeAsTextBehaviorNormal) const;
 
-    // Return an estimate of the backing store area (in pixels). May be incorrect for tiled layers.
-    virtual double backingStoreArea() const;
+    // Return an estimate of the backing store memory cost (in bytes). May be incorrect for tiled layers.
+    virtual double backingStoreMemoryEstimate() const;
 
     bool usingTiledLayer() const { return m_usingTiledLayer; }
 
     virtual TiledBacking* tiledBacking() { return 0; }
 
-#if PLATFORM(QT) || PLATFORM(GTK)
+#if PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
     // This allows several alternative GraphicsLayer implementations in the same port,
     // e.g. if a different GraphicsLayer implementation is needed in WebKit1 vs. WebKit2.
     typedef PassOwnPtr<GraphicsLayer> GraphicsLayerFactory(GraphicsLayerClient*);
@@ -505,6 +467,7 @@ protected:
     bool m_acceleratesDrawing : 1;
     bool m_maintainsPixelAlignment : 1;
     bool m_appliesPageScale : 1; // Set for the layer which has the page scale applied to it.
+    bool m_usingTileCache : 1;
 
     GraphicsLayerPaintingPhase m_paintingPhase;
     CompositingCoordinatesOrientation m_contentsOrientation; // affects orientation of layer contents
@@ -523,7 +486,7 @@ protected:
 
     int m_repaintCount;
 
-#if PLATFORM(QT) || PLATFORM(GTK)
+#if PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
     static GraphicsLayer::GraphicsLayerFactory* s_graphicsLayerFactory;
 #endif
 };
@@ -539,4 +502,3 @@ void showGraphicsLayerTree(const WebCore::GraphicsLayer* layer);
 #endif // USE(ACCELERATED_COMPOSITING)
 
 #endif // GraphicsLayer_h
-

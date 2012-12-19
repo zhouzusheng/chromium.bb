@@ -38,6 +38,7 @@
 #include "MemoryCache.h"
 #include "SecurityOrigin.h"
 #include "SecurityPolicy.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/CString.h>
@@ -121,12 +122,26 @@ PassRefPtr<SubresourceLoader> SubresourceLoader::create(Frame* frame, CachedReso
     return subloader.release();
 }
 
+CachedResource* SubresourceLoader::cachedResource()
+{
+    return m_resource;
+}
+
 void SubresourceLoader::cancelIfNotFinishing()
 {
     if (m_state != Initialized)
         return;
 
     ResourceLoader::cancel();
+}
+
+void SubresourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
+    ResourceLoader::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_resource);
+    info.addMember(m_document);
+    info.addMember(m_requestCountTracker);
 }
 
 bool SubresourceLoader::init(const ResourceRequest& request)
@@ -140,10 +155,16 @@ bool SubresourceLoader::init(const ResourceRequest& request)
     return true;
 }
 
+bool SubresourceLoader::isSubresourceLoader()
+{
+    return true;
+}
+
 void SubresourceLoader::willSendRequest(ResourceRequest& newRequest, const ResourceResponse& redirectResponse)
 {
     // Store the previous URL because the call to ResourceLoader::willSendRequest will modify it.
     KURL previousURL = request().url();
+    RefPtr<SubresourceLoader> protect(this);
     
     ResourceLoader::willSendRequest(newRequest, redirectResponse);
     if (!previousURL.isNull() && !newRequest.isNull() && previousURL != newRequest.url()) {

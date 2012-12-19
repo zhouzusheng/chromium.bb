@@ -31,6 +31,7 @@
 #include "StylePropertySet.h"
 #include "StyleRule.h"
 #include "StyleRuleImport.h"
+#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/Deque.h>
 
 namespace WebCore {
@@ -53,10 +54,9 @@ unsigned StyleSheetContents::estimatedSizeInBytes() const
     return size;
 }
 
-StyleSheetContents::StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const KURL& finalURL, const CSSParserContext& context)
+StyleSheetContents::StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext& context)
     : m_ownerRule(ownerRule)
     , m_originalURL(originalURL)
-    , m_finalURL(finalURL)
     , m_loadCompleted(false)
     , m_isUserStyleSheet(ownerRule && ownerRule->parentStyleSheet() && ownerRule->parentStyleSheet()->isUserStyleSheet())
     , m_hasSyntacticallyValidCSSHeader(true)
@@ -72,7 +72,6 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
     : RefCounted<StyleSheetContents>()
     , m_ownerRule(0)
     , m_originalURL(o.m_originalURL)
-    , m_finalURL(o.m_finalURL)
     , m_encodingFromCharsetRule(o.m_encodingFromCharsetRule)
     , m_importRules(o.m_importRules.size())
     , m_childRules(o.m_childRules.size())
@@ -249,7 +248,10 @@ void StyleSheetContents::parserAddNamespace(const AtomicString& prefix, const At
 {
     if (uri.isNull() || prefix.isNull())
         return;
-    m_namespaces.add(prefix, uri);
+    PrefixNamespaceURIMap::AddResult result = m_namespaces.add(prefix, uri);
+    if (result.isNewEntry)
+        return;
+    result.iterator->second = uri;
 }
 
 const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& prefix)
@@ -279,7 +281,7 @@ void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cached
     // to at least start with a syntactically valid CSS rule.
     // This prevents an attacker playing games by injecting CSS strings into HTML, XML, JSON, etc. etc.
     if (!hasValidMIMEType && !hasSyntacticallyValidCSSHeader()) {
-        bool isCrossOriginCSS = !securityOrigin || !securityOrigin->canRequest(finalURL());
+        bool isCrossOriginCSS = !securityOrigin || !securityOrigin->canRequest(baseURL());
         if (isCrossOriginCSS) {
             clearRules();
             return;
@@ -287,11 +289,10 @@ void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cached
     }
     if (m_parserContext.needsSiteSpecificQuirks && isStrictParserMode(m_parserContext.mode)) {
         // Work around <https://bugs.webkit.org/show_bug.cgi?id=28350>.
-        DEFINE_STATIC_LOCAL(const String, slashKHTMLFixesDotCss, ("/KHTMLFixes.css"));
-        DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, ("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n"));
+        DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, (ASCIILiteral("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n")));
         // There are two variants of KHTMLFixes.css. One is equal to mediaWikiKHTMLFixesStyleSheet,
         // while the other lacks the second trailing newline.
-        if (finalURL().string().endsWith(slashKHTMLFixesDotCss) && !sheetText.isNull() && mediaWikiKHTMLFixesStyleSheet.startsWith(sheetText)
+        if (baseURL().string().endsWith("/KHTMLFixes.css") && !sheetText.isNull() && mediaWikiKHTMLFixesStyleSheet.startsWith(sheetText)
             && sheetText.length() >= mediaWikiKHTMLFixesStyleSheet.length() - 1)
             clearRules();
     }
@@ -323,6 +324,8 @@ void StyleSheetContents::checkLoaded()
 {
     if (isLoading())
         return;
+
+    RefPtr<StyleSheetContents> protect(this);
 
     // Avoid |this| being deleted by scripts that run via
     // ScriptableDocumentParser::executeScriptsWaitingForStylesheets().
@@ -409,6 +412,46 @@ void StyleSheetContents::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
     }
 }
 
+static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<StyleRuleBase> >& rules)
+{
+    for (unsigned i = 0; i < rules.size(); ++i) {
+        const StyleRuleBase* rule = rules[i].get();
+        switch (rule->type()) {
+        case StyleRuleBase::Style:
+            if (static_cast<const StyleRule*>(rule)->properties()->hasFailedOrCanceledSubresources())
+                return true;
+            break;
+        case StyleRuleBase::FontFace:
+            if (static_cast<const StyleRuleFontFace*>(rule)->properties()->hasFailedOrCanceledSubresources())
+                return true;
+            break;
+        case StyleRuleBase::Media:
+            if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleMedia*>(rule)->childRules()))
+                return true;
+            break;
+        case StyleRuleBase::Region:
+            if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleRegion*>(rule)->childRules()))
+                return true;
+            break;
+        case StyleRuleBase::Import:
+            ASSERT_NOT_REACHED();
+        case StyleRuleBase::Page:
+        case StyleRuleBase::Keyframes:
+        case StyleRuleBase::Unknown:
+        case StyleRuleBase::Charset:
+        case StyleRuleBase::Keyframe:
+            break;
+        }
+    }
+    return false;
+}
+
+bool StyleSheetContents::hasFailedOrCanceledSubresources() const
+{
+    ASSERT(isCacheable());
+    return childRulesHaveFailedOrCanceledSubresources(m_childRules);
+}
+
 StyleSheetContents* StyleSheetContents::parentStyleSheet() const
 {
     return m_ownerRule ? m_ownerRule->parentStyleSheet() : 0;
@@ -439,6 +482,17 @@ void StyleSheetContents::removedFromMemoryCache()
     ASSERT(m_isInMemoryCache);
     ASSERT(isCacheable());
     m_isInMemoryCache = false;
+}
+
+void StyleSheetContents::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    info.addMember(m_originalURL);
+    info.addMember(m_encodingFromCharsetRule);
+    info.addVector(m_importRules);
+    info.addInstrumentedVector(m_childRules);
+    info.addHashMap(m_namespaces);
+    info.addVector(m_clients);
 }
 
 }

@@ -10,7 +10,7 @@
 
 #include "GrGLContextInfo.h"
 #include "GrGLSL.h"
-#include "GrStringBuilder.h"
+#include "SkString.h"
 
 #define USE_UNIFORM_FLOAT_ARRAYS true
 
@@ -33,6 +33,17 @@ public:
         kAttribute_TypeModifier
     };
 
+    enum Precision {
+        kLow_Precision,         // lowp
+        kMedium_Precision,      // mediump
+        kHigh_Precision,        // highp
+        kDefault_Precision,     // Default for the current context. We make
+                                // fragment shaders default to mediump on ES2
+                                // because highp support is not guaranteed (and
+                                // we haven't been motivated to test for it).
+                                // Otherwise, highp.
+    };
+
     /**
      * Defaults to a float with no precision specifier
      */
@@ -40,8 +51,18 @@ public:
         fType = kFloat_GrSLType;
         fTypeModifier = kNone_TypeModifier;
         fCount = kNonArray;
-        fEmitPrecision = false;
+        fPrecision = kDefault_Precision;
         fUseUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS;
+    }
+
+    GrGLShaderVar(const char* name, GrSLType type, int arrayCount = kNonArray) {
+        GrAssert(kVoid_GrSLType != type);
+        fType = type;
+        fTypeModifier = kNone_TypeModifier;
+        fCount = arrayCount;
+        fPrecision = kDefault_Precision;
+        fUseUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS;
+        fName = name;
     }
 
     GrGLShaderVar(const GrGLShaderVar& var)
@@ -49,8 +70,10 @@ public:
         , fTypeModifier(var.fTypeModifier)
         , fName(var.fName)
         , fCount(var.fCount)
-        , fEmitPrecision(var.fEmitPrecision)
-        , fUseUniformFloatArrays(var.fUseUniformFloatArrays) {}
+        , fPrecision(var.fPrecision)
+        , fUseUniformFloatArrays(var.fUseUniformFloatArrays) {
+        GrAssert(kVoid_GrSLType != var.fType);
+    }
 
     /**
      * Values for array count that have special meaning. We allow 1-sized arrays.
@@ -65,14 +88,15 @@ public:
      */
     void set(GrSLType type,
              TypeModifier typeModifier,
-             const GrStringBuilder& name,
-             bool emitPrecision = false,
+             const SkString& name,
+             Precision precision = kDefault_Precision,
              bool useUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS) {
+        GrAssert(kVoid_GrSLType != type);
         fType = type;
         fTypeModifier = typeModifier;
         fName = name;
         fCount = kNonArray;
-        fEmitPrecision = emitPrecision;
+        fPrecision = precision;
         fUseUniformFloatArrays = useUniformFloatArrays;
     }
 
@@ -82,13 +106,14 @@ public:
     void set(GrSLType type,
              TypeModifier typeModifier,
              const char* name,
-             bool specifyPrecision = false,
+             Precision precision = kDefault_Precision,
              bool useUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS) {
+        GrAssert(kVoid_GrSLType != type);
         fType = type;
         fTypeModifier = typeModifier;
         fName = name;
         fCount = kNonArray;
-        fEmitPrecision = specifyPrecision;
+        fPrecision = precision;
         fUseUniformFloatArrays = useUniformFloatArrays;
     }
 
@@ -97,15 +122,16 @@ public:
      */
     void set(GrSLType type,
              TypeModifier typeModifier,
-             const GrStringBuilder& name,
+             const SkString& name,
              int count,
-             bool specifyPrecision = false,
+             Precision precision = kDefault_Precision,
              bool useUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS) {
+        GrAssert(kVoid_GrSLType != type);
         fType = type;
         fTypeModifier = typeModifier;
         fName = name;
         fCount = count;
-        fEmitPrecision = specifyPrecision;
+        fPrecision = precision;
         fUseUniformFloatArrays = useUniformFloatArrays;
     }
 
@@ -116,13 +142,14 @@ public:
              TypeModifier typeModifier,
              const char* name,
              int count,
-             bool specifyPrecision = false,
+             Precision precision = kDefault_Precision,
              bool useUniformFloatArrays = USE_UNIFORM_FLOAT_ARRAYS) {
+        GrAssert(kVoid_GrSLType != type);
         fType = type;
         fTypeModifier = typeModifier;
         fName = name;
         fCount = count;
-        fEmitPrecision = specifyPrecision;
+        fPrecision = precision;
         fUseUniformFloatArrays = useUniformFloatArrays;
     }
 
@@ -154,16 +181,22 @@ public:
     /**
      * Access the var name as a writable string
      */
-    GrStringBuilder* accessName() { return &fName; }
+    SkString* accessName() { return &fName; }
     /**
      * Set the var name
      */
-    void setName(const GrStringBuilder& n) { fName = n; }
+    void setName(const SkString& n) { fName = n; }
     void setName(const char* n) { fName = n; }
+
     /**
      * Get the var name.
      */
-    const GrStringBuilder& getName() const { return fName; }
+    const SkString& getName() const { return fName; }
+
+    /**
+     * Shortcut for this->getName().c_str();
+     */
+    const char* c_str() const { return this->getName().c_str(); }
 
     /**
      * Get the type of the var
@@ -178,36 +211,34 @@ public:
     void setTypeModifier(TypeModifier type) { fTypeModifier = type; }
 
     /**
-     * Must the variable declaration emit a precision specifier
+     * Get the precision of the var
      */
-    bool emitsPrecision() const { return fEmitPrecision; }
+    Precision getPrecision() const { return fPrecision; }
+
     /**
-     * Specify whether the declaration should specify precision
+     * Set the precision of the var
      */
-    void setEmitPrecision(bool p) { fEmitPrecision = p; }
+    void setPrecision(Precision p) { fPrecision = p; }
 
     /**
      * Write a declaration of this variable to out.
      */
-    void appendDecl(const GrGLContextInfo& gl, GrStringBuilder* out) const {
+    void appendDecl(const GrGLContextInfo& gl, SkString* out) const {
         if (this->getTypeModifier() != kNone_TypeModifier) {
            out->append(TypeModifierString(this->getTypeModifier(),
                                           gl.glslGeneration()));
            out->append(" ");
         }
-        if (this->emitsPrecision()) {
-            out->append(GrGetGLSLVarPrecisionDeclType(gl.binding()));
-            out->append(" ");
-        }
+        out->append(PrecisionString(fPrecision, gl.binding()));
         GrSLType effectiveType = this->getType();
         if (this->isArray()) {
             if (this->isUnsizedArray()) {
-                out->appendf("%s %s[]", 
-                             TypeString(effectiveType), 
+                out->appendf("%s %s[]",
+                             TypeString(effectiveType),
                              this->getName().c_str());
             } else {
                 GrAssert(this->getArrayCount() > 0);
-                out->appendf("%s %s[%d]", 
+                out->appendf("%s %s[%d]",
                              TypeString(effectiveType),
                              this->getName().c_str(),
                              this->getArrayCount());
@@ -217,11 +248,12 @@ public:
                          TypeString(effectiveType),
                          this->getName().c_str());
         }
-        out->append(";\n");
     }
 
     static const char* TypeString(GrSLType t) {
         switch (t) {
+            case kVoid_GrSLType:
+                return "void";
             case kFloat_GrSLType:
                 return "float";
             case kVec2f_GrSLType:
@@ -242,14 +274,14 @@ public:
         }
     }
 
-    void appendArrayAccess(int index, GrStringBuilder* out) const {
+    void appendArrayAccess(int index, SkString* out) const {
         out->appendf("%s[%d]%s",
                      this->getName().c_str(),
                      index,
                      fUseUniformFloatArrays ? "" : ".x");
     }
 
-    void appendArrayAccess(const char* indexName, GrStringBuilder* out) const {
+    void appendArrayAccess(const char* indexName, SkString* out) const {
         out->appendf("%s[%s]%s",
                      this->getName().c_str(),
                      indexName,
@@ -257,8 +289,7 @@ public:
     }
 
 private:
-    static const char* TypeModifierString(TypeModifier t,
-                                          GrGLSLGeneration gen) {
+    static const char* TypeModifierString(TypeModifier t, GrGLSLGeneration gen) {
         switch (t) {
             case kNone_TypeModifier:
                 return "";
@@ -276,11 +307,30 @@ private:
         }
     }
 
-    GrSLType fType;
+    static const char* PrecisionString(Precision p, GrGLBinding binding) {
+        // Desktop GLSL has added precision qualifiers but they don't do anything.
+        if (kES2_GrGLBinding == binding) {
+            switch (p) {
+                case kLow_Precision:
+                    return "lowp ";
+                case kMedium_Precision:
+                    return "mediump ";
+                case kHigh_Precision:
+                    return "highp ";
+                case kDefault_Precision:
+                    return "";
+                default:
+                    GrCrash("Unexpected precision type.");
+            }
+        }
+        return "";
+    }
+
+    GrSLType        fType;
     TypeModifier    fTypeModifier;
-    GrStringBuilder fName;
+    SkString        fName;
     int             fCount;
-    bool            fEmitPrecision;
+    Precision       fPrecision;
     /// Work around driver bugs on some hardware that don't correctly
     /// support uniform float []
     bool            fUseUniformFloatArrays;

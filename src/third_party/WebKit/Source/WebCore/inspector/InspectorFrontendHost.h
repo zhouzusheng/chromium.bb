@@ -32,10 +32,9 @@
 #include "ConsoleTypes.h"
 #include "ContextMenu.h"
 #include "ContextMenuProvider.h"
-#include "PlatformString.h"
-
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -78,6 +77,8 @@ public:
     bool canSave();
     void save(const String& url, const String& content, bool forceSaveAs);
     void append(const String& url, const String& content);
+
+    bool canInspectWorkers();
 
     // Called from [Custom] implementations.
     void showContextMenu(Event*, const Vector<ContextMenuItem>& items);

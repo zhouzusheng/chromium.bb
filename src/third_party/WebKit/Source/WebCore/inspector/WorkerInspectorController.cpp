@@ -59,6 +59,7 @@ namespace WebCore {
 namespace {
 
 class PageInspectorProxy : public InspectorFrontendChannel {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit PageInspectorProxy(WorkerContext* workerContext) : m_workerContext(workerContext) { }
     virtual ~PageInspectorProxy() { }
@@ -72,11 +73,13 @@ private:
 };
 
 class WorkerStateClient : public InspectorStateClient {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     WorkerStateClient(WorkerContext* context) : m_workerContext(context) { }
     virtual ~WorkerStateClient() { }
 
 private:
+    virtual bool supportsInspectorStateUpdates() const { return true; }
     virtual void updateInspectorStateCookie(const String& cookie)
     {
         m_workerContext->thread()->workerReportingProxy().updateInspectorStateCookie(cookie);
@@ -111,7 +114,9 @@ WorkerInspectorController::WorkerInspectorController(WorkerContext* workerContex
 #endif
         , 0
         , 0
-        , 0
+#if ENABLE(JAVASCRIPT_DEBUGGER)
+        , m_debuggerAgent.get()
+#endif
     );
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)

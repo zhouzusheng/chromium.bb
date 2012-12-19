@@ -31,6 +31,7 @@
 #define AccessibilityObject_h
 
 #include "FloatQuad.h"
+#include "FractionalLayoutRect.h"
 #include "LayoutTypes.h"
 #include "VisiblePosition.h"
 #include "VisibleSelection.h"
@@ -103,6 +104,7 @@ enum AccessibilityRole {
     BrowserRole,
     BusyIndicatorRole,
     ButtonRole,
+    CanvasRole,
     CellRole, 
     CheckBoxRole,
     ColorWellRole,
@@ -128,6 +130,7 @@ enum AccessibilityRole {
     GrowAreaRole,
     HeadingRole,
     HelpTagRole,
+    HorizontalRuleRole,
     IgnoredRole,
     ImageRole,
     ImageMapRole,
@@ -141,6 +144,7 @@ enum AccessibilityRole {
     LandmarkMainRole,
     LandmarkNavigationRole,
     LandmarkSearchRole,
+    LegendRole,
     LinkRole,
     ListRole,
     ListBoxRole,
@@ -187,6 +191,7 @@ enum AccessibilityRole {
     TreeGridRole,
     TreeItemRole,
     TextFieldRole,
+    ToggleButtonRole,
     ToolbarRole,
     UnknownRole,
     UserInterfaceTooltipRole,
@@ -317,6 +322,7 @@ public:
 
     typedef Vector<RefPtr<AccessibilityObject> > AccessibilityChildrenVector;
     
+    virtual bool isAccessibilityNodeObject() const { return false; }    
     virtual bool isAccessibilityRenderObject() const { return false; }
     virtual bool isAccessibilityScrollbar() const { return false; }
     virtual bool isAccessibilityScrollView() const { return false; }
@@ -362,7 +368,7 @@ public:
     virtual bool isMenuList() const { return false; }
     virtual bool isMenuListPopup() const { return false; }
     virtual bool isMenuListOption() const { return false; }
-    virtual bool isSpinButton() const { return false; }
+    virtual bool isSpinButton() const { return roleValue() == SpinButtonRole; }
     virtual bool isSpinButtonPart() const { return false; }
     virtual bool isMockObject() const { return false; }
     bool isTextControl() const { return roleValue() == TextAreaRole || roleValue() == TextFieldRole; }
@@ -374,10 +380,11 @@ public:
     bool isTree() const { return roleValue() == TreeRole; }
     bool isTreeItem() const { return roleValue() == TreeItemRole; }
     bool isScrollbar() const { return roleValue() == ScrollBarRole; }
-    bool isButton() const { return roleValue() == ButtonRole; }
+    bool isButton() const;
     bool isListItem() const { return roleValue() == ListItemRole; }
     bool isCheckboxOrRadio() const { return isCheckbox() || isRadioButton(); }
     bool isScrollView() const { return roleValue() == ScrollAreaRole; }
+    bool isCanvas() const { return roleValue() == CanvasRole; }
     bool isBlockquote() const;
     bool isLandmark() const;
     
@@ -450,10 +457,13 @@ public:
     virtual bool supportsARIAFlowTo() const { return false; }
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
     virtual bool ariaHasPopup() const { return false; }
+    virtual bool ariaPressedIsPresent() const;
     bool ariaIsMultiline() const;
     virtual const AtomicString& invalidStatus() const;
     bool supportsARIAExpanded() const;
     AccessibilitySortDirection sortDirection() const;
+    virtual bool canvasHasFallbackContent() const { return false; }
+    bool supportsRangeValue() const;
     
     // ARIA drag and drop
     virtual bool supportsARIADropping() const { return false; }
@@ -556,6 +566,7 @@ public:
 
     virtual void childrenChanged() { }
     virtual void contentChanged() { }
+    virtual void updateAccessibilityRole() { }
     const AccessibilityChildrenVector& children();
     virtual void addChildren() { }
     virtual bool canHaveChildren() const { return true; }
@@ -578,8 +589,10 @@ public:
     virtual void handleAriaExpandedChanged() { }
     bool isDescendantOfObject(const AccessibilityObject*) const;
     bool isAncestorOfObject(const AccessibilityObject*) const;
+    AccessibilityObject* firstAnonymousBlockChild() const;
     
     static AccessibilityRole ariaRoleToWebCoreRole(const String&);
+    bool hasAttribute(const QualifiedName&) const;
     const AtomicString& getAttribute(const QualifiedName&) const;
 
     virtual VisiblePositionRange visiblePositionRange() const { return VisiblePositionRange(); }
@@ -637,6 +650,8 @@ public:
     virtual String nameForMSAA() const { return String(); }
     virtual String descriptionForMSAA() const { return String(); }
     virtual AccessibilityRole roleValueForMSAA() const { return roleValue(); }
+
+    virtual String passwordFieldValue() const { return String(); }
 
     // Used by an ARIA tree to get all its rows.
     void ariaTreeRows(AccessibilityChildrenVector&);
@@ -711,6 +726,7 @@ protected:
     static bool isAccessibilityObjectSearchMatch(AccessibilityObject*, AccessibilitySearchCriteria*);
     static bool isAccessibilityTextSearchMatch(AccessibilityObject*, AccessibilitySearchCriteria*);
     static bool objectMatchesSearchCriteriaWithResultLimit(AccessibilityObject*, AccessibilitySearchCriteria*, AccessibilityChildrenVector&);
+    virtual AccessibilityRole buttonRoleType() const;
     
 #if PLATFORM(GTK)
     bool allowsTextRanges() const;

@@ -10,6 +10,7 @@
 #include "base/base_export.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/threading/thread_checker.h"
 
 namespace base {
 
@@ -18,10 +19,10 @@ namespace base {
 class BASE_EXPORT SupportsUserData {
  public:
   SupportsUserData();
-  virtual ~SupportsUserData();
 
   // Derive from this class and add your own data members to associate extra
-  // information with this object. Use GetUserData(key) and SetUserData()
+  // information with this object. Alternatively, add this as a public base
+  // class to any class with a virtual destructor.
   class BASE_EXPORT Data {
    public:
     virtual ~Data() {}
@@ -33,12 +34,24 @@ class BASE_EXPORT SupportsUserData {
   // delete the object if it is changed or the object is destroyed.
   Data* GetUserData(const void* key) const;
   void SetUserData(const void* key, Data* data);
+  void RemoveUserData(const void* key);
+
+  // SupportsUserData is not thread-safe, and on debug build will assert it is
+  // only used on one thread. Calling this method allows the caller to hand
+  // the SupportsUserData instance across threads. Use only if you are taking
+  // full control of the synchronization of that hand over.
+  void DetachUserDataThread();
+
+ protected:
+  virtual ~SupportsUserData();
 
  private:
   typedef std::map<const void*, linked_ptr<Data> > DataMap;
 
-  // Externally-defined data accessible by key
+  // Externally-defined data accessible by key.
   DataMap user_data_;
+  // Guards usage of |user_data_|
+  ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(SupportsUserData);
 };

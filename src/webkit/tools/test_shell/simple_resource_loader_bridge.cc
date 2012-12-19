@@ -59,6 +59,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/blob/blob_storage_controller.h"
@@ -68,6 +69,7 @@
 #include "webkit/fileapi/file_system_dir_url_request_job.h"
 #include "webkit/fileapi/file_system_url_request_job.h"
 #include "webkit/glue/resource_loader_bridge.h"
+#include "webkit/glue/resource_request_body.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/tools/test_shell/simple_appcache_system.h"
 #include "webkit/tools/test_shell/simple_file_system.h"
@@ -81,6 +83,7 @@
 #endif
 
 using webkit_glue::ResourceLoaderBridge;
+using webkit_glue::ResourceRequestBody;
 using webkit_glue::ResourceResponseInfo;
 using net::StaticCookiePolicy;
 using net::HttpResponseHeaders;
@@ -187,6 +190,10 @@ class TestShellNetworkDelegate : public net::NetworkDelegate {
       const net::CompletionCallback& callback) OVERRIDE {
     return net::OK;
   }
+
+  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
+                                        RequestWaitState state) OVERRIDE {
+  }
 };
 
 TestShellRequestContextParams* g_request_context_params = NULL;
@@ -275,7 +282,7 @@ struct RequestParams {
   ResourceType::Type request_type;
   int appcache_host_id;
   bool download_to_file;
-  scoped_refptr<net::UploadData> upload;
+  scoped_refptr<ResourceRequestBody> request_body;
 };
 
 // The interval for calls to RequestProxy::MaybeUpdateUploadProgress
@@ -391,11 +398,12 @@ class RequestProxy
     peer_->OnDownloadedData(bytes_read);
   }
 
-  void NotifyCompletedRequest(const net::URLRequestStatus& status,
+  void NotifyCompletedRequest(int error_code,
                               const std::string& security_info,
                               const base::TimeTicks& complete_time) {
     if (peer_) {
-      peer_->OnCompletedRequest(status, security_info, complete_time);
+      peer_->OnCompletedRequest(error_code, false, security_info,
+                                complete_time);
       DropPeer();  // ensure no further notifications
     }
   }
@@ -410,14 +418,7 @@ class RequestProxy
   // actions performed on the owner's thread.
 
   void AsyncStart(RequestParams* params) {
-    // Might need to resolve the blob references in the upload data.
-    if (params->upload) {
-      static_cast<TestShellRequestContext*>(g_request_context)->
-          blob_storage_controller()->ResolveBlobReferencesInUploadData(
-              params->upload.get());
-    }
-
-    request_.reset(new net::URLRequest(params->url, this));
+    request_.reset(g_request_context->CreateRequest(params->url, this));
     request_->set_method(params->method);
     request_->set_first_party_for_cookies(params->first_party_for_cookies);
     request_->set_referrer(params->referrer.spec());
@@ -427,8 +428,12 @@ class RequestProxy
     headers.AddHeadersFromString(params->headers);
     request_->SetExtraRequestHeaders(headers);
     request_->set_load_flags(params->load_flags);
-    request_->set_upload(params->upload.get());
-    request_->set_context(g_request_context);
+    if (params->request_body) {
+      request_->set_upload(
+          params->request_body->ResolveElementsAndCreateUploadData(
+              static_cast<TestShellRequestContext*>(g_request_context)->
+                  blob_storage_controller()));
+    }
     SimpleAppCacheSystem::SetExtraRequestInfo(
         request_.get(), params->appcache_host_id, params->request_type);
 
@@ -529,14 +534,14 @@ class RequestProxy
         base::Bind(&RequestProxy::NotifyReceivedData, this, bytes_read));
   }
 
-  virtual void OnCompletedRequest(const net::URLRequestStatus& status,
+  virtual void OnCompletedRequest(int error_code,
                                   const std::string& security_info,
                                   const base::TimeTicks& complete_time) {
     if (download_to_file_)
       file_stream_.CloseSync();
     owner_loop_->PostTask(
         FROM_HERE,
-        base::Bind(&RequestProxy::NotifyCompletedRequest, this, status,
+        base::Bind(&RequestProxy::NotifyCompletedRequest, this, error_code,
                    security_info, complete_time));
   }
 
@@ -600,7 +605,8 @@ class RequestProxy
     // was a file request and encountered an error, then we need to use the
     // |failed_file_request_status_|. Otherwise use request_'s status.
     OnCompletedRequest(failed_file_request_status_.get() ?
-                       *failed_file_request_status_ : request_->status(),
+                       failed_file_request_status_->error() :
+                       request_->status().error(),
                        std::string(), base::TimeTicks());
     request_.reset();  // destroy on the io thread
   }
@@ -615,32 +621,29 @@ class RequestProxy
       return;
     }
 
-    // GetContentLengthSync() may perform file IO, but it's ok here, as file
-    // IO is not prohibited in IOThread defined in the file.
-    uint64 size = request_->get_upload()->GetContentLengthSync();
-    uint64 position = request_->GetUploadProgress();
-    if (position == last_upload_position_)
+    net::UploadProgress progress = request_->GetUploadProgress();
+    if (progress.position() == last_upload_position_)
       return;  // no progress made since last time
 
     const uint64 kHalfPercentIncrements = 200;
     const base::TimeDelta kOneSecond = base::TimeDelta::FromMilliseconds(1000);
 
-    uint64 amt_since_last = position - last_upload_position_;
+    uint64 amt_since_last = progress.position() - last_upload_position_;
     base::TimeDelta time_since_last = base::TimeTicks::Now() -
                                       last_upload_ticks_;
 
-    bool is_finished = (size == position);
-    bool enough_new_progress = (amt_since_last > (size /
+    bool is_finished = (progress.size() == progress.position());
+    bool enough_new_progress = (amt_since_last > (progress.size() /
                                                   kHalfPercentIncrements));
     bool too_much_time_passed = time_since_last > kOneSecond;
 
     if (is_finished || enough_new_progress || too_much_time_passed) {
       owner_loop_->PostTask(
           FROM_HERE,
-          base::Bind(&RequestProxy::NotifyUploadProgress, this, position,
-                     size));
+          base::Bind(&RequestProxy::NotifyUploadProgress, this,
+                     progress.position(), progress.size()));
       last_upload_ticks_ = base::TimeTicks::Now();
-      last_upload_position_ = position;
+      last_upload_position_ = progress.position();
     }
   }
 
@@ -823,12 +826,12 @@ class SyncRequestProxy : public RequestProxy {
   }
 
   virtual void OnCompletedRequest(
-      const net::URLRequestStatus& status,
+      int error_code,
       const std::string& security_info,
       const base::TimeTicks& complete_time) OVERRIDE {
     if (download_to_file_)
       file_stream_.CloseSync();
-    result_->status = status;
+    result_->error_code = error_code;
     event_.Signal();
   }
 
@@ -871,37 +874,10 @@ class ResourceLoaderBridgeImpl : public ResourceLoaderBridge {
   // --------------------------------------------------------------------------
   // ResourceLoaderBridge implementation:
 
-  virtual void AppendDataToUpload(const char* data, int data_len) {
+  virtual void SetRequestBody(ResourceRequestBody* request_body) {
     DCHECK(params_.get());
-    if (!params_->upload)
-      params_->upload = new net::UploadData();
-    params_->upload->AppendBytes(data, data_len);
-  }
-
-  virtual void AppendFileRangeToUpload(
-      const FilePath& file_path,
-      uint64 offset,
-      uint64 length,
-      const base::Time& expected_modification_time) {
-    DCHECK(params_.get());
-    if (!params_->upload)
-      params_->upload = new net::UploadData();
-    params_->upload->AppendFileRange(file_path, offset, length,
-                                     expected_modification_time);
-  }
-
-  virtual void AppendBlobToUpload(const GURL& blob_url) {
-    DCHECK(params_.get());
-    if (!params_->upload)
-      params_->upload = new net::UploadData();
-    params_->upload->AppendBlob(blob_url);
-  }
-
-  virtual void SetUploadIdentifier(int64 identifier) {
-    DCHECK(params_.get());
-    if (!params_->upload)
-      params_->upload = new net::UploadData();
-    params_->upload->set_identifier(identifier);
+    DCHECK(!params_->request_body);
+    params_->request_body = request_body;
   }
 
   virtual bool Start(Peer* peer) {

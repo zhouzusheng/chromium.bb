@@ -36,6 +36,7 @@
 
 #include "MediaStreamSource.h"
 #include <public/WebString.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 
 using namespace WebCore;
@@ -94,6 +95,41 @@ WebString WebMediaStreamSource::name() const
 {
     ASSERT(!m_private.isNull());
     return m_private.get()->name();
+}
+
+void WebMediaStreamSource::setReadyState(ReadyState state)
+{
+    ASSERT(!m_private.isNull());
+    m_private->setReadyState(static_cast<MediaStreamSource::ReadyState>(state));
+}
+
+WebMediaStreamSource::ReadyState WebMediaStreamSource::readyState() const
+{
+    ASSERT(!m_private.isNull());
+    return static_cast<ReadyState>(m_private->readyState());
+}
+
+class ExtraDataContainer : public WebCore::MediaStreamSource::ExtraData {
+public:
+    ExtraDataContainer(WebMediaStreamSource::ExtraData* extraData) : m_extraData(WTF::adoptPtr(extraData)) { }
+
+    WebMediaStreamSource::ExtraData* extraData() { return m_extraData.get(); }
+
+private:
+    OwnPtr<WebMediaStreamSource::ExtraData> m_extraData;
+};
+
+WebMediaStreamSource::ExtraData* WebMediaStreamSource::extraData() const
+{
+    RefPtr<MediaStreamSource::ExtraData> data = m_private->extraData();
+    if (!data)
+        return 0;
+    return static_cast<ExtraDataContainer*>(data.get())->extraData();
+}
+
+void WebMediaStreamSource::setExtraData(ExtraData* extraData)
+{
+    m_private->setExtraData(adoptRef(new ExtraDataContainer(extraData)));
 }
 
 } // namespace WebKit

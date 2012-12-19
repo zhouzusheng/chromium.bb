@@ -6,111 +6,73 @@
  * found in the LICENSE file.
  */
 
-
-
 #ifndef GrTexture_DEFINED
 #define GrTexture_DEFINED
 
-#include "GrResource.h"
+#include "GrSurface.h"
+#include "GrCacheID.h"
 
 class GrRenderTarget;
 class GrResourceKey;
-class GrSamplerState;
+class GrTextureParams;
 
-/*
- * All uncached textures should have this value as their fClientCacheID
- */
-static const uint64_t kUncached_CacheID = 0xAAAAAAAA;
-
-/*
- * Scratch textures should all have this value as their fClientCacheID
- */
-static const uint64_t kScratch_CacheID = 0xBBBBBBBB;
-
-
-class GrTexture : public GrResource {
+class GrTexture : public GrSurface {
 
 public:
     SK_DECLARE_INST_COUNT(GrTexture)
+    GR_DECLARE_RESOURCE_CACHE_TYPE()
 
+    // from GrResource
     /**
-     * Retrieves the width of the texture.
-     *
-     * @return the width in texels
+     * Informational texture flags
      */
-    int width() const { return fDesc.fWidth; }
+    enum FlagBits {
+        kFirstBit = (kLastPublic_GrTextureFlagBit << 1),
 
-    /**
-     * Retrieves the height of the texture.
-     *
-     * @return the height in texels
-     */
-    int height() const { return fDesc.fHeight; }
+        /**
+         * This texture should be returned to the texture cache when
+         * it is no longer reffed
+         */
+        kReturnToCache_FlagBit        = kFirstBit,
+    };
 
-    /**
-     * Convert from texels to normalized texture coords for POT textures
-     * only.
-     */
-    GrFixed normalizeFixedX(GrFixed x) const { 
-        GrAssert(GrIsPow2(fDesc.fWidth));
-        return x >> fShiftFixedX; 
+    void setFlag(GrTextureFlags flags) {
+        fDesc.fFlags = fDesc.fFlags | flags;
     }
-    GrFixed normalizeFixedY(GrFixed y) const { 
-        GrAssert(GrIsPow2(fDesc.fHeight));
-        return y >> fShiftFixedY; 
+    void resetFlag(GrTextureFlags flags) {
+        fDesc.fFlags = fDesc.fFlags & ~flags;
     }
-
-    /**
-     * Retrieves the pixel config specified when the texture was created.
-     */
-    GrPixelConfig config() const { return fDesc.fConfig; }
-
-    /**
-     * Return the descriptor describing the texture
-     */
-    const GrTextureDesc& desc() const { return fDesc; }
+    bool isSetFlag(GrTextureFlags flags) const {
+        return 0 != (fDesc.fFlags & flags);
+    }
 
     /**
      *  Approximate number of bytes used by the texture
      */
-    virtual size_t sizeInBytes() const {
-        return (size_t) fDesc.fWidth * 
-                        fDesc.fHeight * 
+    virtual size_t sizeInBytes() const SK_OVERRIDE {
+        return (size_t) fDesc.fWidth *
+                        fDesc.fHeight *
                         GrBytesPerPixel(fDesc.fConfig);
     }
 
-    /**
-     * Read a rectangle of pixels from the texture.
-     * @param left          left edge of the rectangle to read (inclusive)
-     * @param top           top edge of the rectangle to read (inclusive)
-     * @param width         width of rectangle to read in pixels.
-     * @param height        height of rectangle to read in pixels.
-     * @param config        the pixel config of the destination buffer
-     * @param buffer        memory to read the rectangle into.
-     * @param rowBytes      number of bytes bewtween consecutive rows. Zero
-     *                      means rows are tightly packed.
-     *
-     * @return true if the read succeeded, false if not. The read can fail
-     *              because of a unsupported pixel config.
-     */
-    bool readPixels(int left, int top, int width, int height,
-                    GrPixelConfig config, void* buffer,
-                    size_t rowBytes);
+    // GrSurface overrides
+    virtual bool readPixels(int left, int top, int width, int height,
+                            GrPixelConfig config,
+                            void* buffer,
+                            size_t rowBytes = 0,
+                            uint32_t pixelOpsFlags = 0) SK_OVERRIDE;
+
+    virtual void writePixels(int left, int top, int width, int height,
+                             GrPixelConfig config,
+                             const void* buffer,
+                             size_t rowBytes = 0,
+                             uint32_t pixelOpsFlags = 0) SK_OVERRIDE;
 
     /**
-     * Writes a rectangle of pixels to the texture.
-     * @param left          left edge of the rectangle to write (inclusive)
-     * @param top           top edge of the rectangle to write (inclusive)
-     * @param width         width of rectangle to write in pixels.
-     * @param height        height of rectangle to write in pixels.
-     * @param config        the pixel config of the source buffer
-     * @param buffer        memory to read pixels from
-     * @param rowBytes      number of bytes between consecutive rows. Zero
-     *                      means rows are tightly packed.
+     * @return this texture
      */
-    void writePixels(int left, int top, int width, int height,
-                     GrPixelConfig config, const void* buffer,
-                     size_t rowBytes);
+    virtual GrTexture* asTexture() SK_OVERRIDE { return this; }
+    virtual const GrTexture* asTexture() const SK_OVERRIDE { return this; }
 
     /**
      * Retrieves the render target underlying this texture that can be passed to
@@ -119,8 +81,26 @@ public:
      * @return    handle to render target or NULL if the texture is not a
      *            render target
      */
-    GrRenderTarget* asRenderTarget() { return fRenderTarget; }
-    const GrRenderTarget* asRenderTarget() const { return fRenderTarget; }
+    virtual GrRenderTarget* asRenderTarget() SK_OVERRIDE {
+        return fRenderTarget;
+    }
+    virtual const GrRenderTarget* asRenderTarget() const SK_OVERRIDE {
+        return fRenderTarget;
+    }
+
+    // GrTexture
+    /**
+     * Convert from texels to normalized texture coords for POT textures
+     * only.
+     */
+    GrFixed normalizeFixedX(GrFixed x) const {
+        GrAssert(GrIsPow2(fDesc.fWidth));
+        return x >> fShiftFixedX;
+    }
+    GrFixed normalizeFixedY(GrFixed y) const {
+        GrAssert(GrIsPow2(fDesc.fHeight));
+        return y >> fShiftFixedY;
+    }
 
     /**
      * Removes the reference on the associated GrRenderTarget held by this
@@ -137,7 +117,7 @@ public:
 
     /**
      *  Call this when the state of the native API texture object is
-     *  altered directly, without being tracked by skia. 
+     *  altered directly, without being tracked by skia.
      */
     virtual void invalidateCachedState() = 0;
 
@@ -152,8 +132,9 @@ public:
 #endif
 
     static GrResourceKey ComputeKey(const GrGpu* gpu,
-                                    const GrSamplerState* sampler,
+                                    const GrTextureParams* sampler,
                                     const GrTextureDesc& desc,
+                                    const GrCacheData& cacheData,
                                     bool scratch);
 
     static bool NeedsResizing(const GrResourceKey& key);
@@ -166,9 +147,8 @@ protected:
                                    // subclass cons can create and set
 
     GrTexture(GrGpu* gpu, const GrTextureDesc& desc)
-    : INHERITED(gpu)
-    , fRenderTarget(NULL)
-    , fDesc(desc) {
+    : INHERITED(gpu, desc)
+    , fRenderTarget(NULL) {
 
         // only make sense if alloc size is pow2
         fShiftFixedX = 31 - Gr_clz(fDesc.fWidth);
@@ -176,23 +156,20 @@ protected:
     }
 
     // GrResource overrides
-    virtual void onRelease() {
-        this->releaseRenderTarget();
-    }
-
-    virtual void onAbandon();
+    virtual void onRelease() SK_OVERRIDE;
+    virtual void onAbandon() SK_OVERRIDE;
 
     void validateDesc() const;
 
 private:
-    GrTextureDesc       fDesc;
-
     // these two shift a fixed-point value into normalized coordinates
     // for this texture if the texture is power of two sized.
     int                 fShiftFixedX;
     int                 fShiftFixedY;
 
-    typedef GrResource INHERITED;
+    virtual void internal_dispose() const SK_OVERRIDE;
+
+    typedef GrSurface INHERITED;
 };
 
 #endif

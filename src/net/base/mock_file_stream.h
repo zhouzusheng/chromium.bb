@@ -6,7 +6,6 @@
 
 #ifndef NET_BASE_MOCK_FILE_STREAM_H_
 #define NET_BASE_MOCK_FILE_STREAM_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -44,7 +43,8 @@ class MockFileStream : public net::FileStream {
                     const CompletionCallback& callback) OVERRIDE;
   virtual int WriteSync(const char* buf, int buf_len) OVERRIDE;
   virtual int64 Truncate(int64 bytes) OVERRIDE;
-  virtual int Flush() OVERRIDE;
+  virtual int Flush(const CompletionCallback& callback) OVERRIDE;
+  virtual int FlushSync() OVERRIDE;
 
   void set_forced_error(int error) { forced_error_ = error; }
   void clear_forced_error() { forced_error_ = net::OK; }

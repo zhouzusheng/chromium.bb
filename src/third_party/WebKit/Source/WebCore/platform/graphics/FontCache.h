@@ -41,14 +41,14 @@
 #include <mlang.h>
 #endif
 
-namespace WebCore
-{
+namespace WebCore {
 
 class Font;
 class FontPlatformData;
 class FontData;
 class FontDescription;
 class FontSelector;
+class OpenTypeVerticalData;
 class SimpleFontData;
 
 class FontCache {
@@ -104,6 +104,15 @@ public:
     SimpleFontData* fontDataFromDescriptionAndLogFont(const FontDescription&, ShouldRetain, const LOGFONT& font, wchar_t* outFontFamilyName);
 #endif
 
+#if ENABLE(OPENTYPE_VERTICAL)
+#if USE(SKIA)
+    typedef uint32_t FontFileKey;
+#else
+    typedef AtomicString FontFileKey;
+#endif
+    OpenTypeVerticalData* getVerticalData(const FontFileKey&, const FontPlatformData&);
+#endif
+
 private:
     FontCache();
     ~FontCache();
@@ -130,7 +139,7 @@ private:
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
 
-#if USE(CORE_TEXT) || OS(ANDROID)
+#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN)) || OS(ANDROID)
     friend class ComplexTextController;
 #endif
     friend class SimpleFontData; // For getCachedFontData(const FontPlatformData*)

@@ -15,6 +15,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_constants.h"
 
 namespace {
 
@@ -394,6 +395,10 @@ void RenderText::SetText(const string16& text) {
   // or SetCursorPosition in upper layer.
   SetSelectionModel(SelectionModel());
 
+  // Invalidate the cached text direction if it depends on the text contents.
+  if (directionality_mode_ == DIRECTIONALITY_FROM_TEXT)
+    text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+
   ResetLayout();
 }
 
@@ -409,6 +414,10 @@ void RenderText::SetFontList(const FontList& font_list) {
   font_list_ = font_list;
   cached_bounds_and_offset_valid_ = false;
   ResetLayout();
+}
+
+void RenderText::SetFont(const Font& font) {
+  SetFontList(FontList(font));
 }
 
 void RenderText::SetFontSize(int size) {
@@ -440,8 +449,6 @@ void RenderText::SetObscured(bool obscured) {
 }
 
 void RenderText::SetDisplayRect(const Rect& r) {
-  if (r.width() != display_rect_.width())
-    ResetLayout();
   display_rect_ = r;
   cached_bounds_and_offset_valid_ = false;
 }
@@ -521,18 +528,16 @@ void RenderText::ClearSelection() {
                                    selection_model_.caret_affinity()));
 }
 
-void RenderText::SelectAll() {
-  SelectionModel all;
-  if (GetTextDirection() == base::i18n::LEFT_TO_RIGHT)
-    all = SelectionModel(ui::Range(0, text().length()), CURSOR_FORWARD);
-  else
-    all = SelectionModel(ui::Range(text().length(), 0), CURSOR_BACKWARD);
-  SetSelectionModel(all);
+void RenderText::SelectAll(bool reversed) {
+  const size_t length = text().length();
+  const ui::Range all = reversed ? ui::Range(length, 0) : ui::Range(0, length);
+  const bool success = SelectRange(all);
+  DCHECK(success);
 }
 
 void RenderText::SelectWord() {
   if (obscured_) {
-    SelectAll();
+    SelectAll(false);
     return;
   }
 
@@ -598,6 +603,42 @@ void RenderText::ApplyDefaultStyle() {
   ResetLayout();
 }
 
+void RenderText::SetDirectionalityMode(DirectionalityMode mode) {
+  if (mode == directionality_mode_)
+    return;
+
+  directionality_mode_ = mode;
+  text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+  ResetLayout();
+}
+
+base::i18n::TextDirection RenderText::GetTextDirection() {
+  if (text_direction_ == base::i18n::UNKNOWN_DIRECTION) {
+    switch (directionality_mode_) {
+      case DIRECTIONALITY_FROM_TEXT:
+        // Derive the direction from the display text, which differs from text()
+        // in the case of obscured (password) textfields.
+        text_direction_ =
+            base::i18n::GetFirstStrongCharacterDirection(GetDisplayText());
+        break;
+      case DIRECTIONALITY_FROM_UI:
+        text_direction_ = base::i18n::IsRTL() ? base::i18n::RIGHT_TO_LEFT :
+                                                base::i18n::LEFT_TO_RIGHT;
+        break;
+      case DIRECTIONALITY_FORCE_LTR:
+        text_direction_ = base::i18n::LEFT_TO_RIGHT;
+        break;
+      case DIRECTIONALITY_FORCE_RTL:
+        text_direction_ = base::i18n::RIGHT_TO_LEFT;
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+
+  return text_direction_;
+}
+
 VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
   return GetTextDirection() == base::i18n::LEFT_TO_RIGHT ?
       CURSOR_RIGHT : CURSOR_LEFT;
@@ -606,11 +647,13 @@ VisualCursorDirection RenderText::GetVisualDirectionOfLogicalEnd() {
 void RenderText::Draw(Canvas* canvas) {
   EnsureLayout();
 
-  gfx::Rect clip_rect(display_rect());
-  clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
+  if (clip_to_display_rect()) {
+    gfx::Rect clip_rect(display_rect());
+    clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
 
-  canvas->Save();
-  canvas->ClipRect(clip_rect);
+    canvas->Save();
+    canvas->ClipRect(clip_rect);
+  }
 
   if (!text().empty())
     DrawSelection(canvas);
@@ -619,7 +662,9 @@ void RenderText::Draw(Canvas* canvas) {
 
   if (!text().empty())
     DrawVisualText(canvas);
-  canvas->Restore();
+
+  if (clip_to_display_rect())
+    canvas->Restore();
 }
 
 Rect RenderText::GetCursorBounds(const SelectionModel& caret,
@@ -699,6 +744,8 @@ void RenderText::SetTextShadows(const ShadowValues& shadows) {
 
 RenderText::RenderText()
     : horizontal_alignment_(base::i18n::IsRTL() ? ALIGN_RIGHT : ALIGN_LEFT),
+      directionality_mode_(DIRECTIONALITY_FROM_TEXT),
+      text_direction_(base::i18n::UNKNOWN_DIRECTION),
       cursor_enabled_(true),
       cursor_visible_(false),
       insert_mode_(true),
@@ -712,6 +759,7 @@ RenderText::RenderText()
       fade_head_(false),
       fade_tail_(false),
       background_is_transparent_(false),
+      clip_to_display_rect_(true),
       cached_bounds_and_offset_valid_(false) {
 }
 
@@ -825,7 +873,6 @@ Point RenderText::GetAlignmentOffset() {
 Point RenderText::GetOriginForDrawing() {
   Point origin(GetTextOrigin());
   const int height = GetStringSize().height();
-  DCHECK_LE(height, display_rect().height());
   // Center the text vertically in the display area.
   origin.Offset(0, (display_rect().height() - height) / 2);
   return origin;

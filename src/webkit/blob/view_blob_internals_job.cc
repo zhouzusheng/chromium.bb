@@ -15,6 +15,7 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
+#include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
 #include "webkit/blob/blob_data.h"
 #include "webkit/blob/blob_storage_controller.h"
@@ -97,8 +98,10 @@ void AddHTMLButton(const std::string& title,
 namespace webkit_blob {
 
 ViewBlobInternalsJob::ViewBlobInternalsJob(
-    net::URLRequest* request, BlobStorageController* blob_storage_controller)
-    : net::URLRequestSimpleJob(request),
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    BlobStorageController* blob_storage_controller)
+    : net::URLRequestSimpleJob(request, network_delegate),
       blob_storage_controller_(blob_storage_controller),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
@@ -142,9 +145,11 @@ void ViewBlobInternalsJob::DoWorkAsync() {
   StartAsync();
 }
 
-bool ViewBlobInternalsJob::GetData(std::string* mime_type,
-                                   std::string* charset,
-                                   std::string* data) const {
+int ViewBlobInternalsJob::GetData(
+    std::string* mime_type,
+    std::string* charset,
+    std::string* data,
+    const net::CompletionCallback& callback) const {
   mime_type->assign("text/html");
   charset->assign("UTF-8");
 
@@ -155,7 +160,7 @@ bool ViewBlobInternalsJob::GetData(std::string* mime_type,
   else
     GenerateHTML(data);
   EndHTML(data);
-  return true;
+  return net::OK;
 }
 
 void ViewBlobInternalsJob::GenerateHTML(std::string* out) const {
@@ -191,38 +196,45 @@ void ViewBlobInternalsJob::GenerateHTMLForBlobData(const BlobData& blob_data,
     }
     const BlobData::Item& item = blob_data.items().at(i);
 
-    switch (item.type) {
-      case BlobData::TYPE_DATA:
-      case BlobData::TYPE_DATA_EXTERNAL:
+    switch (item.type()) {
+      case BlobData::Item::TYPE_BYTES:
         AddHTMLListItem(kType, "data", out);
         break;
-      case BlobData::TYPE_FILE:
+      case BlobData::Item::TYPE_FILE:
         AddHTMLListItem(kType, "file", out);
         AddHTMLListItem(kPath,
-#if defined(OS_WIN)
-                 net::EscapeForHTML(WideToUTF8(item.file_path.value())),
-#else
-                 net::EscapeForHTML(item.file_path.value()),
-#endif
+                 net::EscapeForHTML(item.path().AsUTF8Unsafe()),
                  out);
-        if (!item.expected_modification_time.is_null()) {
+        if (!item.expected_modification_time().is_null()) {
           AddHTMLListItem(kModificationTime, UTF16ToUTF8(
-              TimeFormatFriendlyDateAndTime(item.expected_modification_time)),
+              TimeFormatFriendlyDateAndTime(item.expected_modification_time())),
               out);
         }
         break;
-      case BlobData::TYPE_BLOB:
+      case BlobData::Item::TYPE_BLOB:
         AddHTMLListItem(kType, "blob", out);
-        AddHTMLListItem(kURL, item.blob_url.spec(), out);
+        AddHTMLListItem(kURL, item.url().spec(), out);
+        break;
+      case BlobData::Item::TYPE_FILE_FILESYSTEM:
+        AddHTMLListItem(kType, "filesystem", out);
+        AddHTMLListItem(kURL, item.url().spec(), out);
+        if (!item.expected_modification_time().is_null()) {
+          AddHTMLListItem(kModificationTime, UTF16ToUTF8(
+              TimeFormatFriendlyDateAndTime(item.expected_modification_time())),
+              out);
+        }
+        break;
+      case BlobData::Item::TYPE_UNKNOWN:
+        NOTREACHED();
         break;
     }
-    if (item.offset) {
+    if (item.offset()) {
       AddHTMLListItem(kOffset, UTF16ToUTF8(base::FormatNumber(
-          static_cast<int64>(item.offset))), out);
+          static_cast<int64>(item.offset()))), out);
     }
-    if (static_cast<int64>(item.length) != -1) {
+    if (static_cast<int64>(item.length()) != -1) {
       AddHTMLListItem(kLength, UTF16ToUTF8(base::FormatNumber(
-          static_cast<int64>(item.length))), out);
+          static_cast<int64>(item.length()))), out);
     }
 
     if (has_multi_items)

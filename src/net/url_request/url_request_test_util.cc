@@ -16,7 +16,7 @@
 #include "net/base/server_bound_cert_service.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
-#include "net/url_request/url_request_job_factory.h"
+#include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -67,8 +67,12 @@ void TestURLRequestContext::Init() {
   if (!cert_verifier())
     context_storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
   if (!ftp_transaction_factory()) {
+#if !defined(DISABLE_FTP_SUPPORT)
     context_storage_.set_ftp_transaction_factory(
         new net::FtpNetworkLayer(host_resolver()));
+#else
+    context_storage_.set_ftp_transaction_factory(NULL);
+#endif  // !defined(DISABLE_FTP_SUPPORT)
   }
   if (!ssl_config_service())
     context_storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
@@ -109,17 +113,16 @@ void TestURLRequestContext::Init() {
   if (accept_charset().empty())
     set_accept_charset("iso-8859-1,*,utf-8");
   if (!job_factory())
-    context_storage_.set_job_factory(new net::URLRequestJobFactory);
+    context_storage_.set_job_factory(new net::URLRequestJobFactoryImpl);
 }
 
-TestURLRequest::TestURLRequest(const GURL& url, Delegate* delegate)
-    : net::URLRequest(url, delegate),
-      context_(new TestURLRequestContext) {
-  set_context(context_.get());
+TestURLRequest::TestURLRequest(const GURL& url,
+                               Delegate* delegate,
+                               TestURLRequestContext* context)
+    : net::URLRequest(url, delegate, context) {
 }
 
 TestURLRequest::~TestURLRequest() {
-  set_context(NULL);
 }
 
 TestURLRequestContextGetter::TestURLRequestContextGetter(
@@ -476,9 +479,6 @@ bool TestNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
   if (cookie_options_bit_mask_ & NO_SET_COOKIE)
     allow = false;
 
-  if (cookie_options_bit_mask_ & FORCE_SESSION)
-    options->set_force_session();
-
   if (!allow) {
     blocked_set_cookie_count_++;
   } else {
@@ -504,6 +504,11 @@ int TestNetworkDelegate::OnBeforeSocketStreamConnect(
   return net::OK;
 }
 
+void TestNetworkDelegate::OnRequestWaitStateChange(
+    const net::URLRequest& request,
+    RequestWaitState state) {
+}
+
 // static
 std::string ScopedCustomUrlRequestTestHttpHost::value_("127.0.0.1");
 
@@ -522,4 +527,32 @@ ScopedCustomUrlRequestTestHttpHost::~ScopedCustomUrlRequestTestHttpHost() {
 // static
 const std::string& ScopedCustomUrlRequestTestHttpHost::value() {
   return value_;
+}
+
+TestJobInterceptor::TestJobInterceptor() : main_intercept_job_(NULL) {
+}
+
+net::URLRequestJob* TestJobInterceptor::MaybeIntercept(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const {
+  net::URLRequestJob* job = main_intercept_job_;
+  main_intercept_job_ = NULL;
+  return job;
+}
+
+net::URLRequestJob* TestJobInterceptor::MaybeInterceptRedirect(
+      const GURL& location,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const {
+  return NULL;
+}
+
+net::URLRequestJob* TestJobInterceptor::MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const {
+  return NULL;
+}
+
+void TestJobInterceptor::set_main_intercept_job(net::URLRequestJob* job) {
+  main_intercept_job_ = job;
 }

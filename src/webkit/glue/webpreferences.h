@@ -18,7 +18,6 @@
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/glue/webkit_glue_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositor.h"
 
 namespace WebKit {
 class WebView;
@@ -96,7 +95,9 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool show_composited_layer_borders;
   bool show_composited_layer_tree;
   bool show_fps_counter;
+  bool accelerated_compositing_for_overflow_scroll_enabled;
   bool show_paint_rects;
+  bool render_vsync_enabled;
   bool asynchronous_spell_checking_enabled;
   bool unified_textchecker_enabled;
   bool accelerated_compositing_enabled;
@@ -109,25 +110,22 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool deferred_2d_canvas_enabled;
   bool accelerated_painting_enabled;
   bool accelerated_filters_enabled;
+  bool gesture_tap_highlight_enabled;
   bool accelerated_plugins_enabled;
   bool memory_info_enabled;
-  bool interactive_form_validation_enabled;
   bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
   bool password_echo_enabled;
   bool should_print_backgrounds;
   bool enable_scroll_animator;
-  bool hixie76_websocket_protocol_enabled;
   bool visual_word_movement_enabled;
+  bool css_sticky_position_enabled;
   bool css_regions_enabled;
   bool css_shaders_enabled;
+  bool css_variables_enabled;
   bool device_supports_touch;
-#if !defined(WEBCOMPOSITOR_OWNS_SETTINGS)
-  bool threaded_animation_enabled;
-  bool per_tile_painting_enabled;
-  bool partial_swap_enabled;
-#endif
+  bool device_supports_mouse;
   int default_tile_width;
   int default_tile_height;
   int max_untiled_layer_width;
@@ -135,6 +133,13 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool fixed_position_creates_stacking_context;
   bool sync_xhr_in_documents_enabled;
   int number_of_cpu_cores;
+
+  // This flags corresponds to a Page's Settings' setCookieEnabled state. It
+  // only controls whether or not the "document.cookie" field is properly
+  // connected to the backing store, for instance if you wanted to be able to
+  // define custom getters and setters from within a unique security content
+  // without raising a DOM security exception.
+  bool cookie_enabled;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

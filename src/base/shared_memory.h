@@ -4,7 +4,6 @@
 
 #ifndef BASE_SHARED_MEMORY_H_
 #define BASE_SHARED_MEMORY_H_
-#pragma once
 
 #include "build/build_config.h"
 
@@ -143,8 +142,10 @@ class BASE_EXPORT SharedMemory {
 
   // Maps the shared memory into the caller's address space.
   // Returns true on success, false otherwise.  The memory address
-  // is accessed via the memory() accessor.
+  // is accessed via the memory() accessor.  The mapped address is guaranteed to
+  // have an alignment of at least MAP_MINIMUM_ALIGNMENT.
   bool Map(uint32 bytes);
+  enum { MAP_MINIMUM_ALIGNMENT = 32 };
 
   // Unmaps the shared memory from the caller's address space.
   // Returns true if successful; returns false on error or if the
@@ -170,7 +171,7 @@ class BASE_EXPORT SharedMemory {
   // identifier is not portable.
   SharedMemoryHandle handle() const;
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_NACL)
   // Returns a unique identifier for this shared memory segment. Inode numbers
   // are technically only unique to a single filesystem. However, we always
   // allocate shared memory backing files from the same directory, so will end
@@ -224,7 +225,7 @@ class BASE_EXPORT SharedMemory {
   void Unlock();
 
  private:
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_NACL)
   bool PrepareMapFile(FILE *fp);
   bool FilePathForMemoryName(const std::string& mem_name, FilePath* path);
   void LockOrUnlockCommon(int function);

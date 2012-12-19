@@ -25,6 +25,7 @@
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "ImageBuffer.h"
+#include "Page.h"
 #include "RenderSVGRoot.h"
 #include "SVGImage.h"
 
@@ -75,7 +76,8 @@ void SVGImageCache::setRequestedSizeAndScales(const CachedImageClient* client, c
 
 SVGImageCache::SizeAndScales SVGImageCache::requestedSizeAndScales(const CachedImageClient* client) const
 {
-    ASSERT(client);
+    if (!client)
+        return SizeAndScales();
     SizeAndScalesMap::const_iterator it = m_sizeAndScalesMap.find(client);
     if (it == m_sizeAndScalesMap.end())
         return SizeAndScales();
@@ -128,18 +130,27 @@ void SVGImageCache::redrawTimerFired(Timer<SVGImageCache>*)
        redraw();
 }
 
-Image* SVGImageCache::lookupOrCreateBitmapImageForClient(const CachedImageClient* client)
+Image* SVGImageCache::lookupOrCreateBitmapImageForRenderer(const RenderObject* renderer)
 {
-    ASSERT(client);
+    if (!renderer)
+        return Image::nullImage();
 
-    // The cache needs to know the size of the client before querying an image for it.
-    SizeAndScalesMap::iterator sizeIt = m_sizeAndScalesMap.find(client);
+    const CachedImageClient* client = renderer;
+
+    // The cache needs to know the size of the renderer before querying an image for it.
+    SizeAndScalesMap::iterator sizeIt = m_sizeAndScalesMap.find(renderer);
     if (sizeIt == m_sizeAndScalesMap.end())
         return Image::nullImage();
 
     IntSize size = sizeIt->second.size;
     float zoom = sizeIt->second.zoom;
     float scale = sizeIt->second.scale;
+
+    // FIXME (85335): This needs to take CSS transform scale into account as well.
+    Page* page = renderer->document()->page();
+    if (!scale)
+        scale = page->deviceScaleFactor() * page->pageScaleFactor();
+
     ASSERT(!size.isEmpty());
 
     // Lookup image for client in cache and eventually update it.
@@ -170,7 +181,7 @@ Image* SVGImageCache::lookupOrCreateBitmapImageForClient(const CachedImageClient
     Image* newImagePtr = newImage.get();
     ASSERT(newImagePtr);
 
-    m_imageDataMap.add(client, ImageData(newBuffer.leakPtr(), newImage.release(), sizeIt->second));
+    m_imageDataMap.add(client, ImageData(newBuffer.leakPtr(), newImage.release(), SizeAndScales(size, zoom, scale)));
     return newImagePtr;
 }
 

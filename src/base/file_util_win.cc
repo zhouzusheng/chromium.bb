@@ -5,7 +5,6 @@
 #include "base/file_util.h"
 
 #include <windows.h>
-#include <propvarutil.h>
 #include <psapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -23,10 +22,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "base/win/pe_image.h"
-#include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
-#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 
 namespace file_util {
@@ -330,142 +326,6 @@ bool GetFileCreationLocalTime(const std::wstring& filename,
       CreateFile(filename.c_str(), GENERIC_READ, kFileShareAll, NULL,
                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL));
   return GetFileCreationLocalTimeFromHandle(file_handle.Get(), creation_time);
-}
-
-bool ResolveShortcut(FilePath* path) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  HRESULT result;
-  base::win::ScopedComPtr<IShellLink> i_shell_link;
-  bool is_resolved = false;
-
-  // Get pointer to the IShellLink interface
-  result = i_shell_link.CreateInstance(CLSID_ShellLink, NULL,
-                                       CLSCTX_INPROC_SERVER);
-  if (SUCCEEDED(result)) {
-    base::win::ScopedComPtr<IPersistFile> persist;
-    // Query IShellLink for the IPersistFile interface
-    result = persist.QueryFrom(i_shell_link);
-    if (SUCCEEDED(result)) {
-      WCHAR temp_path[MAX_PATH];
-      // Load the shell link
-      result = persist->Load(path->value().c_str(), STGM_READ);
-      if (SUCCEEDED(result)) {
-        // Try to find the target of a shortcut
-        result = i_shell_link->Resolve(0, SLR_NO_UI);
-        if (SUCCEEDED(result)) {
-          result = i_shell_link->GetPath(temp_path, MAX_PATH,
-                                  NULL, SLGP_UNCPRIORITY);
-          *path = FilePath(temp_path);
-          is_resolved = true;
-        }
-      }
-    }
-  }
-
-  return is_resolved;
-}
-
-bool CreateOrUpdateShortcutLink(const wchar_t *source,
-                                const wchar_t *destination,
-                                const wchar_t *working_dir,
-                                const wchar_t *arguments,
-                                const wchar_t *description,
-                                const wchar_t *icon,
-                                int icon_index,
-                                const wchar_t* app_id,
-                                uint32 options) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  bool create = (options & SHORTCUT_CREATE_ALWAYS) != 0;
-
-  // |source| is required when SHORTCUT_CREATE_ALWAYS is specified.
-  DCHECK(source || !create);
-
-  // Length of arguments and description must be less than MAX_PATH.
-  DCHECK(lstrlen(arguments) < MAX_PATH);
-  DCHECK(lstrlen(description) < MAX_PATH);
-
-  base::win::ScopedComPtr<IShellLink> i_shell_link;
-  base::win::ScopedComPtr<IPersistFile> i_persist_file;
-
-  // Get pointer to the IShellLink interface
-  if (FAILED(i_shell_link.CreateInstance(CLSID_ShellLink, NULL,
-                                         CLSCTX_INPROC_SERVER)) ||
-      FAILED(i_persist_file.QueryFrom(i_shell_link))) {
-    return false;
-  }
-
-  if (!create && FAILED(i_persist_file->Load(destination, STGM_READWRITE)))
-    return false;
-
-  if ((source || create) && FAILED(i_shell_link->SetPath(source)))
-    return false;
-
-  if (working_dir && FAILED(i_shell_link->SetWorkingDirectory(working_dir)))
-    return false;
-
-  if (arguments && FAILED(i_shell_link->SetArguments(arguments)))
-    return false;
-
-  if (description && FAILED(i_shell_link->SetDescription(description)))
-    return false;
-
-  if (icon && FAILED(i_shell_link->SetIconLocation(icon, icon_index)))
-    return false;
-
-  bool is_dual_mode = (options & SHORTCUT_DUAL_MODE) != 0;
-  if ((app_id || is_dual_mode) &&
-      base::win::GetVersion() >= base::win::VERSION_WIN7) {
-    base::win::ScopedComPtr<IPropertyStore> property_store;
-    if (FAILED(property_store.QueryFrom(i_shell_link)) || !property_store.get())
-      return false;
-
-    if (app_id && !base::win::SetAppIdForPropertyStore(property_store, app_id))
-      return false;
-    if (is_dual_mode &&
-        !base::win::SetDualModeForPropertyStore(property_store)) {
-      return false;
-    }
-  }
-
-  HRESULT result = i_persist_file->Save(destination, TRUE);
-
-  // If we successfully updated the icon, notify the shell that we have done so.
-  if (!create && SUCCEEDED(result)) {
-    // Release the interfaces in case the SHChangeNotify call below depends on
-    // the operations above being fully completed.
-    i_persist_file.Release();
-    i_shell_link.Release();
-
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-  }
-
-  return SUCCEEDED(result);
-}
-
-bool TaskbarPinShortcutLink(const wchar_t* shortcut) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  // "Pin to taskbar" is only supported after Win7.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return false;
-
-  int result = reinterpret_cast<int>(ShellExecute(NULL, L"taskbarpin", shortcut,
-      NULL, NULL, 0));
-  return result > 32;
-}
-
-bool TaskbarUnpinShortcutLink(const wchar_t* shortcut) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
-  // "Unpin from taskbar" is only supported after Win7.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return false;
-
-  int result = reinterpret_cast<int>(ShellExecute(NULL, L"taskbarunpin",
-      shortcut, NULL, NULL, 0));
-  return result > 32;
 }
 
 bool GetTempDir(FilePath* path) {
@@ -784,7 +644,7 @@ bool SetCurrentDirectory(const FilePath& directory) {
 
 FileEnumerator::FileEnumerator(const FilePath& root_path,
                                bool recursive,
-                               FileType file_type)
+                               int file_type)
     : recursive_(recursive),
       file_type_(file_type),
       has_find_data_(false),
@@ -797,7 +657,7 @@ FileEnumerator::FileEnumerator(const FilePath& root_path,
 
 FileEnumerator::FileEnumerator(const FilePath& root_path,
                                bool recursive,
-                               FileType file_type,
+                               int file_type,
                                const FilePath::StringType& pattern)
     : recursive_(recursive),
       file_type_(file_type),
@@ -827,11 +687,6 @@ void FileEnumerator::GetFindInfo(FindInfo* info) {
 // static
 bool FileEnumerator::IsDirectory(const FindInfo& info) {
   return (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-}
-
-// static
-bool FileEnumerator::IsLink(const FindInfo& info) {
-  return false;
 }
 
 // static

@@ -36,6 +36,7 @@
 #include "RenderRubyText.h"
 #include "RenderText.h"
 #include "RenderView.h"
+#include "StyleInheritedData.h"
 
 using namespace std;
 
@@ -76,7 +77,7 @@ RenderRubyText* RenderRubyRun::rubyText() const
     RenderObject* child = firstChild();
     // If in future it becomes necessary to support floating or positioned ruby text,
     // layout will have to be changed to handle them properly.
-    ASSERT(!child || !child->isRubyText() || !child->isFloatingOrPositioned());
+    ASSERT(!child || !child->isRubyText() || !child->isFloatingOrOutOfFlowPositioned());
     return child && child->isRubyText() ? static_cast<RenderRubyText*>(child) : 0;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,43 +26,26 @@
 #ifndef CCDrawQuad_h
 #define CCDrawQuad_h
 
-#include "cc/CCSharedQuadState.h"
+#include "CCSharedQuadState.h"
 
 namespace WebCore {
 
-class CCCheckerboardDrawQuad;
-class CCDebugBorderDrawQuad;
-class CCIOSurfaceDrawQuad;
-class CCRenderPassDrawQuad;
-class CCSolidColorDrawQuad;
-class CCStreamVideoDrawQuad;
-class CCTextureDrawQuad;
-class CCTileDrawQuad;
-class CCYUVVideoDrawQuad;
+// WARNING! All CCXYZDrawQuad classes must remain PODs (plain old data).
+// They are intended to be "serializable" by copying their raw bytes, so they
+// must not contain any non-bit-copyable member variables!
+//
+// Furthermore, the class members need to be packed so they are aligned
+// properly and don't have paddings/gaps, otherwise memory check tools
+// like Valgrind will complain about uninitialized memory usage when
+// transferring these classes over the wire.
+#pragma pack(push, 4)
 
 // CCDrawQuad is a bag of data used for drawing a quad. Because different
 // materials need different bits of per-quad data to render, classes that derive
 // from CCDrawQuad store additional data in their derived instance. The Material
-// enum is used to "safely" upcast to the derived class.
+// enum is used to "safely" downcast to the derived class.
 class CCDrawQuad {
-    WTF_MAKE_NONCOPYABLE(CCDrawQuad);
 public:
-    const IntRect& quadRect() const { return m_quadRect; }
-    const WebKit::WebTransformationMatrix& quadTransform() const { return m_sharedQuadState->quadTransform(); }
-    const WebKit::WebTransformationMatrix& layerTransform() const { return m_sharedQuadState->layerTransform(); }
-    const IntRect& layerRect() const { return m_sharedQuadState->layerRect(); }
-    const IntRect& scissorRect() const { return m_sharedQuadState->scissorRect(); }
-    float opacity() const { return m_sharedQuadState->opacity(); }
-    // For the purposes of blending, what part of the contents of this quad are opaque?
-    IntRect opaqueRect() const;
-    bool needsBlending() const { return m_needsBlending || !opaqueRect().contains(m_quadVisibleRect); }
-    bool isLayerAxisAlignedIntRect() const { return m_sharedQuadState->isLayerAxisAlignedIntRect(); }
-
-    // Allows changing the rect that gets drawn to make it smaller. Parameter passed
-    // in will be clipped to quadRect().
-    void setQuadVisibleRect(const IntRect&);
-    const IntRect& quadVisibleRect() const { return m_quadVisibleRect; }
-
     enum Material {
         Invalid,
         Checkerboard,
@@ -76,25 +59,41 @@ public:
         StreamVideoContent,
     };
 
-    Material material() const { return m_material; }
+    IntRect quadRect() const { return m_quadRect; }
+    const WebKit::WebTransformationMatrix& quadTransform() const { return m_sharedQuadState->quadTransform; }
+    IntRect visibleContentRect() const { return m_sharedQuadState->visibleContentRect; }
+    IntRect clippedRectInTarget() const { return m_sharedQuadState->clippedRectInTarget; }
+    float opacity() const { return m_sharedQuadState->opacity; }
+    // For the purposes of blending, what part of the contents of this quad are opaque?
+    IntRect opaqueRect() const;
+    bool needsBlending() const { return m_needsBlending || !opaqueRect().contains(m_quadVisibleRect); }
+
+    // Allows changing the rect that gets drawn to make it smaller. Parameter passed
+    // in will be clipped to quadRect().
+    void setQuadVisibleRect(const IntRect&);
+    IntRect quadVisibleRect() const { return m_quadVisibleRect; }
     bool isDebugQuad() const { return m_material == DebugBorder; }
 
-    const CCCheckerboardDrawQuad* toCheckerboardDrawQuad() const;
-    const CCDebugBorderDrawQuad* toDebugBorderDrawQuad() const;
-    const CCIOSurfaceDrawQuad* toIOSurfaceDrawQuad() const;
-    const CCRenderPassDrawQuad* toRenderPassDrawQuad() const;
-    const CCSolidColorDrawQuad* toSolidColorDrawQuad() const;
-    const CCStreamVideoDrawQuad* toStreamVideoDrawQuad() const;
-    const CCTextureDrawQuad* toTextureDrawQuad() const;
-    const CCTileDrawQuad* toTileDrawQuad() const;
-    const CCYUVVideoDrawQuad* toYUVVideoDrawQuad() const;
+    Material material() const { return m_material; }
+
+    // Returns transfer size of this object based on the derived class (by
+    // looking at the material type).
+    unsigned size() const;
+
+    PassOwnPtr<CCDrawQuad> copy(const CCSharedQuadState* copiedSharedQuadState) const;
 
     const CCSharedQuadState* sharedQuadState() const { return m_sharedQuadState; }
+    int sharedQuadStateId() const { return m_sharedQuadStateId; }
+    void setSharedQuadState(const CCSharedQuadState*);
 
 protected:
     CCDrawQuad(const CCSharedQuadState*, Material, const IntRect&);
 
+    // Stores state common to a large bundle of quads; kept separate for memory
+    // efficiency. There is special treatment to reconstruct these pointers
+    // during serialization.
     const CCSharedQuadState* m_sharedQuadState;
+    int m_sharedQuadStateId;
 
     Material m_material;
     IntRect m_quadRect;
@@ -110,6 +109,8 @@ protected:
     // variables determine that the quad is not fully opaque but may be partially opaque.
     IntRect m_opaqueRect;
 };
+
+#pragma pack(pop)
 
 }
 

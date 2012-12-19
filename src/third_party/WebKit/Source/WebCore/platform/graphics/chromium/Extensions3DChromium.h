@@ -38,6 +38,7 @@ public:
     virtual ~Extensions3DChromium();
 
     // Supported extensions:
+    //   GL_CHROMIUM_shallow_flush  : only supported if an ipc command buffer is used.
     //   GL_CHROMIUM_resource_safe  : indicating that textures/renderbuffers are always initialized before read/write.
     //   GL_CHROMIUM_strict_attribs : indicating a GL error is generated for out-of-bounds buffer accesses.
     //   GL_CHROMIUM_post_sub_buffer
@@ -48,6 +49,7 @@ public:
     //   GL_CHROMIUM_iosurface (Mac OS X specific)
     //   GL_CHROMIUM_command_buffer_query
     //   GL_ANGLE_texture_usage
+    //   GL_EXT_debug_marker
     //   GL_EXT_texture_storage
     //   GL_EXT_occlusion_query_boolean
 
@@ -90,48 +92,11 @@ public:
         COMMANDS_ISSUED_CHROMIUM = 0x84F2
     };
 
-    // GL_CHROMIUM_post_sub_buffer
-    void postSubBufferCHROMIUM(int x, int y, int width, int height);
-
     // GL_CHROMIUM_map_sub
     void* mapBufferSubDataCHROMIUM(unsigned target, int offset, int size, unsigned access);
     void unmapBufferSubDataCHROMIUM(const void*);
     void* mapTexSubImage2DCHROMIUM(unsigned target, int level, int xoffset, int yoffset, int width, int height, unsigned format, unsigned type, unsigned access);
     void unmapTexSubImage2DCHROMIUM(const void*);
-
-    // GL_CHROMIUM_set_visibility
-    void setVisibilityCHROMIUM(bool);
-
-    // GL_EXT_discard_framebuffer
-    virtual void discardFramebufferEXT(GC3Denum target, GC3Dsizei numAttachments, const GC3Denum* attachments);
-    virtual void ensureFramebufferCHROMIUM();
-
-    // GL_CHROMIUM_gpu_memory_manager
-    struct GpuMemoryAllocationCHROMIUM {
-        size_t gpuResourceSizeInBytes;
-        bool suggestHaveBackbuffer;
-
-        GpuMemoryAllocationCHROMIUM(size_t gpuResourceSizeInBytes, bool suggestHaveBackbuffer)
-            : gpuResourceSizeInBytes(gpuResourceSizeInBytes)
-            , suggestHaveBackbuffer(suggestHaveBackbuffer)
-        {
-        }
-    };
-    class GpuMemoryAllocationChangedCallbackCHROMIUM {
-    public:
-
-        virtual void onGpuMemoryAllocationChanged(GpuMemoryAllocationCHROMIUM) = 0;
-        virtual ~GpuMemoryAllocationChangedCallbackCHROMIUM() { }
-    };
-    void setGpuMemoryAllocationChangedCallbackCHROMIUM(PassOwnPtr<GpuMemoryAllocationChangedCallbackCHROMIUM>);
-
-    // GL_CHROMIUM_swapbuffers_complete_callback
-    class SwapBuffersCompleteCallbackCHROMIUM {
-    public:
-        virtual void onSwapBuffersComplete() = 0;
-        virtual ~SwapBuffersCompleteCallbackCHROMIUM() { }
-    };
-    void setSwapBuffersCompleteCallbackCHROMIUM(PassOwnPtr<SwapBuffersCompleteCallbackCHROMIUM>);
 
     // GL_CHROMIUM_rate_limit_offscreen_context
     void rateLimitOffscreenContextCHROMIUM();
@@ -155,6 +120,22 @@ public:
     void endQueryEXT(GC3Denum);
     void getQueryivEXT(GC3Denum, GC3Denum, GC3Dint*);
     void getQueryObjectuivEXT(Platform3DObject, GC3Denum, GC3Duint*);
+
+    // GL_CHROMIUM_copy_texture
+    void copyTextureCHROMIUM(GC3Denum, Platform3DObject, Platform3DObject, GC3Dint, GC3Denum);
+
+    // GL_CHROMIUM_shallow_flush
+    virtual void shallowFlushCHROMIUM();
+
+    // GL_EXT_robustness
+    virtual void readnPixelsEXT(int x, int y, GC3Dsizei width, GC3Dsizei height, GC3Denum format, GC3Denum type, GC3Dsizei bufSize, void *data);
+    virtual void getnUniformfvEXT(GC3Duint program, int location, GC3Dsizei bufSize, float *params);
+    virtual void getnUniformivEXT(GC3Duint program, int location, GC3Dsizei bufSize, int *params);
+
+    // GL_EXT_debug_marker
+    virtual void insertEventMarkerEXT(const String&);
+    virtual void pushGroupMarkerEXT(const String&);
+    virtual void popGroupMarkerEXT(void);
 
 private:
     // Instances of this class are strictly owned by the GraphicsContext3D implementation and do not

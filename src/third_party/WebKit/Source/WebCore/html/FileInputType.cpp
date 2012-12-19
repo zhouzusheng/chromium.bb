@@ -29,11 +29,13 @@
 #include "File.h"
 #include "FileList.h"
 #include "FileSystem.h"
+#include "FormController.h"
 #include "FormDataList.h"
 #include "Frame.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "Icon.h"
+#include "InputTypeNames.h"
 #include "LocalizedStrings.h"
 #include "RenderFileUploadControl.h"
 #include "ScriptController.h"
@@ -95,40 +97,41 @@ PassOwnPtr<InputType> FileInputType::create(HTMLInputElement* element)
     return adoptPtr(new FileInputType(element));
 }
 
+Vector<FileChooserFileInfo> FileInputType::filesFromFormControlState(const FormControlState& state)
+{
+    Vector<FileChooserFileInfo> files;
+    for (size_t i = 0; i < state.valueSize(); i += 2) {
+        if (!state[i + 1].isEmpty())
+            files.append(FileChooserFileInfo(state[i], state[i + 1]));
+        else
+            files.append(FileChooserFileInfo(state[i]));
+    }
+    return files;
+}
+
 const AtomicString& FileInputType::formControlType() const
 {
     return InputTypeNames::file();
 }
 
-bool FileInputType::saveFormControlState(String& result) const
+FormControlState FileInputType::saveFormControlState() const
 {
     if (m_fileList->isEmpty())
-        return false;
-    result = String();
+        return FormControlState();
+    FormControlState state;
     unsigned numFiles = m_fileList->length();
     for (unsigned i = 0; i < numFiles; ++i) {
-        result.append(m_fileList->item(i)->path());
-        result.append('\1');
-        result.append(m_fileList->item(i)->name());
-        result.append('\0');
+        state.append(m_fileList->item(i)->path());
+        state.append(m_fileList->item(i)->name());
     }
-    return true;
+    return state;
 }
 
-void FileInputType::restoreFormControlState(const String& state)
+void FileInputType::restoreFormControlState(const FormControlState& state)
 {
-    Vector<FileChooserFileInfo> files;
-    Vector<String> paths;
-    state.split('\0', paths);
-    for (unsigned i = 0; i < paths.size(); ++i) {
-        Vector<String> pathAndName;
-        paths[i].split('\1', pathAndName);
-        if (pathAndName.size() > 1)
-            files.append(FileChooserFileInfo(pathAndName[0], pathAndName[1]));
-        else
-            files.append(FileChooserFileInfo(paths[i]));
-    }
-    filesChosen(files);
+    if (state.valueSize() % 2)
+        return;
+    filesChosen(filesFromFormControlState(state));
 }
 
 bool FileInputType::appendFormData(FormDataList& encoding, bool multipart) const
@@ -300,13 +303,13 @@ void FileInputType::createShadowSubtree()
 {
     ASSERT(element()->shadow());
     ExceptionCode ec = 0;
-    element()->shadow()->oldestShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), ec);
+    element()->userAgentShadowRoot()->appendChild(element()->multiple() ? UploadButtonElement::createForMultiple(element()->document()): UploadButtonElement::create(element()->document()), ec);
 }
 
 void FileInputType::multipleAttributeChanged()
 {
     ASSERT(element()->shadow());
-    UploadButtonElement* button = static_cast<UploadButtonElement*>(element()->shadow()->oldestShadowRoot()->firstChild());
+    UploadButtonElement* button = static_cast<UploadButtonElement*>(element()->userAgentShadowRoot()->firstChild());
     if (button)
         button->setValue(element()->multiple() ? fileButtonChooseMultipleFilesLabel() : fileButtonChooseFileLabel());
 }
@@ -407,6 +410,10 @@ bool FileInputType::receiveDroppedFiles(const DragData* dragData)
     }
 #endif
 
+#if ENABLE(FILE_SYSTEM)
+    m_droppedFileSystemId = dragData->droppedFileSystemId();
+#endif
+
     Vector<FileChooserFileInfo> files;
     for (unsigned i = 0; i < paths.size(); ++i)
         files.append(FileChooserFileInfo(paths[i]));
@@ -420,6 +427,13 @@ bool FileInputType::receiveDroppedFiles(const DragData* dragData)
     }
     return true;
 }
+
+#if ENABLE(FILE_SYSTEM)
+String FileInputType::droppedFileSystemId()
+{
+    return m_droppedFileSystemId;
+}
+#endif
 
 Icon* FileInputType::icon() const
 {

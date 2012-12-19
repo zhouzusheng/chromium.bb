@@ -32,6 +32,7 @@
 #ifndef ProgressShadowElement_h
 #define ProgressShadowElement_h
 
+#if ENABLE(PROGRESS_ELEMENT)
 #include "HTMLDivElement.h"
 #include <wtf/Forward.h>
 
@@ -44,7 +45,18 @@ public:
     ProgressShadowElement(Document*);
     HTMLProgressElement* progressElement() const;
 
+protected:
+    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+};
+
+class ProgressInnerElement : public ProgressShadowElement {
+public:
+    ProgressInnerElement(Document*);
+
+    static PassRefPtr<ProgressInnerElement> create(Document*);
 private:
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const;
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 };
 
@@ -64,7 +76,6 @@ inline PassRefPtr<ProgressBarElement> ProgressBarElement::create(Document* docum
     return adoptRef(new ProgressBarElement(document));
 }
 
-
 class ProgressValueElement : public ProgressShadowElement {
 public:
     ProgressValueElement(Document* document) 
@@ -83,5 +94,5 @@ inline PassRefPtr<ProgressValueElement> ProgressValueElement::create(Document* d
 }
 
 }
-
-#endif
+#endif // ENABLE(PROGRESS_ELEMENT)
+#endif // ProgressShadowElement_h

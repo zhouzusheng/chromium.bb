@@ -35,58 +35,52 @@ namespace WebCore {
 
 class Attr;
 class Element;
+class ImmutableElementAttributeData;
+class MutableElementAttributeData;
 
-inline Attribute* findAttributeInVector(const Vector<Attribute>& attributes, const QualifiedName& name)
-{
-    for (unsigned i = 0; i < attributes.size(); ++i) {
-        if (attributes.at(i).name().matches(name))
-            return &const_cast<Vector<Attribute>& >(attributes).at(i);
-    }
-    return 0;
-}
+enum SynchronizationOfLazyAttribute { NotInSynchronizationOfLazyAttribute, InSynchronizationOfLazyAttribute };
 
-enum EInUpdateStyleAttribute { NotInUpdateStyleAttribute, InUpdateStyleAttribute };
-
-class ElementAttributeData {
+class ElementAttributeData : public RefCounted<ElementAttributeData> {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<ElementAttributeData> create()
-    {
-        return adoptPtr(new ElementAttributeData);
-    }
+    static PassRefPtr<ElementAttributeData> create();
+    static PassRefPtr<ElementAttributeData> createImmutable(const Vector<Attribute>&);
 
     void clearClass() { m_classNames.clear(); }
-    void setClass(const String& className, bool shouldFoldCase);
+    void setClass(const AtomicString& className, bool shouldFoldCase) const { m_classNames.set(className, shouldFoldCase); }
     const SpaceSplitString& classNames() const { return m_classNames; }
 
     const AtomicString& idForStyleResolution() const { return m_idForStyleResolution; }
-    void setIdForStyleResolution(const AtomicString& newId) { m_idForStyleResolution = newId; }
+    void setIdForStyleResolution(const AtomicString& newId) const { m_idForStyleResolution = newId; }
 
+    const StylePropertySet* inlineStyle() const { return m_inlineStyleDecl.get(); }
     StylePropertySet* inlineStyle() { return m_inlineStyleDecl.get(); }
     StylePropertySet* ensureInlineStyle(StyledElement*);
     StylePropertySet* ensureMutableInlineStyle(StyledElement*);
-    void updateInlineStyleAvoidingMutation(StyledElement*, const String& text);
+    void updateInlineStyleAvoidingMutation(StyledElement*, const String& text) const;
     void destroyInlineStyle(StyledElement*);
+    void detachCSSOMWrapperIfNeeded(StyledElement*);
 
-    StylePropertySet* attributeStyle() const { return m_attributeStyle.get(); }
-    void setAttributeStyle(PassRefPtr<StylePropertySet> style) { m_attributeStyle = style; }
+    const StylePropertySet* attributeStyle() const { return m_attributeStyle.get(); }
+    void setAttributeStyle(PassRefPtr<StylePropertySet> style) const { m_attributeStyle = style; }
 
-    size_t length() const { return m_attributes.size(); }
-    bool isEmpty() const { return m_attributes.isEmpty(); }
+    size_t length() const;
+    bool isEmpty() const { return !length(); }
 
     PassRefPtr<Attr> getAttributeNode(const String&, bool shouldIgnoreAttributeCase, Element*) const;
     PassRefPtr<Attr> getAttributeNode(const QualifiedName&, Element*) const;
 
     // Internal interface.
-    Attribute* attributeItem(unsigned index) const { return &const_cast<ElementAttributeData*>(this)->m_attributes[index]; }
-    Attribute* getAttributeItem(const QualifiedName& name) const { return findAttributeInVector(m_attributes, name); }
+    const Attribute* attributeItem(unsigned index) const;
+    const Attribute* getAttributeItem(const QualifiedName&) const;
+    Attribute* attributeItem(unsigned index);
+    Attribute* getAttributeItem(const QualifiedName&);
     size_t getAttributeItemIndex(const QualifiedName&) const;
-    size_t getAttributeItemIndex(const String& name, bool shouldIgnoreAttributeCase) const;
+    size_t getAttributeItemIndex(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
 
     // These functions do no error checking.
-    void addAttribute(const Attribute&, Element*, EInUpdateStyleAttribute = NotInUpdateStyleAttribute);
-    void removeAttribute(const QualifiedName&, Element*);
-    void removeAttribute(size_t index, Element*, EInUpdateStyleAttribute = NotInUpdateStyleAttribute);
+    void addAttribute(const Attribute&, Element*, SynchronizationOfLazyAttribute = NotInSynchronizationOfLazyAttribute);
+    void removeAttribute(size_t index, Element*, SynchronizationOfLazyAttribute = NotInSynchronizationOfLazyAttribute);
     PassRefPtr<Attr> takeAttribute(size_t index, Element*);
 
     bool hasID() const { return !m_idForStyleResolution.isNull(); }
@@ -94,58 +88,115 @@ public:
 
     bool isEquivalent(const ElementAttributeData* other) const;
 
-    void setAttr(Element*, const QualifiedName&, Attr*);
-    void removeAttr(Element*, const QualifiedName&);
-    PassRefPtr<Attr> attrIfExists(Element*, const QualifiedName&);
-    PassRefPtr<Attr> ensureAttr(Element*, const QualifiedName&);
+    void setAttr(Element*, const QualifiedName&, Attr*) const;
+    void removeAttr(Element*, const QualifiedName&) const;
+    PassRefPtr<Attr> attrIfExists(Element*, const QualifiedName&) const;
+    PassRefPtr<Attr> ensureAttr(Element*, const QualifiedName&) const;
+    void detachAttrObjectsFromElement(Element*) const;
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+
+    bool isMutable() const { return m_isMutable; }
+
+protected:
+    ElementAttributeData()
+        : m_isMutable(true)
+        , m_arraySize(0)
+    { }
+
+    ElementAttributeData(unsigned arraySize)
+        : m_isMutable(false)
+        , m_arraySize(arraySize)
+    { }
+
+    mutable RefPtr<StylePropertySet> m_inlineStyleDecl;
+    mutable RefPtr<StylePropertySet> m_attributeStyle;
+    mutable SpaceSplitString m_classNames;
+    mutable AtomicString m_idForStyleResolution;
+
+    unsigned m_isMutable : 1;
+    unsigned m_arraySize : 31;
 
 private:
     friend class Element;
     friend class HTMLConstructionSite;
+    friend class ImmutableElementAttributeData;
+    friend class MutableElementAttributeData;
 
-    ElementAttributeData()
-    {
-    }
-
-    const Vector<Attribute>& attributeVector() const { return m_attributes; }
-    Vector<Attribute> clonedAttributeVector() const { return m_attributes; }
-
-    void detachAttrObjectsFromElement(Element*);
-    Attribute* getAttributeItem(const String& name, bool shouldIgnoreAttributeCase) const;
-    size_t getAttributeItemIndexSlowCase(const String& name, bool shouldIgnoreAttributeCase) const;
+    Attribute* getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase);
+    const Attribute* getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
+    size_t getAttributeItemIndexSlowCase(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
     void cloneDataFrom(const ElementAttributeData& sourceData, const Element& sourceElement, Element& targetElement);
     void clearAttributes(Element*);
-    void replaceAttribute(size_t index, const Attribute&, Element*);
 
-    RefPtr<StylePropertySet> m_inlineStyleDecl;
-    RefPtr<StylePropertySet> m_attributeStyle;
-    SpaceSplitString m_classNames;
-    AtomicString m_idForStyleResolution;
-    Vector<Attribute> m_attributes;
+    PassRefPtr<ElementAttributeData> makeMutableCopy() const;
+
+    Vector<Attribute, 4>& mutableAttributeVector();
+    const Vector<Attribute, 4>& mutableAttributeVector() const;
+    const Attribute* immutableAttributeArray() const;
 };
 
-inline void ElementAttributeData::removeAttribute(const QualifiedName& name, Element* element)
-{
-    size_t index = getAttributeItemIndex(name);
-    if (index == notFound)
-        return;
+class ImmutableElementAttributeData : public ElementAttributeData {
+public:
+    ImmutableElementAttributeData(const Vector<Attribute>&);
+    ~ImmutableElementAttributeData();
 
-    removeAttribute(index, element);
-    return;
+    void* m_attributeArray;
+};
+
+class MutableElementAttributeData : public ElementAttributeData {
+public:
+    MutableElementAttributeData() { }
+    MutableElementAttributeData(const ImmutableElementAttributeData&);
+
+    Vector<Attribute, 4> m_attributeVector;
+};
+
+inline Vector<Attribute, 4>& ElementAttributeData::mutableAttributeVector()
+{
+    ASSERT(m_isMutable);
+    return static_cast<MutableElementAttributeData*>(this)->m_attributeVector;
 }
 
-inline Attribute* ElementAttributeData::getAttributeItem(const String& name, bool shouldIgnoreAttributeCase) const
+inline const Vector<Attribute, 4>& ElementAttributeData::mutableAttributeVector() const
+{
+    ASSERT(m_isMutable);
+    return static_cast<const MutableElementAttributeData*>(this)->m_attributeVector;
+}
+
+inline const Attribute* ElementAttributeData::immutableAttributeArray() const
+{
+    ASSERT(!m_isMutable);
+    return reinterpret_cast<const Attribute*>(&static_cast<const ImmutableElementAttributeData*>(this)->m_attributeArray);
+}
+
+inline size_t ElementAttributeData::length() const
+{
+    if (isMutable())
+        return mutableAttributeVector().size();
+    return m_arraySize;
+}
+
+inline Attribute* ElementAttributeData::getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase)
 {
     size_t index = getAttributeItemIndex(name, shouldIgnoreAttributeCase);
     if (index != notFound)
-        return &const_cast<ElementAttributeData*>(this)->m_attributes[index];
+        return attributeItem(index);
+    return 0;
+}
+
+inline const Attribute* ElementAttributeData::getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase) const
+{
+    size_t index = getAttributeItemIndex(name, shouldIgnoreAttributeCase);
+    if (index != notFound)
+        return attributeItem(index);
     return 0;
 }
 
 inline size_t ElementAttributeData::getAttributeItemIndex(const QualifiedName& name) const
 {
-    for (unsigned i = 0; i < m_attributes.size(); ++i) {
-        if (m_attributes.at(i).name().matches(name))
+    for (unsigned i = 0; i < length(); ++i) {
+        if (attributeItem(i)->name().matches(name))
             return i;
     }
     return notFound;
@@ -153,15 +204,16 @@ inline size_t ElementAttributeData::getAttributeItemIndex(const QualifiedName& n
 
 // We use a boolean parameter instead of calling shouldIgnoreAttributeCase so that the caller
 // can tune the behavior (hasAttribute is case sensitive whereas getAttribute is not).
-inline size_t ElementAttributeData::getAttributeItemIndex(const String& name, bool shouldIgnoreAttributeCase) const
+inline size_t ElementAttributeData::getAttributeItemIndex(const AtomicString& name, bool shouldIgnoreAttributeCase) const
 {
     unsigned len = length();
     bool doSlowCheck = shouldIgnoreAttributeCase;
 
     // Optimize for the case where the attribute exists and its name exactly matches.
     for (unsigned i = 0; i < len; ++i) {
-        if (!m_attributes[i].name().hasPrefix()) {
-            if (name == m_attributes[i].localName())
+        const Attribute* attribute = attributeItem(i);
+        if (!attribute->name().hasPrefix()) {
+            if (name == attribute->localName())
                 return i;
         } else
             doSlowCheck = true;
@@ -170,6 +222,52 @@ inline size_t ElementAttributeData::getAttributeItemIndex(const String& name, bo
     if (doSlowCheck)
         return getAttributeItemIndexSlowCase(name, shouldIgnoreAttributeCase);
     return notFound;
+}
+
+inline const Attribute* ElementAttributeData::getAttributeItem(const QualifiedName& name) const
+{
+    for (unsigned i = 0; i < length(); ++i) {
+        if (attributeItem(i)->name().matches(name))
+            return attributeItem(i);
+    }
+    return 0;
+}
+
+inline Attribute* ElementAttributeData::getAttributeItem(const QualifiedName& name)
+{
+    for (unsigned i = 0; i < length(); ++i) {
+        if (attributeItem(i)->name().matches(name))
+            return attributeItem(i);
+    }
+    return 0;
+}
+
+inline const Attribute* ElementAttributeData::attributeItem(unsigned index) const
+{
+    ASSERT(index < length());
+    if (m_isMutable)
+        return &mutableAttributeVector().at(index);
+    return &immutableAttributeArray()[index];
+}
+
+inline Attribute* ElementAttributeData::attributeItem(unsigned index)
+{
+    ASSERT(index < length());
+    return &mutableAttributeVector().at(index);
+}
+
+}
+
+namespace WTF {
+
+template <> inline void deleteOwnedPtr<WebCore::ElementAttributeData>(WebCore::ElementAttributeData* ptr)
+{
+    if (!ptr)
+        return;
+    if (ptr->isMutable())
+        delete static_cast<WebCore::MutableElementAttributeData*>(ptr);
+    else
+        delete static_cast<WebCore::ImmutableElementAttributeData*>(ptr);
 }
 
 }

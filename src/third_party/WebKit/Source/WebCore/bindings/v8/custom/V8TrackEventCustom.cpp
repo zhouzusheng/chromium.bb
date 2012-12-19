@@ -36,7 +36,6 @@
 
 #include "TrackBase.h"
 #include "TrackEvent.h"
-#include "V8Proxy.h"
 #include "V8TextTrack.h"
 
 namespace WebCore {
@@ -57,7 +56,7 @@ v8::Handle<v8::Value> V8TrackEvent::trackAccessorGetter(v8::Local<v8::String> na
         break;
         
     case TrackBase::TextTrack:
-        return toV8(static_cast<TextTrack*>(track), info.GetIsolate());
+        return toV8(static_cast<TextTrack*>(track), info.Holder(), info.GetIsolate());
         break;
 
     case TrackBase::AudioTrack:

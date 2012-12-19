@@ -40,9 +40,12 @@
 #include "TransformOperations.h"
 #include "TranslateTransformOperation.h"
 
-#include "cc/CCActiveAnimation.h"
-#include "cc/CCKeyframedAnimationCurve.h"
-
+#include <public/Platform.h>
+#include <public/WebAnimation.h>
+#include <public/WebAnimationCurve.h>
+#include <public/WebCompositorSupport.h>
+#include <public/WebFloatAnimationCurve.h>
+#include <public/WebTransformAnimationCurve.h>
 #include <public/WebTransformOperations.h>
 #include <public/WebTransformationMatrix.h>
 
@@ -112,6 +115,8 @@ WebTransformOperations toWebTransformOperations(const TransformOperations& trans
             break;
         }
         case TransformOperation::IDENTITY:
+            webTransformOperations.appendIdentity();
+            break;
         case TransformOperation::NONE:
             // Do nothing.
             break;
@@ -122,25 +127,62 @@ WebTransformOperations toWebTransformOperations(const TransformOperations& trans
 }
 
 template <class Value, class Keyframe, class Curve>
-bool appendKeyframe(Curve& curve, double keyTime, const Value* value, PassOwnPtr<CCTimingFunction> timingFunction, const FloatSize&)
+bool appendKeyframeWithStandardTimingFunction(Curve* curve, double keyTime, const Value* value, const Value* lastValue, WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize&)
 {
-    curve.addKeyframe(Keyframe::create(keyTime, value->value(), timingFunction));
+    curve->add(Keyframe(keyTime, value->value()), timingFunctionType);
     return true;
 }
 
-template <>
-bool appendKeyframe<TransformAnimationValue, CCTransformKeyframe, CCKeyframedTransformAnimationCurve>(CCKeyframedTransformAnimationCurve& curve, double keyTime, const TransformAnimationValue* value, PassOwnPtr<CCTimingFunction> timingFunction, const FloatSize& boxSize)
+template <class Value, class Keyframe, class Curve>
+bool appendKeyframeWithCustomBezierTimingFunction(Curve* curve, double keyTime, const Value* value, const Value* lastValue, double x1, double y1, double x2, double y2, const FloatSize&)
 {
+    curve->add(Keyframe(keyTime, value->value()), x1, y1, x2, y2);
+    return true;
+}
+
+bool isRotationType(TransformOperation::OperationType transformType)
+{
+    return transformType == TransformOperation::ROTATE
+        || transformType == TransformOperation::ROTATE_X
+        || transformType == TransformOperation::ROTATE_Y
+        || transformType == TransformOperation::ROTATE_Z
+        || transformType == TransformOperation::ROTATE_3D;
+}
+
+template <>
+bool appendKeyframeWithStandardTimingFunction<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(WebTransformAnimationCurve* curve, double keyTime, const TransformAnimationValue* value, const TransformAnimationValue* lastValue, WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize& boxSize)
+{
+    bool canBlend = !lastValue;
     WebTransformOperations operations = toWebTransformOperations(*value->value(), boxSize);
-    if (operations.apply().isInvertible()) {
-        curve.addKeyframe(CCTransformKeyframe::create(keyTime, operations, timingFunction));
+    if (!canBlend) {
+        WebTransformOperations lastOperations = toWebTransformOperations(*lastValue->value(), boxSize);
+        canBlend = lastOperations.canBlendWith(operations);
+    }
+    if (canBlend) {
+        curve->add(WebTransformKeyframe(keyTime, operations), timingFunctionType);
+        return true;
+    }
+    return false;
+}
+
+template <>
+bool appendKeyframeWithCustomBezierTimingFunction<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(WebTransformAnimationCurve* curve, double keyTime, const TransformAnimationValue* value, const TransformAnimationValue* lastValue, double x1, double y1, double x2, double y2, const FloatSize& boxSize)
+{
+    bool canBlend = !lastValue;
+    WebTransformOperations operations = toWebTransformOperations(*value->value(), boxSize);
+    if (!canBlend) {
+        WebTransformOperations lastOperations = toWebTransformOperations(*lastValue->value(), boxSize);
+        canBlend = lastOperations.canBlendWith(operations);
+    }
+    if (canBlend) {
+        curve->add(WebTransformKeyframe(keyTime, operations), x1, y1, x2, y2);
         return true;
     }
     return false;
 }
 
 template <class Value, class Keyframe, class Curve>
-PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList& valueList, const Animation* animation, size_t animationId, size_t groupId, double timeOffset, CCActiveAnimation::TargetProperty targetProperty, const FloatSize& boxSize)
+PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& valueList, const Animation* animation, int animationId, double timeOffset, Curve* curve, WebKit::WebAnimation::TargetProperty targetProperty, const FloatSize& boxSize)
 {
     bool alternate = false;
     bool reverse = false;
@@ -152,15 +194,13 @@ PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList& val
             reverse = true;
     }
 
-    OwnPtr<Curve> curve = Curve::create();
-    Vector<Keyframe> keyframes;
-
     for (size_t i = 0; i < valueList.size(); i++) {
         size_t index = reverse ? valueList.size() - i - 1 : i;
-
         const Value* originalValue = static_cast<const Value*>(valueList.at(index));
+        const Value* lastOriginalValue = 0;
+        if (valueList.size() > 1 && ((reverse && index + 1 < valueList.size()) || (!reverse && index > 0)))
+            lastOriginalValue = static_cast<const Value*>(valueList.at(reverse ? index + 1 : index - 1));
 
-        OwnPtr<CCTimingFunction> timingFunction;
         const TimingFunction* originalTimingFunction = originalValue->timingFunction();
 
         // If there hasn't been a timing function associated with this keyframe, use the
@@ -168,21 +208,33 @@ PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList& val
         if (!originalTimingFunction && animation->isTimingFunctionSet())
             originalTimingFunction = animation->timingFunction().get();
 
+        // Ease is the default timing function.
+        WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeEase;
+
+        bool isUsingCustomBezierTimingFunction = false;
+        double x1 = 0;
+        double y1 = 0;
+        double x2 = 1;
+        double y2 = 1;
+
         if (originalTimingFunction) {
             switch (originalTimingFunction->type()) {
             case TimingFunction::StepsFunction:
                 // FIXME: add support for steps timing function.
                 return nullptr;
             case TimingFunction::LinearFunction:
-                // Don't set the timing function. Keyframes are interpolated linearly if there is no timing function.
+                timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeLinear;
                 break;
             case TimingFunction::CubicBezierFunction:
                 const CubicBezierTimingFunction* originalBezierTimingFunction = static_cast<const CubicBezierTimingFunction*>(originalTimingFunction);
-                timingFunction = CCCubicBezierTimingFunction::create(originalBezierTimingFunction->x1(), originalBezierTimingFunction->y1(), originalBezierTimingFunction->x2(), originalBezierTimingFunction->y2());
+                isUsingCustomBezierTimingFunction = true;
+                x1 = originalBezierTimingFunction->x1();
+                y1 = originalBezierTimingFunction->y1();
+                x2 = originalBezierTimingFunction->x2();
+                y2 = originalBezierTimingFunction->y2();
                 break;
             } // switch
-        } else
-            timingFunction = CCEaseTimingFunction::create();
+        }
 
         double duration = (animation && animation->isDurationSet()) ? animation->duration() : 1;
         double keyTime = originalValue->keyTime() * duration;
@@ -190,38 +242,40 @@ PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList& val
         if (reverse)
             keyTime = duration - keyTime;
 
-        bool addedKeyframe = appendKeyframe<Value, Keyframe, Curve>(*curve, keyTime, originalValue, timingFunction.release(), boxSize);
+        bool addedKeyframe = false;
+        if (isUsingCustomBezierTimingFunction)
+            addedKeyframe = appendKeyframeWithCustomBezierTimingFunction<Value, Keyframe, Curve>(curve, keyTime, originalValue, lastOriginalValue, x1, y1, x2, y2, boxSize);
+        else
+            addedKeyframe = appendKeyframeWithStandardTimingFunction<Value, Keyframe, Curve>(curve, keyTime, originalValue, lastOriginalValue, timingFunctionType, boxSize);
         if (!addedKeyframe)
             return nullptr;
     }
 
-    OwnPtr<CCActiveAnimation> anim = CCActiveAnimation::create(curve.release(), animationId, groupId, targetProperty);
+    OwnPtr<WebKit::WebAnimation> webAnimation = adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, targetProperty, animationId));
 
-    ASSERT(anim.get());
-
-    if (anim.get()) {
-        int iterations = (animation && animation->isIterationCountSet()) ? animation->iterationCount() : 1;
-        anim->setIterations(iterations);
-        anim->setAlternatesDirection(alternate);
-    }
-
-    // In order to avoid skew, the main thread animation cannot tick until it has received the start time of
-    // the corresponding impl thread animation.
-    anim->setNeedsSynchronizedStartTime(true);
+    int iterations = (animation && animation->isIterationCountSet()) ? animation->iterationCount() : 1;
+    webAnimation->setIterations(iterations);
+    webAnimation->setAlternatesDirection(alternate);
 
     // If timeOffset > 0, then the animation has started in the past.
-    anim->setTimeOffset(timeOffset);
+    webAnimation->setTimeOffset(timeOffset);
 
-    return anim.release();
+    return webAnimation.release();
 }
 
-PassOwnPtr<CCActiveAnimation> createActiveAnimation(const KeyframeValueList& values, const Animation* animation, size_t animationId, size_t groupId, double timeOffset, const FloatSize& boxSize)
+PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& values, const Animation* animation, int animationId, double timeOffset, const FloatSize& boxSize)
 {
-    if (values.property() == AnimatedPropertyWebkitTransform)
-        return createActiveAnimation<TransformAnimationValue, CCTransformKeyframe, CCKeyframedTransformAnimationCurve>(values, animation, animationId, groupId, timeOffset, CCActiveAnimation::Transform, FloatSize(boxSize));
 
-    if (values.property() == AnimatedPropertyOpacity)
-        return createActiveAnimation<FloatAnimationValue, CCFloatKeyframe, CCKeyframedFloatAnimationCurve>(values, animation, animationId, groupId, timeOffset, CCActiveAnimation::Opacity, FloatSize());
+
+    if (values.property() == AnimatedPropertyWebkitTransform) {
+        OwnPtr<WebTransformAnimationCurve> curve = adoptPtr(Platform::current()->compositorSupport()->createTransformAnimationCurve());
+        return createWebAnimation<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), WebKit::WebAnimation::TargetPropertyTransform, FloatSize(boxSize));
+    }
+
+    if (values.property() == AnimatedPropertyOpacity) {
+        OwnPtr<WebFloatAnimationCurve> curve = adoptPtr(Platform::current()->compositorSupport()->createFloatAnimationCurve());
+        return createWebAnimation<FloatAnimationValue, WebFloatKeyframe, WebFloatAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), WebKit::WebAnimation::TargetPropertyOpacity, FloatSize());
+    }
 
     return nullptr;
 }

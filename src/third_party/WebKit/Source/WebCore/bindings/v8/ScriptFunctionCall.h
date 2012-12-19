@@ -31,10 +31,10 @@
 #ifndef ScriptFunctionCall_h
 #define ScriptFunctionCall_h
 
-#include "PlatformString.h"
 #include "ScriptObject.h"
 
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
     class ScriptValue;
@@ -74,7 +74,7 @@ namespace WebCore {
 
     class ScriptCallback : public ScriptCallArgumentHandler {
     public:
-        ScriptCallback(ScriptState*, ScriptValue);
+        ScriptCallback(ScriptState*, const ScriptValue&);
 
         ScriptValue call();
         ScriptValue call(bool& hadException);

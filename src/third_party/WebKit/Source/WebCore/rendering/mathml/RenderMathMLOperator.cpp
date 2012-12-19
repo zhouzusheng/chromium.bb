@@ -223,8 +223,7 @@ void RenderMathMLOperator::updateFromElement()
         
         RefPtr<RenderStyle> newStyle = RenderStyle::create();
         newStyle->inheritFrom(style());
-        newStyle->setDisplay(INLINE_BLOCK);
-        newStyle->setVerticalAlign(BASELINE);
+        newStyle->setDisplay(FLEX);
         
         // Check for a stretchable character that is under the minimum height and use the
         // font size to adjust the glyph size.
@@ -331,11 +330,11 @@ void RenderMathMLOperator::updateFromElement()
     setNeedsLayoutAndPrefWidthsRecalc();
 }
 
-PassRefPtr<RenderStyle> RenderMathMLOperator::createStackableStyle(int lineHeight, int maxHeightForRenderer, int topRelative)
+PassRefPtr<RenderStyle> RenderMathMLOperator::createStackableStyle(int /* lineHeight */, int maxHeightForRenderer, int topRelative)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::create();
     newStyle->inheritFrom(style());
-    newStyle->setDisplay(BLOCK);
+    newStyle->setDisplay(FLEX);
     
     FontDescription desc = style()->fontDescription();
     desc.setIsAbsoluteSize(true);
@@ -343,8 +342,7 @@ PassRefPtr<RenderStyle> RenderMathMLOperator::createStackableStyle(int lineHeigh
     desc.setComputedSize(gGlyphFontSize);
     newStyle->setFontDescription(desc);
     newStyle->font().update(style()->font().fontSelector());
-    newStyle->setLineHeight(Length(lineHeight, Fixed));
-    newStyle->setVerticalAlign(TOP);
+    // FIXME: With -webkit-line-box-contain, this method's lineHeight argument is no longer used. It should be removed in a future patch.
 
     if (maxHeightForRenderer > 0)
         newStyle->setMaxHeight(Length(maxHeightForRenderer, Fixed));
@@ -383,11 +381,11 @@ RenderBlock* RenderMathMLOperator::createGlyph(UChar glyph, int lineHeight, int 
     return container;
 }
 
-LayoutUnit RenderMathMLOperator::baselinePosition(FontBaseline, bool firstLine, LineDirectionMode lineDirection, LinePositionMode linePositionMode) const
+LayoutUnit RenderMathMLOperator::firstLineBoxBaseline() const
 {
     if (m_isStacked)
         return m_stretchHeight * 2 / 3 - (m_stretchHeight - static_cast<int>(m_stretchHeight / gOperatorExpansion)) / 2;    
-    return RenderBlock::baselinePosition(AlphabeticBaseline, firstLine, lineDirection, linePositionMode);
+    return RenderMathMLBlock::firstLineBoxBaseline();
 }
     
 }

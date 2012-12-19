@@ -26,9 +26,11 @@
 #ifndef ContentSecurityPolicy_h
 #define ContentSecurityPolicy_h
 
+#include "KURL.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
+#include <wtf/text/TextPosition.h>
 #include <wtf/text/WTFString.h>
 
 namespace WTF {
@@ -39,12 +41,15 @@ namespace WebCore {
 
 class CSPDirectiveList;
 class ScriptCallStack;
+class DOMStringList;
 class ScriptExecutionContext;
-class KURL;
+class SecurityOrigin;
 
+typedef int SandboxFlags;
 typedef Vector<OwnPtr<CSPDirectiveList> > CSPDirectiveListVector;
 
 class ContentSecurityPolicy {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<ContentSecurityPolicy> create(ScriptExecutionContext* scriptExecutionContext)
     {
@@ -59,32 +64,62 @@ public:
         EnforcePolicy
     };
 
+    enum ReportingStatus {
+        SendReport,
+        SuppressReport
+    };
+
     void didReceiveHeader(const String&, HeaderType);
 
-    // These functions are wrong becuase they assume that there is only one header.
+    // These functions are wrong because they assume that there is only one header.
     // FIXME: Replace them with functions that return vectors.
     const String& deprecatedHeader() const;
     HeaderType deprecatedHeaderType() const;
 
-    bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
-    bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
-    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
-    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
-    bool allowEval(PassRefPtr<ScriptCallStack>) const;
+    bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
+    bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
+    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
+    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
+    bool allowEval(PassRefPtr<ScriptCallStack>, ReportingStatus = SendReport) const;
+    bool allowScriptNonce(const String& nonce, const String& contextURL, const WTF::OrdinalNumber& contextLine, const KURL& = KURL()) const;
+    bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ReportingStatus = SendReport) const;
 
-    bool allowScriptFromSource(const KURL&) const;
-    bool allowObjectFromSource(const KURL&) const;
-    bool allowChildFrameFromSource(const KURL&) const;
-    bool allowImageFromSource(const KURL&) const;
-    bool allowStyleFromSource(const KURL&) const;
-    bool allowFontFromSource(const KURL&) const;
-    bool allowMediaFromSource(const KURL&) const;
-    bool allowConnectToSource(const KURL&) const;
+    bool allowScriptFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowObjectFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowChildFrameFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowImageFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowStyleFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowFontFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowMediaFromSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowConnectToSource(const KURL&, ReportingStatus = SendReport) const;
+    bool allowFormAction(const KURL&, ReportingStatus = SendReport) const;
 
     void setOverrideAllowInlineStyle(bool);
 
+    bool isActive() const;
+    void gatherReportURIs(DOMStringList&) const;
+
+    void reportDuplicateDirective(const String&) const;
+    void reportIgnoredPathComponent(const String& directiveName, const String& completeSource, const String& path) const;
+    void reportInvalidDirectiveValueCharacter(const String& directiveName, const String& value) const;
+    void reportInvalidNonce(const String&) const;
+    void reportInvalidPluginTypes(const String&) const;
+    void reportInvalidSourceExpression(const String& directiveName, const String& source) const;
+    void reportUnrecognizedDirective(const String&) const;
+    void reportViolation(const String& directiveText, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), PassRefPtr<ScriptCallStack> = 0) const;
+
+    void reportBlockedScriptExecutionToInspector(const String& directiveText) const;
+
+    const KURL& url() const;
+    KURL completeURL(const String&) const;
+    SecurityOrigin* securityOrigin() const;
+    void enforceSandboxFlags(SandboxFlags) const;
+    String evalDisabledErrorMessage() const;
+
 private:
     explicit ContentSecurityPolicy(ScriptExecutionContext*);
+
+    void logToConsole(const String& message, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), PassRefPtr<ScriptCallStack> = 0) const;
 
     ScriptExecutionContext* m_scriptExecutionContext;
     bool m_overrideInlineStyleAllowed;

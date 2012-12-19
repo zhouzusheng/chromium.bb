@@ -30,8 +30,9 @@
 #include "Color.h"
 #include "ColorSpace.h"
 #include "GraphicsTypes.h"
-#include "ImageSource.h"
+#include "ImageOrientation.h"
 #include "IntRect.h"
+#include "NativeImagePtr.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
@@ -50,10 +51,6 @@ struct CGContext;
 typedef struct tagSIZE SIZE;
 typedef SIZE* LPSIZE;
 typedef struct HBITMAP__ *HBITMAP;
-#endif
-
-#if PLATFORM(QT)
-#include <QPixmap>
 #endif
 
 #if PLATFORM(GTK)
@@ -157,7 +154,7 @@ public:
 #endif
 
 #if PLATFORM(QT)
-    static void setPlatformResource(const char* name, const QPixmap&);
+    static void setPlatformResource(const char* name, const QImage&);
 #endif
 
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
@@ -171,6 +168,8 @@ public:
     virtual bool notSolidColor() { return true; }
 #endif
 
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
 protected:
     Image(ImageObserver* = 0);
 
@@ -181,6 +180,7 @@ protected:
     virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, ColorSpace styleColorSpace, CompositeOperator) { }
 #endif
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator) = 0;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, RespectImageOrientationEnum);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize, ColorSpace styleColorSpace, CompositeOperator);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator);
 

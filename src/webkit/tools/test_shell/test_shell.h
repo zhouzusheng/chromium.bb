@@ -5,9 +5,9 @@
 #ifndef WEBKIT_TOOLS_TEST_SHELL_TEST_SHELL_H_
 #define WEBKIT_TOOLS_TEST_SHELL_TEST_SHELL_H_
 
-#pragma once
 
 #include <list>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,7 +22,6 @@
 #include "base/memory/weak_ptr.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNavigationPolicy.h"
 #include "ui/gfx/native_widget_types.h"
-#include "webkit/tools/test_shell/layout_test_controller.h"
 #include "webkit/tools/test_shell/webview_host.h"
 #include "webkit/tools/test_shell/webwidget_host.h"
 
@@ -49,8 +48,7 @@ class TestShell : public base::SupportsWeakPtr<TestShell>  {
 public:
     struct TestParams {
       // Load the test defaults.
-      TestParams() : dump_tree(true), dump_pixels(false) {
-      }
+      TestParams();
 
       // The kind of output we want from this test.
       bool dump_tree;
@@ -114,12 +112,11 @@ public:
     void ShowDevTools();
     void CloseDevTools();
 
-    // Called by the LayoutTestController to signal test completion.
+    // Called to signal test completion.
     void TestFinished();
 
-    // Called by LayoutTestController when a test hits the timeout, but does not
-    // cause a hang. We can avoid killing TestShell in this case and still dump
-    // the test results.
+    // Called when a test hits the timeout, but does not cause a hang.  We can
+    // avoid killing TestShell in this case and still dump the test results.
     void TestTimedOut();
 
     // Called to block the calling thread until TestFinished is called.
@@ -130,9 +127,6 @@ public:
     // We use this to avoid relying on Windows focus during layout test mode.
     void SetFocus(WebWidgetHost* host, bool enable);
 
-    LayoutTestController* layout_test_controller() {
-      return layout_test_controller_.get();
-    }
     TestWebViewDelegate* delegate() { return delegate_.get(); }
     TestWebViewDelegate* popup_delegate() { return popup_delegate_.get(); }
     TestNavigationController* navigation_controller() {
@@ -142,17 +136,14 @@ public:
       return notification_presenter_.get();
     }
 
-    // Resets the LayoutTestController and EventSendingController.  Should be
-    // called before loading a page, since some end-editing event notifications
-    // may arrive after the previous page has finished dumping its text and
-    // therefore end up in the next test's results if the messages are still
-    // enabled.
+    // Resets TestWebViewDelegate. Should be called before loading a page,
+    // since some end-editing event notifications may arrive after the previous
+    // page has finished dumping its text and therefore end up in the next
+    // test's results if the messages are still enabled.
     void ResetTestController();
 
-    // Passes options from LayoutTestController through to the delegate (or
-    // any other caller).
     bool AcceptsEditing() {
-      return layout_test_controller_->AcceptsEditing();
+      return true;
     }
 
     void LoadFile(const FilePath& file);
@@ -193,11 +184,6 @@ public:
 #if defined(OS_WIN)
     static ATOM RegisterWindowClass();
 #endif
-
-    // Called by the WebView delegate WindowObjectCleared() method, this
-    // binds the layout_test_controller_ and other C++ controller classes to
-    // window JavaScript objects so they can be accessed by layout tests.
-    virtual void BindJSObjectsToWindow(WebKit::WebFrame* frame);
 
     // Writes the back-forward list data for every open window into result.
     // Should call DumpBackForwardListOfWindow on each TestShell window.
@@ -360,7 +346,6 @@ private:
     // Default timeout in ms for file page loads when in layout test mode.
     static int file_test_timeout_ms_;
 
-    scoped_ptr<LayoutTestController> layout_test_controller_;
     scoped_ptr<TestNavigationController> navigation_controller_;
     scoped_ptr<TestNotificationPresenter> notification_presenter_;
 

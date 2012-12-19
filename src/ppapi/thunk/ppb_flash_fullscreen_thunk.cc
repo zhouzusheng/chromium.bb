@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ppapi/c/dev/ppb_fullscreen_dev.h"
+#include "ppapi/c/ppb_fullscreen.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
 #include "ppapi/thunk/thunk.h"
 #include "ppapi/thunk/enter.h"
@@ -37,7 +37,7 @@ PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size) {
   return enter.functions()->GetFlashAPI()->FlashGetScreenSize(instance, size);
 }
 
-const PPB_FlashFullscreen g_ppb_flash_fullscreen_thunk = {
+const PPB_FlashFullscreen_0_1 g_ppb_flash_fullscreen_thunk = {
   &IsFullscreen,
   &SetFullscreen,
   &GetScreenSize

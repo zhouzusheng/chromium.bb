@@ -4,7 +4,6 @@
 
 #ifndef MEDIA_BASE_MEDIA_LOG_H_
 #define MEDIA_BASE_MEDIA_LOG_H_
-#pragma once
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -19,7 +18,6 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
  public:
   // Convert various enums to strings.
   static const char* EventTypeToString(MediaLogEvent::Type type);
-  static const char* PipelineStateToString(Pipeline::State);
   static const char* PipelineStatusToString(PipelineStatus);
 
   MediaLog();
@@ -32,8 +30,8 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
   scoped_ptr<MediaLogEvent> CreateEvent(MediaLogEvent::Type type);
   scoped_ptr<MediaLogEvent> CreateBooleanEvent(
       MediaLogEvent::Type type, const char* property, bool value);
-  scoped_ptr<MediaLogEvent> CreateIntegerEvent(
-      MediaLogEvent::Type type, const char* property, int64 value);
+  scoped_ptr<MediaLogEvent> CreateStringEvent(
+      MediaLogEvent::Type type, const char* property, const std::string& value);
   scoped_ptr<MediaLogEvent> CreateTimeEvent(
       MediaLogEvent::Type type, const char* property, base::TimeDelta value);
   scoped_ptr<MediaLogEvent> CreateLoadEvent(const std::string& url);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2012 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,26 +26,30 @@
 #ifndef CCDebugBorderDrawQuad_h
 #define CCDebugBorderDrawQuad_h
 
-#include "Color.h"
-#include "cc/CCDrawQuad.h"
+#include "CCDrawQuad.h"
+#include "SkColor.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
-class CCDebugBorderDrawQuad : public CCDrawQuad {
-    WTF_MAKE_NONCOPYABLE(CCDebugBorderDrawQuad);
-public:
-    static PassOwnPtr<CCDebugBorderDrawQuad> create(const CCSharedQuadState*, const IntRect&, const Color&, int width);
+#pragma pack(push, 4)
 
-    const Color& color() const { return m_color; };
+class CCDebugBorderDrawQuad : public CCDrawQuad {
+public:
+    static PassOwnPtr<CCDebugBorderDrawQuad> create(const CCSharedQuadState*, const IntRect&, SkColor, int width);
+
+    SkColor color() const { return m_color; };
     int width() const { return m_width; }
 
+    static const CCDebugBorderDrawQuad* materialCast(const CCDrawQuad*);
 private:
-    CCDebugBorderDrawQuad(const CCSharedQuadState*, const IntRect&, const Color&, int width);
+    CCDebugBorderDrawQuad(const CCSharedQuadState*, const IntRect&, SkColor, int width);
 
-    Color m_color;
+    SkColor m_color;
     int m_width;
 };
+
+#pragma pack(pop)
 
 }
 

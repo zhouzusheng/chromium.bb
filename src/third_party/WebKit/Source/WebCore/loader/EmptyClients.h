@@ -65,6 +65,7 @@ namespace WebCore {
 class GraphicsContext3D;
 
 class EmptyChromeClient : public ChromeClient {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     virtual ~EmptyChromeClient() { }
     virtual void chromeDestroyed() { }
@@ -124,15 +125,8 @@ public:
 #if ENABLE(PAGE_POPUP)
     virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect&) OVERRIDE { return 0; }
     virtual void closePagePopup(PagePopup*) OVERRIDE { }
-#endif
-
-#if ENABLE(REGISTER_PROTOCOL_HANDLER)
-    virtual void registerProtocolHandler(const String&, const String&, const String&, const String&) { }
-#endif
-
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
-    virtual CustomHandlersState isProtocolHandlerRegistered(const String&, const String&, const String&) { return CustomHandlersDeclined; }
-    virtual void unregisterProtocolHandler(const String&, const String&, const String&) { }
+    virtual void setPagePopupDriver(PagePopupDriver*) OVERRIDE { }
+    virtual void resetPagePopupDriver() OVERRIDE { }
 #endif
 
     virtual void setStatusbarText(const String&) { }
@@ -179,6 +173,10 @@ public:
     virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) OVERRIDE;
 #endif
 
+#if ENABLE(CALENDAR_PICKER)
+    virtual PassOwnPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
+#endif
+
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) OVERRIDE;
     virtual void loadIconForFiles(const Vector<String>&, FileIconLoader*) { }
 
@@ -206,7 +204,6 @@ public:
 #endif
     
     virtual void numWheelEventHandlersChanged(unsigned) OVERRIDE { }
-    virtual void numTouchEventHandlersChanged(unsigned) OVERRIDE { }
     
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const { return false; }
 };
@@ -567,14 +564,12 @@ public:
 
     virtual void inspectorDestroyed() { }
     
-    virtual void openInspectorFrontend(InspectorController*) { }
+    virtual InspectorFrontendChannel* openInspectorFrontend(InspectorController*) { return 0; }
     virtual void closeInspectorFrontend() { }
     virtual void bringFrontendToFront() { }
 
     virtual void highlight() { }
     virtual void hideHighlight() { }
-
-    virtual bool sendMessageToFrontend(const String&) { return false; }
 };
 
 class EmptyDeviceMotionClient : public DeviceMotionClient {
@@ -591,7 +586,7 @@ public:
     virtual void setController(DeviceOrientationController*) { }
     virtual void startUpdating() { }
     virtual void stopUpdating() { }
-    virtual DeviceOrientation* lastOrientation() const { return 0; }
+    virtual DeviceOrientationData* lastOrientation() const { return 0; }
     virtual void deviceOrientationControllerDestroyed() { }
 };
 

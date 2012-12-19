@@ -39,7 +39,6 @@
 #include "WebMediaPlayerClient.h"
 #include "WebStreamTextureClient.h"
 #include <public/WebVideoFrameProvider.h>
-#include <public/WebVideoLayer.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -50,6 +49,7 @@ namespace WebKit {
 class WebHelperPluginImpl;
 class WebAudioSourceProvider;
 class WebMediaPlayer;
+class WebVideoLayer;
 
 // This class serves as a bridge between WebCore::MediaPlayer and
 // WebKit::WebMediaPlayer.
@@ -98,7 +98,7 @@ public:
     virtual void load(const WTF::String& url);
     virtual void cancelLoad();
 #if USE(ACCELERATED_COMPOSITING)
-    virtual WebCore::PlatformLayer* platformLayer() const;
+    virtual WebKit::WebLayer* platformLayer() const;
 #endif
     virtual WebCore::PlatformMedia platformMedia() const;
     virtual void play();
@@ -163,7 +163,9 @@ public:
     virtual WTF::PassRefPtr<WebCore::TimeRanges> sourceBuffered(const String&);
     virtual bool sourceAppend(const String&, const unsigned char* data, unsigned length);
     virtual bool sourceAbort(const String&);
+    virtual void sourceSetDuration(double);
     virtual void sourceEndOfStream(WebCore::MediaPlayer::EndOfStreamStatus);
+    virtual bool sourceSetTimestampOffset(const String&, double offset);
 #endif
 
 #if ENABLE(ENCRYPTED_MEDIA)
@@ -186,16 +188,16 @@ private:
     static void getSupportedTypes(WTF::HashSet<WTF::String>&);
 #if ENABLE(ENCRYPTED_MEDIA)
     static WebCore::MediaPlayer::SupportsType supportsType(
-        const WTF::String& type, const WTF::String& codecs, const String& keySystem);
+        const WTF::String& type, const WTF::String& codecs, const String& keySystem, const WebCore::KURL&);
 #else
     static WebCore::MediaPlayer::SupportsType supportsType(
-        const WTF::String& type, const WTF::String& codecs);
+        const WTF::String& type, const WTF::String& codecs, const WebCore::KURL&);
 #endif
 #if USE(ACCELERATED_COMPOSITING)
     bool acceleratedRenderingInUse();
 #endif
 
-    Mutex m_compositingMutex; // Guards m_currentVideoFrame and m_videoFrameProviderClient.
+    Mutex m_webMediaPlayerMutex; // Guards the m_webMediaPlayer
     WebCore::MediaPlayer* m_mediaPlayer;
     OwnPtr<WebMediaPlayer> m_webMediaPlayer;
     WebVideoFrame* m_currentVideoFrame;
@@ -204,7 +206,7 @@ private:
     WebCore::MediaPlayer::Preload m_preload;
     RefPtr<WebHelperPluginImpl> m_helperPlugin;
 #if USE(ACCELERATED_COMPOSITING)
-    WebVideoLayer m_videoLayer;
+    OwnPtr<WebVideoLayer> m_videoLayer;
     bool m_supportsAcceleratedCompositing;
     bool m_opaque;
     WebVideoFrameProvider::Client* m_videoFrameProviderClient;

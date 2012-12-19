@@ -22,6 +22,7 @@
 #include "RenderCombineText.h"
 
 #include "RenderBlock.h"
+#include "StyleInheritedData.h"
 
 namespace WebCore {
 
@@ -40,8 +41,10 @@ void RenderCombineText::styleDidChange(StyleDifference diff, const RenderStyle* 
     setStyleInternal(RenderStyle::clone(style()));
     RenderText::styleDidChange(diff, oldStyle);
 
-    if (m_isCombined)
+    if (m_isCombined) {
         RenderText::setTextInternal(originalText()); // This RenderCombineText has been combined once. Restore the original text for the next combineText().
+        m_isCombined = false;
+    }
 
     m_needsFontUpdate = true;
 }

@@ -30,11 +30,10 @@
 #ifndef PopupListBox_h
 #define PopupListBox_h
 
-#include "Font.h"
-#include "FontSelector.h"
 #include "FramelessScrollView.h"
-#include "IntRect.h"
 #include "Node.h"
+#include "TextDirection.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -48,7 +47,9 @@ static const int kMinEndOfLinePadding = 2;
 static const int kTextToLabelPadding = 10;
 static const TimeStamp kTypeAheadTimeoutMs = 1000;
 
+class Font;
 class GraphicsContext;
+class IntRect;
 class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 #if ENABLE(GESTURE_EVENTS)
@@ -85,6 +86,15 @@ struct PopupContainerSettings {
     bool deviceSupportsTouch;
 };
 
+class PopupContent {
+public:
+    virtual void layout() = 0;
+    virtual void setMaxHeight(int) = 0;
+    virtual void setMaxWidthAndLayout(int) = 0;
+    virtual int popupContentHeight() const = 0;
+    virtual ~PopupContent() { };
+};
+
 // A container for the data for each menu item (e.g. represented by <option>
 // or <optgroup> in a <select> widget) and is used by PopupListBox.
 struct PopupItem {
@@ -110,7 +120,7 @@ struct PopupItem {
 
 // This class uses WebCore code to paint and handle events for a drop-down list
 // box ("combobox" on Windows).
-class PopupListBox : public FramelessScrollView {
+class PopupListBox : public FramelessScrollView, public PopupContent {
 public:
     static PassRefPtr<PopupListBox> create(PopupMenuClient* client, const PopupContainerSettings& settings)
     {
@@ -164,7 +174,7 @@ public:
     void setBaseWidth(int width) { m_baseWidth = std::min(m_maxWindowWidth, width); }
 
     // Computes the size of widget and children.
-    void layout();
+    virtual void layout() OVERRIDE;
 
     // Returns whether the popup wants to process events for the passed key.
     bool isInterestedInEventForKey(int keyCode);
@@ -172,15 +182,17 @@ public:
     // Gets the height of a row.
     int getRowHeight(int index);
 
-    void setMaxHeight(int maxHeight) { m_maxHeight = maxHeight; }
+    virtual void setMaxHeight(int maxHeight) OVERRIDE { m_maxHeight = maxHeight; }
 
     void setMaxWidth(int maxWidth) { m_maxWindowWidth = maxWidth; }
 
-    void setMaxWidthAndLayout(int);
+    virtual void setMaxWidthAndLayout(int) OVERRIDE;
 
     void disconnectClient() { m_popupClient = 0; }
 
     const Vector<PopupItem*>& items() const { return m_items; }
+
+    virtual int popupContentHeight() const OVERRIDE;
 
 private:
     friend class PopupContainer;
@@ -188,7 +200,7 @@ private:
 
     PopupListBox(PopupMenuClient*, const PopupContainerSettings&);
 
-    ~PopupListBox()
+    virtual ~PopupListBox()
     {
         clear();
     }

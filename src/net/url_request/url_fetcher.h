@@ -4,7 +4,6 @@
 
 #ifndef NET_URL_REQUEST_URL_FETCHER_H_
 #define NET_URL_REQUEST_URL_FETCHER_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -36,6 +35,10 @@ typedef std::vector<std::string> ResponseCookies;
 // the object to be notified when the URL has been loaded:
 //   URLFetcher* fetcher = URLFetcher::Create("http://www.google.com",
 //                                            URLFetcher::GET, this);
+//
+// You must also set a request context getter:
+//
+//   fetcher->SetRequestContext(&my_request_context_getter);
 //
 // Then, optionally set properties on this object, like the request context or
 // extra headers:
@@ -82,6 +85,34 @@ class NET_EXPORT URLFetcher {
   typedef base::Callback<base::SupportsUserData::Data*()> CreateDataCallback;
 
   virtual ~URLFetcher();
+
+  // |url| is the URL to send the request to.
+  // |request_type| is the type of request to make.
+  // |d| the object that will receive the callback on fetch completion.
+  static URLFetcher* Create(const GURL& url,
+                            URLFetcher::RequestType request_type,
+                            URLFetcherDelegate* d);
+
+  // Like above, but if there's a URLFetcherFactory registered with the
+  // implementation it will be used. |id| may be used during testing to identify
+  // who is creating the URLFetcher.
+  static URLFetcher* Create(int id,
+                            const GURL& url,
+                            URLFetcher::RequestType request_type,
+                            URLFetcherDelegate* d);
+
+  // Cancels all existing URLFetchers.  Will notify the URLFetcherDelegates.
+  // Note that any new URLFetchers created while this is running will not be
+  // cancelled.  Typically, one would call this in the CleanUp() method of an IO
+  // thread, so that no new URLRequests would be able to start on the IO thread
+  // anyway.  This doesn't prevent new URLFetchers from trying to post to the IO
+  // thread though, even though the task won't ever run.
+  static void CancelAll();
+
+  // Normally interception is disabled for URLFetcher, but you can use this
+  // to enable it for tests. Also see ScopedURLFetcherFactory for another way
+  // of testing code that uses an URLFetcher.
+  static void SetEnableInterceptionForTests(bool enabled);
 
   // Sets data only needed by POSTs.  All callers making POST requests should
   // call this before the request is started.  |upload_content_type| is the MIME

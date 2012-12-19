@@ -78,7 +78,9 @@ WebPreferences::WebPreferences()
       show_composited_layer_borders(false),
       show_composited_layer_tree(false),
       show_fps_counter(false),
+      accelerated_compositing_for_overflow_scroll_enabled(false),
       show_paint_rects(false),
+      render_vsync_enabled(true),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
       accelerated_compositing_enabled(false),
@@ -91,32 +93,30 @@ WebPreferences::WebPreferences()
       deferred_2d_canvas_enabled(false),
       accelerated_painting_enabled(false),
       accelerated_filters_enabled(false),
+      gesture_tap_highlight_enabled(false),
       accelerated_plugins_enabled(false),
       memory_info_enabled(false),
-      interactive_form_validation_enabled(true),
       fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
       password_echo_enabled(false),
       should_print_backgrounds(false),
       enable_scroll_animator(false),
-      hixie76_websocket_protocol_enabled(false),
       visual_word_movement_enabled(false),
+      css_sticky_position_enabled(false),
       css_regions_enabled(false),
       css_shaders_enabled(false),
+      css_variables_enabled(false),
       device_supports_touch(false),
-#if !defined(WEBCOMPOSITOR_OWNS_SETTINGS)
-      threaded_animation_enabled(false),
-      per_tile_painting_enabled(false),
-      partial_swap_enabled(false),
-#endif
+      device_supports_mouse(true),
       default_tile_width(256),
       default_tile_height(256),
       max_untiled_layer_width(512),
       max_untiled_layer_height(512),
       fixed_position_creates_stacking_context(false),
       sync_xhr_in_documents_enabled(true),
-      number_of_cpu_cores(1) {
+      number_of_cpu_cores(1),
+      cookie_enabled(true) {
   standard_font_family_map[kCommonScript] =
       ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[kCommonScript] =
@@ -175,14 +175,38 @@ void setFantasyFontFamilyWrapper(WebSettings* settings,
 typedef void (*SetFontFamilyWrapper)(
     WebKit::WebSettings*, const string16&, UScriptCode);
 
+// If |scriptCode| is a member of a family of "similar" script codes, returns
+// the script code in that family that is used by WebKit for font selection
+// purposes.  For example, USCRIPT_KATAKANA_OR_HIRAGANA and USCRIPT_JAPANESE are
+// considered equivalent for the purposes of font selection.  WebKit uses the
+// script code USCRIPT_KATAKANA_OR_HIRAGANA.  So, if |scriptCode| is
+// USCRIPT_JAPANESE, the function returns USCRIPT_KATAKANA_OR_HIRAGANA.  WebKit
+// uses different scripts than the ones in Chrome pref names because the version
+// of ICU included on certain ports does not have some of the newer scripts.  If
+// |scriptCode| is not a member of such a family, returns |scriptCode|.
+UScriptCode GetScriptForWebSettings(UScriptCode scriptCode) {
+  switch (scriptCode) {
+  case USCRIPT_HIRAGANA:
+  case USCRIPT_KATAKANA:
+  case USCRIPT_JAPANESE:
+    return USCRIPT_KATAKANA_OR_HIRAGANA;
+  case USCRIPT_KOREAN:
+    return USCRIPT_HANGUL;
+  default:
+    return scriptCode;
+  }
+}
+
 void ApplyFontsFromMap(const WebPreferences::ScriptFontFamilyMap& map,
                        SetFontFamilyWrapper setter,
                        WebSettings* settings) {
   for (WebPreferences::ScriptFontFamilyMap::const_iterator it = map.begin();
        it != map.end(); ++it) {
     int32 script = u_getPropertyValueEnum(UCHAR_SCRIPT, (it->first).c_str());
-    if (script >= 0 && script < USCRIPT_CODE_LIMIT)
-      (*setter)(settings, it->second, (UScriptCode) script);
+    if (script >= 0 && script < USCRIPT_CODE_LIMIT) {
+      UScriptCode code = static_cast<UScriptCode>(script);
+      (*setter)(settings, it->second, GetScriptForWebSettings(code));
+    }
   }
 }
 
@@ -237,6 +261,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setOfflineWebApplicationCacheEnabled(application_cache_enabled);
   settings->setCaretBrowsingEnabled(caret_browsing_enabled);
   settings->setHyperlinkAuditingEnabled(hyperlink_auditing_enabled);
+  settings->setCookieEnabled(cookie_enabled);
 
   // This setting affects the behavior of links in an editable region:
   // clicking the link should select it rather than navigate to it.
@@ -286,6 +311,10 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Display an FPS indicator if requested on the command line.
   settings->setShowFPSCounter(show_fps_counter);
 
+  // Enables accelerated compositing for overflow scroll.
+  settings->setAcceleratedCompositingForOverflowScrollEnabled(
+      accelerated_compositing_for_overflow_scroll_enabled);
+
   // Display the current compositor tree as overlay if requested on
   // the command line
   settings->setShowPlatformLayerTree(show_composited_layer_tree);
@@ -293,6 +322,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Display visualization of what has changed on the screen using an
   // overlay of rects, if requested on the command line.
   settings->setShowPaintRects(show_paint_rects);
+
+  // Set whether to throttle framerate to Vsync.
+  settings->setRenderVSyncEnabled(render_vsync_enabled);
 
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
@@ -316,6 +348,9 @@ void WebPreferences::Apply(WebView* web_view) const {
 
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(accelerated_filters_enabled);
+
+  // Enable gesture tap highlight if requested on the command line.
+  settings->setGestureTapHighlightEnabled(gesture_tap_highlight_enabled);
 
   // Enabling accelerated layers from the command line enabled accelerated
   // 3D CSS, Video, and Animations.
@@ -350,8 +385,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   // ChromeClient::tabsToLinks which is part of the glue code.
   web_view->setTabsToLinks(tabs_to_links);
 
-  settings->setInteractiveFormValidationEnabled(
-      interactive_form_validation_enabled);
+  settings->setInteractiveFormValidationEnabled(true);
 
   settings->setFullScreenEnabled(fullscreen_enabled);
   settings->setAllowDisplayOfInsecureContent(allow_displaying_insecure_content);
@@ -359,24 +393,15 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setPasswordEchoEnabled(password_echo_enabled);
   settings->setShouldPrintBackgrounds(should_print_backgrounds);
   settings->setEnableScrollAnimator(enable_scroll_animator);
-  settings->setHixie76WebSocketProtocolEnabled(
-      hixie76_websocket_protocol_enabled);
   settings->setVisualWordMovementEnabled(visual_word_movement_enabled);
 
+  settings->setCSSStickyPositionEnabled(css_sticky_position_enabled);
   settings->setExperimentalCSSRegionsEnabled(css_regions_enabled);
   settings->setExperimentalCSSCustomFilterEnabled(css_shaders_enabled);
+  settings->setExperimentalCSSVariablesEnabled(css_variables_enabled);
 
   settings->setDeviceSupportsTouch(device_supports_touch);
-
-#if !defined(WEBCOMPOSITOR_OWNS_SETTINGS)
-  settings->setThreadedAnimationEnabled(threaded_animation_enabled);
-
-  // Enable per-tile painting if requested on the command line.
-  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
-
-  // Enable partial swaps if specified form the command line.
-  settings->setPartialSwapEnabled(partial_swap_enabled);
-#endif
+  settings->setDeviceSupportsMouse(device_supports_mouse);
 
   settings->setDefaultTileSize(
       WebSize(default_tile_width, default_tile_height));

@@ -4,7 +4,8 @@
 
 #ifndef BASE_WIN_WINDOWS_VERSION_H_
 #define BASE_WIN_WINDOWS_VERSION_H_
-#pragma once
+
+#include <string>
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
@@ -77,6 +78,7 @@ class BASE_EXPORT OSInfo {
   int processors() const { return processors_; }
   size_t allocation_granularity() const { return allocation_granularity_; }
   WOW64Status wow64_status() const { return wow64_status_; }
+  std::string processor_model_name();
 
   // Like wow64_status(), but for the supplied handle instead of the current
   // process.  This doesn't touch member state, so you can bypass the singleton.
@@ -93,6 +95,7 @@ class BASE_EXPORT OSInfo {
   int processors_;
   size_t allocation_granularity_;
   WOW64Status wow64_status_;
+  std::string processor_model_name_;
 
   DISALLOW_COPY_AND_ASSIGN(OSInfo);
 };

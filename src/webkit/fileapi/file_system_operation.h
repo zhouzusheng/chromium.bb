@@ -5,270 +5,275 @@
 #ifndef WEBKIT_FILEAPI_FILE_SYSTEM_OPERATION_H_
 #define WEBKIT_FILEAPI_FILE_SYSTEM_OPERATION_H_
 
-#include <string>
 #include <vector>
 
-#include "base/file_path.h"
 #include "base/file_util_proxy.h"
-#include "base/gtest_prod_util.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/process.h"
-#include "googleurl/src/gurl.h"
-#include "webkit/fileapi/fileapi_export.h"
-#include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_operation_interface.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/quota/quota_manager.h"
 
 namespace base {
 class Time;
-}
-
-namespace chromeos {
-class CrosMountPointProvider;
-}
+}  // namespace base
 
 namespace net {
 class URLRequest;
 class URLRequestContext;
 }  // namespace net
 
+namespace webkit_blob {
+class ShareableFileReference;
+}
+
 class GURL;
 
 namespace fileapi {
 
-class FileSystemContext;
-class FileWriterDelegate;
-class FileSystemOperationTest;
+class FileSystemURL;
+class LocalFileSystemOperation;
 
-// FileSystemOperation implementation for local file systems.
-class FILEAPI_EXPORT FileSystemOperation
-    : public NON_EXPORTED_BASE(FileSystemOperationInterface) {
+// The interface class for FileSystemOperation implementations.
+//
+// This interface defines file system operations required to implement
+// "File API: Directories and System"
+// http://www.w3.org/TR/file-system-api/
+//
+// DESIGN NOTES
+//
+// This class is designed to
+//
+// 1) Serve one-time file system operation per instance.  Only one
+// method(CreateFile, CreateDirectory, Copy, Move, DirectoryExists,
+// GetMetadata, ReadDirectory and Remove) may be called during the
+// lifetime of this object and it should be called no more than once.
+//
+// 2) Be self-destructed, or get deleted via base::Owned() after the
+// operation finishes and completion callback is called.
+//
+// 3) Deliver the results of operations to the client via the callback function
+// passed as the last parameter of the method.
+//
+class FileSystemOperation {
  public:
-  virtual ~FileSystemOperation();
+  virtual ~FileSystemOperation() {}
 
-  // FileSystemOperation overrides.
-  virtual void CreateFile(const GURL& path_url,
+  // Used for CreateFile(), etc. |result| is the return code of the operation.
+  typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
+
+  // Used for GetMetadata(). |result| is the return code of the operation,
+  // |file_info| is the obtained file info, and |platform_path| is the path
+  // of the file.
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           const base::PlatformFileInfo& file_info,
+           const FilePath& platform_path)> GetMetadataCallback;
+
+  // Used for OpenFile(). |result| is the return code of the operation.
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           base::PlatformFile file,
+           base::ProcessHandle peer_handle)> OpenFileCallback;
+
+  // Used for ReadDirectoryCallback.
+  typedef std::vector<base::FileUtilProxy::Entry> FileEntryList;
+
+  // Used for ReadDirectory(). |result| is the return code of the operation,
+  // |file_list| is the list of files read, and |has_more| is true if some files
+  // are yet to be read.
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           const FileEntryList& file_list,
+           bool has_more)> ReadDirectoryCallback;
+
+  // Used for CreateSnapshotFile(). (Please see the comment at
+  // CreateSnapshotFile() below for how the method is called)
+  // |result| is the return code of the operation.
+  // |file_info| is the metadata of the snapshot file created.
+  // |platform_path| is the path to the snapshot file created.
+  //
+  // The snapshot file could simply be of the local file pointed by the given
+  // filesystem URL in local filesystem cases; remote filesystems
+  // may want to download the file into a temporary snapshot file and then
+  // return the metadata of the temporary file.
+  //
+  // |file_ref| is used to manage the lifetime of the returned
+  // snapshot file.  It can be set to let the chromium backend take
+  // care of the life time of the snapshot file.  Otherwise (if the returned
+  // file does not require any handling) the implementation can just
+  // return NULL.  In a more complex case, the implementaiton can manage
+  // the lifetime of the snapshot file on its own (e.g. by its cache system)
+  // but also can be notified via the reference when the file becomes no
+  // longer necessary in the javascript world.
+  // Please see the comment for ShareableFileReference for details.
+  //
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           const base::PlatformFileInfo& file_info,
+           const FilePath& platform_path,
+           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
+          SnapshotFileCallback;
+
+  // Used for Write().
+  typedef base::Callback<void(base::PlatformFileError result,
+                              int64 bytes,
+                              bool complete)> WriteCallback;
+
+  // Creates a file at |path|. If |exclusive| is true, an error is raised
+  // in case a file is already present at the URL.
+  virtual void CreateFile(const FileSystemURL& path,
                           bool exclusive,
-                          const StatusCallback& callback) OVERRIDE;
-  virtual void CreateDirectory(const GURL& path_url,
+                          const StatusCallback& callback) = 0;
+
+  // Creates a directory at |path|. If |exclusive| is true, an error is
+  // raised in case a directory is already present at the URL. If
+  // |recursive| is true, create parent directories as needed just like
+  // mkdir -p does.
+  virtual void CreateDirectory(const FileSystemURL& path,
                                bool exclusive,
                                bool recursive,
-                               const StatusCallback& callback) OVERRIDE;
-  virtual void Copy(const GURL& src_path_url,
-                    const GURL& dest_path_url,
-                    const StatusCallback& callback) OVERRIDE;
-  virtual void Move(const GURL& src_path_url,
-                    const GURL& dest_path_url,
-                    const StatusCallback& callback) OVERRIDE;
-  virtual void DirectoryExists(const GURL& path_url,
-                               const StatusCallback& callback) OVERRIDE;
-  virtual void FileExists(const GURL& path_url,
-                          const StatusCallback& callback) OVERRIDE;
-  virtual void GetMetadata(const GURL& path_url,
-                           const GetMetadataCallback& callback) OVERRIDE;
-  virtual void ReadDirectory(const GURL& path_url,
-                             const ReadDirectoryCallback& callback) OVERRIDE;
-  virtual void Remove(const GURL& path_url, bool recursive,
-                      const StatusCallback& callback) OVERRIDE;
+                               const StatusCallback& callback) = 0;
+
+  // Copes a file or directory from |src_path| to |dest_path|. If
+  // |src_path| is a directory, the contents of |src_path| are copied to
+  // |dest_path| recursively. A new file or directory is created at
+  // |dest_path| as needed.
+  virtual void Copy(const FileSystemURL& src_path,
+                    const FileSystemURL& dest_path,
+                    const StatusCallback& callback) = 0;
+
+  // Moves a file or directory from |src_path| to |dest_path|. A new file
+  // or directory is created at |dest_path| as needed.
+  virtual void Move(const FileSystemURL& src_path,
+                    const FileSystemURL& dest_path,
+                    const StatusCallback& callback) = 0;
+
+  // Checks if a directory is present at |path|.
+  virtual void DirectoryExists(const FileSystemURL& path,
+                               const StatusCallback& callback) = 0;
+
+  // Checks if a file is present at |path|.
+  virtual void FileExists(const FileSystemURL& path,
+                          const StatusCallback& callback) = 0;
+
+  // Gets the metadata of a file or directory at |path|.
+  virtual void GetMetadata(const FileSystemURL& path,
+                           const GetMetadataCallback& callback) = 0;
+
+  // Reads contents of a directory at |path|.
+  virtual void ReadDirectory(const FileSystemURL& path,
+                             const ReadDirectoryCallback& callback) = 0;
+
+  // Removes a file or directory at |path|. If |recursive| is true, remove
+  // all files and directories under the directory at |path| recursively.
+  virtual void Remove(const FileSystemURL& path, bool recursive,
+                      const StatusCallback& callback) = 0;
+
+  // Writes contents of |blob_url| to |path| at |offset|.
+  // |url_request_context| is used to read contents in |blob_url|.
   virtual void Write(const net::URLRequestContext* url_request_context,
-                     const GURL& path_url,
+                     const FileSystemURL& path,
                      const GURL& blob_url,
                      int64 offset,
-                     const WriteCallback& callback) OVERRIDE;
-  virtual void Truncate(const GURL& path_url, int64 length,
-                        const StatusCallback& callback) OVERRIDE;
-  virtual void TouchFile(const GURL& path_url,
+                     const WriteCallback& callback) = 0;
+
+  // Truncates a file at |path| to |length|. If |length| is larger than
+  // the original file size, the file will be extended, and the extended
+  // part is filled with null bytes.
+  virtual void Truncate(const FileSystemURL& path, int64 length,
+                        const StatusCallback& callback) = 0;
+
+  // Tries to cancel the current operation [we support cancelling write or
+  // truncate only]. Reports failure for the current operation, then reports
+  // success for the cancel operation itself via the |cancel_dispatcher|.
+  //
+  // E.g. a typical cancel implementation would look like:
+  //
+  //   virtual void SomeOperationImpl::Cancel(
+  //       const StatusCallback& cancel_callback) {
+  //     // Abort the current inflight operation first.
+  //     ...
+  //
+  //     // Dispatch ABORT error for the current operation by invoking
+  //     // the callback function for the ongoing operation,
+  //     operation_callback.Run(base::PLATFORM_FILE_ERROR_ABORT, ...);
+  //
+  //     // Dispatch 'success' for the cancel (or dispatch appropriate
+  //     // error code with DidFail() if the cancel has somehow failed).
+  //     cancel_callback.Run(base::PLATFORM_FILE_OK);
+  //   }
+  //
+  // Note that, for reporting failure, the callback function passed to a
+  // cancellable operations are kept around with the operation instance
+  // (as |operation_callback_| in the code example).
+  virtual void Cancel(const StatusCallback& cancel_callback) = 0;
+
+  // Modifies timestamps of a file or directory at |path| with
+  // |last_access_time| and |last_modified_time|. The function DOES NOT
+  // create a file unlike 'touch' command on Linux.
+  //
+  // This function is used only by Pepper as of writing.
+  virtual void TouchFile(const FileSystemURL& path,
                          const base::Time& last_access_time,
                          const base::Time& last_modified_time,
-                         const StatusCallback& callback) OVERRIDE;
-  virtual void OpenFile(const GURL& path_url,
+                         const StatusCallback& callback) = 0;
+
+  // Opens a file at |path| with |file_flags|, where flags are OR'ed
+  // values of base::PlatformFileFlags.
+  //
+  // |peer_handle| is the process handle of a pepper plugin process, which
+  // is necessary for underlying IPC calls with Pepper plugins.
+  //
+  // This function is used only by Pepper as of writing.
+  virtual void OpenFile(const FileSystemURL& path,
                         int file_flags,
                         base::ProcessHandle peer_handle,
-                        const OpenFileCallback& callback) OVERRIDE;
-  virtual void Cancel(const StatusCallback& cancel_callback) OVERRIDE;
-  virtual FileSystemOperation* AsFileSystemOperation() OVERRIDE;
-  virtual void CreateSnapshotFile(
-      const GURL& path,
-      const SnapshotFileCallback& callback) OVERRIDE;
+                        const OpenFileCallback& callback) = 0;
 
-  // Synchronously gets the platform path for the given |path_url|.
-  void SyncGetPlatformPath(const GURL& path_url, FilePath* platform_path);
+  // Notifies a file at |path| opened by OpenFile is closed in plugin process.
+  // File system will run some cleanup task such as uploading the modified file
+  // content to a remote storage.
+  //
+  // This function is used only by Pepper as of writing.
+  virtual void NotifyCloseFile(const FileSystemURL& path) = 0;
 
- private:
-  class ScopedQuotaNotifier;
+  // For downcasting to FileSystemOperation.
+  // TODO(kinuko): this hack should go away once appropriate upload-stream
+  // handling based on element types is supported.
+  virtual LocalFileSystemOperation* AsLocalFileSystemOperation() = 0;
 
-  // Modes for SetUpFileSystemPath.
-  enum SetUpPathMode {
-    PATH_FOR_READ,
-    PATH_FOR_WRITE,
-    PATH_FOR_CREATE,
-  };
+  // Creates a local snapshot file for a given |path| and returns the
+  // metadata and platform path of the snapshot file via |callback|.
+  // In local filesystem cases the implementation may simply return
+  // the metadata of the file itself (as well as GetMetadata does),
+  // while in remote filesystem case the backend may want to download the file
+  // into a temporary snapshot file and return the metadata of the
+  // temporary file.  Or if the implementaiton already has the local cache
+  // data for |path| it can simply return the path to the cache.
+  virtual void CreateSnapshotFile(const FileSystemURL& path,
+                                  const SnapshotFileCallback& callback) = 0;
 
-  // A struct to pass arguments to DidGetUsageAndQuotaAndRunTask
-  // purely for compilation (as Bind doesn't recognize too many arguments).
-  struct TaskParamsForDidGetQuota {
-    TaskParamsForDidGetQuota();
-    ~TaskParamsForDidGetQuota();
-    GURL origin;
-    FileSystemType type;
-    base::Closure task;
-    base::Closure error_callback;
-  };
-
-  // Only MountPointProviders or testing class can create a
-  // new operation directly.
-  friend class FileSystemTestHelper;
-  friend class IsolatedMountPointProvider;
-  friend class SandboxMountPointProvider;
-  friend class TestMountPointProvider;
-  friend class chromeos::CrosMountPointProvider;
-
-  friend class FileSystemOperationTest;
-  friend class FileSystemOperationWriteTest;
-  friend class FileWriterDelegateTest;
-  friend class FileSystemTestOriginHelper;
-  friend class FileSystemQuotaTest;
-
-  explicit FileSystemOperation(FileSystemContext* file_system_context);
-
-  FileSystemContext* file_system_context() const {
-    return operation_context_.file_system_context();
-  }
-
-  FileSystemOperationContext* file_system_operation_context() {
-    return &operation_context_;
-  }
-
-  // The unit tests that need to specify and control the lifetime of the
-  // file_util on their own should call this before performing the actual
-  // operation. If it is given it will not be overwritten by the class.
-  void set_override_file_util(FileSystemFileUtil* file_util) {
-    src_util_ = file_util;
-    dest_util_ = file_util;
-  }
-
-  // Queries the quota and usage and then runs the given |task|.
-  // If an error occurs during the quota query it runs |error_callback| instead.
-  void GetUsageAndQuotaThenRunTask(
-      const GURL& origin,
-      FileSystemType type,
-      const base::Closure& task,
-      const base::Closure& error_callback);
-
-  // Called after the quota info is obtained from the quota manager
-  // (which is triggered by GetUsageAndQuotaThenRunTask).
-  // Sets the quota info in the operation_context_ and then runs the given
-  // |task| if the returned quota status is successful, otherwise runs
-  // |error_callback|.
-  void DidGetUsageAndQuotaAndRunTask(
-      const TaskParamsForDidGetQuota& params,
-      quota::QuotaStatusCode status,
-      int64 usage, int64 quota);
-
-  // The 'body' methods that perform the actual work (i.e. posting the
-  // file task on proxy_) after the quota check.
-  void DoCreateFile(const StatusCallback& callback, bool exclusive);
-  void DoCreateDirectory(const StatusCallback& callback,
-                         bool exclusive,
-                         bool recursive);
-  void DoCopy(const StatusCallback& callback);
-  void DoMove(const StatusCallback& callback);
-  void DoTruncate(const StatusCallback& callback, int64 length);
-  void DoOpenFile(const OpenFileCallback& callback, int file_flags);
-
-  // Callback for CreateFile for |exclusive|=true cases.
-  void DidEnsureFileExistsExclusive(const StatusCallback& callback,
-                                    base::PlatformFileError rv,
-                                    bool created);
-
-  // Callback for CreateFile for |exclusive|=false cases.
-  void DidEnsureFileExistsNonExclusive(const StatusCallback& callback,
-                                       base::PlatformFileError rv,
-                                       bool created);
-
-  // Generic callback that translates platform errors to WebKit error codes.
-  void DidFinishFileOperation(const StatusCallback& callback,
-                              base::PlatformFileError rv);
-
-  void DidDirectoryExists(const StatusCallback& callback,
-                          base::PlatformFileError rv,
-                          const base::PlatformFileInfo& file_info,
-                          const FilePath& unused);
-  void DidFileExists(const StatusCallback& callback,
-                     base::PlatformFileError rv,
-                     const base::PlatformFileInfo& file_info,
-                     const FilePath& unused);
-  void DidGetMetadata(const GetMetadataCallback& callback,
-                      base::PlatformFileError rv,
-                      const base::PlatformFileInfo& file_info,
-                      const FilePath& platform_path);
-  void DidReadDirectory(const ReadDirectoryCallback& callback,
-                        base::PlatformFileError rv,
-                        const std::vector<base::FileUtilProxy::Entry>& entries,
-                        bool has_more);
-  void DidWrite(base::PlatformFileError rv,
-                int64 bytes,
-                bool complete);
-  void DidTouchFile(const StatusCallback& callback,
-                    base::PlatformFileError rv);
-  void DidOpenFile(const OpenFileCallback& callback,
-                   base::PlatformFileError rv,
-                   base::PassPlatformFile file,
-                   bool created);
-
-  // Checks the validity of a given |path_url| and and populates
-  // |path| and |file_util| for |mode|.
-  base::PlatformFileError SetUpFileSystemPath(
-      const GURL& path_url,
-      FileSystemPath* file_system_path,
-      FileSystemFileUtil** file_util,
-      SetUpPathMode mode);
-
+ protected:
   // Used only for internal assertions.
-  // Returns false if there's another inflight pending operation.
-  bool SetPendingOperationType(OperationType type);
-
-  FileSystemOperationContext operation_context_;
-  FileSystemPath src_path_;
-  FileSystemPath dest_path_;
-  FileSystemFileUtil* src_util_;  // Not owned.
-  FileSystemFileUtil* dest_util_;  // Not owned.
-
-  // This is set before any write operations.  The destructor of
-  // ScopedQuotaNotifier sends notification to the QuotaManager
-  // to tell the update is done; so that we can make sure notify
-  // the manager after any write operations are done.
-  scoped_ptr<ScopedQuotaNotifier> scoped_quota_notifier_;
-
-  // These are all used only by Write().
-  friend class FileWriterDelegate;
-  scoped_ptr<FileWriterDelegate> file_writer_delegate_;
-
-  // write_callback is kept in this class for so that we can dispatch it when
-  // the operation is cancelled. calcel_callback is kept for canceling a
-  // Truncate() operation. We can't actually stop Truncate in another thread;
-  // after it resumed from the working thread, cancellation takes place.
-  WriteCallback write_callback_;
-  StatusCallback cancel_callback_;
-  void set_write_callback(const WriteCallback& write_callback) {
-    write_callback_ = write_callback;
-  }
-
-  // Used only by OpenFile, in order to clone the file handle back to the
-  // requesting process.
-  base::ProcessHandle peer_handle_;
-
-  // A flag to make sure we call operation only once per instance.
-  OperationType pending_operation_;
-
-  // FileSystemOperation instance is usually deleted upon completion but
-  // could be deleted while it has inflight callbacks when Cancel is called.
-  base::WeakPtrFactory<FileSystemOperation> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileSystemOperation);
+  enum OperationType {
+    kOperationNone,
+    kOperationCreateFile,
+    kOperationCreateDirectory,
+    kOperationCreateSnapshotFile,
+    kOperationCopy,
+    kOperationCopyInForeignFile,
+    kOperationMove,
+    kOperationDirectoryExists,
+    kOperationFileExists,
+    kOperationGetMetadata,
+    kOperationReadDirectory,
+    kOperationRemove,
+    kOperationWrite,
+    kOperationTruncate,
+    kOperationTouchFile,
+    kOperationOpenFile,
+    kOperationCloseFile,
+    kOperationGetLocalPath,
+    kOperationCancel,
+  };
 };
 
 }  // namespace fileapi

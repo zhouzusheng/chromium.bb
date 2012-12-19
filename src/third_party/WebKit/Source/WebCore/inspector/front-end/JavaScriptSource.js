@@ -34,107 +34,14 @@
  * @param {string} url
  * @param {WebInspector.Resource} resource
  * @param {WebInspector.ContentProvider} contentProvider
- * @param {WebInspector.SourceMapping} sourceMapping
  */
-WebInspector.JavaScriptSource = function(url, resource, contentProvider, sourceMapping, isEditable)
+WebInspector.JavaScriptSource = function(url, resource, contentProvider, isEditable)
 {
-    WebInspector.UISourceCode.call(this, url, resource, contentProvider, sourceMapping);
+    WebInspector.UISourceCode.call(this, url, resource, contentProvider);
     this._isEditable = isEditable;
-
-    this._formatterMapping = new WebInspector.IdentityFormatterSourceMapping();
-    // FIXME: postpone breakpoints restore to after the mapping has been established.
-    setTimeout(function() {
-        if (!this._formatted)
-            WebInspector.breakpointManager.restoreBreakpoints(this);
-    }.bind(this), 0);
 }
 
 WebInspector.JavaScriptSource.prototype = {
-    /**
-     * @param {?string} content
-     * @param {boolean} contentEncoded
-     * @param {string} mimeType
-     */
-    fireContentAvailable: function(content, contentEncoded, mimeType)
-    {
-        WebInspector.UISourceCode.prototype.fireContentAvailable.call(this, content, contentEncoded, mimeType);
-        if (this._formatOnLoad) {
-            delete this._formatOnLoad;
-            this.setFormatted(true);
-        }
-    },
-
-    /**
-     * @param {boolean} formatted
-     * @param {function()=} callback
-     */
-    setFormatted: function(formatted, callback)
-    {
-        callback = callback || function() {};
-        if (!this.contentLoaded()) {
-            this._formatOnLoad = formatted;
-            callback();
-            return;
-        }
-
-        if (this._formatted === formatted) {
-            callback();
-            return;
-        }
-
-        this._formatted = formatted;
-
-        // Re-request content
-        this._contentLoaded = false;
-        WebInspector.UISourceCode.prototype.requestContent.call(this, didGetContent.bind(this));
-  
-        /**
-         * @this {WebInspector.UISourceCode}
-         * @param {?string} content
-         * @param {boolean} contentEncoded
-         * @param {string} mimeType
-         */
-        function didGetContent(content, contentEncoded, mimeType)
-        {
-            if (!formatted) {
-                this._togglingFormatter = true;
-                this.contentChanged(content || "", mimeType);
-                delete this._togglingFormatter;
-                this._formatterMapping = new WebInspector.IdentityFormatterSourceMapping();
-                this.updateLiveLocations();
-                callback();
-                return;
-            }
-    
-            var formatter = new WebInspector.ScriptFormatter();
-            formatter.formatContent(mimeType, content || "", didFormatContent.bind(this));
-  
-            /**
-             * @this {WebInspector.UISourceCode}
-             * @param {string} formattedContent
-             * @param {WebInspector.FormatterSourceMapping} formatterMapping
-             */
-            function didFormatContent(formattedContent, formatterMapping)
-            {
-                this._togglingFormatter = true;
-                this.contentChanged(formattedContent, mimeType);
-                delete this._togglingFormatter;
-                this._formatterMapping = formatterMapping;
-                this.updateLiveLocations();
-                WebInspector.breakpointManager.restoreBreakpoints(this);
-                callback();
-            }
-        }
-    },
-
-    /**
-     * @return {boolean}
-     */
-    togglingFormatter: function()
-    {
-        return this._togglingFormatter;
-    },
-
     /**
      * @param {number} lineNumber
      * @param {number} columnNumber
@@ -142,21 +49,17 @@ WebInspector.JavaScriptSource.prototype = {
      */
     uiLocationToRawLocation: function(lineNumber, columnNumber)
     {
-        var location = this._formatterMapping.formattedToOriginal(lineNumber, columnNumber);
-        var rawLocation = WebInspector.UISourceCode.prototype.uiLocationToRawLocation.call(this, location[0], location[1]);
+        var rawLocation = WebInspector.UISourceCode.prototype.uiLocationToRawLocation.call(this, lineNumber, columnNumber);
         var debuggerModelLocation = /** @type {WebInspector.DebuggerModel.Location} */ rawLocation;
         return debuggerModelLocation;
     },
 
     /**
-     * @param {WebInspector.UILocation} uiLocation
+     * @return {boolean}
      */
-    overrideLocation: function(uiLocation)
+    supportsEnabledBreakpointsWhileEditing: function()
     {
-        var location = this._formatterMapping.originalToFormatted(uiLocation.lineNumber, uiLocation.columnNumber);
-        uiLocation.lineNumber = location[0];
-        uiLocation.columnNumber = location[1];
-        return uiLocation;
+        return false;
     },
 
     /**
@@ -164,7 +67,7 @@ WebInspector.JavaScriptSource.prototype = {
      */
     breakpointStorageId: function()
     {
-        return this._formatted ? "deobfuscated:" + this.url : this.url;
+        return this.formatted() ? "deobfuscated:" + this.url : this.url;
     },
 
     /**
@@ -188,7 +91,7 @@ WebInspector.JavaScriptSource.prototype = {
      * @param {function(?string)} callback
      */
     workingCopyCommitted: function(callback)
-    {  
+    {
         /**
          * @param {?string} error
          */
@@ -198,7 +101,9 @@ WebInspector.JavaScriptSource.prototype = {
             callback(error);
         }
 
-        WebInspector.DebuggerResourceBinding.setScriptSource(this, this.workingCopy(), innerCallback.bind(this));
+        var rawLocation = this.uiLocationToRawLocation(0, 0);
+        var script = WebInspector.debuggerModel.scriptForId(rawLocation.scriptId);
+        WebInspector.debuggerModel.setScriptSource(script.scriptId, this.workingCopy(), innerCallback.bind(this));
     },
 
     /**
@@ -212,6 +117,11 @@ WebInspector.JavaScriptSource.prototype = {
         var content = this.content();
         var provider = content ? new WebInspector.StaticContentProvider(this._contentProvider.contentType(), content) : this._contentProvider;
         provider.searchInContent(query, caseSensitive, isRegex, callback);
+    },
+
+    formattedChanged: function()
+    {
+        WebInspector.breakpointManager.restoreBreakpoints(this);
     }
 }
 

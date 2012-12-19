@@ -4,9 +4,9 @@
 
 #ifndef WEBKIT_DOM_STORAGE_DOM_STORAGE_CONTEXT_H_
 #define WEBKIT_DOM_STORAGE_DOM_STORAGE_CONTEXT_H_
-#pragma once
 
 #include <map>
+#include <set>
 #include <vector>
 
 #include "base/atomic_sequence_num.h"
@@ -35,6 +35,7 @@ class DomStorageArea;
 class DomStorageNamespace;
 class DomStorageSession;
 class DomStorageTaskRunner;
+class SessionStorageDatabase;
 
 // The Context is the root of an object containment hierachy for
 // Namespaces and Areas related to the owning profile.
@@ -156,9 +157,18 @@ class DomStorageContext
   // Must be called on the background thread.
   void CreateSessionNamespace(int64 namespace_id,
                               const std::string& persistent_namespace_id);
-  void DeleteSessionNamespace(int64 namespace_id);
+  void DeleteSessionNamespace(int64 namespace_id, bool should_persist_data);
   void CloneSessionNamespace(int64 existing_id, int64 new_id,
                              const std::string& new_persistent_id);
+
+  // Starts backing sessionStorage on disk. This function must be called right
+  // after DomStorageContext is created, before it's used.
+  void SetSaveSessionStorageOnDisk();
+
+  // Deletes all namespaces which don't have an associated DomStorageNamespace
+  // alive. This function is used for deleting possible leftover data after an
+  // unclean exit.
+  void StartScavengingUnusedSessionStorage();
 
  private:
   friend class DomStorageContextTest;
@@ -170,6 +180,14 @@ class DomStorageContext
   ~DomStorageContext();
 
   void ClearSessionOnlyOrigins();
+
+  // For scavenging unused sessionStorages.
+  void FindUnusedNamespaces();
+  void FindUnusedNamespacesInCommitSequence(
+      const std::set<std::string>& namespace_ids_in_use,
+      const std::set<std::string>& protected_persistent_session_ids);
+  void DeleteNextUnusedNamespace();
+  void DeleteNextUnusedNamespaceInCommitSequence();
 
   // Collection of namespaces keyed by id.
   StorageNamespaceMap namespaces_;
@@ -195,6 +213,15 @@ class DomStorageContext
   bool is_shutdown_;
   bool force_keep_session_state_;
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
+  scoped_refptr<SessionStorageDatabase> session_storage_database_;
+
+  // For cleaning up unused namespaces gradually.
+  bool scavenging_started_;
+  std::vector<std::string> deletable_persistent_namespace_ids_;
+
+  // Persistent namespace IDs to protect from gradual deletion (they will
+  // be needed for session restore).
+  std::set<std::string> protected_persistent_session_ids_;
 };
 
 }  // namespace dom_storage

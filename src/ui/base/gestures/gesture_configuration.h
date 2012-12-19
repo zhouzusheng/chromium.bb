@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_GESTURES_GESTURE_CONFIGURATION_H_
 #define UI_BASE_GESTURES_GESTURE_CONFIGURATION_H_
-#pragma once
 
 #include "base/basictypes.h"
 #include "ui/base/ui_export.h"
@@ -22,8 +21,12 @@ class UI_EXPORT GestureConfiguration {
   static int default_radius() {
     return default_radius_;
   }
+  static void set_default_radius(int radius) { default_radius_ = radius; }
   static double long_press_time_in_seconds() {
     return long_press_time_in_seconds_;
+  }
+  static double semi_long_press_time_in_seconds() {
+    return semi_long_press_time_in_seconds_;
   }
   static double max_distance_for_two_finger_tap_in_pixels() {
     return max_distance_for_two_finger_tap_in_pixels_;
@@ -36,6 +39,9 @@ class UI_EXPORT GestureConfiguration {
   }
   static void set_long_press_time_in_seconds(double val) {
     long_press_time_in_seconds_ = val;
+  }
+  static void set_semi_long_press_time_in_seconds(double val) {
+    semi_long_press_time_in_seconds_ = val;
   }
   static double max_seconds_between_double_click() {
     return max_seconds_between_double_click_;
@@ -66,6 +72,12 @@ class UI_EXPORT GestureConfiguration {
   }
   static void set_max_touch_move_in_pixels_for_click(double val) {
     max_touch_move_in_pixels_for_click_ = val;
+  }
+  static double max_distance_between_taps_for_double_tap() {
+    return max_distance_between_taps_for_double_tap_;
+  }
+  static void set_max_distance_between_taps_for_double_tap(double val) {
+    max_distance_between_taps_for_double_tap_ = val;
   }
   static double min_distance_for_pinch_scroll_in_pixels() {
     return min_distance_for_pinch_scroll_in_pixels_;
@@ -127,6 +139,12 @@ class UI_EXPORT GestureConfiguration {
   static void set_rail_start_proportion(double val) {
     rail_start_proportion_ = val;
   }
+  static double touchscreen_fling_acceleration_adjustment() {
+    return touchscreen_fling_acceleration_adjustment_;
+  }
+  static void set_touchscreen_fling_acceleration_adjustment(double val) {
+    touchscreen_fling_acceleration_adjustment_ = val;
+  }
 
  private:
   // These are listed in alphabetical order ignoring underscores, to
@@ -147,11 +165,13 @@ class UI_EXPORT GestureConfiguration {
   static int max_radius_;
 
   static double long_press_time_in_seconds_;
+  static double semi_long_press_time_in_seconds_;
   static double max_seconds_between_double_click_;
   static double max_separation_for_gesture_touches_in_pixels_;
   static double max_swipe_deviation_ratio_;
   static double max_touch_down_duration_in_seconds_for_click_;
   static double max_touch_move_in_pixels_for_click_;
+  static double max_distance_between_taps_for_double_tap_;
   static double min_distance_for_pinch_scroll_in_pixels_;
   static double min_flick_speed_squared_;
   static double min_pinch_update_distance_in_pixels_;
@@ -162,6 +182,7 @@ class UI_EXPORT GestureConfiguration {
   static int points_buffered_for_velocity_;
   static double rail_break_proportion_;
   static double rail_start_proportion_;
+  static double touchscreen_fling_acceleration_adjustment_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureConfiguration);
 };

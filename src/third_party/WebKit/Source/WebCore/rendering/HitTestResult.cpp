@@ -48,65 +48,140 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HitTestPoint::HitTestPoint()
-    : m_topPadding(0)
-    , m_rightPadding(0)
-    , m_bottomPadding(0)
-    , m_leftPadding(0)
+HitTestLocation::HitTestLocation()
+    : m_region(0)
     , m_isRectBased(false)
+    , m_isRectilinear(true)
 {
 }
 
-HitTestPoint::HitTestPoint(const LayoutPoint& point)
+HitTestLocation::HitTestLocation(const LayoutPoint& point)
     : m_point(point)
-    , m_topPadding(0)
-    , m_rightPadding(0)
-    , m_bottomPadding(0)
-    , m_leftPadding(0)
+    , m_boundingBox(rectForPoint(point, 0, 0, 0, 0))
+    , m_transformedPoint(point)
+    , m_transformedRect(m_boundingBox)
+    , m_region(0)
     , m_isRectBased(false)
+    , m_isRectilinear(true)
 {
 }
 
-HitTestPoint::HitTestPoint(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+HitTestLocation::HitTestLocation(const FloatPoint& point)
+    : m_point(flooredLayoutPoint(point))
+    , m_boundingBox(rectForPoint(m_point, 0, 0, 0, 0))
+    , m_transformedPoint(point)
+    , m_transformedRect(m_boundingBox)
+    , m_region(0)
+    , m_isRectBased(false)
+    , m_isRectilinear(true)
+{
+}
+
+HitTestLocation::HitTestLocation(const FloatPoint& point, const FloatQuad& quad)
+    : m_transformedPoint(point)
+    , m_transformedRect(quad)
+    , m_region(0)
+    , m_isRectBased(true)
+{
+    m_point = flooredLayoutPoint(point);
+    m_boundingBox = enclosingIntRect(quad.boundingBox());
+    m_isRectilinear = quad.isRectilinear();
+}
+
+HitTestLocation::HitTestLocation(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
     : m_point(centerPoint)
-    , m_topPadding(topPadding)
-    , m_rightPadding(rightPadding)
-    , m_bottomPadding(bottomPadding)
-    , m_leftPadding(leftPadding)
+    , m_boundingBox(rectForPoint(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding))
+    , m_transformedPoint(centerPoint)
+    , m_region(0)
+    , m_isRectBased(topPadding || rightPadding || bottomPadding || leftPadding)
+    , m_isRectilinear(true)
 {
-    // If all padding values passed in are zero then it is not a rect based hit test.
-    m_isRectBased = topPadding || rightPadding || bottomPadding || leftPadding;
+    m_transformedRect = FloatQuad(m_boundingBox);
 }
 
-HitTestPoint::HitTestPoint(const HitTestPoint& other)
+HitTestLocation::HitTestLocation(const HitTestLocation& other, const LayoutSize& offset, RenderRegion* region)
     : m_point(other.m_point)
-    , m_topPadding(other.m_topPadding)
-    , m_rightPadding(other.m_rightPadding)
-    , m_bottomPadding(other.m_bottomPadding)
-    , m_leftPadding(other.m_leftPadding)
+    , m_boundingBox(other.m_boundingBox)
+    , m_transformedPoint(other.m_transformedPoint)
+    , m_transformedRect(other.m_transformedRect)
+    , m_region(region)
     , m_isRectBased(other.m_isRectBased)
+    , m_isRectilinear(other.m_isRectilinear)
+{
+    move(offset);
+}
+
+HitTestLocation::HitTestLocation(const HitTestLocation& other)
+    : m_point(other.m_point)
+    , m_boundingBox(other.m_boundingBox)
+    , m_transformedPoint(other.m_transformedPoint)
+    , m_transformedRect(other.m_transformedRect)
+    , m_region(other.m_region)
+    , m_isRectBased(other.m_isRectBased)
+    , m_isRectilinear(other.m_isRectilinear)
 {
 }
 
-HitTestPoint::~HitTestPoint()
+HitTestLocation::~HitTestLocation()
 {
 }
 
-HitTestPoint& HitTestPoint::operator=(const HitTestPoint& other)
+HitTestLocation& HitTestLocation::operator=(const HitTestLocation& other)
 {
     m_point = other.m_point;
-    m_topPadding = other.m_topPadding;
-    m_rightPadding = other.m_rightPadding;
-    m_bottomPadding = other.m_bottomPadding;
-    m_leftPadding = other.m_leftPadding;
+    m_boundingBox = other.m_boundingBox;
+    m_transformedPoint = other.m_transformedPoint;
+    m_transformedRect = other.m_transformedRect;
+    m_region = other.m_region;
     m_isRectBased = other.m_isRectBased;
+    m_isRectilinear = other.m_isRectilinear;
 
     return *this;
 }
 
-IntRect HitTestPoint::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+void HitTestLocation::move(const LayoutSize& offset)
 {
-    IntPoint actualPoint(roundedIntPoint(point));
+    m_point.move(offset);
+    m_transformedPoint.move(offset);
+    m_transformedRect.move(offset);
+    m_boundingBox = enclosingIntRect(m_transformedRect.boundingBox());
+}
+
+template<typename RectType>
+bool HitTestLocation::intersectsRect(const RectType& rect) const
+{
+    // FIXME: When the hit test is not rect based we should use rect.contains(m_point).
+    // That does change some corner case tests though.
+
+    // First check if rect even intersects our bounding box.
+    if (!rect.intersects(m_boundingBox))
+        return false;
+
+    // If the transformed rect is rectilinear the bounding box intersection was accurate.
+    if (m_isRectilinear)
+        return true;
+
+    // If rect fully contains our bounding box, we are also sure of an intersection.
+    if (rect.contains(m_boundingBox))
+        return true;
+
+    // Otherwise we need to do a slower quad based intersection test.
+    return m_transformedRect.intersectsRect(rect);
+}
+
+bool HitTestLocation::intersects(const LayoutRect& rect) const
+{
+    return intersectsRect(rect);
+}
+
+bool HitTestLocation::intersects(const FloatRect& rect) const
+{
+    return intersectsRect(rect);
+}
+
+IntRect HitTestLocation::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+{
+    IntPoint actualPoint(flooredIntPoint(point));
     actualPoint -= IntSize(leftPadding, topPadding);
 
     IntSize actualPadding(leftPadding + rightPadding, topPadding + bottomPadding);
@@ -117,46 +192,36 @@ IntRect HitTestPoint::rectForPoint(const LayoutPoint& point, unsigned topPadding
     return IntRect(actualPoint, actualPadding);
 }
 
-HitTestResult::HitTestResult() : HitTestPoint()
+HitTestResult::HitTestResult() : HitTestLocation()
     , m_isOverWidget(false)
-    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
-    , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const LayoutPoint& point) : HitTestPoint(point)
+HitTestResult::HitTestResult(const LayoutPoint& point) : HitTestLocation(point)
     , m_isOverWidget(false)
-    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
-    , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding, ShadowContentFilterPolicy allowShadowContent)
-    : HitTestPoint(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding)
+HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+    : HitTestLocation(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding)
     , m_isOverWidget(false)
-    , m_shadowContentFilterPolicy(allowShadowContent)
-    , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const HitTestPoint& other, ShadowContentFilterPolicy allowShadowContent)
-    : HitTestPoint(other)
+HitTestResult::HitTestResult(const HitTestLocation& other)
+    : HitTestLocation(other)
     , m_isOverWidget(false)
-    , m_shadowContentFilterPolicy(allowShadowContent)
-    , m_region(0)
 {
 }
 
 HitTestResult::HitTestResult(const HitTestResult& other)
-    : HitTestPoint(other)
+    : HitTestLocation(other)
     , m_innerNode(other.innerNode())
     , m_innerNonSharedNode(other.innerNonSharedNode())
     , m_localPoint(other.localPoint())
     , m_innerURLElement(other.URLElement())
     , m_scrollbar(other.scrollbar())
     , m_isOverWidget(other.isOverWidget())
-    , m_shadowContentFilterPolicy(other.shadowContentFilterPolicy())
-    , m_region(other.region())
 {
     // Only copy the NodeSet in case of rect hit test.
     m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
@@ -168,7 +233,7 @@ HitTestResult::~HitTestResult()
 
 HitTestResult& HitTestResult::operator=(const HitTestResult& other)
 {
-    HitTestPoint::operator=(other);
+    HitTestLocation::operator=(other);
     m_innerNode = other.innerNode();
     m_innerNonSharedNode = other.innerNonSharedNode();
     m_localPoint = other.localPoint();
@@ -178,9 +243,6 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
 
     // Only copy the NodeSet in case of rect hit test.
     m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
-    m_shadowContentFilterPolicy  = other.shadowContentFilterPolicy();
-
-    m_region = other.m_region;
 
     return *this;
 }
@@ -606,7 +668,7 @@ bool HitTestResult::isContentEditable() const
     return m_innerNonSharedNode->rendererIsEditable();
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& pointInContainer, const IntRect& rect)
+bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestRequest& request, const HitTestLocation& locationInContainer, const LayoutRect& rect)
 {
     // If it is not a rect-based hit test, this method has to be no-op.
     // Return false, so the hit test stops.
@@ -617,12 +679,12 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& 
     if (!node)
         return true;
 
-    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+    if (!request.allowsShadowContent())
         node = node->shadowAncestorNode();
 
     mutableRectBasedTestResult().add(node);
 
-    bool regionFilled = rect.contains(rectForPoint(pointInContainer));
+    bool regionFilled = rect.contains(locationInContainer.boundingBox());
     // FIXME: This code (incorrectly) attempts to correct for culled inline nodes. See https://bugs.webkit.org/show_bug.cgi?id=85849.
     if (node->renderer()->isInline() && !regionFilled) {
         for (RenderObject* curr = node->renderer()->parent(); curr; curr = curr->parent()) {
@@ -641,7 +703,7 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& 
     return !regionFilled;
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& pointInContainer, const FloatRect& rect)
+bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestRequest& request, const HitTestLocation& locationInContainer, const FloatRect& rect)
 {
     // If it is not a rect-based hit test, this method has to be no-op.
     // Return false, so the hit test stops.
@@ -652,12 +714,12 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& 
     if (!node)
         return true;
 
-    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+    if (!request.allowsShadowContent())
         node = node->shadowAncestorNode();
 
     mutableRectBasedTestResult().add(node);
 
-    bool regionFilled = rect.contains(rectForPoint(pointInContainer));
+    bool regionFilled = rect.contains(locationInContainer.boundingBox());
     // FIXME: This code (incorrectly) attempts to correct for culled inline nodes. See https://bugs.webkit.org/show_bug.cgi?id=85849.
     if (node->renderer()->isInline() && !regionFilled) {
         for (RenderObject* curr = node->renderer()->parent(); curr; curr = curr->parent()) {
@@ -716,7 +778,7 @@ Vector<String> HitTestResult::dictationAlternatives() const
     if (!m_innerNonSharedNode)
         return Vector<String>();
 
-    DocumentMarker* marker = m_innerNonSharedNode->document()->markers()->markerContainingPoint(hitTestPoint().point(), DocumentMarker::DictationAlternatives);
+    DocumentMarker* marker = m_innerNonSharedNode->document()->markers()->markerContainingPoint(hitTestLocation().point(), DocumentMarker::DictationAlternatives);
     if (!marker)
         return Vector<String>();
 
@@ -725,6 +787,21 @@ Vector<String> HitTestResult::dictationAlternatives() const
         return Vector<String>();
 
     return frame->editor()->dictationAlternativesForMarker(marker);
+}
+
+Node* HitTestResult::targetNode() const
+{
+    Node* node = innerNode();
+    if (!node)
+        return 0;
+    if (node->inDocument())
+        return node;
+
+    Element* element = node->parentElement();
+    if (element && element->inDocument())
+        return element;
+
+    return node;
 }
 
 } // namespace WebCore

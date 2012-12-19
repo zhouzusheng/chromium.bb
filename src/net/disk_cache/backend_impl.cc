@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/hash.h"
 #include "base/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -26,7 +27,6 @@
 #include "net/disk_cache/errors.h"
 #include "net/disk_cache/experiments.h"
 #include "net/disk_cache/file.h"
-#include "net/disk_cache/hash.h"
 #include "net/disk_cache/mem_backend_impl.h"
 
 // This has to be defined before including histogram_macros.h from this file.
@@ -497,8 +497,10 @@ int BackendImpl::SyncInit() {
   if (previous_crash) {
     ReportError(ERR_PREVIOUS_CRASH);
   } else if (!restarted_) {
-      ReportError(ERR_NO_ERROR);
+    ReportError(ERR_NO_ERROR);
   }
+
+  FlushIndex();
 
   return disabled_ ? net::ERR_FAILED : net::OK;
 }
@@ -522,6 +524,7 @@ void BackendImpl::CleanupCache() {
     }
   }
   block_files_.CloseFiles();
+  FlushIndex();
   index_ = NULL;
   ptr_factory_.InvalidateWeakPtrs();
   done_.Signal();
@@ -659,7 +662,7 @@ void BackendImpl::SyncOnExternalCacheHit(const std::string& key) {
   if (disabled_)
     return;
 
-  uint32 hash = Hash(key);
+  uint32 hash = base::Hash(key);
   bool error;
   EntryImpl* cache_entry = MatchEntry(key, hash, false, Addr(), &error);
   if (cache_entry) {
@@ -675,19 +678,27 @@ EntryImpl* BackendImpl::OpenEntryImpl(const std::string& key) {
     return NULL;
 
   TimeTicks start = TimeTicks::Now();
-  uint32 hash = Hash(key);
+  uint32 hash = base::Hash(key);
   Trace("Open hash 0x%x", hash);
 
   bool error;
   EntryImpl* cache_entry = MatchEntry(key, hash, false, Addr(), &error);
-  if (!cache_entry) {
-    stats_.OnEvent(Stats::OPEN_MISS);
-    return NULL;
-  }
-
-  if (ENTRY_NORMAL != cache_entry->entry()->Data()->state) {
+  if (cache_entry && ENTRY_NORMAL != cache_entry->entry()->Data()->state) {
     // The entry was already evicted.
     cache_entry->Release();
+    cache_entry = NULL;
+  }
+
+  int current_size = data_->header.num_bytes / (1024 * 1024);
+  int64 total_hours = stats_.GetCounter(Stats::TIMER) / 120;
+  int64 no_use_hours = stats_.GetCounter(Stats::LAST_REPORT_TIMER) / 120;
+  int64 use_hours = total_hours - no_use_hours;
+
+  if (!cache_entry) {
+    CACHE_UMA(AGE_MS, "OpenTime.Miss", 0, start);
+    CACHE_UMA(COUNTS_10000, "AllOpenBySize.Miss", 0, current_size);
+    CACHE_UMA(HOURS, "AllOpenByTotalHours.Miss", 0, total_hours);
+    CACHE_UMA(HOURS, "AllOpenByUseHours.Miss", 0, use_hours);
     stats_.OnEvent(Stats::OPEN_MISS);
     return NULL;
   }
@@ -695,7 +706,12 @@ EntryImpl* BackendImpl::OpenEntryImpl(const std::string& key) {
   eviction_.OnOpenEntry(cache_entry);
   entry_count_++;
 
+  Trace("Open hash 0x%x end: 0x%x", hash,
+        cache_entry->entry()->address().value());
   CACHE_UMA(AGE_MS, "OpenTime", 0, start);
+  CACHE_UMA(COUNTS_10000, "AllOpenBySize.Hit", 0, current_size);
+  CACHE_UMA(HOURS, "AllOpenByTotalHours.Hit", 0, total_hours);
+  CACHE_UMA(HOURS, "AllOpenByUseHours.Hit", 0, use_hours);
   stats_.OnEvent(Stats::OPEN_HIT);
   SIMPLE_STATS_COUNTER("disk_cache.hit");
   return cache_entry;
@@ -706,7 +722,7 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
     return NULL;
 
   TimeTicks start = TimeTicks::Now();
-  uint32 hash = Hash(key);
+  uint32 hash = base::Hash(key);
   Trace("Create hash 0x%x", hash);
 
   scoped_refptr<EntryImpl> parent;
@@ -795,6 +811,7 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
   stats_.OnEvent(Stats::CREATE_HIT);
   SIMPLE_STATS_COUNTER("disk_cache.miss");
   Trace("create entry hit ");
+  FlushIndex();
   return cache_entry.release();
 }
 
@@ -922,6 +939,7 @@ void BackendImpl::RecoveredEntry(CacheRankingsBlock* rankings) {
     return;
 
   data_->table[hash & mask_] = address.value();
+  FlushIndex();
 }
 
 void BackendImpl::InternalDoomEntry(EntryImpl* entry) {
@@ -950,6 +968,8 @@ void BackendImpl::InternalDoomEntry(EntryImpl* entry) {
   } else if (!error) {
     data_->table[hash & mask_] = child;
   }
+
+  FlushIndex();
 }
 
 #if defined(NET_BUILD_STRESS_CACHE)
@@ -1164,7 +1184,8 @@ void BackendImpl::CriticalError(int error) {
 }
 
 void BackendImpl::ReportError(int error) {
-  STRESS_DCHECK(!error || error == ERR_PREVIOUS_CRASH);
+  STRESS_DCHECK(!error || error == ERR_PREVIOUS_CRASH ||
+                error == ERR_CACHE_CREATED);
 
   // We transmit positive numbers, instead of direct error codes.
   DCHECK_LE(error, 0);
@@ -1303,7 +1324,16 @@ int BackendImpl::SelfCheck() {
   return CheckAllEntries();
 }
 
+void BackendImpl::FlushIndex() {
+  if (index_ && !disabled_)
+    index_->Flush();
+}
+
 // ------------------------------------------------------------------------
+
+net::CacheType BackendImpl::GetCacheType() const {
+  return cache_type_;
+}
 
 int32 BackendImpl::GetEntryCount() const {
   if (!index_ || disabled_)
@@ -1538,6 +1568,7 @@ void BackendImpl::PrepareForRestart() {
 
   disabled_ = true;
   data_->header.crash = 0;
+  index_->Flush();
   index_ = NULL;
   data_ = NULL;
   block_files_.CloseFiles();
@@ -1721,6 +1752,7 @@ EntryImpl* BackendImpl::MatchEntry(const std::string& key, uint32 hash,
     cache_entry = NULL;
 
   find_parent ? parent_entry.swap(&tmp) : cache_entry.swap(&tmp);
+  FlushIndex();
   return tmp;
 }
 
@@ -1953,7 +1985,14 @@ void BackendImpl::ReportStats() {
 
   int current_size = data_->header.num_bytes / (1024 * 1024);
   int max_size = max_size_ / (1024 * 1024);
+  int hit_ratio_as_percentage = stats_.GetHitRatio();
+
   CACHE_UMA(COUNTS_10000, "Size2", 0, current_size);
+  // For any bin in HitRatioBySize2, the hit ratio of caches of that size is the
+  // ratio of that bin's total count to the count in the same bin in the Size2
+  // histogram.
+  if (base::RandInt(0, 99) < hit_ratio_as_percentage)
+    CACHE_UMA(COUNTS_10000, "HitRatioBySize2", 0, current_size);
   CACHE_UMA(COUNTS_10000, "MaxSize2", 0, max_size);
   if (!max_size)
     max_size++;
@@ -1989,6 +2028,11 @@ void BackendImpl::ReportStats() {
   // that event, start reporting this:
 
   CACHE_UMA(HOURS, "TotalTime", 0, static_cast<int>(total_hours));
+  // For any bin in HitRatioByTotalTime, the hit ratio of caches of that total
+  // time is the ratio of that bin's total count to the count in the same bin in
+  // the TotalTime histogram.
+  if (base::RandInt(0, 99) < hit_ratio_as_percentage)
+    CACHE_UMA(HOURS, "HitRatioByTotalTime", 0, implicit_cast<int>(total_hours));
 
   int64 use_hours = stats_.GetCounter(Stats::LAST_REPORT_TIMER) / 120;
   stats_.SetCounter(Stats::LAST_REPORT_TIMER, stats_.GetCounter(Stats::TIMER));
@@ -2002,7 +2046,12 @@ void BackendImpl::ReportStats() {
     return;
 
   CACHE_UMA(HOURS, "UseTime", 0, static_cast<int>(use_hours));
-  CACHE_UMA(PERCENTAGE, "HitRatio", 0, stats_.GetHitRatio());
+  // For any bin in HitRatioByUseTime, the hit ratio of caches of that use time
+  // is the ratio of that bin's total count to the count in the same bin in the
+  // UseTime histogram.
+  if (base::RandInt(0, 99) < hit_ratio_as_percentage)
+    CACHE_UMA(HOURS, "HitRatioByUseTime", 0, implicit_cast<int>(use_hours));
+  CACHE_UMA(PERCENTAGE, "HitRatio", 0, hit_ratio_as_percentage);
 
   int64 trim_rate = stats_.GetCounter(Stats::TRIM_ENTRY) / use_hours;
   CACHE_UMA(COUNTS, "TrimRate", 0, static_cast<int>(trim_rate));

@@ -57,7 +57,7 @@ enum PostType { PostSynchronously, PostAsynchronously };
 class AXObjectCache {
     WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED;
 public:
-    AXObjectCache(const Document*);
+    explicit AXObjectCache(const Document*);
     ~AXObjectCache();
 
     static AccessibilityObject* focusedUIElementForPage(const Page*);
@@ -70,6 +70,7 @@ public:
     // For AX objects with elements that back them.
     AccessibilityObject* getOrCreate(RenderObject*);
     AccessibilityObject* getOrCreate(Widget*);
+    AccessibilityObject* getOrCreate(Node*);
 
     // used for objects without backing elements
     AccessibilityObject* getOrCreate(AccessibilityRole);
@@ -77,24 +78,31 @@ public:
     // will only return the AccessibilityObject if it already exists
     AccessibilityObject* get(RenderObject*);
     AccessibilityObject* get(Widget*);
+    AccessibilityObject* get(Node*);
     
     void remove(RenderObject*);
+    void remove(Node*);
     void remove(Widget*);
     void remove(AXID);
 
     void detachWrapper(AccessibilityObject*);
     void attachWrapper(AccessibilityObject*);
+    void childrenChanged(Node*);
     void childrenChanged(RenderObject*);
-    void checkedStateChanged(RenderObject*);
+    void checkedStateChanged(Node*);
+    void selectedChildrenChanged(Node*);
     void selectedChildrenChanged(RenderObject*);
     // Called by a node when text or a text equivalent (e.g. alt) attribute is changed.
+    void contentChanged(Node*);
     void contentChanged(RenderObject*);
-    
-    void handleActiveDescendantChanged(RenderObject*);
-    void handleAriaRoleChanged(RenderObject*);
-    void handleFocusedUIElementChanged(RenderObject* oldFocusedRenderer, RenderObject* newFocusedRenderer);
+    // Called when a node has just been attached, so we can make sure we have the right subclass of AccessibilityObject.
+    void updateCacheAfterNodeIsAttached(Node*);
+
+    void handleActiveDescendantChanged(Node*);
+    void handleAriaRoleChanged(Node*);
+    void handleFocusedUIElementChanged(Node* oldFocusedNode, Node* newFocusedNode);
     void handleScrolledToAnchor(const Node* anchorNode);
-    void handleAriaExpandedChange(RenderObject*);
+    void handleAriaExpandedChange(Node*);
     void handleScrollbarUpdate(ScrollView*);
 
 #if HAVE(ACCESSIBILITY)
@@ -106,7 +114,7 @@ public:
     static bool accessibilityEnhancedUserInterfaceEnabled() { return gAccessibilityEnhancedUserInterfaceEnabled; }
 #else
     static void enableAccessibility() { }
-    static void setEnhancedUserInterfaceAccessibility(bool flag) { }
+    static void setEnhancedUserInterfaceAccessibility(bool) { }
     static bool accessibilityEnabled() { return false; }
     static bool accessibilityEnhancedUserInterfaceEnabled() { return false; }
 #endif
@@ -121,11 +129,6 @@ public:
     AXID platformGenerateAXID() const;
     AccessibilityObject* objectFromAXID(AXID id) const { return m_objects.get(id).get(); }
 
-    // This is a weak reference cache for knowing if Nodes used by TextMarkers are valid.
-    void setNodeInUse(Node* n) { m_textMarkerNodes.add(n); }
-    void removeNodeForUse(Node* n) { m_textMarkerNodes.remove(n); }
-    bool isNodeInUse(Node* n) { return m_textMarkerNodes.contains(n); }
-    
     // Text marker utilities.
     void textMarkerDataForVisiblePosition(TextMarkerData&, const VisiblePosition&);
     VisiblePosition visiblePositionForTextMarkerData(TextMarkerData&);
@@ -152,6 +155,7 @@ public:
     };
 
     void postNotification(RenderObject*, AXNotification, bool postToElement, PostType = PostAsynchronously);
+    void postNotification(Node*, AXNotification, bool postToElement, PostType = PostAsynchronously);
     void postNotification(AccessibilityObject*, Document*, AXNotification, bool postToElement, PostType = PostAsynchronously);
 
     enum AXTextChange {
@@ -159,7 +163,7 @@ public:
         AXTextDeleted,
     };
 
-    void nodeTextChangeNotification(RenderObject*, AXTextChange, unsigned offset, const String&);
+    void nodeTextChangeNotification(Node*, AXTextChange, unsigned offset, const String&);
 
     enum AXLoadingEvent {
         AXLoadingStarted,
@@ -177,11 +181,17 @@ protected:
     void nodeTextChangePlatformNotification(AccessibilityObject*, AXTextChange, unsigned offset, const String&);
     void frameLoadingEventPlatformNotification(AccessibilityObject*, AXLoadingEvent);
 
+    // This is a weak reference cache for knowing if Nodes used by TextMarkers are valid.
+    void setNodeInUse(Node* n) { m_textMarkerNodes.add(n); }
+    void removeNodeForUse(Node* n) { m_textMarkerNodes.remove(n); }
+    bool isNodeInUse(Node* n) { return m_textMarkerNodes.contains(n); }
+
 private:
     Document* m_document;
     HashMap<AXID, RefPtr<AccessibilityObject> > m_objects;
     HashMap<RenderObject*, AXID> m_renderObjectMapping;
     HashMap<Widget*, AXID> m_widgetObjectMapping;
+    HashMap<Node*, AXID> m_nodeObjectMapping;
     HashSet<Node*> m_textMarkerNodes;
     static bool gAccessibilityEnabled;
     static bool gAccessibilityEnhancedUserInterfaceEnabled;
@@ -204,9 +214,11 @@ inline AXObjectCache::AXObjectCache(const Document* doc) : m_document(const_cast
 inline AXObjectCache::~AXObjectCache() { }
 inline AccessibilityObject* AXObjectCache::focusedUIElementForPage(const Page*) { return 0; }
 inline AccessibilityObject* AXObjectCache::get(RenderObject*) { return 0; }
+inline AccessibilityObject* AXObjectCache::get(Node*) { return 0; }
 inline AccessibilityObject* AXObjectCache::get(Widget*) { return 0; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole) { return 0; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(RenderObject*) { return 0; }
+inline AccessibilityObject* AXObjectCache::getOrCreate(Node*) { return 0; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(Widget*) { return 0; }
 inline AccessibilityObject* AXObjectCache::rootObject() { return 0; }
 inline AccessibilityObject* AXObjectCache::rootObjectForFrame(Frame*) { return 0; }
@@ -214,27 +226,33 @@ inline Element* AXObjectCache::rootAXEditableElement(Node*) { return 0; }
 inline bool nodeHasRole(Node*, const String&) { return false; }
 inline const Element* AXObjectCache::rootAXEditableElement(const Node*) { return 0; }
 inline void AXObjectCache::attachWrapper(AccessibilityObject*) { }
-inline void AXObjectCache::checkedStateChanged(RenderObject*) { }
+inline void AXObjectCache::checkedStateChanged(Node*) { }
 inline void AXObjectCache::childrenChanged(RenderObject*) { }
+inline void AXObjectCache::childrenChanged(Node*) { }
 inline void AXObjectCache::contentChanged(RenderObject*) { }
+inline void AXObjectCache::contentChanged(Node*) { }
+inline void AXObjectCache::updateCacheAfterNodeIsAttached(Node*) { }
 inline void AXObjectCache::detachWrapper(AccessibilityObject*) { }
 inline void AXObjectCache::frameLoadingEventNotification(Frame*, AXLoadingEvent) { }
 inline void AXObjectCache::frameLoadingEventPlatformNotification(AccessibilityObject*, AXLoadingEvent) { }
-inline void AXObjectCache::handleActiveDescendantChanged(RenderObject*) { }
-inline void AXObjectCache::handleAriaExpandedChange(RenderObject*) { }
-inline void AXObjectCache::handleAriaRoleChanged(RenderObject*) { }
-inline void AXObjectCache::handleFocusedUIElementChanged(RenderObject*, RenderObject*) { }
+inline void AXObjectCache::handleActiveDescendantChanged(Node*) { }
+inline void AXObjectCache::handleAriaExpandedChange(Node*) { }
+inline void AXObjectCache::handleAriaRoleChanged(Node*) { }
+inline void AXObjectCache::handleFocusedUIElementChanged(Node*, Node*) { }
 inline void AXObjectCache::handleScrollbarUpdate(ScrollView*) { }
 inline void AXObjectCache::handleScrolledToAnchor(const Node*) { }
-inline void AXObjectCache::nodeTextChangeNotification(RenderObject*, AXTextChange, unsigned, const String&) { }
+inline void AXObjectCache::nodeTextChangeNotification(Node*, AXTextChange, unsigned, const String&) { }
 inline void AXObjectCache::nodeTextChangePlatformNotification(AccessibilityObject*, AXTextChange, unsigned, const String&) { }
-inline void AXObjectCache::postNotification(AccessibilityObject*, Document*, AXNotification, bool postToElement, PostType) { }
-inline void AXObjectCache::postNotification(RenderObject*, AXNotification, bool postToElement, PostType) { }
+inline void AXObjectCache::postNotification(AccessibilityObject*, Document*, AXNotification, bool, PostType) { }
+inline void AXObjectCache::postNotification(RenderObject*, AXNotification, bool, PostType) { }
+inline void AXObjectCache::postNotification(Node*, AXNotification, bool, PostType) { }
 inline void AXObjectCache::postPlatformNotification(AccessibilityObject*, AXNotification) { }
 inline void AXObjectCache::remove(AXID) { }
 inline void AXObjectCache::remove(RenderObject*) { }
+inline void AXObjectCache::remove(Node*) { }
 inline void AXObjectCache::remove(Widget*) { }
 inline void AXObjectCache::selectedChildrenChanged(RenderObject*) { }
+inline void AXObjectCache::selectedChildrenChanged(Node*) { }
 #endif
 
 }

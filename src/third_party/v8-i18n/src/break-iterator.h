@@ -1,4 +1,4 @@
-// Copyright 2011 the v8-i18n authors.
+// Copyright 2012 the v8-i18n authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef V8_I18N_SRC_BREAK_ITERATOR_H_
+#ifndef V8_I18N_SRC_BREAK_ITERATOR_H
 #define V8_I18N_SRC_BREAK_ITERATOR_H_
 
 #include "unicode/uversion.h"
@@ -27,48 +27,44 @@ namespace v8_i18n {
 
 class BreakIterator {
  public:
-  static v8::Handle<v8::Value> JSBreakIterator(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSCreateBreakIterator(const v8::Arguments& args);
 
   // Helper methods for various bindings.
 
-  // Unpacks break iterator object from corresponding JavaScript object.
-  static icu::BreakIterator* UnpackBreakIterator(v8::Handle<v8::Object> obj);
-
-  // Deletes the old value and sets the adopted text in
-  // corresponding JavaScript object.
-  static icu::UnicodeString* ResetAdoptedText(v8::Handle<v8::Object> obj,
-                                              v8::Handle<v8::Value> text_value);
+  // Unpacks iterator object from corresponding JavaScript object.
+  static icu::BreakIterator* UnpackBreakIterator(
+      v8::Handle<v8::Object> obj);
 
   // Release memory we allocated for the BreakIterator once the JS object that
   // holds the pointer gets garbage collected.
   static void DeleteBreakIterator(v8::Persistent<v8::Value> object,
-                                  void* param);
+				  void* param);
 
   // Assigns new text to the iterator.
-  static v8::Handle<v8::Value> BreakIteratorAdoptText(
+  static v8::Handle<v8::Value> JSInternalBreakIteratorAdoptText(
       const v8::Arguments& args);
 
   // Moves iterator to the beginning of the string and returns new position.
-  static v8::Handle<v8::Value> BreakIteratorFirst(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSInternalBreakIteratorFirst(
+      const v8::Arguments& args);
 
   // Moves iterator to the next position and returns it.
-  static v8::Handle<v8::Value> BreakIteratorNext(const v8::Arguments& args);
+  static v8::Handle<v8::Value> JSInternalBreakIteratorNext(
+      const v8::Arguments& args);
 
   // Returns current iterator's current position.
-  static v8::Handle<v8::Value> BreakIteratorCurrent(
+  static v8::Handle<v8::Value> JSInternalBreakIteratorCurrent(
       const v8::Arguments& args);
 
   // Returns type of the item from current position.
   // This call is only valid for word break iterators. Others just return 0.
-  static v8::Handle<v8::Value> BreakIteratorBreakType(
+  static v8::Handle<v8::Value> JSInternalBreakIteratorBreakType(
       const v8::Arguments& args);
 
  private:
   BreakIterator() {}
-
-  static v8::Persistent<v8::FunctionTemplate> break_iterator_template_;
 };
 
 }  // namespace v8_i18n
 
-#endif  // V8_I18N_SRC_BREAK_ITERATOR_H_
+#endif  // V8_I18N_SRC_BREAK_ITERATOR

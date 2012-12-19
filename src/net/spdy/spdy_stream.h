@@ -4,14 +4,14 @@
 
 #ifndef NET_SPDY_SPDY_STREAM_H_
 #define NET_SPDY_SPDY_STREAM_H_
-#pragma once
 
+#include <list>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
 #include "net/base/io_buffer.h"
@@ -20,16 +20,16 @@
 #include "net/base/request_priority.h"
 #include "net/base/server_bound_cert_service.h"
 #include "net/base/ssl_client_cert_type.h"
-#include "net/base/upload_data.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
+#include "net/spdy/spdy_session.h"
 
 namespace net {
 
 class AddressList;
 class IPEndPoint;
-class SpdySession;
 class SSLCertRequestInfo;
 class SSLInfo;
 
@@ -41,8 +41,7 @@ class SSLInfo;
 // initiated by the server, only the SpdySession will maintain any reference,
 // until such a time as a client object requests a stream for the path.
 class NET_EXPORT_PRIVATE SpdyStream
-    : public base::RefCounted<SpdyStream>,
-      public ChunkCallback {
+    : public base::RefCounted<SpdyStream> {
  public:
   // Delegate handles protocol specific behavior of spdy stream.
   class NET_EXPORT_PRIVATE Delegate {
@@ -73,17 +72,18 @@ class NET_EXPORT_PRIVATE SpdyStream
                                    base::Time response_time,
                                    int status) = 0;
 
+    // Called when a HEADERS frame is sent.
+    virtual void OnHeadersSent() = 0;
+
     // Called when data is received.
-    virtual void OnDataReceived(const char* data, int length) = 0;
+    // Returns network error code. OK when it successfully receives data.
+    virtual int OnDataReceived(const char* data, int length) = 0;
 
     // Called when data is sent.
     virtual void OnDataSent(int length) = 0;
 
     // Called when SpdyStream is closed.
     virtual void OnClose(int status) = 0;
-
-    // Sets the callback to be invoked when a new chunk is available to upload.
-    virtual void set_chunk_callback(ChunkCallback* callback) = 0;
 
    protected:
     friend class base::RefCounted<Delegate>;
@@ -93,9 +93,23 @@ class NET_EXPORT_PRIVATE SpdyStream
     DISALLOW_COPY_AND_ASSIGN(Delegate);
   };
 
+  // Indicates pending frame type.
+  enum FrameType {
+    TYPE_HEADERS,
+    TYPE_DATA
+  };
+
+  // Structure to contains pending frame information.
+  typedef struct {
+    FrameType type;
+    union {
+      SpdyHeaderBlock* header_block;
+      SpdyDataFrame* data_frame;
+    };
+  } PendingFrame;
+
   // SpdyStream constructor
   SpdyStream(SpdySession* session,
-             SpdyStreamId stream_id,
              bool pushed,
              const BoundNetLog& net_log);
 
@@ -176,8 +190,8 @@ class NET_EXPORT_PRIVATE SpdyStream
 
   const BoundNetLog& net_log() const { return net_log_; }
 
-  const linked_ptr<SpdyHeaderBlock>& spdy_headers() const;
-  void set_spdy_headers(const linked_ptr<SpdyHeaderBlock>& headers);
+  const SpdyHeaderBlock& spdy_headers() const;
+  void set_spdy_headers(scoped_ptr<SpdyHeaderBlock> headers);
   base::Time GetRequestTime() const;
   void SetRequestTime(base::Time t);
 
@@ -228,6 +242,10 @@ class NET_EXPORT_PRIVATE SpdyStream
   // For non push stream, it will send SYN_STREAM frame.
   int SendRequest(bool has_upload_data);
 
+  // Sends a HEADERS frame. SpdyStream owns |headers| and will release it after
+  // the HEADERS frame is actually sent.
+  int WriteHeaders(SpdyHeaderBlock* headers);
+
   // Sends DATA frame.
   int WriteStreamData(IOBuffer* data, int length,
                       SpdyDataFlags flags);
@@ -254,12 +272,11 @@ class NET_EXPORT_PRIVATE SpdyStream
   // true.
   GURL GetUrl() const;
 
-  // ChunkCallback methods.
-  virtual void OnChunkAvailable() OVERRIDE;
-
   int GetProtocolVersion() const;
 
  private:
+  class SpdyStreamIOBufferProducer;
+
   enum State {
     STATE_NONE,
     STATE_GET_DOMAIN_BOUND_CERT,
@@ -276,6 +293,7 @@ class NET_EXPORT_PRIVATE SpdyStream
   };
 
   friend class base::RefCounted<SpdyStream>;
+
   virtual ~SpdyStream();
 
   // If the stream is stalled and if |send_window_size_| is positive, then set
@@ -308,6 +326,14 @@ class NET_EXPORT_PRIVATE SpdyStream
   // the MessageLoop to replay all the data that the server has already sent.
   void PushedStreamReplayData();
 
+  // Informs the SpdySession that this stream has a write available.
+  void SetHasWriteAvailable();
+
+  // Returns a newly created SPDY frame owned by the called that contains
+  // the next frame to be sent by this frame.  May return NULL if this
+  // stream has become stalled on flow control.
+  SpdyFrame* ProduceNextFrame();
+
   // There is a small period of time between when a server pushed stream is
   // first created, and the pushed data is replayed. Any data received during
   // this time should continue to be buffered.
@@ -334,14 +360,23 @@ class NET_EXPORT_PRIVATE SpdyStream
   SpdyStream::Delegate* delegate_;
 
   // The request to send.
-  linked_ptr<SpdyHeaderBlock> request_;
+  scoped_ptr<SpdyHeaderBlock> request_;
 
   // The time at which the request was made that resulted in this response.
   // For cached responses, this time could be "far" in the past.
   base::Time request_time_;
 
-  linked_ptr<SpdyHeaderBlock> response_;
+  scoped_ptr<SpdyHeaderBlock> response_;
   base::Time response_time_;
+
+  // An in order list of pending frame data that are going to be sent. HEADERS
+  // frames are queued as SpdyHeaderBlock structures because these must be
+  // compressed just before sending. Data frames are queued as SpdyDataFrame.
+  std::list<PendingFrame> pending_frames_;
+
+  // An in order list of sending frame types. It will be used to know which type
+  // of frame is sent and which callback should be invoked in OnOpen().
+  std::list<FrameType> waiting_completions_;
 
   State io_state_;
 

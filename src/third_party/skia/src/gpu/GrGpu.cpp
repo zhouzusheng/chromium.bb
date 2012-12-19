@@ -10,7 +10,6 @@
 #include "GrGpu.h"
 
 #include "GrBufferAllocPool.h"
-#include "GrClipIterator.h"
 #include "GrContext.h"
 #include "GrIndexBuffer.h"
 #include "GrStencilBuffer.h"
@@ -30,8 +29,7 @@ extern void gr_run_unittests();
 #define DEBUG_INVAL_START_IDX -1
 
 GrGpu::GrGpu()
-    : fClipMaskManager(this)
-    , fContext(NULL)
+    : fContext(NULL)
     , fResetTimestamp(kExpiredTimestamp+1)
     , fVertexPool(NULL)
     , fIndexPool(NULL)
@@ -39,13 +37,14 @@ GrGpu::GrGpu()
     , fIndexPoolUseCnt(0)
     , fQuadIndexBuffer(NULL)
     , fUnitSquareVertexBuffer(NULL)
-    , fContextIsDirty(true)
-    , fResourceHead(NULL) {
+    , fContextIsDirty(true) {
+
+    fClipMaskManager.setGpu(this);
 
 #if GR_DEBUG
     //gr_run_unittests();
 #endif
-        
+
     fGeomPoolStateStack.push_back();
 #if GR_DEBUG
     GeometryPoolState& poolState = fGeomPoolStateStack.back();
@@ -68,8 +67,8 @@ void GrGpu::abandonResources() {
 
     fClipMaskManager.releaseResources();
 
-    while (NULL != fResourceHead) {
-        fResourceHead->abandon();
+    while (NULL != fResourceList.head()) {
+        fResourceList.head()->abandon();
     }
 
     GrAssert(NULL == fQuadIndexBuffer || !fQuadIndexBuffer->isValid());
@@ -87,8 +86,8 @@ void GrGpu::releaseResources() {
 
     fClipMaskManager.releaseResources();
 
-    while (NULL != fResourceHead) {
-        fResourceHead->release();
+    while (NULL != fResourceList.head()) {
+        fResourceList.head()->release();
     }
 
     GrAssert(NULL == fQuadIndexBuffer || !fQuadIndexBuffer->isValid());
@@ -105,33 +104,15 @@ void GrGpu::releaseResources() {
 void GrGpu::insertResource(GrResource* resource) {
     GrAssert(NULL != resource);
     GrAssert(this == resource->getGpu());
-    GrAssert(NULL == resource->fNext);
-    GrAssert(NULL == resource->fPrevious);
 
-    resource->fNext = fResourceHead;
-    if (NULL != fResourceHead) {
-        GrAssert(NULL == fResourceHead->fPrevious);
-        fResourceHead->fPrevious = resource;
-    }
-    fResourceHead = resource;
+    fResourceList.addToHead(resource);
 }
 
 void GrGpu::removeResource(GrResource* resource) {
     GrAssert(NULL != resource);
-    GrAssert(NULL != fResourceHead);
+    GrAssert(this == resource->getGpu());
 
-    if (fResourceHead == resource) {
-        GrAssert(NULL == resource->fPrevious);
-        fResourceHead = resource->fNext;
-    } else {
-        GrAssert(NULL != fResourceHead);
-        resource->fPrevious->fNext = resource->fNext;
-    }
-    if (NULL != resource->fNext) {
-        resource->fNext->fPrevious = resource->fPrevious;
-    }
-    resource->fNext = NULL;
-    resource->fPrevious = NULL;
+    fResourceList.remove(resource);
 }
 
 
@@ -147,7 +128,7 @@ GrTexture* GrGpu::createTexture(const GrTextureDesc& desc,
                                 const void* srcData, size_t rowBytes) {
     this->handleDirtyContext();
     GrTexture* tex = this->onCreateTexture(desc, srcData, rowBytes);
-    if (NULL != tex && 
+    if (NULL != tex &&
         (kRenderTarget_GrTextureFlagBit & desc.fFlags) &&
         !(kNoStencil_GrTextureFlagBit & desc.fFlags)) {
         GrAssert(NULL != tex->asRenderTarget());
@@ -162,7 +143,7 @@ GrTexture* GrGpu::createTexture(const GrTextureDesc& desc,
 
 bool GrGpu::attachStencilBufferToRenderTarget(GrRenderTarget* rt) {
     GrAssert(NULL == rt->getStencilBuffer());
-    GrStencilBuffer* sb = 
+    GrStencilBuffer* sb =
         this->getContext()->findStencilBuffer(rt->width(),
                                               rt->height(),
                                               rt->numSamples());
@@ -176,9 +157,6 @@ bool GrGpu::attachStencilBufferToRenderTarget(GrRenderTarget* rt) {
     }
     if (this->createStencilBufferForRenderTarget(rt,
                                                  rt->width(), rt->height())) {
-        rt->getStencilBuffer()->ref();
-        rt->getStencilBuffer()->transferToCacheAndLock();
-
         // Right now we're clearing the stencil buffer here after it is
         // attached to an RT for the first time. When we start matching
         // stencil buffers with smaller color targets this will no longer
@@ -228,12 +206,18 @@ GrIndexBuffer* GrGpu::createIndexBuffer(uint32_t size, bool dynamic) {
 }
 
 GrPath* GrGpu::createPath(const SkPath& path) {
-    GrAssert(fCaps.fPathStencilingSupport);
+    GrAssert(fCaps.pathStencilingSupport());
     this->handleDirtyContext();
     return this->onCreatePath(path);
 }
 
-void GrGpu::clear(const GrIRect* rect, GrColor color) {
+void GrGpu::clear(const GrIRect* rect,
+                  GrColor color,
+                  GrRenderTarget* renderTarget) {
+    GrDrawState::AutoRenderTargetRestore art;
+    if (NULL != renderTarget) {
+        art.set(this->drawState(), renderTarget);
+    }
     if (NULL == this->getDrawState().getRenderTarget()) {
         return;
     }
@@ -250,8 +234,6 @@ bool GrGpu::readPixels(GrRenderTarget* target,
                        int left, int top, int width, int height,
                        GrPixelConfig config, void* buffer,
                        size_t rowBytes, bool invertY) {
-    GrAssert(GrPixelConfigIsUnpremultiplied(config) ==
-             GrPixelConfigIsUnpremultiplied(target->config()));
     this->handleDirtyContext();
     return this->onReadPixels(target, left, top, width, height,
                               config, buffer, rowBytes, invertY);
@@ -261,8 +243,6 @@ void GrGpu::writeTexturePixels(GrTexture* texture,
                                int left, int top, int width, int height,
                                GrPixelConfig config, const void* buffer,
                                size_t rowBytes) {
-    GrAssert(GrPixelConfigIsUnpremultiplied(config) ==
-             GrPixelConfigIsUnpremultiplied(texture->config()));
     this->handleDirtyContext();
     this->onWriteTexturePixels(texture, left, top, width, height,
                                config, buffer, rowBytes);
@@ -351,34 +331,16 @@ const GrVertexBuffer* GrGpu::getUnitSquareVertexBuffer() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const GrStencilSettings* GrGpu::GetClipStencilSettings(void) {
-    // stencil settings to use when clip is in stencil
-    GR_STATIC_CONST_SAME_STENCIL_STRUCT(sClipStencilSettings,
-        kKeep_StencilOp,
-        kKeep_StencilOp,
-        kAlwaysIfInClip_StencilFunc,
-        0x0000,
-        0x0000,
-        0x0000);
-    return GR_CONST_STENCIL_SETTINGS_PTR_FROM_STRUCT_PTR(&sClipStencilSettings);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 bool GrGpu::setupClipAndFlushState(DrawType type) {
 
-    ScissoringSettings scissoringSettings;
-
-    if (!fClipMaskManager.createClipMask(fClip, &scissoringSettings)) {
+    if (!fClipMaskManager.setupClipping(fClip)) {
         return false;
     }
 
-    // Must flush the scissor after graphics state
     if (!this->flushGraphicsState(type)) {
         return false;
     }
 
-    scissoringSettings.setupScissoring(this);
     return true;
 }
 
@@ -444,9 +406,13 @@ void GrGpu::onDrawNonIndexed(GrPrimitiveType type,
     this->onGpuDrawNonIndexed(type, sVertex, vertexCount);
 }
 
-void GrGpu::onStencilPath(const GrPath& path, GrPathFill fill) {
+void GrGpu::onStencilPath(const GrPath* path, GrPathFill fill) {
     this->handleDirtyContext();
 
+    // TODO: make this more effecient (don't copy and copy back)
+    GrAutoTRestore<GrStencilSettings> asr(this->drawState()->stencil());
+
+    this->setStencilPathSettings(*path, fill, this->drawState()->stencil());
     if (!this->setupClipAndFlushState(kStencilPath_DrawType)) {
         return;
     }
@@ -467,9 +433,9 @@ void GrGpu::finalizeReservedIndices() {
 void GrGpu::prepareVertexPool() {
     if (NULL == fVertexPool) {
         GrAssert(0 == fVertexPoolUseCnt);
-        fVertexPool = new GrVertexBufferAllocPool(this, true,
+        fVertexPool = SkNEW_ARGS(GrVertexBufferAllocPool, (this, true,
                                                   VERTEX_POOL_VB_SIZE,
-                                                  VERTEX_POOL_VB_COUNT);
+                                                  VERTEX_POOL_VB_COUNT));
         fVertexPool->releaseGpuRef();
     } else if (!fVertexPoolUseCnt) {
         // the client doesn't have valid data in the pool
@@ -480,9 +446,9 @@ void GrGpu::prepareVertexPool() {
 void GrGpu::prepareIndexPool() {
     if (NULL == fIndexPool) {
         GrAssert(0 == fIndexPoolUseCnt);
-        fIndexPool = new GrIndexBufferAllocPool(this, true,
+        fIndexPool = SkNEW_ARGS(GrIndexBufferAllocPool, (this, true,
                                                 INDEX_POOL_IB_SIZE,
-                                                INDEX_POOL_IB_COUNT);
+                                                INDEX_POOL_IB_COUNT));
         fIndexPool->releaseGpuRef();
     } else if (!fIndexPoolUseCnt) {
         // the client doesn't have valid data in the pool
@@ -494,12 +460,12 @@ bool GrGpu::onReserveVertexSpace(GrVertexLayout vertexLayout,
                                  int vertexCount,
                                  void** vertices) {
     GeometryPoolState& geomPoolState = fGeomPoolStateStack.back();
-    
+
     GrAssert(vertexCount > 0);
     GrAssert(NULL != vertices);
-    
+
     this->prepareVertexPool();
-    
+
     *vertices = fVertexPool->makeSpace(vertexLayout,
                                        vertexCount,
                                        &geomPoolState.fPoolVertexBuffer,
@@ -513,7 +479,7 @@ bool GrGpu::onReserveVertexSpace(GrVertexLayout vertexLayout,
 
 bool GrGpu::onReserveIndexSpace(int indexCount, void** indices) {
     GeometryPoolState& geomPoolState = fGeomPoolStateStack.back();
-    
+
     GrAssert(indexCount > 0);
     GrAssert(NULL != indices);
 

@@ -32,8 +32,7 @@
 #ifndef HTMLDataListElement_h
 #define HTMLDataListElement_h
 
-#if ENABLE(DATALIST)
-
+#if ENABLE(DATALIST_ELEMENT)
 #include "HTMLCollection.h"
 #include "HTMLElement.h"
 
@@ -43,13 +42,15 @@ class HTMLDataListElement : public HTMLElement {
 public:
     static PassRefPtr<HTMLDataListElement> create(const QualifiedName&, Document*);
 
-    HTMLCollection* options();
+    PassRefPtr<HTMLCollection> options();
+
+    void optionElementChildrenChanged();
 
 private:
     HTMLDataListElement(const QualifiedName&, Document*);
 };
 
-}  // namespace WebCore
-#endif  // ENABLE(DATALIST)
+} // namespace WebCore
+#endif // ENABLE(DATALIST_ELEMENT)
 
-#endif  // HTMLDataListElement_h
+#endif // HTMLDataListElement_h

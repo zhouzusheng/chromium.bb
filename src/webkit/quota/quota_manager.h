@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_QUOTA_QUOTA_MANAGER_H_
 #define WEBKIT_QUOTA_QUOTA_MANAGER_H_
-#pragma once
 
 #include <deque>
 #include <list>
@@ -40,13 +39,13 @@ class QuotaInternalsProxy;
 
 namespace quota {
 
-struct QuotaManagerDeleter;
-
+class MockQuotaManager;
 class QuotaDatabase;
 class QuotaManagerProxy;
 class QuotaTemporaryStorageEvictor;
 class UsageTracker;
-class MockQuotaManager;
+
+struct QuotaManagerDeleter;
 
 struct QuotaAndUsage {
   int64 usage;
@@ -184,9 +183,11 @@ class QuotaManager : public QuotaTaskObserver,
 
   void GetStatistics(std::map<std::string, std::string>* statistics);
 
-  bool IsStorageUnlimited(const GURL& origin) const {
+  bool IsStorageUnlimited(const GURL& origin, StorageType type) const;
+
+  bool IsInstalledApp(const GURL& origin) const {
     return special_storage_policy_.get() &&
-           special_storage_policy_->IsStorageUnlimited(origin);
+           special_storage_policy_->IsInstalledApp(origin);
   }
 
   virtual void GetOriginsModifiedSince(StorageType type,
@@ -205,6 +206,9 @@ class QuotaManager : public QuotaTaskObserver,
 
   static const int kEvictionIntervalInMilliSeconds;
 
+  // This is kept non-const so that test code can change the value.
+  static int64 kSyncableStorageDefaultHostQuota;
+
  protected:
   virtual ~QuotaManager();
 
@@ -218,35 +222,28 @@ class QuotaManager : public QuotaTaskObserver,
   friend class QuotaTemporaryStorageEvictor;
   friend struct QuotaManagerDeleter;
 
-  class DatabaseTaskBase;
-  class InitializeTask;
-  class UpdateTemporaryQuotaOverrideTask;
-  class GetPersistentHostQuotaTask;
-  class UpdatePersistentHostQuotaTask;
-  class GetLRUOriginTask;
-  class DeleteOriginInfo;
-  class InitializeTemporaryOriginsInfoTask;
-  class UpdateAccessTimeTask;
-  class UpdateModifiedTimeTask;
-  class GetModifiedSinceTask;
-
   class GetUsageInfoTask;
   class UsageAndQuotaDispatcherTask;
   class UsageAndQuotaDispatcherTaskForTemporary;
   class UsageAndQuotaDispatcherTaskForPersistent;
+  class UsageAndQuotaDispatcherTaskForSyncable;
   class UsageAndQuotaDispatcherTaskForTemporaryGlobal;
 
   class OriginDataDeleter;
   class HostDataDeleter;
 
-  class AvailableSpaceQueryTask;
-  class DumpQuotaTableTask;
-  class DumpOriginInfoTableTask;
+  class GetModifiedSinceHelper;
+  class DumpQuotaTableHelper;
+  class DumpOriginInfoTableHelper;
 
   typedef QuotaDatabase::QuotaTableEntry QuotaTableEntry;
   typedef QuotaDatabase::OriginInfoTableEntry OriginInfoTableEntry;
   typedef std::vector<QuotaTableEntry> QuotaTableEntries;
   typedef std::vector<OriginInfoTableEntry> OriginInfoTableEntries;
+
+  // Function pointer type used to store the function which returns the
+  // available disk space for the disk containing the given FilePath.
+  typedef int64 (*GetAvailableDiskSpaceFn)(const FilePath&);
 
   typedef base::Callback<void(const QuotaTableEntries&)>
       DumpQuotaTableCallback;
@@ -254,8 +251,8 @@ class QuotaManager : public QuotaTaskObserver,
       DumpOriginInfoTableCallback;
 
   struct EvictionContext {
-    EvictionContext() : evicted_type(kStorageTypeUnknown) {}
-    virtual ~EvictionContext() {}
+    EvictionContext();
+    virtual ~EvictionContext();
     GURL evicted_origin;
     StorageType evicted_type;
 
@@ -314,12 +311,6 @@ class QuotaManager : public QuotaTaskObserver,
   void DeleteOriginFromDatabase(const GURL& origin, StorageType type);
 
   void DidOriginDataEvicted(QuotaStatusCode status);
-  void DidGetGlobalUsageAndQuotaForEviction(QuotaStatusCode status,
-                                            StorageType type,
-                                            int64 usage,
-                                            int64 unlimited_usage,
-                                            int64 quota,
-                                            int64 available_space);
 
   void ReportHistogram();
   void DidGetTemporaryGlobalUsageForHistogram(StorageType type,
@@ -340,13 +331,36 @@ class QuotaManager : public QuotaTaskObserver,
   virtual void GetUsageAndQuotaForEviction(
       const GetUsageAndQuotaForEvictionCallback& callback) OVERRIDE;
 
-  void DidRunInitializeTask();
+  void DidSetTemporaryGlobalOverrideQuota(const QuotaCallback& callback,
+                                          const int64* new_quota,
+                                          bool success);
+  void DidGetPersistentHostQuota(const HostQuotaCallback& callback,
+                                 const std::string& host,
+                                 const int64* quota,
+                                 bool success);
+  void DidSetPersistentHostQuota(const std::string& host,
+                                 const HostQuotaCallback& callback,
+                                 const int64* new_quota,
+                                 bool success);
+  void DidInitialize(int64* temporary_quota_override,
+                     int64* desired_available_space,
+                     bool success);
+  void DidGetLRUOrigin(const GURL* origin,
+                       bool success);
   void DidGetInitialTemporaryGlobalQuota(QuotaStatusCode status,
                                          StorageType type,
                                          int64 quota_unused);
-  void DidGetDatabaseLRUOrigin(const GURL& origin);
+  void DidInitializeTemporaryOriginsInfo(bool success);
+  void DidGetAvailableSpace(const AvailableSpaceCallback& callback,
+                            int64 space);
+  void DidDatabaseWork(bool success);
 
   void DeleteOnCorrectThread() const;
+
+  void PostTaskAndReplyWithResultForDBThread(
+      const tracked_objects::Location& from_here,
+      const base::Callback<bool(QuotaDatabase*)>& task,
+      const base::Callback<void(bool)>& reply);
 
   const bool is_incognito_;
   const FilePath profile_path_;
@@ -365,6 +379,7 @@ class QuotaManager : public QuotaTaskObserver,
 
   scoped_ptr<UsageTracker> temporary_usage_tracker_;
   scoped_ptr<UsageTracker> persistent_usage_tracker_;
+  scoped_ptr<UsageTracker> syncable_usage_tracker_;
   // TODO(michaeln): Need a way to clear the cache, drop and
   // reinstantiate the trackers when they're not handling requests.
 
@@ -387,6 +402,11 @@ class QuotaManager : public QuotaTaskObserver,
 
   base::WeakPtrFactory<QuotaManager> weak_factory_;
   base::RepeatingTimer<QuotaManager> histogram_timer_;
+
+  // Pointer to the function used to get the available disk space. This is
+  // overwritten by QuotaManagerTest in order to attain a deterministic reported
+  // value. The default value points to base::SysInfo::AmountOfFreeDiskSpace.
+  GetAvailableDiskSpaceFn get_disk_space_fn_;
 
   DISALLOW_COPY_AND_ASSIGN(QuotaManager);
 };

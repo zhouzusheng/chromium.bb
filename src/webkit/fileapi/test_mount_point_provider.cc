@@ -10,10 +10,11 @@
 
 #include "base/file_util.h"
 #include "base/sequenced_task_runner.h"
+#include "webkit/fileapi/file_observers.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
-#include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/local_file_system_operation.h"
 #include "webkit/fileapi/local_file_util.h"
 #include "webkit/fileapi/native_file_util.h"
 #include "webkit/fileapi/sandbox_file_stream_writer.h"
@@ -21,15 +22,15 @@
 
 namespace fileapi {
 
-namespace {
-
 // This only supports single origin.
-class TestFileSystemQuotaUtil : public FileSystemQuotaUtil {
+class TestMountPointProvider::QuotaUtil
+    : public FileSystemQuotaUtil,
+      public FileUpdateObserver {
  public:
-  explicit TestFileSystemQuotaUtil(base::SequencedTaskRunner* task_runner)
-      : FileSystemQuotaUtil(task_runner), usage_(0) {}
-  virtual ~TestFileSystemQuotaUtil() {}
+  QuotaUtil() : usage_(0) {}
+  virtual ~QuotaUtil() {}
 
+  // FileSystemQuotaUtil overrides.
   virtual void GetOriginsForTypeOnFileThread(
       FileSystemType type,
       std::set<GURL>* origins) OVERRIDE {
@@ -47,44 +48,32 @@ class TestFileSystemQuotaUtil : public FileSystemQuotaUtil {
       FileSystemType type) OVERRIDE {
     return usage_;
   }
-  virtual void NotifyOriginWasAccessedOnIOThread(
-      quota::QuotaManagerProxy* proxy,
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE {
-    // Do nothing.
-  }
-  virtual void UpdateOriginUsageOnFileThread(
-      quota::QuotaManagerProxy* proxy,
-      const GURL& origin_url,
-      FileSystemType type,
-      int64 delta) OVERRIDE {
-    usage_ += delta;
-  }
-  virtual void StartUpdateOriginOnFileThread(
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE {
-    // Do nothing.
-  }
-  virtual void EndUpdateOriginOnFileThread(
-      const GURL& origin_url,
-      FileSystemType type) OVERRIDE {}
   virtual void InvalidateUsageCache(const GURL& origin_url,
                                     FileSystemType type) OVERRIDE {
     // Do nothing.
   }
 
+  // FileUpdateObserver overrides.
+  virtual void OnStartUpdate(const FileSystemURL& url) OVERRIDE {}
+  virtual void OnUpdate(const FileSystemURL& url, int64 delta) OVERRIDE {
+    usage_ += delta;
+  }
+  virtual void OnEndUpdate(const FileSystemURL& url) OVERRIDE {}
+
  private:
   int64 usage_;
 };
-
-}  // namespace
 
 TestMountPointProvider::TestMountPointProvider(
     base::SequencedTaskRunner* task_runner,
     const FilePath& base_path)
     : base_path_(base_path),
+      task_runner_(task_runner),
       local_file_util_(new LocalFileUtil()),
-      quota_util_(new TestFileSystemQuotaUtil(task_runner)) {
+      quota_util_(new QuotaUtil) {
+  UpdateObserverList::Source source;
+  source.AddObserver(quota_util_.get(), task_runner_);
+  observers_ = UpdateObserverList(source);
 }
 
 TestMountPointProvider::~TestMountPointProvider() {
@@ -114,9 +103,8 @@ FilePath TestMountPointProvider::GetFileSystemRootPathOnFileThread(
   return success ? base_path_ : FilePath();
 }
 
-bool TestMountPointProvider::IsAccessAllowed(
-    const GURL& origin_url, FileSystemType type, const FilePath& virtual_path) {
-  return type == fileapi::kFileSystemTypeTest;
+bool TestMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
+  return url.type() == fileapi::kFileSystemTypeTest;
 }
 
 bool TestMountPointProvider::IsRestrictedFileName(
@@ -124,7 +112,7 @@ bool TestMountPointProvider::IsRestrictedFileName(
   return false;
 }
 
-FileSystemFileUtil* TestMountPointProvider::GetFileUtil() {
+FileSystemFileUtil* TestMountPointProvider::GetFileUtil(FileSystemType type) {
   return local_file_util_.get();
 }
 
@@ -133,31 +121,48 @@ FilePath TestMountPointProvider::GetPathForPermissionsCheck(
   return base_path_.Append(virtual_path);
 }
 
-FileSystemOperationInterface*
-TestMountPointProvider::CreateFileSystemOperation(
-    const GURL& origin_url,
-    FileSystemType file_system_type,
-    const FilePath& virtual_path,
-    FileSystemContext* context) const {
-  return new FileSystemOperation(context);
+FileSystemOperation* TestMountPointProvider::CreateFileSystemOperation(
+    const FileSystemURL& url,
+    FileSystemContext* context,
+    base::PlatformFileError* error_code) const {
+  scoped_ptr<FileSystemOperationContext> operation_context(
+      new FileSystemOperationContext(context));
+  operation_context->set_update_observers(observers_);
+  return new LocalFileSystemOperation(context, operation_context.Pass());
 }
 
 webkit_blob::FileStreamReader* TestMountPointProvider::CreateFileStreamReader(
-    const GURL& url,
+    const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
   return new FileSystemFileStreamReader(context, url, offset);
 }
 
 fileapi::FileStreamWriter* TestMountPointProvider::CreateFileStreamWriter(
-    const GURL& url,
+    const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return new SandboxFileStreamWriter(context, url, offset);
+  return new SandboxFileStreamWriter(context, url, offset, observers_);
 }
 
 FileSystemQuotaUtil* TestMountPointProvider::GetQuotaUtil() {
   return quota_util_.get();
+}
+
+void TestMountPointProvider::DeleteFileSystem(
+    const GURL& origin_url,
+    FileSystemType type,
+    FileSystemContext* context,
+    const DeleteFileSystemCallback& callback) {
+  // This won't be called unless we add test code that opens a test
+  // filesystem by OpenFileSystem.
+  NOTREACHED();
+  callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
+}
+
+const UpdateObserverList* TestMountPointProvider::GetUpdateObservers(
+    FileSystemType type) const {
+  return &observers_;
 }
 
 }  // namespace fileapi

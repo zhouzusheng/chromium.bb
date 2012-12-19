@@ -25,18 +25,18 @@
 
 #include "CachePolicy.h"
 #include "FrameLoaderTypes.h"
-#include "PlatformString.h"
 #include "PurgePriority.h"
-#include "ResourceLoaderOptions.h"
 #include "ResourceLoadPriority.h"
+#include "ResourceLoaderOptions.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
 #include "Timer.h"
+#include <time.h>
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/Vector.h>
-#include <time.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -115,7 +115,7 @@ public:
     void addClient(CachedResourceClient*);
     void removeClient(CachedResourceClient*);
     bool hasClients() const { return !m_clients.isEmpty() || !m_clientsAwaitingCallback.isEmpty(); }
-    void deleteIfPossible();
+    bool deleteIfPossible();
 
     enum PreloadResult {
         PreloadNotReferenced,
@@ -128,6 +128,7 @@ public:
     virtual void didAddClient(CachedResourceClient*);
     virtual void didRemoveClient(CachedResourceClient*) { }
     virtual void allClientsRemoved() { }
+    void destroyDecodedDataIfNeeded();
 
     unsigned count() const { return m_clients.size(); }
 
@@ -143,6 +144,8 @@ public:
 
     bool isLoading() const { return m_loading; }
     void setLoading(bool b) { m_loading = b; }
+
+    SubresourceLoader* loader() { return m_loader.get(); }
 
     virtual bool isImage() const { return false; }
     bool ignoreForRequestCount() const
@@ -204,6 +207,7 @@ public:
 
     bool wasCanceled() const { return m_status == Canceled; }
     bool errorOccurred() const { return (m_status == LoadError || m_status == DecodeError); }
+    bool loadFailedOrCanceled() { return m_status == Canceled || m_status == LoadError; }
 
     bool sendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
     
@@ -211,6 +215,9 @@ public:
 
     void setOwningCachedResourceLoader(CachedResourceLoader* cachedResourceLoader) { m_owningCachedResourceLoader = cachedResourceLoader; }
     
+    // MemoryCache does not destroy the decoded data of a CachedResource if the decoded data will be likely used.
+    virtual bool likelyToBeUsedSoon() { return false; }
+
     bool isPreloaded() const { return m_preloadCount; }
     void increasePreloadCount() { ++m_preloadCount; }
     void decreasePreloadCount() { ASSERT(m_preloadCount); --m_preloadCount; }
@@ -245,8 +252,10 @@ public:
     void setLoadFinishTime(double finishTime) { m_loadFinishTime = finishTime; }
     double loadFinishTime() const { return m_loadFinishTime; }
 
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
 protected:
-    void checkNotify();
+    virtual void checkNotify();
 
     void setEncodedSize(unsigned);
     void setDecodedSize(unsigned);
@@ -283,9 +292,11 @@ protected:
 
     RefPtr<SharedBuffer> m_data;
     OwnPtr<PurgeableBuffer> m_purgeableData;
+    Timer<CachedResource> m_decodedDataDeletionTimer;
 
 private:
     bool addClientToSet(CachedResourceClient*);
+    void decodedDataDeletionTimerFired(Timer<CachedResource>*);
 
     virtual PurgePriority purgePriority() const { return PurgeDefault; }
 

@@ -30,6 +30,7 @@
 #include "Attribute.h"
 #include "Document.h"
 #include "ExceptionCode.h"
+#include "HTMLDataListElement.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
 #include "HTMLSelectElement.h"
@@ -187,6 +188,12 @@ int HTMLOptionElement::index() const
 
 void HTMLOptionElement::parseAttribute(const Attribute& attribute)
 {
+#if ENABLE(DATALIST_ELEMENT)
+    if (attribute.name() == valueAttr) {
+        if (HTMLDataListElement* dataList = ownerDataListElement())
+            dataList->optionElementChildrenChanged();
+    } else
+#endif
     if (attribute.name() == disabledAttr) {
         bool oldDisabled = m_disabled;
         m_disabled = !attribute.isNull();
@@ -245,14 +252,33 @@ void HTMLOptionElement::setSelectedState(bool selected)
 
     m_isSelected = selected;
     setNeedsStyleRecalc();
+
+    if (HTMLSelectElement* select = ownerSelectElement())
+        select->invalidateSelectedItems();
 }
 
 void HTMLOptionElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
+#if ENABLE(DATALIST_ELEMENT)
+    if (HTMLDataListElement* dataList = ownerDataListElement())
+        dataList->optionElementChildrenChanged();
+    else
+#endif
     if (HTMLSelectElement* select = ownerSelectElement())
         select->optionElementChildrenChanged();
     HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
+
+#if ENABLE(DATALIST_ELEMENT)
+HTMLDataListElement* HTMLOptionElement::ownerDataListElement() const
+{
+    for (ContainerNode* parent = parentNode(); parent ; parent = parent->parentNode()) {
+        if (parent->hasTagName(datalistTag))
+            return static_cast<HTMLDataListElement*>(parent);
+    }
+    return 0;
+}
+#endif
 
 HTMLSelectElement* HTMLOptionElement::ownerSelectElement() const
 {
@@ -303,7 +329,14 @@ String HTMLOptionElement::textIndentedToRespectGroupLabel() const
 
 bool HTMLOptionElement::disabled() const
 {
-    return ownElementDisabled() || (parentNode() && parentNode()->isHTMLElement() && static_cast<HTMLElement*>(parentNode())->disabled());
+    if (ownElementDisabled())
+        return true;
+
+    if (!parentNode() || !parentNode()->isHTMLElement())
+        return false;
+
+    HTMLElement* parentElement = static_cast<HTMLElement*>(parentNode());
+    return parentElement->hasTagName(optgroupTag) && parentElement->disabled();
 }
 
 Node::InsertionNotificationRequest HTMLOptionElement::insertedInto(ContainerNode* insertionPoint)

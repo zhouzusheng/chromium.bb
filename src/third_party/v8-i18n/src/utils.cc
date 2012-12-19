@@ -29,6 +29,18 @@ void Utils::StrNCopy(char* dest, int length, const char* src) {
 }
 
 // static
+bool Utils::V8StringToUnicodeString(const v8::Handle<v8::Value>& input,
+				    icu::UnicodeString* output) {
+  v8::String::Utf8Value utf8_value(input);
+
+  if (*utf8_value == NULL) return false;
+
+  output->setTo(icu::UnicodeString::fromUTF8(*utf8_value));
+
+  return true;
+}
+
+// static
 bool Utils::ExtractStringSetting(const v8::Handle<v8::Object>& settings,
                                  const char* setting,
                                  icu::UnicodeString* result) {
@@ -43,10 +55,7 @@ bool Utils::ExtractStringSetting(const v8::Handle<v8::Object>& settings,
   // No need to check if |value| is empty because it's taken care of
   // by TryCatch above.
   if (!value->IsUndefined() && !value->IsNull() && value->IsString()) {
-    v8::String::Utf8Value utf8_value(value);
-    if (*utf8_value == NULL) return false;
-    result->setTo(icu::UnicodeString::fromUTF8(*utf8_value));
-    return true;
+    return V8StringToUnicodeString(value, result);
   }
   return false;
 }

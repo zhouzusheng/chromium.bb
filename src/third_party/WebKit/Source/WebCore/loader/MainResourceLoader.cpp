@@ -57,7 +57,7 @@
 #include "PluginDatabase.h"
 #endif
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
 #include "WebCoreSystemInterface.h"
 #endif
 
@@ -76,7 +76,7 @@ MainResourceLoader::MainResourceLoader(Frame* frame)
     , m_loadingMultipartContent(false)
     , m_waitingForContentPolicy(false)
     , m_timeOfLastDataReceived(0.0)
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     , m_filter(0)
 #endif
 {
@@ -84,7 +84,7 @@ MainResourceLoader::MainResourceLoader(Frame* frame)
 
 MainResourceLoader::~MainResourceLoader()
 {
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     ASSERT(!m_filter);
 #endif
 }
@@ -134,7 +134,7 @@ void MainResourceLoader::didCancel(const ResourceError& error)
     // like calling DOMWindow::print(), during which a half-canceled load could try to finish.
     documentLoader()->mainReceivedError(error);
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (m_filter) {
         wkFilterRelease(m_filter);
         m_filter = 0;
@@ -204,6 +204,11 @@ void MainResourceLoader::willSendRequest(ResourceRequest& newRequest, const Reso
     // reference to this object; one example of this is 3266216.
     RefPtr<MainResourceLoader> protect(this);
 
+    if (!frameLoader()->checkIfFormActionAllowedByCSP(newRequest.url())) {
+        cancel();
+        return;
+    }
+
     ASSERT(documentLoader()->timing()->fetchStart());
     if (!redirectResponse.isNull()) {
         // If the redirecting url is not allowed to display content from the target origin,
@@ -266,7 +271,11 @@ void MainResourceLoader::continueAfterContentPolicy(PolicyAction contentPolicy, 
     switch (contentPolicy) {
     case PolicyUse: {
         // Prevent remote web archives from loading because they can claim to be from any domain and thus avoid cross-domain security checks (4120255).
-        bool isRemoteWebArchive = (equalIgnoringCase("application/x-webarchive", mimeType) || equalIgnoringCase("multipart/related", mimeType))
+        bool isRemoteWebArchive = (equalIgnoringCase("application/x-webarchive", mimeType)
+#if PLATFORM(GTK)
+                                   || equalIgnoringCase("message/rfc822", mimeType)
+#endif
+                                   || equalIgnoringCase("multipart/related", mimeType))
             && !m_substituteData.isValid() && !SchemeRegistry::shouldTreatURLSchemeAsLocal(url.protocol());
         if (!frameLoader()->client()->canShowMIMEType(mimeType) || isRemoteWebArchive) {
             frameLoader()->policyChecker()->cannotShowMIMEType(r);
@@ -352,29 +361,6 @@ void MainResourceLoader::continueAfterContentPolicy(PolicyAction policy)
     deref(); // balances ref in didReceiveResponse
 }
 
-#if PLATFORM(QT)
-void MainResourceLoader::substituteMIMETypeFromPluginDatabase(const ResourceResponse& r)
-{
-    if (!m_frame->loader()->subframeLoader()->allowPlugins(NotAboutToInstantiatePlugin))
-        return;
-
-    String filename = r.url().lastPathComponent();
-    if (filename.endsWith('/'))
-        return;
-
-    size_t extensionPos = filename.reverseFind('.');
-    if (extensionPos == notFound)
-        return;
-
-    String extension = filename.substring(extensionPos + 1);
-    String mimeType = PluginDatabase::installedPlugins()->MIMETypeForExtension(extension);
-    if (!mimeType.isEmpty()) {
-        ResourceResponse* response = const_cast<ResourceResponse*>(&r);
-        response->setMimeType(mimeType);
-    }
-}
-#endif
-
 void MainResourceLoader::didReceiveResponse(const ResourceResponse& r)
 {
     if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForMainResponse(request(), r))
@@ -385,8 +371,8 @@ void MainResourceLoader::didReceiveResponse(const ResourceResponse& r)
         String content = it->second;
         if (m_frame->loader()->shouldInterruptLoadForXFrameOptions(content, r.url())) {
             InspectorInstrumentation::continueAfterXFrameOptionsDenied(m_frame.get(), documentLoader(), identifier(), r);
-            DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to display document because display forbidden by X-Frame-Options.\n"));
-            m_frame->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, consoleMessage);
+            DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Refused to display document because display forbidden by X-Frame-Options.\n")));
+            m_frame->document()->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, consoleMessage);
 
             cancel();
             return;
@@ -397,11 +383,6 @@ void MainResourceLoader::didReceiveResponse(const ResourceResponse& r)
     // See <rdar://problem/6304600> for more details.
 #if !USE(CF)
     ASSERT(shouldLoadAsEmptyDocument(r.url()) || !defersLoading());
-#endif
-
-#if PLATFORM(QT)
-    if (r.mimeType() == "application/octet-stream")
-        substituteMIMETypeFromPluginDatabase(r);
 #endif
 
     if (m_loadingMultipartContent) {
@@ -441,7 +422,7 @@ void MainResourceLoader::didReceiveResponse(const ResourceResponse& r)
     }
 #endif
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (r.url().protocolIs("https") && wkFilterIsManagedSession())
         m_filter = wkFilterCreateInstance(r.nsURLResponse());
 #endif
@@ -471,7 +452,7 @@ void MainResourceLoader::didReceiveData(const char* data, int length, long long 
     ASSERT(!defersLoading());
 #endif
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (m_filter) {
         ASSERT(!wkFilterWasBlocked(m_filter));
         const char* blockedData = wkFilterAddData(m_filter, data, &length);
@@ -497,7 +478,7 @@ void MainResourceLoader::didReceiveData(const char* data, int length, long long 
 
     ResourceLoader::didReceiveData(data, length, encodedDataLength, allAtOnce);
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (WebFilterEvaluator *filter = m_filter) {
         // If we got here, it means we know if we were blocked or not. If we were blocked, we're
         // done loading the page altogether. Either way, we don't need the filter anymore.
@@ -524,7 +505,7 @@ void MainResourceLoader::didFinishLoading(double finishTime)
     RefPtr<MainResourceLoader> protect(this);
     RefPtr<DocumentLoader> dl = documentLoader();
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (m_filter) {
         int length;
         const char* data = wkFilterDataComplete(m_filter, &length);
@@ -549,7 +530,7 @@ void MainResourceLoader::didFinishLoading(double finishTime)
 
 void MainResourceLoader::didFail(const ResourceError& error)
 {
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
     if (m_filter) {
         wkFilterRelease(m_filter);
         m_filter = 0;
@@ -566,6 +547,15 @@ void MainResourceLoader::didFail(const ResourceError& error)
 #endif
     
     receivedError(error);
+}
+
+void MainResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
+    ResourceLoader::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_initialRequest);
+    info.addMember(m_substituteData);
+    info.addMember(m_dataLoadTimer);
 }
 
 void MainResourceLoader::handleEmptyLoad(const KURL& url, bool forURLScheme)

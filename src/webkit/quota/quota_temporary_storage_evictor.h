@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_QUOTA_QUOTA_TEMPORARY_STORAGE_EVICTOR_H_
 #define WEBKIT_QUOTA_QUOTA_TEMPORARY_STORAGE_EVICTOR_H_
-#pragma once
 
 #include <map>
 #include <string>
@@ -47,15 +46,7 @@ class QuotaTemporaryStorageEvictor : public base::NonThreadSafe {
   };
 
   struct EvictionRoundStatistics {
-    EvictionRoundStatistics()
-        : in_round(false),
-          is_initialized(false),
-          usage_overage_at_round(-1),
-          diskspace_shortage_at_round(-1),
-          usage_on_beginning_of_round(-1),
-          usage_on_end_of_round(-1),
-          num_evicted_origins_in_round(0) {
-    }
+    EvictionRoundStatistics();
 
     bool in_round;
     bool is_initialized;

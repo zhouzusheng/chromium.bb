@@ -167,6 +167,9 @@ void GLES2Finish() {
 void GLES2Flush() {
   gles2::GetGLContext()->Flush();
 }
+void GLES2ShallowFlushCHROMIUM() {
+  gles2::GetGLContext()->ShallowFlushCHROMIUM();
+}
 void GLES2FramebufferRenderbuffer(
     GLenum target, GLenum attachment, GLenum renderbuffertarget,
     GLuint renderbuffer) {
@@ -541,6 +544,15 @@ void GLES2GetQueryivEXT(GLenum target, GLenum pname, GLint* params) {
 void GLES2GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* params) {
   gles2::GetGLContext()->GetQueryObjectuivEXT(id, pname, params);
 }
+void GLES2InsertEventMarkerEXT(GLsizei length, const GLchar* marker) {
+  gles2::GetGLContext()->InsertEventMarkerEXT(length, marker);
+}
+void GLES2PushGroupMarkerEXT(GLsizei length, const GLchar* marker) {
+  gles2::GetGLContext()->PushGroupMarkerEXT(length, marker);
+}
+void GLES2PopGroupMarkerEXT() {
+  gles2::GetGLContext()->PopGroupMarkerEXT();
+}
 void GLES2SwapBuffers() {
   gles2::GetGLContext()->SwapBuffers();
 }
@@ -651,11 +663,9 @@ void GLES2ProduceTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
 void GLES2ConsumeTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
   gles2::GetGLContext()->ConsumeTextureCHROMIUM(target, mailbox);
 }
-void GLES2GetUniformLocationsCHROMIUM(
-    const GLUniformDefinitionCHROMIUM* uniforms, GLsizei count,
-    GLsizei max_locations, GLint* locations) {
-  gles2::GetGLContext()->GetUniformLocationsCHROMIUM(
-      uniforms, count, max_locations, locations);
+void GLES2BindUniformLocationCHROMIUM(
+    GLuint program, GLint location, const char* name) {
+  gles2::GetGLContext()->BindUniformLocationCHROMIUM(program, location, name);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_C_LIB_AUTOGEN_H_

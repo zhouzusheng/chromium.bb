@@ -4,7 +4,6 @@
 
 #ifndef UI_BASE_DRAGDROP_OS_EXCHANGE_DATA_PROVIDER_WIN_H_
 #define UI_BASE_DRAGDROP_OS_EXCHANGE_DATA_PROVIDER_WIN_H_
-#pragma once
 
 #include <objidl.h>
 #include <shlobj.h>
@@ -16,7 +15,6 @@
 // being binary compatible.
 #ifndef __IDataObjectAsyncCapability_FWD_DEFINED__
 #define IDataObjectAsyncCapability IAsyncOperation
-#define IID_IDataObjectAsyncCapability IID_IAsyncOperation
 #endif
 
 #include "base/win/scoped_comptr.h"

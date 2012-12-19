@@ -27,7 +27,15 @@ CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
       last_put_sent_(0),
       commands_issued_(0),
       usable_(true),
+      context_lost_(false),
       last_flush_time_(0) {
+}
+
+bool CommandBufferHelper::IsContextLost() {
+  if (!context_lost_) {
+    context_lost_ = error::IsError(command_buffer()->GetLastError());
+  }
+  return context_lost_;
 }
 
 bool CommandBufferHelper::AllocateRingBuffer() {
@@ -74,12 +82,16 @@ bool CommandBufferHelper::AllocateRingBuffer() {
   return true;
 }
 
-void CommandBufferHelper::FreeRingBuffer() {
-  GPU_CHECK_EQ(put_, get_offset());
+void CommandBufferHelper::FreeResources() {
   if (HaveRingBuffer()) {
     command_buffer_->DestroyTransferBuffer(ring_buffer_id_);
     ring_buffer_id_ = -1;
   }
+}
+
+void CommandBufferHelper::FreeRingBuffer() {
+  GPU_CHECK_EQ(put_, get_offset());
+  FreeResources();
 }
 
 bool CommandBufferHelper::Initialize(int32 ring_buffer_size) {
@@ -88,6 +100,7 @@ bool CommandBufferHelper::Initialize(int32 ring_buffer_size) {
 }
 
 CommandBufferHelper::~CommandBufferHelper() {
+  FreeResources();
 }
 
 bool CommandBufferHelper::FlushSync() {

@@ -98,6 +98,7 @@ public:
     WEBKIT_EXPORT WebNode nextSibling() const;
     WEBKIT_EXPORT bool hasChildNodes() const;
     WEBKIT_EXPORT WebNodeList childNodes();
+    WEBKIT_EXPORT bool appendChild(const WebNode& child);
     WEBKIT_EXPORT WebString createMarkup() const;
     WEBKIT_EXPORT bool isLink() const;
     WEBKIT_EXPORT bool isTextNode() const;
@@ -111,6 +112,7 @@ public:
     WEBKIT_EXPORT void simulateClick();
     WEBKIT_EXPORT WebNodeList getElementsByTagName(const WebString&) const;
     WEBKIT_EXPORT WebElement rootEditableElement() const;
+    WEBKIT_EXPORT bool focused() const;
 
     // Returns true if the node has a non-empty bounding box in layout.
     // This does not 100% guarantee the user can see it, but is pretty close.

@@ -46,6 +46,7 @@
 #define GL_UNPACK_FLIP_Y_CHROMIUM             0x9240
 
 #define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM     0x9241
+#define GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM   0x9242
 #define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM 0x9243
 
 // GL_ANGLE_pack_reverse_row_order
@@ -85,6 +86,9 @@
 // GL_CHROMIUM_command_buffer_query
 #define GL_COMMANDS_ISSUED_CHROMIUM            0x84F2
 
+/* GL_CHROMIUM_get_error_query */
+#define GL_GET_ERROR_QUERY_CHROMIUM            0x84F3
+
 // GL_OES_texure_3D
 #define GL_SAMPLER_3D_OES                      0x8B5F
 
@@ -98,6 +102,13 @@
 #define GL_DEPTH24_STENCIL8_OES                0x88F0
 
 #define GL_GLEXT_PROTOTYPES 1
+
+// GL_ARB_get_program_binary
+#define PROGRAM_BINARY_RETRIEVABLE_HINT        0x8257
+// GL_OES_get_program_binary
+#define GL_PROGRAM_BINARY_LENGTH_OES           0x8741
+#define GL_NUM_PROGRAM_BINARY_FORMATS_OES      0x87FE
+#define GL_PROGRAM_BINARY_FORMATS_OES          0x87FF
 
 // Define this for extra GL error debugging (slower).
 // #define GL_ERROR_DEBUGGING

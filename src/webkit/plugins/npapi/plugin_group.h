@@ -4,7 +4,6 @@
 
 #ifndef WEBKIT_PLUGINS_NPAPI_PLUGIN_GROUP_H_
 #define WEBKIT_PLUGINS_NPAPI_PLUGIN_GROUP_H_
-#pragma once
 
 #include <string>
 #include <vector>
@@ -85,10 +84,6 @@ class WEBKIT_PLUGINS_EXPORT PluginGroup {
   // Check if the group has no plugins. Could happen after a reload if the plug-
   // in has disappeared from the pc (or in the process of updating).
   bool IsEmpty() const;
-
-  // Parse a version string as used by a plug-in. This method is more lenient
-  // in accepting weird version strings than Version::GetFromString().
-  static Version* CreateVersionFromString(const string16& version_string);
 
   const std::vector<webkit::WebPluginInfo>& web_plugin_infos() const {
     return web_plugin_infos_;

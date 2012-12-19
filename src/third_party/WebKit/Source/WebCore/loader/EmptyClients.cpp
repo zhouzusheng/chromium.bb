@@ -28,6 +28,7 @@
 #include "config.h"
 #include "EmptyClients.h"
 
+#include "DateTimeChooser.h"
 #include "DocumentLoader.h"
 #include "FileChooser.h"
 #include "FormState.h"
@@ -45,9 +46,11 @@
 
 namespace WebCore {
 
-#if ENABLE(SVG) || ENABLE(PAGE_POPUP)
 void fillWithEmptyClients(Page::PageClients& pageClients)
 {
+    static ChromeClient* dummyChromeClient = adoptPtr(new EmptyChromeClient).leakPtr();
+    pageClients.chromeClient = dummyChromeClient;
+
 #if ENABLE(CONTEXT_MENUS)
     static ContextMenuClient* dummyContextMenuClient = adoptPtr(new EmptyContextMenuClient).leakPtr();
     pageClients.contextMenuClient = dummyContextMenuClient;
@@ -64,7 +67,6 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
     static InspectorClient* dummyInspectorClient = adoptPtr(new EmptyInspectorClient).leakPtr();
     pageClients.inspectorClient = dummyInspectorClient;
 }
-#endif
 
 class EmptyPopupMenu : public PopupMenu {
 public:
@@ -97,6 +99,13 @@ PassRefPtr<SearchPopupMenu> EmptyChromeClient::createSearchPopupMenu(PopupMenuCl
 
 #if ENABLE(INPUT_TYPE_COLOR)
 PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClient*, const Color&)
+{
+    return nullptr;
+}
+#endif
+
+#if ENABLE(CALENDAR_PICKER)
+PassOwnPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
     return nullptr;
 }

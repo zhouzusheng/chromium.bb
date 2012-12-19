@@ -161,6 +161,7 @@ public:
 
     virtual void setPrivateBrowsingMode(bool) { }
 
+    virtual String engineDescription() const { return emptyString(); }
 
 #if ENABLE(WEB_AUDIO)
     virtual AudioSourceProvider* audioSourceProvider() { return 0; }
@@ -172,7 +173,9 @@ public:
     virtual bool sourceRemoveId(const String& id) { return false; }
     virtual bool sourceAppend(const String& id, const unsigned char* data, unsigned length) { return false; }
     virtual bool sourceAbort(const String& id) { return false; }
+    virtual void sourceSetDuration(double) { }
     virtual void sourceEndOfStream(MediaPlayer::EndOfStreamStatus) { };
+    virtual bool sourceSetTimestampOffset(const String& id, double offset) { return false; }
 #endif
 
 #if ENABLE(ENCRYPTED_MEDIA)

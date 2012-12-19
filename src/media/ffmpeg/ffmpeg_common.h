@@ -28,6 +28,7 @@ MSVC_PUSH_DISABLE_WARNING(4244);
 #include <libavutil/avutil.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/log.h>
+#include <libavutil/imgutils.h>
 MSVC_POP_WARNING();
 }  // extern "C"
 
@@ -102,10 +103,6 @@ VideoCodec CodecIDToVideoCodec(CodecID codec_id);
 
 // Converts an FFmpeg audio codec ID into its corresponding supported codec id.
 AudioCodec CodecIDToAudioCodec(CodecID codec_id);
-
-// Calculates the duration of one frame based on the frame rate specified by
-// |config|.
-base::TimeDelta GetFrameDuration(const VideoDecoderConfig& config);
 
 // Closes & destroys all AVStreams in the context and then closes &
 // destroys the AVFormatContext.

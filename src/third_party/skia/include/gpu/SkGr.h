@@ -17,14 +17,12 @@
 #include "GrTypes.h"
 #include "GrContext.h"
 #include "GrFontScaler.h"
-#include "GrClipIterator.h"
 
 // skia headers
 #include "SkBitmap.h"
 #include "SkPath.h"
 #include "SkPoint.h"
 #include "SkRegion.h"
-#include "SkShader.h"
 #include "SkClipStack.h"
 
 #if (GR_DEBUG && defined(SK_RELEASE)) || (GR_RELEASE && defined(SK_DEBUG))
@@ -33,14 +31,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // Sk to Gr Type conversions
-
-GR_STATIC_ASSERT((int)GrSamplerState::kClamp_WrapMode == (int)SkShader::kClamp_TileMode);
-GR_STATIC_ASSERT((int)GrSamplerState::kRepeat_WrapMode ==(
-                 int)SkShader::kRepeat_TileMode);
-GR_STATIC_ASSERT((int)GrSamplerState::kMirror_WrapMode ==
-                 (int)SkShader::kMirror_TileMode);
-
-#define sk_tile_mode_to_grwrap(X) ((GrSamplerState::WrapMode)(X))
 
 GR_STATIC_ASSERT((int)kZero_GrBlendCoeff == (int)SkXfermode::kZero_Coeff);
 GR_STATIC_ASSERT((int)kOne_GrBlendCoeff  == (int)SkXfermode::kOne_Coeff);
@@ -68,65 +58,31 @@ GR_STATIC_ASSERT((int)SkPath::kDone_Verb  == (int)kEnd_PathCmd);
 
 #include "SkColorPriv.h"
 
-class SkGr {
-public:
-    /**
-     *  Convert the SkBitmap::Config to the corresponding PixelConfig, or
-     *  kUnknown_PixelConfig if the conversion cannot be done.
-     */
-    static GrPixelConfig BitmapConfig2PixelConfig(SkBitmap::Config);
+/**
+ *  Convert the SkBitmap::Config to the corresponding PixelConfig, or
+ *  kUnknown_PixelConfig if the conversion cannot be done.
+ */
+GrPixelConfig SkBitmapConfig2GrPixelConfig(SkBitmap::Config);
 
-    static GrColor SkColor2GrColor(SkColor c) {
-        SkPMColor pm = SkPreMultiplyColor(c);
-        unsigned r = SkGetPackedR32(pm);
-        unsigned g = SkGetPackedG32(pm);
-        unsigned b = SkGetPackedB32(pm);
-        unsigned a = SkGetPackedA32(pm);
-        return GrColorPackRGBA(r, g, b, a);
-    }
-};
+static inline GrColor SkColor2GrColor(SkColor c) {
+    SkPMColor pm = SkPreMultiplyColor(c);
+    unsigned r = SkGetPackedR32(pm);
+    unsigned g = SkGetPackedG32(pm);
+    unsigned b = SkGetPackedB32(pm);
+    unsigned a = SkGetPackedA32(pm);
+    return GrColorPackRGBA(r, g, b, a);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+GrTexture* GrLockCachedBitmapTexture(GrContext*,
+                                     const SkBitmap&,
+                                     const GrTextureParams*);
+
+void GrUnlockCachedBitmapTexture(GrTexture*);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Classes
-
-class SkGrClipIterator : public GrClipIterator {
-public:
-    SkGrClipIterator() { fClipStack = NULL;  fCurr = NULL; }
-    SkGrClipIterator(const SkClipStack& clipStack) { this->reset(clipStack); }
-
-    void reset(const SkClipStack& clipStack);
-
-    // overrides
-    virtual bool isDone() const SK_OVERRIDE { return NULL == fCurr; }
-    virtual void next() SK_OVERRIDE { fCurr = fIter.next(); }
-    virtual void rewind() SK_OVERRIDE { this->reset(*fClipStack); }
-    virtual GrClipType getType() const SK_OVERRIDE;
-
-    virtual SkRegion::Op getOp() const SK_OVERRIDE;
-
-    virtual bool getDoAA() const SK_OVERRIDE;
-
-    virtual void getRect(GrRect* rect) const SK_OVERRIDE {
-        if (!fCurr->fRect) {
-            rect->setEmpty();
-        } else {
-            *rect = *fCurr->fRect;
-        }
-    }
-
-    virtual const SkPath* getPath() SK_OVERRIDE {
-        return fCurr->fPath;
-    }
-
-    virtual GrPathFill getPathFill() const SK_OVERRIDE;
-
-private:
-    const SkClipStack*                  fClipStack;
-    SkClipStack::B2FIter                fIter;
-    // SkClipStack's auto advances on each get
-    // so we store the current pos here.
-    const SkClipStack::B2FIter::Clip*   fCurr;
-};
 
 class SkGlyphCache;
 
@@ -150,12 +106,5 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Helper functions
-
-GrContext::TextureCacheEntry sk_gr_create_bitmap_texture(GrContext* ctx,
-                                                uint64_t key,
-                                                const GrSamplerState* sampler,
-                                                const SkBitmap& bitmap);
-
 
 #endif

@@ -18,12 +18,9 @@
 
 struct SkIRect;
 struct SkRect;
-class SkColorTable;
 class SkPaint;
 class SkPixelRef;
 class SkRegion;
-class SkFlattenableReadBuffer;
-class SkFlattenableWriteBuffer;
 
 // This is an opaque class, not interpreted by skia
 class SkGpuTexture;
@@ -95,10 +92,10 @@ public:
     */
     bool empty() const { return 0 == fWidth || 0 == fHeight; }
 
-    /** Return true iff the bitmap has no pixels nor a pixelref. Note: this can
-        return true even if the dimensions of the bitmap are > 0 (see empty()).
+    /** Return true iff the bitmap has no pixelref. Note: this can return true even if the
+        dimensions of the bitmap are > 0 (see empty()).
     */
-    bool isNull() const { return NULL == fPixels && NULL == fPixelRef; }
+    bool isNull() const { return NULL == fPixelRef; }
 
     /** Return the config for the bitmap.
     */
@@ -172,7 +169,7 @@ public:
 
     /** Marks this bitmap as immutable, meaning that the contents of its
         pixels will not change for the lifetime of the bitmap and of the
-        underlying pixelref. This state can be set, but it cannot be 
+        underlying pixelref. This state can be set, but it cannot be
         cleared once it is set. This state propagates to all other bitmaps
         that share the same pixelref.
     */
@@ -191,11 +188,11 @@ public:
     */
     bool isVolatile() const;
 
-    /** Specify whether this bitmap is volatile. Bitmaps are not volatile by 
+    /** Specify whether this bitmap is volatile. Bitmaps are not volatile by
         default. Temporary bitmaps that are discarded after use should be
         marked as volatile. This provides a hint to the device that the bitmap
-        should not be cached. Providing this hint when appropriate can  
-        improve performance by avoiding unnecessary overhead and resource 
+        should not be cached. Providing this hint when appropriate can
+        improve performance by avoiding unnecessary overhead and resource
         consumption on the device.
     */
     void setIsVolatile(bool);
@@ -362,9 +359,9 @@ public:
     SkColorTable* getColorTable() const { return fColorTable; }
 
     /** Returns a non-zero, unique value corresponding to the pixels in our
-        pixelref (or raw pixels set via setPixels). Each time the pixels are
-        changed (and notifyPixelsChanged is called), a different generation ID
-        will be returned.
+        pixelref. Each time the pixels are changed (and notifyPixelsChanged
+        is called), a different generation ID will be returned. Finally, if
+        their is no pixelRef then zero is returned.
     */
     uint32_t getGenerationID() const;
 
@@ -398,7 +395,8 @@ public:
 
     /** Scroll (a subset of) the contents of this bitmap by dx/dy. If there are
         no pixels allocated (i.e. getPixels() returns null) the method will
-        still update the inval region (if present).
+        still update the inval region (if present). If the bitmap is immutable,
+        do nothing and return false.
 
         @param subset The subset of the bitmap to scroll/move. To scroll the
                       entire contents, specify [0, 0, width, height] or just
@@ -426,7 +424,7 @@ public:
      *  does not have any pixels (or has not be locked with lockPixels()).
      */
     SkColor getColor(int x, int y) const;
-    
+
     /** Returns the address of the specified pixel. This performs a runtime
         check to know the size of the pixels, and will return the same answer
         as the corresponding size-specific method (e.g. getAddr16). Since the
@@ -551,6 +549,13 @@ public:
     bool extractAlpha(SkBitmap* dst, const SkPaint* paint, Allocator* allocator,
                       SkIPoint* offset) const;
 
+    /** The following two functions provide the means to both flatten and
+        unflatten the bitmap AND its pixels into the provided buffer.
+        It is recommended that you do not call these functions directly,
+        but instead call the write/readBitmap functions on the respective
+        buffers as they can optimize the recording process and avoid recording
+        duplicate bitmaps and pixelRefs.
+     */
     void flatten(SkFlattenableWriteBuffer&) const;
     void unflatten(SkFlattenableReadBuffer&);
 
@@ -558,6 +563,8 @@ public:
 
     class Allocator : public SkRefCnt {
     public:
+        SK_DECLARE_INST_COUNT(Allocator)
+
         /** Allocate the pixel memory for the bitmap, given its dimensions and
             config. Return true on success, where success means either setPixels
             or setPixelRef was called. The pixels need not be locked when this
@@ -566,6 +573,8 @@ public:
             colortable should be left unchanged.
         */
         virtual bool allocPixelRef(SkBitmap*, SkColorTable*) = 0;
+    private:
+        typedef SkRefCnt INHERITED;
     };
 
     /** Subclass of Allocator that returns a pixelref that allocates its pixel
@@ -609,10 +618,6 @@ private:
     // or a cache of the returned value from fPixelRef->lockPixels()
     mutable void*       fPixels;
     mutable SkColorTable* fColorTable;    // only meaningful for kIndex8
-    // When there is no pixel ref (setPixels was called) we still need a
-    // gen id for SkDevice implementations that may cache a copy of the
-    // pixels (e.g. as a gpu texture)
-    mutable int         fRawPixelGenerationID;
 
     enum Flags {
         kImageIsOpaque_Flag     = 0x01,

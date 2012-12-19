@@ -43,11 +43,11 @@ public:
     static PassOwnPtr<PlatformGestureCurve> create(const FloatPoint& velocity);
     virtual ~WheelFlingPlatformGestureCurve();
 
-    virtual const char* debugName() const { return "WheelFling"; }
-    virtual bool apply(double time, PlatformGestureCurveTarget*);
+    virtual const char* debugName() const OVERRIDE;
+    virtual bool apply(double time, PlatformGestureCurveTarget*) OVERRIDE;
 
 private:
-    WheelFlingPlatformGestureCurve(const FloatPoint& velocity);
+    explicit WheelFlingPlatformGestureCurve(const FloatPoint& velocity);
 
     FloatPoint m_velocity;
     IntPoint m_cumulativeScroll;

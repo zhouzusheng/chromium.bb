@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple, Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012 Apple, Inc. All rights reserved.
  * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
@@ -48,6 +48,8 @@ class NSResponder;
 namespace WebCore {
 
     class AccessibilityObject;
+    class DateTimeChooser;
+    class DateTimeChooserClient;
     class Element;
     class FileChooser;
     class FileIconLoader;
@@ -63,11 +65,13 @@ namespace WebCore {
     class Page;
     class PagePopup;
     class PagePopupClient;
+    class PagePopupDriver;
     class PopupMenuClient;
     class SecurityOrigin;
     class GraphicsContext3D;
     class Widget;
 
+    struct DateTimeChooserParameters;
     struct FrameLoadRequest;
     struct ViewportArguments;
     struct WindowFeatures;
@@ -79,6 +83,10 @@ namespace WebCore {
 #if ENABLE(INPUT_TYPE_COLOR)
     class ColorChooser;
     class ColorChooserClient;
+#endif
+
+#if PLATFORM(WIN) && USE(AVFOUNDATION)
+    struct GraphicsDeviceAdapter;
 #endif
 
     class ChromeClient {
@@ -141,21 +149,6 @@ namespace WebCore {
 
         virtual void* webView() const = 0;
 
-#if ENABLE(REGISTER_PROTOCOL_HANDLER)
-        virtual void registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title) = 0;
-#endif
-
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
-        enum CustomHandlersState {
-            CustomHandlersNew,
-            CustomHandlersRegistered,
-            CustomHandlersDeclined
-        };
-
-        virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const String& baseURL, const String& url) = 0;
-        virtual void unregisterProtocolHandler(const String& scheme, const String& baseURL, const String& url) = 0;
-#endif
-
         virtual IntRect windowResizerRect() const = 0;
 
         // Methods used by HostWindow.
@@ -213,7 +206,7 @@ namespace WebCore {
         // the new cache.
         virtual void reachedApplicationCacheOriginQuota(SecurityOrigin*, int64_t totalSpaceNeeded) = 0;
 
-#if ENABLE(DASHBOARD_SUPPORT)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
         virtual void dashboardRegionsChanged();
 #endif
 
@@ -230,6 +223,10 @@ namespace WebCore {
 
 #if ENABLE(INPUT_TYPE_COLOR)
         virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) = 0;
+#endif
+
+#if ENABLE(CALENDAR_PICKER)
+        virtual PassOwnPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 #endif
 
         virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
@@ -276,6 +273,10 @@ namespace WebCore {
         virtual CompositingTriggerFlags allowedCompositingTriggers() const { return static_cast<CompositingTriggerFlags>(AllTriggers); }
 #endif
 
+#if PLATFORM(WIN) && USE(AVFOUNDATION)
+        virtual GraphicsDeviceAdapter* graphicsDeviceAdapter() const { return 0; }
+#endif
+
         virtual bool supportsFullscreenForNode(const Node*) { return false; }
         virtual void enterFullscreenForNode(Node*) { }
         virtual void exitFullscreenForNode(Node*) { }
@@ -320,6 +321,9 @@ namespace WebCore {
         // The return value can be 0.
         virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect& originBoundsInRootView) = 0;
         virtual void closePagePopup(PagePopup*) = 0;
+        // For testing.
+        virtual void setPagePopupDriver(PagePopupDriver*) = 0;
+        virtual void resetPagePopupDriver() = 0;
 #endif
         // This function is called whenever a text field <input> is
         // created. The implementation should return true if it wants
@@ -343,7 +347,6 @@ namespace WebCore {
         virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, FrameLoader::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
 
         virtual void numWheelEventHandlersChanged(unsigned) = 0;
-        virtual void numTouchEventHandlersChanged(unsigned) = 0;
         
         virtual bool isSVGImageChromeClient() const { return false; }
 
@@ -352,6 +355,10 @@ namespace WebCore {
         virtual void requestPointerUnlock() { }
         virtual bool isPointerLocked() { return false; }
 #endif
+
+        virtual void logDiagnosticMessage(const String& message, const String& description, const String& status) { UNUSED_PARAM(message); UNUSED_PARAM(description); UNUSED_PARAM(status); }
+
+        virtual FloatSize minimumWindowSize() const { return FloatSize(100, 100); };
 
     protected:
         virtual ~ChromeClient() { }

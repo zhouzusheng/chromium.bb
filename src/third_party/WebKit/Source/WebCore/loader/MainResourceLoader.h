@@ -34,7 +34,7 @@
 #include "SubstituteData.h"
 #include <wtf/Forward.h>
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
 OBJC_CLASS WebFilterEvaluator;
 #endif
 
@@ -73,8 +73,10 @@ namespace WebCore {
 
         bool isLoadingMultipartContent() const { return m_loadingMultipartContent; }
 
+        virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
     private:
-        MainResourceLoader(Frame*);
+        explicit MainResourceLoader(Frame*);
 
         virtual void willCancel(const ResourceError&) OVERRIDE;
         virtual void didCancel(const ResourceError&) OVERRIDE;
@@ -112,7 +114,7 @@ namespace WebCore {
         bool m_waitingForContentPolicy;
         double m_timeOfLastDataReceived;
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+#if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
         WebFilterEvaluator *m_filter;
 #endif
     };

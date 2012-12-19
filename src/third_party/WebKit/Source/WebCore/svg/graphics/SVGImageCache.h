@@ -34,8 +34,10 @@ class CachedImage;
 class CachedImageClient;
 class ImageBuffer;
 class SVGImage;
+class RenderObject;
 
 class SVGImageCache {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     ~SVGImageCache();
 
@@ -47,7 +49,7 @@ public:
     struct SizeAndScales {
         SizeAndScales()
             : zoom(1)
-            , scale(1)
+            , scale(0)
         {
         }
 
@@ -58,9 +60,16 @@ public:
         {
         }
 
+        SizeAndScales(const IntSize& newSize, float newZoom)
+            : size(newSize)
+            , zoom(newZoom)
+            , scale(0)
+        {
+        }
+
         IntSize size;
         float zoom;
-        float scale;
+        float scale; // A scale of 0 indicates that the default scale should be used.
     };
 
     void removeClientFromCache(const CachedImageClient*);
@@ -68,7 +77,7 @@ public:
     void setRequestedSizeAndScales(const CachedImageClient*, const SizeAndScales&);
     SizeAndScales requestedSizeAndScales(const CachedImageClient*) const;
 
-    Image* lookupOrCreateBitmapImageForClient(const CachedImageClient*);
+    Image* lookupOrCreateBitmapImageForRenderer(const RenderObject*);
     void imageContentChanged();
 
 private:

@@ -27,6 +27,9 @@
 #include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkTemplates.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/clipboard_client.h"
 #include "webkit/glue/scoped_clipboard_writer_glue.h"
@@ -249,10 +252,27 @@ int32_t PPB_Flash_Impl::GetSettingInt(PP_Instance instance,
 }
 
 PP_Var PPB_Flash_Impl::GetSetting(PP_Instance instance,
-                                   PP_FlashSetting setting) {
-  // No current settings are supported in-process.
-  return PP_MakeUndefined();
+                                  PP_FlashSetting setting) {
+  switch(setting) {
+    case PP_FLASHSETTING_LSORESTRICTIONS: {
+      return PP_MakeInt32(
+          instance_->delegate()->GetLocalDataRestrictions(
+              instance_->container()->element().document().url(),
+              instance_->plugin_url()));
+    }
+    default:
+      // No other settings are supported in-process.
+      return PP_MakeUndefined();
+  }
 }
+
+PP_Bool PPB_Flash_Impl::SetCrashData(PP_Instance instance,
+                                     PP_FlashCrashKey key,
+                                     PP_Var value) {
+  // Not implemented in process.
+  return PP_FALSE;
+}
+
 
 PP_Bool PPB_Flash_Impl::IsClipboardFormatAvailable(
     PP_Instance instance,
@@ -326,16 +346,17 @@ PP_Var PPB_Flash_Impl::ReadClipboardData(
       return PP_MakeNull();
     }
     case PP_FLASH_CLIPBOARD_FORMAT_HTML: {
-      string16 html_stdstr;
+      string16 html;
       GURL gurl;
       uint32 fragment_start;
       uint32 fragment_end;
       clipboard_client_->ReadHTML(buffer_type,
-                                  &html_stdstr,
+                                  &html,
                                   &gurl,
                                   &fragment_start,
                                   &fragment_end);
-      return StringVar::StringToPPVar(UTF16ToUTF8(html_stdstr));
+      return StringVar::StringToPPVar(UTF16ToUTF8(
+          html.substr(fragment_start, fragment_end - fragment_start)));
     }
     case PP_FLASH_CLIPBOARD_FORMAT_RTF: {
       std::string result;

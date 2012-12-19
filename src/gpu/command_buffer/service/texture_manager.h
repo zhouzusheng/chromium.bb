@@ -20,6 +20,8 @@ namespace gles2 {
 class GLES2Decoder;
 class Display;
 class TextureDefinition;
+class MemoryTracker;
+class MemoryTypeTracker;
 
 // This class keeps track of the textures and their sizes so we can do NPOT and
 // texture complete checking.
@@ -186,33 +188,8 @@ class GPU_EXPORT TextureManager {
     ~TextureInfo();
 
     struct LevelInfo {
-      LevelInfo()
-         : cleared(true),
-           target(0),
-           level(-1),
-           internal_format(0),
-           width(0),
-           height(0),
-           depth(0),
-           border(0),
-           format(0),
-           type(0),
-           estimated_size(0) {
-      }
-
-      LevelInfo(const LevelInfo& rhs)
-         : cleared(rhs.cleared),
-           target(rhs.target),
-           level(rhs.level),
-           internal_format(rhs.internal_format),
-           width(rhs.width),
-           height(rhs.height),
-           depth(rhs.depth),
-           border(rhs.border),
-           format(rhs.format),
-           type(rhs.type),
-           estimated_size(rhs.estimated_size) {
-      }
+      LevelInfo();
+      LevelInfo(const LevelInfo& rhs);
 
       bool cleared;
       GLenum target;
@@ -351,7 +328,8 @@ class GPU_EXPORT TextureManager {
     DISALLOW_COPY_AND_ASSIGN(TextureInfo);
   };
 
-  TextureManager(FeatureInfo* feature_info,
+  TextureManager(MemoryTracker* memory_tracker,
+                 FeatureInfo* feature_info,
                  GLsizei max_texture_size,
                  GLsizei max_cube_map_texture_size);
   ~TextureManager();
@@ -524,6 +502,8 @@ class GPU_EXPORT TextureManager {
   void StartTracking(TextureInfo* info);
   void StopTracking(TextureInfo* info);
 
+  scoped_ptr<MemoryTypeTracker> texture_memory_tracker_;
+
   FeatureInfo::Ref feature_info_;
 
   // Info for each texture in the system.
@@ -544,7 +524,6 @@ class GPU_EXPORT TextureManager {
   unsigned int texture_info_count_;
 
   uint32 mem_represented_;
-  uint32 last_reported_mem_represented_;
 
   bool have_context_;
 

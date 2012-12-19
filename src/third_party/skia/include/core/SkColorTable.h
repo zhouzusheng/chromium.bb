@@ -20,6 +20,8 @@
 */
 class SkColorTable : public SkFlattenable {
 public:
+    SK_DECLARE_INST_COUNT(SkColorTable)
+
     /** Makes a deep copy of colors.
      */
     SkColorTable(const SkColorTable& src);
@@ -68,7 +70,7 @@ public:
         the colors were changed during the lock.
     */
     SkPMColor* lockColors() {
-        SkDEBUGCODE(fColorLockCount += 1;)
+        SkDEBUGCODE(sk_atomic_inc(&fColorLockCount);)
         return fColors;
     }
     /** Balancing call to lockColors(). If the colors have been changed, pass true.

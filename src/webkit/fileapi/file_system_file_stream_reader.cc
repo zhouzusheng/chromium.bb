@@ -6,13 +6,14 @@
 
 #include "base/file_util_proxy.h"
 #include "base/platform_file.h"
-#include "base/sequenced_task_runner.h"
+#include "base/single_thread_task_runner.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "webkit/blob/local_file_stream_reader.h"
 #include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_operation_interface.h"
+#include "webkit/fileapi/file_system_operation.h"
+#include "webkit/fileapi/file_system_task_runners.h"
 
 using webkit_blob::LocalFileStreamReader;
 
@@ -30,11 +31,11 @@ void ReadAdapter(base::WeakPtr<FileSystemFileStreamReader> reader,
     callback.Run(rv);
 }
 
-}
+}  // namespace
 
 FileSystemFileStreamReader::FileSystemFileStreamReader(
     FileSystemContext* file_system_context,
-    const GURL& url,
+    const FileSystemURL& url,
     int64 initial_offset)
     : file_system_context_(file_system_context),
       url_(url),
@@ -52,10 +53,11 @@ int FileSystemFileStreamReader::Read(
   if (local_file_reader_.get())
     return local_file_reader_->Read(buf, buf_len, callback);
   DCHECK(!has_pending_create_snapshot_);
-  FileSystemOperationInterface* operation =
-      file_system_context_->CreateFileSystemOperation(url_);
-  if (!operation)
-    return net::ERR_INVALID_URL;
+  base::PlatformFileError error_code;
+  FileSystemOperation* operation =
+      file_system_context_->CreateFileSystemOperation(url_, &error_code);
+  if (error_code != base::PLATFORM_FILE_OK)
+    return net::PlatformFileErrorToNetError(error_code);
   has_pending_create_snapshot_ = true;
   operation->CreateSnapshotFile(
       url_,
@@ -79,8 +81,7 @@ void FileSystemFileStreamReader::DidCreateSnapshot(
   has_pending_create_snapshot_ = false;
 
   if (file_error != base::PLATFORM_FILE_OK) {
-    callback.Run(
-        LocalFileStreamReader::PlatformFileErrorToNetError(file_error));
+    callback.Run(net::PlatformFileErrorToNetError(file_error));
     return;
   }
 
@@ -88,10 +89,9 @@ void FileSystemFileStreamReader::DidCreateSnapshot(
   snapshot_ref_ = file_ref;
 
   local_file_reader_.reset(
-      new LocalFileStreamReader(file_system_context_->file_task_runner(),
-                                platform_path,
-                                initial_offset_,
-                                base::Time()));
+      new LocalFileStreamReader(
+          file_system_context_->task_runners()->file_task_runner(),
+          platform_path, initial_offset_, base::Time()));
 
   read_closure.Run();
 }

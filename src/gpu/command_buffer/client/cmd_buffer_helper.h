@@ -44,6 +44,9 @@ class GPU_EXPORT CommandBufferHelper {
   //       buffer.
   bool Initialize(int32 ring_buffer_size);
 
+  // True if the context is lost.
+  bool IsContextLost();
+
   // Asynchronously flushes the commands, setting the put pointer to let the
   // buffer interface know that new commands have been added. After a flush
   // returns, the command buffer service is aware of all pending commands.
@@ -274,6 +277,7 @@ class GPU_EXPORT CommandBufferHelper {
   }
 
   bool AllocateRingBuffer();
+  void FreeResources();
 
   CommandBuffer* command_buffer_;
   int32 ring_buffer_id_;
@@ -287,6 +291,7 @@ class GPU_EXPORT CommandBufferHelper {
   int32 last_put_sent_;
   int commands_issued_;
   bool usable_;
+  bool context_lost_;
 
   // Using C runtime instead of base because this file cannot depend on base.
   clock_t last_flush_time_;

@@ -40,11 +40,19 @@
 namespace WebCore {
 
 struct SameSizeAsCSSRule : public RefCounted<SameSizeAsCSSRule> {
+#if USE(JSC)
+    char bitfields;
+#else
     unsigned bitfields;
+#endif
     void* pointerUnion;
 };
 
 COMPILE_ASSERT(sizeof(CSSRule) == sizeof(SameSizeAsCSSRule), CSSRule_should_stay_small);
+
+#if ENABLE(CSS_REGIONS)
+COMPILE_ASSERT(StyleRuleBase::Region == static_cast<StyleRuleBase::Type>(CSSRule::WEBKIT_REGION_RULE), enums_should_match);
+#endif
 
 void CSSRule::setCssText(const String& /*cssText*/, ExceptionCode& /*ec*/)
 {
@@ -160,10 +168,59 @@ void CSSRule::reattach(StyleRuleBase* rule)
     ASSERT_NOT_REACHED();
 }
 
+void CSSRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    switch (type()) {
+    case UNKNOWN_RULE:
+        static_cast<const CSSUnknownRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case STYLE_RULE:
+        static_cast<const CSSStyleRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case PAGE_RULE:
+        static_cast<const CSSPageRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case CHARSET_RULE:
+        static_cast<const CSSCharsetRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case IMPORT_RULE:
+        static_cast<const CSSImportRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case MEDIA_RULE:
+        static_cast<const CSSMediaRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case FONT_FACE_RULE:
+        static_cast<const CSSFontFaceRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case WEBKIT_KEYFRAMES_RULE:
+        static_cast<const WebKitCSSKeyframesRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+    case WEBKIT_KEYFRAME_RULE:
+        static_cast<const WebKitCSSKeyframeRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+#if ENABLE(CSS_REGIONS)
+    case WEBKIT_REGION_RULE:
+        static_cast<const WebKitCSSRegionRule*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
+#endif
+    }
+    ASSERT_NOT_REACHED();
+    return;
+}
+
 const CSSParserContext& CSSRule::parserContext() const
 {
     CSSStyleSheet* styleSheet = parentStyleSheet();
     return styleSheet ? styleSheet->contents()->parserContext() : strictCSSParserContext();
+}
+
+void CSSRule::reportBaseClassMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+    if (m_parentIsRule)
+        info.addMember(m_parentRule);
+    else
+        info.addMember(m_parentStyleSheet);
 }
 
 } // namespace WebCore

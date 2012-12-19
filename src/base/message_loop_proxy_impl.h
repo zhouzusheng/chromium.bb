@@ -4,7 +4,6 @@
 
 #ifndef BASE_MESSAGE_LOOP_PROXY_IMPL_H_
 #define BASE_MESSAGE_LOOP_PROXY_IMPL_H_
-#pragma once
 
 #include "base/base_export.h"
 #include "base/message_loop.h"
@@ -21,14 +20,7 @@ class BASE_EXPORT MessageLoopProxyImpl : public MessageLoopProxy {
   // MessageLoopProxy implementation
   virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
                                const base::Closure& task,
-                               int64 delay_ms) OVERRIDE;
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const base::Closure& task,
                                base::TimeDelta delay) OVERRIDE;
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      int64 delay_ms) OVERRIDE;
   virtual bool PostNonNestableDelayedTask(
       const tracked_objects::Location& from_here,
       const base::Closure& task,

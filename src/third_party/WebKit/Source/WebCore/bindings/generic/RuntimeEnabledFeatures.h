@@ -31,6 +31,8 @@
 #ifndef RuntimeEnabledFeatures_h
 #define RuntimeEnabledFeatures_h
 
+#include "PlatformExportMacros.h"
+
 namespace WebCore {
 
 // A class that stores static enablers for all experimental features. Note that
@@ -129,10 +131,6 @@ public:
     static bool webkitAudioContextEnabled() { return isWebAudioEnabled; }
 #endif
 
-    static void setPushStateEnabled(bool isEnabled) { isPushStateEnabled = isEnabled; }
-    static bool pushStateEnabled() { return isPushStateEnabled; }
-    static bool replaceStateEnabled() { return isPushStateEnabled; }
-
 #if ENABLE(TOUCH_EVENTS)
     static bool touchEnabled() { return isTouchEnabled; }
     static void setTouchEnabled(bool isEnabled) { isTouchEnabled = isEnabled; }
@@ -148,7 +146,7 @@ public:
     static bool deviceMotionEnabled() { return isDeviceMotionEnabled; }
     static bool deviceMotionEventEnabled() { return isDeviceMotionEnabled; }
     static bool ondevicemotionEnabled() { return isDeviceMotionEnabled; }
-    
+
     static void setDeviceOrientationEnabled(bool isEnabled) { isDeviceOrientationEnabled = isEnabled; }
     static bool deviceOrientationEnabled() { return isDeviceOrientationEnabled; }
     static bool deviceOrientationEventEnabled() { return isDeviceOrientationEnabled; }
@@ -187,13 +185,15 @@ public:
 
     static bool peerConnectionEnabled() { return isMediaStreamEnabled && isPeerConnectionEnabled; }
     static void setPeerConnectionEnabled(bool isEnabled) { isPeerConnectionEnabled = isEnabled; }
-    static bool webkitDeprecatedPeerConnectionEnabled() { return peerConnectionEnabled(); }
-    static bool webkitPeerConnection00Enabled() { return peerConnectionEnabled(); }
+    static bool deprecatedPeerConnectionEnabled() { return isMediaStreamEnabled && isDeprecatedPeerConnectionEnabled; }
+    static void setDeprecatedPeerConnectionEnabled(bool isEnabled) { isDeprecatedPeerConnectionEnabled = isEnabled; }
+    static bool webkitPeerConnection00Enabled() { return deprecatedPeerConnectionEnabled(); }
+    static bool webkitRTCPeerConnectionEnabled() { return peerConnectionEnabled(); }
 #endif
 
 #if ENABLE(GAMEPAD)
-    static void setWebkitGamepadsEnabled(bool isEnabled) { isGamepadEnabled = isEnabled; }
-    static bool webkitGamepadsEnabled() { return isGamepadEnabled; }
+    static void setWebkitGetGamepadsEnabled(bool isEnabled) { isGamepadEnabled = isEnabled; }
+    static bool webkitGetGamepadsEnabled() { return isGamepadEnabled; }
 #endif
 
 #if ENABLE(QUOTA)
@@ -219,6 +219,9 @@ public:
 #if ENABLE(SHADOW_DOM)
     static bool shadowDOMEnabled() { return isShadowDOMEnabled; }
     static void setShadowDOMEnabled(bool isEnabled) { isShadowDOMEnabled = isEnabled; }
+
+    static bool authorShadowDOMForAnyElementEnabled() { return isAuthorShadowDOMForAnyElementEnabled; }
+    static void setAuthorShadowDOMForAnyElementEnabled(bool isEnabled) { isAuthorShadowDOMForAnyElementEnabled = isEnabled; }
 #endif
 
 #if ENABLE(STYLE_SCOPED)
@@ -230,6 +233,40 @@ public:
     static bool inputTypeDateEnabled() { return isInputTypeDateEnabled; }
     static void setInputTypeDateEnabled(bool isEnabled) { isInputTypeDateEnabled = isEnabled; }
 #endif
+
+#if ENABLE(INPUT_TYPE_DATETIME)
+    static bool inputTypeDateTimeEnabled() { return isInputTypeDateTimeEnabled; }
+    static void setInputTypeDateTimeEnabled(bool isEnabled) { isInputTypeDateTimeEnabled = isEnabled; }
+#endif
+
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+    static bool inputTypeDateTimeLocalEnabled() { return isInputTypeDateTimeLocalEnabled; }
+    static void setInputTypeDateTimeLocalEnabled(bool isEnabled) { isInputTypeDateTimeLocalEnabled = isEnabled; }
+#endif
+
+#if ENABLE(INPUT_TYPE_MONTH)
+    static bool inputTypeMonthEnabled() { return isInputTypeMonthEnabled; }
+    static void setInputTypeMonthEnabled(bool isEnabled) { isInputTypeMonthEnabled = isEnabled; }
+#endif
+
+#if ENABLE(INPUT_TYPE_TIME)
+    static bool inputTypeTimeEnabled() { return isInputTypeTimeEnabled; }
+    static void setInputTypeTimeEnabled(bool isEnabled) { isInputTypeTimeEnabled = isEnabled; }
+#endif
+
+#if ENABLE(INPUT_TYPE_WEEK)
+    static bool inputTypeWeekEnabled() { return isInputTypeWeekEnabled; }
+    static void setInputTypeWeekEnabled(bool isEnabled) { isInputTypeWeekEnabled = isEnabled; }
+#endif
+
+#if ENABLE(DIALOG_ELEMENT)
+    static bool dialogElementEnabled() { return isDialogElementEnabled; }
+    static void setDialogElementEnabled(bool isEnabled) { isDialogElementEnabled = isEnabled; }
+#endif
+
+    static bool langAttributeAwareFormControlUIEnabled() { return isLangAttributeAwareFormControlUIEnabled; }
+    // The lang attribute support is incomplete and should only be turned on for tests.
+    static void setLangAttributeAwareFormControlUIEnabled(bool isEnabled) { isLangAttributeAwareFormControlUIEnabled = isEnabled; }
 
 private:
     // Never instantiate.
@@ -243,12 +280,12 @@ private:
     static bool isGeolocationEnabled;
     static bool isIndexedDBEnabled;
     static bool isWebAudioEnabled;
-    static bool isPushStateEnabled;
     static bool isTouchEnabled;
     static bool isDeviceMotionEnabled;
     static bool isDeviceOrientationEnabled;
     static bool isSpeechInputEnabled;
     static bool isCSSExclusionsEnabled;
+    WEBCORE_TESTING static bool isLangAttributeAwareFormControlUIEnabled;
 #if ENABLE(SCRIPTED_SPEECH)
     static bool isScriptedSpeechEnabled;
 #endif
@@ -263,6 +300,7 @@ private:
 #if ENABLE(MEDIA_STREAM)
     static bool isMediaStreamEnabled;
     static bool isPeerConnectionEnabled;
+    static bool isDeprecatedPeerConnectionEnabled;
 #endif
 
 #if ENABLE(GAMEPAD)
@@ -295,6 +333,8 @@ private:
 
 #if ENABLE(SHADOW_DOM)
     static bool isShadowDOMEnabled;
+
+    static bool isAuthorShadowDOMForAnyElementEnabled;
 #endif
 
 #if ENABLE(STYLE_SCOPED)
@@ -303,6 +343,30 @@ private:
 
 #if ENABLE(INPUT_TYPE_DATE)
     static bool isInputTypeDateEnabled;
+#endif
+
+#if ENABLE(INPUT_TYPE_DATETIME)
+    static bool isInputTypeDateTimeEnabled;
+#endif
+
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+    static bool isInputTypeDateTimeLocalEnabled;
+#endif
+
+#if ENABLE(INPUT_TYPE_MONTH)
+    static bool isInputTypeMonthEnabled;
+#endif
+
+#if ENABLE(INPUT_TYPE_TIME)
+    static bool isInputTypeTimeEnabled;
+#endif
+
+#if ENABLE(INPUT_TYPE_WEEK)
+    static bool isInputTypeWeekEnabled;
+#endif
+
+#if ENABLE(DIALOG_ELEMENT)
+    static bool isDialogElementEnabled;
 #endif
 };
 

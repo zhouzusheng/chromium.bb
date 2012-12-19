@@ -4,12 +4,11 @@
 
 #ifndef NET_DISK_CACHE_STORAGE_BLOCK_INL_H_
 #define NET_DISK_CACHE_STORAGE_BLOCK_INL_H_
-#pragma once
 
 #include "net/disk_cache/storage_block.h"
 
+#include "base/hash.h"
 #include "base/logging.h"
-#include "net/disk_cache/hash.h"
 #include "net/disk_cache/trace.h"
 
 namespace disk_cache {
@@ -168,7 +167,7 @@ template<typename T> void StorageBlock<T>::DeleteData() {
 }
 
 template<typename T> uint32 StorageBlock<T>::CalculateHash() const {
-  return Hash(reinterpret_cast<char*>(data_), offsetof(T, self_hash));
+  return base::Hash(reinterpret_cast<char*>(data_), offsetof(T, self_hash));
 }
 
 }  // namespace disk_cache

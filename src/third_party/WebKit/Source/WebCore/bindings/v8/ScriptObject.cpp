@@ -39,7 +39,6 @@
 #include "V8Binding.h"
 #include "V8InjectedScriptHost.h"
 #include "V8InspectorFrontendHost.h"
-#include "V8Proxy.h"
 
 #include <v8.h>
 
@@ -47,6 +46,12 @@ namespace WebCore {
 
 ScriptObject::ScriptObject(ScriptState* scriptState, v8::Handle<v8::Object> v8Object)
     : ScriptValue(v8Object)
+    , m_scriptState(scriptState)
+{
+}
+
+ScriptObject::ScriptObject(ScriptState* scriptState, const ScriptValue& scriptValue)
+    : ScriptValue(scriptValue)
     , m_scriptState(scriptState)
 {
 }

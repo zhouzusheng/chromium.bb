@@ -34,6 +34,7 @@
 #include "Event.h"
 #include "EventNames.h"
 #include "ExceptionCode.h"
+#include "FormController.h"
 #include "FormDataList.h"
 #include "Frame.h"
 #include "HTMLNames.h"
@@ -71,6 +72,7 @@ HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document*
     , m_rows(defaultRows)
     , m_cols(defaultCols)
     , m_wrap(SoftWrap)
+    , m_placeholder(0)
     , m_isDirty(false)
     , m_wasModifiedByUser(false)
 {
@@ -88,7 +90,7 @@ PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(const QualifiedName&
 void HTMLTextAreaElement::createShadowSubtree()
 {
     ASSERT(!shadow());
-    RefPtr<ShadowRoot> root = ShadowRoot::create(this, ShadowRoot::CreatingUserAgentShadowRoot);
+    RefPtr<ShadowRoot> root = ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot);
     root->appendChild(TextControlInnerTextElement::create(document()), ASSERT_NO_EXCEPTION);
 }
 
@@ -98,18 +100,14 @@ const AtomicString& HTMLTextAreaElement::formControlType() const
     return textarea;
 }
 
-bool HTMLTextAreaElement::saveFormControlState(String& result) const
+FormControlState HTMLTextAreaElement::saveFormControlState() const
 {
-    String currentValue = value();
-    if (currentValue == defaultValue())
-        return false;
-    result = currentValue;
-    return true;
+    return m_isDirty ? FormControlState(value()) : FormControlState();
 }
 
-void HTMLTextAreaElement::restoreFormControlState(const String& state)
+void HTMLTextAreaElement::restoreFormControlState(const FormControlState& state)
 {
-    setValue(state);
+    setValue(state[0]);
 }
 
 void HTMLTextAreaElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -218,6 +216,11 @@ void HTMLTextAreaElement::reset()
     setNonDirtyValue(defaultValue());
 }
 
+bool HTMLTextAreaElement::hasCustomFocusLogic() const
+{
+    return true;
+}
+
 bool HTMLTextAreaElement::isKeyboardFocusable(KeyboardEvent*) const
 {
     // If a given text area can be focused at all, then it will always be keyboard focusable.
@@ -297,7 +300,7 @@ String HTMLTextAreaElement::sanitizeUserInputValue(const String& proposedValue, 
 
 HTMLElement* HTMLTextAreaElement::innerTextElement() const
 {
-    Node* node = shadow()->oldestShadowRoot()->firstChild();
+    Node* node = userAgentShadowRoot()->firstChild();
     ASSERT(!node || node->hasTagName(divTag));
     return toHTMLElement(node);
 }
@@ -493,13 +496,13 @@ bool HTMLTextAreaElement::shouldUseInputMethod()
 
 HTMLElement* HTMLTextAreaElement::placeholderElement() const
 {
-    return m_placeholder.get();
+    return m_placeholder;
 }
 
 void HTMLTextAreaElement::attach()
 {
     HTMLTextFormControlElement::attach();
-    fixPlaceholderRenderer(m_placeholder.get(), innerTextElement());
+    fixPlaceholderRenderer(m_placeholder, innerTextElement());
 }
 
 void HTMLTextAreaElement::updatePlaceholderText()
@@ -508,21 +511,22 @@ void HTMLTextAreaElement::updatePlaceholderText()
     String placeholderText = strippedPlaceholder();
     if (placeholderText.isEmpty()) {
         if (m_placeholder) {
-            shadow()->oldestShadowRoot()->removeChild(m_placeholder.get(), ec);
+            userAgentShadowRoot()->removeChild(m_placeholder, ec);
             ASSERT(!ec);
-            m_placeholder.clear();
+            m_placeholder = 0;
         }
         return;
     }
     if (!m_placeholder) {
-        m_placeholder = HTMLDivElement::create(document());
+        RefPtr<HTMLDivElement> placeholder = HTMLDivElement::create(document());
+        m_placeholder = placeholder.get();
         m_placeholder->setShadowPseudoId("-webkit-input-placeholder");
-        shadow()->oldestShadowRoot()->insertBefore(m_placeholder, innerTextElement()->nextSibling(), ec);
+        userAgentShadowRoot()->insertBefore(m_placeholder, innerTextElement()->nextSibling(), ec);
         ASSERT(!ec);
     }
     m_placeholder->setInnerText(placeholderText, ec);
     ASSERT(!ec);
-    fixPlaceholderRenderer(m_placeholder.get(), innerTextElement());
+    fixPlaceholderRenderer(m_placeholder, innerTextElement());
 }
 
 }

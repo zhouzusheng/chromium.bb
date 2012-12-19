@@ -182,6 +182,9 @@
     /** Returns the square root of the SkScalar
     */
     #define SkScalarSqrt(x)         sk_float_sqrt(x)
+    /** Returns b to the e
+    */
+    #define SkScalarPow(b, e)       sk_float_pow(b, e)
     /** Returns the average of two SkScalars (a+b)/2
     */
     #define SkScalarAve(a, b)       (((a) + (b)) * 0.5f)
@@ -331,6 +334,12 @@ static inline bool SkScalarNearlyEqual(SkScalar x, SkScalar y,
 static inline SkScalar SkScalarInterp(SkScalar A, SkScalar B, SkScalar t) {
     SkASSERT(t >= 0 && t <= SK_Scalar1);
     return A + SkScalarMul(B - A, t);
+}
+
+static inline SkScalar SkScalarLog2(SkScalar x) {
+    static const SkScalar log2_conversion_factor = SkScalarDiv(1, SkScalarLog(2));
+
+    return SkScalarMul(SkScalarLog(x), log2_conversion_factor);
 }
 
 /** Interpolate along the function described by (keys[length], values[length])

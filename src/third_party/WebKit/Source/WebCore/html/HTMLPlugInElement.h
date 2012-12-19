@@ -24,6 +24,7 @@
 #define HTMLPlugInElement_h
 
 #include "HTMLFrameOwnerElement.h"
+#include "ImageLoaderClient.h"
 #include "ScriptInstance.h"
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
@@ -36,7 +37,7 @@ class RenderEmbeddedObject;
 class RenderWidget;
 class Widget;
 
-class HTMLPlugInElement : public HTMLFrameOwnerElement {
+class HTMLPlugInElement : public HTMLFrameOwnerElement, public ImageLoaderClientBase<HTMLPlugInElement> {
 public:
     virtual ~HTMLPlugInElement();
 
@@ -44,7 +45,7 @@ public:
 
     PassScriptInstance getInstance();
 
-    Widget* pluginWidget();
+    Widget* pluginWidget() const;
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* getNPObject();
@@ -61,6 +62,7 @@ protected:
     virtual void detach();
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     bool m_inBeforeLoadEventHandler;
     // Subclasses should use guardedDispatchBeforeLoadEvent instead of calling dispatchBeforeLoadEvent directly.
@@ -71,7 +73,10 @@ private:
 
     virtual void defaultEventHandler(Event*);
 
-    virtual RenderWidget* renderWidgetForJSBindings() = 0;
+    virtual RenderWidget* renderWidgetForJSBindings() const = 0;
+
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isPluginElement() const;
 
 private:
     mutable ScriptInstance m_instance;

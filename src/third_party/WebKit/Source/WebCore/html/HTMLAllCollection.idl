@@ -30,12 +30,12 @@ module html {
         NamedGetter,
         CustomCall,
         MasqueradesAsUndefined,
-        JSGenerateIsReachable
+        GenerateIsReachable=ImplBaseRoot,
+        V8DependentLifetime
     ] HTMLAllCollection {
         readonly attribute unsigned long length;
         [Custom] Node item(in [Optional=DefaultIsUndefined] unsigned long index);
         [Custom] Node namedItem(in DOMString name);
-
         // FIXME: This should return an HTMLAllCollection.
         NodeList tags(in DOMString name);
     };

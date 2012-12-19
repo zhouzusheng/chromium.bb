@@ -10,20 +10,17 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_helpers.h"
+#include "base/memory/weak_ptr.h"
+#include "base/sequenced_task_runner_helpers.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "build/build_config.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/glue/webcursor.h"
+#include "webkit/plugins/npapi/webplugin_delegate.h"
 #include "webkit/plugins/webkit_plugins_export.h"
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include "base/memory/weak_ptr.h"
-#endif
 
 #if defined(USE_X11)
 #include "ui/base/x/x11_util.h"
@@ -51,12 +48,9 @@ class PluginInstance;
 #if defined(OS_MACOSX)
 class WebPluginAcceleratedSurface;
 class ExternalDragTracker;
-#ifndef NP_NO_QUICKDRAW
-class QuickDrawDrawingManager;
-#endif  // NP_NO_QUICKDRAW
 #endif  // OS_MACOSX
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
 class WebPluginIMEWin;
 #endif  // OS_WIN
 
@@ -78,7 +72,6 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
     PLUGIN_QUIRK_NO_WINDOWLESS = 1024,  // Windows
     PLUGIN_QUIRK_PATCH_REGENUMKEYEXW = 2048,  // Windows
     PLUGIN_QUIRK_ALWAYS_NOTIFY_SUCCESS = 4096,  // Windows
-    PLUGIN_QUIRK_ALLOW_FASTER_QUICKDRAW_PATH = 8192,  // Mac
     PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE = 16384,  // Windows
     PLUGIN_QUIRK_WINDOWLESS_NO_RIGHT_CLICK = 32768,  // Linux
     PLUGIN_QUIRK_IGNORE_FIRST_SETWINDOW_CALL = 65536,  // Windows.
@@ -92,15 +85,17 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
                                        const std::string& mime_type,
                                        gfx::PluginWindowHandle containing_view);
 
-  static bool IsPluginDelegateWindow(gfx::NativeWindow window);
-  static bool GetPluginNameFromWindow(gfx::NativeWindow window,
+#if defined(OS_WIN)
+  static bool IsPluginDelegateWindow(HWND window);
+  static bool GetPluginNameFromWindow(HWND window,
                                       string16* plugin_name);
-  static bool GetPluginVersionFromWindow(gfx::NativeWindow window,
+  static bool GetPluginVersionFromWindow(HWND window,
                                          string16* plugin_version);
 
   // Returns true if the window handle passed in is that of the dummy
   // activation window for windowless plugins.
-  static bool IsDummyActivationWindow(gfx::NativeWindow window);
+  static bool IsDummyActivationWindow(HWND window);
+#endif
 
   // WebPluginDelegate implementation
   virtual bool Initialize(const GURL& url,
@@ -152,7 +147,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // Informs the plugin that the view it is in has gained or lost focus.
   void SetContentAreaHasFocus(bool has_focus);
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Informs the plug-in that an IME has changed its status.
   void ImeCompositionUpdated(const string16& text,
                              const std::vector<int>& clauses,
@@ -180,8 +175,6 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   static WebPluginDelegateImpl* GetActiveDelegate();
   // Informs the plugin that the window it is in has gained or lost focus.
   void SetWindowHasFocus(bool has_focus);
-  // Returns whether or not the window the plugin is in has focus.
-  bool GetWindowHasFocus() const { return containing_window_has_focus_; }
   // Informs the plugin that its tab or window has been hidden or shown.
   void SetContainerVisibility(bool is_visible);
   // Informs the plugin that its containing window's frame has changed.
@@ -204,17 +197,10 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // context instead of a buffer context.
   void SetNoBufferContext();
 
-#ifndef NP_NO_CARBON
-  // Indicates that it's time to send the plugin a null event.
-  void FireIdleEvent();
-#endif
-
   // TODO(caryclark): This is a temporary workaround to allow the Darwin / Skia
   // port to share code with the Darwin / CG port. Later, this will be removed
   // and all callers will use the Paint defined above.
   void CGPaint(CGContextRef context, const gfx::Rect& rect);
-
-  bool AllowBufferFlipping();
 #endif  // OS_MACOSX && !USE_AURA
 
   gfx::PluginWindowHandle windowed_handle() const {
@@ -336,7 +322,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   WebPlugin* plugin_;
   scoped_refptr<PluginInstance> instance_;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Original wndproc before we subclassed.
   WNDPROC plugin_wnd_proc_;
 
@@ -376,7 +362,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   gfx::Rect clip_rect_;
   int quirks_;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Windowless plugins don't have keyboard focus causing issues with the
   // plugin not receiving keyboard events if the plugin enters a modal
   // loop like TrackPopupMenuEx or MessageBox, etc.
@@ -456,35 +442,8 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // Uses a CARenderer to draw the plug-in's layer in our OpenGL surface.
   void DrawLayerInSurface();
 
-#ifndef NP_NO_CARBON
-  // Moves our dummy window to match the current screen location of the plugin.
-  void UpdateDummyWindowBounds(const gfx::Point& plugin_origin);
-
-#ifndef NP_NO_QUICKDRAW
-  // Sets the mode used for QuickDraw plugin drawing. If enabled is true the
-  // plugin draws into a GWorld that's not connected to a window (the faster
-  // path), otherwise the plugin draws into our invisible dummy window (which is
-  // slower, since the call we use to scrape the window contents is much more
-  // expensive than copying between GWorlds).
-  void SetQuickDrawFastPathEnabled(bool enabled);
-#endif
-
-  // Adjusts the idle event rate for a Carbon plugin based on its current
-  // visibility.
-  void UpdateIdleEventRate();
-#endif  // !NP_NO_CARBON
-
   bool use_buffer_context_;
   CGContextRef buffer_context_;  // Weak ref.
-
-#ifndef NP_NO_CARBON
-  NP_CGContext np_cg_context_;
-#endif
-#ifndef NP_NO_QUICKDRAW
-  NP_Port qd_port_;
-  scoped_ptr<QuickDrawDrawingManager> qd_manager_;
-  base::TimeTicks fast_path_enable_tick_;
-#endif
 
   CALayer* layer_;  // Used for CA drawing mode. Weak, retained by plug-in.
   WebPluginAcceleratedSurface* surface_;  // Weak ref.
@@ -518,7 +477,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // The url with which the plugin was instantiated.
   std::string plugin_url_;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
   // Indicates the end of a user gesture period.
   void OnUserGestureEnd();
 

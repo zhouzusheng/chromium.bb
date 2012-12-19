@@ -4124,7 +4124,9 @@ LayoutRect RenderLayer::childrenClipRect() const
     ClipRect backgroundRect, foregroundRect, outlineRect;
     // Need to use temporary clip rects, because the value of 'dontClipToOverflow' may be different from the painting path (<rdar://problem/11844909>).
     calculateRects(clippingRootLayer, 0, TemporaryClipRects, renderView->unscaledDocumentRect(), layerBounds, backgroundRect, foregroundRect, outlineRect);
-    return clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(foregroundRect.rect())).enclosingBoundingBox();
+    LayoutRect rect = foregroundRect.rect();
+    rect.unite(clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(foregroundRect.rect())).enclosingBoundingBox());
+    return rect;
 }
 
 LayoutRect RenderLayer::selfClipRect() const
@@ -4136,7 +4138,9 @@ LayoutRect RenderLayer::selfClipRect() const
     LayoutRect layerBounds;
     ClipRect backgroundRect, foregroundRect, outlineRect;
     calculateRects(clippingRootLayer, 0, PaintingClipRects, renderView->documentRect(), layerBounds, backgroundRect, foregroundRect, outlineRect);
-    return clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(backgroundRect.rect())).enclosingBoundingBox();
+    LayoutRect rect = backgroundRect.rect();
+    rect.unite(clippingRootLayer->renderer()->localToAbsoluteQuad(FloatQuad(rect)).enclosingBoundingBox());
+    return rect;
 }
 
 LayoutRect RenderLayer::localClipRect() const

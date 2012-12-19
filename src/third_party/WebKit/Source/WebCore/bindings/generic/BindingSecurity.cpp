@@ -49,7 +49,7 @@ static bool canAccessDocument(BindingState* state, Document* targetDocument, Sec
 
     DOMWindow* active = activeDOMWindow(state);
     if (!active)
-        return false;
+        return true;
 
     if (active->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;

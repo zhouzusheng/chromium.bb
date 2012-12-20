@@ -315,11 +315,11 @@ static LayoutUnit shezPageRemainingLogicalHeightForOffset(LayoutState* layoutSta
     offset += shezOffsetFromLogicalTopOfFirstPage(layoutState);
 
     LayoutUnit pageLogicalHeight = layoutState->m_pageLogicalHeight;
-    LayoutUnit remainingHeight = pageLogicalHeight - layoutMod(offset, pageLogicalHeight);
+    LayoutUnit remainingHeight = pageLogicalHeight - intMod(offset, pageLogicalHeight);
 
     // If includeBoundaryPoint is true the line exactly on the top edge of a
     // column will act as being part of the previous column.
-    remainingHeight = layoutMod(remainingHeight, pageLogicalHeight);
+    remainingHeight = intMod(remainingHeight, pageLogicalHeight);
 
     return remainingHeight;
 }

@@ -284,6 +284,11 @@ void RenderListItem::computePreferredLogicalWidths()
     RenderBlock::computePreferredLogicalWidths();
 }
 
+LayoutUnit RenderListItem::additionalMarginStart() const
+{
+    return m_marker && !m_marker->isInside() ? m_marker->minPreferredLogicalWidth() : ZERO_LAYOUT_UNIT;
+}
+
 void RenderListItem::layout()
 {
     ASSERT(needsLayout()); 

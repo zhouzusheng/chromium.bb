@@ -1984,6 +1984,23 @@ void RenderBlock::moveRunInToOriginalPosition(RenderObject* runIn)
     parent()->setNeedsLayoutAndPrefWidthsRecalc();
 }
 
+LayoutUnit RenderBlock::additionalMarginStart() const
+{
+    if (!parent() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
+        return ZERO_LAYOUT_UNIT;
+    }
+
+    RenderBox *prevListItem = previousSiblingBox();
+    while (prevListItem && !prevListItem->isListItem()) {
+        prevListItem = prevListItem->previousSiblingBox();
+    }
+
+    if (!prevListItem)
+        return ZERO_LAYOUT_UNIT;
+
+    return prevListItem->style()->listStylePosition() == INSIDE ? 40 : prevListItem->marginStart();
+}
+
 LayoutUnit RenderBlock::collapseMargins(RenderBox* child, MarginInfo& marginInfo)
 {
     // Get the four margin values for the child and cache them.

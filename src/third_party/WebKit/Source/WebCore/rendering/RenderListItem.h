@@ -67,6 +67,8 @@ private:
     virtual void layout();
     virtual void computePreferredLogicalWidths();
 
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     void positionListMarker();
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);

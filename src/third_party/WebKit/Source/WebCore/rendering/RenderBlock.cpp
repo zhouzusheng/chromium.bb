@@ -1996,7 +1996,7 @@ LayoutUnit RenderBlock::additionalMarginStart() const
     }
 
     if (!prevListItem)
-        return ZERO_LAYOUT_UNIT;
+        return 40;
 
     return prevListItem->style()->listStylePosition() == INSIDE ? 40 : prevListItem->marginStart();
 }

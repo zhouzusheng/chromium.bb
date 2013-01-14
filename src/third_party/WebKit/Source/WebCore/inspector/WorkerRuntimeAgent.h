@@ -47,7 +47,13 @@ public:
         return adoptPtr(new WorkerRuntimeAgent(instrumentingAgents, state, injectedScriptManager, context));
     }
     virtual ~WorkerRuntimeAgent();
-    virtual void setReportExecutionContextCreation(ErrorString*, bool);
+
+    // Protocol commands.
+    virtual void run(ErrorString*);
+
+#if ENABLE(JAVASCRIPT_DEBUGGER)
+    void pauseWorkerContext(WorkerContext*);
+#endif // ENABLE(JAVASCRIPT_DEBUGGER)
 
 private:
     WorkerRuntimeAgent(InstrumentingAgents*, InspectorState*, InjectedScriptManager*, WorkerContext*);
@@ -55,6 +61,7 @@ private:
     virtual void muteConsole();
     virtual void unmuteConsole();
     WorkerContext* m_workerContext;
+    bool m_paused;
 };
 
 } // namespace WebCore

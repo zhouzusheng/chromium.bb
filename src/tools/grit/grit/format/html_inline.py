@@ -187,9 +187,10 @@ def DoInline(
       return src_match.group(0)
     inlined_files.add(filepath)
 
-    # Even if names_only is set, html files needs to be opened, because it
-    # can link to images that need to be added to the file set.
-    if names_only and not filepath.endswith('.html'):
+    if names_only:
+      inlined_files.update(GetResourceFilenames(filepath,
+                                                allow_external_script,
+                                                rewrite_function))
       return ""
 
     return pattern % InlineToString(filepath, grd_node, allow_external_script)

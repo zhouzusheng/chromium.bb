@@ -473,11 +473,11 @@ void SkRadialGradient::shadeSpan(int x, int y,
 
 #if SK_SUPPORT_GPU
 
-class GrGLRadialGradient : public GrGLGradientStage {
+class GrGLRadialGradient : public GrGLGradientEffect {
 public:
 
-    GrGLRadialGradient(const GrProgramStageFactory& factory,
-                       const GrCustomStage&) : INHERITED (factory) { }
+    GrGLRadialGradient(const GrBackendEffectFactory& factory,
+                       const GrEffect&) : INHERITED (factory) { }
     virtual ~GrGLRadialGradient() { }
 
     virtual void emitVS(GrGLShaderBuilder* builder,
@@ -487,11 +487,11 @@ public:
                         const char* inputColor,
                         const TextureSamplerArray&) SK_OVERRIDE;
 
-    static StageKey GenKey(const GrCustomStage& s, const GrGLCaps& caps) { return 0; }
+    static EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps) { return 0; }
 
 private:
 
-    typedef GrGLGradientStage INHERITED;
+    typedef GrGLGradientEffect INHERITED;
 
 };
 
@@ -500,34 +500,32 @@ private:
 class GrRadialGradient : public GrGradientEffect {
 public:
 
-    GrRadialGradient(GrContext* ctx,
-                     const SkRadialGradient& shader,
-                     GrSamplerState* sampler)
-        : INHERITED(ctx, shader, sampler) {
+    GrRadialGradient(GrContext* ctx, const SkRadialGradient& shader, SkShader::TileMode tm)
+        : INHERITED(ctx, shader, tm) {
     }
 
     virtual ~GrRadialGradient() { }
 
     static const char* Name() { return "Radial Gradient"; }
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE {
-        return GrTProgramStageFactory<GrRadialGradient>::getInstance();
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<GrRadialGradient>::getInstance();
     }
 
-    typedef GrGLRadialGradient GLProgramStage;
+    typedef GrGLRadialGradient GLEffect;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     typedef GrGradientEffect INHERITED;
 };
 
 /////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrRadialGradient);
+GR_DEFINE_EFFECT_TEST(GrRadialGradient);
 
-GrCustomStage* GrRadialGradient::TestCreate(SkRandom* random,
-                                            GrContext* context,
-                                            GrTexture**) {
+GrEffect* GrRadialGradient::TestCreate(SkRandom* random,
+                                       GrContext* context,
+                                       GrTexture**) {
     SkPoint center = {random->nextUScalar1(), random->nextUScalar1()};
     SkScalar radius = random->nextUScalar1();
 
@@ -539,10 +537,12 @@ GrCustomStage* GrRadialGradient::TestCreate(SkRandom* random,
     SkAutoTUnref<SkShader> shader(SkGradientShader::CreateRadial(center, radius,
                                                                  colors, stops, colorCount,
                                                                  tm));
-    GrSamplerState sampler;
-    GrCustomStage* stage = shader->asNewCustomStage(context, &sampler);
-    GrAssert(NULL != stage);
-    return stage;
+    GrEffectStage stage;
+    shader->asNewEffect(context, &stage);
+    GrAssert(NULL != stage.getEffect());
+    // const_cast and ref is a hack! Will remove when asNewEffect returns GrEffect*
+    stage.getEffect()->ref();
+    return const_cast<GrEffect*>(stage.getEffect());
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -558,22 +558,29 @@ void GrGLRadialGradient::emitFS(GrGLShaderBuilder* builder,
 
 /////////////////////////////////////////////////////////////////////
 
-GrCustomStage* SkRadialGradient::asNewCustomStage(GrContext* context,
-    GrSamplerState* sampler) const {
-    SkASSERT(NULL != context && NULL != sampler);
-    sampler->matrix()->preConcat(fPtsToUnit);
-    sampler->textureParams()->setTileModeX(fTileMode);
-    sampler->textureParams()->setTileModeY(kClamp_TileMode);
-    sampler->textureParams()->setBilerp(true);
-    return SkNEW_ARGS(GrRadialGradient, (context, *this, sampler));
+bool SkRadialGradient::asNewEffect(GrContext* context, GrEffectStage* stage) const {
+    SkASSERT(NULL != context && NULL != stage);
+    SkAutoTUnref<GrEffect> effect(SkNEW_ARGS(GrRadialGradient, (context, *this, fTileMode)));
+
+    SkMatrix matrix;
+    if (this->getLocalMatrix(&matrix)) {
+        if (!matrix.invert(&matrix)) {
+            return false;
+        }
+        matrix.postConcat(fPtsToUnit);
+        stage->setEffect(effect, matrix);
+    } else {
+        stage->setEffect(effect, fPtsToUnit);
+    }
+
+    return true;
 }
 
 #else
 
-GrCustomStage* SkRadialGradient::asNewCustomStage(GrContext* context,
-    GrSamplerState* sampler) const {
+bool SkRadialGradient::asNewEffect(GrContext*, GrEffectStage*) const {
     SkDEBUGFAIL("Should not call in GPU-less build");
-    return NULL;
+    return false;
 }
 
 #endif

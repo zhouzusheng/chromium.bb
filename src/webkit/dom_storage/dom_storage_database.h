@@ -14,12 +14,13 @@
 #include "base/string16.h"
 #include "sql/connection.h"
 #include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace dom_storage {
 
 // Represents a SQLite based backing for DOM storage data. This
 // class is designed to be used on a single thread.
-class DomStorageDatabase {
+class WEBKIT_STORAGE_EXPORT DomStorageDatabase {
  public:
   static FilePath GetJournalFilePath(const FilePath& database_path);
 

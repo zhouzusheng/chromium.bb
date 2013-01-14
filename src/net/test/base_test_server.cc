@@ -29,8 +29,7 @@ namespace {
 
 std::string GetHostname(BaseTestServer::Type type,
                         const BaseTestServer::SSLOptions& options) {
-  if ((type == BaseTestServer::TYPE_HTTPS ||
-       type == BaseTestServer::TYPE_WSS) &&
+  if (BaseTestServer::UsingSSL(type) &&
       options.server_certificate ==
           BaseTestServer::SSLOptions::CERT_MISMATCHED_NAME) {
     // Return a different hostname string that resolves to the same hostname.
@@ -127,7 +126,7 @@ BaseTestServer::BaseTestServer(Type type, const SSLOptions& ssl_options)
       type_(type),
       started_(false),
       log_to_console_(false) {
-  DCHECK(type == TYPE_HTTPS || type == TYPE_WSS);
+  DCHECK(UsingSSL(type));
   Init(GetHostname(type, ssl_options));
 }
 
@@ -169,10 +168,7 @@ std::string BaseTestServer::GetScheme() const {
 bool BaseTestServer::GetAddressList(AddressList* address_list) const {
   DCHECK(address_list);
 
-  scoped_ptr<HostResolver> resolver(
-      CreateSystemHostResolver(HostResolver::kDefaultParallelism,
-                               HostResolver::kDefaultRetryAttempts,
-                               NULL));
+  scoped_ptr<HostResolver> resolver(HostResolver::CreateDefaultResolver(NULL));
   HostResolver::RequestInfo info(host_port_pair_);
   TestCompletionCallback callback;
   int rv = resolver->Resolve(info, address_list, callback.callback(), NULL,
@@ -309,7 +305,7 @@ bool BaseTestServer::LoadTestRootCert() const {
 bool BaseTestServer::SetupWhenServerStarted() {
   DCHECK(host_port_pair_.port());
 
-  if ((type_ == TYPE_HTTPS || type_ == TYPE_WSS) && !LoadTestRootCert())
+  if (UsingSSL(type_) && !LoadTestRootCert())
       return false;
 
   started_ = true;
@@ -340,9 +336,7 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
   if (VLOG_IS_ON(1) || log_to_console_)
     arguments->Set("log-to-console", base::Value::CreateNullValue());
 
-  if (type_ == TYPE_HTTPS) {
-    arguments->Set("https", base::Value::CreateNullValue());
-
+  if (UsingSSL(type_)) {
     // Check the certificate arguments of the HTTPS server.
     FilePath certificate_path(certificates_dir_);
     FilePath certificate_file(ssl_options_.GetCertificateFile());
@@ -356,10 +350,6 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
       }
       arguments->SetString("cert-and-key-file", certificate_path.value());
     }
-
-    std::string ocsp_arg = ssl_options_.GetOCSPArgument();
-    if (!ocsp_arg.empty())
-      arguments->SetString("ocsp", ocsp_arg);
 
     // Check the client certificate related arguments.
     if (ssl_options_.request_client_certificate)
@@ -379,6 +369,14 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
 
     if (ssl_client_certs->GetSize())
       arguments->Set("ssl-client-ca", ssl_client_certs.release());
+  }
+
+  if (type_ == TYPE_HTTPS) {
+    arguments->Set("https", base::Value::CreateNullValue());
+
+    std::string ocsp_arg = ssl_options_.GetOCSPArgument();
+    if (!ocsp_arg.empty())
+      arguments->SetString("ocsp", ocsp_arg);
 
     // Check bulk cipher argument.
     scoped_ptr<base::ListValue> bulk_cipher_values(new base::ListValue());

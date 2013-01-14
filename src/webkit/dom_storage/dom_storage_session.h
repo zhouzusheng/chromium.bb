@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace dom_storage {
 
@@ -18,7 +19,7 @@ class DomStorageContext;
 // storage namespace and provides an interface to Clone() an
 // existing session storage namespace. It may be used on any thread.
 // See class comments for DomStorageContext for a larger overview.
-class DomStorageSession
+class WEBKIT_STORAGE_EXPORT DomStorageSession
     : public base::RefCountedThreadSafe<DomStorageSession> {
  public:
   // Constructs a |DomStorageSession| and allocates new IDs for it.
@@ -34,6 +35,7 @@ class DomStorageSession
     return persistent_namespace_id_;
   }
   void SetShouldPersist(bool should_persist);
+  bool should_persist() const;
   bool IsFromContext(DomStorageContext* context);
   DomStorageSession* Clone();
 

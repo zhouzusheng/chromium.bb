@@ -210,11 +210,39 @@ static unsigned calculateOutlineGlyphCount(HDC hdc) {
 
 class LogFontTypeface : public SkTypeface {
 public:
-    LogFontTypeface(SkTypeface::Style style, SkFontID fontID, const LOGFONT& lf) :
-      SkTypeface(style, fontID, false), fLogFont(lf), fSerializeAsStream(false) {}
+    LogFontTypeface(SkTypeface::Style style, SkFontID fontID, const LOGFONT& lf, bool serializeAsStream = false) :
+        SkTypeface(style, fontID, false), fLogFont(lf), fSerializeAsStream(serializeAsStream) {
+
+        // If the font has cubic outlines, it will not be rendered with ClearType.
+        HFONT font = CreateFontIndirect(&lf);
+
+        HDC deviceContext = ::CreateCompatibleDC(NULL);
+        HFONT savefont = (HFONT)SelectObject(deviceContext, font);
+
+        TEXTMETRIC textMetric;
+        if (0 == GetTextMetrics(deviceContext, &textMetric)) {
+            SkFontHost::EnsureTypefaceAccessible(*this);
+            if (0 == GetTextMetrics(deviceContext, &textMetric)) {
+                textMetric.tmPitchAndFamily = TMPF_TRUETYPE;
+            }
+        }
+        if (deviceContext) {
+            ::SelectObject(deviceContext, savefont);
+            ::DeleteDC(deviceContext);
+        }
+        if (font) {
+            ::DeleteObject(font);
+        }
+
+        // Used a logfont on a memory context, should never get a device font.
+        // Therefore all TMPF_DEVICE will be PostScript (cubic) fonts.
+        fCanBeLCD = !((textMetric.tmPitchAndFamily & TMPF_VECTOR) &&
+                      (textMetric.tmPitchAndFamily & TMPF_DEVICE));
+    }
 
     LOGFONT fLogFont;
     bool fSerializeAsStream;
+    bool fCanBeLCD;
 
     static LogFontTypeface* Create(const LOGFONT& lf) {
         SkTypeface::Style style = get_style(lf);
@@ -229,8 +257,7 @@ public:
      *  Takes ownership of fontMemResource.
      */
     FontMemResourceTypeface(SkTypeface::Style style, SkFontID fontID, const LOGFONT& lf, HANDLE fontMemResource) :
-      LogFontTypeface(style, fontID, lf), fFontMemResource(fontMemResource) {
-      fSerializeAsStream = true;
+        LogFontTypeface(style, fontID, lf, true), fFontMemResource(fontMemResource) {
     }
 
     HANDLE fFontMemResource;
@@ -521,9 +548,10 @@ protected:
     virtual uint16_t generateCharToGlyph(SkUnichar uni) SK_OVERRIDE;
     virtual void generateAdvance(SkGlyph* glyph) SK_OVERRIDE;
     virtual void generateMetrics(SkGlyph* glyph) SK_OVERRIDE;
-    virtual void generateImage(const SkGlyph& glyph, SkMaskGamma::PreBlend* maskPreBlend) SK_OVERRIDE;
+    virtual void generateImage(const SkGlyph& glyph) SK_OVERRIDE;
     virtual void generatePath(const SkGlyph& glyph, SkPath* path) SK_OVERRIDE;
-    virtual void generateFontMetrics(SkPaint::FontMetrics* mX, SkPaint::FontMetrics* mY) SK_OVERRIDE;
+    virtual void generateFontMetrics(SkPaint::FontMetrics* mX,
+                                     SkPaint::FontMetrics* mY) SK_OVERRIDE;
 
 private:
     HDCOffscreen fOffscreen;
@@ -1107,19 +1135,9 @@ static inline unsigned clamp255(unsigned x) {
     return x - (x >> 8);
 }
 
-void SkScalerContext_Windows::generateImage(const SkGlyph& glyph, SkMaskGamma::PreBlend* maskPreBlend) {
+void SkScalerContext_Windows::generateImage(const SkGlyph& glyph) {
     SkAutoMutexAcquire ac(gFTMutex);
     SkASSERT(fDDC);
-
-    //Must be careful not to use these if maskPreBlend == NULL
-    const uint8_t* tableR = NULL;
-    const uint8_t* tableG = NULL;
-    const uint8_t* tableB = NULL;
-    if (maskPreBlend) {
-        tableR = maskPreBlend->fR;
-        tableG = maskPreBlend->fG;
-        tableB = maskPreBlend->fB;
-    }
 
     const bool isBW = SkMask::kBW_Format == fRec.fMaskFormat;
     const bool isAA = !isLCD(fRec);
@@ -1175,10 +1193,10 @@ void SkScalerContext_Windows::generateImage(const SkGlyph& glyph, SkMaskGamma::P
         // since the caller may require A8 for maskfilters, we can't check for BW
         // ... until we have the caller tell us that explicitly
         const SkGdiRGB* src = (const SkGdiRGB*)bits;
-        if (maskPreBlend) {
-            rgb_to_a8<true>(src, srcRB, glyph, tableG);
+        if (fPreBlend.isApplicable()) {
+            rgb_to_a8<true>(src, srcRB, glyph, fPreBlend.fG);
         } else {
-            rgb_to_a8<false>(src, srcRB, glyph, tableG);
+            rgb_to_a8<false>(src, srcRB, glyph, fPreBlend.fG);
         }
     } else {    // LCD16
         const SkGdiRGB* src = (const SkGdiRGB*)bits;
@@ -1187,17 +1205,21 @@ void SkScalerContext_Windows::generateImage(const SkGlyph& glyph, SkMaskGamma::P
             ((SkGlyph*)&glyph)->fMaskFormat = SkMask::kBW_Format;
         } else {
             if (SkMask::kLCD16_Format == glyph.fMaskFormat) {
-                if (maskPreBlend) {
-                    rgb_to_lcd16<true>(src, srcRB, glyph, tableR, tableG, tableB);
+                if (fPreBlend.isApplicable()) {
+                    rgb_to_lcd16<true>(src, srcRB, glyph,
+                                       fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
                 } else {
-                    rgb_to_lcd16<false>(src, srcRB, glyph, tableR, tableG, tableB);
+                    rgb_to_lcd16<false>(src, srcRB, glyph,
+                                        fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
                 }
             } else {
                 SkASSERT(SkMask::kLCD32_Format == glyph.fMaskFormat);
-                if (maskPreBlend) {
-                    rgb_to_lcd32<true>(src, srcRB, glyph, tableR, tableG, tableB);
+                if (fPreBlend.isApplicable()) {
+                    rgb_to_lcd32<true>(src, srcRB, glyph,
+                                       fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
                 } else {
-                    rgb_to_lcd32<false>(src, srcRB, glyph, tableR, tableG, tableB);
+                    rgb_to_lcd32<false>(src, srcRB, glyph,
+                                        fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
                 }
             }
         }
@@ -1664,11 +1686,16 @@ SkTypeface* SkFontHost::CreateTypeface(const SkTypeface* familyFace,
 }
 
 SkTypeface* SkFontHost::CreateTypefaceFromFile(const char path[]) {
-    printf("SkFontHost::CreateTypefaceFromFile unimplemented");
-    return NULL;
+    SkTypeface* face = NULL;
+    SkAutoTUnref<SkFILEStream> stream(SkNEW_ARGS(SkFILEStream, (path)));
+
+    if (stream->isValid()) {
+        face = CreateTypefaceFromStream(stream);
+    }
+    return face;
 }
 
-void SkFontHost::FilterRec(SkScalerContext::Rec* rec) {
+void SkFontHost::FilterRec(SkScalerContext::Rec* rec, SkTypeface* typeface) {
     unsigned flagsWeDontSupport = SkScalerContext::kDevKernText_Flag |
                                   SkScalerContext::kAutohinting_Flag |
                                   SkScalerContext::kEmbeddedBitmapText_Flag |
@@ -1708,9 +1735,9 @@ void SkFontHost::FilterRec(SkScalerContext::Rec* rec) {
     }
 #endif
 
-#if 0
-    if (SkMask::kLCD16_Format == rec->fMaskFormat) {
-        rec->fMaskFormat = SkMask::kLCD32_Format;
+    LogFontTypeface* logfontTypeface = static_cast<LogFontTypeface*>(typeface);
+    if (!logfontTypeface->fCanBeLCD && isLCD(*rec)) {
+        rec->fMaskFormat = SkMask::kA8_Format;
+        rec->fFlags &= ~SkScalerContext::kGenA8FromLCD_Flag;
     }
-#endif
 }

@@ -7,6 +7,7 @@
 
 #include "ui/base/ui_export.h"
 #include "ui/gfx/point_base.h"
+#include "ui/gfx/point_f.h"
 
 #if defined(OS_WIN)
 typedef unsigned long DWORD;
@@ -43,9 +44,37 @@ class UI_EXPORT Point : public PointBase<Point, int> {
   CGPoint ToCGPoint() const;
 #endif
 
+  operator PointF() const {
+    return PointF(x(), y());
+  }
+
+  PointF Scale(float scale) const WARN_UNUSED_RESULT {
+    return Scale(scale, scale);
+  }
+
+  PointF Scale(float x_scale, float y_scale) const WARN_UNUSED_RESULT {
+    return PointF(x() * x_scale, y() * y_scale);
+  }
+
   // Returns a string representation of point.
   std::string ToString() const;
 };
+
+inline bool operator==(const Point& lhs, const Point& rhs) {
+  return lhs.x() == rhs.x() && lhs.y() == rhs.y();
+}
+
+inline bool operator!=(const Point& lhs, const Point& rhs) {
+  return !(lhs == rhs);
+}
+
+inline Point operator+(Point lhs, Point rhs) {
+  return lhs.Add(rhs);
+}
+
+inline Point operator-(Point lhs, Point rhs) {
+  return lhs.Subtract(rhs);
+}
 
 #if !defined(COMPILER_MSVC)
 extern template class PointBase<Point, int>;

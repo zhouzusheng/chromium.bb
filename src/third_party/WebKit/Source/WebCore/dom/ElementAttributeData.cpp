@@ -31,12 +31,13 @@
 #include "CSSStyleSheet.h"
 #include "StyledElement.h"
 #include "WebCoreMemoryInstrumentation.h"
+#include <wtf/MemoryInstrumentationVector.h>
 
 namespace WebCore {
 
 static size_t immutableElementAttributeDataSize(unsigned count)
 {
-    return sizeof(ImmutableElementAttributeData) + sizeof(Attribute) * count;
+    return sizeof(ElementAttributeData) + sizeof(Attribute) * count;
 }
 
 PassRefPtr<ElementAttributeData> ElementAttributeData::createImmutable(const Vector<Attribute>& attributes)
@@ -114,7 +115,7 @@ static AttrList* ensureAttrListForElement(Element* element)
     ASSERT(!attrListMap().contains(element));
     element->setHasAttrList();
     AttrListMap::AddResult result = attrListMap().add(element, adoptPtr(new AttrList));
-    return result.iterator->second.get();
+    return result.iterator->value.get();
 }
 
 static void removeAttrListForElement(Element* element)
@@ -225,37 +226,17 @@ void ElementAttributeData::destroyInlineStyle(StyledElement* element)
     m_inlineStyleDecl = 0;
 }
 
-void ElementAttributeData::addAttribute(const Attribute& attribute, Element* element, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
+void ElementAttributeData::addAttribute(const Attribute& attribute)
 {
     ASSERT(isMutable());
-
-    if (element && inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        element->willModifyAttribute(attribute.name(), nullAtom, attribute.value());
-
     mutableAttributeVector().append(attribute);
-
-    if (element && inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        element->didAddAttribute(attribute);
 }
 
-void ElementAttributeData::removeAttribute(size_t index, Element* element, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
+void ElementAttributeData::removeAttribute(size_t index)
 {
     ASSERT(isMutable());
     ASSERT(index < length());
-
-    Attribute& attribute = mutableAttributeVector().at(index);
-    QualifiedName name = attribute.name();
-
-    if (element && inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        element->willRemoveAttribute(name, attribute.value());
-
-    if (RefPtr<Attr> attr = attrIfExists(element, name))
-        attr->detachFromElementWithValue(attribute.value());
-
     mutableAttributeVector().remove(index);
-
-    if (element && inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        element->didRemoveAttribute(name);
 }
 
 bool ElementAttributeData::isEquivalent(const ElementAttributeData* other) const
@@ -300,7 +281,7 @@ void ElementAttributeData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo)
     info.addMember(m_classNames);
     info.addMember(m_idForStyleResolution);
     if (m_isMutable)
-        info.addVector(mutableAttributeVector());
+        info.addMember(mutableAttributeVector());
     for (unsigned i = 0, len = length(); i < len; i++)
         info.addMember(*attributeItem(i));
 }
@@ -357,7 +338,7 @@ void ElementAttributeData::cloneDataFrom(const ElementAttributeData& sourceData,
             static_cast<StyledElement&>(targetElement).styleAttributeChanged(attribute.value(), StyledElement::DoNotReparseStyleAttribute);
             continue;
         }
-        targetElement.attributeChanged(attribute);
+        targetElement.attributeChanged(attribute.name(), attribute.value());
     }
 
     if (targetElement.isStyledElement() && sourceData.m_inlineStyleDecl) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2011, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -46,10 +46,12 @@ using namespace std;
 
 namespace WebCore {
 
-static void setLoadsImagesAutomaticallyInAllFrames(Page* page)
+static void setImageLoadingSettings(Page* page)
 {
-    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext())
+    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        frame->document()->cachedResourceLoader()->setImagesEnabled(page->settings()->areImagesEnabled());
         frame->document()->cachedResourceLoader()->setAutoLoadImages(page->settings()->loadsImagesAutomatically());
+    }
 }
 
 // Sets the entry in the font map for the given script. If family is the empty string, removes the entry instead.
@@ -60,7 +62,7 @@ static inline void setGenericFontFamilyMap(ScriptFontFamilyMap& fontMap, const A
         if (it == fontMap.end())
             return;
         fontMap.remove(it);
-    } else if (it != fontMap.end() && it->second == family)
+    } else if (it != fontMap.end() && it->value == family)
         return;
     else
         fontMap.set(static_cast<int>(script), family);
@@ -73,21 +75,25 @@ static inline const AtomicString& getGenericFontFamilyForScript(const ScriptFont
 {
     ScriptFontFamilyMap::const_iterator it = fontMap.find(static_cast<int>(script));
     if (it != fontMap.end())
-        return it->second;
+        return it->value;
     if (script != USCRIPT_COMMON)
         return getGenericFontFamilyForScript(fontMap, USCRIPT_COMMON);
     return emptyAtom;
 }
+
+double Settings::gDefaultMinDOMTimerInterval = 0.010; // 10 milliseconds
+double Settings::gDefaultDOMTimerAlignmentInterval = 0;
 
 #if USE(SAFARI_THEME)
 bool Settings::gShouldPaintNativeControls = true;
 #endif
 
 #if USE(AVFOUNDATION)
-bool Settings::gAVFoundationEnabled(false);
+bool Settings::gAVFoundationEnabled = false;
 #endif
 
 bool Settings::gMockScrollbarsEnabled = false;
+bool Settings::gUsesOverlayScrollbars = false;
 
 #if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
 bool Settings::gShouldUseHighResolutionTimers = true;
@@ -122,6 +128,7 @@ static const double defaultIncrementalRenderingSuppressionTimeoutInSeconds = 5;
 
 Settings::Settings(Page* page)
     : m_page(0)
+    , m_mediaTypeOverride("screen")
     , m_editableLinkBehavior(EditableLinkDefaultBehavior)
     , m_textDirectionSubmenuInclusionBehavior(TextDirectionSubmenuAutomaticallyIncluded)
     , m_passwordEchoDurationInSeconds(1)
@@ -129,6 +136,7 @@ Settings::Settings(Page* page)
     , m_minimumLogicalFontSize(0)
     , m_defaultFontSize(0)
     , m_defaultFixedFontSize(0)
+    , m_screenFontSubstitutionEnabled(true)
     , m_validationMessageTimerMagnification(50)
     , m_minimumAccelerated2dCanvasSize(257 * 256)
     , m_layoutFallbackWidth(980)
@@ -164,6 +172,7 @@ Settings::Settings(Page* page)
     , m_allowUniversalAccessFromFileURLs(true)
     , m_allowFileAccessFromFileURLs(true)
     , m_javaScriptCanOpenWindowsAutomatically(false)
+    , m_supportsMultipleWindows(true)
     , m_javaScriptCanAccessClipboard(false)
     , m_shouldPrintBackgrounds(false)
     , m_textAreasAreResizable(false)
@@ -289,7 +298,9 @@ Settings::Settings(Page* page)
     , m_windowFocusRestricted(true)
     , m_diagnosticLoggingEnabled(false)
     , m_scrollingPerformanceLoggingEnabled(false)
-    , m_loadsImagesAutomaticallyTimer(this, &Settings::loadsImagesAutomaticallyTimerFired)
+    , m_applyPageScaleFactorInCompositor(false)
+    , m_plugInSnapshottingEnabled(false)
+    , m_setImageLoadingSettingsTimer(this, &Settings::imageLoadingSettingsTimerFired)
     , m_incrementalRenderingSuppressionTimeoutInSeconds(defaultIncrementalRenderingSuppressionTimeoutInSeconds)
 {
     // A Frame may not have been created yet, so we initialize the AtomicString
@@ -417,6 +428,15 @@ void Settings::setDefaultFixedFontSize(int defaultFontSize)
     m_page->setNeedsRecalcStyleInAllFrames();
 }
 
+void Settings::setScreenFontSubstitutionEnabled(bool screenFontSubstitutionEnabled)
+{
+    if (m_screenFontSubstitutionEnabled == screenFontSubstitutionEnabled)
+        return;
+
+    m_screenFontSubstitutionEnabled = screenFontSubstitutionEnabled;
+    m_page->setNeedsRecalcStyleInAllFrames();
+}
+
 #if ENABLE(TEXT_AUTOSIZING)
 void Settings::setTextAutosizingEnabled(bool textAutosizingEnabled)
 {
@@ -444,6 +464,31 @@ void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
 
 #endif
 
+void Settings::setResolutionOverride(const IntSize& densityPerInchOverride)
+{
+    if (m_resolutionDensityPerInchOverride == densityPerInchOverride)
+        return;
+
+    m_resolutionDensityPerInchOverride = densityPerInchOverride;
+    m_page->setNeedsRecalcStyleInAllFrames();
+}
+
+void Settings::setMediaTypeOverride(const String& mediaTypeOverride)
+{
+    if (m_mediaTypeOverride == mediaTypeOverride)
+        return;
+
+    m_mediaTypeOverride = mediaTypeOverride;
+
+    Frame* mainFrame = m_page->mainFrame();
+    ASSERT(mainFrame);
+    FrameView* view = mainFrame->view();
+    ASSERT(view);
+
+    view->setMediaType(mediaTypeOverride);
+    m_page->setNeedsRecalcStyleInAllFrames();
+}
+
 void Settings::setLoadsImagesAutomatically(bool loadsImagesAutomatically)
 {
     m_loadsImagesAutomatically = loadsImagesAutomatically;
@@ -455,12 +500,12 @@ void Settings::setLoadsImagesAutomatically(bool loadsImagesAutomatically)
     // Starting these loads synchronously is not important.  By putting it on a 0-delay, properly closing the Page cancels them
     // before they have a chance to really start.
     // See http://webkit.org/b/60572 for more discussion.
-    m_loadsImagesAutomaticallyTimer.startOneShot(0);
+    m_setImageLoadingSettingsTimer.startOneShot(0);
 }
 
-void Settings::loadsImagesAutomaticallyTimerFired(Timer<Settings>*)
+void Settings::imageLoadingSettingsTimerFired(Timer<Settings>*)
 {
-    setLoadsImagesAutomaticallyInAllFrames(m_page);
+    setImageLoadingSettings(m_page);
 }
 
 void Settings::setLoadsSiteIconsIgnoringImageLoadingSetting(bool loadsSiteIcons)
@@ -506,6 +551,9 @@ void Settings::setJavaEnabledForLocalFiles(bool isJavaEnabledForLocalFiles)
 void Settings::setImagesEnabled(bool areImagesEnabled)
 {
     m_areImagesEnabled = areImagesEnabled;
+
+    // See comment in setLoadsImagesAutomatically.
+    m_setImageLoadingSettingsTimer.startOneShot(0);
 }
 
 void Settings::setMediaEnabled(bool isMediaEnabled)
@@ -557,6 +605,11 @@ void Settings::setPrivateBrowsingEnabled(bool privateBrowsingEnabled)
 void Settings::setJavaScriptCanOpenWindowsAutomatically(bool javaScriptCanOpenWindowsAutomatically)
 {
     m_javaScriptCanOpenWindowsAutomatically = javaScriptCanOpenWindowsAutomatically;
+}
+
+void Settings::setSupportsMultipleWindows(bool supportsMultipleWindows)
+{
+    m_supportsMultipleWindows = supportsMultipleWindows;
 }
 
 void Settings::setJavaScriptCanAccessClipboard(bool javaScriptCanAccessClipboard)
@@ -647,12 +700,12 @@ void Settings::setDOMPasteAllowed(bool DOMPasteAllowed)
 
 void Settings::setDefaultMinDOMTimerInterval(double interval)
 {
-    DOMTimer::setDefaultMinTimerInterval(interval);
+    gDefaultMinDOMTimerInterval = interval;
 }
 
 double Settings::defaultMinDOMTimerInterval()
 {
-    return DOMTimer::defaultMinTimerInterval();
+    return gDefaultMinDOMTimerInterval;
 }
 
 void Settings::setMinDOMTimerInterval(double interval)
@@ -663,6 +716,26 @@ void Settings::setMinDOMTimerInterval(double interval)
 double Settings::minDOMTimerInterval()
 {
     return m_page->minimumTimerInterval();
+}
+
+void Settings::setDefaultDOMTimerAlignmentInterval(double interval)
+{
+    gDefaultDOMTimerAlignmentInterval = interval;
+}
+
+double Settings::defaultDOMTimerAlignmentInterval()
+{
+    return gDefaultDOMTimerAlignmentInterval;
+}
+
+void Settings::setDOMTimerAlignmentInterval(double interval)
+{
+    m_page->setTimerAlignmentInterval(interval);
+}
+
+double Settings::domTimerAlignmentInterval() const
+{
+    return m_page->timerAlignmentInterval();
 }
 
 void Settings::setUsesPageCache(bool usesPageCache)
@@ -968,6 +1041,16 @@ void Settings::setMockScrollbarsEnabled(bool flag)
 bool Settings::mockScrollbarsEnabled()
 {
     return gMockScrollbarsEnabled;
+}
+
+void Settings::setUsesOverlayScrollbars(bool flag)
+{
+    gUsesOverlayScrollbars = flag;
+}
+
+bool Settings::usesOverlayScrollbars()
+{
+    return gUsesOverlayScrollbars;
 }
 
 #if USE(JSC)

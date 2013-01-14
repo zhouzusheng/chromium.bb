@@ -128,13 +128,25 @@ bool CSSCrossfadeValue::isPending() const
 
 void CSSCrossfadeValue::loadSubimages(CachedResourceLoader* cachedResourceLoader)
 {
+    CachedResourceHandle<CachedImage> oldCachedFromImage = m_cachedFromImage;
+    CachedResourceHandle<CachedImage> oldCachedToImage = m_cachedToImage;
+
     m_cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
     m_cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
 
-    if (m_cachedFromImage)
-        m_cachedFromImage->addClient(&m_crossfadeSubimageObserver);
-    if (m_cachedToImage)
-        m_cachedToImage->addClient(&m_crossfadeSubimageObserver);
+    if (m_cachedFromImage != oldCachedFromImage) {
+        if (oldCachedFromImage)
+            oldCachedFromImage->removeClient(&m_crossfadeSubimageObserver);
+        if (m_cachedFromImage)
+            m_cachedFromImage->addClient(&m_crossfadeSubimageObserver);
+    }
+
+    if (m_cachedToImage != oldCachedToImage) {
+        if (oldCachedToImage)
+            oldCachedToImage->removeClient(&m_crossfadeSubimageObserver);
+        if (m_cachedToImage)
+            m_cachedToImage->addClient(&m_crossfadeSubimageObserver);
+    }
 
     m_crossfadeSubimageObserver.setReady(true);
 }
@@ -179,7 +191,7 @@ void CSSCrossfadeValue::crossfadeChanged(const IntRect&)
 {
     RenderObjectSizeCountMap::const_iterator end = clients().end();
     for (RenderObjectSizeCountMap::const_iterator curr = clients().begin(); curr != end; ++curr) {
-        RenderObject* client = const_cast<RenderObject*>(curr->first);
+        RenderObject* client = const_cast<RenderObject*>(curr->key);
         client->imageChanged(static_cast<WrappedImagePtr>(this));
     }
 }

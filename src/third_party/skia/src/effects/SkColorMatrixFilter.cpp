@@ -318,4 +318,114 @@ bool SkColorMatrixFilter::asColorMatrix(SkScalar matrix[20]) {
     return true;
 }
 
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkColorMatrixFilter)
+#if SK_SUPPORT_GPU
+#include "GrEffect.h"
+#include "gl/GrGLEffect.h"
+
+class ColorMatrixEffect : public GrEffect {
+public:
+    static const char* Name() { return "Color Matrix"; }
+
+    ColorMatrixEffect(const SkColorMatrix& matrix) : GrEffect(0), fMatrix(matrix) {}
+
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<ColorMatrixEffect>::getInstance();
+    }
+
+    virtual bool isEqual(const GrEffect& s) const {
+        const ColorMatrixEffect& cme = static_cast<const ColorMatrixEffect&>(s);
+        return cme.fMatrix == fMatrix;
+    }
+
+    GR_DECLARE_EFFECT_TEST;
+
+    class GLEffect : public GrGLLegacyEffect {
+    public:
+        // this class always generates the same code.
+        static EffectKey GenKey(const GrEffect& s, const GrGLCaps&) { return 0; }
+
+        GLEffect(const GrBackendEffectFactory& factory,
+                 const GrEffect& effect)
+        : INHERITED(factory)
+        , fMatrixHandle(GrGLUniformManager::kInvalidUniformHandle)
+        , fVectorHandle(GrGLUniformManager::kInvalidUniformHandle) {
+        }
+
+        virtual void setupVariables(GrGLShaderBuilder* builder) SK_OVERRIDE {
+            fMatrixHandle = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                kMat44f_GrSLType,
+                                                "ColorMatrix");
+            fVectorHandle = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                                kVec4f_GrSLType,
+                                                "ColorMatrixVector");
+        }
+
+        virtual void emitVS(GrGLShaderBuilder* builder, const char* vertexCoords) SK_OVERRIDE {
+        }
+
+        virtual void emitFS(GrGLShaderBuilder* builder,
+                            const char* outputColor,
+                            const char* inputColor,
+                            const TextureSamplerArray&) SK_OVERRIDE {
+            if (NULL == inputColor) {
+                // could optimize this case, but we aren't for now.
+                inputColor = GrGLSLOnesVecf(4);
+            }
+            // The max() is to guard against 0 / 0 during unpremul when the incoming color is
+            // transparent black.
+            builder->fFSCode.appendf("\tfloat nonZeroAlpha = max(%s.a, 0.00001);\n", inputColor);
+            builder->fFSCode.appendf("\t%s = %s * vec4(%s.rgb / nonZeroAlpha, nonZeroAlpha) + %s;\n",
+                                     outputColor,
+                                     builder->getUniformCStr(fMatrixHandle),
+                                     inputColor,
+                                     builder->getUniformCStr(fVectorHandle));
+            builder->fFSCode.appendf("\t%s.rgb *= %s.a;\n", outputColor, outputColor);
+        }
+
+        virtual void setData(const GrGLUniformManager& uniManager,
+                             const GrEffect& effect) SK_OVERRIDE {
+            const ColorMatrixEffect& cme = static_cast<const ColorMatrixEffect&>(effect);
+            const float* m = cme.fMatrix.fMat;
+            // The GL matrix is transposed from SkColorMatrix.
+            GrGLfloat mt[]  = {
+                m[0], m[5], m[10], m[15],
+                m[1], m[6], m[11], m[16],
+                m[2], m[7], m[12], m[17],
+                m[3], m[8], m[13], m[18],
+            };
+            static const float kScale = 1.0f / 255.0f;
+            GrGLfloat vec[] = {
+                m[4] * kScale, m[9] * kScale, m[14] * kScale, m[19] * kScale,
+            };
+            uniManager.setMatrix4fv(fMatrixHandle, 0, 1, mt);
+            uniManager.set4fv(fVectorHandle, 0, 1, vec);
+        }
+
+    private:
+        GrGLUniformManager::UniformHandle fMatrixHandle;
+        GrGLUniformManager::UniformHandle fVectorHandle;
+    };
+
+private:
+    SkColorMatrix fMatrix;
+
+    typedef GrGLLegacyEffect INHERITED;
+};
+
+GR_DEFINE_EFFECT_TEST(ColorMatrixEffect);
+
+GrEffect* ColorMatrixEffect::TestCreate(SkRandom* random,
+                                        GrContext*,
+                                        GrTexture* dummyTextures[2]) {
+    SkColorMatrix colorMatrix;
+    for (int i = 0; i < SK_ARRAY_COUNT(colorMatrix.fMat); ++i) {
+        colorMatrix.fMat[i] = random->nextSScalar1();
+    }
+    return SkNEW_ARGS(ColorMatrixEffect, (colorMatrix));
+}
+
+GrEffect* SkColorMatrixFilter::asNewEffect(GrContext*) const {
+    return SkNEW_ARGS(ColorMatrixEffect, (fMatrix));
+}
+
+#endif

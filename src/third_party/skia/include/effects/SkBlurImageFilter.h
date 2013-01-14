@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef SkBlurImageFilter_DEFINED
 #define SkBlurImageFilter_DEFINED
 
@@ -26,7 +25,7 @@ protected:
                                SkBitmap* result, SkIPoint* offset) SK_OVERRIDE;
 
     bool canFilterImageGPU() const SK_OVERRIDE { return true; }
-    virtual GrTexture* onFilterImageGPU(GrTexture* src, const SkRect& rect) SK_OVERRIDE;
+    virtual GrTexture* onFilterImageGPU(Proxy* proxy, GrTexture* src, const SkRect& rect) SK_OVERRIDE;
 
 private:
     SkSize   fSigma;
@@ -34,4 +33,3 @@ private:
 };
 
 #endif
-

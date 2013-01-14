@@ -197,8 +197,11 @@ static icu::Collator* CreateICUCollator(
 
   // Set flags first, and then override them with sensitivity if necessary.
   SetBooleanAttribute(UCOL_NUMERIC_COLLATION, "numeric", options, collator);
-  SetBooleanAttribute(
-      UCOL_NORMALIZATION_MODE, "normalization", options, collator);
+
+  // Normalization is always on, by the spec. We are free to optimize
+  // if the strings are already normalized (but we don't have a way to tell
+  // that right now).
+  collator->setAttribute(UCOL_NORMALIZATION_MODE, UCOL_ON, status);
 
   icu::UnicodeString case_first;
   if (Utils::ExtractStringSetting(options, "caseFirst", &case_first)) {
@@ -259,8 +262,6 @@ static void SetResolvedSettings(const icu::Locale& icu_locale,
   v8::HandleScope handle_scope;
 
   SetBooleanSetting(UCOL_NUMERIC_COLLATION, collator, "numeric", resolved);
-  SetBooleanSetting(
-      UCOL_NORMALIZATION_MODE, collator, "normalization", resolved);
 
   UErrorCode status = U_ZERO_ERROR;
 

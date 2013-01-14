@@ -178,6 +178,23 @@ enum TransitionFlag {
 };
 
 
+// Indicates whether the transition is simple: the target map of the transition
+// either extends the current map with a new property, or it modifies the
+// property that was added last to the current map.
+enum SimpleTransitionFlag {
+  SIMPLE_TRANSITION,
+  FULL_TRANSITION
+};
+
+
+// Indicates whether we are only interested in the descriptors of a particular
+// map, or in all descriptors in the descriptor array.
+enum DescriptorFlag {
+  ALL_DESCRIPTORS,
+  OWN_DESCRIPTORS
+};
+
+
 // Instance size sentinel for objects of variable size.
 const int kVariableSizeSentinel = 0;
 
@@ -714,6 +731,11 @@ struct ValueInfo : public Malloced {
 // A template-ized version of the IsXXX functions.
 template <class C> static inline bool Is(Object* obj);
 
+#ifdef VERIFY_HEAP
+#define DECLARE_VERIFIER(Name) void Name##Verify();
+#else
+#define DECLARE_VERIFIER(Name)
+#endif
 
 class MaybeObject BASE_EMBEDDED {
  public:
@@ -758,7 +780,7 @@ class MaybeObject BASE_EMBEDDED {
   void Print(FILE* out);
   void PrintLn(FILE* out);
 #endif
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   // Verifies the object.
   void Verify();
 #endif
@@ -965,7 +987,7 @@ class Object : public MaybeObject {
   // < the length of the string.  Used to implement [] on strings.
   inline bool IsStringObjectWithCharacterAt(uint32_t index);
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   // Verify a pointer is a valid object pointer.
   static void VerifyPointer(Object* p);
 #endif
@@ -1020,9 +1042,8 @@ class Smi: public Object {
   }
   void SmiPrint(FILE* out);
   void SmiPrint(StringStream* accumulator);
-#ifdef DEBUG
-  void SmiVerify();
-#endif
+
+  DECLARE_VERIFIER(Smi)
 
   static const int kMinValue =
       (static_cast<unsigned int>(-1)) << (kSmiValueSize - 1);
@@ -1093,9 +1114,8 @@ class Failure: public MaybeObject {
   }
   void FailurePrint(FILE* out);
   void FailurePrint(StringStream* accumulator);
-#ifdef DEBUG
-  void FailureVerify();
-#endif
+
+  DECLARE_VERIFIER(Failure)
 
  private:
   inline intptr_t value() const;
@@ -1226,9 +1246,8 @@ class HeapObject: public Object {
   void HeapObjectPrint(FILE* out);
   void PrintHeader(FILE* out, const char* id);
 #endif
-
-#ifdef DEBUG
-  void HeapObjectVerify();
+  DECLARE_VERIFIER(HeapObject)
+#ifdef VERIFY_HEAP
   inline void VerifyObjectField(int offset);
   inline void VerifySmiField(int offset);
 
@@ -1314,9 +1333,7 @@ class HeapNumber: public HeapObject {
   }
   void HeapNumberPrint(FILE* out);
   void HeapNumberPrint(StringStream* accumulator);
-#ifdef DEBUG
-  void HeapNumberVerify();
-#endif
+  DECLARE_VERIFIER(HeapNumber)
 
   inline int get_exponent();
   inline int get_sign();
@@ -1603,6 +1620,18 @@ class JSObject: public JSReceiver {
       Handle<String> key,
       Handle<Object> value,
       PropertyAttributes attributes);
+
+  // Try to follow an existing transition to a field with attributes NONE. The
+  // return value indicates whether the transition was successful.
+  static inline bool TryTransitionToField(Handle<JSObject> object,
+                                          Handle<String> key);
+
+  inline int LastAddedFieldIndex();
+
+  // Extend the receiver with a single fast property appeared first in the
+  // passed map. This also extends the property backing store if necessary.
+  static void AddFastPropertyUsingMap(Handle<JSObject> object, Handle<Map> map);
+  inline MUST_USE_RESULT MaybeObject* AddFastPropertyUsingMap(Map* map);
 
   // Can cause GC.
   MUST_USE_RESULT MaybeObject* SetLocalPropertyIgnoreAttributes(
@@ -2061,9 +2090,7 @@ class JSObject: public JSReceiver {
   }
   void JSObjectPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSObjectVerify();
-#endif
+  DECLARE_VERIFIER(JSObject)
 #ifdef OBJECT_PRINT
   inline void PrintProperties() {
     PrintProperties(stdout);
@@ -2345,8 +2372,8 @@ class FixedArray: public FixedArrayBase {
   }
   void FixedArrayPrint(FILE* out);
 #endif
+  DECLARE_VERIFIER(FixedArray)
 #ifdef DEBUG
-  void FixedArrayVerify();
   // Checks if two FixedArrays have identical contents.
   bool IsEqualTo(FixedArray* other);
 #endif
@@ -2366,23 +2393,6 @@ class FixedArray: public FixedArrayBase {
     static inline int SizeOf(Map* map, HeapObject* object) {
       return SizeFor(reinterpret_cast<FixedArray*>(object)->length());
     }
-  };
-
-  // WhitenessWitness is used to prove that a descriptor array is white
-  // (unmarked), so incremental write barriers can be skipped because the
-  // marking invariant cannot be broken and slots pointing into evacuation
-  // candidates will be discovered when the object is scanned. A witness is
-  // always stack-allocated right after creating an array. By allocating a
-  // witness, incremental marking is globally disabled. The witness is then
-  // passed along wherever needed to statically prove that the array is known to
-  // be white.
-  class WhitenessWitness {
-   public:
-    inline explicit WhitenessWitness(FixedArray* array);
-    inline ~WhitenessWitness();
-
-   private:
-    IncrementalMarking* marking_;
   };
 
  protected:
@@ -2449,10 +2459,7 @@ class FixedDoubleArray: public FixedArrayBase {
   }
   void FixedDoubleArrayPrint(FILE* out);
 #endif
-
-#ifdef DEBUG
-  void FixedDoubleArrayVerify();
-#endif
+  DECLARE_VERIFIER(FixedDoubleArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(FixedDoubleArray);
@@ -2461,13 +2468,31 @@ class FixedDoubleArray: public FixedArrayBase {
 
 // DescriptorArrays are fixed arrays used to hold instance descriptors.
 // The format of the these objects is:
-//   [0]: Either Smi(0) if uninitialized, or a pointer to small fixed array:
+//   [0]: Number of descriptors
+//   [1]: Either Smi(0) if uninitialized, or a pointer to small fixed array:
 //          [0]: pointer to fixed array with enum cache
 //          [1]: either Smi(0) or pointer to fixed array with indices
-//   [1]: first key
-//   [length() - kDescriptorSize]: last key
+//   [2]: first key
+//   [2 + number of descriptors * kDescriptorSize]: start of slack
 class DescriptorArray: public FixedArray {
  public:
+  // WhitenessWitness is used to prove that a descriptor array is white
+  // (unmarked), so incremental write barriers can be skipped because the
+  // marking invariant cannot be broken and slots pointing into evacuation
+  // candidates will be discovered when the object is scanned. A witness is
+  // always stack-allocated right after creating an array. By allocating a
+  // witness, incremental marking is globally disabled. The witness is then
+  // passed along wherever needed to statically prove that the array is known to
+  // be white.
+  class WhitenessWitness {
+   public:
+    inline explicit WhitenessWitness(FixedArray* array);
+    inline ~WhitenessWitness();
+
+   private:
+    IncrementalMarking* marking_;
+  };
+
   // Returns true for both shared empty_descriptor_array and for smis, which the
   // map uses to encode additional bit fields when the descriptor array is not
   // yet used.
@@ -2477,20 +2502,47 @@ class DescriptorArray: public FixedArray {
   int number_of_descriptors() {
     ASSERT(length() >= kFirstIndex || IsEmpty());
     int len = length();
-    return len <= kFirstIndex ? 0 : (len - kFirstIndex) / kDescriptorSize;
+    return len == 0 ? 0 : Smi::cast(get(kDescriptorLengthIndex))->value();
   }
 
+  int number_of_descriptors_storage() {
+    int len = length();
+    return len == 0 ? 0 : (len - kFirstIndex) / kDescriptorSize;
+  }
+
+  int NumberOfSlackDescriptors() {
+    return number_of_descriptors_storage() - number_of_descriptors();
+  }
+
+  inline void SetNumberOfDescriptors(int number_of_descriptors);
   inline int number_of_entries() { return number_of_descriptors(); }
-  inline int NextEnumerationIndex() { return number_of_descriptors() + 1; }
 
   bool HasEnumCache() {
     return !IsEmpty() && !get(kEnumCacheIndex)->IsSmi();
   }
 
-  Object* GetEnumCache() {
+  void CopyEnumCacheFrom(DescriptorArray* array) {
+    set(kEnumCacheIndex, array->get(kEnumCacheIndex));
+  }
+
+  FixedArray* GetEnumCache() {
     ASSERT(HasEnumCache());
     FixedArray* bridge = FixedArray::cast(get(kEnumCacheIndex));
-    return bridge->get(kEnumCacheBridgeCacheIndex);
+    return FixedArray::cast(bridge->get(kEnumCacheBridgeCacheIndex));
+  }
+
+  bool HasEnumIndicesCache() {
+    if (IsEmpty()) return false;
+    Object* object = get(kEnumCacheIndex);
+    if (object->IsSmi()) return false;
+    FixedArray* bridge = FixedArray::cast(object);
+    return !bridge->get(kEnumCacheBridgeIndicesCacheIndex)->IsSmi();
+  }
+
+  FixedArray* GetEnumIndicesCache() {
+    ASSERT(HasEnumIndicesCache());
+    FixedArray* bridge = FixedArray::cast(get(kEnumCacheIndex));
+    return FixedArray::cast(bridge->get(kEnumCacheBridgeIndicesCacheIndex));
   }
 
   Object** GetEnumCacheSlot() {
@@ -2498,6 +2550,8 @@ class DescriptorArray: public FixedArray {
     return HeapObject::RawField(reinterpret_cast<HeapObject*>(this),
                                 kEnumCacheOffset);
   }
+
+  void ClearEnumCache();
 
   // Initialize or change the enum cache,
   // using the supplied storage for the small "bridge".
@@ -2526,13 +2580,13 @@ class DescriptorArray: public FixedArray {
   inline void Set(int descriptor_number,
                   Descriptor* desc,
                   const WhitenessWitness&);
+  inline void Set(int descriptor_number, Descriptor* desc);
 
   // Append automatically sets the enumeration index. This should only be used
   // to add descriptors in bulk at the end, followed by sorting the descriptor
   // array.
-  inline void Append(Descriptor* desc,
-                     const WhitenessWitness&,
-                     int number_of_set_descriptors);
+  inline void Append(Descriptor* desc, const WhitenessWitness&);
+  inline void Append(Descriptor* desc);
 
   // Transfer a complete descriptor from the src descriptor array to this
   // descriptor array.
@@ -2541,23 +2595,22 @@ class DescriptorArray: public FixedArray {
                 int src_index,
                 const WhitenessWitness&);
 
+  MUST_USE_RESULT MaybeObject* CopyUpTo(int enumeration_index);
+
   // Sort the instance descriptors by the hash codes of their keys.
   void Sort();
-  inline void SwapSortedKeys(int first, int second);
 
   // Search the instance descriptors for given name.
-  INLINE(int Search(String* name));
+  INLINE(int Search(String* name, int number_of_own_descriptors));
 
   // As the above, but uses DescriptorLookupCache and updates it when
   // necessary.
-  INLINE(int SearchWithCache(String* name));
-
-  // Tells whether the name is present int the array.
-  bool Contains(String* name) { return kNotFound != Search(name); }
+  INLINE(int SearchWithCache(String* name, Map* map));
 
   // Allocates a DescriptorArray, but returns the singleton
   // empty descriptor array object if number_of_descriptors is 0.
-  MUST_USE_RESULT static MaybeObject* Allocate(int number_of_descriptors);
+  MUST_USE_RESULT static MaybeObject* Allocate(int number_of_descriptors,
+                                               int slack = 0);
 
   // Casting.
   static inline DescriptorArray* cast(Object* obj);
@@ -2565,8 +2618,9 @@ class DescriptorArray: public FixedArray {
   // Constant for denoting key was not found.
   static const int kNotFound = -1;
 
-  static const int kEnumCacheIndex = 0;
-  static const int kFirstIndex = 1;
+  static const int kDescriptorLengthIndex = 0;
+  static const int kEnumCacheIndex = 1;
+  static const int kFirstIndex = 2;
 
   // The length of the "bridge" to the enum cache.
   static const int kEnumCacheBridgeLength = 2;
@@ -2574,7 +2628,8 @@ class DescriptorArray: public FixedArray {
   static const int kEnumCacheBridgeIndicesCacheIndex = 1;
 
   // Layout description.
-  static const int kEnumCacheOffset = FixedArray::kHeaderSize;
+  static const int kDescriptorLengthOffset = FixedArray::kHeaderSize;
+  static const int kEnumCacheOffset = kDescriptorLengthOffset + kPointerSize;
   static const int kFirstOffset = kEnumCacheOffset + kPointerSize;
 
   // Layout description for the bridge array.
@@ -2596,7 +2651,7 @@ class DescriptorArray: public FixedArray {
 
 #ifdef DEBUG
   // Is the descriptor array sorted and without duplicates?
-  bool IsSortedNoDuplicates();
+  bool IsSortedNoDuplicates(int valid_descriptors = -1);
 
   // Is the descriptor array consistent with the back pointers in targets?
   bool IsConsistentWithBackPointers(Map* current_map);
@@ -2649,24 +2704,21 @@ class DescriptorArray: public FixedArray {
            kDescriptorValue;
   }
 
-  // Swap operation on FixedArray without using write barriers.
-  static inline void NoIncrementalWriteBarrierSwap(
-      FixedArray* array, int first, int second);
-
   // Swap first and second descriptor.
-  inline void NoIncrementalWriteBarrierSwapDescriptors(
-      int first, int second);
+  inline void SwapSortedKeys(int first, int second);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DescriptorArray);
 };
 
 
-template<typename T>
-inline int LinearSearch(T* array, String* name, int len);
+enum SearchMode { ALL_ENTRIES, VALID_ENTRIES };
+
+template<SearchMode search_mode, typename T>
+inline int LinearSearch(T* array, String* name, int len, int valid_entries);
 
 
-template<typename T>
-inline int Search(T* array, String* name);
+template<SearchMode search_mode, typename T>
+inline int Search(T* array, String* name, int valid_entries = 0);
 
 
 // HashTable is a subclass of FixedArray that implements a hash table
@@ -2868,11 +2920,12 @@ class HashTable: public FixedArray {
     return (hash + GetProbeOffset(number)) & (size - 1);
   }
 
-  static uint32_t FirstProbe(uint32_t hash, uint32_t size) {
+  inline static uint32_t FirstProbe(uint32_t hash, uint32_t size) {
     return hash & (size - 1);
   }
 
-  static uint32_t NextProbe(uint32_t last, uint32_t number, uint32_t size) {
+  inline static uint32_t NextProbe(
+      uint32_t last, uint32_t number, uint32_t size) {
     return (last + number) & (size - 1);
   }
 
@@ -2958,6 +3011,8 @@ class SymbolTable: public HashTable<SymbolTableShape, HashTableKey*> {
 
  private:
   MUST_USE_RESULT MaybeObject* LookupKey(HashTableKey* key, Object** s);
+
+  template <bool seq_ascii> friend class JsonParser;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(SymbolTable);
 };
@@ -3340,9 +3395,7 @@ class JSFunctionResultCache: public FixedArray {
   // Casting
   static inline JSFunctionResultCache* cast(Object* obj);
 
-#ifdef DEBUG
-  void JSFunctionResultCacheVerify();
-#endif
+  DECLARE_VERIFIER(JSFunctionResultCache)
 };
 
 
@@ -3562,9 +3615,7 @@ class NormalizedMapCache: public FixedArray {
   // Casting
   static inline NormalizedMapCache* cast(Object* obj);
 
-#ifdef DEBUG
-  void NormalizedMapCacheVerify();
-#endif
+  DECLARE_VERIFIER(NormalizedMapCache)
 };
 
 
@@ -3613,9 +3664,7 @@ class ByteArray: public FixedArrayBase {
   }
   void ByteArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ByteArrayVerify();
-#endif
+  DECLARE_VERIFIER(ByteArray)
 
   // Layout description.
   static const int kAlignedSize = OBJECT_POINTER_ALIGN(kHeaderSize);
@@ -3649,9 +3698,7 @@ class FreeSpace: public HeapObject {
   }
   void FreeSpacePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void FreeSpaceVerify();
-#endif
+  DECLARE_VERIFIER(FreeSpace)
 
   // Layout description.
   // Size is smi tagged when it is stored.
@@ -3731,9 +3778,7 @@ class ExternalPixelArray: public ExternalArray {
   }
   void ExternalPixelArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalPixelArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalPixelArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalPixelArray);
@@ -3760,9 +3805,7 @@ class ExternalByteArray: public ExternalArray {
   }
   void ExternalByteArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalByteArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalByteArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalByteArray);
@@ -3789,9 +3832,7 @@ class ExternalUnsignedByteArray: public ExternalArray {
   }
   void ExternalUnsignedByteArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalUnsignedByteArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalUnsignedByteArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalUnsignedByteArray);
@@ -3818,9 +3859,7 @@ class ExternalShortArray: public ExternalArray {
   }
   void ExternalShortArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalShortArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalShortArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalShortArray);
@@ -3847,9 +3886,7 @@ class ExternalUnsignedShortArray: public ExternalArray {
   }
   void ExternalUnsignedShortArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalUnsignedShortArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalUnsignedShortArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalUnsignedShortArray);
@@ -3876,9 +3913,7 @@ class ExternalIntArray: public ExternalArray {
   }
   void ExternalIntArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalIntArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalIntArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalIntArray);
@@ -3905,9 +3940,7 @@ class ExternalUnsignedIntArray: public ExternalArray {
   }
   void ExternalUnsignedIntArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalUnsignedIntArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalUnsignedIntArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalUnsignedIntArray);
@@ -3934,9 +3967,7 @@ class ExternalFloatArray: public ExternalArray {
   }
   void ExternalFloatArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ExternalFloatArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalFloatArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalFloatArray);
@@ -3963,9 +3994,7 @@ class ExternalDoubleArray: public ExternalArray {
   }
   void ExternalDoubleArrayPrint(FILE* out);
 #endif  // OBJECT_PRINT
-#ifdef DEBUG
-  void ExternalDoubleArrayVerify();
-#endif  // DEBUG
+  DECLARE_VERIFIER(ExternalDoubleArray)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalDoubleArray);
@@ -4488,9 +4517,8 @@ class Code: public HeapObject {
   }
   void CodePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void CodeVerify();
-#endif
+  DECLARE_VERIFIER(Code)
+
   void ClearInlineCaches();
   void ClearTypeFeedbackCells(Heap* heap);
 
@@ -4672,6 +4700,7 @@ class Map: public HeapObject {
   class IsShared:                   public BitField<bool, 22,  1> {};
   class FunctionWithPrototype:      public BitField<bool, 23,  1> {};
   class DictionaryMap:              public BitField<bool, 24,  1> {};
+  class OwnsDescriptors:            public BitField<bool, 25,  1> {};
 
   // Tells whether the object in the prototype property will be used
   // for instances created from this function.  If the prototype
@@ -4797,8 +4826,11 @@ class Map: public HeapObject {
   inline Map* elements_transition_map();
   MUST_USE_RESULT inline MaybeObject* set_elements_transition_map(
       Map* transitioned_map);
-  inline void SetTransition(int index, Map* target);
-  MUST_USE_RESULT inline MaybeObject* AddTransition(String* key, Map* target);
+  inline void SetTransition(int transition_index, Map* target);
+  inline Map* GetTransition(int transition_index);
+  MUST_USE_RESULT inline MaybeObject* AddTransition(String* key,
+                                                    Map* target,
+                                                    SimpleTransitionFlag flag);
   DECL_ACCESSORS(transitions, TransitionArray)
   inline void ClearTransitions(Heap* heap,
                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
@@ -4836,14 +4868,8 @@ class Map: public HeapObject {
   inline JSFunction* unchecked_constructor();
 
   // [instance descriptors]: describes the object.
-  inline DescriptorArray* instance_descriptors();
-  MUST_USE_RESULT inline MaybeObject* SetDescriptors(
-      DescriptorArray* descriptors,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  static void SetDescriptors(Handle<Map> map,
-                             Handle<DescriptorArray> descriptors);
-  MUST_USE_RESULT inline MaybeObject* InitializeDescriptors(
-      DescriptorArray* descriptors);
+  DECL_ACCESSORS(instance_descriptors, DescriptorArray)
+  inline void InitializeDescriptors(DescriptorArray* descriptors);
 
   // [stub cache]: contains stubs compiled for this map.
   DECL_ACCESSORS(code_cache, Object)
@@ -4920,16 +4946,28 @@ class Map: public HeapObject {
   }
 
   void SetNumberOfOwnDescriptors(int number) {
+    ASSERT(number <= instance_descriptors()->number_of_descriptors());
     set_bit_field3(NumberOfOwnDescriptorsBits::update(bit_field3(), number));
   }
+
+  inline JSGlobalPropertyCell* RetrieveDescriptorsPointer();
 
   int EnumLength() {
     return EnumLengthBits::decode(bit_field3());
   }
 
-  void SetEnumLength(int index) {
-    set_bit_field3(EnumLengthBits::update(bit_field3(), index));
+  void SetEnumLength(int length) {
+    if (length != kInvalidEnumCache) {
+      ASSERT(length >= 0);
+      ASSERT(length == 0 || instance_descriptors()->HasEnumCache());
+      ASSERT(length <= NumberOfOwnDescriptors());
+    }
+    set_bit_field3(EnumLengthBits::update(bit_field3(), length));
   }
+
+
+  inline bool owns_descriptors();
+  inline void set_owns_descriptors(bool is_shared);
 
   MUST_USE_RESULT MaybeObject* RawCopy(int instance_size);
   MUST_USE_RESULT MaybeObject* CopyWithPreallocatedFieldDescriptors();
@@ -4937,14 +4975,19 @@ class Map: public HeapObject {
   MUST_USE_RESULT MaybeObject* CopyReplaceDescriptors(
       DescriptorArray* descriptors,
       String* name,
-      TransitionFlag flag);
+      TransitionFlag flag,
+      int descriptor_index);
+  MUST_USE_RESULT MaybeObject* ShareDescriptor(DescriptorArray* descriptors,
+                                               Descriptor* descriptor);
   MUST_USE_RESULT MaybeObject* CopyAddDescriptor(Descriptor* descriptor,
                                                  TransitionFlag flag);
   MUST_USE_RESULT MaybeObject* CopyInsertDescriptor(Descriptor* descriptor,
                                                     TransitionFlag flag);
-  MUST_USE_RESULT MaybeObject* CopyReplaceDescriptor(Descriptor* descriptor,
-                                                     int index,
-                                                     TransitionFlag flag);
+  MUST_USE_RESULT MaybeObject* CopyReplaceDescriptor(
+      DescriptorArray* descriptors,
+      Descriptor* descriptor,
+      int index,
+      TransitionFlag flag);
   MUST_USE_RESULT MaybeObject* CopyAsElementsKind(ElementsKind kind,
                                                   TransitionFlag flag);
 
@@ -4966,7 +5009,8 @@ class Map: public HeapObject {
 
   // Returns the number of properties described in instance_descriptors
   // filtering out properties with the specified attributes.
-  int NumberOfDescribedProperties(PropertyAttributes filter = NONE);
+  int NumberOfDescribedProperties(DescriptorFlag which = OWN_DESCRIPTORS,
+                                  PropertyAttributes filter = NONE);
 
   // Casting.
   static inline Map* cast(Object* obj);
@@ -4987,8 +5031,10 @@ class Map: public HeapObject {
 
   // Extend the descriptor array of the map with the list of descriptors.
   // In case of duplicates, the latest descriptor is used.
-  static void CopyAppendCallbackDescriptors(Handle<Map> map,
-                                            Handle<Object> descriptors);
+  static void AppendCallbackDescriptors(Handle<Map> map,
+                                        Handle<Object> descriptors);
+
+  static void EnsureDescriptorSlack(Handle<Map> map, int slack);
 
   // Returns the found code or undefined if absent.
   Object* FindInCodeCache(String* name, Code::Flags flags);
@@ -5026,14 +5072,14 @@ class Map: public HeapObject {
   Handle<Map> FindTransitionedMap(MapHandleList* candidates);
   Map* FindTransitionedMap(MapList* candidates);
 
-  // Zaps the contents of backing data structures in debug mode. Note that the
+  // Zaps the contents of backing data structures. Note that the
   // heap verifier (i.e. VerifyMarkingVisitor) relies on zapping of objects
   // holding weak references when incremental marking is used, because it also
   // iterates over objects that are otherwise unreachable.
-#ifdef DEBUG
+  // In general we only want to call these functions in release mode when
+  // heap verification is turned on.
   void ZapPrototypeTransitions();
   void ZapTransitions();
-#endif
 
   // Dispatched behavior.
 #ifdef OBJECT_PRINT
@@ -5042,8 +5088,9 @@ class Map: public HeapObject {
   }
   void MapPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void MapVerify();
+  DECLARE_VERIFIER(Map)
+
+#ifdef VERIFY_HEAP
   void SharedMapVerify();
 #endif
 
@@ -5070,7 +5117,7 @@ class Map: public HeapObject {
 
   static const int kMaxPreAllocatedPropertyFields = 255;
 
-  // Constant for denoting that the Enum Cache field was not yet used.
+  // Constant for denoting that the enum cache is not yet initialized.
   static const int kInvalidEnumCache = EnumLengthBits::kMax;
 
   // Layout description.
@@ -5084,11 +5131,12 @@ class Map: public HeapObject {
   // indirection.
   static const int kTransitionsOrBackPointerOffset =
       kConstructorOffset + kPointerSize;
-  static const int kCodeCacheOffset =
+  static const int kDescriptorsOffset =
       kTransitionsOrBackPointerOffset + kPointerSize;
+  static const int kCodeCacheOffset =
+      kDescriptorsOffset + kPointerSize;
   static const int kBitField3Offset = kCodeCacheOffset + kPointerSize;
-  static const int kPadStart = kBitField3Offset + kPointerSize;
-  static const int kSize = MAP_POINTER_ALIGN(kPadStart);
+  static const int kSize = kBitField3Offset + kPointerSize;
 
   // Layout of pointer fields. Heap iteration code relies on them
   // being continuously allocated.
@@ -5246,9 +5294,7 @@ class Script: public Struct {
   }
   void ScriptPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ScriptVerify();
-#endif
+  DECLARE_VERIFIER(Script)
 
   static const int kSourceOffset = HeapObject::kHeaderSize;
   static const int kNameOffset = kSourceOffset + kPointerSize;
@@ -5728,9 +5774,7 @@ class SharedFunctionInfo: public HeapObject {
   }
   void SharedFunctionInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void SharedFunctionInfoVerify();
-#endif
+  DECLARE_VERIFIER(SharedFunctionInfo)
 
   void ResetForNewContext(int new_ic_age);
 
@@ -5964,9 +6008,7 @@ class JSModule: public JSObject {
   }
   void JSModulePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSModuleVerify();
-#endif
+  DECLARE_VERIFIER(JSModule)
 
   // Layout description.
   static const int kContextOffset = JSObject::kHeaderSize;
@@ -6069,8 +6111,6 @@ class JSFunction: public JSObject {
   // The initial map for an object created by this constructor.
   inline Map* initial_map();
   inline void set_initial_map(Map* value);
-  MUST_USE_RESULT inline MaybeObject* set_initial_map_and_cache_transitions(
-      Map* value);
   inline bool has_initial_map();
 
   // Get and set the prototype property on a JSFunction. If the
@@ -6127,9 +6167,7 @@ class JSFunction: public JSObject {
   }
   void JSFunctionPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSFunctionVerify();
-#endif
+  DECLARE_VERIFIER(JSFunction)
 
   // Returns the number of allocated literals.
   inline int NumberOfLiterals();
@@ -6188,9 +6226,7 @@ class JSGlobalProxy : public JSObject {
   }
   void JSGlobalProxyPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSGlobalProxyVerify();
-#endif
+  DECLARE_VERIFIER(JSGlobalProxy)
 
   // Layout description.
   static const int kNativeContextOffset = JSObject::kHeaderSize;
@@ -6268,9 +6304,7 @@ class JSGlobalObject: public GlobalObject {
   }
   void JSGlobalObjectPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSGlobalObjectVerify();
-#endif
+  DECLARE_VERIFIER(JSGlobalObject)
 
   // Layout description.
   static const int kSize = GlobalObject::kHeaderSize;
@@ -6302,9 +6336,7 @@ class JSBuiltinsObject: public GlobalObject {
   }
   void JSBuiltinsObjectPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSBuiltinsObjectVerify();
-#endif
+  DECLARE_VERIFIER(JSBuiltinsObject)
 
   // Layout description.  The size of the builtins object includes
   // room for two pointers per runtime routine written in javascript
@@ -6345,9 +6377,7 @@ class JSValue: public JSObject {
   }
   void JSValuePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSValueVerify();
-#endif
+  DECLARE_VERIFIER(JSValue)
 
   // Layout description.
   static const int kValueOffset = JSObject::kHeaderSize;
@@ -6401,9 +6431,8 @@ class JSDate: public JSObject {
   }
   void JSDatePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSDateVerify();
-#endif
+  DECLARE_VERIFIER(JSDate)
+
   // The order is important. It must be kept in sync with date macros
   // in macros.py.
   enum FieldIndex {
@@ -6499,9 +6528,7 @@ class JSMessageObject: public JSObject {
   }
   void JSMessageObjectPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSMessageObjectVerify();
-#endif
+  DECLARE_VERIFIER(JSMessageObject)
 
   // Layout description.
   static const int kTypeOffset = JSObject::kHeaderSize;
@@ -6590,9 +6617,7 @@ class JSRegExp: public JSObject {
   static inline JSRegExp* cast(Object* obj);
 
   // Dispatched behavior.
-#ifdef DEBUG
-  void JSRegExpVerify();
-#endif
+  DECLARE_VERIFIER(JSRegExp)
 
   static const int kDataOffset = JSObject::kHeaderSize;
   static const int kSize = kDataOffset + kPointerSize;
@@ -6748,9 +6773,7 @@ class CodeCache: public Struct {
   }
   void CodeCachePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void CodeCacheVerify();
-#endif
+  DECLARE_VERIFIER(CodeCache)
 
   static const int kDefaultCacheOffset = HeapObject::kHeaderSize;
   static const int kNormalTypeCacheOffset =
@@ -6839,9 +6862,7 @@ class PolymorphicCodeCache: public Struct {
   }
   void PolymorphicCodeCachePrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void PolymorphicCodeCacheVerify();
-#endif
+  DECLARE_VERIFIER(PolymorphicCodeCache)
 
   static const int kCacheOffset = HeapObject::kHeaderSize;
   static const int kSize = kCacheOffset + kPointerSize;
@@ -6894,9 +6915,7 @@ class TypeFeedbackInfo: public Struct {
   }
   void TypeFeedbackInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void TypeFeedbackInfoVerify();
-#endif
+  DECLARE_VERIFIER(TypeFeedbackInfo)
 
   static const int kStorage1Offset = HeapObject::kHeaderSize;
   static const int kStorage2Offset = kStorage1Offset + kPointerSize;
@@ -6942,9 +6961,7 @@ class AliasedArgumentsEntry: public Struct {
   }
   void AliasedArgumentsEntryPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void AliasedArgumentsEntryVerify();
-#endif
+  DECLARE_VERIFIER(AliasedArgumentsEntry)
 
   static const int kAliasedContextSlot = HeapObject::kHeaderSize;
   static const int kSize = kAliasedContextSlot + kPointerSize;
@@ -6987,10 +7004,6 @@ class StringHasher {
   // index.
   bool is_array_index() { return is_array_index_; }
 
-  bool is_valid() { return is_valid_; }
-
-  void invalidate() { is_valid_ = false; }
-
   // Calculated hash value for a string consisting of 1 to
   // String::kMaxArrayIndexSize digits with no leading zeros (except "0").
   // value is represented decimal value.
@@ -7009,13 +7022,33 @@ class StringHasher {
 
   inline uint32_t GetHash();
 
+  // Reusable parts of the hashing algorithm.
+  INLINE(static uint32_t AddCharacterCore(uint32_t running_hash, uint32_t c));
+  INLINE(static uint32_t GetHashCore(uint32_t running_hash));
+
   int length_;
   uint32_t raw_running_hash_;
   uint32_t array_index_;
   bool is_array_index_;
   bool is_first_char_;
-  bool is_valid_;
   friend class TwoCharHashTableKey;
+
+  template <bool seq_ascii> friend class JsonParser;
+};
+
+
+class IncrementalAsciiStringHasher {
+ public:
+  explicit inline IncrementalAsciiStringHasher(uint32_t seed, char first_char);
+  inline void AddCharacter(uc32 c);
+  inline uint32_t GetHash();
+
+ private:
+  int length_;
+  uint32_t raw_running_hash_;
+  uint32_t array_index_;
+  bool is_array_index_;
+  char first_char_;
 };
 
 
@@ -7275,9 +7308,8 @@ class String: public HeapObject {
 
   char* ToAsciiArray();
 #endif
-#ifdef DEBUG
-  void StringVerify();
-#endif
+  DECLARE_VERIFIER(String)
+
   inline bool IsFlat();
 
   // Layout description.
@@ -7346,7 +7378,7 @@ class String: public HeapObject {
       kIsNotArrayIndexMask | kHashNotComputedMask;
 
   // Value of hash field containing computed hash equal to zero.
-  static const int kZeroHash = kIsNotArrayIndexMask;
+  static const int kEmptyStringHash = kIsNotArrayIndexMask;
 
   // Maximal string length.
   static const int kMaxLength = (1 << (32 - 2)) - 1;
@@ -7381,32 +7413,47 @@ class String: public HeapObject {
                           int from,
                           int to);
 
-  static inline bool IsAscii(const char* chars, int length) {
+  // The return value may point to the first aligned word containing the
+  // first non-ascii character, rather than directly to the non-ascii character.
+  // If the return value is >= the passed length, the entire string was ASCII.
+  static inline int NonAsciiStart(const char* chars, int length) {
+    const char* start = chars;
     const char* limit = chars + length;
 #ifdef V8_HOST_CAN_READ_UNALIGNED
     ASSERT(kMaxAsciiCharCode == 0x7F);
     const uintptr_t non_ascii_mask = kUintptrAllBitsSet / 0xFF * 0x80;
     while (chars + sizeof(uintptr_t) <= limit) {
       if (*reinterpret_cast<const uintptr_t*>(chars) & non_ascii_mask) {
-        return false;
+        return static_cast<int>(chars - start);
       }
       chars += sizeof(uintptr_t);
     }
 #endif
     while (chars < limit) {
-      if (static_cast<uint8_t>(*chars) > kMaxAsciiCharCodeU) return false;
+      if (static_cast<uint8_t>(*chars) > kMaxAsciiCharCodeU) {
+        return static_cast<int>(chars - start);
+      }
       ++chars;
     }
-    return true;
+    return static_cast<int>(chars - start);
+  }
+
+  static inline bool IsAscii(const char* chars, int length) {
+    return NonAsciiStart(chars, length) >= length;
+  }
+
+  static inline int NonAsciiStart(const uc16* chars, int length) {
+    const uc16* limit = chars + length;
+    const uc16* start = chars;
+    while (chars < limit) {
+      if (*chars > kMaxAsciiCharCodeU) return static_cast<int>(chars - start);
+      ++chars;
+    }
+    return static_cast<int>(chars - start);
   }
 
   static inline bool IsAscii(const uc16* chars, int length) {
-    const uc16* limit = chars + length;
-    while (chars < limit) {
-      if (*chars > kMaxAsciiCharCodeU) return false;
-      ++chars;
-    }
-    return true;
+    return NonAsciiStart(chars, length) >= length;
   }
 
  protected:
@@ -7514,9 +7561,7 @@ class SeqAsciiString: public SeqString {
                                                       unsigned* offset,
                                                       unsigned chars);
 
-#ifdef DEBUG
-  void SeqAsciiStringVerify();
-#endif
+  DECLARE_VERIFIER(SeqAsciiString)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SeqAsciiString);
@@ -7621,9 +7666,7 @@ class ConsString: public String {
   typedef FixedBodyDescriptor<kFirstOffset, kSecondOffset + kPointerSize, kSize>
           BodyDescriptor;
 
-#ifdef DEBUG
-  void ConsStringVerify();
-#endif
+  DECLARE_VERIFIER(ConsString)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ConsString);
@@ -7675,9 +7718,7 @@ class SlicedString: public String {
                               kOffsetOffset + kPointerSize, kSize>
           BodyDescriptor;
 
-#ifdef DEBUG
-  void SlicedStringVerify();
-#endif
+  DECLARE_VERIFIER(SlicedString)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SlicedString);
@@ -7904,9 +7945,7 @@ class Oddball: public HeapObject {
   static inline Oddball* cast(Object* obj);
 
   // Dispatched behavior.
-#ifdef DEBUG
-  void OddballVerify();
-#endif
+  DECLARE_VERIFIER(Oddball)
 
   // Initialize the fields.
   MUST_USE_RESULT MaybeObject* Initialize(const char* to_string,
@@ -7957,9 +7996,8 @@ class JSGlobalPropertyCell: public HeapObject {
     return address() + kValueOffset;
   }
 
-#ifdef DEBUG
-  void JSGlobalPropertyCellVerify();
-#endif
+  DECLARE_VERIFIER(JSGlobalPropertyCell)
+
 #ifdef OBJECT_PRINT
   inline void JSGlobalPropertyCellPrint() {
     JSGlobalPropertyCellPrint(stdout);
@@ -8062,9 +8100,7 @@ class JSProxy: public JSReceiver {
   }
   void JSProxyPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSProxyVerify();
-#endif
+  DECLARE_VERIFIER(JSProxy)
 
   // Layout description. We add padding so that a proxy has the same
   // size as a virgin JSObject. This is essential for becoming a JSObject
@@ -8105,9 +8141,7 @@ class JSFunctionProxy: public JSProxy {
   }
   void JSFunctionProxyPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSFunctionProxyVerify();
-#endif
+  DECLARE_VERIFIER(JSFunctionProxy)
 
   // Layout description.
   static const int kCallTrapOffset = JSProxy::kPaddingOffset;
@@ -8142,9 +8176,7 @@ class JSSet: public JSObject {
   }
   void JSSetPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSSetVerify();
-#endif
+  DECLARE_VERIFIER(JSSet)
 
   static const int kTableOffset = JSObject::kHeaderSize;
   static const int kSize = kTableOffset + kPointerSize;
@@ -8169,9 +8201,7 @@ class JSMap: public JSObject {
   }
   void JSMapPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSMapVerify();
-#endif
+  DECLARE_VERIFIER(JSMap)
 
   static const int kTableOffset = JSObject::kHeaderSize;
   static const int kSize = kTableOffset + kPointerSize;
@@ -8199,9 +8229,7 @@ class JSWeakMap: public JSObject {
   }
   void JSWeakMapPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSWeakMapVerify();
-#endif
+  DECLARE_VERIFIER(JSWeakMap)
 
   static const int kTableOffset = JSObject::kHeaderSize;
   static const int kNextOffset = kTableOffset + kPointerSize;
@@ -8236,9 +8264,7 @@ class Foreign: public HeapObject {
   }
   void ForeignPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ForeignVerify();
-#endif
+  DECLARE_VERIFIER(Foreign)
 
   // Layout description.
 
@@ -8295,9 +8321,7 @@ class JSArray: public JSObject {
   }
   void JSArrayPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void JSArrayVerify();
-#endif
+  DECLARE_VERIFIER(JSArray)
 
   // Number of element slots to pre-allocate for an empty array.
   static const int kPreallocatedArrayElements = 4;
@@ -8376,9 +8400,7 @@ class AccessorInfo: public Struct {
   }
   void AccessorInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void AccessorInfoVerify();
-#endif
+  DECLARE_VERIFIER(AccessorInfo)
 
   static const int kGetterOffset = HeapObject::kHeaderSize;
   static const int kSetterOffset = kGetterOffset + kPointerSize;
@@ -8442,9 +8464,7 @@ class AccessorPair: public Struct {
 #ifdef OBJECT_PRINT
   void AccessorPairPrint(FILE* out = stdout);
 #endif
-#ifdef DEBUG
-  void AccessorPairVerify();
-#endif
+  DECLARE_VERIFIER(AccessorPair)
 
   static const int kGetterOffset = HeapObject::kHeaderSize;
   static const int kSetterOffset = kGetterOffset + kPointerSize;
@@ -8478,9 +8498,7 @@ class AccessCheckInfo: public Struct {
   }
   void AccessCheckInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void AccessCheckInfoVerify();
-#endif
+  DECLARE_VERIFIER(AccessCheckInfo)
 
   static const int kNamedCallbackOffset   = HeapObject::kHeaderSize;
   static const int kIndexedCallbackOffset = kNamedCallbackOffset + kPointerSize;
@@ -8509,9 +8527,7 @@ class InterceptorInfo: public Struct {
   }
   void InterceptorInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void InterceptorInfoVerify();
-#endif
+  DECLARE_VERIFIER(InterceptorInfo)
 
   static const int kGetterOffset = HeapObject::kHeaderSize;
   static const int kSetterOffset = kGetterOffset + kPointerSize;
@@ -8539,9 +8555,7 @@ class CallHandlerInfo: public Struct {
   }
   void CallHandlerInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void CallHandlerInfoVerify();
-#endif
+  DECLARE_VERIFIER(CallHandlerInfo)
 
   static const int kCallbackOffset = HeapObject::kHeaderSize;
   static const int kDataOffset = kCallbackOffset + kPointerSize;
@@ -8557,9 +8571,7 @@ class TemplateInfo: public Struct {
   DECL_ACCESSORS(tag, Object)
   DECL_ACCESSORS(property_list, Object)
 
-#ifdef DEBUG
-  void TemplateInfoVerify();
-#endif
+  DECLARE_VERIFIER(TemplateInfo)
 
   static const int kTagOffset          = HeapObject::kHeaderSize;
   static const int kPropertyListOffset = kTagOffset + kPointerSize;
@@ -8602,9 +8614,7 @@ class FunctionTemplateInfo: public TemplateInfo {
   }
   void FunctionTemplateInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void FunctionTemplateInfoVerify();
-#endif
+  DECLARE_VERIFIER(FunctionTemplateInfo)
 
   static const int kSerialNumberOffset = TemplateInfo::kHeaderSize;
   static const int kCallCodeOffset = kSerialNumberOffset + kPointerSize;
@@ -8651,9 +8661,7 @@ class ObjectTemplateInfo: public TemplateInfo {
   }
   void ObjectTemplateInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void ObjectTemplateInfoVerify();
-#endif
+  DECLARE_VERIFIER(ObjectTemplateInfo)
 
   static const int kConstructorOffset = TemplateInfo::kHeaderSize;
   static const int kInternalFieldCountOffset =
@@ -8675,9 +8683,7 @@ class SignatureInfo: public Struct {
   }
   void SignatureInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void SignatureInfoVerify();
-#endif
+  DECLARE_VERIFIER(SignatureInfo)
 
   static const int kReceiverOffset = Struct::kHeaderSize;
   static const int kArgsOffset     = kReceiverOffset + kPointerSize;
@@ -8700,9 +8706,7 @@ class TypeSwitchInfo: public Struct {
   }
   void TypeSwitchInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void TypeSwitchInfoVerify();
-#endif
+  DECLARE_VERIFIER(TypeSwitchInfo)
 
   static const int kTypesOffset = Struct::kHeaderSize;
   static const int kSize        = kTypesOffset + kPointerSize;
@@ -8752,9 +8756,7 @@ class DebugInfo: public Struct {
   }
   void DebugInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void DebugInfoVerify();
-#endif
+  DECLARE_VERIFIER(DebugInfo)
 
   static const int kSharedFunctionInfoIndex = Struct::kHeaderSize;
   static const int kOriginalCodeIndex = kSharedFunctionInfoIndex + kPointerSize;
@@ -8810,9 +8812,7 @@ class BreakPointInfo: public Struct {
   }
   void BreakPointInfoPrint(FILE* out);
 #endif
-#ifdef DEBUG
-  void BreakPointInfoVerify();
-#endif
+  DECLARE_VERIFIER(BreakPointInfo)
 
   static const int kCodePositionIndex = Struct::kHeaderSize;
   static const int kSourcePositionIndex = kCodePositionIndex + kPointerSize;
@@ -8830,6 +8830,7 @@ class BreakPointInfo: public Struct {
 
 #undef DECL_BOOLEAN_ACCESSORS
 #undef DECL_ACCESSORS
+#undef DECLARE_VERIFIER
 
 #define VISITOR_SYNCHRONIZATION_TAGS_LIST(V)                            \
   V(kSymbolTable, "symbol_table", "(Symbols)")                          \

@@ -165,7 +165,8 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
         return;
     
     if (!m_didIncrementVisuallyNonEmptyPixelCount) {
-        view()->frameView()->incrementVisuallyNonEmptyPixelCount(m_imageResource->imageSize(1.0f));
+        // At a zoom level of 1 the image is guaranteed to have an integer size.
+        view()->frameView()->incrementVisuallyNonEmptyPixelCount(flooredIntSize(m_imageResource->imageSize(1.0f)));
         m_didIncrementVisuallyNonEmptyPixelCount = true;
     }
 
@@ -173,7 +174,7 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
 
     // Set image dimensions, taking into account the size of the alt text.
     if (m_imageResource->errorOccurred()) {
-        if (!m_altText.isEmpty() && document()->isPendingStyleRecalc()) {
+        if (!m_altText.isEmpty() && document()->hasPendingStyleRecalc()) {
             ASSERT(node());
             if (node()) {
                 m_needsToSetSizeForAltText = true;
@@ -187,7 +188,7 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     imageDimensionsChanged(imageSizeChanged, rect);
 }
 
-bool RenderImage::updateIntrinsicSizeIfNeeded(const IntSize& newSize, bool imageSizeChanged)
+bool RenderImage::updateIntrinsicSizeIfNeeded(const LayoutSize& newSize, bool imageSizeChanged)
 {
     if (newSize == intrinsicSize() && !imageSizeChanged)
         return false;
@@ -219,22 +220,19 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
 
     bool shouldRepaint = true;
     if (intrinsicSizeChanged) {
-        // lets see if we need to relayout at all..
-        LayoutUnit oldwidth = width();
-        LayoutUnit oldheight = height();
         if (!preferredLogicalWidthsDirty())
             setPreferredLogicalWidthsDirty(true);
-        updateLogicalWidth();
-        updateLogicalHeight();
+        LogicalExtentComputedValues computedValues;
+        computeLogicalWidthInRegion(computedValues);
+        LayoutUnit newWidth = computedValues.m_extent;
+        computeLogicalHeight(height(), 0, computedValues);
+        LayoutUnit newHeight = computedValues.m_extent;
 
-        if (imageSizeChanged || width() != oldwidth || height() != oldheight) {
+        if (imageSizeChanged || width() != newWidth || height() != newHeight) {
             shouldRepaint = false;
             if (!selfNeedsLayout())
                 setNeedsLayout(true);
         }
-
-        setWidth(oldwidth);
-        setHeight(oldheight);
     }
 
     if (shouldRepaint) {
@@ -329,7 +327,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
                 if (centerY < 0)
                     centerY = 0;
                 imageOffset = LayoutSize(leftBorder + leftPad + centerX + 1, topBorder + topPad + centerY + 1);
-                context->drawImage(image.get(), style()->colorSpace(), IntRect(roundedIntPoint(paintOffset + imageOffset), imageSize), CompositeSourceOver, shouldRespectImageOrientation());
+                context->drawImage(image.get(), style()->colorSpace(), pixelSnappedIntRect(LayoutRect(paintOffset + imageOffset, imageSize)), CompositeSourceOver, shouldRespectImageOrientation());
                 errorPictureDrawn = true;
             }
 
@@ -488,9 +486,9 @@ bool RenderImage::backgroundIsObscured() const
     return true;
 }
 
-int RenderImage::minimumReplacedHeight() const
+LayoutUnit RenderImage::minimumReplacedHeight() const
 {
-    return m_imageResource->errorOccurred() ? intrinsicSize().height() : 0;
+    return m_imageResource->errorOccurred() ? intrinsicSize().height() : LayoutUnit();
 }
 
 HTMLMapElement* RenderImage::imageMap() const
@@ -536,6 +534,7 @@ void RenderImage::updateAltText()
 
 void RenderImage::layout()
 {
+    StackStats::LayoutCheckPoint layoutCheckPoint;
     RenderReplaced::layout();
 
     // Propagate container size to image resource.

@@ -145,6 +145,21 @@ namespace WebCore {
             return m_bytes + (y * width()) + x;
 #endif
         }
+
+        void reportMemoryUsage(MemoryObjectInfo*) const;
+
+#if PLATFORM(CHROMIUM)
+        void setSkBitmap(const SkBitmap& bitmap)
+        {
+            m_bitmap = NativeImageSkia(bitmap, 1);
+        }
+
+        const SkBitmap& getSkBitmap() const
+        {
+            return m_bitmap.bitmap();
+        }
+#endif
+
     private:
         int width() const;
         int height() const;
@@ -177,10 +192,10 @@ namespace WebCore {
         Vector<PixelData> m_backingStore;
         PixelData* m_bytes; // The memory is backed by m_backingStore.
         IntSize m_size;
-        bool m_hasAlpha;
         // FIXME: Do we need m_colorProfile anymore?
         ColorProfile m_colorProfile;
 #endif
+        bool m_hasAlpha;
         IntRect m_originalFrameRect; // This will always just be the entire
                                      // buffer except for GIF frames whose
                                      // original rect was smaller than the
@@ -285,18 +300,20 @@ namespace WebCore {
         void setIgnoreGammaAndColorProfile(bool flag) { m_ignoreGammaAndColorProfile = flag; }
         bool ignoresGammaAndColorProfile() const { return m_ignoreGammaAndColorProfile; }
 
+        ImageOrientation orientation() const { return m_orientation; }
+
         enum { iccColorProfileHeaderLength = 128 };
 
         static bool rgbColorProfile(const char* profileData, unsigned profileLength)
         {
-            ASSERT(profileLength >= iccColorProfileHeaderLength);
+            ASSERT_UNUSED(profileLength, profileLength >= iccColorProfileHeaderLength);
 
             return !memcmp(&profileData[16], "RGB ", 4);
         }
 
         static bool inputDeviceColorProfile(const char* profileData, unsigned profileLength)
         {
-            ASSERT(profileLength >= iccColorProfileHeaderLength);
+            ASSERT_UNUSED(profileLength, profileLength >= iccColorProfileHeaderLength);
 
             return !memcmp(&profileData[12], "mntr", 4) || !memcmp(&profileData[12], "scnr", 4);
         }
@@ -359,6 +376,8 @@ namespace WebCore {
         void setMaxNumPixels(int m) { m_maxNumPixels = m; }
 #endif
 
+        virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
     protected:
         void prepareScaleDataIfNecessary();
         int upperBoundScaledX(int origX, int searchStart = 0);
@@ -376,6 +395,7 @@ namespace WebCore {
         Vector<int> m_scaledRows;
         bool m_premultiplyAlpha;
         bool m_ignoreGammaAndColorProfile;
+        ImageOrientation m_orientation;
 
     private:
         // Some code paths compute the size of the image as "width * height * 4"

@@ -37,8 +37,11 @@
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "InspectorInstrumentation.h"
+#include "LoaderStrategy.h"
 #include "Page.h"
+#include "PlatformStrategies.h"
 #include "ProgressTracker.h"
+#include "ResourceBuffer.h"
 #include "ResourceError.h"
 #include "ResourceHandle.h"
 #include "ResourceLoadScheduler.h"
@@ -48,7 +51,7 @@
 
 namespace WebCore {
 
-PassRefPtr<SharedBuffer> ResourceLoader::resourceData()
+PassRefPtr<ResourceBuffer> ResourceLoader::resourceData()
 {
     return m_resourceData;
 }
@@ -88,9 +91,13 @@ void ResourceLoader::releaseResources()
     // the resources to prevent a double dealloc of WebView <rdar://problem/4372628>
     m_reachedTerminalState = true;
 
+#if USE(PLATFORM_STRATEGIES)
+    platformStrategies()->loaderStrategy()->resourceLoadScheduler()->remove(this);
+#endif
     m_identifier = 0;
-
+#if !USE(PLATFORM_STRATEGIES)
     resourceLoadScheduler()->remove(this);
+#endif
 
     if (m_handle) {
         // Clear out the ResourceHandle's client so that it doesn't try to call
@@ -198,12 +205,12 @@ void ResourceLoader::addData(const char* data, int length, bool allAtOnce)
         return;
 
     if (allAtOnce) {
-        m_resourceData = SharedBuffer::create(data, length);
+        m_resourceData = ResourceBuffer::create(data, length);
         return;
     }
         
     if (!m_resourceData)
-        m_resourceData = SharedBuffer::create(data, length);
+        m_resourceData = ResourceBuffer::create(data, length);
     else
         m_resourceData->append(data, length);
 }
@@ -236,8 +243,13 @@ void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceRes
         frameLoader()->notifier()->willSendRequest(this, request, redirectResponse);
     }
 
-    if (!redirectResponse.isNull())
+    if (!redirectResponse.isNull()) {
+#if USE(PLATFORM_STRATEGIES)
+        platformStrategies()->loaderStrategy()->resourceLoadScheduler()->crossOriginRedirectReceived(this, request.url());
+#else
         resourceLoadScheduler()->crossOriginRedirectReceived(this, request.url());
+#endif
+    }
     m_request = request;
 }
 
@@ -288,7 +300,7 @@ void ResourceLoader::willStopBufferingData(const char* data, int length)
         return;
 
     ASSERT(!m_resourceData);
-    m_resourceData = SharedBuffer::create(data, length);
+    m_resourceData = ResourceBuffer::create(data, length);
 }
 
 void ResourceLoader::didFinishLoading(double finishTime)
@@ -482,7 +494,7 @@ void ResourceLoader::didReceiveAuthenticationChallenge(const AuthenticationChall
     }
     // Only these platforms provide a way to continue without credentials.
     // If we can't continue with credentials, we need to cancel the load altogether.
-#if PLATFORM(MAC) || USE(CFNETWORK) || USE(CURL)
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(CURL) || PLATFORM(GTK)
     handle()->receivedRequestToContinueWithoutCredential(challenge);
     ASSERT(!handle()->hasAuthenticationChallenge());
 #else
@@ -545,5 +557,15 @@ void ResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_deferredRequest);
     info.addMember(m_options);
 }
+
+#if PLATFORM(MAC)
+void ResourceLoader::setIdentifier(unsigned long identifier)
+{
+    // FIXME (NetworkProcess): This is temporary to allow WebKit to directly set the identifier on a ResourceLoader.
+    // More permanently we'll want the identifier to be piped through ResourceLoader::init/start so
+    // it always has it, especially in willSendRequest.
+    m_identifier = identifier;
+}
+#endif
 
 }

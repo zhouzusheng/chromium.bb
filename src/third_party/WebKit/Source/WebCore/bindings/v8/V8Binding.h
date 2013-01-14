@@ -96,9 +96,9 @@ namespace WebCore {
         StringImpl* stringImpl = string.impl();
         if (!stringImpl)
             return isolate ? v8::String::Empty(isolate) : v8::String::Empty();
-
-        V8PerIsolateData* data = V8PerIsolateData::current(isolate);
-        return data->stringCache()->v8ExternalString(stringImpl, isolate);
+        if (UNLIKELY(!isolate))
+            isolate = v8::Isolate::GetCurrent();
+        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(stringImpl, isolate);
     }
 
     // Convert a string to a V8 string.
@@ -109,14 +109,16 @@ namespace WebCore {
 
     inline v8::Handle<v8::Integer> v8Integer(int value, v8::Isolate* isolate = 0)
     {
-        V8PerIsolateData* data = V8PerIsolateData::current(isolate);
-        return data->integerCache()->v8Integer(value);
+        if (UNLIKELY(!isolate))
+            isolate = v8::Isolate::GetCurrent();
+        return V8PerIsolateData::from(isolate)->integerCache()->v8Integer(value, isolate);
     }
 
     inline v8::Handle<v8::Integer> v8UnsignedInteger(unsigned value, v8::Isolate* isolate = 0)
     {
-        V8PerIsolateData* data = V8PerIsolateData::current(isolate);
-        return data->integerCache()->v8UnsignedInteger(value);
+        if (UNLIKELY(!isolate))
+            isolate = v8::Isolate::GetCurrent();
+        return V8PerIsolateData::from(isolate)->integerCache()->v8UnsignedInteger(value, isolate);
     }
 
     inline v8::Handle<v8::Value> v8Undefined()
@@ -182,27 +184,28 @@ namespace WebCore {
 
     template<>
     struct NativeValueTraits<String> {
-        static inline String arrayNativeValue(const v8::Local<v8::Array>& array, size_t i)
+        static inline String nativeValue(const v8::Handle<v8::Value>& value)
         {
-            return toWebCoreString(array->Get(i));
+            return toWebCoreString(value);
         }
     };
 
     template<>
     struct NativeValueTraits<float> {
-        static inline float arrayNativeValue(const v8::Local<v8::Array>& array, size_t i)
+        static inline float nativeValue(const v8::Handle<v8::Value>& value)
         {
-            return static_cast<float>(array->Get(v8Integer(i))->NumberValue());
+            return static_cast<float>(value->NumberValue());
         }
     };
 
     template<>
     struct NativeValueTraits<double> {
-        static inline double arrayNativeValue(const v8::Local<v8::Array>& array, size_t i)
+        static inline double nativeValue(const v8::Handle<v8::Value>& value)
         {
-            return static_cast<double>(array->Get(v8Integer(i))->NumberValue());
+            return static_cast<double>(value->NumberValue());
         }
     };
+
 
     template <class T>
     Vector<T> toNativeArray(v8::Handle<v8::Value> value)
@@ -215,11 +218,23 @@ namespace WebCore {
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(value));
         v8::Local<v8::Array> array = v8::Local<v8::Array>::Cast(v8Value);
         size_t length = array->Length();
-        for (size_t i = 0; i < length; ++i) {
-            result.append(TraitsType::arrayNativeValue(array, i));
-        }
+        for (size_t i = 0; i < length; ++i)
+            result.append(TraitsType::nativeValue(array->Get(i)));
         return result;
     }
+
+    template <class T>
+    Vector<T> toNativeArguments(const v8::Arguments& args, int startIndex)
+    {
+        ASSERT(startIndex <= args.Length());
+        Vector<T> result;
+        typedef NativeValueTraits<T> TraitsType;
+        int length = args.Length();
+        for (int i = startIndex; i < length; ++i)
+            result.append(TraitsType::nativeValue(args[i]));
+        return result;
+    }
+
 
     // Validates that the passed object is a sequence type per WebIDL spec
     // http://www.w3.org/TR/2012/WD-WebIDL-20120207/#es-sequence

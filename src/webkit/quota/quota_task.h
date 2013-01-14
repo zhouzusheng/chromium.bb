@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner_helpers.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -20,7 +21,6 @@ class TaskRunner;
 namespace quota {
 
 class QuotaTaskObserver;
-class QuotaThreadTask;
 
 // A base class for quota tasks.
 // TODO(kinuko): Revise this using base::Callback.
@@ -54,7 +54,6 @@ class QuotaTask {
  private:
   friend class base::DeleteHelper<QuotaTask>;
   friend class QuotaTaskObserver;
-  friend class QuotaThreadTask;
 
   void Abort();
   QuotaTaskObserver* observer_;
@@ -62,46 +61,9 @@ class QuotaTask {
   bool delete_scheduled_;
 };
 
-// For tasks that post tasks to the other thread.
-class QuotaThreadTask : public QuotaTask,
-                        public base::RefCountedThreadSafe<QuotaThreadTask> {
- public:
-  QuotaThreadTask(QuotaTaskObserver* observer,
-                  base::TaskRunner* target_task_runner);
-
- protected:
-  virtual ~QuotaThreadTask();
-
-  // One of the following Run methods should be overridden for execution
-  // on the target thread.
-
-  // A task to invoke the CallCompleted() method on the original thread will
-  // be scheduled immediately upon return from RunOnTargetThread().
-  virtual void RunOnTargetThread();
-
-  // A task to invoke the CallCompleted() method on the original thread will
-  // only be scheduled if RunOnTargetThreadAsync returns true. If false is
-  // returned, the derived class should schedule a task to do so upon actual
-  // completion.
-  virtual bool RunOnTargetThreadAsync();
-
-  virtual void Run() OVERRIDE;
-  base::TaskRunner* target_task_runner() const {
-    return target_task_runner_;
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<QuotaThreadTask>;
-  friend class QuotaTaskObserver;
-  void CallRunOnTargetThread();
-
-  scoped_refptr<base::TaskRunner> target_task_runner_;
-};
-
-class QuotaTaskObserver {
+class WEBKIT_STORAGE_EXPORT QuotaTaskObserver {
  protected:
   friend class QuotaTask;
-  friend class QuotaThreadTask;
 
   QuotaTaskObserver();
   virtual ~QuotaTaskObserver();

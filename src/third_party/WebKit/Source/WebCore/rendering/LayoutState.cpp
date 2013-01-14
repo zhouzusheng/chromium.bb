@@ -42,13 +42,16 @@ LayoutState::LayoutState(LayoutState* prev, RenderBox* renderer, const LayoutSiz
 #ifndef NDEBUG
     , m_renderer(renderer)
 #endif
+#if ENABLE(CSS_EXCLUSIONS)
+    , m_exclusionShapeInsideInfo(0)
+#endif
 {
     ASSERT(m_next);
 
     bool fixed = renderer->isOutOfFlowPositioned() && renderer->style()->position() == FixedPosition;
     if (fixed) {
         // FIXME: This doesn't work correctly with transforms.
-        FloatPoint fixedOffset = renderer->view()->localToAbsolute(FloatPoint(), true);
+        FloatPoint fixedOffset = renderer->view()->localToAbsolute(FloatPoint(), IsFixed);
         m_paintOffset = LayoutSize(fixedOffset.x(), fixedOffset.y()) + offset;
     } else
         m_paintOffset = prev->m_paintOffset + offset;
@@ -107,7 +110,19 @@ LayoutState::LayoutState(LayoutState* prev, RenderBox* renderer, const LayoutSiz
     if (!m_columnInfo)
         m_columnInfo = m_next->m_columnInfo;
 
+#if ENABLE(CSS_EXCLUSIONS)
+    if (renderer->isRenderBlock()) {
+        m_exclusionShapeInsideInfo = toRenderBlock(renderer)->exclusionShapeInsideInfo();
+        if (!m_exclusionShapeInsideInfo)
+            m_exclusionShapeInsideInfo = m_next->m_exclusionShapeInsideInfo;
+    }
+#endif
+
     m_layoutDelta = m_next->m_layoutDelta;
+#if !ASSERT_DISABLED && ENABLE(SATURATED_LAYOUT_ARITHMETIC)
+    m_layoutDeltaXSaturated = m_next->m_layoutDeltaXSaturated;
+    m_layoutDeltaYSaturated = m_next->m_layoutDeltaYSaturated;
+#endif
     
     m_isPaginated = m_pageLogicalHeight || m_columnInfo || renderer->isRenderFlowThread();
 
@@ -124,6 +139,10 @@ LayoutState::LayoutState(LayoutState* prev, RenderBox* renderer, const LayoutSiz
 LayoutState::LayoutState(RenderObject* root)
     : m_clipped(false)
     , m_isPaginated(false)
+#if !ASSERT_DISABLED && ENABLE(SATURATED_LAYOUT_ARITHMETIC)
+    , m_layoutDeltaXSaturated(false)
+    , m_layoutDeltaYSaturated(false)
+#endif    
     , m_pageLogicalHeight(0)
     , m_pageLogicalHeightChanged(false)
     , m_columnInfo(0)
@@ -132,9 +151,12 @@ LayoutState::LayoutState(RenderObject* root)
 #ifndef NDEBUG
     , m_renderer(root)
 #endif
+#if ENABLE(CSS_EXCLUSIONS)
+    , m_exclusionShapeInsideInfo(0)
+#endif
 {
     RenderObject* container = root->container();
-    FloatPoint absContentPoint = container->localToAbsolute(FloatPoint(), false, true);
+    FloatPoint absContentPoint = container->localToAbsolute(FloatPoint(), UseTransforms);
     m_paintOffset = LayoutSize(absContentPoint.x(), absContentPoint.y());
 
     if (container->hasOverflowClip()) {

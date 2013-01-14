@@ -204,6 +204,7 @@ WebInspector.DefaultTextEditor.prototype = {
     {
         this._mainPanel.addDecoration(lineNumber, element);
         this._gutterPanel.addDecoration(lineNumber, element);
+        this._syncDecorationsForLine(lineNumber);
     },
 
     /**
@@ -214,6 +215,7 @@ WebInspector.DefaultTextEditor.prototype = {
     {
         this._mainPanel.removeDecoration(lineNumber, element);
         this._gutterPanel.removeDecoration(lineNumber, element);
+        this._syncDecorationsForLine(lineNumber);
     },
 
     /**
@@ -393,6 +395,8 @@ WebInspector.DefaultTextEditor.prototype = {
         var handleRedo = this._mainPanel.handleUndoRedo.bind(this._mainPanel, true);
         this._shortcuts[WebInspector.KeyboardShortcut.makeKey("z", modifiers.CtrlOrMeta)] = handleUndo;
         this._shortcuts[WebInspector.KeyboardShortcut.makeKey("z", modifiers.Shift | modifiers.CtrlOrMeta)] = handleRedo;
+        if (!WebInspector.isMac())
+            this._shortcuts[WebInspector.KeyboardShortcut.makeKey("y", modifiers.CtrlOrMeta)] = handleRedo;
 
         var handleTabKey = this._mainPanel.handleTabKeyPress.bind(this._mainPanel, false);
         var handleShiftTabKey = this._mainPanel.handleTabKeyPress.bind(this._mainPanel, true);
@@ -416,7 +420,7 @@ WebInspector.DefaultTextEditor.prototype = {
         var anchor = event.target.enclosingNodeOrSelfWithNodeName("a");
         if (anchor)
             return;
-        var contextMenu = new WebInspector.ContextMenu();
+        var contextMenu = new WebInspector.ContextMenu(event);
         var target = event.target.enclosingNodeOrSelfWithClass("webkit-line-number");
         if (target)
             this._delegate.populateLineGutterContextMenu(contextMenu, target.lineNumber);
@@ -424,7 +428,7 @@ WebInspector.DefaultTextEditor.prototype = {
             target = this._mainPanel._enclosingLineRowOrSelf(event.target);
             this._delegate.populateTextAreaContextMenu(contextMenu, target && target.lineNumber);
         }
-        contextMenu.show(event);
+        contextMenu.show();
     },
 
     _handleScrollChanged: function(event)
@@ -572,10 +576,10 @@ WebInspector.DefaultTextEditor.prototype = {
         if (!this.readOnly())
             WebInspector.markBeingEdited(this.element, false);
         this._freeCachedElements();
-    }
-}
+    },
 
-WebInspector.DefaultTextEditor.prototype.__proto__ = WebInspector.View.prototype;
+    __proto__: WebInspector.View.prototype
+}
 
 /**
  * @constructor
@@ -1059,10 +1063,10 @@ WebInspector.TextEditorGutterPanel.prototype = {
             if (!decorations.length)
                 delete this._decorations[lineNumber];
         }
-    }
-}
+    },
 
-WebInspector.TextEditorGutterPanel.prototype.__proto__ = WebInspector.TextEditorChunkedPanel.prototype;
+    __proto__: WebInspector.TextEditorChunkedPanel.prototype
+}
 
 /**
  * @constructor
@@ -1561,10 +1565,9 @@ WebInspector.TextEditorMainPanel.prototype = {
 
             if (lineNumber === range.startLine)
                 newRange.startColumn = Math.max(0, newRange.startColumn - lineIndentLength);
+            if (lineNumber === range.endLine)
+                newRange.endColumn = Math.max(0, newRange.endColumn - lineIndentLength);
         }
-
-        if (lineIndentLength)
-            newRange.endColumn = Math.max(0, newRange.endColumn - lineIndentLength);
 
         this._lastEditedRange = newRange;
 
@@ -1861,10 +1864,21 @@ WebInspector.TextEditorMainPanel.prototype = {
             if (!highlight)
                 return;
 
-            lineRow.removeChildren();
+            var decorationsElement = lineRow.decorationsElement;
+            if (!decorationsElement)
+                lineRow.removeChildren();
+            else {
+                while (true) {
+                    var child = lineRow.firstChild;
+                    if (!child || child === decorationsElement)
+                        break;
+                    lineRow.removeChild(child);
+                }
+            }
+
             var line = this._textModel.line(lineNumber);
             if (!line)
-                lineRow.appendChild(document.createElement("br"));
+                lineRow.insertBefore(document.createElement("br"), decorationsElement);
 
             var plainTextStart = -1;
             for (var j = 0; j < line.length;) {
@@ -1881,21 +1895,19 @@ WebInspector.TextEditorMainPanel.prototype = {
                     j++;
                 } else {
                     if (plainTextStart !== -1) {
-                        this._appendTextNode(lineRow, line.substring(plainTextStart, j));
+                        this._insertTextNodeBefore(lineRow, decorationsElement, line.substring(plainTextStart, j));
                         plainTextStart = -1;
                         --this._paintLinesOperationsCredit;
                     }
-                    this._appendSpan(lineRow, line.substring(j, j + attribute.length), attribute.tokenType);
+                    this._insertSpanBefore(lineRow, decorationsElement, line.substring(j, j + attribute.length), attribute.tokenType);
                     j += attribute.length;
                     --this._paintLinesOperationsCredit;
                 }
             }
             if (plainTextStart !== -1) {
-                this._appendTextNode(lineRow, line.substring(plainTextStart, line.length));
+                this._insertTextNodeBefore(lineRow, decorationsElement, line.substring(plainTextStart, line.length));
                 --this._paintLinesOperationsCredit;
             }
-            if (lineRow.decorationsElement)
-                lineRow.appendChild(lineRow.decorationsElement);
         } finally {
             if (this._rangeToMark && this._rangeToMark.startLine === lineNumber)
                 this._markedRangeElement = WebInspector.highlightSearchResult(lineRow, this._rangeToMark.startColumn, this._rangeToMark.endColumn - this._rangeToMark.startColumn);
@@ -2019,7 +2031,7 @@ WebInspector.TextEditorMainPanel.prototype = {
             var rangeBoundary = lineRow.rangeBoundaryForOffset(column);
         else {
             var offset = column;
-            for (var i = chunk.startLine; i < line; ++i)
+            for (var i = chunk.startLine; i < line && i < this._textModel.linesCount; ++i)
                 offset += this._textModel.lineLength(i) + 1; // \n
             lineRow = chunk.element;
             if (lineRow.firstChild)
@@ -2048,20 +2060,21 @@ WebInspector.TextEditorMainPanel.prototype = {
 
     /**
      * @param {Element} element
+     * @param {Element} oldChild
      * @param {string} content
      * @param {string} className
      */
-    _appendSpan: function(element, content, className)
+    _insertSpanBefore: function(element, oldChild, content, className)
     {
         if (className === "html-resource-link" || className === "html-external-link") {
-            element.appendChild(this._createLink(content, className === "html-external-link"));
+            element.insertBefore(this._createLink(content, className === "html-external-link"), oldChild);
             return;
         }
 
         var span = this._cachedSpans.pop() || document.createElement("span");
         span.className = "webkit-" + className;
         span.textContent = content;
-        element.appendChild(span);
+        element.insertBefore(span, oldChild);
         if (!("spans" in element))
             element.spans = [];
         element.spans.push(span);
@@ -2069,16 +2082,17 @@ WebInspector.TextEditorMainPanel.prototype = {
 
     /**
      * @param {Element} element
+     * @param {Element} oldChild
      * @param {string} text
      */
-    _appendTextNode: function(element, text)
+    _insertTextNodeBefore: function(element, oldChild, text)
     {
         var textNode = this._cachedTextNodes.pop();
         if (textNode)
             textNode.nodeValue = text;
         else
             textNode = document.createTextNode(text);
-        element.appendChild(textNode);
+        element.insertBefore(textNode, oldChild);
         if (!("textNodes" in element))
             element.textNodes = [];
         element.textNodes.push(textNode);
@@ -2496,10 +2510,10 @@ WebInspector.TextEditorMainPanel.prototype = {
         textContents = textContent.split("\n");
         for (var i = 0; i < textContents.length; ++i)
             lines.push(textContents[i]);
-    }
-}
+    },
 
-WebInspector.TextEditorMainPanel.prototype.__proto__ = WebInspector.TextEditorChunkedPanel.prototype;
+    __proto__: WebInspector.TextEditorChunkedPanel.prototype
+}
 
 /**
  * @constructor

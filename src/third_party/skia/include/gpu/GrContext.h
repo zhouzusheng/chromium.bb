@@ -10,19 +10,22 @@
 #ifndef GrContext_DEFINED
 #define GrContext_DEFINED
 
-#include "GrConfig.h"
-#include "GrPaint.h"
+#include "GrColor.h"
 #include "GrAARectRenderer.h"
 #include "GrClipData.h"
+#include "GrMatrix.h"
+#include "GrPaint.h"
 // not strictly needed but requires WK change in LayerTextureUpdaterCanvas to
 // remove.
 #include "GrRenderTarget.h"
-#include "SkClipStack.h"
+#include "GrRefCnt.h"
+#include "GrTexture.h"
 
 class GrAutoScratchTexture;
 class GrCacheKey;
 class GrDrawState;
 class GrDrawTarget;
+class GrEffect;
 class GrFontCache;
 class GrGpu;
 class GrIndexBuffer;
@@ -33,6 +36,7 @@ class GrPathRendererChain;
 class GrResourceEntry;
 class GrResourceCache;
 class GrStencilBuffer;
+class GrTextureParams;
 class GrVertexBuffer;
 class GrVertexBufferAllocPool;
 class GrSoftwarePathRenderer;
@@ -42,10 +46,9 @@ public:
     SK_DECLARE_INST_COUNT(GrContext)
 
     /**
-     * Creates a GrContext from within a 3D context.
+     * Creates a GrContext for a backend context.
      */
-    static GrContext* Create(GrEngine engine,
-                             GrPlatform3DContext context3D);
+    static GrContext* Create(GrBackend, GrBackendContext);
 
     /**
      * Returns the number of GrContext instances for the current thread.
@@ -63,7 +66,25 @@ public:
     void resetContext();
 
     /**
-     * Abandons all gpu resources, assumes 3D API state is unknown. Call this
+     * Callback function to allow classes to cleanup on GrContext destruction.
+     * The 'info' field is filled in with the 'info' passed to addCleanUp.
+     */
+    typedef void (*PFCleanUpFunc)(const GrContext* context, void* info);
+
+    /**
+     * Add a function to be called from within GrContext's destructor.
+     * This gives classes a chance to free resources held on a per context basis.
+     * The 'info' parameter will be stored and passed to the callback function.
+     */
+    void addCleanUp(PFCleanUpFunc cleanUp, void* info) {
+        CleanUpData* entry = fCleanUpData.push();
+
+        entry->fFunc = cleanUp;
+        entry->fInfo = info;
+    }
+
+    /**
+     * Abandons all GPU resources, assumes 3D API state is unknown. Call this
      * if you have lost the associated GPU context, and thus internal texture,
      * buffer, etc. references/IDs are now invalid. Should be called even when
      * GrContext is no longer going to be used for two reasons:
@@ -83,7 +104,7 @@ public:
     void contextDestroyed();
 
     /**
-     * Frees gpu created by the context. Can be called to reduce GPU memory
+     * Frees GPU created by the context. Can be called to reduce GPU memory
      * pressure.
      */
     void freeGpuResources();
@@ -100,7 +121,7 @@ public:
      *  Create a new entry, based on the specified key and texture, and return
      *  a "locked" texture. Must call be balanced with an unlockTexture() call.
      *
-     * @param params    The tex params used to draw a texture may help determine
+     * @param params    The texture params used to draw a texture may help determine
      *                  the cache entry used. (e.g. different versions may exist
      *                  for different wrap modes on GPUs with limited NPOT
      *                  texture support). NULL implies clamp wrap modes.
@@ -127,7 +148,7 @@ public:
      *
      *  @param desc     Description of the texture properties.
      *  @param cacheData Cache-specific properties (e.g., texture gen ID)
-     *  @param params   The tex params used to draw a texture may help determine
+     *  @param params   The texture params used to draw a texture may help determine
      *                  the cache entry used. (e.g. different versions may exist
      *                  for different wrap modes on GPUs with limited NPOT
      *                  texture support). NULL implies clamp wrap modes.
@@ -172,7 +193,7 @@ public:
      *
      * Textures created by createAndLockTexture() hide the complications of
      * tiling non-power-of-two textures on APIs that don't support this (e.g.
-     * unextended GLES2). Tiling a npot texture created by lockScratchTexture on
+     * unextended GLES2). Tiling a NPOT texture created by lockScratchTexture on
      * such an API will create gaps in the tiling pattern. This includes clamp
      * mode. (This may be addressed in a future update.)
      */
@@ -234,13 +255,13 @@ public:
     void setTextureCacheLimits(int maxTextures, size_t maxTextureBytes);
 
     /**
-     *  Return the max width or height of a texture supported by the current gpu
+     *  Return the max width or height of a texture supported by the current GPU.
      */
     int getMaxTextureSize() const;
 
     /**
      * Return the max width or height of a render target supported by the
-     * current gpu
+     * current GPU.
      */
     int getMaxRenderTargetSize() const;
 
@@ -268,7 +289,7 @@ public:
     bool isConfigRenderable(GrPixelConfig config) const;
 
     ///////////////////////////////////////////////////////////////////////////
-    // Platform Surfaces
+    // Backend Surfaces
 
     /**
      * Wraps an existing texture with a GrTexture object.
@@ -280,11 +301,11 @@ public:
      *
      * @return GrTexture object or NULL on failure.
      */
-    GrTexture* createPlatformTexture(const GrPlatformTextureDesc& desc);
+    GrTexture* wrapBackendTexture(const GrBackendTextureDesc& desc);
 
     /**
      * Wraps an existing render target with a GrRenderTarget object. It is
-     * similar to createPlatformTexture but can be used to draw into surfaces
+     * similar to wrapBackendTexture but can be used to draw into surfaces
      * that are not also textures (e.g. FBO 0 in OpenGL, or an MSAA buffer that
      * the client will resolve to a texture).
      *
@@ -292,8 +313,7 @@ public:
      *
      * @return GrTexture object or NULL on failure.
      */
-     GrRenderTarget* createPlatformRenderTarget(
-                                    const GrPlatformRenderTargetDesc& desc);
+     GrRenderTarget* wrapBackendRenderTarget(const GrBackendRenderTargetDesc& desc);
 
     ///////////////////////////////////////////////////////////////////////////
     // Matrix state
@@ -309,6 +329,11 @@ public:
      * @param m the matrix to set.
      */
     void setMatrix(const GrMatrix& m);
+
+    /**
+     * Sets the current transformation matrix to identity.
+     */
+    void setIdentityMatrix();
 
     /**
      * Concats the current matrix. The passed matrix is applied before the
@@ -396,8 +421,7 @@ public:
      * @param translate     optional additional translation applied to the
      *                      path.
      */
-    void drawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill,
-                  const GrPoint* translate = NULL);
+    void drawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill);
 
     /**
      * Draws vertices with a paint.
@@ -506,7 +530,7 @@ public:
                                 uint32_t pixelOpsFlags = 0);
 
     /**
-     * Copy the src pixels [buffer, rowbytes, pixelconfig] into a render target at the specified
+     * Copy the src pixels [buffer, row bytes, pixel config] into a render target at the specified
      * rectangle.
      * @param target        the render target to write into. NULL means the current render target.
      * @param left          left edge of the rectangle to write (inclusive)
@@ -515,7 +539,7 @@ public:
      * @param height        height of rectangle to write in pixels.
      * @param config        the pixel config of the source buffer
      * @param buffer        memory to read the rectangle from.
-     * @param rowBytes      number of bytes bewtween consecutive rows. Zero means rows are tightly
+     * @param rowBytes      number of bytes between consecutive rows. Zero means rows are tightly
      *                      packed.
      * @param pixelOpsFlags see PixelOpsFlags enum above.
      */
@@ -534,7 +558,7 @@ public:
      * @param height        height of rectangle to read in pixels.
      * @param config        the pixel config of the destination buffer
      * @param buffer        memory to read the rectangle into.
-     * @param rowBytes      number of bytes bewtween consecutive rows. Zero means rows are tightly
+     * @param rowBytes      number of bytes between consecutive rows. Zero means rows are tightly
      *                      packed.
      * @param pixelOpsFlags see PixelOpsFlags enum above.
      *
@@ -556,7 +580,7 @@ public:
      * @param height        height of rectangle to write in pixels.
      * @param config        the pixel config of the source buffer
      * @param buffer        memory to read pixels from
-     * @param rowBytes      number of bytes bewtween consecutive rows. Zero
+     * @param rowBytes      number of bytes between consecutive rows. Zero
      *                      means rows are tightly packed.
      * @param pixelOpsFlags see PixelOpsFlags enum above.
      */
@@ -576,12 +600,12 @@ public:
 
     /**
      * Resolves a render target that has MSAA. The intermediate MSAA buffer is
-     * downsampled to the associated GrTexture (accessible via
+     * down-sampled to the associated GrTexture (accessible via
      * GrRenderTarget::asTexture()). Any pending draws to the render target will
      * be executed before the resolve.
      *
      * This is only necessary when a client wants to access the object directly
-     * using the underlying graphics API. GrContext will detect when it must
+     * using the backend API directly. GrContext will detect when it must
      * perform a resolve to a GrTexture used as the source of a draw or before
      * reading pixels back from a GrTexture or GrRenderTarget.
      */
@@ -595,7 +619,7 @@ public:
      * @param rect            The destination rectangle.
      * @param sigmaX          The blur's standard deviation in X.
      * @param sigmaY          The blur's standard deviation in Y.
-     * @return the blurred texture, which may be srcTexture ref'ed, or a
+     * @return the blurred texture, which may be srcTexture reffed, or a
      * new texture.  It is the caller's responsibility to unref this texture.
      */
      GrTexture* gaussianBlur(GrTexture* srcTexture,
@@ -647,55 +671,104 @@ public:
     };
 
     /**
-     *  Save/restore the view-matrix in the context.
+     * Save/restore the view-matrix in the context. It can optionally adjust a paint to account
+     * for a coordinate system change. Here is an example of how the paint param can be used:
+     *
+     * A GrPaint is setup with GrEffects. The stages will have access to the pre-matrix source
+     * geometry positions when the draw is executed. Later on a decision is made to transform the
+     * geometry to device space on the CPU. The effects now need to know that the space in which
+     * the geometry will be specified has changed.
+     *
+     * Note that when restore is called (or in the destructor) the context's matrix will be
+     * restored. However, the paint will not be restored. The caller must make a copy of the
+     * paint if necessary. Hint: use SkTCopyOnFirstWrite if the AutoMatrix is conditionally
+     * initialized.
      */
     class AutoMatrix : GrNoncopyable {
     public:
-        enum InitialMatrix {
-            kPreserve_InitialMatrix,
-            kIdentity_InitialMatrix,
-        };
-
         AutoMatrix() : fContext(NULL) {}
 
-        AutoMatrix(GrContext* ctx, InitialMatrix initialState) : fContext(ctx) {
-            fMatrix = ctx->getMatrix();
-            switch (initialState) {
-                case kPreserve_InitialMatrix:
-                    break;
-                case kIdentity_InitialMatrix:
-                    ctx->setMatrix(GrMatrix::I());
-                    break;
-                default:
-                    GrCrash("Unexpected initial matrix state");
+        ~AutoMatrix() { this->restore(); }
+
+        /**
+         * Initializes by pre-concat'ing the context's current matrix with the preConcat param.
+         */
+        void setPreConcat(GrContext* context, const GrMatrix& preConcat, GrPaint* paint = NULL) {
+            GrAssert(NULL != context);
+
+            this->restore();
+
+            fContext = context;
+            fMatrix = context->getMatrix();
+            this->preConcat(preConcat, paint);
+        }
+
+        /**
+         * Sets the context's matrix to identity. Returns false if the inverse matrix is required to
+         * update a paint but the matrix cannot be inverted.
+         */
+        bool setIdentity(GrContext* context, GrPaint* paint = NULL) {
+            GrAssert(NULL != context);
+
+            this->restore();
+
+            if (NULL != paint) {
+                if (!paint->sourceCoordChangeByInverse(context->getMatrix())) {
+                    return false;
+                }
             }
+            fMatrix = context->getMatrix();
+            fContext = context;
+            context->setIdentityMatrix();
+            return true;
         }
 
-        AutoMatrix(GrContext* ctx, const GrMatrix& matrix) : fContext(ctx) {
-            fMatrix = ctx->getMatrix();
-            ctx->setMatrix(matrix);
+        /**
+         * Replaces the context's matrix with a new matrix. Returns false if the inverse matrix is
+         * required to update a paint but the matrix cannot be inverted.
+         */
+        bool set(GrContext* context, const GrMatrix& newMatrix, GrPaint* paint = NULL) {
+            if (NULL != paint) {
+                if (!this->setIdentity(context, paint)) {
+                    return false;
+                }
+                this->preConcat(newMatrix, paint);
+            } else {
+                this->restore();
+                fContext = context;
+                fMatrix = context->getMatrix();
+                context->setMatrix(newMatrix);
+            }
+            return true;
         }
 
-        void set(GrContext* ctx) {
+        /**
+         * If this has been initialized then the context's matrix will be further updated by
+         * pre-concat'ing the preConcat param. The matrix that will be restored remains unchanged.
+         * The paint is assumed to be relative to the context's matrix at the time this call is
+         * made, not the matrix at the time AutoMatrix was first initialized. In other words, this
+         * performs an incremental update of the paint.
+         */
+        void preConcat(const GrMatrix& preConcat, GrPaint* paint = NULL) {
+            if (NULL != paint) {
+                paint->sourceCoordChange(preConcat);
+            }
+            fContext->concatMatrix(preConcat);
+        }
+
+        /**
+         * Returns false if never initialized or the inverse matrix was required to update a paint
+         * but the matrix could not be inverted.
+         */
+        bool succeeded() const { return NULL != fContext; }
+
+        /**
+         * If this has been initialized then the context's original matrix is restored.
+         */
+        void restore() {
             if (NULL != fContext) {
                 fContext->setMatrix(fMatrix);
-            }
-            fMatrix = ctx->getMatrix();
-            fContext = ctx;
-        }
-
-        void set(GrContext* ctx, const GrMatrix& matrix) {
-            if (NULL != fContext) {
-                fContext->setMatrix(fMatrix);
-            }
-            fMatrix = ctx->getMatrix();
-            ctx->setMatrix(matrix);
-            fContext = ctx;
-        }
-
-        ~AutoMatrix() {
-            if (NULL != fContext) {
-                fContext->setMatrix(fMatrix);
+                fContext = NULL;
             }
         }
 
@@ -713,7 +786,7 @@ public:
             kWideOpen_InitialClip,
         };
 
-        AutoClip(GrContext* context, InitialClip initialState) 
+        AutoClip(GrContext* context, InitialClip initialState)
         : fContext(context) {
             GrAssert(kWideOpen_InitialClip == initialState);
             fNewClipData.fClipStack = &fNewClipStack;
@@ -748,9 +821,12 @@ public:
     public:
         AutoWideOpenIdentityDraw(GrContext* ctx, GrRenderTarget* rt)
             : fAutoClip(ctx, AutoClip::kWideOpen_InitialClip)
-            , fAutoRT(ctx, rt)
-            , fAutoMatrix(ctx, AutoMatrix::kIdentity_InitialMatrix) {
+            , fAutoRT(ctx, rt) {
+            fAutoMatrix.setIdentity(ctx);
+            // should never fail with no paint param.
+            GrAssert(fAutoMatrix.succeeded());
         }
+
     private:
         AutoClip fAutoClip;
         AutoRenderTarget fAutoRT;
@@ -766,9 +842,8 @@ public:
     const GrIndexBuffer* getQuadIndexBuffer() const;
 
     /**
-     * Stencil buffers add themselves to the cache using
-     * addStencilBuffer. findStencilBuffer is called to check the
-     * cache for a SB that matches an RT's criteria.
+     * Stencil buffers add themselves to the cache using addStencilBuffer. findStencilBuffer is
+     * called to check the cache for a SB that matches an RT's criteria.
      */
     void addStencilBuffer(GrStencilBuffer* sb);
     GrStencilBuffer* findStencilBuffer(int width, int height, int sampleCnt);
@@ -782,6 +857,16 @@ public:
 #if GR_CACHE_STATS
     void printCacheStats() const;
 #endif
+
+    ///////////////////////////////////////////////////////////////////////////
+    // Legacy names that will be kept until WebKit can be updated.
+    GrTexture* createPlatformTexture(const GrPlatformTextureDesc& desc) {
+        return this->wrapBackendTexture(desc);
+    }
+
+    GrRenderTarget* createPlatformRenderTarget(const GrPlatformRenderTargetDesc& desc) {
+        return wrapBackendRenderTarget(desc);
+    }
 
 private:
     // Used to indicate whether a draw should be performed immediately or queued in fDrawBuffer.
@@ -810,20 +895,24 @@ private:
     int                         fPMToUPMConversion;
     int                         fUPMToPMConversion;
 
+    struct CleanUpData {
+        PFCleanUpFunc fFunc;
+        void*         fInfo;
+    };
+
+    SkTDArray<CleanUpData>      fCleanUpData;
+
     GrContext(GrGpu* gpu);
 
     void setupDrawBuffer();
 
     void flushDrawBuffer();
 
-    void setPaint(const GrPaint& paint);
-
     /// Sets the paint and returns the target to draw into. The paint can be NULL in which case the
     /// draw state is left unmodified.
     GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw);
 
-    void internalDrawPath(const GrPaint& paint, const SkPath& path,
-                          GrPathFill fill, const GrPoint* translate);
+    void internalDrawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill);
 
     GrTexture* createResizedTexture(const GrTextureDesc& desc,
                                     const GrCacheData& cacheData,
@@ -839,16 +928,15 @@ private:
     // for use with textures released from an GrAutoScratchTexture.
     void addExistingTextureToCache(GrTexture* texture);
 
-    GrCustomStage* createPMToUPMEffect(GrTexture* texture, bool swapRAndB);
-    GrCustomStage* createUPMToPMEffect(GrTexture* texture, bool swapRAndB);
+    GrEffect* createPMToUPMEffect(GrTexture* texture, bool swapRAndB);
+    GrEffect* createUPMToPMEffect(GrTexture* texture, bool swapRAndB);
 
     typedef GrRefCnt INHERITED;
 };
 
 /**
- * Gets and locks a scratch texture from a descriptor using
- * either exact or approximate criteria. Unlocks texture in
- * the destructor.
+ * Gets and locks a scratch texture from a descriptor using either exact or approximate criteria.
+ * Unlocks texture in the destructor.
  */
 class GrAutoScratchTexture : ::GrNoncopyable {
 public:

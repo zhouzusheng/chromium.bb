@@ -931,16 +931,13 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
     // at this point we're done with prePathMatrix
     SkDEBUGCODE(prePathMatrix = (const SkMatrix*)0x50FF8001;)
 
-    const SkPaint* paint = &origPaint;
-    SkTLazy<SkPaint> lazyPaint;
+    SkTCopyOnFirstWrite<SkPaint> paint(origPaint);
 
     {
         SkScalar coverage;
         if (SkDrawTreatAsHairline(origPaint, *matrix, &coverage)) {
             if (SK_Scalar1 == coverage) {
-                lazyPaint.set(origPaint);
-                lazyPaint.get()->setStrokeWidth(0);
-                paint = lazyPaint.get();
+                paint.writable()->setStrokeWidth(0);
             } else if (xfermodeSupportsCoverageAsAlpha(origPaint.getXfermode())) {
                 U8CPU newAlpha;
 #if 0
@@ -953,10 +950,9 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
                 int scale = (int)SkScalarMul(coverage, 256);
                 newAlpha = origPaint.getAlpha() * scale >> 8;
 #endif
-                lazyPaint.set(origPaint);
-                lazyPaint.get()->setStrokeWidth(0);
-                lazyPaint.get()->setAlpha(newAlpha);
-                paint = lazyPaint.get();
+                SkPaint* writablePaint = paint.writable();
+                writablePaint->setStrokeWidth(0);
+                writablePaint->setAlpha(newAlpha);
             }
         }
     }
@@ -1538,8 +1534,11 @@ void SkDraw::drawText(const char text[], size_t byteLength,
         return;
     }
 
+    // SkScalarRec doesn't currently have a way of representing hairline stroke and
+    // will fill if its frame-width is 0.
     if (/*paint.isLinearText() ||*/
-        (fMatrix->hasPerspective())) {
+        (fMatrix->hasPerspective()) ||
+        (0 == paint.getStrokeWidth() && SkPaint::kStroke_Style == paint.getStyle())) {
         this->drawText_asPaths(text, byteLength, x, y, paint);
         return;
     }
@@ -1547,13 +1546,6 @@ void SkDraw::drawText(const char text[], size_t byteLength,
     SkDrawCacheProc glyphCacheProc = paint.getDrawCacheProc();
 
     const SkMatrix* matrix = fMatrix;
-    if (hasCustomD1GProc(*this)) {
-        // only support the fMVMatrix (for now) for the GPU case, which also
-        // sets the fD1GProc
-        if (fMVMatrix) {
-            matrix = fMVMatrix;
-        }
-    }
 
     SkAutoGlyphCache    autoCache(paint, matrix);
     SkGlyphCache*       cache = autoCache.getCache();
@@ -1747,13 +1739,6 @@ void SkDraw::drawPosText(const char text[], size_t byteLength,
     }
 
     const SkMatrix* matrix = fMatrix;
-    if (hasCustomD1GProc(*this)) {
-        // only support the fMVMatrix (for now) for the GPU case, which also
-        // sets the fD1GProc
-        if (fMVMatrix) {
-            matrix = fMVMatrix;
-        }
-    }
 
     SkDrawCacheProc     glyphCacheProc = paint.getDrawCacheProc();
     SkAutoGlyphCache    autoCache(paint, matrix);
@@ -2459,9 +2444,6 @@ void SkDraw::validate() const {
 
     br.set(0, 0, fBitmap->width(), fBitmap->height());
     SkASSERT(cr.isEmpty() || br.contains(cr));
-
-    // assert that both are null, or both are not-null
-    SkASSERT(!fMVMatrix == !fExtMatrix);
 }
 
 #endif

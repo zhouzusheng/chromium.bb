@@ -44,46 +44,57 @@ class CachedSVGDocument;
 class CachedFont;
 class CachedImage;
 class CachedRawResource;
+class CachedResourceRequest;
 class CachedScript;
 class CachedShader;
 class CachedTextTrack;
 class CachedXSLStyleSheet;
 class Document;
+class DocumentLoader;
 class Frame;
 class ImageLoader;
 class KURL;
 
-// The CachedResourceLoader manages the loading of scripts/images/stylesheets for a single document.
-class CachedResourceLoader {
+// The CachedResourceLoader provides a per-context interface to the MemoryCache
+// and enforces a bunch of security checks and rules for resource revalidation.
+// Its lifetime is roughly per-DocumentLoader, in that it is generally created
+// in the DocumentLoader constructor and loses its ability to generate network
+// requests when the DocumentLoader is destroyed. Documents also hold a 
+// RefPtr<CachedResourceLoader> for their lifetime (and will create one if they
+// are initialized without a Frame), so a Document can keep a CachedResourceLoader
+// alive past detach if scripts still reference the Document.
+class CachedResourceLoader : public RefCounted<CachedResourceLoader> {
     WTF_MAKE_NONCOPYABLE(CachedResourceLoader); WTF_MAKE_FAST_ALLOCATED;
 friend class ImageLoader;
 friend class ResourceCacheValidationSuppressor;
 
 public:
-    CachedResourceLoader(Document*);
+    enum DeferOption { NoDefer, DeferredByClient };
+    static PassRefPtr<CachedResourceLoader> create(DocumentLoader* documentLoader) { return adoptRef(new CachedResourceLoader(documentLoader)); }
     ~CachedResourceLoader();
 
-    CachedResourceHandle<CachedImage> requestImage(ResourceRequest&);
-    CachedResourceHandle<CachedCSSStyleSheet> requestCSSStyleSheet(ResourceRequest&, const String& charset, ResourceLoadPriority = ResourceLoadPriorityUnresolved);
-    CachedResourceHandle<CachedCSSStyleSheet> requestUserCSSStyleSheet(ResourceRequest&, const String& charset);
-    CachedResourceHandle<CachedScript> requestScript(ResourceRequest&, const String& charset);
-    CachedResourceHandle<CachedFont> requestFont(ResourceRequest&);
-    CachedResourceHandle<CachedRawResource> requestRawResource(ResourceRequest&, const ResourceLoaderOptions&);
+    CachedResourceHandle<CachedImage> requestImage(CachedResourceRequest&);
+    CachedResourceHandle<CachedCSSStyleSheet> requestCSSStyleSheet(CachedResourceRequest&);
+    CachedResourceHandle<CachedCSSStyleSheet> requestUserCSSStyleSheet(CachedResourceRequest&);
+    CachedResourceHandle<CachedScript> requestScript(CachedResourceRequest&);
+    CachedResourceHandle<CachedFont> requestFont(CachedResourceRequest&);
+    CachedResourceHandle<CachedRawResource> requestRawResource(CachedResourceRequest&);
+    CachedResourceHandle<CachedRawResource> requestMainResource(CachedResourceRequest&);
 
 #if ENABLE(SVG)
-    CachedResourceHandle<CachedSVGDocument> requestSVGDocument(ResourceRequest&);
+    CachedResourceHandle<CachedSVGDocument> requestSVGDocument(CachedResourceRequest&);
 #endif
 #if ENABLE(XSLT)
-    CachedResourceHandle<CachedXSLStyleSheet> requestXSLStyleSheet(ResourceRequest&);
+    CachedResourceHandle<CachedXSLStyleSheet> requestXSLStyleSheet(CachedResourceRequest&);
 #endif
 #if ENABLE(LINK_PREFETCH)
-    CachedResourceHandle<CachedResource> requestLinkResource(CachedResource::Type, ResourceRequest&, ResourceLoadPriority = ResourceLoadPriorityUnresolved);
+    CachedResourceHandle<CachedResource> requestLinkResource(CachedResource::Type, CachedResourceRequest&);
 #endif
 #if ENABLE(VIDEO_TRACK)
-    CachedResourceHandle<CachedTextTrack> requestTextTrack(ResourceRequest&);
+    CachedResourceHandle<CachedTextTrack> requestTextTrack(CachedResourceRequest&);
 #endif
 #if ENABLE(CSS_SHADERS)
-    CachedResourceHandle<CachedShader> requestShader(ResourceRequest&);
+    CachedResourceHandle<CachedShader> requestShader(CachedResourceRequest&);
 #endif
 
     // Logs an access denied message to the console for the specified URL.
@@ -97,11 +108,17 @@ public:
 
     bool autoLoadImages() const { return m_autoLoadImages; }
     void setAutoLoadImages(bool);
+
+    void setImagesEnabled(bool);
+
+    bool shouldDeferImageLoad(const KURL&) const;
     
     CachePolicy cachePolicy() const;
     
-    Frame* frame() const; // Can be NULL
-    Document* document() const { return m_document; }
+    Frame* frame() const; // Can be null
+    Document* document() const { return m_document; } // Can be null
+    void setDocument(Document* document) { m_document = document; }
+    void clearDocumentLoader() { m_documentLoader = 0; }
 
     void removeCachedResource(CachedResource*) const;
     void loadDone();
@@ -121,24 +138,32 @@ public:
     
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
+    static const ResourceLoaderOptions& defaultCachedResourceOptions();
+
 private:
-    CachedResourceHandle<CachedResource> requestResource(CachedResource::Type, ResourceRequest&, const String& charset, const ResourceLoaderOptions&, ResourceLoadPriority = ResourceLoadPriorityUnresolved, bool isPreload = false);
-    CachedResourceHandle<CachedResource> revalidateResource(CachedResource*, ResourceLoadPriority, const ResourceLoaderOptions&);
-    CachedResourceHandle<CachedResource> loadResource(CachedResource::Type, ResourceRequest&, const String& charset, ResourceLoadPriority, const ResourceLoaderOptions&);
+    explicit CachedResourceLoader(DocumentLoader*);
+
+    CachedResourceHandle<CachedResource> requestResource(CachedResource::Type, CachedResourceRequest&);
+    CachedResourceHandle<CachedResource> revalidateResource(CachedResource*);
+    CachedResourceHandle<CachedResource> loadResource(CachedResource::Type, ResourceRequest&, const String& charset);
     void requestPreload(CachedResource::Type, ResourceRequest&, const String& charset);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
-    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, ResourceRequest&, bool forPreload, CachedResource* existingResource) const;
+    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, ResourceRequest&, bool forPreload, CachedResource* existingResource, DeferOption) const;
     
     void notifyLoadedFromMemoryCache(CachedResource*);
     bool checkInsecureContent(CachedResource::Type, const KURL&) const;
 
     void garbageCollectDocumentResourcesTimerFired(Timer<CachedResourceLoader>*);
     void performPostLoadActions();
+
+    bool clientDefersImage(const KURL&) const;
+    void reloadImagesIfNotDeferred();
     
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
     Document* m_document;
+    DocumentLoader* m_documentLoader;
     
     int m_requestCount;
     
@@ -152,8 +177,9 @@ private:
 
     Timer<CachedResourceLoader> m_garbageCollectDocumentResourcesTimer;
 
-    // 30 bits left
+    // 29 bits left
     bool m_autoLoadImages : 1;
+    bool m_imagesEnabled : 1;
     bool m_allowStaleResources : 1;
 };
 

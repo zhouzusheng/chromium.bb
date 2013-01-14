@@ -17,7 +17,9 @@
 #include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
 
@@ -286,8 +288,9 @@ class ExtractSubsetImageSource: public gfx::ImageSkiaSource {
   // gfx::ImageSkiaSource overrides:
   virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
     ImageSkiaRep image_rep = image_.GetRepresentation(scale_factor);
-    SkIRect subset_bounds_in_pixel = RectToSkIRect(subset_bounds_.Scale(
-        ui::GetScaleFactorScale(image_rep.scale_factor())));
+    float scale_to_pixel = ui::GetScaleFactorScale(image_rep.scale_factor());
+    SkIRect subset_bounds_in_pixel = RectToSkIRect(ToFlooredRectDeprecated(
+        gfx::ScaleRect(subset_bounds_, scale_to_pixel)));
     SkBitmap dst;
     bool success = image_rep.sk_bitmap().extractSubset(&dst,
                                                        subset_bounds_in_pixel);
@@ -323,7 +326,8 @@ class ResizeSource : public ImageSkiaSource {
       return image_rep;
 
     const float scale = ui::GetScaleFactorScale(scale_factor);
-    const Size target_pixel_size(target_dip_size_.Scale(scale));
+    const Size target_pixel_size = gfx::ToFlooredSize(
+        target_dip_size_.Scale(scale));
     const SkBitmap resized = skia::ImageOperations::Resize(
         image_rep.sk_bitmap(),
         resize_method_,
@@ -426,7 +430,8 @@ ImageSkia ImageSkiaOperations::CreateButtonBackground(SkColor color,
 // static
 ImageSkia ImageSkiaOperations::ExtractSubset(const ImageSkia& image,
                                              const Rect& subset_bounds) {
-  gfx::Rect clipped_bounds = subset_bounds.Intersect(gfx::Rect(image.size()));
+  gfx::Rect clipped_bounds =
+      gfx::IntersectRects(subset_bounds, gfx::Rect(image.size()));
   if (image.isNull() || clipped_bounds.IsEmpty()) {
     return ImageSkia();
   }

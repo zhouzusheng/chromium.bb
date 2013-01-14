@@ -2009,21 +2009,32 @@ void V8HeapExplorer::ExtractMapReferences(int entry, Map* map) {
                        Map::kConstructorOffset);
   if (map->HasTransitionArray()) {
     TransitionArray* transitions = map->transitions();
-    if (!transitions->descriptors()->IsEmpty()) {
-      DescriptorArray* descriptors = transitions->descriptors();
-      TagObject(descriptors, "(map descriptors)");
-      SetInternalReference(transitions, entry,
-                           "descriptors", descriptors,
-                           TransitionArray::kDescriptorsOffset);
-      IndexedReferencesExtractor refs_extractor(
-          this, transitions, entry);
-      transitions->Iterate(&refs_extractor);
-    }
+
+    Object* back_pointer = transitions->back_pointer_storage();
+    TagObject(transitions->back_pointer_storage(), "(back pointer)");
+    SetInternalReference(transitions, entry,
+                         "backpointer", back_pointer,
+                         TransitionArray::kBackPointerStorageOffset);
+    IndexedReferencesExtractor transitions_refs(this, transitions, entry);
+    transitions->Iterate(&transitions_refs);
+
     TagObject(transitions, "(transition array)");
     SetInternalReference(map, entry,
                          "transitions", transitions,
                          Map::kTransitionsOrBackPointerOffset);
+  } else {
+    Object* back_pointer = map->GetBackPointer();
+    TagObject(back_pointer, "(back pointer)");
+    SetInternalReference(map, entry,
+                         "backpointer", back_pointer,
+                         Map::kTransitionsOrBackPointerOffset);
   }
+  DescriptorArray* descriptors = map->instance_descriptors();
+  TagObject(descriptors, "(map descriptors)");
+  SetInternalReference(map, entry,
+                       "descriptors", descriptors,
+                       Map::kDescriptorsOffset);
+
   SetInternalReference(map, entry,
                        "code_cache", map->code_cache(),
                        Map::kCodeCacheOffset);
@@ -2179,7 +2190,9 @@ void V8HeapExplorer::ExtractClosureReferences(JSObject* js_obj, int entry) {
 void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
   if (js_obj->HasFastProperties()) {
     DescriptorArray* descs = js_obj->map()->instance_descriptors();
+    int real_size = js_obj->map()->NumberOfOwnDescriptors();
     for (int i = 0; i < descs->number_of_descriptors(); i++) {
+      if (descs->GetDetails(i).descriptor_index() > real_size) continue;
       switch (descs->GetType(i)) {
         case FIELD: {
           int index = descs->GetFieldIndex(i);
@@ -3082,26 +3095,26 @@ bool HeapSnapshotGenerator::GenerateSnapshot() {
       Heap::kMakeHeapIterableMask,
       "HeapSnapshotGenerator::GenerateSnapshot");
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   Heap* debug_heap = Isolate::Current()->heap();
-  ASSERT(!debug_heap->old_data_space()->was_swept_conservatively());
-  ASSERT(!debug_heap->old_pointer_space()->was_swept_conservatively());
-  ASSERT(!debug_heap->code_space()->was_swept_conservatively());
-  ASSERT(!debug_heap->cell_space()->was_swept_conservatively());
-  ASSERT(!debug_heap->map_space()->was_swept_conservatively());
+  CHECK(!debug_heap->old_data_space()->was_swept_conservatively());
+  CHECK(!debug_heap->old_pointer_space()->was_swept_conservatively());
+  CHECK(!debug_heap->code_space()->was_swept_conservatively());
+  CHECK(!debug_heap->cell_space()->was_swept_conservatively());
+  CHECK(!debug_heap->map_space()->was_swept_conservatively());
 #endif
 
   // The following code uses heap iterators, so we want the heap to be
   // stable. It should follow TagGlobalObjects as that can allocate.
   AssertNoAllocation no_alloc;
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   debug_heap->Verify();
 #endif
 
   SetProgressTotal(1);  // 1 pass.
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   debug_heap->Verify();
 #endif
 

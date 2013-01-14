@@ -6,6 +6,8 @@
 '''The <output> and <file> elements.
 '''
 
+import os
+
 import grit.format.rc_header
 
 from grit import xtb_reader
@@ -32,8 +34,8 @@ class FileNode(base.Node):
   def MandatoryAttributes(self):
     return ['path', 'lang']
 
-  def RunGatherers(self, recursive=False, debug=False):
-    if not self.should_load_ or not self.SatisfiesOutputCondition():
+  def RunPostSubstitutionGatherer(self, debug=False):
+    if not self.should_load_:
       return
 
     root = self.GetRoot()
@@ -58,7 +60,7 @@ class FileNode(base.Node):
             'by the \'lang\' attribute.')
 
   def GetInputPath(self):
-    return self.attrs['path']
+    return os.path.expandvars(self.attrs['path'])
 
 
 class OutputNode(base.Node):
@@ -75,10 +77,7 @@ class OutputNode(base.Node):
     }
 
   def GetType(self):
-    if self.SatisfiesOutputCondition():
-      return self.attrs['type']
-    else:
-      return 'output_condition_not_satisfied_%s' % self.attrs['type']
+    return self.attrs['type']
 
   def GetLanguage(self):
     '''Returns the language ID, default 'en'.'''
@@ -91,10 +90,12 @@ class OutputNode(base.Node):
     return self.attrs['filename']
 
   def GetOutputFilename(self):
+    path = None
     if hasattr(self, 'output_filename'):
-      return self.output_filename
+      path = self.output_filename
     else:
-      return self.attrs['filename']
+      path = self.attrs['filename']
+    return os.path.expandvars(path)
 
   def _IsValidChild(self, child):
     return isinstance(child, EmitNode)
@@ -108,12 +109,4 @@ class EmitNode(base.ContentNode):
   def GetEmitType(self):
     '''Returns the emit_type for this node. Default is 'append'.'''
     return self.attrs['emit_type']
-
-  def ItemFormatter(self, t):
-    if t == 'rc_header':
-      return grit.format.rc_header.EmitAppender()
-    else:
-      return super(EmitNode, self).ItemFormatter(t)
-
-
 

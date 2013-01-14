@@ -56,7 +56,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
   virtual int OnHeadersReceived(
       URLRequest* request,
       const CompletionCallback& callback,
-      HttpResponseHeaders* original_response_headers,
+      const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers)
       OVERRIDE {
     return OK;
@@ -171,11 +171,6 @@ class BasicURLRequestContext : public URLRequestContext {
 
 }  // namespace
 
-URLRequestContextBuilder::HostResolverParams::HostResolverParams()
-    : parallelism(HostResolver::kDefaultParallelism),
-      retry_attempts(HostResolver::kDefaultRetryAttempts) {}
-URLRequestContextBuilder::HostResolverParams::~HostResolverParams() {}
-
 URLRequestContextBuilder::HttpCacheParams::HttpCacheParams()
     : type(IN_MEMORY),
       max_size(0) {}
@@ -197,12 +192,12 @@ URLRequestContextBuilder::URLRequestContextBuilder()
       http_cache_enabled_(true) {}
 URLRequestContextBuilder::~URLRequestContextBuilder() {}
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_ANDROID)
 void URLRequestContextBuilder::set_proxy_config_service(
     ProxyConfigService* proxy_config_service) {
   proxy_config_service_.reset(proxy_config_service);
 }
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 URLRequestContext* URLRequestContextBuilder::Build() {
   BasicURLRequestContext* context = new BasicURLRequestContext;
@@ -210,31 +205,29 @@ URLRequestContext* URLRequestContextBuilder::Build() {
 
   context->set_user_agent(user_agent_);
 
-  BasicNetworkDelegate* network_delegate = new BasicNetworkDelegate;
-  storage->set_network_delegate(network_delegate);
+  if (!network_delegate_)
+    network_delegate_.reset(new BasicNetworkDelegate);
+  storage->set_network_delegate(network_delegate_.release());
 
-  net::HostResolver* host_resolver = net::CreateSystemHostResolver(
-      host_resolver_params_.parallelism,
-      host_resolver_params_.retry_attempts,
-      NULL /* no NetLog */);
-  storage->set_host_resolver(host_resolver);
+  storage->set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
 
   if (ftp_enabled_) {
-    storage->set_ftp_transaction_factory(new FtpNetworkLayer(host_resolver));
+    storage->set_ftp_transaction_factory(
+        new FtpNetworkLayer(context->host_resolver()));
   }
 
   context->StartFileThread();
 
   // TODO(willchan): Switch to using this code when
   // ProxyService::CreateSystemProxyConfigService()'s signature doesn't suck.
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_ANDROID)
   ProxyConfigService* proxy_config_service = proxy_config_service_.release();
 #else
   ProxyConfigService* proxy_config_service =
       ProxyService::CreateSystemProxyConfigService(
           base::ThreadTaskRunnerHandle::Get(),
           context->file_message_loop());
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
   storage->set_proxy_service(
       ProxyService::CreateUsingSystemProxyResolver(
           proxy_config_service,
@@ -242,14 +235,15 @@ URLRequestContext* URLRequestContextBuilder::Build() {
           context->net_log()));
   storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
   storage->set_http_auth_handler_factory(
-      net::HttpAuthHandlerRegistryFactory::CreateDefault(host_resolver));
+      net::HttpAuthHandlerRegistryFactory::CreateDefault(
+          context->host_resolver()));
   storage->set_cookie_store(new CookieMonster(NULL, NULL));
   storage->set_transport_security_state(new net::TransportSecurityState());
   storage->set_http_server_properties(new net::HttpServerPropertiesImpl);
   storage->set_cert_verifier(CertVerifier::CreateDefault());
 
   net::HttpNetworkSession::Params network_session_params;
-  network_session_params.host_resolver = host_resolver;
+  network_session_params.host_resolver = context->host_resolver();
   network_session_params.cert_verifier = context->cert_verifier();
   network_session_params.transport_security_state =
       context->transport_security_state();

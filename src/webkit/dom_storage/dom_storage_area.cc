@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/time.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/database/database_util.h"
 #include "webkit/dom_storage/dom_storage_map.h"
 #include "webkit/dom_storage/dom_storage_namespace.h"
@@ -18,13 +19,13 @@
 #include "webkit/dom_storage/session_storage_database.h"
 #include "webkit/dom_storage/session_storage_database_adapter.h"
 #include "webkit/fileapi/file_system_util.h"
-#include "webkit/glue/webkit_glue.h"
 
 using webkit_database::DatabaseUtil;
 
 namespace dom_storage {
 
-static const int kCommitTimerSeconds = 1;
+// Non-const for testing.
+static int commit_timer_seconds = 1;
 
 DomStorageArea::CommitBatch::CommitBatch()
   : clear_all_first(false) {
@@ -49,7 +50,7 @@ FilePath DomStorageArea::DatabaseFileNameFromOrigin(const GURL& origin) {
 // static
 GURL DomStorageArea::OriginFromDatabaseFileName(const FilePath& name) {
   DCHECK(name.MatchesExtension(kDatabaseFileExtension));
-  WebKit::WebString origin_id = webkit_glue::FilePathToWebString(
+  WebKit::WebString origin_id = webkit_base::FilePathToWebString(
       name.BaseName().RemoveExtension());
   return DatabaseUtil::GetOriginFromIdentifier(origin_id);
 }
@@ -172,6 +173,25 @@ bool DomStorageArea::Clear() {
   return true;
 }
 
+void DomStorageArea::FastClear() {
+  // TODO(marja): Unify clearing localStorage and sessionStorage. The problem is
+  // to make the following 3 to work together: 1) FastClear, 2) PurgeMemory and
+  // 3) not creating events when clearing an empty area.
+  if (is_shutdown_)
+    return;
+
+  map_ = new DomStorageMap(kPerAreaQuota + kPerAreaOverQuotaAllowance);
+  // This ensures no import will happen while we're waiting to clear the data
+  // from the database. This mechanism fails if PurgeMemory is called.
+  is_initial_import_done_ = true;
+
+  if (backing_.get()) {
+    CommitBatch* commit_batch = CreateCommitBatchIfNeeded();
+    commit_batch->clear_all_first = true;
+    commit_batch->changed_values.clear();
+  }
+}
+
 DomStorageArea* DomStorageArea::ShallowCopy(
     int64 destination_namespace_id,
     const std::string& destination_persistent_namespace_id) {
@@ -222,6 +242,8 @@ void DomStorageArea::DeleteOrigin() {
 
 void DomStorageArea::PurgeMemory() {
   DCHECK(!is_shutdown_);
+  // Purging sessionStorage is not supported; it won't work with FastClear.
+  DCHECK(!session_storage_backing_.get());
   if (!is_initial_import_done_ ||  // We're not using any memory.
       !backing_.get() ||  // We can't purge anything.
       HasUncommittedChanges())  // We leave things alone with changes pending.
@@ -250,6 +272,11 @@ void DomStorageArea::Shutdown() {
   DCHECK(success);
 }
 
+// static
+void DomStorageArea::DisableCommitDelayForTesting() {
+  commit_timer_seconds = 0;
+}
+
 void DomStorageArea::InitialImportIfNeeded() {
   if (is_initial_import_done_)
     return;
@@ -274,7 +301,7 @@ DomStorageArea::CommitBatch* DomStorageArea::CreateCommitBatchIfNeeded() {
       task_runner_->PostDelayedTask(
           FROM_HERE,
           base::Bind(&DomStorageArea::OnCommitTimer, this),
-          base::TimeDelta::FromSeconds(kCommitTimerSeconds));
+          base::TimeDelta::FromSeconds(commit_timer_seconds));
     }
   }
   return commit_batch_.get();
@@ -325,7 +352,7 @@ void DomStorageArea::OnCommitComplete() {
     task_runner_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&DomStorageArea::OnCommitTimer, this),
-        base::TimeDelta::FromSeconds(kCommitTimerSeconds));
+        base::TimeDelta::FromSeconds(commit_timer_seconds));
   }
 }
 

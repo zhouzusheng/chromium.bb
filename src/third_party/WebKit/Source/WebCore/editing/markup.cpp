@@ -31,7 +31,6 @@
 
 #include "CDATASection.h"
 #include "CSSPrimitiveValue.h"
-#include "CSSProperty.h"
 #include "CSSPropertyNames.h"
 #include "CSSRule.h"
 #include "CSSRuleList.h"
@@ -244,7 +243,7 @@ void StyledMarkupAccumulator::appendText(StringBuilder& out, Text* text)
         const bool useRenderedText = !enclosingNodeWithTag(firstPositionInNode(text), selectTag);
         String content = useRenderedText ? renderedText(text, m_range) : stringValueForRange(text, m_range);
         StringBuilder buffer;
-        appendCharactersReplacingEntities(buffer, content.characters(), content.length(), EntityMaskInPCDATA);
+        appendCharactersReplacingEntities(buffer, content, 0, content.length(), EntityMaskInPCDATA);
         out.append(convertHTMLTextToInterchangeFormat(buffer.toString(), text));
     }
 
@@ -666,11 +665,10 @@ PassRefPtr<DocumentFragment> createFragmentFromMarkup(Document* document, const 
 {
     // We use a fake body element here to trick the HTML parser to using the InBody insertion mode.
     RefPtr<HTMLBodyElement> fakeBody = HTMLBodyElement::create(document);
-    // Ignore exceptions here since this function is used to parse markup for pasting or for other editing purposes.
-    ExceptionCode ignoredEC;
-    RefPtr<DocumentFragment> fragment = createContextualFragment(markup, fakeBody.get(), scriptingPermission, ignoredEC);
+    RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
+    fragment->parseHTML(markup, fakeBody.get(), scriptingPermission);
 
-    if (fragment && !baseURL.isEmpty() && baseURL != blankURL() && baseURL != document->baseURL())
+    if (!baseURL.isEmpty() && baseURL != blankURL() && baseURL != document->baseURL())
         completeURLs(fragment.get(), baseURL);
 
     return fragment.release();
@@ -991,7 +989,7 @@ String urlToMarkup(const KURL& url, const String& title)
     markup.append("<a href=\"");
     markup.append(url.string());
     markup.append("\">");
-    appendCharactersReplacingEntities(markup, title.characters(), title.length(), EntityMaskInPCDATA);
+    MarkupAccumulator::appendCharactersReplacingEntities(markup, title, 0, title.length(), EntityMaskInPCDATA);
     markup.append("</a>");
     return markup.toString();
 }
@@ -1026,7 +1024,7 @@ PassRefPtr<DocumentFragment> createFragmentForTransformToFragment(const String& 
         RefPtr<HTMLBodyElement> fakeBody = HTMLBodyElement::create(outputDoc);
         fragment->parseHTML(sourceString, fakeBody.get());
     } else if (sourceMIMEType == "text/plain")
-        fragment->parserAddChild(Text::create(outputDoc, sourceString));
+        fragment->parserAppendChild(Text::create(outputDoc, sourceString));
     else {
         bool successfulParse = fragment->parseXML(sourceString, 0);
         if (!successfulParse)

@@ -534,6 +534,13 @@ int HttpNetworkTransaction::DoLoop(int result) {
       case STATE_GENERATE_SERVER_AUTH_TOKEN_COMPLETE:
         rv = DoGenerateServerAuthTokenComplete(rv);
         break;
+      case STATE_INIT_REQUEST_BODY:
+        DCHECK_EQ(OK, rv);
+        rv = DoInitRequestBody();
+        break;
+      case STATE_INIT_REQUEST_BODY_COMPLETE:
+        rv = DoInitRequestBodyComplete(rv);
+        break;
       case STATE_BUILD_REQUEST:
         DCHECK_EQ(OK, rv);
         net_log_.BeginEvent(NetLog::TYPE_HTTP_TRANSACTION_SEND_REQUEST);
@@ -689,7 +696,7 @@ int HttpNetworkTransaction::DoGenerateServerAuthToken() {
 int HttpNetworkTransaction::DoGenerateServerAuthTokenComplete(int rv) {
   DCHECK_NE(ERR_IO_PENDING, rv);
   if (rv == OK)
-    next_state_ = STATE_BUILD_REQUEST;
+    next_state_ = STATE_INIT_REQUEST_BODY;
   return rv;
 }
 
@@ -742,18 +749,27 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
   request_headers_.MergeFrom(request_->extra_headers);
 }
 
-int HttpNetworkTransaction::DoBuildRequest() {
-  next_state_ = STATE_BUILD_REQUEST_COMPLETE;
+int HttpNetworkTransaction::DoInitRequestBody() {
+  next_state_ = STATE_INIT_REQUEST_BODY_COMPLETE;
   request_body_.reset(NULL);
+  int rv = OK;
   if (request_->upload_data) {
     request_body_.reset(new UploadDataStream(request_->upload_data));
-    const int error_code = request_body_->InitSync();
-    if (error_code != OK) {
-      request_body_.reset(NULL);
-      return error_code;
-    }
+    rv = request_body_->Init(io_callback_);
   }
+  return rv;
+}
 
+int HttpNetworkTransaction::DoInitRequestBodyComplete(int result) {
+  if (result == OK)
+    next_state_ = STATE_BUILD_REQUEST;
+  else
+    request_body_.reset(NULL);
+  return result;
+}
+
+int HttpNetworkTransaction::DoBuildRequest() {
+  next_state_ = STATE_BUILD_REQUEST_COMPLETE;
   headers_valid_ = false;
 
   // This is constructed lazily (instead of within our Start method), so that
@@ -845,6 +861,23 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       return rv;
   }
   DCHECK(response_.headers);
+
+  // Server-induced fallback is supported only if this is a PAC configured
+  // proxy. See: http://crbug.com/143712
+  if (response_.was_fetched_via_proxy && proxy_info_.did_use_pac_script()) {
+    if (response_.headers != NULL &&
+        response_.headers->HasHeaderValue("connection", "proxy-bypass")) {
+      ProxyService* proxy_service = session_->proxy_service();
+      if (proxy_service->MarkProxyAsBad(proxy_info_, net_log_)) {
+        // Only retry in the case of GETs. We don't want to resubmit a POST
+        // if the proxy took some action.
+        if (request_->method == "GET") {
+          ResetConnectionAndRequestForResend();
+          return OK;
+        }
+      }
+    }
+  }
 
   // Like Net.HttpResponseCode, but only for MAIN_FRAME loads.
   if (request_->load_flags & LOAD_MAIN_FRAME) {
@@ -1005,17 +1038,6 @@ void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
         total_duration,
         base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
         100);
-
-  static const bool use_conn_impact_histogram =
-      base::FieldTrialList::TrialExists("ConnCountImpact");
-  if (use_conn_impact_histogram) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        base::FieldTrial::MakeName("Net.Transaction_Connected_New_b",
-            "ConnCountImpact"),
-        total_duration,
-        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
-        100);
-    }
   }
 
   static const bool use_spdy_histogram =
@@ -1399,6 +1421,8 @@ std::string HttpNetworkTransaction::DescribeState(State state) {
   switch (state) {
     STATE_CASE(STATE_CREATE_STREAM);
     STATE_CASE(STATE_CREATE_STREAM_COMPLETE);
+    STATE_CASE(STATE_INIT_REQUEST_BODY);
+    STATE_CASE(STATE_INIT_REQUEST_BODY_COMPLETE);
     STATE_CASE(STATE_BUILD_REQUEST);
     STATE_CASE(STATE_BUILD_REQUEST_COMPLETE);
     STATE_CASE(STATE_SEND_REQUEST);

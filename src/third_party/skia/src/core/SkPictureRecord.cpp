@@ -15,10 +15,12 @@
 #define HEAP_BLOCK_SIZE 4096
 
 enum {
+    // just need a value that save or getSaveCount would never return
     kNoInitialSave = -1,
 };
 
-SkPictureRecord::SkPictureRecord(uint32_t flags) :
+SkPictureRecord::SkPictureRecord(uint32_t flags, SkDevice* device) :
+        INHERITED(device),
         fBoundingHierarchy(NULL),
         fStateTree(NULL),
         fFlattenableHeap(HEAP_BLOCK_SIZE),
@@ -33,12 +35,13 @@ SkPictureRecord::SkPictureRecord(uint32_t flags) :
 #endif
 
     fRestoreOffsetStack.setReserve(32);
-    fInitialSaveCount = kNoInitialSave;
 
     fBitmapHeap = SkNEW(SkBitmapHeap);
     fFlattenableHeap.setBitmapStorage(fBitmapHeap);
     fPathHeap = NULL;   // lazy allocate
     fFirstSavedLayerIndex = kNoSavedLayerIndex;
+
+    fInitialSaveCount = kNoInitialSave;
 }
 
 SkPictureRecord::~SkPictureRecord() {
@@ -53,13 +56,8 @@ SkPictureRecord::~SkPictureRecord() {
 ///////////////////////////////////////////////////////////////////////////////
 
 SkDevice* SkPictureRecord::setDevice(SkDevice* device) {
-    SkASSERT(kNoInitialSave == fInitialSaveCount);
-    this->INHERITED::setDevice(device);
-
-    // The bracketting save() call needs to be recorded after setting the
-    // device otherwise the clip stack will get messed-up
-    fInitialSaveCount = this->save(SkCanvas::kMatrixClip_SaveFlag);
-    return device;
+    SkASSERT(!"eeek, don't try to change the device on a recording canvas");
+    return this->INHERITED::setDevice(device);
 }
 
 int SkPictureRecord::save(SaveFlags flags) {
@@ -165,7 +163,7 @@ static bool collapseSaveClipRestore(SkWriter32* writer, int32_t offset) {
     // Some unexplained crashes in Chrome may be caused by this. Disabling
     // for now to see if it helps.
     // crbug.com/147406
-#if 1
+#ifdef SK_DISABLE_PICTURE_PEEPHOLE_OPTIMIZATION
     return false;
 #endif
 
@@ -321,12 +319,23 @@ void SkPictureRecord::fillRestoreOffsetPlaceholdersForCurrentStackLevel(
 #endif
 }
 
+void SkPictureRecord::beginRecording() {
+    // we have to call this *after* our constructor, to ensure that it gets
+    // recorded. This is balanced by restoreToCount() call from endRecording,
+    // which in-turn calls our overridden restore(), so those get recorded too.
+    fInitialSaveCount = this->save(kMatrixClip_SaveFlag);
+}
+
 void SkPictureRecord::endRecording() {
     SkASSERT(kNoInitialSave != fInitialSaveCount);
     this->restoreToCount(fInitialSaveCount);
 }
 
 void SkPictureRecord::recordRestoreOffsetPlaceholder(SkRegion::Op op) {
+    if (fRestoreOffsetStack.isEmpty()) {
+        return;
+    }
+
     if (regionOpExpands(op)) {
         // Run back through any previous clip ops, and mark their offset to
         // be 0, disabling their ability to trigger a jump-to-restore, otherwise
@@ -426,12 +435,12 @@ void SkPictureRecord::drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar
     validate();
 }
 
-void SkPictureRecord::drawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
+void SkPictureRecord::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
                             const SkRect& dst, const SkPaint* paint) {
-    addDraw(DRAW_BITMAP_RECT);
+    addDraw(DRAW_BITMAP_RECT_TO_RECT);
     addPaintPtr(paint);
     addBitmap(bitmap);
-    addIRectPtr(src);  // may be null
+    addRectPtr(src);  // may be null
     addRect(dst);
     validate();
 }

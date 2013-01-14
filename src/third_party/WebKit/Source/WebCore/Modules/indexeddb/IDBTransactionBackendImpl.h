@@ -30,8 +30,10 @@
 
 #include "DOMStringList.h"
 #include "IDBBackingStore.h"
+#include "IDBDatabaseError.h"
 #include "IDBTransactionBackendInterface.h"
 #include "IDBTransactionCallbacks.h"
+#include "ScriptExecutionContext.h"
 #include "Timer.h"
 #include <wtf/Deque.h>
 #include <wtf/HashSet.h>
@@ -56,6 +58,7 @@ public:
     virtual void abort();
     virtual void setCallbacks(IDBTransactionCallbacks* callbacks) { m_callbacks = callbacks; }
 
+    void abort(PassRefPtr<IDBDatabaseError>);
     void run();
     unsigned short mode() const { return m_mode; }
     bool scheduleTask(PassOwnPtr<ScriptExecutionContext::Task> task, PassOwnPtr<ScriptExecutionContext::Task> abortTask = nullptr) { return scheduleTask(NormalTask, task, abortTask); }
@@ -65,6 +68,7 @@ public:
     void addPendingEvents(int);
     void addPreemptiveEvent() { m_pendingPreemptiveEvents++; }
     void didCompletePreemptiveEvent() { m_pendingPreemptiveEvents--; ASSERT(m_pendingPreemptiveEvents >= 0); }
+    IDBBackingStore::Transaction* backingStoreTransaction() { return m_transaction.get(); }
 
 private:
     IDBTransactionBackendImpl(DOMStringList* objectStores, unsigned short mode, IDBDatabaseBackendImpl*);

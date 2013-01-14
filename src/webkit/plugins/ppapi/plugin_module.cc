@@ -26,7 +26,6 @@
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_graphics_2d_dev.h"
-#include "ppapi/c/dev/ppb_layer_compositor_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_printing_dev.h"
@@ -38,7 +37,6 @@
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
-#include "ppapi/c/dev/ppb_video_layer_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
@@ -73,6 +71,7 @@
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
 #include "ppapi/c/private/ppb_flash_file.h"
+#include "ppapi/c/private/ppb_flash_font_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_tcp_socket.h"
@@ -99,6 +98,7 @@
 #include "ppapi/c/trusted/ppb_image_data_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/shared_impl/callback_tracker.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/ppb_opengles2_shared.h"
 #include "ppapi/shared_impl/ppb_var_shared.h"
@@ -116,14 +116,12 @@
 #include "webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
-#include "webkit/plugins/ppapi/ppb_layer_compositor_impl.h"
 #include "webkit/plugins/ppapi/ppb_proxy_impl.h"
 #include "webkit/plugins/ppapi/ppb_scrollbar_impl.h"
 #include "webkit/plugins/ppapi/ppb_uma_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_var_deprecated_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_capture_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_decoder_impl.h"
-#include "webkit/plugins/ppapi/ppb_video_layer_impl.h"
 
 using ppapi::InputEventData;
 using ppapi::PpapiGlobals;
@@ -303,7 +301,7 @@ const void* InternalGetInterface(const char* name) {
     return ::ppapi::thunk::GetPPB_BufferTrusted_0_1_Thunk();
   if (strcmp(name, PPB_CORE_INTERFACE_1_0) == 0)
     return &core_interface;
-  if (strcmp(name, PPB_GPU_BLACKLIST_INTERFACE) == 0)
+  if (strcmp(name, PPB_GPUBLACKLIST_PRIVATE_INTERFACE) == 0)
     return PPB_GpuBlacklist_Private_Impl::GetInterface();
   if (strcmp(name, PPB_GRAPHICS_3D_TRUSTED_INTERFACE_1_0) == 0)
     return ::ppapi::thunk::GetPPB_Graphics3DTrusted_1_0_Thunk();
@@ -513,21 +511,16 @@ scoped_refptr<PluginModule> PluginModule::CreateModuleForNaClInstance() {
   return nacl_module;
 }
 
-void PluginModule::InitAsProxiedNaCl(
-    scoped_ptr<PluginDelegate::OutOfProcessProxy> out_of_process_proxy,
-    PP_Instance instance) {
-  InitAsProxied(out_of_process_proxy.release());
+void PluginModule::InitAsProxiedNaCl(PluginInstance* plugin_instance) {
+  DCHECK(out_of_process_proxy_.get());
   // InitAsProxied (for the trusted/out-of-process case) initializes only the
   // module, and one or more instances are added later. In this case, the
   // PluginInstance was already created as in-process, so we missed the proxy
   // AddInstance step and must do it now.
-  out_of_process_proxy_->AddInstance(instance);
+  out_of_process_proxy_->AddInstance(plugin_instance->pp_instance());
   // In NaCl, we need to tell the instance to reset itself as proxied. This will
   // clear cached interface pointers and send DidCreate (etc) to the plugin
   // side of the proxy.
-  PluginInstance* plugin_instance = host_globals->GetInstance(instance);
-  if (!plugin_instance)
-    return;
   plugin_instance->ResetAsProxied(this);
 }
 

@@ -32,6 +32,7 @@
 #define DateTimeChooser_h
 
 #include "IntRect.h"
+#include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -41,15 +42,18 @@ struct DateTimeChooserParameters {
     IntRect anchorRectInRootView;
     String currentValue;
     Vector<String> suggestionValues;
+    Vector<String> localizedSuggestionValues;
     Vector<String> suggestionLabels;
     double minimum;
     double maximum;
     double step;
+    double stepBase;
     bool required;
+    bool isAnchorElementRTL;
 };
 
 // For pickers like color pickers and date pickers.
-class DateTimeChooser {
+class DateTimeChooser : public RefCounted<DateTimeChooser> {
 public:
     virtual ~DateTimeChooser() { }
 

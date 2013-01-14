@@ -64,6 +64,8 @@ public:
     void setSelectionEnd(int);
     void setSelectionDirection(const String&);
     void select();
+    virtual void setRangeText(const String& replacement, ExceptionCode&);
+    virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionCode&);
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
     PassRefPtr<Range> selection() const;
@@ -77,7 +79,6 @@ public:
     virtual HTMLElement* innerTextElement() const = 0;
 
     void selectionChanged(bool userTriggered);
-    void notifyFormStateChanged();
     bool lastChangeWasUserEdit() const;
     void setInnerTextValue(const String&);
     String innerTextValue() const;

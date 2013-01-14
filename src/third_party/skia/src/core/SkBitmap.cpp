@@ -829,6 +829,7 @@ bool SkBitmap::extractSubset(SkBitmap* result, const SkIRect& subset) const {
     SkBitmap dst;
     dst.setConfig(this->config(), r.width(), r.height(), this->rowBytes());
     dst.setIsVolatile(this->isVolatile());
+    dst.setIsOpaque(this->isOpaque());
 
     if (fPixelRef) {
         // share the pixelref with a custom offset
@@ -1162,7 +1163,7 @@ void SkBitmap::buildMipMap(bool forceRebuild) {
     uint8_t*    addr = (uint8_t*)mm->pixels();
     int         width = this->width();
     int         height = this->height();
-    unsigned    rowBytes = this->rowBytes();
+    unsigned    rowBytes;
     SkBitmap    dstBM;
 
     for (int i = 0; i < maxLevels; i++) {

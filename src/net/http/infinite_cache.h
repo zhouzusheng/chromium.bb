@@ -43,6 +43,9 @@ class NET_EXPORT_PRIVATE InfiniteCacheTransaction {
   // Called when a new HttpTransaction is started.
   void OnRequestStart(const HttpRequestInfo* request);
 
+  // Called when the transaction corresponds to a back navigation.
+  void OnBackForwardNavigation();
+
   // Called when the response headers are available.
   void OnResponseReceived(const HttpResponseInfo* response);
 
@@ -63,7 +66,6 @@ class NET_EXPORT_PRIVATE InfiniteCacheTransaction {
 
   base::WeakPtr<InfiniteCache> cache_;
   scoped_ptr<ResourceData> resource_data_;
-  bool must_doom_entry_;
   DISALLOW_COPY_AND_ASSIGN(InfiniteCacheTransaction);
 };
 

@@ -12,9 +12,9 @@
 
 class SkColorFilter;
 
-class SkColorFilterImageFilter : public SkSingleInputImageFilter {
+class SK_API SkColorFilterImageFilter : public SkSingleInputImageFilter {
 public:
-    SkColorFilterImageFilter(SkColorFilter* cf, SkImageFilter* input = NULL);
+    static SkColorFilterImageFilter* Create(SkColorFilter* cf, SkImageFilter* input = NULL);
     virtual ~SkColorFilterImageFilter();
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkColorFilterImageFilter)
@@ -26,7 +26,10 @@ protected:
     virtual bool onFilterImage(Proxy*, const SkBitmap& src, const SkMatrix&,
                                SkBitmap* result, SkIPoint* loc) SK_OVERRIDE;
 
+    virtual SkColorFilter* asColorFilter() const SK_OVERRIDE;
+
 private:
+    SkColorFilterImageFilter(SkColorFilter* cf, SkImageFilter* input);
     SkColorFilter*  fColorFilter;
 
     typedef SkSingleInputImageFilter INHERITED;

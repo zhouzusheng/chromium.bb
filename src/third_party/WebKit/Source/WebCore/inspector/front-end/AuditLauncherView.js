@@ -89,6 +89,9 @@ WebInspector.AuditLauncherView.prototype = {
         this._updateResourceProgress();
     },
 
+    /**
+     * @param {!WebInspector.AuditCategory} category
+     */
     addCategory: function(category)
     {
         if (!this._sortedCategories.length)
@@ -113,6 +116,9 @@ WebInspector.AuditLauncherView.prototype = {
         this._updateButton();
     },
 
+    /**
+     * @param {boolean} auditRunning
+     */
     _setAuditRunning: function(auditRunning)
     {
         if (this._auditRunning === auditRunning)
@@ -158,6 +164,9 @@ WebInspector.AuditLauncherView.prototype = {
         this._setAuditRunning(!this._auditRunning);
     },
 
+    /**
+     * @param {boolean} checkCategories
+     */
     _selectAllClicked: function(checkCategories)
     {
         var childNodes = this._categoriesElement.childNodes;
@@ -174,6 +183,10 @@ WebInspector.AuditLauncherView.prototype = {
         this._updateButton();
     },
 
+    /**
+     * @param {string} title
+     * @param {string} id
+     */
     _createCategoryElement: function(title, id)
     {
         var labelElement = document.createElement("label");
@@ -249,7 +262,7 @@ WebInspector.AuditLauncherView.prototype = {
     {
         this._launchButton.textContent = this._auditRunning ? WebInspector.UIString("Stop") : WebInspector.UIString("Run");
         this._launchButton.disabled = !this._currentCategoriesCount;
-    }
-}
+    },
 
-WebInspector.AuditLauncherView.prototype.__proto__ = WebInspector.View.prototype;
+    __proto__: WebInspector.View.prototype
+}

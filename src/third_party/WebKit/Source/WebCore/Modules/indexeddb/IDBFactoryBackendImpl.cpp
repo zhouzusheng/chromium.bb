@@ -55,7 +55,6 @@ static String computeUniqueIdentifier(const String& name, SecurityOrigin* securi
 }
 
 IDBFactoryBackendImpl::IDBFactoryBackendImpl()
-    : m_transactionCoordinator(IDBTransactionCoordinator::create())
 {
 }
 
@@ -91,8 +90,7 @@ void IDBFactoryBackendImpl::getDatabaseNames(PassRefPtr<IDBCallbacks> callbacks,
 
     RefPtr<DOMStringList> databaseNames = DOMStringList::create();
 
-    Vector<String> foundNames;
-    backingStore->getDatabaseNames(foundNames);
+    Vector<String> foundNames = backingStore->getDatabaseNames();
     for (Vector<String>::const_iterator it = foundNames.begin(); it != foundNames.end(); ++it)
         databaseNames->append(*it);
 
@@ -107,7 +105,7 @@ void IDBFactoryBackendImpl::deleteDatabase(const String& name, PassRefPtr<IDBCal
     if (it != m_databaseBackendMap.end()) {
         // If there are any connections to the database, directly delete the
         // database.
-        it->second->deleteDatabase(callbacks);
+        it->value->deleteDatabase(callbacks);
         return;
     }
 
@@ -118,7 +116,7 @@ void IDBFactoryBackendImpl::deleteDatabase(const String& name, PassRefPtr<IDBCal
         return;
     }
 
-    RefPtr<IDBDatabaseBackendImpl> databaseBackend = IDBDatabaseBackendImpl::create(name, backingStore.get(), m_transactionCoordinator.get(), this, uniqueIdentifier);
+    RefPtr<IDBDatabaseBackendImpl> databaseBackend = IDBDatabaseBackendImpl::create(name, backingStore.get(), this, uniqueIdentifier);
     if (databaseBackend) {
         m_databaseBackendMap.set(uniqueIdentifier, databaseBackend.get());
         databaseBackend->deleteDatabase(callbacks);
@@ -134,7 +132,7 @@ PassRefPtr<IDBBackingStore> IDBFactoryBackendImpl::openBackingStore(PassRefPtr<S
     RefPtr<IDBBackingStore> backingStore;
     IDBBackingStoreMap::iterator it2 = m_backingStoreMap.find(fileIdentifier);
     if (it2 != m_backingStoreMap.end())
-        backingStore = it2->second;
+        backingStore = it2->value;
     else {
 #if USE(LEVELDB)
         backingStore = IDBLevelDBBackingStore::open(securityOrigin.get(), dataDirectory, fileIdentifier, this);
@@ -164,7 +162,7 @@ void IDBFactoryBackendImpl::open(const String& name, int64_t version, PassRefPtr
             return;
         }
 
-        databaseBackend = IDBDatabaseBackendImpl::create(name, backingStore.get(), m_transactionCoordinator.get(), this, uniqueIdentifier);
+        databaseBackend = IDBDatabaseBackendImpl::create(name, backingStore.get(), this, uniqueIdentifier);
         if (databaseBackend)
             m_databaseBackendMap.set(uniqueIdentifier, databaseBackend.get());
         else {
@@ -172,7 +170,7 @@ void IDBFactoryBackendImpl::open(const String& name, int64_t version, PassRefPtr
             return;
         }
     } else
-        databaseBackend = it->second;
+        databaseBackend = it->value;
 
     if (version == IDBDatabaseMetadata::NoIntVersion)
         databaseBackend->openConnection(callbacks, databaseCallbacks);

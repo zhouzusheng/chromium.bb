@@ -36,6 +36,21 @@ int64 SysInfo::AmountOfPhysicalMemory() {
 }
 
 // static
+int64 SysInfo::AmountOfAvailablePhysicalMemory() {
+  MEMORYSTATUSEX memory_info;
+  memory_info.dwLength = sizeof(memory_info);
+  if (!GlobalMemoryStatusEx(&memory_info)) {
+    NOTREACHED();
+    return 0;
+  }
+
+  int64 rv = static_cast<int64>(memory_info.ullAvailPhys);
+  if (rv < 0)
+    rv = kint64max;
+  return rv;
+}
+
+// static
 int64 SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
   base::ThreadRestrictions::AssertIOAllowed();
 
@@ -74,9 +89,19 @@ std::string SysInfo::OperatingSystemVersion() {
 // See chrome/browser/feedback/feedback_util.h, FeedbackUtil::SetOSVersion.
 
 // static
-std::string SysInfo::CPUArchitecture() {
-  // TODO: Make this vary when we support any other architectures.
-  return "x86";
+std::string SysInfo::OperatingSystemArchitecture() {
+  win::OSInfo::WindowsArchitecture arch =
+      win::OSInfo::GetInstance()->architecture();
+  switch (arch) {
+    case win::OSInfo::X86_ARCHITECTURE:
+      return "x86";
+    case win::OSInfo::X64_ARCHITECTURE:
+      return "x86_64";
+    case win::OSInfo::IA64_ARCHITECTURE:
+      return "ia64";
+    default:
+      return "";
+  }
 }
 
 // static

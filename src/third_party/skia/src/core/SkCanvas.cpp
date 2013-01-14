@@ -10,9 +10,11 @@
 #include "SkCanvas.h"
 #include "SkBounder.h"
 #include "SkDevice.h"
+#include "SkDeviceImageFilterProxy.h"
 #include "SkDraw.h"
 #include "SkDrawFilter.h"
 #include "SkDrawLooper.h"
+#include "SkMetaData.h"
 #include "SkPicture.h"
 #include "SkRasterClip.h"
 #include "SkScalarCompare.h"
@@ -75,9 +77,6 @@ struct DeviceCM {
     SkRasterClip        fClip;
     const SkMatrix*     fMatrix;
     SkPaint*            fPaint; // may be null (in the future)
-    // optional, related to canvas' external matrix
-    const SkMatrix*     fMVMatrix;
-    const SkMatrix*     fExtMatrix;
 
     DeviceCM(SkDevice* device, int x, int y, const SkPaint* paint, SkCanvas* canvas)
             : fNext(NULL) {
@@ -134,20 +133,10 @@ struct DeviceCM {
             SkASSERT(deviceR.contains(fClip.getBounds()));
         }
 #endif
-        // default is to assume no external matrix
-        fMVMatrix = NULL;
-        fExtMatrix = NULL;
-    }
-
-    // can only be called after calling updateMC()
-    void updateExternalMatrix(const SkMatrix& extM, const SkMatrix& extI) {
-        fMVMatrixStorage.setConcat(extI, *fMatrix);
-        fMVMatrix = &fMVMatrixStorage;
-        fExtMatrix = &extM; // assumes extM has long life-time (owned by canvas)
     }
 
 private:
-    SkMatrix    fMatrixStorage, fMVMatrixStorage;
+    SkMatrix    fMatrixStorage;
 };
 
 /*  This is the record we keep for each save/restore level in the stack.
@@ -247,8 +236,6 @@ public:
             fDevice = rec->fDevice;
             fBitmap = &fDevice->accessBitmap(true);
             fPaint  = rec->fPaint;
-            fMVMatrix = rec->fMVMatrix;
-            fExtMatrix = rec->fExtMatrix;
             SkDEBUGCODE(this->validate();)
 
             fCurrLayer = rec->fNext;
@@ -257,7 +244,6 @@ public:
             }
             // fCurrLayer may be NULL now
 
-            fCanvas->prepareForDeviceDraw(fDevice, *fMatrix, *fClip);
             return true;
         }
         return false;
@@ -454,9 +440,9 @@ SkDevice* SkCanvas::init(SkDevice* device) {
     fBounder = NULL;
     fLocalBoundsCompareType.setEmpty();
     fLocalBoundsCompareTypeDirty = true;
-    fLastDeviceToGainFocus = NULL;
     fDeviceCMDirty = false;
     fSaveLayerCount = 0;
+    fMetaData = NULL;
 
     fMCRec = (MCRec*)fMCStack.push_back();
     new (fMCRec) MCRec(NULL, 0);
@@ -464,10 +450,6 @@ SkDevice* SkCanvas::init(SkDevice* device) {
     fMCRec->fLayer = SkNEW_ARGS(DeviceCM, (NULL, 0, 0, NULL, NULL));
     fMCRec->fTopLayer = fMCRec->fLayer;
     fMCRec->fNext = NULL;
-
-    fExternalMatrix.reset();
-    fExternalInverse.reset();
-    fUseExternalMatrix = false;
 
     fSurfaceBase = NULL;
 
@@ -503,6 +485,7 @@ SkCanvas::~SkCanvas() {
     this->internalRestore();    // restore the last, since we're going away
 
     SkSafeUnref(fBounder);
+    SkDELETE(fMetaData);
 
     dec_canvas();
 }
@@ -519,6 +502,15 @@ SkDrawFilter* SkCanvas::getDrawFilter() const {
 SkDrawFilter* SkCanvas::setDrawFilter(SkDrawFilter* filter) {
     SkRefCnt_SafeAssign(fMCRec->fFilter, filter);
     return filter;
+}
+
+SkMetaData& SkCanvas::getMetaData() {
+    // metadata users are rare, so we lazily allocate it. If that changes we
+    // can decide to just make it a field in the device (rather than a ptr)
+    if (NULL == fMetaData) {
+        fMetaData = new SkMetaData;
+    }
+    return *fMetaData;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -601,12 +593,6 @@ SkDevice* SkCanvas::setDevice(SkDevice* device) {
     return device;
 }
 
-SkDevice* SkCanvas::setBitmapDevice(const SkBitmap& bitmap) {
-    SkDevice* device = this->setDevice(SkNEW_ARGS(SkDevice, (bitmap)));
-    device->unref();
-    return device;
-}
-
 bool SkCanvas::readPixels(SkBitmap* bitmap,
                           int x, int y,
                           Config8888 config8888) {
@@ -666,30 +652,13 @@ void SkCanvas::updateDeviceCMCache() {
 
         if (NULL == layer->fNext) {   // only one layer
             layer->updateMC(totalMatrix, totalClip, fClipStack, NULL);
-            if (fUseExternalMatrix) {
-                layer->updateExternalMatrix(fExternalMatrix,
-                                            fExternalInverse);
-            }
         } else {
             SkRasterClip clip(totalClip);
             do {
                 layer->updateMC(totalMatrix, clip, fClipStack, &clip);
-                if (fUseExternalMatrix) {
-                    layer->updateExternalMatrix(fExternalMatrix,
-                                                fExternalInverse);
-                }
             } while ((layer = layer->fNext) != NULL);
         }
         fDeviceCMDirty = false;
-    }
-}
-
-void SkCanvas::prepareForDeviceDraw(SkDevice* device, const SkMatrix& matrix,
-                                    const SkRegion& clip) {
-    SkASSERT(device);
-    if (fLastDeviceToGainFocus != device) {
-        device->gainFocus(matrix, clip);
-        fLastDeviceToGainFocus = device;
     }
 }
 
@@ -879,13 +848,6 @@ void SkCanvas::internalRestore() {
 
     fDeviceCMDirty = true;
     fLocalBoundsCompareTypeDirty = true;
-    // Dirty this pointer to handle the case of a new device created at the same address as the
-    // device we are restoring from. E.g.:
-    // saveLayer (creates a device)
-    // drawSomething
-    // restore (deletes the device)
-    // saveLayer (oops new device at the same address)
-    fLastDeviceToGainFocus = NULL;
 
     fClipStack.restore();
     // reserve our layer (if any)
@@ -963,29 +925,6 @@ void SkCanvas::internalDrawBitmap(const SkBitmap& bitmap, const SkIRect* srcRect
     this->commonDrawBitmap(bitmap, srcRect, matrix, *paint);
 }
 
-#include "SkImageFilter.h"
-
-class DeviceImageFilterProxy : public SkImageFilter::Proxy {
-public:
-    DeviceImageFilterProxy(SkDevice* device) : fDevice(device) {}
-
-    virtual SkDevice* createDevice(int w, int h) SK_OVERRIDE {
-        return fDevice->createCompatibleDevice(SkBitmap::kARGB_8888_Config,
-                                               w, h, false);
-    }
-    virtual bool canHandleImageFilter(SkImageFilter* filter) SK_OVERRIDE {
-        return fDevice->canHandleImageFilter(filter);
-    }
-    virtual bool filterImage(SkImageFilter* filter, const SkBitmap& src,
-                             const SkMatrix& ctm,
-                             SkBitmap* result, SkIPoint* offset) SK_OVERRIDE {
-        return fDevice->filterImage(filter, src, ctm, result, offset);
-    }
-
-private:
-    SkDevice* fDevice;
-};
-
 void SkCanvas::internalDrawDevice(SkDevice* srcDev, int x, int y,
                                   const SkPaint* paint) {
     SkPaint tmp;
@@ -1001,7 +940,7 @@ void SkCanvas::internalDrawDevice(SkDevice* srcDev, int x, int y,
         SkImageFilter* filter = paint->getImageFilter();
         SkIPoint pos = { x - iter.getX(), y - iter.getY() };
         if (filter && !dstDev->canHandleImageFilter(filter)) {
-            DeviceImageFilterProxy proxy(dstDev);
+            SkDeviceImageFilterProxy proxy(dstDev);
             SkBitmap dst;
             const SkBitmap& src = srcDev->accessBitmap(false);
             if (filter->filterImage(&proxy, src, *iter.fMatrix, &dst, &pos)) {
@@ -1036,7 +975,7 @@ void SkCanvas::drawSprite(const SkBitmap& bitmap, int x, int y,
         SkImageFilter* filter = paint->getImageFilter();
         SkIPoint pos = { x - iter.getX(), y - iter.getY() };
         if (filter && !iter.fDevice->canHandleImageFilter(filter)) {
-            DeviceImageFilterProxy proxy(iter.fDevice);
+            SkDeviceImageFilterProxy proxy(iter.fDevice);
             SkBitmap dst;
             if (filter->filterImage(&proxy, bitmap, *iter.fMatrix,
                                     &dst, &pos)) {
@@ -1411,21 +1350,6 @@ const SkRegion& SkCanvas::getTotalClip() const {
     return fMCRec->fRasterClip->forceGetBW();
 }
 
-void SkCanvas::setExternalMatrix(const SkMatrix* matrix) {
-    if (NULL == matrix || matrix->isIdentity()) {
-        if (fUseExternalMatrix) {
-            fDeviceCMDirty = true;
-        }
-        fUseExternalMatrix = false;
-    } else {
-        if (matrix->invert(&fExternalInverse)) {
-            fExternalMatrix = *matrix;
-            fUseExternalMatrix = true;
-            fDeviceCMDirty = true;  // |= (fExternalMatrix != *matrix)
-        }
-    }
-}
-
 SkDevice* SkCanvas::createLayerDevice(SkBitmap::Config config,
                                       int width, int height,
                                       bool isOpaque) {
@@ -1576,13 +1500,12 @@ void SkCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
 }
 
 // this one is non-virtual, so it can be called safely by other canvas apis
-void SkCanvas::internalDrawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
+void SkCanvas::internalDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src,
                                       const SkRect& dst, const SkPaint* paint) {
     if (bitmap.width() == 0 || bitmap.height() == 0 || dst.isEmpty()) {
         return;
     }
 
-    // do this now, to avoid the cost of calling extract for RLE bitmaps
     if (NULL == paint || paint->canComputeFastBounds()) {
         SkRect storage;
         const SkRect* bounds = &dst;
@@ -1594,43 +1517,22 @@ void SkCanvas::internalDrawBitmapRect(const SkBitmap& bitmap, const SkIRect* src
         }
     }
 
-    const SkBitmap* bitmapPtr = &bitmap;
-
-    SkMatrix matrix;
-    SkRect tmpSrc;
-    if (src) {
-        tmpSrc.set(*src);
-        // if the extract process clipped off the top or left of the
-        // original, we adjust for that here to get the position right.
-        if (tmpSrc.fLeft > 0) {
-            tmpSrc.fRight -= tmpSrc.fLeft;
-            tmpSrc.fLeft = 0;
-        }
-        if (tmpSrc.fTop > 0) {
-            tmpSrc.fBottom -= tmpSrc.fTop;
-            tmpSrc.fTop = 0;
-        }
-    } else {
-        tmpSrc.set(0, 0, SkIntToScalar(bitmap.width()),
-                   SkIntToScalar(bitmap.height()));
+    SkLazyPaint lazy;
+    if (NULL == paint) {
+        paint = lazy.init();
     }
-    matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
 
-    // ensure that src is "valid" before we pass it to our internal routines
-    // and to SkDevice. i.e. sure it is contained inside the original bitmap.
-    SkIRect tmpISrc;
-    if (src) {
-        tmpISrc.set(0, 0, bitmap.width(), bitmap.height());
-        if (!tmpISrc.intersect(*src)) {
-            return;
-        }
-        src = &tmpISrc;
+    LOOPER_BEGIN(*paint, SkDrawFilter::kBitmap_Type)
+
+    while (iter.next()) {
+        iter.fDevice->drawBitmapRect(iter, bitmap, src, dst, looper.paint());
     }
-    this->internalDrawBitmap(*bitmapPtr, src, matrix, paint);
+
+    LOOPER_END
 }
 
-void SkCanvas::drawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
-                              const SkRect& dst, const SkPaint* paint) {
+void SkCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
+                                    const SkRect& dst, const SkPaint* paint) {
     SkDEBUGCODE(bitmap.validate();)
     this->internalDrawBitmapRect(bitmap, src, dst, paint);
 }
@@ -1678,8 +1580,12 @@ void SkCanvas::internalDrawBitmapNine(const SkBitmap& bitmap,
     c.fRight = SkPin32(center.fRight, c.fLeft, w);
     c.fBottom = SkPin32(center.fBottom, c.fTop, h);
 
-    const int32_t srcX[4] = { 0, c.fLeft, c.fRight, w };
-    const int32_t srcY[4] = { 0, c.fTop, c.fBottom, h };
+    const SkScalar srcX[4] = {
+        0, SkIntToScalar(c.fLeft), SkIntToScalar(c.fRight), w
+    };
+    const SkScalar srcY[4] = {
+        0, SkIntToScalar(c.fTop), SkIntToScalar(c.fBottom), h
+    };
     SkScalar dstX[4] = {
         dst.fLeft, dst.fLeft + SkIntToScalar(c.fLeft),
         dst.fRight - SkIntToScalar(w - c.fRight), dst.fRight
@@ -1699,9 +1605,9 @@ void SkCanvas::internalDrawBitmapNine(const SkBitmap& bitmap,
         dstY[2] = dstY[1];
     }
 
-    SkIRect s;
-    SkRect  d;
     for (int y = 0; y < 3; y++) {
+        SkRect s, d;
+
         s.fTop = srcY[y];
         s.fBottom = srcY[y+1];
         d.fTop = dstY[y];

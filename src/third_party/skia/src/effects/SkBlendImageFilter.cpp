@@ -12,7 +12,7 @@
 #if SK_SUPPORT_GPU
 #include "SkGr.h"
 #include "SkGrPixelRef.h"
-#include "gl/GrGLProgramStage.h"
+#include "gl/GrGLEffect.h"
 #endif
 
 namespace {
@@ -52,38 +52,22 @@ SkPMColor multiply_proc(SkPMColor src, SkPMColor dst) {
 ///////////////////////////////////////////////////////////////////////////////
 
 SkBlendImageFilter::SkBlendImageFilter(SkBlendImageFilter::Mode mode, SkImageFilter* background, SkImageFilter* foreground)
-  : fMode(mode), fBackground(background), fForeground(foreground)
+  : INHERITED(background, foreground), fMode(mode)
 {
-    SkASSERT(NULL != background);
-    SkSafeRef(fBackground);
-    SkSafeRef(fForeground);
 }
 
 SkBlendImageFilter::~SkBlendImageFilter() {
-    SkSafeUnref(fBackground);
-    SkSafeUnref(fForeground);
 }
 
 SkBlendImageFilter::SkBlendImageFilter(SkFlattenableReadBuffer& buffer)
   : INHERITED(buffer)
 {
     fMode = (SkBlendImageFilter::Mode) buffer.readInt();
-    fBackground = buffer.readFlattenableT<SkImageFilter>();
-    if (buffer.readBool()) {
-        fForeground = buffer.readFlattenableT<SkImageFilter>();
-    } else {
-        fForeground = NULL;
-    }
 }
 
 void SkBlendImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
     buffer.writeInt((int) fMode);
-    buffer.writeFlattenable(fBackground);
-    buffer.writeBool(NULL != fForeground);
-    if (NULL != fForeground) {
-        buffer.writeFlattenable(fForeground);
-    }
 }
 
 bool SkBlendImageFilter::onFilterImage(Proxy* proxy,
@@ -92,11 +76,13 @@ bool SkBlendImageFilter::onFilterImage(Proxy* proxy,
                                        SkBitmap* dst,
                                        SkIPoint* offset) {
     SkBitmap background, foreground = src;
-    SkASSERT(NULL != fBackground);
-    if (!fBackground->filterImage(proxy, src, ctm, &background, offset)) {
+    SkImageFilter* backgroundInput = getBackgroundInput();
+    SkImageFilter* foregroundInput = getForegroundInput();
+    SkASSERT(NULL != backgroundInput);
+    if (!backgroundInput->filterImage(proxy, src, ctm, &background, offset)) {
         return false;
     }
-    if (fForeground && !fForeground->filterImage(proxy, src, ctm, &foreground, offset)) {
+    if (foregroundInput && !foregroundInput->filterImage(proxy, src, ctm, &foreground, offset)) {
         return false;
     }
     SkAutoLockPixels alp_foreground(foreground), alp_background(background);
@@ -124,10 +110,10 @@ bool SkBlendImageFilter::onFilterImage(Proxy* proxy,
 ///////////////////////////////////////////////////////////////////////////////
 
 #if SK_SUPPORT_GPU
-class GrGLBlendEffect  : public GrGLProgramStage {
+class GrGLBlendEffect  : public GrGLLegacyEffect {
 public:
-    GrGLBlendEffect(const GrProgramStageFactory& factory,
-                    const GrCustomStage& stage);
+    GrGLBlendEffect(const GrBackendEffectFactory& factory,
+                    const GrEffect& effect);
     virtual ~GrGLBlendEffect();
 
     virtual void emitFS(GrGLShaderBuilder* builder,
@@ -138,10 +124,10 @@ public:
     virtual void emitVS(GrGLShaderBuilder* builder,
                         const char* vertexCoords) SK_OVERRIDE {}
 
-    static inline StageKey GenKey(const GrCustomStage& s, const GrGLCaps&);
+    static inline EffectKey GenKey(const GrEffect& s, const GrGLCaps&);
 
 private:
-    typedef GrGLProgramStage INHERITED;
+    typedef GrGLLegacyEffect INHERITED;
     SkBlendImageFilter::Mode fMode;
 };
 
@@ -152,11 +138,11 @@ public:
     GrBlendEffect(SkBlendImageFilter::Mode mode, GrTexture* foreground);
     virtual ~GrBlendEffect();
 
-    virtual bool isEqual(const GrCustomStage&) const SK_OVERRIDE;
-    const GrProgramStageFactory& getFactory() const;
+    virtual bool isEqual(const GrEffect&) const SK_OVERRIDE;
+    const GrBackendEffectFactory& getFactory() const;
     SkBlendImageFilter::Mode mode() const { return fMode; }
 
-    typedef GrGLBlendEffect GLProgramStage;
+    typedef GrGLBlendEffect GLEffect;
     static const char* Name() { return "Blend"; }
 
 private:
@@ -165,7 +151,8 @@ private:
 };
 
 // FIXME:  This should be refactored with SkSingleInputImageFilter's version.
-static GrTexture* getInputResultAsTexture(SkImageFilter* input,
+static GrTexture* getInputResultAsTexture(SkImageFilter::Proxy* proxy,
+                                          SkImageFilter* input,
                                           GrTexture* src,
                                           const SkRect& rect) {
     GrTexture* resultTex;
@@ -173,13 +160,13 @@ static GrTexture* getInputResultAsTexture(SkImageFilter* input,
         resultTex = src;
     } else if (input->canFilterImageGPU()) {
         // onFilterImageGPU() already refs the result, so just return it here.
-        return input->onFilterImageGPU(src, rect);
+        return input->onFilterImageGPU(proxy, src, rect);
     } else {
         SkBitmap srcBitmap, result;
         srcBitmap.setConfig(SkBitmap::kARGB_8888_Config, src->width(), src->height());
         srcBitmap.setPixelRef(new SkGrPixelRef(src))->unref();
         SkIPoint offset;
-        if (input->filterImage(NULL, srcBitmap, SkMatrix(), &result, &offset)) {
+        if (input->filterImage(proxy, srcBitmap, SkMatrix(), &result, &offset)) {
             if (result.getTexture()) {
                 resultTex = (GrTexture*) result.getTexture();
             } else {
@@ -196,9 +183,9 @@ static GrTexture* getInputResultAsTexture(SkImageFilter* input,
     return resultTex;
 }
 
-GrTexture* SkBlendImageFilter::onFilterImageGPU(GrTexture* src, const SkRect& rect) {
-    SkAutoTUnref<GrTexture> background(getInputResultAsTexture(fBackground, src, rect));
-    SkAutoTUnref<GrTexture> foreground(getInputResultAsTexture(fForeground, src, rect));
+GrTexture* SkBlendImageFilter::onFilterImageGPU(Proxy* proxy, GrTexture* src, const SkRect& rect) {
+    SkAutoTUnref<GrTexture> background(getInputResultAsTexture(proxy, getBackgroundInput(), src, rect));
+    SkAutoTUnref<GrTexture> foreground(getInputResultAsTexture(proxy, getForegroundInput(), src, rect));
     GrContext* context = src->getContext();
 
     GrTextureDesc desc;
@@ -209,18 +196,21 @@ GrTexture* SkBlendImageFilter::onFilterImageGPU(GrTexture* src, const SkRect& re
 
     GrAutoScratchTexture ast(context, desc);
     GrTexture* dst = ast.detach();
-    GrContext::AutoMatrix avm(context, GrMatrix::I());
+
+    GrContext::AutoMatrix am;
+    am.setIdentity(context);
+
     GrContext::AutoRenderTarget art(context, dst->asRenderTarget());
     GrContext::AutoClip ac(context, rect);
 
-    GrMatrix sampleM;
-    sampleM.setIDiv(background->width(), background->height());
+    GrMatrix backgroundTexMatrix, foregroundTexMatrix;
+    backgroundTexMatrix.setIDiv(background->width(), background->height());
+    foregroundTexMatrix.setIDiv(foreground->width(), foreground->height());
     GrPaint paint;
-    paint.reset();
-    paint.textureSampler(0)->reset(sampleM);
-    paint.textureSampler(0)->setCustomStage(SkNEW_ARGS(GrSingleTextureEffect, (background.get())))->unref();
-    paint.textureSampler(1)->reset(sampleM);
-    paint.textureSampler(1)->setCustomStage(SkNEW_ARGS(GrBlendEffect, (fMode, foreground.get())))->unref();
+    paint.colorStage(0)->setEffect(
+        SkNEW_ARGS(GrSingleTextureEffect, (background.get())), backgroundTexMatrix)->unref();
+    paint.colorStage(1)->setEffect(
+        SkNEW_ARGS(GrBlendEffect, (fMode, foreground.get())), foregroundTexMatrix)->unref();
     context->drawRect(paint, rect);
     return dst;
 }
@@ -234,22 +224,22 @@ GrBlendEffect::GrBlendEffect(SkBlendImageFilter::Mode mode, GrTexture* foregroun
 GrBlendEffect::~GrBlendEffect() {
 }
 
-bool GrBlendEffect::isEqual(const GrCustomStage& sBase) const {
+bool GrBlendEffect::isEqual(const GrEffect& sBase) const {
     const GrBlendEffect& s = static_cast<const GrBlendEffect&>(sBase);
     return INHERITED::isEqual(sBase) &&
            fMode == s.fMode;
 }
 
-const GrProgramStageFactory& GrBlendEffect::getFactory() const {
-    return GrTProgramStageFactory<GrBlendEffect>::getInstance();
+const GrBackendEffectFactory& GrBlendEffect::getFactory() const {
+    return GrTBackendEffectFactory<GrBlendEffect>::getInstance();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrGLBlendEffect::GrGLBlendEffect(const GrProgramStageFactory& factory,
-                                 const GrCustomStage& stage)
-    : GrGLProgramStage(factory),
-      fMode(static_cast<const GrBlendEffect&>(stage).mode()) {
+GrGLBlendEffect::GrGLBlendEffect(const GrBackendEffectFactory& factory,
+                                 const GrEffect& effect)
+    : INHERITED(factory),
+      fMode(static_cast<const GrBlendEffect&>(effect).mode()) {
 }
 
 GrGLBlendEffect::~GrGLBlendEffect() {
@@ -285,9 +275,7 @@ void GrGLBlendEffect::emitFS(GrGLShaderBuilder* builder,
     }
 }
 
-GrGLProgramStage::StageKey GrGLBlendEffect::GenKey(const GrCustomStage& s, const GrGLCaps&) {
+GrGLEffect::EffectKey GrGLBlendEffect::GenKey(const GrEffect& s, const GrGLCaps&) {
     return static_cast<const GrBlendEffect&>(s).mode();
 }
 #endif
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkBlendImageFilter)

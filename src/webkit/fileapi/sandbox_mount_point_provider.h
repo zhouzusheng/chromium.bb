@@ -15,11 +15,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/fileapi/fileapi_export.h"
 #include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_options.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/task_runner_bound_observer_list.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -31,6 +31,7 @@ class QuotaManagerProxy;
 
 namespace fileapi {
 
+class LocalFileSystemOperation;
 class ObfuscatedFileUtil;
 class SandboxQuotaObserver;
 
@@ -39,7 +40,7 @@ class SandboxQuotaObserver;
 // profile directory in a sandboxed way.
 // This interface also lets one enumerate and remove storage for the origins
 // that use the filesystem.
-class FILEAPI_EXPORT SandboxMountPointProvider
+class WEBKIT_STORAGE_EXPORT SandboxMountPointProvider
     : public FileSystemMountPointProvider,
       public FileSystemQuotaUtil {
  public:
@@ -101,6 +102,7 @@ class FILEAPI_EXPORT SandboxMountPointProvider
   virtual webkit_blob::FileStreamReader* CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
+      const base::Time& expected_modification_time,
       FileSystemContext* context) const OVERRIDE;
   virtual FileStreamWriter* CreateFileStreamWriter(
       const FileSystemURL& url,
@@ -161,8 +163,15 @@ class FILEAPI_EXPORT SandboxMountPointProvider
   // Returns update observers for the given type.
   const UpdateObserverList* GetUpdateObservers(FileSystemType type) const;
 
-  // Reset all observers.
-  void ResetObservers();
+  void AddSyncableFileUpdateObserver(FileUpdateObserver* observer,
+                                     base::SequencedTaskRunner* task_runner);
+  void AddSyncableFileChangeObserver(FileChangeObserver* observer,
+                                     base::SequencedTaskRunner* task_runner);
+
+  // Returns a LocalFileSystemOperation that can be used to apply changes
+  // to the syncable filesystem.
+  LocalFileSystemOperation* CreateFileSystemOperationForSync(
+      FileSystemContext* file_system_context);
 
  private:
   friend class SandboxQuotaObserver;
@@ -199,6 +208,10 @@ class FILEAPI_EXPORT SandboxMountPointProvider
   // Observers.
   UpdateObserverList update_observers_;
   AccessObserverList access_observers_;
+
+  // Observers for syncable file systems.
+  UpdateObserverList syncable_update_observers_;
+  ChangeObserverList syncable_change_observers_;
 
   base::Time next_release_time_for_open_filesystem_stat_;
 

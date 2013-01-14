@@ -60,8 +60,7 @@ class NET_EXPORT HostResolverImpl
     : public HostResolver,
       NON_EXPORTED_BASE(public base::NonThreadSafe),
       public NetworkChangeNotifier::IPAddressObserver,
-      public NetworkChangeNotifier::DNSObserver,
-      public base::SupportsWeakPtr<HostResolverImpl> {
+      public NetworkChangeNotifier::DNSObserver {
  public:
   // Parameters for ProcTask which resolves hostnames using HostResolveProc.
   //
@@ -116,7 +115,7 @@ class NET_EXPORT HostResolverImpl
   //
   // |net_log| must remain valid for the life of the HostResolverImpl.
   // TODO(szym): change to scoped_ptr<HostCache>.
-  HostResolverImpl(HostCache* cache,
+  HostResolverImpl(scoped_ptr<HostCache> cache,
                    const PrioritizedDispatcher::Limits& job_limits,
                    const ProcTaskParams& proc_params,
                    scoped_ptr<DnsClient> dns_client,
@@ -194,6 +193,9 @@ class NET_EXPORT HostResolverImpl
   // Callback from IPv6 probe activity.
   void IPv6ProbeSetDefaultAddressFamily(AddressFamily address_family);
 
+  // Callback from HaveOnlyLoopbackAddresses probe.
+  void SetHaveOnlyLoopbackAddresses(bool result);
+
   // Returns the (hostname, address_family) key to use for |info|, choosing an
   // "effective" address family by inheriting the resolver's default address
   // family when the request leaves it unspecified.
@@ -201,8 +203,7 @@ class NET_EXPORT HostResolverImpl
 
   // Records the result in cache if cache is present.
   void CacheResult(const Key& key,
-                   int net_error,
-                   const AddressList& addr_list,
+                   const HostCache::Entry& entry,
                    base::TimeDelta ttl);
 
   // Removes |job| from |jobs_|, only if it exists.
@@ -247,6 +248,8 @@ class NET_EXPORT HostResolverImpl
 
   // Address family to use when the request doesn't specify one.
   AddressFamily default_address_family_;
+
+  base::WeakPtrFactory<HostResolverImpl> weak_ptr_factory_;
 
   // If present, used by DnsTask and ServeFromHosts to resolve requests.
   scoped_ptr<DnsClient> dns_client_;

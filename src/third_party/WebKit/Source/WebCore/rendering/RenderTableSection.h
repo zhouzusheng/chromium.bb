@@ -70,11 +70,10 @@ public:
 
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
 
-    virtual LayoutUnit firstLineBoxBaseline() const;
+    virtual int firstLineBoxBaseline() const OVERRIDE;
 
     void addCell(RenderTableCell*, RenderTableRow* row);
 
-    void setCellLogicalWidths();
     int calcRowLogicalHeight();
     void layoutRows();
 
@@ -117,14 +116,9 @@ public:
         Length logicalHeight;
     };
 
-    bool hasSameDirectionAsTable() const
-    {
-        return table()->style()->direction() == style()->direction();
-    }
-
     const BorderValue& borderAdjoiningTableStart() const
     {
-        if (hasSameDirectionAsTable())
+        if (hasSameDirectionAs(table()))
             return style()->borderStart();
 
         return style()->borderEnd();
@@ -132,11 +126,14 @@ public:
 
     const BorderValue& borderAdjoiningTableEnd() const
     {
-        if (hasSameDirectionAsTable())
+        if (hasSameDirectionAs(table()))
             return style()->borderEnd();
 
         return style()->borderStart();
     }
+
+    const BorderValue& borderAdjoiningStartCell(const RenderTableCell*) const;
+    const BorderValue& borderAdjoiningEndCell(const RenderTableCell*) const;
 
     const RenderTableCell* firstRowCellAdjoiningTableStart() const;
     const RenderTableCell* firstRowCellAdjoiningTableEnd() const;
@@ -175,7 +172,7 @@ public:
     bool needsCellRecalc() const { return m_needsCellRecalc; }
     void setNeedsCellRecalc();
 
-    LayoutUnit getBaseline(unsigned row) { return m_grid[row].baseline; }
+    LayoutUnit rowBaseline(unsigned row) { return m_grid[row].baseline; }
 
     void rowLogicalHeightChanged(unsigned rowIndex);
 

@@ -103,6 +103,10 @@ bool SkShader::setContext(const SkBitmap& device,
     return false;
 }
 
+SkShader::ShadeProc SkShader::asAShadeProc(void** ctx) {
+    return NULL;
+}
+
 #include "SkColorPriv.h"
 
 void SkShader::shadeSpan16(int x, int y, uint16_t span16[], int count) {
@@ -201,9 +205,8 @@ SkShader::GradientType SkShader::asAGradient(GradientInfo* info) const {
     return kNone_GradientType;
 }
 
-GrCustomStage* SkShader::asNewCustomStage(GrContext* context,
-                                          GrSamplerState* sampler) const {
-    return NULL;
+bool SkShader::asNewEffect(GrContext*, GrEffectStage*) const {
+    return false;
 }
 
 SkShader* SkShader::CreateBitmapShader(const SkBitmap& src,
@@ -332,8 +335,6 @@ SkShader::GradientType SkColorShader::asAGradient(GradientInfo* info) const {
     return kColor_GradientType;
 }
 
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkColorShader)
-
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "SkEmptyShader.h"
@@ -355,5 +356,3 @@ void SkEmptyShader::shadeSpan16(int x, int y, uint16_t span[], int count) {
 void SkEmptyShader::shadeSpanAlpha(int x, int y, uint8_t alpha[], int count) {
     SkDEBUGFAIL("should never get called, since setContext() returned false");
 }
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkEmptyShader)

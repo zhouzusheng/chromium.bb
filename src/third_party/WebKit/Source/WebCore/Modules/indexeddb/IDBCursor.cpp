@@ -37,8 +37,9 @@
 #include "IDBRequest.h"
 #include "IDBTracing.h"
 #include "IDBTransaction.h"
+#include "ScriptCallStack.h"
 #include "ScriptExecutionContext.h"
-#include "SerializedScriptValue.h"
+#include <limits>
 
 namespace WebCore {
 
@@ -80,7 +81,6 @@ IDBCursor::IDBCursor(PassRefPtr<IDBCursorBackendInterface> backend, Direction di
     , m_transaction(transaction)
     , m_transactionNotifier(transaction, this)
     , m_gotValue(false)
-    , m_valueIsDirty(true)
 {
     ASSERT(m_backend);
     ASSERT(m_request);
@@ -101,22 +101,21 @@ const String& IDBCursor::direction() const
     return direction;
 }
 
-PassRefPtr<IDBKey> IDBCursor::key() const
+const ScriptValue& IDBCursor::key() const
 {
     IDB_TRACE("IDBCursor::key");
-    return m_currentKey;
+    return m_currentKeyValue;
 }
 
-PassRefPtr<IDBKey> IDBCursor::primaryKey() const
+const ScriptValue& IDBCursor::primaryKey() const
 {
     IDB_TRACE("IDBCursor::primaryKey");
-    return m_currentPrimaryKey;
+    return m_currentPrimaryKeyValue;
 }
 
-PassRefPtr<IDBAny> IDBCursor::value()
+const ScriptValue& IDBCursor::value() const
 {
     IDB_TRACE("IDBCursor::value");
-    m_valueIsDirty = false;
     return m_currentValue;
 }
 
@@ -125,10 +124,9 @@ IDBAny* IDBCursor::source() const
     return m_source.get();
 }
 
-PassRefPtr<IDBRequest> IDBCursor::update(ScriptExecutionContext* context, PassRefPtr<SerializedScriptValue> prpValue, ExceptionCode& ec)
+PassRefPtr<IDBRequest> IDBCursor::update(ScriptExecutionContext* context, ScriptValue& value, ExceptionCode& ec)
 {
     IDB_TRACE("IDBCursor::update");
-    RefPtr<SerializedScriptValue> value = prpValue;
 
     if (!m_gotValue || isKeyCursor()) {
         ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
@@ -142,17 +140,12 @@ PassRefPtr<IDBRequest> IDBCursor::update(ScriptExecutionContext* context, PassRe
         ec = IDBDatabaseException::READ_ONLY_ERR;
         return 0;
     }
-    if (value->blobURLs().size() > 0) {
-        // FIXME: Add Blob/File/FileList support
-        ec = IDBDatabaseException::IDB_DATA_CLONE_ERR;
-        return 0;
-    }
 
     RefPtr<IDBObjectStore> objectStore = effectiveObjectStore();
     const IDBKeyPath& keyPath = objectStore->metadata().keyPath;
     const bool usesInLineKeys = !keyPath.isNull();
     if (usesInLineKeys) {
-        RefPtr<IDBKey> keyPathKey = createIDBKeyFromSerializedValueAndKeyPath(value, keyPath);
+        RefPtr<IDBKey> keyPathKey = createIDBKeyFromScriptValueAndKeyPath(value, keyPath);
         if (!keyPathKey || !keyPathKey->isEqual(m_currentPrimaryKey.get())) {
             ec = IDBDatabaseException::DATA_ERR;
             return 0;
@@ -162,7 +155,7 @@ PassRefPtr<IDBRequest> IDBCursor::update(ScriptExecutionContext* context, PassRe
     return objectStore->put(IDBObjectStoreBackendInterface::CursorUpdate, IDBAny::create(this), context, value, m_currentPrimaryKey, ec);
 }
 
-void IDBCursor::advance(long count, ExceptionCode& ec)
+void IDBCursor::advance(long long count, ExceptionCode& ec)
 {
     IDB_TRACE("IDBCursor::advance");
     if (!m_gotValue) {
@@ -176,8 +169,7 @@ void IDBCursor::advance(long count, ExceptionCode& ec)
     }
 
     // FIXME: This should only need to check for 0 once webkit.org/b/96798 lands.
-    const int64_t maxECMAScriptInteger = 0x20000000000000LL - 1;
-    if (count < 1 || count > maxECMAScriptInteger) {
+    if (count < 1 || count > UINT_MAX) {
         ec = NATIVE_TYPE_ERR;
         return;
     }
@@ -185,8 +177,7 @@ void IDBCursor::advance(long count, ExceptionCode& ec)
     m_request->setPendingCursor(this);
     m_gotValue = false;
     m_backend->advance(count, m_request, ec);
-    if (ec)
-        m_request->markEarlyDeath();
+    ASSERT(!ec);
 }
 
 void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
@@ -227,8 +218,7 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
     m_request->setPendingCursor(this);
     m_gotValue = false;
     m_backend->continueFunction(key, m_request, ec);
-    if (ec)
-        m_request->markEarlyDeath();
+    ASSERT(!ec);
 }
 
 PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context, ExceptionCode& ec)
@@ -243,16 +233,13 @@ PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context
         return 0;
     }
 
-    if (!m_gotValue) {
+    if (!m_gotValue || isKeyCursor()) {
         ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
         return 0;
     }
     RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
     m_backend->deleteFunction(request, ec);
-    if (ec) {
-        request->markEarlyDeath();
-        return 0;
-    }
+    ASSERT(!ec);
     return request.release();
 }
 
@@ -263,36 +250,37 @@ void IDBCursor::postSuccessHandlerCallback()
 
 void IDBCursor::close()
 {
-    ASSERT(m_request);
-    m_request->finishCursor();
-    m_request.clear();
+    m_transactionNotifier.cursorFinished();
+    if (m_request) {
+        m_request->finishCursor();
+        m_request.clear();
+    }
 }
 
-void IDBCursor::setValueReady(PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue> prpValue)
+void IDBCursor::setValueReady(ScriptExecutionContext* context, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, ScriptValue& value)
 {
     m_currentKey = key;
-    m_currentPrimaryKey = primaryKey;
+    m_currentKeyValue = idbKeyToScriptValue(context, m_currentKey);
 
-    RefPtr<SerializedScriptValue> value = prpValue;
+    m_currentPrimaryKey = primaryKey;
+    m_currentPrimaryKeyValue = idbKeyToScriptValue(context, m_currentPrimaryKey);
+
     if (!isKeyCursor()) {
         RefPtr<IDBObjectStore> objectStore = effectiveObjectStore();
         const IDBObjectStoreMetadata metadata = objectStore->metadata();
         if (metadata.autoIncrement && !metadata.keyPath.isNull()) {
 #ifndef NDEBUG
-            RefPtr<IDBKey> expectedKey = createIDBKeyFromSerializedValueAndKeyPath(value, metadata.keyPath);
+            RefPtr<IDBKey> expectedKey = createIDBKeyFromScriptValueAndKeyPath(value, metadata.keyPath);
             ASSERT(!expectedKey || expectedKey->isEqual(m_currentPrimaryKey.get()));
 #endif
-            RefPtr<SerializedScriptValue> valueAfterInjection = injectIDBKeyIntoSerializedValue(m_currentPrimaryKey, value, metadata.keyPath);
-            ASSERT(valueAfterInjection);
+            bool injected = injectIDBKeyIntoScriptValue(m_currentPrimaryKey, value, metadata.keyPath);
             // FIXME: There is no way to report errors here. Move this into onSuccessWithContinuation so that we can abort the transaction there. See: https://bugs.webkit.org/show_bug.cgi?id=92278
-            if (valueAfterInjection)
-                value = valueAfterInjection;
+            ASSERT_UNUSED(injected, injected);
         }
     }
-    m_currentValue = IDBAny::create(value.release());
+    m_currentValue = value;
 
     m_gotValue = true;
-    m_valueIsDirty = true;
 }
 
 PassRefPtr<IDBObjectStore> IDBCursor::effectiveObjectStore()
@@ -303,7 +291,7 @@ PassRefPtr<IDBObjectStore> IDBCursor::effectiveObjectStore()
     return index->objectStore();
 }
 
-IDBCursor::Direction IDBCursor::stringToDirection(const String& directionString, ExceptionCode& ec)
+IDBCursor::Direction IDBCursor::stringToDirection(const String& directionString, ScriptExecutionContext* context, ExceptionCode& ec)
 {
     if (directionString == IDBCursor::directionNext())
         return IDBCursor::NEXT;
@@ -313,6 +301,14 @@ IDBCursor::Direction IDBCursor::stringToDirection(const String& directionString,
         return IDBCursor::PREV;
     if (directionString == IDBCursor::directionPrevUnique())
         return IDBCursor::PREV_NO_DUPLICATE;
+
+    // FIXME: Remove legacy constants. http://webkit.org/b/85315
+    // FIXME: This is not thread-safe.
+    DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Numeric direction values are deprecated in openCursor and openKeyCursor. Use \"next\", \"nextunique\", \"prev\", or \"prevunique\".")));
+    if (directionString == "0" || directionString == "1" || directionString == "2" || directionString == "3") {
+        context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
+        return static_cast<IDBCursor::Direction>(IDBCursor::NEXT + (directionString[0] - '0'));
+    }
 
     ec = NATIVE_TYPE_ERR;
     return IDBCursor::NEXT;

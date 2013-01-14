@@ -52,11 +52,24 @@ unsigned CSSSelector::specificity() const
 {
     // make sure the result doesn't overflow
     static const unsigned maxValueMask = 0xffffff;
+    static const unsigned idMask = 0xff0000;
+    static const unsigned classMask = 0xff00;
+    static const unsigned elementMask = 0xff;
     unsigned total = 0;
+    unsigned temp = 0;
     for (const CSSSelector* selector = this; selector; selector = selector->tagHistory()) {
         if (selector->m_isForPage)
             return (total + selector->specificityForPage()) & maxValueMask;
-        total = (total + selector->specificityForOneSelector()) & maxValueMask;
+        temp = total + selector->specificityForOneSelector();
+        // Clamp each component to its max in the case of overflow.
+        if ((temp & idMask) < (total & idMask))
+            total |= idMask;
+        else if ((temp & classMask) < (total & classMask))
+            total |= classMask;
+        else if ((temp & elementMask) < (total & elementMask))
+            total |= elementMask;
+        else
+            total = temp;
     }
     return total;
 }
@@ -183,7 +196,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoValid:
     case PseudoInvalid:
     case PseudoIndeterminate:
-    case PseudoScope:
     case PseudoTarget:
     case PseudoLang:
     case PseudoNot:
@@ -265,7 +277,6 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
     DEFINE_STATIC_LOCAL(AtomicString, scrollbarTrack, ("-webkit-scrollbar-track", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, scrollbarTrackPiece, ("-webkit-scrollbar-track-piece", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, selection, ("selection", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, scope, ("scope", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, target, ("target", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, visited, ("visited", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, windowInactive, ("window-inactive", AtomicString::ConstructFromLiteral));
@@ -353,7 +364,6 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
         nameToPseudoType->set(scrollbarTrackPiece.impl(), CSSSelector::PseudoScrollbarTrackPiece);
         nameToPseudoType->set(cornerPresent.impl(), CSSSelector::PseudoCornerPresent);
         nameToPseudoType->set(selection.impl(), CSSSelector::PseudoSelection);
-        nameToPseudoType->set(scope.impl(), CSSSelector::PseudoScope);
         nameToPseudoType->set(target.impl(), CSSSelector::PseudoTarget);
         nameToPseudoType->set(visited.impl(), CSSSelector::PseudoVisited);
         nameToPseudoType->set(firstPage.impl(), CSSSelector::PseudoFirstPage);
@@ -377,7 +387,7 @@ CSSSelector::PseudoType CSSSelector::parsePseudoType(const AtomicString& name)
         return PseudoUnknown;
     HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoType = nameToPseudoTypeMap();
     HashMap<AtomicStringImpl*, CSSSelector::PseudoType>::iterator slot = nameToPseudoType->find(name.impl());
-    return slot == nameToPseudoType->end() ? PseudoUnknown : slot->second;
+    return slot == nameToPseudoType->end() ? PseudoUnknown : slot->value;
 }
 
 bool CSSSelector::isUnknownPseudoType(const AtomicString& name)
@@ -445,7 +455,6 @@ void CSSSelector::extractPseudoType() const
     case PseudoValid:
     case PseudoInvalid:
     case PseudoIndeterminate:
-    case PseudoScope:
     case PseudoTarget:
     case PseudoLang:
     case PseudoNot:

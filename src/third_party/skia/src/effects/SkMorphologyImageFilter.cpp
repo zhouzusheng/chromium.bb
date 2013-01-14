@@ -14,7 +14,7 @@
 #include "GrContext.h"
 #include "GrTexture.h"
 #include "GrGpu.h"
-#include "gl/GrGLProgramStage.h"
+#include "gl/GrGLEffect.h"
 #include "effects/Gr1DKernelEffect.h"
 #endif
 
@@ -249,27 +249,27 @@ public:
 
     static const char* Name() { return "Morphology"; }
 
-    typedef GrGLMorphologyEffect GLProgramStage;
+    typedef GrGLMorphologyEffect GLEffect;
 
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE;
-    virtual bool isEqual(const GrCustomStage&) const SK_OVERRIDE;
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual bool isEqual(const GrEffect&) const SK_OVERRIDE;
 
 protected:
 
     MorphologyType fType;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     typedef Gr1DKernelEffect INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class GrGLMorphologyEffect  : public GrGLProgramStage {
+class GrGLMorphologyEffect  : public GrGLLegacyEffect {
 public:
-    GrGLMorphologyEffect (const GrProgramStageFactory& factory,
-                          const GrCustomStage& stage);
+    GrGLMorphologyEffect (const GrBackendEffectFactory& factory,
+                          const GrEffect& effect);
 
     virtual void setupVariables(GrGLShaderBuilder* builder) SK_OVERRIDE;
     virtual void emitVS(GrGLShaderBuilder* state,
@@ -279,12 +279,9 @@ public:
                         const char* inputColor,
                         const TextureSamplerArray&) SK_OVERRIDE;
 
-    static inline StageKey GenKey(const GrCustomStage& s, const GrGLCaps& caps);
+    static inline EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps);
 
-    virtual void setData(const GrGLUniformManager&,
-                         const GrCustomStage&,
-                         const GrRenderTarget*,
-                         int stageNum) SK_OVERRIDE;
+    virtual void setData(const GrGLUniformManager&, const GrEffect&) SK_OVERRIDE;
 
 private:
     int width() const { return GrMorphologyEffect::WidthFromRadius(fRadius); }
@@ -293,14 +290,14 @@ private:
     GrMorphologyEffect::MorphologyType  fType;
     GrGLUniformManager::UniformHandle   fImageIncrementUni;
 
-    typedef GrGLProgramStage INHERITED;
+    typedef GrGLLegacyEffect INHERITED;
 };
 
-GrGLMorphologyEffect::GrGLMorphologyEffect(const GrProgramStageFactory& factory,
-                                           const GrCustomStage& stage)
-    : GrGLProgramStage(factory)
+GrGLMorphologyEffect::GrGLMorphologyEffect(const GrBackendEffectFactory& factory,
+                                           const GrEffect& effect)
+    : INHERITED(factory)
     , fImageIncrementUni(GrGLUniformManager::kInvalidUniformHandle) {
-    const GrMorphologyEffect& m = static_cast<const GrMorphologyEffect&>(stage);
+    const GrMorphologyEffect& m = static_cast<const GrMorphologyEffect&>(effect);
     fRadius = m.radius();
     fType = m.type();
 }
@@ -344,18 +341,15 @@ void GrGLMorphologyEffect::emitFS(GrGLShaderBuilder* builder,
     GrGLSLMulVarBy4f(code, 2, outputColor, inputColor);
 }
 
-GrGLProgramStage::StageKey GrGLMorphologyEffect::GenKey(const GrCustomStage& s,
+GrGLEffect::EffectKey GrGLMorphologyEffect::GenKey(const GrEffect& s,
                                                         const GrGLCaps& caps) {
     const GrMorphologyEffect& m = static_cast<const GrMorphologyEffect&>(s);
-    StageKey key = static_cast<StageKey>(m.radius());
+    EffectKey key = static_cast<EffectKey>(m.radius());
     key |= (m.type() << 8);
     return key;
 }
 
-void GrGLMorphologyEffect::setData(const GrGLUniformManager& uman,
-                                   const GrCustomStage& data,
-                                   const GrRenderTarget*,
-                                   int stageNum) {
+void GrGLMorphologyEffect::setData(const GrGLUniformManager& uman, const GrEffect& data) {
     const Gr1DKernelEffect& kern =
         static_cast<const Gr1DKernelEffect&>(data);
     GrGLTexture& texture =
@@ -389,11 +383,11 @@ GrMorphologyEffect::GrMorphologyEffect(GrTexture* texture,
 GrMorphologyEffect::~GrMorphologyEffect() {
 }
 
-const GrProgramStageFactory& GrMorphologyEffect::getFactory() const {
-    return GrTProgramStageFactory<GrMorphologyEffect>::getInstance();
+const GrBackendEffectFactory& GrMorphologyEffect::getFactory() const {
+    return GrTBackendEffectFactory<GrMorphologyEffect>::getInstance();
 }
 
-bool GrMorphologyEffect::isEqual(const GrCustomStage& sBase) const {
+bool GrMorphologyEffect::isEqual(const GrEffect& sBase) const {
     const GrMorphologyEffect& s =
         static_cast<const GrMorphologyEffect&>(sBase);
     return (INHERITED::isEqual(sBase) &&
@@ -404,13 +398,13 @@ bool GrMorphologyEffect::isEqual(const GrCustomStage& sBase) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrMorphologyEffect);
+GR_DEFINE_EFFECT_TEST(GrMorphologyEffect);
 
-GrCustomStage* GrMorphologyEffect::TestCreate(SkRandom* random,
-                                              GrContext* context,
-                                              GrTexture* textures[]) {
-    int texIdx = random->nextBool() ? GrCustomStageUnitTest::kSkiaPMTextureIdx :
-                                      GrCustomStageUnitTest::kAlphaTextureIdx;
+GrEffect* GrMorphologyEffect::TestCreate(SkRandom* random,
+                                         GrContext* context,
+                                         GrTexture* textures[]) {
+    int texIdx = random->nextBool() ? GrEffectUnitTest::kSkiaPMTextureIdx :
+                                      GrEffectUnitTest::kAlphaTextureIdx;
     Direction dir = random->nextBool() ? kX_Direction : kY_Direction;
     static const int kMaxRadius = 10;
     int radius = random->nextRangeU(1, kMaxRadius);
@@ -431,9 +425,7 @@ void apply_morphology_pass(GrContext* context,
     GrMatrix sampleM;
     sampleM.setIDiv(texture->width(), texture->height());
     GrPaint paint;
-    paint.reset();
-    paint.textureSampler(0)->reset(sampleM);
-    paint.textureSampler(0)->setCustomStage(SkNEW_ARGS(GrMorphologyEffect, (texture, direction, radius, morphType)))->unref();
+    paint.colorStage(0)->setEffect(SkNEW_ARGS(GrMorphologyEffect, (texture, direction, radius, morphType)), sampleM)->unref();
     context->drawRect(paint, rect);
 }
 
@@ -443,14 +435,19 @@ GrTexture* apply_morphology(GrTexture* srcTexture,
                             SkISize radius) {
     GrContext* context = srcTexture->getContext();
     srcTexture->ref();
-    GrContext::AutoMatrix avm(context, GrMatrix::I());
+
+    GrContext::AutoMatrix am;
+    am.setIdentity(context);
+
     GrContext::AutoClip acs(context, GrRect::MakeWH(SkIntToScalar(srcTexture->width()),
                                                     SkIntToScalar(srcTexture->height())));
+
     GrTextureDesc desc;
     desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
     desc.fWidth = SkScalarCeilToInt(rect.width());
     desc.fHeight = SkScalarCeilToInt(rect.height());
     desc.fConfig = kRGBA_8888_GrPixelConfig;
+
     if (radius.fWidth > 0) {
         GrAutoScratchTexture ast(context, desc);
         GrContext::AutoRenderTarget art(context, ast.texture()->asRenderTarget());
@@ -478,17 +475,14 @@ GrTexture* apply_morphology(GrTexture* srcTexture,
 
 };
 
-GrTexture* SkDilateImageFilter::onFilterImageGPU(GrTexture* src, const SkRect& rect) {
-    SkAutoTUnref<GrTexture> input(this->getInputResultAsTexture(src, rect));
-    return apply_morphology(src, rect, GrMorphologyEffect::kDilate_MorphologyType, radius());
+GrTexture* SkDilateImageFilter::onFilterImageGPU(Proxy* proxy, GrTexture* src, const SkRect& rect) {
+    SkAutoTUnref<GrTexture> input(this->getInputResultAsTexture(proxy, src, rect));
+    return apply_morphology(input, rect, GrMorphologyEffect::kDilate_MorphologyType, radius());
 }
 
-GrTexture* SkErodeImageFilter::onFilterImageGPU(GrTexture* src, const SkRect& rect) {
-    SkAutoTUnref<GrTexture> input(this->getInputResultAsTexture(src, rect));
-    return apply_morphology(src, rect, GrMorphologyEffect::kErode_MorphologyType, radius());
+GrTexture* SkErodeImageFilter::onFilterImageGPU(Proxy* proxy, GrTexture* src, const SkRect& rect) {
+    SkAutoTUnref<GrTexture> input(this->getInputResultAsTexture(proxy, src, rect));
+    return apply_morphology(input, rect, GrMorphologyEffect::kErode_MorphologyType, radius());
 }
 
 #endif
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkDilateImageFilter)
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkErodeImageFilter)

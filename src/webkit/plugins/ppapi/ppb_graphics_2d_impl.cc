@@ -10,6 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/time.h"
 #include "skia/ext/platform_canvas.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_rect.h"
@@ -20,7 +21,10 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/skia_util.h"
 #include "webkit/plugins/ppapi/common.h"
@@ -42,6 +46,8 @@ namespace webkit {
 namespace ppapi {
 
 namespace {
+
+const int64 kOffscreenCallbackDelayMs = 1000 / 30;  // 30 fps
 
 // Converts a rect inside an image of the given dimensions. The rect may be
 // NULL to indicate it should be the entire image. If the rect is outside of
@@ -72,17 +78,6 @@ bool ValidateAndConvertRect(const PP_Rect* rect,
                       rect->size.width, rect->size.height);
   }
   return true;
-}
-
-// Scale the rectangle, taking care to round coordinates outward so a
-// rectangle scaled down then scaled back up by the inverse scale would
-// fully contain the entire area affected by the original rectangle.
-gfx::Rect ScaleRectBounds(const gfx::Rect& rect, float scale) {
-  int left = static_cast<int>(floorf(rect.x() * scale));
-  int top = static_cast<int>(floorf(rect.y() * scale));
-  int right = static_cast<int>(ceilf((rect.x() + rect.width()) * scale));
-  int bottom = static_cast<int>(ceilf((rect.y() + rect.height()) * scale));
-  return gfx::Rect(left, top, right - left, bottom - top);
 }
 
 // Converts BGRA <-> RGBA.
@@ -332,7 +327,8 @@ int32_t PPB_Graphics2D_Impl::Flush(scoped_refptr<TrackedCallback> callback,
     return PP_ERROR_INPROGRESS;
 
   bool done_replace_contents = false;
-  bool nothing_visible = true;
+  bool no_update_visible = true;
+  bool is_plugin_visible = true;
   for (size_t i = 0; i < queued_operations_.size(); i++) {
     QueuedOperation& operation = queued_operations_[i];
     gfx::Rect op_rect;
@@ -375,12 +371,14 @@ int32_t PPB_Graphics2D_Impl::Flush(scoped_refptr<TrackedCallback> callback,
         operation.type = QueuedOperation::PAINT;
       }
 
-      // Set |nothing_visible| to false if the change overlaps the visible area.
-      gfx::Rect visible_changed_rect =
-          PP_ToGfxRect(bound_instance_->view_data().clip_rect).
-          Intersect(op_rect);
+      gfx::Rect clip = PP_ToGfxRect(bound_instance_->view_data().clip_rect);
+      is_plugin_visible = !clip.IsEmpty();
+
+      // Set |no_update_visible| to false if the change overlaps the visible
+      // area.
+      gfx::Rect visible_changed_rect = gfx::IntersectRects(clip, op_rect);
       if (!visible_changed_rect.IsEmpty())
-        nothing_visible = false;
+        no_update_visible = false;
 
       // Notify the plugin of the entire change (op_rect), even if it is
       // partially or completely off-screen.
@@ -394,13 +392,18 @@ int32_t PPB_Graphics2D_Impl::Flush(scoped_refptr<TrackedCallback> callback,
   }
   queued_operations_.clear();
 
-  if (nothing_visible) {
+  if (!bound_instance_) {
+    // As promised in the API, we always schedule callback when unbound.
+    ScheduleOffscreenCallback(FlushCallbackData(callback));
+  } else if (no_update_visible && is_plugin_visible &&
+             bound_instance_->view_data().is_page_visible) {
     // There's nothing visible to invalidate so just schedule the callback to
     // execute in the next round of the message loop.
     ScheduleOffscreenCallback(FlushCallbackData(callback));
   } else {
     unpainted_flush_callback_.Set(callback);
   }
+
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -557,12 +560,12 @@ void PPB_Graphics2D_Impl::Paint(WebKit::WebCanvas* canvas,
 
   CGContextDrawImage(canvas, bitmap_rect, image);
 #else
-  gfx::Rect invalidate_rect = plugin_rect.Intersect(paint_rect);
+  gfx::Rect invalidate_rect = gfx::IntersectRects(plugin_rect, paint_rect);
   SkRect sk_invalidate_rect = gfx::RectToSkRect(invalidate_rect);
   SkAutoCanvasRestore auto_restore(canvas, true);
   canvas->clipRect(sk_invalidate_rect);
   gfx::Size pixel_image_size(image_data_->width(), image_data_->height());
-  gfx::Size image_size = pixel_image_size.Scale(scale_);
+  gfx::Size image_size = gfx::ToFlooredSize(pixel_image_size.Scale(scale_));
 
   PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
   if (!plugin_instance)
@@ -641,15 +644,23 @@ bool PPB_Graphics2D_Impl::ConvertToLogicalPixels(float scale,
     return true;
 
   gfx::Rect original_rect = *op_rect;
-  *op_rect = ScaleRectBounds(*op_rect, scale);
+  // Take the enclosing rectangle after scaling so a rectangle scaled down then
+  // scaled back up by the inverse scale would fully contain the entire area
+  // affected by the original rectangle.
+  *op_rect = gfx::ToEnclosingRect(gfx::ScaleRect(*op_rect, scale));
   if (delta) {
     gfx::Point original_delta = *delta;
     float inverse_scale = 1.0f / scale;
-    *delta = delta->Scale(scale);
-    if (original_rect != ScaleRectBounds(*op_rect, inverse_scale) ||
-        original_delta != delta->Scale(inverse_scale)) {
+    *delta = gfx::ToFlooredPoint(delta->Scale(scale));
+
+    gfx::Rect inverse_scaled_rect =
+        gfx::ToEnclosingRect(gfx::ScaleRect(*op_rect, inverse_scale));
+    if (original_rect != inverse_scaled_rect)
       return false;
-    }
+    gfx::Point inverse_scaled_point =
+        gfx::ToFlooredPoint(delta->Scale(inverse_scale));
+    if (original_delta != inverse_scaled_point)
+      return false;
   }
 
   return true;
@@ -730,11 +741,12 @@ void PPB_Graphics2D_Impl::ScheduleOffscreenCallback(
     const FlushCallbackData& callback) {
   DCHECK(!HasPendingFlush());
   offscreen_flush_pending_ = true;
-  MessageLoop::current()->PostTask(
+  MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&PPB_Graphics2D_Impl::ExecuteOffscreenCallback,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback));
+                 callback),
+      base::TimeDelta::FromMilliseconds(kOffscreenCallbackDelayMs));
 }
 
 void PPB_Graphics2D_Impl::ExecuteOffscreenCallback(FlushCallbackData data) {

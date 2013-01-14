@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Eric Seidel <eric@webkit.org>
- * Copyright (C) 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2012 Apple Inc. All rights reserved.
  * Copyright (C) Research In Motion Limited 2011. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -105,9 +105,9 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClien
 #endif
 
 #if ENABLE(CALENDAR_PICKER)
-PassOwnPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return nullptr;
+    return PassRefPtr<DateTimeChooser>();
 }
 #endif
 
@@ -144,6 +144,10 @@ PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const String&
 PassRefPtr<Widget> EmptyFrameLoaderClient::createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool)
 {
     return 0;
+}
+
+void EmptyFrameLoaderClient::recreatePlugin(Widget*)
+{
 }
 
 PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)

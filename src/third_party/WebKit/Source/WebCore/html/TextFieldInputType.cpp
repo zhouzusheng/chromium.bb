@@ -329,6 +329,11 @@ void TextFieldInputType::readonlyAttributeChanged()
         m_innerSpinButton->releaseCapture();
 }
 
+bool TextFieldInputType::supportsReadOnly() const
+{
+    return true;
+}
+
 bool TextFieldInputType::shouldUseInputMethod() const
 {
     return true;
@@ -381,6 +386,10 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
 
     // Truncate the inserted text to avoid violating the maxLength and other constraints.
     String eventText = event->text();
+    unsigned textLength = eventText.length();
+    while (textLength > 0 && isASCIILineBreak(eventText[textLength - 1]))
+        textLength--;
+    eventText.truncate(textLength);
     eventText.replace("\r\n", " ");
     eventText.replace('\r', ' ');
     eventText.replace('\n', ' ');
@@ -421,6 +430,9 @@ void TextFieldInputType::updatePlaceholderText()
 void TextFieldInputType::attach()
 {
     InputType::attach();
+    // If container exists, the container should not have any content data.
+    ASSERT(!m_container || !m_container->renderStyle() || !m_container->renderStyle()->hasContent());
+
     element()->fixPlaceholderRenderer(m_placeholder.get(), m_container ? m_container.get() : m_innerText.get());
 }
 

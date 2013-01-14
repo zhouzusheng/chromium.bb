@@ -29,6 +29,7 @@
 
 #include "Attribute.h"
 #include "CachedResourceLoader.h"
+#include "CachedResourceRequest.h"
 #include "Document.h"
 #include "ElementShadow.h"
 #include "Event.h"
@@ -106,8 +107,7 @@ PassRefPtr<SVGUseElement> SVGUseElement::create(const QualifiedName& tagName, Do
 
 SVGUseElement::~SVGUseElement()
 {
-    if (m_cachedDocument)
-        m_cachedDocument->removeClient(this);
+    setCachedDocument(0);
 
     clearResourceReferences();
 }
@@ -254,19 +254,15 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
         if (isExternalReference) {
             KURL url = document()->completeURL(href());
             if (url.hasFragmentIdentifier()) {
-                ResourceRequest request(url.string());
-                m_cachedDocument = document()->cachedResourceLoader()->requestSVGDocument(request);
-                if (m_cachedDocument)
-                    m_cachedDocument->addClient(this);
+                CachedResourceRequest request(ResourceRequest(url.string()));
+                setCachedDocument(document()->cachedResourceLoader()->requestSVGDocument(request));
             }
-        }
+        } else
+            setCachedDocument(0);
 
-        if (m_cachedDocument && !isExternalReference) {
-            m_cachedDocument->removeClient(this);
-            m_cachedDocument = 0;
-        }
         if (!m_wasInsertedByParser)
             buildPendingResource();
+
         return;
     }
 
@@ -988,6 +984,19 @@ void SVGUseElement::finishParsingChildren()
         buildPendingResource();
         m_wasInsertedByParser = false;
     }
+}
+
+void SVGUseElement::setCachedDocument(CachedResourceHandle<CachedSVGDocument> cachedDocument)
+{
+    if (m_cachedDocument == cachedDocument)
+        return;
+
+    if (m_cachedDocument)
+        m_cachedDocument->removeClient(this);
+
+    m_cachedDocument = cachedDocument;
+    if (m_cachedDocument)
+        m_cachedDocument->addClient(this);
 }
 
 }

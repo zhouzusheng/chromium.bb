@@ -33,6 +33,7 @@
 #include "WebKitCSSKeyframeRule.h"
 #include "WebKitCSSKeyframesRule.h"
 #include "WebKitCSSRegionRule.h"
+#include <wtf/MemoryInstrumentationVector.h>
 
 namespace WebCore {
 
@@ -78,10 +79,16 @@ void StyleRuleBase::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     case Keyframes:
         static_cast<const StyleRuleKeyframes*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
         return;
+    case Host:
+        static_cast<const StyleRuleBlock*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
+        return;
     case Unknown:
     case Charset:
     case Keyframe:
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
+#if !ENABLE(CSS_REGIONS)
+    case Region:
+#endif
+        ASSERT_NOT_REACHED();
         return;
     }
     ASSERT_NOT_REACHED();
@@ -112,6 +119,9 @@ void StyleRuleBase::destroy()
         return;
     case Keyframes:
         delete static_cast<StyleRuleKeyframes*>(this);
+        return;
+    case Host:
+        delete static_cast<StyleRuleHost*>(this);
         return;
     case Unknown:
     case Charset:
@@ -146,6 +156,8 @@ PassRefPtr<StyleRuleBase> StyleRuleBase::copy() const
         return 0;
     case Keyframes:
         return static_cast<const StyleRuleKeyframes*>(this)->copy();
+    case Host:
+        return static_cast<const StyleRuleHost*>(this)->copy();
     case Unknown:
     case Charset:
     case Keyframe:
@@ -187,6 +199,7 @@ PassRefPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSStyleSheet* parentSheet
     case Keyframes:
         rule = WebKitCSSKeyframesRule::create(static_cast<StyleRuleKeyframes*>(self), parentSheet);
         break;
+    case Host:
     case Unknown:
     case Charset:
     case Keyframe:
@@ -337,7 +350,7 @@ void StyleRuleBlock::wrapperRemoveRule(unsigned index)
 void StyleRuleBlock::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addInstrumentedVector(m_childRules);
+    info.addMember(m_childRules);
 }
 
 StyleRuleMedia::StyleRuleMedia(PassRefPtr<MediaQuerySet> media, Vector<RefPtr<StyleRuleBase> >& adoptRules)

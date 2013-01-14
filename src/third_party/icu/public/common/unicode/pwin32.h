@@ -26,6 +26,10 @@
 #define U_WINDOWS
 #endif
 
+#if _MSC_VER >= 1700
+#include <stdint.h>
+#endif
+
 #if defined(__BORLANDC__)
 #define U_HAVE_PLACEMENT_NEW 0
 #define __STDC_CONSTANT_MACROS

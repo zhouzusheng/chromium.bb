@@ -208,10 +208,7 @@ static icu::SimpleDateFormat* CreateICUDateFormat(
   icu::TimeZone* tz = NULL;
   icu::UnicodeString timezone;
   if (Utils::ExtractStringSetting(options, "timeZone", &timezone)) {
-    if (timezone != UNICODE_STRING_SIMPLE("UTC")) {
-      return NULL;
-    }
-    tz = icu::TimeZone::createTimeZone("GMT");
+    tz = icu::TimeZone::createTimeZone(timezone);
   } else {
     tz = icu::TimeZone::createDefault();
   }
@@ -264,6 +261,13 @@ static void SetResolvedSettings(const icu::Locale& icu_locale,
     const icu::Calendar* calendar = date_format->getCalendar();
     const char* calendar_name = calendar->getType();
     resolved->Set(v8::String::New("calendar"), v8::String::New(calendar_name));
+    // Get timeZone ID.
+    const icu::TimeZone& tz = calendar->getTimeZone();
+    icu::UnicodeString time_zone;
+    tz.getID(time_zone);
+    resolved->Set(v8::String::New("timeZone"),
+                  v8::String::New(reinterpret_cast<const uint16_t*>(
+                      time_zone.getBuffer()), time_zone.length()));
   }
 
   // Ugly hack. ICU doesn't expose numbering system in any way, so we have

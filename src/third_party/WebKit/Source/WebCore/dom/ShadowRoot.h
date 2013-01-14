@@ -89,6 +89,13 @@ public:
     InsertionPoint* assignedTo() const;
     void setAssignedTo(InsertionPoint*);
 
+    void registerShadowElement() { ++m_numberOfShadowElementChildren; }
+    void unregisterShadowElement() { --m_numberOfShadowElementChildren; }
+    bool hasShadowInsertionPoint() const { return m_numberOfShadowElementChildren > 0; }
+
+    virtual void registerScopedHTMLStyleChild() OVERRIDE;
+    virtual void unregisterScopedHTMLStyleChild() OVERRIDE;
+
 #ifndef NDEBUG
     ShadowRootType type() const { return m_type; }
 #endif
@@ -108,6 +115,8 @@ private:
     bool m_applyAuthorStyles : 1;
     bool m_resetStyleInheritance : 1;
     InsertionPoint* m_insertionPointAssignedTo;
+    size_t m_numberOfShadowElementChildren;
+    size_t m_numberOfStyles;
 
 #ifndef NDEBUG
     ShadowRootType m_type;

@@ -69,11 +69,13 @@ public:
     bool needsDistribution() const;
     bool needsInvalidation() const { return m_validity != Invalidated; }
 
-    void distributeSelectionsTo(InsertionPoint*, ContentDistribution& pool);
+    void distributeSelectionsTo(InsertionPoint*, const ContentDistribution& pool, Vector<bool>& distributed);
     void distributeNodeChildrenTo(InsertionPoint*, ContainerNode*);
     void invalidateDistributionIn(ContentDistribution*);
 
 private:
+    void populate(Node*, ContentDistribution&);
+
     HashMap<const Node*, InsertionPoint*> m_nodeToInsertionPoint;
     unsigned m_validity : 2;
 };

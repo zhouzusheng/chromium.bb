@@ -57,7 +57,7 @@ RenderLayerFilterInfo* RenderLayerFilterInfo::filterInfoForRenderLayer(const Ren
     if (!s_filterMap)
         return 0;
     RenderLayerFilterInfoMap::iterator iter = s_filterMap->find(layer);
-    return (iter != s_filterMap->end()) ? iter->second : 0;
+    return (iter != s_filterMap->end()) ? iter->value : 0;
 }
 
 RenderLayerFilterInfo* RenderLayerFilterInfo::createFilterInfoForRenderLayerIfNeeded(RenderLayer* layer)
@@ -68,7 +68,7 @@ RenderLayerFilterInfo* RenderLayerFilterInfo::createFilterInfoForRenderLayerIfNe
     RenderLayerFilterInfoMap::iterator iter = s_filterMap->find(layer);
     if (iter != s_filterMap->end()) {
         ASSERT(layer->hasFilterInfo());
-        return iter->second;
+        return iter->value;
     }
     
     RenderLayerFilterInfo* filter = new RenderLayerFilterInfo(layer);
@@ -141,9 +141,8 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
             // Reference is internal; add layer as a client so we can trigger
             // filter repaint on SVG attribute change.
             Element* filter = m_layer->renderer()->node()->document()->getElementById(referenceFilterOperation->fragment());
-            if (!filter || !filter->renderer())
+            if (!filter || !filter->renderer() || !filter->renderer()->isSVGResourceFilter())
                 continue;
-            ASSERT(filter->renderer()->isSVGResourceContainer());
             filter->renderer()->toRenderSVGResourceContainer()->addClientRenderLayer(m_layer);
             m_internalSVGReferences.append(filter);
         }

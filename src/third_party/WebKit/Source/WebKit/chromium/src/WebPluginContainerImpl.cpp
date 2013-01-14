@@ -33,6 +33,7 @@
 
 #include "Chrome.h"
 #include "ChromeClientImpl.h"
+#include "ClipboardChromium.h"
 #include "ScrollbarGroup.h"
 #include "WebCursorInfo.h"
 #include "WebDataSourceImpl.h"
@@ -66,6 +67,7 @@
 #include "ScrollAnimator.h"
 #include "ScrollView.h"
 #include "ScrollbarTheme.h"
+#include "ScrollingCoordinator.h"
 #include "TouchEvent.h"
 #include "UserGestureIndicator.h"
 #include "WebPrintParams.h"
@@ -73,6 +75,7 @@
 #include <public/Platform.h>
 #include <public/WebClipboard.h>
 #include <public/WebCompositorSupport.h>
+#include <public/WebDragData.h>
 #include <public/WebExternalTextureLayer.h>
 #include <public/WebRect.h>
 #include <public/WebString.h>
@@ -115,8 +118,13 @@ void WebPluginContainerImpl::paint(GraphicsContext* gc, const IntRect& damageRec
     if (!parent())
         return;
 
+    FloatRect scaledDamageRect = damageRect;
+    float frameScaleFactor = m_element->document()->frame()->frameScaleFactor();
+    scaledDamageRect.scale(frameScaleFactor);
+    scaledDamageRect.move(-frameRect().x() * (frameScaleFactor - 1), -frameRect().y() * (frameScaleFactor - 1));
+
     // Don't paint anything if the plugin doesn't intersect the damage rect.
-    if (!frameRect().intersects(damageRect))
+    if (!frameRect().intersects(enclosingIntRect(scaledDamageRect)))
         return;
 
     gc->save();
@@ -132,7 +140,7 @@ void WebPluginContainerImpl::paint(GraphicsContext* gc, const IntRect& damageRec
     WebCanvas* canvas = gc->platformContext()->canvas();
 
     IntRect windowRect =
-        IntRect(view->contentsToWindow(damageRect.location()), damageRect.size());
+        IntRect(view->contentsToWindow(enclosingIntRect(scaledDamageRect).location()), enclosingIntRect(scaledDamageRect).size());
     m_webPlugin->paint(canvas, windowRect);
 
     gc->restore();
@@ -525,6 +533,19 @@ void WebPluginContainerImpl::setIsAcceptingTouchEvents(bool acceptingTouchEvents
         m_element->document()->didRemoveTouchEventHandler();
 }
 
+void WebPluginContainerImpl::setWantsWheelEvents(bool wantsWheelEvents)
+{
+    if (m_wantsWheelEvents == wantsWheelEvents)
+        return;
+    m_wantsWheelEvents = wantsWheelEvents;
+    if (Page* page = m_element->document()->page()) {
+        if (ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator()) {
+            if (parent() && parent()->isFrameView())
+                scrollingCoordinator->frameViewLayoutUpdated(static_cast<FrameView*>(parent()));
+        }
+    }
+}
+
 void WebPluginContainerImpl::didReceiveResponse(const ResourceResponse& response)
 {
     // Make sure that the plugin receives window geometry before data, or else
@@ -568,6 +589,16 @@ bool WebPluginContainerImpl::getFormValue(String& value)
 bool WebPluginContainerImpl::supportsKeyboardFocus() const
 {
     return m_webPlugin->supportsKeyboardFocus();
+}
+
+bool WebPluginContainerImpl::canProcessDrag() const
+{
+    return m_webPlugin->canProcessDrag();
+}
+
+bool WebPluginContainerImpl::wantsWheelEvents()
+{
+    return m_wantsWheelEvents;
 }
 
 void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver* observer)
@@ -629,6 +660,7 @@ WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* eleme
     , m_ioSurfaceId(0)
 #endif
     , m_isAcceptingTouchEvents(false)
+    , m_wantsWheelEvents(false)
 {
 }
 
@@ -653,11 +685,17 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
 {
     ASSERT(parent()->isFrameView());
 
+    if (event->isDragEvent()) {
+        if (m_webPlugin->canProcessDrag())
+            handleDragEvent(event);
+        return;
+    }
+
     // We cache the parent FrameView here as the plugin widget could be deleted
     // in the call to HandleEvent. See http://b/issue?id=1362948
     FrameView* parentView = static_cast<FrameView*>(parent());
 
-    WebMouseEventBuilder webEvent(this, *event);
+    WebMouseEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
 
@@ -696,9 +734,35 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     chromeClient->setCursorForPlugin(cursorInfo);
 }
 
+void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)
+{
+    ASSERT(event->isDragEvent());
+
+    WebDragStatus dragStatus = WebDragStatusUnknown;
+    if (event->type() == eventNames().dragenterEvent)
+        dragStatus = WebDragStatusEnter;
+    else if (event->type() == eventNames().dragleaveEvent)
+        dragStatus = WebDragStatusLeave;
+    else if (event->type() == eventNames().dragoverEvent)
+        dragStatus = WebDragStatusOver;
+    else if (event->type() == eventNames().dropEvent)
+        dragStatus = WebDragStatusDrop;
+
+    if (dragStatus == WebDragStatusUnknown)
+        return;
+
+    ClipboardChromium* clipboard = static_cast<ClipboardChromium*>(event->dataTransfer());
+    WebDragData dragData = clipboard->dataObject();
+    WebDragOperationsMask dragOperationMask = static_cast<WebDragOperationsMask>(clipboard->sourceOperation());
+    WebPoint dragScreenLocation(event->screenX(), event->screenY());
+    WebPoint dragLocation(event->absoluteLocation().x() - location().x(), event->absoluteLocation().y() - location().y());
+
+    m_webPlugin->handleDragStatusUpdate(dragStatus, dragData, dragOperationMask, dragLocation, dragScreenLocation);
+}
+
 void WebPluginContainerImpl::handleWheelEvent(WheelEvent* event)
 {
-    WebMouseWheelEventBuilder webEvent(this, *event);
+    WebMouseWheelEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
 
@@ -747,7 +811,9 @@ void WebPluginContainerImpl::handleKeyboardEvent(KeyboardEvent* event)
 
 void WebPluginContainerImpl::handleTouchEvent(TouchEvent* event)
 {
-    WebTouchEventBuilder webEvent(this, *event);
+    if (!m_isAcceptingTouchEvents)
+        return;
+    WebTouchEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
     WebCursorInfo cursorInfo;
@@ -758,7 +824,7 @@ void WebPluginContainerImpl::handleTouchEvent(TouchEvent* event)
 
 void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
 {
-    WebGestureEventBuilder webEvent(this, *event);
+    WebGestureEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
     WebCursorInfo cursorInfo;

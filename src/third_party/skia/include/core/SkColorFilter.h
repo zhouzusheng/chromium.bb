@@ -15,6 +15,8 @@
 #include "SkXfermode.h"
 
 class SkBitmap;
+class GrEffect;
+class GrContext;
 
 class SK_API SkColorFilter : public SkFlattenable {
 public:
@@ -50,7 +52,7 @@ public:
      *  The original component value is the horizontal index for a given row,
      *  and the stored value at that index is the new value for that component.
      */
-    virtual bool asComponentTable(SkBitmap* table);
+    virtual bool asComponentTable(SkBitmap* table) const;
 
     /** Called with a scanline of colors, as if there was a shader installed.
         The implementation writes out its filtered version into result[].
@@ -112,6 +114,11 @@ public:
         are ignored.
     */
     static SkColorFilter* CreateLightingFilter(SkColor mul, SkColor add);
+
+    /** A subclass may implement this factory function to work with the GPU backend. If the return
+        is non-NULL then the caller owns a ref on the returned object.
+     */
+    virtual GrEffect* asNewEffect(GrContext*) const;
 
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
 protected:

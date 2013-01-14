@@ -204,15 +204,6 @@ bool WebRuntimeFeatures::isWebAudioEnabled()
 #endif
 }
 
-void WebRuntimeFeatures::enablePushState(bool)
-{
-}
-
-bool WebRuntimeFeatures::isPushStateEnabled(bool enable)
-{
-    return true;
-}
-
 void WebRuntimeFeatures::enableTouch(bool enable)
 {
 #if ENABLE(TOUCH_EVENTS)
@@ -664,6 +655,24 @@ void WebRuntimeFeatures::enableCSSExclusions(bool enable)
 bool WebRuntimeFeatures::isCSSExclusionsEnabled()
 {
     return RuntimeEnabledFeatures::cssExclusionsEnabled();
+}
+
+void WebRuntimeFeatures::enableWebIntents(bool enable)
+{
+#if ENABLE(WEB_INTENTS)
+    RuntimeEnabledFeatures::setWebIntentsEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::isWebIntentsEnabled()
+{
+#if ENABLE(WEB_INTENTS)
+    return RuntimeEnabledFeatures::webkitStartActivityEnabled();
+#else
+    return false;
+#endif
 }
 
 } // namespace WebKit

@@ -34,7 +34,6 @@
 #include "CSSParser.h"
 #include "CSSPrimitiveValue.h"
 #include "CSSPrimitiveValueMappings.h"
-#include "CSSProperty.h"
 #include "CSSPropertyNames.h"
 #include "CSSReflectValue.h"
 #include "CSSSelector.h"
@@ -49,6 +48,7 @@
 #include "FontFeatureSettings.h"
 #include "FontFeatureValue.h"
 #include "FontValue.h"
+#include "HTMLFrameOwnerElement.h"
 #include "Pair.h"
 #include "Rect.h"
 #include "RenderBox.h"
@@ -58,6 +58,7 @@
 #include "StyleInheritedData.h"
 #include "StylePropertySet.h"
 #include "StylePropertyShorthand.h"
+#include "StyleResolver.h"
 #include "WebCoreMemoryInstrumentation.h"
 #include "WebKitCSSTransformValue.h"
 #include "WebKitFontFamilyNames.h"
@@ -78,7 +79,7 @@
 #include "WebKitCSSFilterValue.h"
 #endif
 
-#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
+#if ENABLE(DASHBOARD_SUPPORT)
 #include "DashboardRegion.h"
 #endif
 
@@ -179,10 +180,10 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyTabSize,
     CSSPropertyTextAlign,
     CSSPropertyTextDecoration,
-#if ENABLE(CSS3_TEXT_DECORATION)
+#if ENABLE(CSS3_TEXT)
     CSSPropertyWebkitTextDecorationLine,
     CSSPropertyWebkitTextDecorationStyle,
-#endif // CSS3_TEXT_DECORATION
+#endif // CSS3_TEXT
     CSSPropertyTextIndent,
     CSSPropertyTextRendering,
     CSSPropertyTextShadow,
@@ -349,8 +350,8 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyWebkitRegionBreakBefore,
     CSSPropertyWebkitRegionBreakInside,
 #endif
-#if ENABLE(WIDGET_REGION)
-    CSSPropertyWebkitWidgetRegion,
+#if ENABLE(DRAGGABLE_REGION)
+    CSSPropertyWebkitAppRegion,
 #endif
 #if ENABLE(CSS_EXCLUSIONS)
     CSSPropertyWebkitWrapFlow,
@@ -377,6 +378,7 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyMarkerEnd,
     CSSPropertyMarkerMid,
     CSSPropertyMarkerStart,
+    CSSPropertyMaskType,
     CSSPropertyShapeRendering,
     CSSPropertyStroke,
     CSSPropertyStrokeDasharray,
@@ -918,7 +920,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::valueForFilter(const RenderObj
                 shadersList->append(cssValuePool().createIdentifierValue(CSSValueNone));
 
             const CustomFilterProgramMixSettings mixSettings = program->mixSettings();
-            if (mixSettings.enabled) {
+            if (program->programType() == PROGRAM_TYPE_BLENDS_ELEMENT_TEXTURE) {
                 RefPtr<WebKitCSSMixFunctionValue> mixFunction = WebKitCSSMixFunctionValue::create();
                 mixFunction->append(program->fragmentShader()->cssValue());
                 mixFunction->append(cssValuePool().createValue(mixSettings.blendMode));
@@ -932,8 +934,8 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::valueForFilter(const RenderObj
             filterValue->append(shadersList.release());
             
             RefPtr<CSSValueList> meshParameters = CSSValueList::createSpaceSeparated();
-            meshParameters->append(cssValuePool().createValue(customOperation->meshRows(), CSSPrimitiveValue::CSS_NUMBER));
             meshParameters->append(cssValuePool().createValue(customOperation->meshColumns(), CSSPrimitiveValue::CSS_NUMBER));
+            meshParameters->append(cssValuePool().createValue(customOperation->meshRows(), CSSPrimitiveValue::CSS_NUMBER));
             meshParameters->append(cssValuePool().createValue(customOperation->meshBoxType()));
             
             // FIXME: The specification doesn't have any "attached" identifier. Should we add one?
@@ -1216,7 +1218,7 @@ static PassRefPtr<CSSValue> renderTextDecorationFlagsToCSSValue(int textDecorati
     return list;
 }
 
-#if ENABLE(CSS3_TEXT_DECORATION)
+#if ENABLE(CSS3_TEXT)
 static PassRefPtr<CSSValue> renderTextDecorationStyleFlagsToCSSValue(TextDecorationStyle textDecorationStyle)
 {
     switch (textDecorationStyle) {
@@ -1235,7 +1237,7 @@ static PassRefPtr<CSSValue> renderTextDecorationStyleFlagsToCSSValue(TextDecorat
     ASSERT_NOT_REACHED();
     return cssValuePool().createExplicitInitialValue();
 }
-#endif // CSS3_TEXT_DECORATION
+#endif // CSS3_TEXT
 
 static PassRefPtr<CSSValue> fillRepeatToCSSValue(EFillRepeat xRepeat, EFillRepeat yRepeat)
 {
@@ -1299,8 +1301,8 @@ static PassRefPtr<CSSValue> counterToCSSValue(const RenderStyle* style, CSSPrope
 
     RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
     for (CounterDirectiveMap::const_iterator it = map->begin(); it != map->end(); ++it) {
-        list->append(cssValuePool().createValue(it->first, CSSPrimitiveValue::CSS_STRING));
-        short number = propertyID == CSSPropertyCounterIncrement ? it->second.incrementValue() : it->second.resetValue();
+        list->append(cssValuePool().createValue(it->key, CSSPrimitiveValue::CSS_STRING));
+        short number = propertyID == CSSPropertyCounterIncrement ? it->value.incrementValue() : it->value.resetValue();
         list->append(cssValuePool().createValue((double)number, CSSPrimitiveValue::CSS_NUMBER));
     }
     return list.release();
@@ -1383,15 +1385,57 @@ static PassRefPtr<CSSPrimitiveValue> fontWeightFromStyle(RenderStyle* style)
     return cssValuePool().createIdentifierValue(CSSValueNormal);
 }
 
+static bool isLayoutDependentProperty(CSSPropertyID propertyID)
+{
+    switch (propertyID) {
+    case CSSPropertyWidth:
+    case CSSPropertyHeight:
+    case CSSPropertyMargin:
+    case CSSPropertyMarginTop:
+    case CSSPropertyMarginBottom:
+    case CSSPropertyMarginLeft:
+    case CSSPropertyMarginRight:
+    case CSSPropertyPadding:
+    case CSSPropertyPaddingTop:
+    case CSSPropertyPaddingBottom:
+    case CSSPropertyPaddingLeft:
+    case CSSPropertyPaddingRight:
+    case CSSPropertyWebkitPerspectiveOrigin:
+    case CSSPropertyWebkitTransformOrigin:
+    case CSSPropertyWebkitTransform:
+#if ENABLE(CSS_FILTERS)
+    case CSSPropertyWebkitFilter:
+#endif
+        return true;
+    default:
+        return false;
+    }
+}
+
 PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropertyID propertyID, EUpdateLayout updateLayout) const
 {
     Node* node = m_node.get();
     if (!node)
         return 0;
 
-    // Make sure our layout is up to date before we allow a query on these attributes.
-    if (updateLayout)
-        node->document()->updateLayoutIgnorePendingStylesheets();
+    if (updateLayout) {
+        Document* document = m_node->document();
+        // FIXME: Some of these cases could be narrowed down or optimized better.
+        bool forceFullLayout = isLayoutDependentProperty(propertyID)
+            || node->isInShadowTree()
+            || (document->styleResolverIfExists() && document->styleResolverIfExists()->hasViewportDependentMediaQueries() && document->ownerElement())
+            || document->seamlessParentIFrame();
+
+        if (forceFullLayout)
+            document->updateLayoutIgnorePendingStylesheets();
+        else {
+            bool needsStyleRecalc = document->hasPendingForcedStyleRecalc();
+            for (Node* n = m_node.get(); n && !needsStyleRecalc; n = n->parentNode())
+                needsStyleRecalc = n->needsStyleRecalc();
+            if (needsStyleRecalc)
+                document->updateStyleIfNeeded();
+        }
+    }
 
     RenderObject* renderer = node->renderer();
 
@@ -1981,12 +2025,12 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             return cssValuePool().createValue(style->textAlign());
         case CSSPropertyTextDecoration:
             return renderTextDecorationFlagsToCSSValue(style->textDecoration());
-#if ENABLE(CSS3_TEXT_DECORATION)
+#if ENABLE(CSS3_TEXT)
         case CSSPropertyWebkitTextDecorationLine:
             return renderTextDecorationFlagsToCSSValue(style->textDecoration());
         case CSSPropertyWebkitTextDecorationStyle:
             return renderTextDecorationStyleFlagsToCSSValue(style->textDecorationStyle());
-#endif // CSS3_TEXT_DECORATION
+#endif // CSS3_TEXT
         case CSSPropertyWebkitTextDecorationsInEffect:
             return renderTextDecorationFlagsToCSSValue(style->textDecorationsInEffect());
         case CSSPropertyWebkitTextFillColor:
@@ -2124,13 +2168,8 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             if (style->boxSizing() == CONTENT_BOX)
                 return cssValuePool().createIdentifierValue(CSSValueContentBox);
             return cssValuePool().createIdentifierValue(CSSValueBorderBox);
-#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
 #if ENABLE(DASHBOARD_SUPPORT)
         case CSSPropertyWebkitDashboardRegion:
-#endif
-#if ENABLE(WIDGET_REGION)
-        case CSSPropertyWebkitWidgetRegion:
-#endif
         {
             const Vector<StyleDashboardRegion>& regions = style->dashboardRegions();
             unsigned count = regions.size();
@@ -2160,6 +2199,10 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             }
             return cssValuePool().createValue(firstRegion.release());
         }
+#endif
+#if ENABLE(DRAGGABLE_REGION)
+        case CSSPropertyWebkitAppRegion:
+            return cssValuePool().createIdentifierValue(style->getDraggableRegionMode() == DraggableRegionDrag ? CSSValueDrag : CSSValueNoDrag);
 #endif
         case CSSPropertyWebkitAnimationDelay:
             return getDelayValue(style->animations());
@@ -2299,7 +2342,10 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitPerspectiveOrigin: {
             RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
             if (renderer) {
-                LayoutRect box = sizingBox(renderer);
+                LayoutRect box;
+                if (renderer->isBox())
+                    box = toRenderBox(renderer)->borderBoxRect();
+
                 RenderView* renderView = m_node->document()->renderView();
                 list->append(zoomAdjustedPixelValue(minimumValueForLength(style->perspectiveOriginX(), box.width(), renderView), style.get()));
                 list->append(zoomAdjustedPixelValue(minimumValueForLength(style->perspectiveOriginY(), box.height(), renderView), style.get()));
@@ -2420,6 +2466,12 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             if (ClipPathOperation* operation = style->clipPath()) {
                 if (operation->getOperationType() == ClipPathOperation::SHAPE)
                     return valueForBasicShape(static_cast<ShapeClipPathOperation*>(operation)->basicShape());
+#if ENABLE(SVG)
+                else if (operation->getOperationType() == ClipPathOperation::REFERENCE) {
+                    ReferenceClipPathOperation* referenceOperation = static_cast<ReferenceClipPathOperation*>(operation);
+                    return CSSPrimitiveValue::create(referenceOperation->url(), CSSPrimitiveValue::CSS_URI);
+                }
+#endif
             }
             return cssValuePool().createIdentifierValue(CSSValueNone);
 #if ENABLE(CSS_REGIONS)
@@ -2442,13 +2494,13 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitWrapPadding:
             return cssValuePool().createValue(style->wrapPadding());
         case CSSPropertyWebkitShapeInside:
-            if (!style->wrapShapeInside())
+            if (!style->shapeInside())
                 return cssValuePool().createIdentifierValue(CSSValueAuto);
-            return valueForBasicShape(style->wrapShapeInside());
+            return valueForBasicShape(style->shapeInside());
         case CSSPropertyWebkitShapeOutside:
-            if (!style->wrapShapeOutside())
+            if (!style->shapeOutside())
                 return cssValuePool().createIdentifierValue(CSSValueAuto);
-            return valueForBasicShape(style->wrapShapeOutside());
+            return valueForBasicShape(style->shapeOutside());
         case CSSPropertyWebkitWrapThrough:
             return cssValuePool().createValue(style->wrapThrough());
 #endif
@@ -2613,6 +2665,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyMarkerEnd:
         case CSSPropertyMarkerMid:
         case CSSPropertyMarkerStart:
+        case CSSPropertyMaskType:
         case CSSPropertyShapeRendering:
         case CSSPropertyStroke:
         case CSSPropertyStrokeDasharray:

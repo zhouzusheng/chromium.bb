@@ -67,51 +67,71 @@ def _ReadFirstIdsFromFile(filename, defines):
   return (src_root_dir, first_ids_dict)
 
 
-class IfNode(base.Node):
-  """A node for conditional inclusion of resources.
+class SplicingNode(base.Node):
+  """A node whose children should be considered to be at the same level as
+  its siblings for most purposes. This includes <if> and <part> nodes.
   """
 
   def _IsValidChild(self, child):
-    from grit.node import empty
-    parent = self.parent
-    while isinstance(parent, IfNode):
-      parent = parent.parent
-    assert parent, '<if> node should never be root.'
-    if isinstance(child, IfNode):
-      return True
-    elif isinstance(parent, empty.IncludesNode):
-      from grit.node import include
-      return isinstance(child, include.IncludeNode)
-    elif isinstance(parent, empty.MessagesNode):
-      from grit.node import message
-      return isinstance(child, message.MessageNode)
-    elif isinstance(parent, empty.StructuresNode):
-      from grit.node import structure
-      return isinstance(child, structure.StructureNode)
-    elif isinstance(parent, empty.OutputsNode):
-      from grit.node import io
-      return isinstance(child, io.OutputNode)
-    elif isinstance(parent, empty.TranslationsNode):
-      from grit.node import io
-      return isinstance(child, io.FileNode)
-    else:
-      return False
+    assert self.parent, '<%s> node should never be root.' % self.name
+    if isinstance(child, SplicingNode):
+      return True  # avoid O(n^2) behavior
+    return self.parent._IsValidChild(child)
+
+
+class IfNode(SplicingNode):
+  """A node for conditional inclusion of resources.
+  """
 
   def MandatoryAttributes(self):
     return ['expr']
 
-  def IsConditionSatisfied(self):
-    """Returns true if and only if the Python expression stored in attribute
-    'expr' evaluates to true.
-    """
-    return self.EvaluateCondition(self.attrs['expr'])
+  def _IsValidChild(self, child):
+    return (isinstance(child, (ThenNode, ElseNode)) or
+            super(IfNode, self)._IsValidChild(child))
 
-  def SatisfiesOutputCondition(self):
-    """Returns true if its condition is satisfied, including on ancestors."""
-    if not self.IsConditionSatisfied():
-      return False
+  def EndParsing(self):
+    children = self.children
+    self.if_then_else = False
+    if any(isinstance(node, (ThenNode, ElseNode)) for node in children):
+      if (len(children) != 2 or not isinstance(children[0], ThenNode) or
+                                not isinstance(children[1], ElseNode)):
+        raise exception.UnexpectedChild(
+            '<if> element must be <if><then>...</then><else>...</else></if>')
+      self.if_then_else = True
+
+  def ActiveChildren(self):
+    cond = self.EvaluateCondition(self.attrs['expr'])
+    if self.if_then_else:
+      return self.children[0 if cond else 1].ActiveChildren()
     else:
-      return super(IfNode, self).SatisfiesOutputCondition()
+      # Equivalent to having all children inside <then> with an empty <else>
+      return super(IfNode, self).ActiveChildren() if cond else []
+
+
+class ThenNode(SplicingNode):
+  """A <then> node. Can only appear directly inside an <if> node."""
+  pass
+
+
+class ElseNode(SplicingNode):
+  """An <else> node. Can only appear directly inside an <if> node."""
+  pass
+
+
+class PartNode(SplicingNode):
+  """A node for inclusion of sub-grd (*.grp) files.
+  """
+
+  def __init__(self):
+    super(PartNode, self).__init__()
+    self.started_inclusion = False
+
+  def MandatoryAttributes(self):
+    return ['file']
+
+  def _IsValidChild(self, child):
+    return self.started_inclusion and super(PartNode, self)._IsValidChild(child)
 
 
 class ReleaseNode(base.Node):
@@ -137,13 +157,6 @@ class ReleaseNode(base.Node):
   def GetReleaseNumber():
     """Returns the sequence number of this release."""
     return self.attribs['seq']
-
-  def ItemFormatter(self, t):
-    if t == 'data_package':
-      from grit.format import data_pack
-      return data_pack.DataPack()
-    else:
-      return super(ReleaseNode, self).ItemFormatter(t)
 
 class GritNode(base.Node):
   """The <grit> root element."""
@@ -208,24 +221,20 @@ class GritNode(base.Node):
     """
     unique_names = {}
     duplicate_names = []
-    for node in self:
-      if isinstance(node, message.PhNode):
-        continue  # PhNode objects have a 'name' attribute which is not an ID
+    # To avoid false positives from mutually exclusive <if> clauses, check
+    # against whatever the output condition happens to be right now.
+    # TODO(benrg): do something better.
+    for node in self.ActiveDescendants():
       if node.attrs.get('generateid', 'true') == 'false':
         continue  # Duplication not relevant in that case
 
-      node_ids = node.GetTextualIds()
-      if node_ids:
-        for node_id in node_ids:
-          if util.SYSTEM_IDENTIFIERS.match(node_id):
-            continue  # predefined IDs are sometimes used more than once
+      for node_id in node.GetTextualIds():
+        if util.SYSTEM_IDENTIFIERS.match(node_id):
+          continue  # predefined IDs are sometimes used more than once
 
-          # Don't complain about duplicate IDs if they occur in a node that is
-          # inside an <if> node.
-          if (node_id in unique_names and node_id not in duplicate_names and
-              (not node.parent or not isinstance(node.parent, IfNode))):
-            duplicate_names.append(node_id)
-          unique_names[node_id] = 1
+        if node_id in unique_names and node_id not in duplicate_names:
+          duplicate_names.append(node_id)
+        unique_names[node_id] = 1
 
     if len(duplicate_names):
       raise exception.DuplicateKey(', '.join(duplicate_names))
@@ -285,37 +294,26 @@ class GritNode(base.Node):
 
   def GetInputFiles(self):
     """Returns the list of files that are read to produce the output."""
-    input_nodes = []
 
     # Importing this here avoids a circular dependency in the imports.
     # pylint: disable-msg=C6204
     from grit.node import include
+    from grit.node import misc
     from grit.node import structure
     from grit.node import variant
 
-    input_nodes.extend(self.GetChildrenOfType(io.FileNode))
-    input_nodes.extend(self.GetChildrenOfType(include.IncludeNode))
-    input_nodes.extend(self.GetChildrenOfType(structure.StructureNode))
-    input_nodes.extend(self.GetChildrenOfType(variant.SkeletonNode))
-
-    # Collect all output languages and contexts.
-    configs = set()
-    for output in self.GetOutputFiles():
-      configs.add((output.GetLanguage() or self.GetSourceLanguage(),
-                   output.GetContext()))
-
     # Check if the input is required for any output configuration.
-    # SatisfiesOutputCondition() checks only one configuration at a time.
     input_files = set()
     old_output_language = self.output_language
-    for lang, ctx in configs:
-      self.SetOutputLanguage(lang)
+    for lang, ctx in self.GetConfigurations():
+      self.SetOutputLanguage(lang or self.GetSourceLanguage())
       self.SetOutputContext(ctx)
-      for node in input_nodes:
-        if node.SatisfiesOutputCondition():
+      for node in self.ActiveDescendants():
+        if isinstance(node, (io.FileNode, include.IncludeNode, misc.PartNode,
+                             structure.StructureNode, variant.SkeletonNode)):
           input_files.add(node.GetInputPath())
     self.SetOutputLanguage(old_output_language)
-    return map(self.ToRealPath, sorted(input_files))
+    return sorted(map(self.ToRealPath, input_files))
 
   def GetFirstIdsFile(self):
     """Returns a usable path to the first_ids file, if set, otherwise
@@ -336,64 +334,26 @@ class GritNode(base.Node):
     else:
       return self.ToRealPath(path)
 
-  def _CollectOutputFiles(self, nodes, output_files):
-    """Recursively filters the list of nodes that may contain other lists
-    in <if> nodes, and collects all the nodes that are not enclosed by
-    unsatisfied <if> conditionals and not <if> nodes themselves.
-
-    Args:
-      nodes: The list of nodes to filter.
-      output_files: The list of satisfying nodes.
-    """
-    for node in nodes:
-      if node.name == 'if':
-        if node.IsConditionSatisfied():
-          self._CollectOutputFiles(node.children, output_files)
-      else:
-        output_files.append(node)
-
   def GetOutputFiles(self):
     """Returns the list of <output> nodes that are descendants of this node's
     <outputs> child and are not enclosed by unsatisfied <if> conditionals.
     """
     for child in self.children:
       if child.name == 'outputs':
-        output_files = []
-        self._CollectOutputFiles(child.children, output_files)
-        return output_files
+        return [node for node in child.ActiveDescendants()
+                     if node.name == 'output']
     raise exception.MissingElement()
+
+  def GetConfigurations(self):
+    """Returns the distinct (language, context) pairs from the output nodes.
+    """
+    return set((n.GetLanguage(), n.GetContext()) for n in self.GetOutputFiles())
 
   def GetSubstitutionMessages(self):
     """Returns the list of <message sub_variable="true"> nodes."""
-    msg_nodes = self.GetChildrenOfType(message.MessageNode)
-    return [n for n in msg_nodes if
-            n.attrs['sub_variable'] == 'true' and n.SatisfiesOutputCondition()]
-
-  def ItemFormatter(self, t):
-    if t == 'rc_header':
-      from grit.format import rc_header  # import here to avoid circular dep
-      return rc_header.TopLevel()
-    elif t in ['rc_all', 'rc_translateable', 'rc_nontranslateable']:
-      from grit.format import rc  # avoid circular dep
-      return rc.TopLevel()
-    elif t == 'c_format':
-      from grit.format import c_format
-      return c_format.TopLevel()
-    elif t == 'resource_map_header':
-      from grit.format import resource_map
-      return resource_map.HeaderTopLevel()
-    elif t in ('resource_map_source', 'resource_file_map_source'):
-      from grit.format import resource_map
-      return resource_map.SourceTopLevel()
-    elif t == 'js_map_format':
-      from grit.format import js_map_format
-      return js_map_format.TopLevel()
-    elif t in ('adm', 'plist', 'plist_strings', 'admx', 'adml', 'doc', 'json',
-        'reg'):
-      from grit.format.policy_templates import template_formatter
-      return template_formatter.TemplateFormatter(t)
-    else:
-      return super(GritNode, self).ItemFormatter(t)
+    return [n for n in self.ActiveDescendants()
+            if isinstance(n, message.MessageNode)
+                and n.attrs['sub_variable'] == 'true']
 
   def SetOutputLanguage(self, output_language):
     """Set the output language. Prepares substitutions.
@@ -456,7 +416,7 @@ class GritNode(base.Node):
     src_root_dir, first_ids = _ReadFirstIdsFromFile(first_ids_filename,
                                                     defines)
     from grit.node import empty
-    for node in self.inorder():
+    for node in self.Preorder():
       if isinstance(node, empty.GroupingNode):
         abs_filename = os.path.abspath(filename_or_stream)
         if abs_filename[:len(src_root_dir)] != src_root_dir:
@@ -488,36 +448,29 @@ class GritNode(base.Node):
           raise Exception('Please update %s and add a first id for %s (%s).'
                           % (first_ids_filename, filename, node.name))
 
-  def RunGatherers(self, recursive=0, debug=False):
-    """Gathers information for the top-level nodes, then apply substitutions,
-    then gather the <translations> node (all substitutions must be done before
-    it is gathered so that they can match up correctly).
+  def RunGatherers(self, debug=False):
+    '''Call RunPreSubstitutionGatherer() on every node of the tree, then apply
+    substitutions, then call RunPostSubstitutionGatherer() on every node.
 
-    The substitutions step requires that the OutputContext has been set.
-    Locally, get the Substitution messages
-    and add them to the substituter. Also add substitutions for language codes
-    in the Rc.
-
-    Gatherers for <translations> child nodes will always be run after all other
-    child nodes have been gathered.
+    The substitutions step requires that the output language has been set.
+    Locally, get the Substitution messages and add them to the substituter.
+    Also add substitutions for language codes in the Rc.
 
     Args:
-      recursive: will call RunGatherers() recursively on all child nodes first.
       debug: will print information while running gatherers.
-    """
-    if recursive:
-      process_last = []
-      for child in self.children:
-        if child.name == 'translations':
-          process_last.append(child)
-        else:
-          child.RunGatherers(recursive=recursive, debug=debug)
+    '''
+    for node in self.ActiveDescendants():
+      if hasattr(node, 'RunPreSubstitutionGatherer'):
+        with node:
+          node.RunPreSubstitutionGatherer(debug=debug)
 
-      assert self.output_language
-      self.SubstituteMessages(self.GetSubstituter())
+    assert self.output_language
+    self.SubstituteMessages(self.GetSubstituter())
 
-      for child in process_last:
-        child.RunGatherers(recursive=recursive, debug=debug)
+    for node in self.ActiveDescendants():
+      if hasattr(node, 'RunPostSubstitutionGatherer'):
+        with node:
+          node.RunPostSubstitutionGatherer(debug=debug)
 
 
 class IdentifierNode(base.Node):
@@ -531,10 +484,6 @@ class IdentifierNode(base.Node):
 
   def DefaultAttributes(self):
     return { 'comment' : '', 'id' : '', 'systemid': 'false' }
-
-  def ItemFormatter(self, t):
-    if t == 'rc_header':
-      return grit.format.rc_header.Item()
 
   def GetId(self):
     """Returns the id of this identifier if it has one, None otherwise

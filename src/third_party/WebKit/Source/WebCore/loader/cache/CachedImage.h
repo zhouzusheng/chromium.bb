@@ -24,9 +24,10 @@
 #define CachedImage_h
 
 #include "CachedResource.h"
-#include "SVGImageCache.h"
 #include "ImageObserver.h"
 #include "IntRect.h"
+#include "LayoutTypesInlineMethods.h"
+#include "SVGImageCache.h"
 #include <wtf/Vector.h>
 
 namespace WebCore {
@@ -63,7 +64,7 @@ public:
     bool imageHasRelativeHeight() const;
     
     // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
-    IntSize imageSizeForRenderer(const RenderObject*, float multiplier); // returns the size of the complete image.
+    LayoutSize imageSizeForRenderer(const RenderObject*, float multiplier); // returns the size of the complete image.
     void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
 
     virtual void didAddClient(CachedResourceClient*);
@@ -72,9 +73,7 @@ public:
     virtual void allClientsRemoved();
     virtual void destroyDecodedData();
 
-    virtual bool likelyToBeUsedSoon();
-
-    virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
+    virtual void data(PassRefPtr<ResourceBuffer> data, bool allDataReceived);
     virtual void error(CachedResource::Status);
     virtual void setResponse(const ResourceResponse&);
     
@@ -82,8 +81,7 @@ public:
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return true; }
 
     virtual bool isImage() const { return true; }
-    bool stillNeedsLoad() const { return !errorOccurred() && status() == Unknown && !isLoading(); }
-    void load();
+    virtual bool stillNeedsLoad() const OVERRIDE { return !errorOccurred() && status() == Unknown && !isLoading(); }
 
     // ImageObserver
     virtual void decodedSizeChanged(const Image* image, int delta);

@@ -7,6 +7,7 @@
 '''
 
 import os
+import struct
 
 from grit import exception
 from grit import lazy_re
@@ -14,9 +15,57 @@ from grit import util
 from grit.gather import interface
 
 
+_PNG_SCALE_CHUNK = '\0\0\0\0csCl\xc1\x30\x60\x4d'
+
+
 def _RescaleImage(data, from_scale, to_scale):
-  # TODO(benrg): Actually rescale the image.
+  if from_scale != to_scale:
+    assert from_scale == 100
+    # Rather than rescaling the image we add a custom chunk directing Chrome to
+    # rescale it on load. Just append it to the PNG data since
+    # _MoveSpecialChunksToFront will move it later anyway.
+    data += _PNG_SCALE_CHUNK
   return data
+
+
+_PNG_MAGIC = '\x89PNG\r\n\x1a\n'
+
+
+'''Special chunks to move to the front of the pak data, before the png data we
+pass to PNGCodec.'''
+_CHUNKS_TO_MOVE = frozenset('csCl npTc'.split())
+
+
+'''Any ancillary chunk not in this list is deleted from the PNG.'''
+_ANCILLARY_CHUNKS_TO_LEAVE = frozenset(
+    'bKGD cHRM gAMA iCCP pHYs sBIT sRGB tRNS'.split())
+
+
+def _MoveSpecialChunksToFront(data):
+  '''Move special chunks to the front of the data, before even the PNG header.
+  Also delete ancillary chunks that are not on our whitelist.
+  '''
+  first = []
+  rest = [_PNG_MAGIC]
+  for chunk in _ChunkifyPNG(data):
+    type = chunk[4:8]
+    critical = type < 'a'
+    if type in _CHUNKS_TO_MOVE:
+      first.append(chunk)
+    elif critical or type in _ANCILLARY_CHUNKS_TO_LEAVE:
+      rest.append(chunk)
+  return ''.join(first + rest)
+
+
+def _ChunkifyPNG(data):
+  '''Given a PNG image, yield its chunks in order.'''
+  assert data.startswith(_PNG_MAGIC)
+  pos = 8
+  while pos != len(data):
+    length = 12 + struct.unpack_from('>I', data, pos)[0]
+    assert 12 <= length <= len(data) - pos
+    yield data[pos:pos+length]
+    pos += length
 
 
 def _MakeBraceGlob(strings):
@@ -78,7 +127,9 @@ class ChromeScaledImage(interface.GathererBase):
   def GetData(self, *args):
     path, scale, req_scale = self._FindInputFile()
     data = util.ReadFile(self.grd_node.ToRealPath(path), util.BINARY)
-    return _RescaleImage(data, scale, req_scale)
+    data = _RescaleImage(data, scale, req_scale)
+    data = _MoveSpecialChunksToFront(data)
+    return data
 
   def Translate(self, *args, **kwargs):
     return self.GetData()

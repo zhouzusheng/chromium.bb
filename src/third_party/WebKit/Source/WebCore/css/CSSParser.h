@@ -47,7 +47,6 @@ namespace WebCore {
 
 class CSSBorderImageSliceValue;
 class CSSPrimitiveValue;
-class CSSProperty;
 class CSSSelectorList;
 class CSSValue;
 class CSSValueList;
@@ -282,6 +281,9 @@ public:
     StyleRuleBase* createPageRule(PassOwnPtr<CSSParserSelector> pageSelector);
     StyleRuleBase* createRegionRule(CSSSelectorVector* regionSelector, RuleList* rules);
     StyleRuleBase* createMarginAtRule(CSSSelector::MarginBoxType);
+#if ENABLE(SHADOW_DOM)
+    StyleRuleBase* createHostRule(RuleList* rules);
+#endif
     void startDeclarationsForMarginBox();
     void endDeclarationsForMarginBox();
 
@@ -366,6 +368,9 @@ public:
 
     PassRefPtr<CSSPrimitiveValue> createPrimitiveNumericValue(CSSParserValue*);
     PassRefPtr<CSSPrimitiveValue> createPrimitiveStringValue(CSSParserValue*);
+#if ENABLE(CSS_VARIABLES)
+    PassRefPtr<CSSPrimitiveValue> createPrimitiveVariableNameValue(CSSParserValue*);
+#endif
 
     static KURL completeURL(const CSSParserContext&, const String& url);
 
@@ -432,6 +437,10 @@ private:
     inline void detectDashToken(int);
     template <typename CharacterType>
     inline void detectAtToken(int, bool);
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+    template <typename CharacterType>
+    inline void detectSupportsToken(int);
+#endif
 
     template <typename CharacterType>
     inline void setRuleHeaderEnd(const CharacterType*);
@@ -451,8 +460,6 @@ private:
 
     bool validWidth(CSSParserValue*);
     bool validHeight(CSSParserValue*);
-
-    void checkForOrphanedUnits();
 
     void deleteFontFaceOnlyValues();
 
@@ -482,6 +489,9 @@ private:
     enum ParsingMode {
         NormalMode,
         MediaQueryMode,
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        SupportsMode,
+#endif
         NthChildMode
     };
 
@@ -527,19 +537,20 @@ private:
 
     // defines units allowed for a certain property, used in parseUnit
     enum Units {
-        FUnknown   = 0x0000,
-        FInteger   = 0x0001,
-        FNumber    = 0x0002,  // Real Numbers
-        FPercent   = 0x0004,
-        FLength    = 0x0008,
-        FAngle     = 0x0010,
-        FTime      = 0x0020,
+        FUnknown = 0x0000,
+        FInteger = 0x0001,
+        FNumber = 0x0002, // Real Numbers
+        FPercent = 0x0004,
+        FLength = 0x0008,
+        FAngle = 0x0010,
+        FTime = 0x0020,
         FFrequency = 0x0040,
-        FRelative  = 0x0100,
-#if ENABLE(CSS_IMAGE_RESOLUTION)
-        FResolution= 0x0200,
+        FPositiveInteger = 0x0080,
+        FRelative = 0x0100,
+#if ENABLE(CSS_IMAGE_RESOLUTION) || ENABLE(RESOLUTION_MEDIA_QUERY)
+        FResolution = 0x0200,
 #endif
-        FNonNeg    = 0x0400
+        FNonNeg = 0x0400
     };
 
     friend inline Units operator|(Units a, Units b)

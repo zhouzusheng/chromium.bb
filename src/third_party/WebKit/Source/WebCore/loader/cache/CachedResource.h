@@ -45,9 +45,9 @@ class CachedMetadata;
 class CachedResourceClient;
 class CachedResourceHandleBase;
 class CachedResourceLoader;
-class Frame;
 class InspectorResource;
 class PurgeableBuffer;
+class ResourceBuffer;
 class SecurityOrigin;
 class SubresourceLoader;
 
@@ -61,6 +61,7 @@ class CachedResource {
     
 public:
     enum Type {
+        MainResource,
         ImageResource,
         CSSStyleSheet,
         Script,
@@ -90,6 +91,7 @@ public:
         Cached,       // regular case
         Canceled,
         LoadError,
+        TimeoutError,
         DecodeError
     };
 
@@ -100,8 +102,11 @@ public:
 
     virtual void setEncoding(const String&) { }
     virtual String encoding() const { return String(); }
-    virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
+    virtual void data(PassRefPtr<ResourceBuffer> data, bool allDataReceived);
     virtual void error(CachedResource::Status);
+
+    void setResourceError(const ResourceError& error) { m_error = error; }
+    const ResourceError& resourceError() const { return m_error; }
 
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return false; }
 
@@ -144,13 +149,14 @@ public:
 
     bool isLoading() const { return m_loading; }
     void setLoading(bool b) { m_loading = b; }
+    virtual bool stillNeedsLoad() const { return false; }
 
     SubresourceLoader* loader() { return m_loader.get(); }
 
     virtual bool isImage() const { return false; }
     bool ignoreForRequestCount() const
     {
-        return false
+        return type() == MainResource
 #if ENABLE(LINK_PREFETCH)
             || type() == LinkPrefetch
             || type() == LinkSubresource
@@ -178,7 +184,7 @@ public:
     
     void stopLoading();
 
-    SharedBuffer* data() const { ASSERT(!m_purgeableData); return m_data.get(); }
+    ResourceBuffer* resourceBuffer() const { ASSERT(!m_purgeableData); return m_data.get(); }
 
     virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
     virtual void setResponse(const ResourceResponse&);
@@ -206,18 +212,16 @@ public:
     void setAccept(const String& accept) { m_accept = accept; }
 
     bool wasCanceled() const { return m_status == Canceled; }
-    bool errorOccurred() const { return (m_status == LoadError || m_status == DecodeError); }
-    bool loadFailedOrCanceled() { return m_status == Canceled || m_status == LoadError; }
+    bool errorOccurred() const { return (m_status == LoadError || m_status == DecodeError || m_status == TimeoutError); }
+    bool loadFailedOrCanceled() { return m_status == Canceled || m_status == LoadError || m_status == TimeoutError; }
+    bool timedOut() const { return m_status == TimeoutError; }
 
-    bool sendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
+    bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
     
     virtual void destroyDecodedData() { }
 
     void setOwningCachedResourceLoader(CachedResourceLoader* cachedResourceLoader) { m_owningCachedResourceLoader = cachedResourceLoader; }
     
-    // MemoryCache does not destroy the decoded data of a CachedResource if the decoded data will be likely used.
-    virtual bool likelyToBeUsedSoon() { return false; }
-
     bool isPreloaded() const { return m_preloadCount; }
     void increasePreloadCount() { ++m_preloadCount; }
     void decreasePreloadCount() { ASSERT(m_preloadCount); --m_preloadCount; }
@@ -290,7 +294,7 @@ protected:
     ResourceResponse m_response;
     double m_responseTimestamp;
 
-    RefPtr<SharedBuffer> m_data;
+    RefPtr<ResourceBuffer> m_data;
     OwnPtr<PurgeableBuffer> m_purgeableData;
     Timer<CachedResource> m_decodedDataDeletionTimer;
 
@@ -303,7 +307,12 @@ private:
     double currentAge() const;
     double freshnessLifetime() const;
 
+    void addAdditionalRequestHeaders(CachedResourceLoader*);
+    void failBeforeStarting();
+
     RefPtr<CachedMetadata> m_cachedMetadata;
+
+    ResourceError m_error;
 
     double m_lastDecodedAccessTime; // Used as a "thrash guard" in the cache
     double m_loadFinishTime;

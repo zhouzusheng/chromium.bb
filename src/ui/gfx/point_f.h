@@ -11,21 +11,41 @@
 #include "ui/gfx/point_base.h"
 
 namespace gfx {
-class Point;
 
 // A floating version of gfx::Point.
 class UI_EXPORT PointF : public PointBase<PointF, float> {
  public:
   PointF();
   PointF(float x, float y);
-  explicit PointF(Point& point);
-  ~PointF() {}
+  ~PointF();
 
-  Point ToPoint() const;
+  PointF Scale(float scale) const WARN_UNUSED_RESULT {
+    return Scale(scale, scale);
+  }
+
+  PointF Scale(float x_scale, float y_scale) const WARN_UNUSED_RESULT {
+    return PointF(x() * x_scale, y() * y_scale);
+  }
 
   // Returns a string representation of point.
   std::string ToString() const;
 };
+
+inline bool operator==(const PointF& lhs, const PointF& rhs) {
+  return lhs.x() == rhs.x() && lhs.y() == rhs.y();
+}
+
+inline bool operator!=(const PointF& lhs, const PointF& rhs) {
+  return !(lhs == rhs);
+}
+
+inline PointF operator+(PointF lhs, PointF rhs) {
+  return lhs.Add(rhs);
+}
+
+inline PointF operator-(PointF lhs, PointF rhs) {
+  return lhs.Subtract(rhs);
+}
 
 #if !defined(COMPILER_MSVC)
 extern template class PointBase<PointF, float>;

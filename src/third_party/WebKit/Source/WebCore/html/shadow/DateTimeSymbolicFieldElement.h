@@ -26,7 +26,7 @@
 #ifndef DateTimeSymbolicFieldElement_h
 #define DateTimeSymbolicFieldElement_h
 
-#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFieldElement.h"
 
 namespace WebCore {
@@ -38,20 +38,21 @@ class DateTimeSymbolicFieldElement : public DateTimeFieldElement {
 
 protected:
     DateTimeSymbolicFieldElement(Document*, FieldOwner&, const Vector<String>&);
+    size_t symbolsSize() const { return m_symbols.size(); }
     virtual bool hasValue() const OVERRIDE FINAL;
-    virtual void setEmptyValue(const DateComponents& dateForReadOnlyField, EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
+    virtual void setEmptyValue(EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual void setValueAsInteger(int, EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual int valueAsInteger() const OVERRIDE FINAL;
 
 private:
     static const int invalidIndex = -1;
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE FINAL;
     String visibleEmptyValue() const;
 
     // DateTimeFieldElement functions.
     virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE FINAL;
     virtual int maximum() const OVERRIDE FINAL;
+    virtual float maximumWidth(const Font&) OVERRIDE;
     virtual int minimum() const OVERRIDE FINAL;
     virtual void stepDown() OVERRIDE FINAL;
     virtual void stepUp() OVERRIDE FINAL;

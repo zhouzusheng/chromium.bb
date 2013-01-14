@@ -73,6 +73,7 @@ public:
     void resetState();
 
     virtual void causesRecompilation(ErrorString*, bool*);
+    virtual void recompileScript() = 0;
     virtual void isSampling(ErrorString*, bool*);
     virtual void hasHeapProfiler(ErrorString*, bool*);
 
@@ -98,6 +99,8 @@ public:
 
     virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result);
     virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId);
+
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
     InspectorProfilerAgent(InstrumentingAgents*, InspectorConsoleAgent*, InspectorState*, InjectedScriptManager*);

@@ -188,6 +188,10 @@ PlatformContextSkia::PlatformContextSkia(SkCanvas* canvas)
     , m_accelerated(false)
     , m_deferred(false)
     , m_drawingToImageBuffer(false)
+    , m_deviceScaleFactor(1)
+#if defined(SK_SUPPORT_HINTING_SCALE_FACTOR)
+    , m_hintingScaleFactor(SK_Scalar1)
+#endif
 {
     m_stateStack.append(State());
     m_state = &m_stateStack.last();
@@ -357,6 +361,9 @@ void PlatformContextSkia::setupPaintCommon(SkPaint* paint) const
     paint->setAntiAlias(m_state->m_useAntialiasing);
     paint->setXfermodeMode(m_state->m_xferMode);
     paint->setLooper(m_state->m_looper);
+#if defined(SK_SUPPORT_HINTING_SCALE_FACTOR)
+    paint->setHintingScaleFactor(m_hintingScaleFactor);
+#endif
 }
 
 void PlatformContextSkia::setupShader(SkPaint* paint, Gradient* grad, Pattern* pat, SkColor color) const
@@ -405,6 +412,10 @@ float PlatformContextSkia::setupPaintForStroking(SkPaint* paint, SkRect* rect, i
         switch (m_state->m_strokeStyle) {
         case NoStroke:
         case SolidStroke:
+#if ENABLE(CSS3_TEXT)
+        case DoubleStroke:
+        case WavyStroke: // FIXME: https://bugs.webkit.org/show_bug.cgi?id=93509 - Needs platform support.
+#endif // CSS3_TEXT
             break;
         case DashedStroke:
             width = m_state->m_dashRatio * width;

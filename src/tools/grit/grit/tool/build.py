@@ -19,6 +19,37 @@ from grit.tool import interface
 from grit import shortcuts
 
 
+# It would be cleaner to have each module register itself, but that would
+# require importing all of them on every run of GRIT.
+'''Map from <output> node types to modules under grit.format.'''
+_format_modules = {
+  'android':                  'android_xml',
+  'c_format':                 'c_format',
+  'chrome_messages_json':     'chrome_messages_json',
+  'data_package':             'data_pack',
+  'js_map_format':            'js_map_format',
+  'rc_all':                   'rc',
+  'rc_translateable':         'rc',
+  'rc_nontranslateable':      'rc',
+  'rc_header':                'rc_header',
+  'resource_map_header':      'resource_map',
+  'resource_map_source':      'resource_map',
+  'resource_file_map_source': 'resource_map',
+}
+_format_modules.update((type, 'policy_templates.template_formatter')
+    for type in 'adm plist plist_strings admx adml doc json reg'.split())
+
+
+def GetFormatter(type):
+  modulename = 'grit.format.' + _format_modules[type]
+  __import__(modulename)
+  module = sys.modules[modulename]
+  try:
+    return module.Format
+  except AttributeError:
+    return module.GetFormatter(type)
+
+
 class RcBuilder(interface.Tool):
   '''A tool that builds RC files and resource header files for compilation.
 
@@ -106,7 +137,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
     self.res.SetOutputLanguage('en')
-    self.res.RunGatherers(recursive = True)
+    self.res.RunGatherers()
     self.Process()
     return 0
 
@@ -139,14 +170,14 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # be written into the target files (skip markers).
     from grit.node import include
     from grit.node import message
-    for node in start_node.inorder():
+    for node in start_node:
       # Same trick data_pack.py uses to see what nodes actually result in
       # real items.
       if (isinstance(node, include.IncludeNode) or
           isinstance(node, message.MessageNode)):
         text_ids = node.GetTextualIds()
         # Mark the item to be skipped if it wasn't in the whitelist.
-        if text_ids and not text_ids[0] in whitelist_names:
+        if text_ids and text_ids[0] not in whitelist_names:
           node.SetWhitelistMarkedAsSkip(True)
 
   @staticmethod
@@ -156,39 +187,14 @@ are exported to translation interchange files (e.g. XMB files), etc.
 
     Args:
       node: grit.node.base.Node subclass
-      output_node: grit.node.io.File
+      output_node: grit.node.io.OutputNode
       outfile: open filehandle
     '''
-    # See if the node should be skipped by a whitelist.
-    # Note: Some Format calls have side effects, so Format is always called
-    # and the whitelist is used to only avoid the output.
-    should_write = not node.WhitelistMarkedAsSkip()
-
     base_dir = util.dirname(output_node.GetOutputFilename())
 
-    try:
-      formatter = node.ItemFormatter(output_node.GetType())
-      if formatter:
-        formatted = formatter.Format(node, output_node.GetLanguage(),
-                                     output_dir=base_dir)
-        if should_write:
-          outfile.write(formatted)
-    except:
-      print u'Error processing node %s' % unicode(node)
-      raise
-
-    for child in node.children:
-      RcBuilder.ProcessNode(child, output_node, outfile)
-
-    try:
-      if formatter:
-        formatted = formatter.FormatEnd(node, output_node.GetLanguage(),
-                                        output_dir=base_dir)
-        if should_write:
-          outfile.write(formatted)
-    except:
-      print u'Error processing node %s' % unicode(node)
-      raise
+    formatter = GetFormatter(output_node.GetType())
+    formatted = formatter(node, output_node.GetLanguage(), output_dir=base_dir)
+    outfile.writelines(formatted)
 
 
   def Process(self):
@@ -222,7 +228,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
           'resource_map_source', 'resource_file_map_source'):
         encoding = 'cp1252'
       elif output.GetType() in ('android', 'c_format', 'js_map_format', 'plist',
-                                'plist_strings', 'doc', 'json'):
+                                'plist_strings', 'doc', 'json',
+                                'chrome_messages_json'):
         encoding = 'utf_8'
       else:
         # TODO(gfeher) modify here to set utf-8 encoding for admx/adml
@@ -232,10 +239,6 @@ are exported to translation interchange files (e.g. XMB files), etc.
       self.res.SetOutputLanguage(output.GetLanguage())
       self.res.SetOutputContext(output.GetContext())
       self.res.SetDefines(self.defines)
-
-      # TODO(joi) Handle this more gracefully
-      import grit.format.rc_header
-      grit.format.rc_header.Item.ids_ = {}
 
       # Make the output directory if it doesn't exist.
       outdir = os.path.split(output.GetOutputFilename())[0]
@@ -286,8 +289,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # and non-official build.
     warnings = (self.res.UberClique().MissingTranslationsReport().
         encode('ascii', 'replace'))
-    if warnings and self.defines.get('_google_chrome', False):
-      print warnings
+    if warnings:
+      self.VerboseOut(warnings)
     if self.res.UberClique().HasMissingTranslations():
       print self.res.UberClique().missing_translations_
       sys.exit(-1)

@@ -26,7 +26,7 @@
 #ifndef DateTimeFieldElement_h
 #define DateTimeFieldElement_h
 
-#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 
 #include "HTMLDivElement.h"
 
@@ -34,6 +34,7 @@ namespace WebCore {
 
 class DateComponents;
 class DateTimeFieldsState;
+class Font;
 
 // DateTimeFieldElement is base class of date time field element.
 class DateTimeFieldElement : public HTMLElement {
@@ -56,22 +57,23 @@ public:
         virtual bool focusOnNextField(const DateTimeFieldElement&) = 0;
         virtual bool focusOnPreviousField(const DateTimeFieldElement&) = 0;
         virtual bool isFieldOwnerDisabledOrReadOnly() const = 0;
+        virtual AtomicString localeIdentifier() const = 0;
     };
 
     virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool hasValue() const = 0;
     bool isReadOnly() const;
+    virtual float maximumWidth(const Font&);
     virtual void populateDateTimeFieldsState(DateTimeFieldsState&) = 0;
     void removeEventHandler() { m_fieldOwner = 0; }
     void setReadOnly();
-    virtual void setEmptyValue(const DateComponents& dateForReadOnlyField, EventBehavior = DispatchNoEvent) = 0;
+    virtual void setEmptyValue(EventBehavior = DispatchNoEvent) = 0;
     virtual void setValueAsDate(const DateComponents&) = 0;
-    virtual void setValueAsDateTimeFieldsState(const DateTimeFieldsState&, const DateComponents& dateForReadOnlyField) = 0;
+    virtual void setValueAsDateTimeFieldsState(const DateTimeFieldsState&) = 0;
     virtual void setValueAsInteger(int, EventBehavior = DispatchNoEvent) = 0;
     virtual void stepDown() = 0;
     virtual void stepUp() = 0;
     virtual String value() const = 0;
-    double valueAsDouble() const;
     virtual int valueAsInteger() const = 0;
     virtual String visibleValue() const = 0;
 
@@ -82,15 +84,16 @@ protected:
     void focusOnNextField();
     virtual void handleKeyboardEvent(KeyboardEvent*) = 0;
     void initialize(const AtomicString& shadowPseudoId, const String& axHelpText);
+    Locale& localeForOwner() const;
+    AtomicString localeIdentifier() const;
     virtual int maximum() const = 0;
     virtual int minimum() const = 0;
-    virtual double unitInMillisecond() const = 0;
     void updateVisibleValue(EventBehavior);
 
 private:
     void defaultKeyboardEventHandler(KeyboardEvent*);
+    virtual bool isDateTimeFieldElement() const OVERRIDE;
     virtual bool isFocusable() const OVERRIDE FINAL;
-    bool isRTL() const;
     virtual bool supportsFocus() const OVERRIDE FINAL;
 
     FieldOwner* m_fieldOwner;

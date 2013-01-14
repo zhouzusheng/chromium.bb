@@ -38,6 +38,8 @@
 #include "HistoryController.h"
 #include "IconController.h"
 #include "IconURL.h"
+#include "LayoutMilestones.h"
+#include "MixedContentChecker.h"
 #include "PolicyChecker.h"
 #include "ResourceHandle.h"
 #include "ResourceLoadNotifier.h"
@@ -92,6 +94,7 @@ public:
     ResourceLoadNotifier* notifier() const { return &m_notifer; }
     SubframeLoader* subframeLoader() const { return &m_subframeLoader; }
     IconController* icon() const { return &m_icon; }
+    MixedContentChecker* mixedContentChecker() const { return &m_mixedContentChecker; }
 
     void prepareForHistoryNavigation();
     void setupForReplace();
@@ -174,12 +177,8 @@ public:
 
     CachePolicy subresourceCachePolicy() const;
 
+    void didLayout(LayoutMilestones);
     void didFirstLayout();
-
-    // FIXME: didFirstVisuallyNonEmptyLayout() and didNewFirstVisuallyNonEmptyLayout() should be merged.
-    // The only reason for both to exist is to experiment with different heuristics for the time being.
-    void didFirstVisuallyNonEmptyLayout();
-    void didNewFirstVisuallyNonEmptyLayout();
 
     void loadedResourceFromMemoryCache(CachedResource*);
     void tellClientAboutPastMemoryCacheLoads();
@@ -215,11 +214,6 @@ public:
     // the sandbox attribute of any parent frames.
     void forceSandboxFlags(SandboxFlags flags) { m_forcedSandboxFlags |= flags; }
     SandboxFlags effectiveSandboxFlags() const;
-
-    // Mixed content related functions.
-    static bool isMixedContent(SecurityOrigin* context, const KURL&);
-    bool checkIfDisplayInsecureContent(SecurityOrigin* context, const KURL&);
-    bool checkIfRunInsecureContent(SecurityOrigin* context, const KURL&);
 
     bool checkIfFormActionAllowedByCSP(const KURL&) const;
 
@@ -377,12 +371,16 @@ private:
     Frame* m_frame;
     FrameLoaderClient* m_client;
 
+    // FIXME: These should be OwnPtr<T> to reduce build times and simplify
+    // header dependencies unless performance testing proves otherwise.
+    // Some of these could be lazily created for memory savings on devices.
     mutable PolicyChecker m_policyChecker;
     mutable HistoryController m_history;
     mutable ResourceLoadNotifier m_notifer;
     mutable SubframeLoader m_subframeLoader;
     mutable FrameLoaderStateMachine m_stateMachine;
     mutable IconController m_icon;
+    mutable MixedContentChecker m_mixedContentChecker;
 
     class FrameProgressTracker;
     OwnPtr<FrameProgressTracker> m_progressTracker;

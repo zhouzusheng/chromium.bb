@@ -34,7 +34,7 @@
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "KeyboardEvent.h"
-#include "LocalizedDate.h"
+#include "PlatformLocale.h"
 #include <limits>
 #include <wtf/CurrentTime.h>
 #include <wtf/DateMath.h>
@@ -156,7 +156,7 @@ String BaseDateAndTimeInputType::localizeValue(const String& proposedValue) cons
     if (!parseToDateComponents(proposedValue, &date))
         return proposedValue;
 
-    String localized = formatLocalizedDate(date);
+    String localized = element()->locale().formatDateTime(date);
     return localized.isEmpty() ? proposedValue : localized;
 }
 
@@ -170,7 +170,7 @@ String BaseDateAndTimeInputType::convertFromVisibleValue(const String& visibleVa
     if (visibleValue.isEmpty())
         return visibleValue;
 
-    double parsedValue = parseLocalizedDate(visibleValue, dateType());
+    double parsedValue = element()->locale().parseDateTime(visibleValue, dateType());
     if (!isfinite(parsedValue))
         return visibleValue;
 
@@ -180,6 +180,11 @@ String BaseDateAndTimeInputType::convertFromVisibleValue(const String& visibleVa
 String BaseDateAndTimeInputType::sanitizeValue(const String& proposedValue) const
 {
     return typeMismatchFor(proposedValue) ? String() : proposedValue;
+}
+
+bool BaseDateAndTimeInputType::supportsReadOnly() const
+{
+    return true;
 }
 
 } // namespace WebCore

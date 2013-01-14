@@ -203,6 +203,14 @@ void SkBitmapProcShader::shadeSpan(int x, int y, SkPMColor dstC[], int count) {
     }
 }
 
+SkShader::ShadeProc SkBitmapProcShader::asAShadeProc(void** ctx) {
+    if (fState.getShaderProc32()) {
+        *ctx = &fState;
+        return (ShadeProc)fState.getShaderProc32();
+    }
+    return NULL;
+}
+
 void SkBitmapProcShader::shadeSpan16(int x, int y, uint16_t dstC[], int count) {
     const SkBitmapProcState& state = fState;
     if (state.getShaderProc16()) {
@@ -298,8 +306,6 @@ SkShader* SkShader::CreateBitmapShader(const SkBitmap& src,
     }
     return shader;
 }
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkBitmapProcShader)
 
 ///////////////////////////////////////////////////////////////////////////////
 

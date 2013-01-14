@@ -13,6 +13,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
@@ -28,7 +29,8 @@ Canvas::Canvas(const gfx::Size& size,
       : scale_factor_(scale_factor),
         owned_canvas_(NULL),
         canvas_(NULL) {
-  gfx::Size pixel_size = size.Scale(ui::GetScaleFactorScale(scale_factor));
+  gfx::Size pixel_size = gfx::ToFlooredSize(size.Scale(
+      ui::GetScaleFactorScale(scale_factor)));
   owned_canvas_.reset(new skia::PlatformCanvas(pixel_size.width(),
                                                pixel_size.height(),
                                                is_opaque));
@@ -74,7 +76,8 @@ void Canvas::RecreateBackingCanvas(const gfx::Size& size,
                                    ui::ScaleFactor scale_factor,
                                    bool is_opaque) {
   scale_factor_ = scale_factor;
-  gfx::Size pixel_size = size.Scale(ui::GetScaleFactorScale(scale_factor));
+  gfx::Size pixel_size = gfx::ToFlooredSize(
+      size.Scale(ui::GetScaleFactorScale(scale_factor)));
   owned_canvas_.reset(new skia::PlatformCanvas(pixel_size.width(),
                                                pixel_size.height(),
                                                is_opaque));
@@ -287,6 +290,12 @@ void Canvas::DrawImageInt(const gfx::ImageSkia& image, int x, int y) {
   DrawImageInt(image, x, y, paint);
 }
 
+void Canvas::DrawImageInt(const gfx::ImageSkia& image, int x, int y, uint8 a) {
+  SkPaint paint;
+  paint.setAlpha(a);
+  DrawImageInt(image, x, y, paint);
+}
+
 void Canvas::DrawImageInt(const gfx::ImageSkia& image,
                           int x, int y,
                           const SkPaint& paint) {
@@ -480,7 +489,7 @@ void Canvas::EndPlatformPaint() {
   skia::EndPlatformPaint(canvas_);
 }
 
-void Canvas::Transform(const ui::Transform& transform) {
+void Canvas::Transform(const gfx::Transform& transform) {
   canvas_->concat(transform.matrix());
 }
 

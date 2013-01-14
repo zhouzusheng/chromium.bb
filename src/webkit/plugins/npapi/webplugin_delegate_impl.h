@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/time.h"
 #include "base/timer.h"
 #include "build/build_config.h"
 #include "third_party/npapi/bindings/npapi.h"
@@ -75,10 +74,7 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
     PLUGIN_QUIRK_HANDLE_MOUSE_CAPTURE = 16384,  // Windows
     PLUGIN_QUIRK_WINDOWLESS_NO_RIGHT_CLICK = 32768,  // Linux
     PLUGIN_QUIRK_IGNORE_FIRST_SETWINDOW_CALL = 65536,  // Windows.
-    PLUGIN_QUIRK_REPARENT_IN_BROWSER = 131072,  // Windows
-    PLUGIN_QUIRK_PATCH_GETKEYSTATE = 262144,  // Windows
-    PLUGIN_QUIRK_EMULATE_IME = 524288,  // Windows.
-    PLUGIN_QUIRK_PATCH_VM_API = 1048576,  // Windows.
+    PLUGIN_QUIRK_EMULATE_IME = 131072,  // Windows.
   };
 
   static WebPluginDelegateImpl* Create(const FilePath& filename,
@@ -184,12 +180,6 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // Informs the plugin that IME composition has completed.
   // If |text| is empty, IME was cancelled.
   void ImeCompositionCompleted(const string16& text);
-#ifndef NP_NO_CARBON
-  // Informs the delegate that the plugin set a Carbon ThemeCursor.
-  void SetThemeCursor(ThemeCursor cursor);
-  // Informs the delegate that the plugin set a Carbon Cursor.
-  void SetCarbonCursor(const Cursor* cursor);
-#endif
   // Informs the delegate that the plugin set a Cocoa NSCursor.
   void SetNSCursor(NSCursor* cursor);
 
@@ -375,7 +365,6 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
   // receives a WM_LBUTTONDOWN/WM_RBUTTONDOWN message via NPP_HandleEvent.
 
   HWND dummy_window_for_activation_;
-  HWND parent_proxy_window_;
   bool CreateDummyWindowForActivation();
 
   // Returns true if the event passed in needs to be tracked for a potential
@@ -395,18 +384,6 @@ class WEBKIT_PLUGINS_EXPORT WebPluginDelegateImpl : public WebPluginDelegate {
 
   // SetCursor interceptor for windowless plugins.
   static HCURSOR WINAPI SetCursorPatch(HCURSOR cursor);
-
-  // GetKeyStatePatch interceptor for UIPI Flash plugin.
-  static SHORT WINAPI GetKeyStatePatch(int vkey);
-
-  static BOOL WINAPI VirtualProtectPatch(LPVOID address,
-                                         SIZE_T size,
-                                         DWORD new_protect,
-                                         PDWORD old_protect);
-
-  static BOOL WINAPI VirtualFreePatch(LPVOID address,
-                                      SIZE_T size,
-                                      DWORD free_type);
 
   // RegEnumKeyExW interceptor.
   static LONG WINAPI RegEnumKeyExWPatch(

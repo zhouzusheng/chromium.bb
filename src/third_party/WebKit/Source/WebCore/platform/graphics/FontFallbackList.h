@@ -39,6 +39,7 @@ class FontSelector;
 const int cAllFamiliesScanned = -1;
 
 class FontFallbackList : public RefCounted<FontFallbackList> {
+    WTF_MAKE_NONCOPYABLE(FontFallbackList);
 public:
     static PassRefPtr<FontFallbackList> create() { return adoptRef(new FontFallbackList()); }
 
@@ -55,18 +56,11 @@ public:
     unsigned fontSelectorVersion() const { return m_fontSelectorVersion; }
     unsigned generation() const { return m_generation; }
 
-    struct GlyphPagesHashTraits : HashTraits<int> {
-        static const int minimumTableSize = 16;
-    };
-    typedef HashMap<int, GlyphPageTreeNode*, DefaultHash<int>::Hash, GlyphPagesHashTraits> GlyphPages;
+    typedef HashMap<int, GlyphPageTreeNode*, DefaultHash<int>::Hash> GlyphPages;
     GlyphPageTreeNode* glyphPageZero() const { return m_pageZero; }
     const GlyphPages& glyphPages() const { return m_pages; }
 
 private:
-    friend class SVGTextRunRenderingContext;
-    void setGlyphPageZero(GlyphPageTreeNode* pageZero) { m_pageZero = pageZero; }
-    void setGlyphPages(const GlyphPages& pages) { m_pages = pages; }
-
     FontFallbackList();
 
     const SimpleFontData* primarySimpleFontData(const Font* f)
@@ -83,8 +77,10 @@ private:
     void setPlatformFont(const FontPlatformData&);
 
     void releaseFontData();
-
-    mutable Vector<pair<const FontData*, bool>, 1> m_fontList;
+    void setGlyphPageZero(GlyphPageTreeNode* pageZero) { m_pageZero = pageZero; }
+    void setGlyphPages(const GlyphPages& pages) { m_pages = pages; }
+    
+    mutable Vector<RefPtr<FontData>, 1> m_fontList;
     mutable GlyphPages m_pages;
     mutable GlyphPageTreeNode* m_pageZero;
     mutable const SimpleFontData* m_cachedPrimarySimpleFontData;
@@ -96,6 +92,7 @@ private:
     mutable bool m_loadingCustomFonts : 1;
 
     friend class Font;
+    friend class SVGTextRunRenderingContext;
 };
 
 }

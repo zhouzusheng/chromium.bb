@@ -10,6 +10,7 @@
 #include "build/build_config.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/size_base.h"
+#include "ui/gfx/size_f.h"
 
 #if defined(OS_WIN)
 typedef struct tagSIZE SIZE;
@@ -42,8 +43,28 @@ class UI_EXPORT Size : public SizeBase<Size, int> {
   CGSize ToCGSize() const;
 #endif
 
+  operator SizeF() const {
+    return SizeF(width(), height());
+  }
+
+  SizeF Scale(float scale) const WARN_UNUSED_RESULT {
+    return Scale(scale, scale);
+  }
+
+  SizeF Scale(float x_scale, float y_scale) const WARN_UNUSED_RESULT {
+    return SizeF(width() * x_scale, height() * y_scale);
+  }
+
   std::string ToString() const;
 };
+
+inline bool operator==(const Size& lhs, const Size& rhs) {
+  return lhs.width() == rhs.width() && lhs.height() == rhs.height();
+}
+
+inline bool operator!=(const Size& lhs, const Size& rhs) {
+  return !(lhs == rhs);
+}
 
 #if !defined(COMPILER_MSVC)
 extern template class SizeBase<Size, int>;

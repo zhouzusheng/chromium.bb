@@ -36,6 +36,7 @@
 #include <string.h>
 #include "attributes.h"
 #include "libavutil/avconfig.h"
+#include "symbols.h"
 
 #if AV_HAVE_BIGENDIAN
 #   define AV_NE(be, le) (be)
@@ -62,12 +63,12 @@
 #define FFALIGN(x, a) (((x)+(a)-1)&~((a)-1))
 
 /* misc math functions */
-extern const uint8_t ff_log2_tab[256];
+extern AVUTIL_SYMBOL const uint8_t ff_log2_tab[256];
 
 /**
  * Reverse the order of the bits of an 8-bits unsigned integer.
  */
-extern const uint8_t av_reverse[256];
+extern AVUTIL_SYMBOL const uint8_t av_reverse[256];
 
 static av_always_inline av_const int av_log2_c(unsigned int v)
 {
@@ -184,6 +185,30 @@ static av_always_inline av_const unsigned av_clip_uintp2_c(int a, int p)
 {
     if (a & ~((1<<p) - 1)) return -a >> 31 & ((1<<p) - 1);
     else                   return  a;
+}
+
+/**
+ * Add two signed 32-bit values with saturation.
+ *
+ * @param  a one value
+ * @param  b another value
+ * @return sum with signed saturation
+ */
+static av_always_inline int av_sat_add32_c(int a, int b)
+{
+    return av_clipl_int32((int64_t)a + b);
+}
+
+/**
+ * Add a doubled value to another value with saturation at both stages.
+ *
+ * @param  a first value
+ * @param  b value doubled and added to a
+ * @return sum with signed saturation
+ */
+static av_always_inline int av_sat_dadd32_c(int a, int b)
+{
+    return av_sat_add32(a, av_sat_add32(b, b));
 }
 
 /**
@@ -391,6 +416,12 @@ static av_always_inline av_const int av_popcount64_c(uint64_t x)
 #endif
 #ifndef av_clip_uintp2
 #   define av_clip_uintp2   av_clip_uintp2_c
+#endif
+#ifndef av_sat_add32
+#   define av_sat_add32     av_sat_add32_c
+#endif
+#ifndef av_sat_dadd32
+#   define av_sat_dadd32    av_sat_dadd32_c
 #endif
 #ifndef av_clipf
 #   define av_clipf         av_clipf_c

@@ -89,6 +89,9 @@
 /* GL_CHROMIUM_get_error_query */
 #define GL_GET_ERROR_QUERY_CHROMIUM            0x84F3
 
+/* GL_CHROMIUM_command_buffer_latency_query */
+#define GL_LATENCY_QUERY_CHROMIUM              0x84F4
+
 // GL_OES_texure_3D
 #define GL_SAMPLER_3D_OES                      0x8B5F
 
@@ -100,6 +103,9 @@
 
 // GL_OES_packed_depth_stencil
 #define GL_DEPTH24_STENCIL8_OES                0x88F0
+
+// GL_OES_compressed_ETC1_RGB8_texture
+#define GL_ETC1_RGB8_OES                       0x8D64
 
 #define GL_GLEXT_PROTOTYPES 1
 

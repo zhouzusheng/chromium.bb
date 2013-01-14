@@ -476,11 +476,11 @@ void SkLinearGradient::shadeSpan16(int x, int y,
 
 /////////////////////////////////////////////////////////////////////
 
-class GrGLLinearGradient : public GrGLGradientStage {
+class GrGLLinearGradient : public GrGLGradientEffect {
 public:
 
-    GrGLLinearGradient(const GrProgramStageFactory& factory,
-                       const GrCustomStage&)
+    GrGLLinearGradient(const GrBackendEffectFactory& factory,
+                       const GrEffect&)
                        : INHERITED (factory) { }
 
     virtual ~GrGLLinearGradient() { }
@@ -491,11 +491,11 @@ public:
                         const char* outputColor,
                         const char* inputColor,
                         const TextureSamplerArray&) SK_OVERRIDE;
-    static StageKey GenKey(const GrCustomStage& s, const GrGLCaps& caps) { return 0; }
+    static EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps) { return 0; }
 
 private:
 
-    typedef GrGLGradientStage INHERITED;
+    typedef GrGLGradientEffect INHERITED;
 };
 
 /////////////////////////////////////////////////////////////////////
@@ -503,31 +503,30 @@ private:
 class GrLinearGradient : public GrGradientEffect {
 public:
 
-    GrLinearGradient(GrContext* ctx, const SkLinearGradient& shader,
-                     GrSamplerState* sampler)
-        : INHERITED(ctx, shader, sampler) { }
+    GrLinearGradient(GrContext* ctx, const SkLinearGradient& shader, SkShader::TileMode tm)
+        : INHERITED(ctx, shader, tm) { }
     virtual ~GrLinearGradient() { }
 
     static const char* Name() { return "Linear Gradient"; }
-    const GrProgramStageFactory& getFactory() const SK_OVERRIDE {
-        return GrTProgramStageFactory<GrLinearGradient>::getInstance();
+    const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<GrLinearGradient>::getInstance();
     }
 
-    typedef GrGLLinearGradient GLProgramStage;
+    typedef GrGLLinearGradient GLEffect;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     typedef GrGradientEffect INHERITED;
 };
 
 /////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrLinearGradient);
+GR_DEFINE_EFFECT_TEST(GrLinearGradient);
 
-GrCustomStage* GrLinearGradient::TestCreate(SkRandom* random,
-                                            GrContext* context,
-                                            GrTexture**) {
+GrEffect* GrLinearGradient::TestCreate(SkRandom* random,
+                                       GrContext* context,
+                                       GrTexture**) {
     SkPoint points[] = {{random->nextUScalar1(), random->nextUScalar1()},
                         {random->nextUScalar1(), random->nextUScalar1()}};
 
@@ -539,10 +538,12 @@ GrCustomStage* GrLinearGradient::TestCreate(SkRandom* random,
     SkAutoTUnref<SkShader> shader(SkGradientShader::CreateLinear(points,
                                                                  colors, stops, colorCount,
                                                                  tm));
-    GrSamplerState sampler;
-    GrCustomStage* stage = shader->asNewCustomStage(context, &sampler);
-    GrAssert(NULL != stage);
-    return stage;
+    GrEffectStage stage;
+    shader->asNewEffect(context, &stage);
+    GrAssert(NULL != stage.getEffect());
+    // const_cast and ref is a hack! Will remove when asNewEffect returns GrEffect*
+    stage.getEffect()->ref();
+    return const_cast<GrEffect*>(stage.getEffect());
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -558,22 +559,30 @@ void GrGLLinearGradient::emitFS(GrGLShaderBuilder* builder,
 
 /////////////////////////////////////////////////////////////////////
 
-GrCustomStage* SkLinearGradient::asNewCustomStage(GrContext* context,
-                                                  GrSamplerState* sampler) const {
-    SkASSERT(NULL != context && NULL != sampler);
-    sampler->matrix()->preConcat(fPtsToUnit);
-    sampler->textureParams()->setTileModeX(fTileMode);
-    sampler->textureParams()->setTileModeY(kClamp_TileMode);
-    sampler->textureParams()->setBilerp(true);
-    return SkNEW_ARGS(GrLinearGradient, (context, *this, sampler));
+bool SkLinearGradient::asNewEffect(GrContext* context, GrEffectStage* stage) const {
+    SkASSERT(NULL != context && NULL != stage);
+
+    SkAutoTUnref<GrEffect> effect(SkNEW_ARGS(GrLinearGradient, (context, *this, fTileMode)));
+
+    SkMatrix matrix;
+    if (this->getLocalMatrix(&matrix)) {
+        if (!matrix.invert(&matrix)) {
+            return false;
+        }
+        matrix.postConcat(fPtsToUnit);
+        stage->setEffect(effect, matrix);
+    } else {
+        stage->setEffect(effect, fPtsToUnit);
+    }
+
+    return true;
 }
 
 #else
 
-GrCustomStage* SkLinearGradient::asNewCustomStage(GrContext* context,
-                                                  GrSamplerState* sampler) const {
+bool SkLinearGradient::asNewEffect(GrContext*, GrEffectStage*) const {
     SkDEBUGFAIL("Should not call in GPU-less build");
-    return NULL;
+    return false;
 }
 
 #endif

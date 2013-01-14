@@ -57,7 +57,7 @@ bool IsSinglePathIsolatedFileSystem(FileSystemType type) {
   return true;
 }
 
-}
+}  // namespace
 
 static base::LazyInstance<IsolatedContext>::Leaky g_isolated_context =
     LAZY_INSTANCE_INITIALIZER;
@@ -307,7 +307,7 @@ void IsolatedContext::RemoveReference(const std::string& filesystem_id) {
   if (found == instance_map_.end())
     return;
   Instance* instance = found->second;
-  DCHECK(instance->ref_counts() > 0);
+  DCHECK_GT(instance->ref_counts(), 0);
   instance->RemoveRef();
   if (instance->ref_counts() == 0 &&
       instance->mount_type() != kFileSystemTypeExternal) {
@@ -442,6 +442,23 @@ std::string IsolatedContext::GetNewFileSystemId() const {
     id = base::HexEncode(random_data, sizeof(random_data));
   } while (instance_map_.find(id) != instance_map_.end());
   return id;
+}
+
+ScopedExternalFileSystem::ScopedExternalFileSystem(
+    const std::string& mount_name,
+    FileSystemType type,
+    const FilePath& path)
+    : mount_name_(mount_name) {
+  IsolatedContext::GetInstance()->RegisterExternalFileSystem(
+      mount_name, type, path);
+}
+
+FilePath ScopedExternalFileSystem::GetVirtualRootPath() const {
+  return IsolatedContext::GetInstance()->CreateVirtualRootPath(mount_name_);
+}
+
+ScopedExternalFileSystem::~ScopedExternalFileSystem() {
+  IsolatedContext::GetInstance()->RevokeFileSystem(mount_name_);
 }
 
 }  // namespace fileapi

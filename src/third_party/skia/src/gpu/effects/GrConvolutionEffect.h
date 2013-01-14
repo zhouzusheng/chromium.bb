@@ -34,10 +34,10 @@ public:
 
     static const char* Name() { return "Convolution"; }
 
-    typedef GrGLConvolutionEffect GLProgramStage;
+    typedef GrGLConvolutionEffect GLEffect;
 
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE;
-    virtual bool isEqual(const GrCustomStage&) const SK_OVERRIDE;
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual bool isEqual(const GrEffect&) const SK_OVERRIDE;
 
     enum {
         // This was decided based on the min allowed value for the max texture
@@ -55,7 +55,7 @@ protected:
     float fKernel[kMaxKernelWidth];
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     typedef Gr1DKernelEffect INHERITED;
 };

@@ -186,6 +186,7 @@ static const char* const kGoogleAcceptableCerts[] = {
   kSPKIHash_Google1024,
   kSPKIHash_Google2048,
   kSPKIHash_EquifaxSecureCA,
+  kSPKIHash_GeoTrustGlobal,
   NULL,
 };
 static const char* const kGoogleRejectedCerts[] = {
@@ -624,8 +625,8 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {12, true, "\006crypto\003cat", true, kNoPins, DOMAIN_NOT_PINNED },
   {25, true, "\014bigshinylock\006minazo\003net", true, kNoPins, DOMAIN_NOT_PINNED },
   {10, true, "\005crate\002io", true, kNoPins, DOMAIN_NOT_PINNED },
-  {13, false, "\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
-  {17, true, "\003www\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
+  {13, false, "\007twitter\003com", true, kTwitterComPins, DOMAIN_TWITTER_COM },
+  {17, true, "\003www\007twitter\003com", true, kTwitterComPins, DOMAIN_TWITTER_COM },
   {17, true, "\003api\007twitter\003com", false, kTwitterCDNPins, DOMAIN_TWITTER_COM },
   {19, true, "\005oauth\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
   {20, true, "\006mobile\007twitter\003com", false, kTwitterComPins, DOMAIN_TWITTER_COM },
@@ -666,6 +667,19 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {18, false, "\014makeyourlaws\003org", true, kNoPins, DOMAIN_NOT_PINNED },
   {22, false, "\003www\014makeyourlaws\003org", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, true, "\003iop\006intuit\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {14, false, "\010surfeasy\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\003www\010surfeasy\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011packagist\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, false, "\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, false, "\003www\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {19, false, "\003www\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {16, false, "\002dm\007lookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, false, "\002dm\011mylookout\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\011itriskltd\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, true, "\012stocktrade\002de", true, kNoPins, DOMAIN_NOT_PINNED },
+  {13, true, "\007rhcloud\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {22, true, "\011openshift\006redhat\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

@@ -21,7 +21,6 @@
 #include "net/base/request_priority.h"
 #include "net/base/ssl_client_cert_type.h"
 #include "net/base/ssl_config_service.h"
-#include "net/base/upload_data_stream.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
@@ -78,7 +77,7 @@ enum SpdyProtocolErrorDetails {
   PROTOCOL_ERROR_UNEXPECTED_PING,
   PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM,
   PROTOCOL_ERROR_SPDY_COMPRESSION_FAILURE,
-  PROTOCOL_ERROR_REQUST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION,
+  PROTOCOL_ERROR_REQUEST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION,
   PROTOCOL_ERROR_SYN_REPLY_NOT_RECEIVED,
   NUM_SPDY_PROTOCOL_ERROR_DETAILS
 };
@@ -365,11 +364,11 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   friend class base::RefCounted<SpdySession>;
 
   // Allow tests to access our innards for testing purposes.
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, Ping);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, ClientPing);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, FailedPing);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, GetActivePushStream);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy2Test, DeleteExpiredPushStreams);
-  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, Ping);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, ClientPing);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, FailedPing);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, GetActivePushStream);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionSpdy3Test, DeleteExpiredPushStreams);

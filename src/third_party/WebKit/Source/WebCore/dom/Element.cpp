@@ -48,6 +48,7 @@
 #include "HTMLElement.h"
 #include "HTMLFormCollection.h"
 #include "HTMLFrameOwnerElement.h"
+#include "HTMLLabelElement.h"
 #include "HTMLNames.h"
 #include "HTMLOptionsCollection.h"
 #include "HTMLParserIdioms.h"
@@ -211,7 +212,7 @@ PassRefPtr<Attr> Element::detachAttribute(size_t index)
     else
         attr = Attr::create(document(), attribute->name(), attribute->value());
 
-    mutableAttributeData()->removeAttribute(index, this);
+    removeAttributeInternal(index, NotInSynchronizationOfLazyAttribute);
     return attr.release();
 }
 
@@ -220,14 +221,11 @@ void Element::removeAttribute(const QualifiedName& name)
     if (!attributeData())
         return;
 
-    if (RefPtr<Attr> attr = attrIfExists(name))
-        attr->detachFromElementWithValue(attr->value());
-
     size_t index = attributeData()->getAttributeItemIndex(name);
     if (index == notFound)
         return;
 
-    mutableAttributeData()->removeAttribute(index, this);
+    removeAttributeInternal(index, NotInSynchronizationOfLazyAttribute);
 }
 
 void Element::setBooleanAttribute(const QualifiedName& name, bool value)
@@ -666,87 +664,72 @@ void Element::setSynchronizedLazyAttribute(const QualifiedName& name, const Atom
     setAttributeInternal(mutableAttributeData()->getAttributeItemIndex(name), name, value, InSynchronizationOfLazyAttribute);
 }
 
-inline void Element::setAttributeInternal(size_t index, const QualifiedName& name, const AtomicString& value, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
+inline void Element::setAttributeInternal(size_t index, const QualifiedName& name, const AtomicString& newValue, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
 {
     ElementAttributeData* attributeData = mutableAttributeData();
 
-    Attribute* old = index != notFound ? attributeData->attributeItem(index) : 0;
-    if (value.isNull()) {
-        if (old)
-            attributeData->removeAttribute(index, this, inSynchronizationOfLazyAttribute);
+    Attribute* existingAttribute = index != notFound ? attributeData->attributeItem(index) : 0;
+    if (newValue.isNull()) {
+        if (existingAttribute)
+            removeAttributeInternal(index, inSynchronizationOfLazyAttribute);
         return;
     }
 
-    if (!old) {
-        attributeData->addAttribute(Attribute(name, value), this, inSynchronizationOfLazyAttribute);
+    if (!existingAttribute) {
+        addAttributeInternal(name, newValue, inSynchronizationOfLazyAttribute);
         return;
     }
 
-    if (inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        willModifyAttribute(name, old->value(), value);
+    if (!inSynchronizationOfLazyAttribute)
+        willModifyAttribute(name, existingAttribute->value(), newValue);
 
+    // If there is an Attr node hooked to this attribute, the Attr::setValue() call below
+    // will write into the ElementAttributeData.
+    // FIXME: Refactor this so it makes some sense.
     if (RefPtr<Attr> attrNode = attrIfExists(name))
-        attrNode->setValue(value);
+        attrNode->setValue(newValue);
     else
-        old->setValue(value);
+        existingAttribute->setValue(newValue);
 
-    if (inSynchronizationOfLazyAttribute == NotInSynchronizationOfLazyAttribute)
-        didModifyAttribute(Attribute(old->name(), old->value()));
+    if (!inSynchronizationOfLazyAttribute)
+        didModifyAttribute(name, newValue);
 }
 
-void Element::attributeChanged(const Attribute& attribute)
+static inline AtomicString makeIdForStyleResolution(const AtomicString& value, bool inQuirksMode)
 {
-    parseAttribute(attribute);
+    if (inQuirksMode)
+        return value.lower();
+    return value;
+}
+
+void Element::attributeChanged(const QualifiedName& name, const AtomicString& newValue)
+{
+    parseAttribute(Attribute(name, newValue));
 
     document()->incDOMTreeVersion();
 
-    if (isIdAttributeName(attribute.name())) {
-        if (attribute.value() != attributeData()->idForStyleResolution()) {
-            if (attribute.isNull())
-                attributeData()->setIdForStyleResolution(nullAtom);
-            else if (document()->inQuirksMode())
-                attributeData()->setIdForStyleResolution(attribute.value().lower());
-            else
-                attributeData()->setIdForStyleResolution(attribute.value());
-            setNeedsStyleRecalc();
+    if (isIdAttributeName(name)) {
+        AtomicString oldId = attributeData()->idForStyleResolution();
+        AtomicString newId = makeIdForStyleResolution(newValue, document()->inQuirksMode());
+        if (newId != oldId) {
+            attributeData()->setIdForStyleResolution(newId);
+            StyleResolver* styleResolver = document()->styleResolverIfExists();
+            if (attached() && (!styleResolver || (styleResolver->hasSelectorForId(newId) || styleResolver->hasSelectorForId(oldId))))
+                setNeedsStyleRecalc();
         }
-    } else if (attribute.name() == HTMLNames::nameAttr)
-        setHasName(!attribute.isNull());
+    } else if (name == HTMLNames::nameAttr)
+        setHasName(!newValue.isNull());
 
     if (!needsStyleRecalc() && document()->attached()) {
         StyleResolver* styleResolver = document()->styleResolverIfExists();
-        if (!styleResolver || styleResolver->hasSelectorForAttribute(attribute.name().localName()))
+        if (!styleResolver || styleResolver->hasSelectorForAttribute(name.localName()))
             setNeedsStyleRecalc();
     }
 
-    invalidateNodeListCachesInAncestors(&attribute.name(), this);
+    invalidateNodeListCachesInAncestors(&name, this);
 
-    if (!AXObjectCache::accessibilityEnabled())
-        return;
-
-    const QualifiedName& attrName = attribute.name();
-    if (attrName == aria_activedescendantAttr) {
-        // any change to aria-activedescendant attribute triggers accessibility focus change, but document focus remains intact
-        document()->axObjectCache()->handleActiveDescendantChanged(this);
-    } else if (attrName == roleAttr) {
-        // the role attribute can change at any time, and the AccessibilityObject must pick up these changes
-        document()->axObjectCache()->handleAriaRoleChanged(this);
-    } else if (attrName == aria_valuenowAttr) {
-        // If the valuenow attribute changes, AX clients need to be notified.
-        document()->axObjectCache()->postNotification(this, AXObjectCache::AXValueChanged, true);
-    } else if (attrName == aria_labelAttr || attrName == aria_labeledbyAttr || attrName == altAttr || attrName == titleAttr) {
-        // If the content of an element changes due to an attribute change, notify accessibility.
-        document()->axObjectCache()->contentChanged(this);
-    } else if (attrName == aria_checkedAttr)
-        document()->axObjectCache()->checkedStateChanged(this);
-    else if (attrName == aria_selectedAttr)
-        document()->axObjectCache()->selectedChildrenChanged(this);
-    else if (attrName == aria_expandedAttr)
-        document()->axObjectCache()->handleAriaExpandedChange(this);
-    else if (attrName == aria_hiddenAttr)
-        document()->axObjectCache()->childrenChanged(this);
-    else if (attrName == aria_invalidAttr)
-        document()->axObjectCache()->postNotification(this, AXObjectCache::AXInvalidStatusChanged, true);
+    if (AXObjectCache::accessibilityEnabled())
+        document()->axObjectCache()->handleAttributeChanged(name, this);
 }
 
 void Element::parseAttribute(const Attribute& attribute)
@@ -843,20 +826,17 @@ void Element::parserSetAttributes(const Vector<Attribute>& attributeVector, Frag
     }
 
     // When the document is in parsing state, we cache immutable ElementAttributeData objects with the
-    // input attribute vector as key. (This cache is held by Document.)
+    // input attribute vector (and the tag name) as key. (This cache is held by Document.)
     if (!document() || !document()->parsing())
         m_attributeData = ElementAttributeData::createImmutable(filteredAttributes);
-    else if (!isHTMLElement()) {
-        // FIXME: Support attribute data sharing for non-HTML elements.
-        m_attributeData = ElementAttributeData::createImmutable(filteredAttributes);
-    } else
+    else
         m_attributeData = document()->cachedImmutableAttributeData(this, filteredAttributes);
 
     // Iterate over the set of attributes we already have on the stack in case
     // attributeChanged mutates m_attributeData.
     // FIXME: Find a way so we don't have to do this.
     for (unsigned i = 0; i < filteredAttributes.size(); ++i)
-        attributeChanged(filteredAttributes[i]);
+        attributeChanged(filteredAttributes[i].name(), filteredAttributes[i].value());
 }
 
 bool Element::hasAttributes() const
@@ -931,6 +911,13 @@ RenderObject* Element::createRenderer(RenderArena* arena, RenderStyle* style)
     return RenderObject::createObject(this, style);
 }
 
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+bool Element::isDateTimeFieldElement() const
+{
+    return false;
+}
+#endif
+
 bool Element::wasChangedSinceLastFormControlChangeEvent() const
 {
     return false;
@@ -962,16 +949,14 @@ Node::InsertionNotificationRequest Element::insertedInto(ContainerNode* insertio
     if (!nameValue.isNull())
         updateName(nullAtom, nameValue);
 
+    if (hasTagName(labelTag)) {
+        TreeScope* scope = treeScope();
+        if (scope->shouldCacheLabelsByForAttribute())
+            updateLabel(scope, nullAtom, fastGetAttribute(forAttr));
+    }
+
     return InsertionDone;
 }
-
-static inline TreeScope* treeScopeOfParent(Node* node, ContainerNode* insertionPoint)
-{
-    if (Node* parent = node->parentNode())
-        parent->treeScope();
-    return insertionPoint->treeScope();
-}
-
 
 void Element::removedFrom(ContainerNode* insertionPoint)
 {
@@ -989,11 +974,17 @@ void Element::removedFrom(ContainerNode* insertionPoint)
     if (insertionPoint->inDocument()) {
         const AtomicString& idValue = getIdAttribute();
         if (!idValue.isNull() && inDocument())
-            updateId(treeScopeOfParent(this, insertionPoint), idValue, nullAtom);
+            updateId(insertionPoint->treeScope(), idValue, nullAtom);
 
         const AtomicString& nameValue = getNameAttribute();
         if (!nameValue.isNull())
             updateName(nameValue, nullAtom);
+
+        if (hasTagName(labelTag)) {
+            TreeScope* treeScope = insertionPoint->treeScope();
+            if (treeScope->shouldCacheLabelsByForAttribute())
+                updateLabel(treeScope, fastGetAttribute(forAttr), nullAtom);
+        }
     }
 
     ContainerNode::removedFrom(insertionPoint);
@@ -1002,36 +993,33 @@ void Element::removedFrom(ContainerNode* insertionPoint)
 void Element::attach()
 {
     suspendPostAttachCallbacks();
-    RenderWidget::suspendWidgetHierarchyUpdates();
+    {
+        WidgetHierarchyUpdatesSuspensionScope suspendWidgetHierarchyUpdates;
+        createRendererIfNeeded();
 
-    createRendererIfNeeded();
-    StyleResolverParentPusher parentPusher(this);
+        StyleResolverParentPusher parentPusher(this);
+        if (parentElement() && parentElement()->isInCanvasSubtree())
+            setIsInCanvasSubtree(true);
 
-    if (parentElement() && parentElement()->isInCanvasSubtree())
-        setIsInCanvasSubtree(true);
-
-    // When a shadow root exists, it does the work of attaching the children.
-    if (ElementShadow* shadow = this->shadow()) {
-        parentPusher.push();
-        shadow->attach();
-        attachChildrenIfNeeded();
-        attachAsNode();
-    } else {
-        if (firstChild())
+        // When a shadow root exists, it does the work of attaching the children.
+        if (ElementShadow* shadow = this->shadow()) {
             parentPusher.push();
+            shadow->attach();
+        } else {
+            if (firstChild())
+                parentPusher.push();
+        }
         ContainerNode::attach();
-    }
 
-    if (hasRareData()) {   
-        ElementRareData* data = elementRareData();
-        if (data->needsFocusAppearanceUpdateSoonAfterAttach()) {
-            if (isFocusable() && document()->focusedNode() == this)
-                document()->updateFocusAppearanceSoon(false /* don't restore selection */);
-            data->setNeedsFocusAppearanceUpdateSoonAfterAttach(false);
+        if (hasRareData()) {   
+            ElementRareData* data = elementRareData();
+            if (data->needsFocusAppearanceUpdateSoonAfterAttach()) {
+                if (isFocusable() && document()->focusedNode() == this)
+                    document()->updateFocusAppearanceSoon(false /* don't restore selection */);
+                data->setNeedsFocusAppearanceUpdateSoonAfterAttach(false);
+            }
         }
     }
-
-    RenderWidget::resumeWidgetHierarchyUpdates();
     resumePostAttachCallbacks();
 }
 
@@ -1045,12 +1033,13 @@ void Element::unregisterNamedFlowContentNode()
 
 void Element::detach()
 {
-    RenderWidget::suspendWidgetHierarchyUpdates();
+    WidgetHierarchyUpdatesSuspensionScope suspendWidgetHierarchyUpdates;
     unregisterNamedFlowContentNode();
     cancelFocusAppearanceUpdate();
     if (hasRareData()) {
-        setIsInCanvasSubtree(false);
-        elementRareData()->resetComputedStyle();
+        ElementRareData* data = elementRareData();
+        data->setIsInCanvasSubtree(false);
+        data->resetComputedStyle();
     }
 
     if (ElementShadow* shadow = this->shadow()) {
@@ -1058,15 +1047,14 @@ void Element::detach()
         shadow->detach();
     }
     ContainerNode::detach();
-
-    RenderWidget::resumeWidgetHierarchyUpdates();
 }
 
 bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderStyle* newStyle)
 {
     ASSERT(currentStyle == renderStyle());
+    ASSERT(renderer());
 
-    if (!renderer() || !currentStyle)
+    if (!currentStyle)
         return false;
 
     const PseudoStyleCache* pseudoStyleCache = currentStyle->cachedPseudoStyles();
@@ -1116,7 +1104,7 @@ void Element::recalcStyle(StyleChange change)
             return;
     }
 
-    // Ref currentStyle in case it would otherwise be deleted when setRenderStyle() is called.
+    // Ref currentStyle in case it would otherwise be deleted when setting the new style in the renderer.
     RefPtr<RenderStyle> currentStyle(renderStyle());
     bool hasParentStyle = parentNodeForRenderingAndStyle() ? static_cast<bool>(parentNodeForRenderingAndStyle()->renderStyle()) : false;
     bool hasDirectAdjacentRules = currentStyle && currentStyle->childrenAffectedByDirectAdjacentRules();
@@ -1126,7 +1114,7 @@ void Element::recalcStyle(StyleChange change)
         if (hasRareData()) {
             ElementRareData* data = elementRareData();
             data->resetComputedStyle();
-            data->m_styleAffectedByEmpty = false;
+            data->setStyleAffectedByEmpty(false);
         }
     }
     if (hasParentStyle && (change >= Inherit || needsStyleRecalc())) {
@@ -1165,21 +1153,19 @@ void Element::recalcStyle(StyleChange change)
                 newStyle->setChildrenAffectedByDirectAdjacentRules();
         }
 
-        if (ch != NoChange || pseudoStyleCacheIsInvalid(currentStyle.get(), newStyle.get()) || (change == Force && renderer() && renderer()->requiresForcedStyleRecalcPropagation())) {
-            setRenderStyle(newStyle);
-        } else if (needsStyleRecalc() && styleChangeType() != SyntheticStyleChange) {
-            // Although no change occurred, we use the new style so that the cousin style sharing code won't get
-            // fooled into believing this style is the same.
-            if (renderer())
-                renderer()->setStyleInternal(newStyle.get());
-            else
-                setRenderStyle(newStyle);
-        } else if (styleChangeType() == SyntheticStyleChange)
-             setRenderStyle(newStyle);
+        if (RenderObject* renderer = this->renderer()) {
+            if (ch != NoChange || pseudoStyleCacheIsInvalid(currentStyle.get(), newStyle.get()) || (change == Force && renderer->requiresForcedStyleRecalcPropagation()) || styleChangeType() == SyntheticStyleChange)
+                renderer->setAnimatableStyle(newStyle.get());
+            else if (needsStyleRecalc()) {
+                // Although no change occurred, we use the new style so that the cousin style sharing code won't get
+                // fooled into believing this style is the same.
+                renderer->setStyleInternal(newStyle.get());
+            }
+        }
 
         // If "rem" units are used anywhere in the document, and if the document element's font size changes, then go ahead and force font updating
         // all the way down the tree. This is simpler than having to maintain a cache of objects (and such font size changes should be rare anyway).
-        if (document()->usesRemUnits() && document()->documentElement() == this && ch != NoChange && currentStyle && newStyle && currentStyle->fontSize() != newStyle->fontSize()) {
+        if (document()->styleSheetCollection()->usesRemUnits() && document()->documentElement() == this && ch != NoChange && currentStyle && newStyle && currentStyle->fontSize() != newStyle->fontSize()) {
             // Cached RenderStyles may depend on the rem units.
             document()->styleResolver()->invalidateMatchedPropertiesCache();
             change = Force;
@@ -1246,8 +1232,9 @@ ElementShadow* Element::ensureShadow()
     if (ElementShadow* shadow = ensureElementRareData()->m_shadow.get())
         return shadow;
 
-    elementRareData()->m_shadow = adoptPtr(new ElementShadow());
-    return elementRareData()->m_shadow.get();
+    ElementRareData* data = elementRareData();
+    data->m_shadow = adoptPtr(new ElementShadow());
+    return data->m_shadow.get();
 }
 
 ShadowRoot* Element::userAgentShadowRoot() const
@@ -1531,11 +1518,40 @@ void Element::setAttributeNS(const AtomicString& namespaceURI, const AtomicStrin
     setAttribute(parsedName, value);
 }
 
-void Element::removeAttribute(size_t index)
+void Element::removeAttributeInternal(size_t index, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
 {
-    ASSERT(attributeData());
-    ASSERT(index <= attributeCount());
-    mutableAttributeData()->removeAttribute(index, this);
+    ASSERT(index < attributeCount());
+
+    ElementAttributeData* attributeData = mutableAttributeData();
+
+    QualifiedName name = attributeData->attributeItem(index)->name();
+    AtomicString valueBeingRemoved = attributeData->attributeItem(index)->value();
+
+    if (!inSynchronizationOfLazyAttribute) {
+        if (!valueBeingRemoved.isNull())
+            willModifyAttribute(name, valueBeingRemoved, nullAtom);
+    }
+
+    if (hasAttrList()) {
+        if (RefPtr<Attr> attr = attributeData->attrIfExists(this, name))
+            attr->detachFromElementWithValue(attributeData->attributeItem(index)->value());
+    }
+
+    attributeData->removeAttribute(index);
+
+    if (!inSynchronizationOfLazyAttribute)
+        didRemoveAttribute(name);
+}
+
+void Element::addAttributeInternal(const QualifiedName& name, const AtomicString& value, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
+{
+    ASSERT(m_attributeData);
+    ASSERT(m_attributeData->isMutable());
+    if (!inSynchronizationOfLazyAttribute)
+        willModifyAttribute(name, nullAtom, value);
+    m_attributeData->addAttribute(Attribute(name, value));
+    if (!inSynchronizationOfLazyAttribute)
+        didAddAttribute(name, value);
 }
 
 void Element::removeAttribute(const AtomicString& name)
@@ -1548,7 +1564,7 @@ void Element::removeAttribute(const AtomicString& name)
     if (index == notFound)
         return;
 
-    mutableAttributeData()->removeAttribute(index, this);
+    removeAttributeInternal(index, NotInSynchronizationOfLazyAttribute);
 }
 
 void Element::removeAttributeNS(const AtomicString& namespaceURI, const AtomicString& localName)
@@ -1737,24 +1753,22 @@ RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
 
 void Element::setStyleAffectedByEmpty()
 {
-    ElementRareData* data = ensureElementRareData();
-    data->m_styleAffectedByEmpty = true;
+    ensureElementRareData()->setStyleAffectedByEmpty(true);
 }
 
 bool Element::styleAffectedByEmpty() const
 {
-    return hasRareData() && elementRareData()->m_styleAffectedByEmpty;
+    return hasRareData() && elementRareData()->styleAffectedByEmpty();
 }
 
 void Element::setIsInCanvasSubtree(bool isInCanvasSubtree)
 {
-    ElementRareData* data = ensureElementRareData();
-    data->m_isInCanvasSubtree = isInCanvasSubtree;
+    ensureElementRareData()->setIsInCanvasSubtree(isInCanvasSubtree);
 }
 
 bool Element::isInCanvasSubtree() const
 {
-    return hasRareData() && elementRareData()->m_isInCanvasSubtree;
+    return hasRareData() && elementRareData()->isInCanvasSubtree();
 }
 
 AtomicString Element::computeInheritedLanguage() const
@@ -1762,21 +1776,29 @@ AtomicString Element::computeInheritedLanguage() const
     const Node* n = this;
     AtomicString value;
     // The language property is inherited, so we iterate over the parents to find the first language.
-    while (n && value.isNull()) {
+    do {
         if (n->isElementNode()) {
-            // Spec: xml:lang takes precedence -- http://www.w3.org/TR/xhtml1/#C_7
-            value = static_cast<const Element*>(n)->fastGetAttribute(XMLNames::langAttr);
-            if (value.isNull())
-                value = static_cast<const Element*>(n)->fastGetAttribute(HTMLNames::langAttr);
+            if (const ElementAttributeData* attributeData = static_cast<const Element*>(n)->attributeData()) {
+                // Spec: xml:lang takes precedence -- http://www.w3.org/TR/xhtml1/#C_7
+                if (const Attribute* attribute = attributeData->getAttributeItem(XMLNames::langAttr))
+                    value = attribute->value();
+                else if (const Attribute* attribute = attributeData->getAttributeItem(HTMLNames::langAttr))
+                    value = attribute->value();
+            }
         } else if (n->isDocumentNode()) {
             // checking the MIME content-language
             value = static_cast<const Document*>(n)->contentLanguage();
         }
 
         n = n->parentNode();
-    }
+    } while (n && value.isNull());
 
     return value;
+}
+
+Locale& Element::locale() const
+{
+    return document()->getCachedLocale(computeInheritedLanguage());
 }
 
 void Element::cancelFocusAppearanceUpdate()
@@ -1943,12 +1965,12 @@ void Element::webkitRequestFullScreen(unsigned short flags)
 
 bool Element::containsFullScreenElement() const
 {
-    return hasRareData() ? elementRareData()->m_containsFullScreenElement : false;
+    return hasRareData() && elementRareData()->containsFullScreenElement();
 }
 
 void Element::setContainsFullScreenElement(bool flag)
 {
-    ensureElementRareData()->m_containsFullScreenElement = flag;
+    ensureElementRareData()->setContainsFullScreenElement(flag);
     setNeedsStyleRecalc(SyntheticStyleChange);
 }
 
@@ -2033,6 +2055,8 @@ RenderRegion* Element::renderRegion() const
     return 0;
 }
 
+#if ENABLE(CSS_REGIONS)
+
 const AtomicString& Element::webkitRegionOverset() const
 {
     document()->updateLayoutIgnorePendingStylesheets();
@@ -2061,8 +2085,6 @@ const AtomicString& Element::webkitRegionOverset() const
     ASSERT_NOT_REACHED();
     return undefinedState;
 }
-
-#if ENABLE(CSS_REGIONS)
 
 Vector<RefPtr<Range> > Element::webkitGetRegionFlowRanges() const
 {
@@ -2102,12 +2124,33 @@ bool Element::hasNamedNodeMap() const
 }
 #endif
 
+void Element::updateLabel(TreeScope* scope, const AtomicString& oldForAttributeValue, const AtomicString& newForAttributeValue)
+{
+    ASSERT(hasTagName(labelTag));
+
+    if (!inDocument())
+        return;
+
+    if (oldForAttributeValue == newForAttributeValue)
+        return;
+
+    if (!oldForAttributeValue.isEmpty())
+        scope->removeLabel(oldForAttributeValue, static_cast<HTMLLabelElement*>(this));
+    if (!newForAttributeValue.isEmpty())
+        scope->addLabel(newForAttributeValue, static_cast<HTMLLabelElement*>(this));
+}
+
 void Element::willModifyAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
     if (isIdAttributeName(name))
         updateId(oldValue, newValue);
     else if (name == HTMLNames::nameAttr)
         updateName(oldValue, newValue);
+    else if (name == HTMLNames::forAttr && hasTagName(labelTag)) {
+        TreeScope* scope = treeScope();
+        if (scope->shouldCacheLabelsByForAttribute())
+            updateLabel(scope, oldValue, newValue);
+    }
 
 #if ENABLE(MUTATION_OBSERVERS)
     if (OwnPtr<MutationObserverInterestGroup> recipients = MutationObserverInterestGroup::createForAttributesMutation(this, name))
@@ -2124,23 +2167,23 @@ void Element::willModifyAttribute(const QualifiedName& name, const AtomicString&
 #endif
 }
 
-void Element::didAddAttribute(const Attribute& attribute)
+void Element::didAddAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    attributeChanged(attribute);
-    InspectorInstrumentation::didModifyDOMAttr(document(), this, attribute.localName(), attribute.value());
+    attributeChanged(name, value);
+    InspectorInstrumentation::didModifyDOMAttr(document(), this, name.localName(), value);
     dispatchSubtreeModifiedEvent();
 }
 
-void Element::didModifyAttribute(const Attribute& attribute)
+void Element::didModifyAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    attributeChanged(attribute);
-    InspectorInstrumentation::didModifyDOMAttr(document(), this, attribute.localName(), attribute.value());
+    attributeChanged(name, value);
+    InspectorInstrumentation::didModifyDOMAttr(document(), this, name.localName(), value);
     // Do not dispatch a DOMSubtreeModified event here; see bug 81141.
 }
 
 void Element::didRemoveAttribute(const QualifiedName& name)
 {
-    attributeChanged(Attribute(name, nullAtom));
+    attributeChanged(name, nullAtom);
     InspectorInstrumentation::didRemoveDOMAttr(document(), this, name.localName());
     dispatchSubtreeModifiedEvent();
 }

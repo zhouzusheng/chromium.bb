@@ -21,12 +21,14 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   virtual void setPerTilePaintingEnabled(bool enabled);
   virtual void setPartialSwapEnabled(bool enabled);
   virtual void setAcceleratedAnimationEnabled(bool enabled);
+  virtual void setPageScalePinchZoomEnabled(bool enabled);
   virtual WebKit::WebLayerTreeView* createLayerTreeView(
       WebKit::WebLayerTreeViewClient* client, const WebKit::WebLayer& root,
       const WebKit::WebLayerTreeView::Settings& settings);
   virtual WebKit::WebLayer* createLayer();
   virtual WebKit::WebContentLayer* createContentLayer(
       WebKit::WebContentLayerClient* client);
+  virtual WebKit::WebDelegatedRendererLayer* createDelegatedRendererLayer();
   virtual WebKit::WebExternalTextureLayer*
     createExternalTextureLayer(WebKit::WebExternalTextureLayerClient* client);
   virtual WebKit::WebIOSurfaceLayer*

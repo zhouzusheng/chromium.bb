@@ -68,10 +68,19 @@ GpuVideoDecoder::GpuVideoDecoder(
 }
 
 void GpuVideoDecoder::Reset(const base::Closure& closure)  {
-  if (!gvd_loop_proxy_->BelongsToCurrentThread() ||
-      state_ == kDrainingDecoder) {
+  if (!gvd_loop_proxy_->BelongsToCurrentThread()) {
     gvd_loop_proxy_->PostTask(FROM_HERE, base::Bind(
         &GpuVideoDecoder::Reset, this, closure));
+    return;
+  }
+
+  if (state_ == kDrainingDecoder) {
+    gvd_loop_proxy_->PostTask(FROM_HERE, base::Bind(
+        &GpuVideoDecoder::Reset, this, closure));
+    // NOTE: if we're deferring Reset() until a Flush() completes, return
+    // queued pictures to the VDA so they can be used to finish that Flush().
+    if (pending_read_cb_.is_null())
+      ready_video_frames_.clear();
     return;
   }
 
@@ -206,10 +215,7 @@ void GpuVideoDecoder::DestroyVDA() {
       base::Bind(&VideoDecodeAccelerator::Destroy, weak_vda_),
       base::Bind(&GpuVideoDecoder::Release, this));
 
-// TODO(posciak): enable for all.
-#ifdef OS_CHROMEOS
   DestroyTextures();
-#endif
 }
 
 void GpuVideoDecoder::Read(const ReadCB& read_cb) {
@@ -253,14 +259,7 @@ void GpuVideoDecoder::Read(const ReadCB& read_cb) {
 }
 
 bool GpuVideoDecoder::CanMoreDecodeWorkBeDone() {
-#if defined(OS_WIN)
-  // TODO(ananta): the DXVA decoder stymies our attempt to pipeline Decode()s by
-  // claiming to be done with previous work way too quickly.  Until this is
-  // resolved we don't pipeline work.  http://crbug.com/150925
-  return bitstream_buffers_in_decoder_.empty() && !pending_read_cb_.is_null();
-#else
   return bitstream_buffers_in_decoder_.size() < kMaxInFlightDecodes;
-#endif
 }
 
 void GpuVideoDecoder::RequestBufferDecode(
@@ -541,10 +540,7 @@ GpuVideoDecoder::~GpuVideoDecoder() {
   }
   bitstream_buffers_in_decoder_.clear();
 
-// TODO(posciak): enable for all.
-#ifdef OS_CHROMEOS
   DestroyTextures();
-#endif
 }
 
 void GpuVideoDecoder::EnsureDemuxOrDecode() {

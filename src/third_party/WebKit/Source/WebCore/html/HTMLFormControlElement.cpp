@@ -297,7 +297,6 @@ static void updateFromElementCallback(Node* node, unsigned)
 {
     ASSERT_ARG(node, node->isElementNode());
     ASSERT_ARG(node, static_cast<Element*>(node)->isFormControlElement());
-    ASSERT(node->renderer());
     if (RenderObject* renderer = node->renderer())
         renderer->updateFromElement();
 }
@@ -457,16 +456,6 @@ void HTMLFormControlElement::setCustomValidity(const String& error)
 {
     FormAssociatedElement::setCustomValidity(error);
     setNeedsValidityCheck();
-}
-
-bool HTMLFormControlElement::shouldMatchReadOnlySelector() const
-{
-    return readOnly();
-}
-
-bool HTMLFormControlElement::shouldMatchReadWriteSelector() const
-{
-    return !readOnly();
 }
 
 bool HTMLFormControlElement::validationMessageShadowTreeContains(Node* node) const

@@ -4,10 +4,31 @@
 
 #include "media/ffmpeg/ffmpeg_common.h"
 
+#include "base/basictypes.h"
 #include "base/logging.h"
+#include "media/base/decoder_buffer.h"
 #include "media/base/video_util.h"
 
 namespace media {
+
+// Why FF_INPUT_BUFFER_PADDING_SIZE? FFmpeg assumes all input buffers are
+// padded. Check here to ensure FFmpeg only receives data padded to its
+// specifications.
+COMPILE_ASSERT(DecoderBuffer::kPaddingSize >= FF_INPUT_BUFFER_PADDING_SIZE,
+               decoder_buffer_padding_size_does_not_fit_ffmpeg_requirement);
+
+// Alignment requirement by FFmpeg for input buffers. This need to be updated
+// to match FFmpeg when it changes.
+#if defined(ARCH_CPU_ARM_FAMILY)
+static const int kFFmpegInputBufferAlignmentSize = 16;
+#else
+static const int kFFmpegInputBufferAlignmentSize = 32;
+#endif
+// Check here to ensure FFmpeg only receives data aligned to its specifications.
+COMPILE_ASSERT(
+    DecoderBuffer::kAlignmentSize >= kFFmpegInputBufferAlignmentSize &&
+    DecoderBuffer::kAlignmentSize % kFFmpegInputBufferAlignmentSize == 0,
+    decoder_buffer_alignment_size_does_not_fit_ffmpeg_requirement);
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
@@ -201,6 +222,7 @@ void AVCodecContextToAudioDecoderConfig(
                      samples_per_second,
                      codec_context->extradata,
                      codec_context->extradata_size,
+                     false,  // Not encrypted.
                      true);
 }
 
@@ -270,7 +292,7 @@ void AVStreamToVideoDecoderConfig(
                      PixelFormatToVideoFormat(stream->codec->pix_fmt),
                      coded_size, visible_rect, natural_size,
                      stream->codec->extradata, stream->codec->extradata_size,
-                     false,
+                     false,  // Not encrypted.
                      true);
 }
 
@@ -331,6 +353,30 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
       return CHANNEL_LAYOUT_7_1_WIDE;
     case AV_CH_LAYOUT_STEREO_DOWNMIX:
       return CHANNEL_LAYOUT_STEREO_DOWNMIX;
+    case AV_CH_LAYOUT_2POINT1:
+      return CHANNEL_LAYOUT_2POINT1;
+    case AV_CH_LAYOUT_3POINT1:
+      return CHANNEL_LAYOUT_3_1;
+    case AV_CH_LAYOUT_4POINT1:
+      return CHANNEL_LAYOUT_4_1;
+    case AV_CH_LAYOUT_6POINT0:
+      return CHANNEL_LAYOUT_6_0;
+    case AV_CH_LAYOUT_6POINT0_FRONT:
+      return CHANNEL_LAYOUT_6_0_FRONT;
+    case AV_CH_LAYOUT_HEXAGONAL:
+      return CHANNEL_LAYOUT_HEXAGONAL;
+    case AV_CH_LAYOUT_6POINT1:
+      return CHANNEL_LAYOUT_6_1;
+    case AV_CH_LAYOUT_6POINT1_BACK:
+      return CHANNEL_LAYOUT_6_1_BACK;
+    case AV_CH_LAYOUT_6POINT1_FRONT:
+      return CHANNEL_LAYOUT_6_1_FRONT;
+    case AV_CH_LAYOUT_7POINT0_FRONT:
+      return CHANNEL_LAYOUT_7_0_FRONT;
+    case AV_CH_LAYOUT_7POINT1_WIDE_BACK:
+      return CHANNEL_LAYOUT_7_1_WIDE_BACK;
+    case AV_CH_LAYOUT_OCTAGONAL:
+      return CHANNEL_LAYOUT_OCTAGONAL;
     default:
       // FFmpeg channel_layout is 0 for .wav and .mp3.  We know mono and stereo
       // from the number of channels, otherwise report errors.
@@ -338,7 +384,7 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
         return CHANNEL_LAYOUT_MONO;
       if (channels == 2)
         return CHANNEL_LAYOUT_STEREO;
-      DVLOG(1) << "Unsupported channel layout: " << layout;
+      LOG(ERROR) << "Unsupported channel layout: " << layout;
   }
   return CHANNEL_LAYOUT_UNSUPPORTED;
 }

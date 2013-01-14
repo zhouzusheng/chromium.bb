@@ -28,7 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-InspectorFrontendAPI = {
+var InspectorFrontendAPI = {
     _pendingCommands: [],
 
     isDebuggingEnabled: function()
@@ -74,9 +74,15 @@ InspectorFrontendAPI = {
             WebInspector.CPUProfileType.instance.stopRecordingProfile();
     },
 
-    setAttachedWindow: function(attached)
+    setAttachedWindow: function(side)
     {
-        WebInspector.attached = attached;
+      
+    },
+
+    setDockSide: function(side)
+    {
+        if (WebInspector.dockController)
+            WebInspector.dockController.setDockSide(side);
     },
 
     showConsole: function()

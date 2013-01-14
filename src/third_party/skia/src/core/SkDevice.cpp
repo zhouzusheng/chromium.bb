@@ -11,6 +11,7 @@
 #include "SkMetaData.h"
 #include "SkRasterClip.h"
 #include "SkRect.h"
+#include "SkShader.h"
 
 SK_DEFINE_INST_COUNT(SkDevice)
 
@@ -346,6 +347,119 @@ void SkDevice::drawBitmap(const SkDraw& draw, const SkBitmap& bitmap,
         bitmapPtr = &tmp;
     }
     draw.drawBitmap(*bitmapPtr, matrix, paint);
+}
+
+void SkDevice::drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
+                              const SkRect* src, const SkRect& dst,
+                              const SkPaint& paint) {
+#ifdef SK_SUPPORT_INT_SRCRECT_DRAWBITMAPRECT
+    SkMatrix matrix;
+    // Compute matrix from the two rectangles
+    {
+        SkRect tmpSrc;
+        if (src) {
+            tmpSrc = *src;
+            // if the extract process clipped off the top or left of the
+            // original, we adjust for that here to get the position right.
+            if (tmpSrc.fLeft > 0) {
+                tmpSrc.fRight -= tmpSrc.fLeft;
+                tmpSrc.fLeft = 0;
+            }
+            if (tmpSrc.fTop > 0) {
+                tmpSrc.fBottom -= tmpSrc.fTop;
+                tmpSrc.fTop = 0;
+            }
+        } else {
+            tmpSrc.set(0, 0, SkIntToScalar(bitmap.width()),
+                       SkIntToScalar(bitmap.height()));
+        }
+        matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
+    }
+
+    // ensure that src is "valid" before we pass it to our internal routines
+    // and to SkDevice. i.e. sure it is contained inside the original bitmap.
+    SkIRect isrcStorage;
+    SkIRect* isrcPtr = NULL;
+    if (src) {
+        src->roundOut(&isrcStorage);
+        if (!isrcStorage.intersect(0, 0, bitmap.width(), bitmap.height())) {
+            return;
+        }
+        isrcPtr = &isrcStorage;
+    }
+
+    this->drawBitmap(draw, bitmap, isrcPtr, matrix, paint);
+#else
+    SkMatrix    matrix;
+    SkRect      bitmapBounds, tmpSrc, tmpDst;
+    SkBitmap    tmpBitmap;
+
+    bitmapBounds.set(0, 0,
+                     SkIntToScalar(bitmap.width()),
+                     SkIntToScalar(bitmap.height()));
+
+    // Compute matrix from the two rectangles
+    if (src) {
+        tmpSrc = *src;
+    } else {
+        tmpSrc = bitmapBounds;
+    }
+    matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
+
+    const SkRect* dstPtr = &dst;
+    const SkBitmap* bitmapPtr = &bitmap;
+
+    // clip the tmpSrc to the bounds of the bitmap, and recompute dstRect if
+    // needed (if the src was clipped). No check needed if src==null.
+    if (src) {
+        if (!bitmapBounds.contains(*src)) {
+            if (!tmpSrc.intersect(bitmapBounds)) {
+                return; // nothing to draw
+            }
+            // recompute dst, based on the smaller tmpSrc
+            matrix.mapRect(&tmpDst, tmpSrc);
+            dstPtr = &tmpDst;
+        }
+
+        // since we may need to clamp to the borders of the src rect within
+        // the bitmap, we extract a subset.
+        SkIRect srcIR;
+        tmpSrc.roundOut(&srcIR);
+        if (!bitmap.extractSubset(&tmpBitmap, srcIR)) {
+            return;
+        }
+        bitmapPtr = &tmpBitmap;
+
+        // Since we did an extract, we need to adjust the matrix accordingly
+        SkScalar dx = 0, dy = 0;
+        if (srcIR.fLeft > 0) {
+            dx = SkIntToScalar(srcIR.fLeft);
+        }
+        if (srcIR.fTop > 0) {
+            dy = SkIntToScalar(srcIR.fTop);
+        }
+        if (dx || dy) {
+            matrix.preTranslate(dx, dy);
+        }
+    }
+
+    // construct a shader, so we can call drawRect with the dst
+    SkShader* s = SkShader::CreateBitmapShader(*bitmapPtr,
+                                               SkShader::kClamp_TileMode,
+                                               SkShader::kClamp_TileMode);
+    if (NULL == s) {
+        return;
+    }
+    s->setLocalMatrix(matrix);
+
+    SkPaint paintWithShader(paint);
+    paintWithShader.setStyle(SkPaint::kFill_Style);
+    paintWithShader.setShader(s)->unref();
+
+    // Call ourself, in case the subclass wanted to share this setup code
+    // but handle the drawRect code themselves.
+    this->drawRect(draw, *dstPtr, paintWithShader);
+#endif
 }
 
 void SkDevice::drawSprite(const SkDraw& draw, const SkBitmap& bitmap,

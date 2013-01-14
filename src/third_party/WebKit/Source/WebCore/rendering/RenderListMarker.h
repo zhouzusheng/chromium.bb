@@ -59,13 +59,13 @@ private:
     virtual InlineBox* createInlineBox();
 
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
-    virtual LayoutUnit baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
 
     bool isImage() const;
     bool isText() const { return !isImage(); }
 
     virtual void setSelectionState(SelectionState);
-    virtual LayoutRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
+    virtual LayoutRect selectionRectForRepaint(RenderLayerModelObject* repaintContainer, bool clipToVisibleContent = true) OVERRIDE;
     virtual bool canBeSelectionLeaf() const { return true; }
 
     void updateMargins();

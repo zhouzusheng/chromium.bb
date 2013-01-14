@@ -445,7 +445,6 @@ bool GrAAConvexPathRenderer::canDrawPath(const SkPath& path,
 
 bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
                                         GrPathFill fill,
-                                        const GrVec* translate,
                                         GrDrawTarget* target,
                                         bool antiAlias) {
 
@@ -453,18 +452,13 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
     if (path->isEmpty()) {
         return true;
     }
-    GrDrawTarget::AutoStateRestore asr(target,
-                                       GrDrawTarget::kPreserve_ASRInit);
     GrDrawState* drawState = target->drawState();
 
-    GrMatrix vm = drawState->getViewMatrix();
-    if (NULL != translate) {
-        vm.postTranslate(translate->fX, translate->fY);
-    }
-    if (!drawState->preConcatSamplerMatricesWithInverse(vm)) {
+    GrDrawState::AutoDeviceCoordDraw adcd(drawState);
+    if (!adcd.succeeded()) {
         return false;
     }
-    drawState->viewMatrix()->reset();
+    const GrMatrix* vm = &adcd.getOriginalMatrix();
 
     GrVertexLayout layout = 0;
     layout |= GrDrawTarget::kEdge_VertexLayoutBit;
@@ -473,10 +467,10 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
     // perspective. Otherwise, we apply the view matrix when copying to the
     // segment representation.
     SkPath tmpPath;
-    if (vm.hasPerspective()) {
-        origPath.transform(vm, &tmpPath);
+    if (vm->hasPerspective()) {
+        origPath.transform(*vm, &tmpPath);
         path = &tmpPath;
-        vm.reset();
+        vm = &GrMatrix::I();
     }
 
     QuadVertex *verts;
@@ -490,7 +484,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
     SkSTArray<kPreallocSegmentCnt, Segment, true> segments;
     SkPoint fanPt;
 
-    if (!get_segments(*path, vm, &segments, &fanPt, &vCount, &iCount)) {
+    if (!get_segments(*path, *vm, &segments, &fanPt, &vCount, &iCount)) {
         return false;
     }
 
@@ -503,12 +497,15 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
 
     create_vertices(segments, fanPt, verts, idxs);
 
+    GrDrawState::VertexEdgeType oldEdgeType = drawState->getVertexEdgeType();
     drawState->setVertexEdgeType(GrDrawState::kQuad_EdgeType);
     target->drawIndexed(kTriangles_GrPrimitiveType,
                         0,        // start vertex
                         0,        // start index
                         vCount,
                         iCount);
+    drawState->setVertexEdgeType(oldEdgeType);
+
     return true;
 }
 

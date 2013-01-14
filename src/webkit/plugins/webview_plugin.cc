@@ -120,7 +120,7 @@ bool WebViewPlugin::getFormValue(WebString& value) {
 }
 
 void WebViewPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
-  gfx::Rect paintRect(rect_.Intersect(rect));
+  gfx::Rect paintRect = gfx::IntersectRects(rect_, rect);
   if (paintRect.IsEmpty())
     return;
 
@@ -139,7 +139,7 @@ void WebViewPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
 void WebViewPlugin::updateGeometry(
     const WebRect& frame_rect, const WebRect& clip_rect,
     const WebVector<WebRect>& cut_out_rects, bool is_visible) {
-  if (frame_rect != rect_) {
+  if (static_cast<gfx::Rect>(frame_rect) != rect_) {
     rect_ = frame_rect;
     web_view_->resize(WebSize(frame_rect.width, frame_rect.height));
   }

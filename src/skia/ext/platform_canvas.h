@@ -7,6 +7,7 @@
 
 // The platform-specific device will include the necessary platform headers
 // to get the surface type.
+#include "base/basictypes.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
@@ -74,14 +75,6 @@ class SK_API PlatformCanvas : public SkCanvas {
  private:
   // Helper method used internally by the initialize() methods.
   bool initializeWithDevice(SkDevice* device);
-
-  // Unimplemented. This is to try to prevent people from calling this function
-  // on SkCanvas. SkCanvas' version is not virtual, so we can't prevent this
-  // 100%, but hopefully this will make people notice and not use the function.
-  // Calling SkCanvas' version will create a new device which is not compatible
-  // with us and we will crash if somebody tries to draw into it with
-  // CoreGraphics.
-  virtual SkDevice* setBitmapDevice(const SkBitmap& bitmap);
 
   // Disallow copy and assign
   PlatformCanvas(const PlatformCanvas&);
@@ -157,6 +150,29 @@ class SK_API ScopedPlatformPaint {
   // Disallow copy and assign
   ScopedPlatformPaint(const ScopedPlatformPaint&);
   ScopedPlatformPaint& operator=(const ScopedPlatformPaint&);
+};
+
+class SK_API PlatformBitmap {
+ public:
+  PlatformBitmap();
+  ~PlatformBitmap();
+
+  // Returns true if the bitmap was able to allocate its surface.
+  bool Allocate(int width, int height, bool is_opaque);
+
+  // Returns the platform surface, or 0 if Allocate() did not return true.
+  PlatformSurface GetSurface() { return surface_; }
+
+  // Return the skia bitmap, which will be empty if Allocate() did not
+  // return true.
+  const SkBitmap& GetBitmap() { return bitmap_; }
+
+ private:
+  SkBitmap bitmap_;
+  PlatformSurface surface_; // initialized to 0
+  intptr_t platform_extra_; // initialized to 0, specific to each platform
+
+  DISALLOW_COPY_AND_ASSIGN(PlatformBitmap);
 };
 
 }  // namespace skia

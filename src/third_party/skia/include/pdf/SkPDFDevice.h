@@ -139,13 +139,14 @@ public:
      */
     SK_API const SkTDArray<SkPDFFont*>& getFontResources() const;
 
-    /** Returns the media box for this device.
+    /** Returns a copy of the media box for this device. The caller is required
+     *  to unref() this when it is finished.
      */
-    SK_API SkRefPtr<SkPDFArray> getMediaBox() const;
+    SK_API SkPDFArray* copyMediaBox() const;
 
-    /** Get the annotations from this page.
+    /** Get the annotations from this page, or NULL if there are none.
      */
-    SK_API SkRefPtr<SkPDFArray> getAnnotations() const;
+    SK_API SkPDFArray* getAnnotations() const { return fAnnotations; }
 
     /** Returns a SkStream with the page contents.  The caller is responsible
         for a reference to the returned value.
@@ -185,8 +186,8 @@ private:
     SkMatrix fInitialTransform;
     SkClipStack fExistingClipStack;
     SkRegion fExistingClipRegion;
-    SkRefPtr<SkPDFArray> fAnnotations;
-    SkRefPtr<SkPDFDict> fResourceDict;
+    SkPDFArray* fAnnotations;
+    SkPDFDict* fResourceDict;
 
     SkTDArray<SkPDFGraphicState*> fGraphicStateResources;
     SkTDArray<SkPDFObject*> fXObjectResources;
@@ -220,7 +221,7 @@ private:
 
     void init();
     void cleanUp(bool clearFontUsage);
-    void createFormXObjectFromDevice(SkRefPtr<SkPDFFormXObject>* xobject);
+    SkPDFFormXObject* createFormXObjectFromDevice();
 
     // Clear the passed clip from all existing content entries.
     void clearClipFromContent(const SkClipStack* clipStack,
@@ -239,7 +240,7 @@ private:
                                     const SkMatrix& matrix,
                                     const SkPaint& paint,
                                     bool hasText,
-                                    SkRefPtr<SkPDFFormXObject>* dst);
+                                    SkPDFFormXObject** dst);
     void finishContentEntry(SkXfermode::Mode xfermode,
                             SkPDFFormXObject* dst);
     bool isContentEmpty();

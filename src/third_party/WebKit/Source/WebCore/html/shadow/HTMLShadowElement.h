@@ -44,11 +44,34 @@ public:
 
     const AtomicString& select() const;
     bool isSelectValid() const OVERRIDE { return true; }
-    bool doesSelectFromHostChildren() const;
+
+protected:
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
 
 private:
     HTMLShadowElement(const QualifiedName&, Document*);
+
+    bool m_registeredWithShadowRoot;
 };
+
+inline bool isHTMLShadowElement(const Node* node)
+{
+    ASSERT(node);
+    return node->hasTagName(HTMLNames::shadowTag);
+}
+
+inline HTMLShadowElement* toHTMLShadowElement(Node* node)
+{
+    ASSERT(!node || isHTMLShadowElement(node));
+    return static_cast<HTMLShadowElement*>(node);
+}
+
+inline const HTMLShadowElement* toHTMLShadowElement(const Node* node)
+{
+    ASSERT(!node || isHTMLShadowElement(node));
+    return static_cast<const HTMLShadowElement*>(node);
+}
 
 } // namespace WebCore
 

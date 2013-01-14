@@ -98,7 +98,6 @@ var ICU_CALENDAR_MAP = {
  */
 var COLLATOR_KEY_MAP = {
   'kn': {'property': 'numeric', 'type': 'boolean'},
-  'kk': {'property': 'normalization', 'type':'boolean'},
   'kf': {'property': 'caseFirst', 'type': 'string',
          'values': ['false', 'lower', 'upper']}
 };

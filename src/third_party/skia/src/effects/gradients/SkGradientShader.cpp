@@ -675,34 +675,31 @@ SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
 #include "effects/GrTextureStripAtlas.h"
 #include "SkGr.h"
 
-GrGLGradientStage::GrGLGradientStage(const GrProgramStageFactory& factory)
+GrGLGradientEffect::GrGLGradientEffect(const GrBackendEffectFactory& factory)
     : INHERITED(factory)
     , fCachedYCoord(GR_ScalarMax)
     , fFSYUni(GrGLUniformManager::kInvalidUniformHandle) { }
 
-GrGLGradientStage::~GrGLGradientStage() { }
+GrGLGradientEffect::~GrGLGradientEffect() { }
 
-void GrGLGradientStage::setupVariables(GrGLShaderBuilder* builder) {
+void GrGLGradientEffect::setupVariables(GrGLShaderBuilder* builder) {
     fFSYUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
                                   kFloat_GrSLType, "GradientYCoordFS");
 }
 
-void GrGLGradientStage::setData(const GrGLUniformManager& uman,
-                                const GrCustomStage& stage,
-                                const GrRenderTarget*,
-                                int stageNum) {
-    GrScalar yCoord = static_cast<const GrGradientEffect&>(stage).getYCoord();
+void GrGLGradientEffect::setData(const GrGLUniformManager& uman, const GrEffect& effect) {
+    GrScalar yCoord = static_cast<const GrGradientEffect&>(effect).getYCoord();
     if (yCoord != fCachedYCoord) {
         uman.set1f(fFSYUni, yCoord);
         fCachedYCoord = yCoord;
     }
 }
 
-void GrGLGradientStage::emitColorLookup(GrGLShaderBuilder* builder,
-                                        const char* gradientTValue,
-                                        const char* outputColor,
-                                        const char* inputColor,
-                                        const GrGLShaderBuilder::TextureSampler& sampler) {
+void GrGLGradientEffect::emitColorLookup(GrGLShaderBuilder* builder,
+                                         const char* gradientTValue,
+                                         const char* outputColor,
+                                         const char* inputColor,
+                                         const GrGLShaderBuilder::TextureSampler& sampler) {
 
     SkString* code = &builder->fFSCode;
     code->appendf("\tvec2 coord = vec2(%s, %s);\n",
@@ -718,8 +715,8 @@ void GrGLGradientStage::emitColorLookup(GrGLShaderBuilder* builder,
 
 GrGradientEffect::GrGradientEffect(GrContext* ctx,
                                    const SkGradientShaderBase& shader,
-                                   GrSamplerState* sampler)
-    : fUseTexture (true) {
+                                   SkShader::TileMode tileMode)
+    : INHERITED(1) {
     // TODO: check for simple cases where we don't need a texture:
     //GradientInfo info;
     //shader.asAGradient(&info);
@@ -737,14 +734,19 @@ GrGradientEffect::GrGradientEffect(GrContext* ctx,
     fAtlas = GrTextureStripAtlas::GetAtlas(desc);
     GrAssert(NULL != fAtlas);
 
+    // We always filter the gradient table. Each table is one row of a texture, so always y-clamp.
+    GrTextureParams params;
+    params.setBilerp(true);
+    params.setTileModeX(tileMode);
+
     fRow = fAtlas->lockRow(bitmap);
     if (-1 != fRow) {
         fYCoord = fAtlas->getYOffset(fRow) + GR_ScalarHalf *
                   fAtlas->getVerticalScaleFactor();
-        fTextureAccess.reset(fAtlas->getTexture());
+        fTextureAccess.reset(fAtlas->getTexture(), params);
     } else {
-        GrTexture* texture = GrLockCachedBitmapTexture(ctx, bitmap, sampler->textureParams());
-        fTextureAccess.reset(texture);
+        GrTexture* texture = GrLockCachedBitmapTexture(ctx, bitmap, &params);
+        fTextureAccess.reset(texture, params);
         fYCoord = GR_ScalarHalf;
 
         // Unlock immediately, this is not great, but we don't have a way of
@@ -760,12 +762,8 @@ GrGradientEffect::~GrGradientEffect() {
     }
 }
 
-int GrGradientEffect::numTextures() const {
-    return fUseTexture ? 1 : 0;
-}
-
 const GrTextureAccess& GrGradientEffect::textureAccess(int index) const {
-    GrAssert(fUseTexture && 0 == index);
+    GrAssert(0 == index);
     return fTextureAccess;
 }
 

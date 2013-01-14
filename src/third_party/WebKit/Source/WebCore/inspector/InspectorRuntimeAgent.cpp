@@ -37,11 +37,6 @@
 #include "InjectedScript.h"
 #include "InjectedScriptManager.h"
 #include "InspectorValues.h"
-#include "InstrumentingAgents.h"
-#include "WorkerContext.h"
-#include "WorkerDebuggerAgent.h"
-#include "WorkerRunLoop.h"
-#include "WorkerThread.h"
 #include <wtf/PassRefPtr.h>
 
 
@@ -58,18 +53,16 @@ static bool asBool(const bool* const b)
 
 InspectorRuntimeAgent::InspectorRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorState* state, InjectedScriptManager* injectedScriptManager)
     : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime", instrumentingAgents, state)
+    , m_enabled(false)
     , m_injectedScriptManager(injectedScriptManager)
 #if ENABLE(JAVASCRIPT_DEBUGGER)
     , m_scriptDebugServer(0)
 #endif
-    , m_paused(false)
 {
-    m_instrumentingAgents->setInspectorRuntimeAgent(this);
 }
 
 InspectorRuntimeAgent::~InspectorRuntimeAgent()
 {
-    m_instrumentingAgents->setInspectorRuntimeAgent(0);
 }
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
@@ -135,7 +128,7 @@ void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const Strin
     }
 }
 
-void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* const ownProperties, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result)
+void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* const ownProperties, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
     if (injectedScript.hasNoValue()) {
@@ -149,6 +142,7 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
     muteConsole();
 
     injectedScript.getProperties(errorString, objectId, ownProperties ? *ownProperties : false, &result);
+    injectedScript.getInternalProperties(errorString, objectId, &internalProperties);
 
     unmuteConsole();
 #if ENABLE(JAVASCRIPT_DEBUGGER)
@@ -170,7 +164,6 @@ void InspectorRuntimeAgent::releaseObjectGroup(ErrorString*, const String& objec
 
 void InspectorRuntimeAgent::run(ErrorString*)
 {
-    m_paused = false;
 }
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
@@ -178,18 +171,6 @@ void InspectorRuntimeAgent::setScriptDebugServer(ScriptDebugServer* scriptDebugS
 {
     m_scriptDebugServer = scriptDebugServer;
 }
-
-#if ENABLE(WORKERS)
-void InspectorRuntimeAgent::pauseWorkerContext(WorkerContext* context)
-{
-    m_paused = true;
-    MessageQueueWaitResult result;
-    do {
-        result = context->thread()->runLoop().runInMode(context, WorkerDebuggerAgent::debuggerTaskMode);
-    // Keep waiting until execution is resumed.
-    } while (result == MessageQueueMessageReceived && m_paused);
-}
-#endif // ENABLE(WORKERS)
 #endif // ENABLE(JAVASCRIPT_DEBUGGER)
 
 } // namespace WebCore

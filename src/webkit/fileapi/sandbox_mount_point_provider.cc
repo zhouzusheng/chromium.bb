@@ -16,6 +16,7 @@
 #include "base/task_runner_util.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
+#include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_options.h"
@@ -28,6 +29,7 @@
 #include "webkit/fileapi/obfuscated_file_util.h"
 #include "webkit/fileapi/sandbox_file_stream_writer.h"
 #include "webkit/fileapi/sandbox_quota_observer.h"
+#include "webkit/fileapi/syncable/syncable_file_system_operation.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -339,18 +341,16 @@ SandboxMountPointProvider::SandboxMountPointProvider(
                       file_task_runner,
                       ALLOW_THIS_IN_INITIALIZER_LIST(this))),
       weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-
   // Set quota observers.
   UpdateObserverList::Source update_observers_src;
   AccessObserverList::Source access_observers_src;
 
   update_observers_src.AddObserver(quota_observer_.get(), file_task_runner_);
   access_observers_src.AddObserver(quota_observer_.get(), NULL);
-  update_observers_src.AddObserver(quota_observer_.get(), file_task_runner_);
-  access_observers_src.AddObserver(quota_observer_.get(), NULL);
 
   update_observers_ = UpdateObserverList(update_observers_src);
   access_observers_ = AccessObserverList(access_observers_src);
+  syncable_update_observers_ = UpdateObserverList(update_observers_src);
 }
 
 SandboxMountPointProvider::~SandboxMountPointProvider() {
@@ -408,8 +408,7 @@ SandboxMountPointProvider::GetFileSystemRootPathOnFileThread(
 }
 
 bool SandboxMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
-  FileSystemType type = url.type();
-  if (!CanHandleType(type))
+  if (!CanHandleType(url.type()))
     return false;
   // We essentially depend on quota to do our access controls, so here
   // we only check if the requested scheme is allowed or not.
@@ -443,9 +442,9 @@ FileSystemFileUtil* SandboxMountPointProvider::GetFileUtil(
 
 FilePath SandboxMountPointProvider::GetPathForPermissionsCheck(
     const FilePath& virtual_path) const {
-  // We simply return the very top directory of the sandbox
-  // filesystem regardless of the input path.
-  return new_base_path();
+  // Sandbox provider shouldn't directly grant permissions for its
+  // data directory.
+  return FilePath();
 }
 
 FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
@@ -456,9 +455,18 @@ FileSystemOperation* SandboxMountPointProvider::CreateFileSystemOperation(
       new FileSystemOperationContext(context));
 
   // Copy the observer lists (assuming we only have small number of observers).
+  if (url.type() == kFileSystemTypeSyncable) {
+    operation_context->set_update_observers(syncable_update_observers_);
+    operation_context->set_change_observers(syncable_change_observers_);
+    operation_context->set_access_observers(access_observers_);
+    return new SyncableFileSystemOperation(
+        context,
+        new LocalFileSystemOperation(context, operation_context.Pass()));
+  }
+
+  // For regular sandboxed types.
   operation_context->set_update_observers(update_observers_);
   operation_context->set_access_observers(access_observers_);
-
   return new LocalFileSystemOperation(context, operation_context.Pass());
 }
 
@@ -466,8 +474,10 @@ webkit_blob::FileStreamReader*
 SandboxMountPointProvider::CreateFileStreamReader(
     const FileSystemURL& url,
     int64 offset,
+    const base::Time& expected_modification_time,
     FileSystemContext* context) const {
-  return new FileSystemFileStreamReader(context, url, offset);
+  return new FileSystemFileStreamReader(
+      context, url, offset, expected_modification_time);
 }
 
 fileapi::FileStreamWriter* SandboxMountPointProvider::CreateFileStreamWriter(
@@ -683,12 +693,39 @@ void SandboxMountPointProvider::CollectOpenFileSystemMetrics(
 
 const UpdateObserverList* SandboxMountPointProvider::GetUpdateObservers(
     FileSystemType type) const {
+  DCHECK(CanHandleType(type));
+  if (type == kFileSystemTypeSyncable)
+    return &syncable_update_observers_;
   return &update_observers_;
 }
 
-void SandboxMountPointProvider::ResetObservers() {
-  update_observers_ = UpdateObserverList();
-  access_observers_ = AccessObserverList();
+void SandboxMountPointProvider::AddSyncableFileUpdateObserver(
+    FileUpdateObserver* observer,
+    base::SequencedTaskRunner* task_runner) {
+  UpdateObserverList::Source observer_source =
+      syncable_update_observers_.source();
+  observer_source.AddObserver(observer, task_runner);
+  syncable_update_observers_ = UpdateObserverList(observer_source);
+}
+
+void SandboxMountPointProvider::AddSyncableFileChangeObserver(
+    FileChangeObserver* observer,
+    base::SequencedTaskRunner* task_runner) {
+  ChangeObserverList::Source observer_source =
+      syncable_change_observers_.source();
+  observer_source.AddObserver(observer, task_runner);
+  syncable_change_observers_ = ChangeObserverList(observer_source);
+}
+
+LocalFileSystemOperation*
+SandboxMountPointProvider::CreateFileSystemOperationForSync(
+    FileSystemContext* file_system_context) {
+  scoped_ptr<FileSystemOperationContext> operation_context(
+      new FileSystemOperationContext(file_system_context));
+  operation_context->set_update_observers(update_observers_);
+  operation_context->set_access_observers(access_observers_);
+  return new LocalFileSystemOperation(file_system_context,
+                                      operation_context.Pass());
 }
 
 FilePath SandboxMountPointProvider::GetUsageCachePathForOriginAndType(

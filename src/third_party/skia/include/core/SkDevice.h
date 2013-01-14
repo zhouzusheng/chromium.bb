@@ -188,6 +188,10 @@ protected:
     virtual bool filterTextFlags(const SkPaint& paint, TextFlags*);
 
     /**
+     *
+     *  DEPRECATED: This will be removed in a future change. Device subclasses
+     *  should use the matrix and clip from the SkDraw passed to draw functions.
+     *
      *  Called with the correct matrix and clip before this device is drawn
      *  to using those settings. If your subclass overrides this, be sure to
      *  call through to the base class as well.
@@ -198,16 +202,9 @@ protected:
      *  picture of the current clip. (i.e. if you regionize all of the geometry
      *  in the clipstack, you will arrive at an equivalent region to the one
      *  passed in).
-    */
-    virtual void setMatrixClip(const SkMatrix&, const SkRegion&,
-                               const SkClipStack&);
-
-    /** Called when this device gains focus (i.e becomes the current device
-        for drawing).
-    */
-    virtual void gainFocus(const SkMatrix&, const SkRegion&) {
-        SkASSERT(fAttachedToCanvas);
-    }
+     */
+     virtual void setMatrixClip(const SkMatrix&, const SkRegion&,
+                                const SkClipStack&);
 
     /** Clears the entire device to the specified color (including alpha).
      *  Ignores the clip.
@@ -249,6 +246,15 @@ protected:
                             const SkMatrix& matrix, const SkPaint& paint);
     virtual void drawSprite(const SkDraw&, const SkBitmap& bitmap,
                             int x, int y, const SkPaint& paint);
+
+    /**
+     *  The default impl. will create a bitmap-shader from the bitmap,
+     *  and call drawRect with it.
+     */
+    virtual void drawBitmapRect(const SkDraw&, const SkBitmap&,
+                                const SkRect* srcOrNull, const SkRect& dst,
+                                const SkPaint& paint);
+
     /**
      *  Does not handle text decoration.
      *  Decorations (underline and stike-thru) will be handled by SkCanvas.
@@ -380,7 +386,7 @@ private:
     friend class SkDraw;
     friend class SkDrawIter;
     friend class SkDeviceFilteredPaint;
-    friend class DeviceImageFilterProxy;
+    friend class SkDeviceImageFilterProxy;
 
     friend class SkSurface_Raster;
     // used to change the backend's pixels (and possibly config/rowbytes)

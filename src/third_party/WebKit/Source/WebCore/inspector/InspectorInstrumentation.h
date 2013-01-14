@@ -37,13 +37,8 @@
 #include "Frame.h"
 #include "Page.h"
 #include "ScriptExecutionContext.h"
+#include "ScriptState.h"
 #include "StorageArea.h"
-
-#if USE(JSC)
-namespace JSC {
-class ExecState;
-}
-#endif
 
 namespace WebCore {
 
@@ -82,12 +77,6 @@ class WorkerContext;
 class WorkerContextProxy;
 class XMLHttpRequest;
 
-#if USE(JSC)
-typedef JSC::ExecState ScriptState;
-#else
-class ScriptState;
-#endif
-
 #if ENABLE(WEB_SOCKETS)
 struct WebSocketFrame;
 class WebSocketHandshakeRequest;
@@ -121,6 +110,7 @@ public:
 
     static void mouseDidMoveOverElement(Page*, const HitTestResult&, unsigned modifierFlags);
     static bool handleMousePress(Page*);
+    static bool handleTouchEvent(Page*, Node*);
     static bool forcePseudoState(Element*, CSSSelector::PseudoType);
 
     static void willSendXMLHttpRequest(ScriptExecutionContext*, const String& url);
@@ -151,8 +141,10 @@ public:
     static void didScroll(Page*);
     static InspectorInstrumentationCookie willDispatchXHRLoadEvent(ScriptExecutionContext*, XMLHttpRequest*);
     static void didDispatchXHRLoadEvent(const InspectorInstrumentationCookie&);
-    static InspectorInstrumentationCookie willPaint(Frame*, GraphicsContext*, const LayoutRect&);
-    static void didPaint(const InspectorInstrumentationCookie&);
+    static void willScrollLayer(Frame*);
+    static void didScrollLayer(Frame*);
+    static InspectorInstrumentationCookie willPaint(Frame*);
+    static void didPaint(const InspectorInstrumentationCookie&, GraphicsContext*, const LayoutRect&);
     static void willComposite(Page*);
     static void didComposite(Page*);
     static InspectorInstrumentationCookie willRecalculateStyle(Document*);
@@ -251,6 +243,7 @@ public:
     static void didReceiveWebSocketFrameError(Document*, unsigned long identifier, const String& errorMessage);
 #endif
 
+    static ScriptObject wrapCanvas2DRenderingContextForInstrumentation(Document*, const ScriptObject&);
 #if ENABLE(WEBGL)
     static ScriptObject wrapWebGLRenderingContextForInstrumentation(Document*, const ScriptObject&);
 #endif
@@ -262,11 +255,16 @@ public:
     static void frontendCreated() { s_frontendCounter += 1; }
     static void frontendDeleted() { s_frontendCounter -= 1; }
     static bool hasFrontends() { return s_frontendCounter; }
-    static bool hasFrontendForScriptContext(ScriptExecutionContext*);
+    static bool canvasAgentEnabled(ScriptExecutionContext*);
+    static bool consoleAgentEnabled(ScriptExecutionContext*);
+    static bool timelineAgentEnabled(ScriptExecutionContext*);
     static bool collectingHTMLParseErrors(Page*);
 #else
     static bool hasFrontends() { return false; }
-    static bool hasFrontendForScriptContext(ScriptExecutionContext*) { return false; }
+    static bool canvasAgentEnabled(ScriptExecutionContext*) { return false; }
+    static bool consoleAgentEnabled(ScriptExecutionContext*) { return false; }
+    static bool runtimeAgentEnabled(Frame*) { return false; }
+    static bool timelineAgentEnabled(ScriptExecutionContext*) { return false; }
     static bool collectingHTMLParseErrors(Page*) { return false; }
 #endif
 
@@ -302,6 +300,7 @@ private:
     static void didUpdateRegionLayoutImpl(InstrumentingAgents*, Document*, WebKitNamedFlow*);
 
     static void mouseDidMoveOverElementImpl(InstrumentingAgents*, const HitTestResult&, unsigned modifierFlags);
+    static bool handleTouchEventImpl(InstrumentingAgents*, Node*);
     static bool handleMousePressImpl(InstrumentingAgents*);
     static bool forcePseudoStateImpl(InstrumentingAgents*, Element*, CSSSelector::PseudoType);
 
@@ -333,8 +332,10 @@ private:
     static void didScrollImpl(InstrumentingAgents*);
     static InspectorInstrumentationCookie willDispatchXHRLoadEventImpl(InstrumentingAgents*, XMLHttpRequest*, ScriptExecutionContext*);
     static void didDispatchXHRLoadEventImpl(const InspectorInstrumentationCookie&);
-    static InspectorInstrumentationCookie willPaintImpl(InstrumentingAgents*, GraphicsContext*, const LayoutRect&, Frame*);
-    static void didPaintImpl(const InspectorInstrumentationCookie&);
+    static void willScrollLayerImpl(InstrumentingAgents*, Frame*);
+    static void didScrollLayerImpl(InstrumentingAgents*);
+    static InspectorInstrumentationCookie willPaintImpl(InstrumentingAgents*, Frame*);
+    static void didPaintImpl(const InspectorInstrumentationCookie&, GraphicsContext*, const LayoutRect&);
     static void willCompositeImpl(InstrumentingAgents*);
     static void didCompositeImpl(InstrumentingAgents*);
     static InspectorInstrumentationCookie willRecalculateStyleImpl(InstrumentingAgents*, Frame*);
@@ -607,6 +608,16 @@ inline void InspectorInstrumentation::mouseDidMoveOverElement(Page* page, const 
     if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForPage(page))
         mouseDidMoveOverElementImpl(instrumentingAgents, result, modifierFlags);
 #endif
+}
+
+inline bool InspectorInstrumentation::handleTouchEvent(Page* page, Node* node)
+{
+#if ENABLE(INSPECTOR)
+    FAST_RETURN_IF_NO_FRONTENDS(false);
+    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForPage(page))
+        return handleTouchEventImpl(instrumentingAgents, node);
+#endif
+    return false;
 }
 
 inline bool InspectorInstrumentation::handleMousePress(Page* page)
@@ -891,22 +902,40 @@ inline void InspectorInstrumentation::didDispatchXHRLoadEvent(const InspectorIns
 #endif
 }
 
-inline InspectorInstrumentationCookie InspectorInstrumentation::willPaint(Frame* frame, GraphicsContext* context, const LayoutRect& rect)
+inline InspectorInstrumentationCookie InspectorInstrumentation::willPaint(Frame* frame)
 {
 #if ENABLE(INSPECTOR)
     FAST_RETURN_IF_NO_FRONTENDS(InspectorInstrumentationCookie());
     if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForFrame(frame))
-        return willPaintImpl(instrumentingAgents, context, rect, frame);
+        return willPaintImpl(instrumentingAgents, frame);
 #endif
     return InspectorInstrumentationCookie();
 }
 
-inline void InspectorInstrumentation::didPaint(const InspectorInstrumentationCookie& cookie)
+inline void InspectorInstrumentation::didPaint(const InspectorInstrumentationCookie& cookie, GraphicsContext* context, const LayoutRect& rect)
 {
 #if ENABLE(INSPECTOR)
     FAST_RETURN_IF_NO_FRONTENDS(void());
     if (cookie.first)
-        didPaintImpl(cookie);
+        didPaintImpl(cookie, context, rect);
+#endif
+}
+
+inline void InspectorInstrumentation::willScrollLayer(Frame* frame)
+{
+#if ENABLE(INSPECTOR)
+    FAST_RETURN_IF_NO_FRONTENDS(void());
+    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForFrame(frame))
+        willScrollLayerImpl(instrumentingAgents, frame);
+#endif
+}
+
+inline void InspectorInstrumentation::didScrollLayer(Frame* frame)
+{
+#if ENABLE(INSPECTOR)
+    FAST_RETURN_IF_NO_FRONTENDS(void());
+    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsForFrame(frame))
+        didScrollLayerImpl(instrumentingAgents);
 #endif
 }
 

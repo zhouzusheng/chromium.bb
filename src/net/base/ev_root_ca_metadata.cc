@@ -260,11 +260,11 @@ static const EVMetadata ev_root_ca_metadata[] = {
         0x48, 0xc2, 0x99, 0x29, 0x5c, 0x75, 0x6c, 0x81, 0x7b, 0x81 } },
     {"2.16.840.1.113733.1.7.48.1", ""},
   },
-  // TURKTRUST Elektronik Sertifika Hizmet Saglayicisi
-  // http://www.turktrust.com.tr/ / https://evssl.turktrust.com.tr/
-  { { { 0xf1, 0x7f, 0x6f, 0xb6, 0x31, 0xdc, 0x99, 0xe3, 0xa3, 0xc8,
-        0x7f, 0xfe, 0x1c, 0xf1, 0x81, 0x10, 0x88, 0xd9, 0x60, 0x33 } },
-    {"2.16.792.3.0.3.1.1.5", "" },
+  // T-TeleSec GlobalRoot Class 3
+  // http://www.telesec.de/ / https://root-class3.test.telesec.de/
+  { { { 0x55, 0xa6, 0x72, 0x3e, 0xcb, 0xf2, 0xec, 0xcd, 0xc3, 0x23,
+        0x74, 0x70, 0x19, 0x9d, 0x2a, 0xbe, 0x11, 0xe3, 0x81, 0xd1 } },
+    {"1.3.6.1.4.1.7879.13.24.1", "" },
   },
   // UTN - DATACorp SGC
   { { { 0x58, 0x11, 0x9f, 0x0e, 0x12, 0x82, 0x87, 0xea, 0x50, 0xfd,
@@ -465,7 +465,7 @@ bool EVRootCAMetadata::RemoveEVCA(const SHA1HashValue& fingerprint) {
 
 EVRootCAMetadata::EVRootCAMetadata() {
   // Constructs the object from the raw metadata in ev_root_ca_metadata.
-#if defined(USE_NSS)
+#if defined(USE_NSS) || defined(OS_IOS)
   crypto::EnsureNSSInit();
 
   for (size_t i = 0; i < arraysize(ev_root_ca_metadata); i++) {

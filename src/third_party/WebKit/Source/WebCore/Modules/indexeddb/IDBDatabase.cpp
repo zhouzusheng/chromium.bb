@@ -63,6 +63,7 @@ IDBDatabase::IDBDatabase(ScriptExecutionContext* context, PassRefPtr<IDBDatabase
     , m_closePending(false)
     , m_contextStopped(false)
     , m_databaseCallbacks(callbacks)
+    , m_didSpamConsole(false)
 {
     // We pass a reference of this object before it can be adopted.
     relaxAdoptionRequirement();
@@ -107,7 +108,7 @@ PassRefPtr<DOMStringList> IDBDatabase::objectStoreNames() const
 {
     RefPtr<DOMStringList> objectStoreNames = DOMStringList::create();
     for (IDBDatabaseMetadata::ObjectStoreMap::const_iterator it = m_metadata.objectStores.begin(); it != m_metadata.objectStores.end(); ++it)
-        objectStoreNames->append(it->first);
+        objectStoreNames->append(it->key);
     objectStoreNames->sort();
     return objectStoreNames.release();
 }
@@ -117,7 +118,7 @@ PassRefPtr<IDBAny> IDBDatabase::version() const
     int64_t intVersion = m_metadata.intVersion;
     if (intVersion == IDBDatabaseMetadata::NoIntVersion)
         return IDBAny::createString(m_metadata.version);
-    return IDBAny::create(SerializedScriptValue::numberValue(intVersion));
+    return IDBAny::create(intVersion);
 }
 
 PassRefPtr<IDBObjectStore> IDBDatabase::createObjectStore(const String& name, const Dictionary& options, ExceptionCode& ec)
@@ -160,15 +161,17 @@ PassRefPtr<IDBObjectStore> IDBDatabase::createObjectStore(const String& name, co
         return 0;
     }
 
-    RefPtr<IDBObjectStoreBackendInterface> objectStoreBackend = m_backend->createObjectStore(name, keyPath, autoIncrement, m_versionChangeTransaction->backend(), ec);
+    int64_t objectStoreId = m_metadata.maxObjectStoreId + 1;
+    RefPtr<IDBObjectStoreBackendInterface> objectStoreBackend = m_backend->createObjectStore(objectStoreId, name, keyPath, autoIncrement, m_versionChangeTransaction->backend(), ec);
     if (!objectStoreBackend) {
         ASSERT(ec);
         return 0;
     }
 
-    IDBObjectStoreMetadata metadata(name, keyPath, autoIncrement);
+    IDBObjectStoreMetadata metadata(name, objectStoreId, keyPath, autoIncrement, IDBObjectStoreBackendInterface::MinimumIndexId);
     RefPtr<IDBObjectStore> objectStore = IDBObjectStore::create(metadata, objectStoreBackend.release(), m_versionChangeTransaction.get());
     m_metadata.objectStores.set(name, metadata);
+    ++m_metadata.maxObjectStoreId;
 
     m_versionChangeTransaction->objectStoreCreated(name, objectStore);
     return objectStore.release();
@@ -198,6 +201,12 @@ void IDBDatabase::deleteObjectStore(const String& name, ExceptionCode& ec)
 
 PassRefPtr<IDBVersionChangeRequest> IDBDatabase::setVersion(ScriptExecutionContext* context, const String& version, ExceptionCode& ec)
 {
+    if (!m_didSpamConsole) {
+        String consoleMessage = ASCIILiteral("The setVersion() method is non-standard and will be removed. Use the \"upgradeneeded\" event instead.");
+        context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
+        m_didSpamConsole = true;
+    }
+
     if (version.isNull()) {
         ec = NATIVE_TYPE_ERR;
         return 0;
@@ -223,7 +232,7 @@ PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* cont
         return 0;
     }
 
-    IDBTransaction::Mode mode = IDBTransaction::stringToMode(modeString, ec);
+    IDBTransaction::Mode mode = IDBTransaction::stringToMode(modeString, context, ec);
     if (ec)
         return 0;
 
@@ -251,25 +260,6 @@ PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* cont
     RefPtr<DOMStringList> storeNames = DOMStringList::create();
     storeNames->append(storeName);
     return transaction(context, storeNames, mode, ec);
-}
-
-PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, const String& storeName, unsigned short mode, ExceptionCode& ec)
-{
-    RefPtr<DOMStringList> storeNames = DOMStringList::create();
-    storeNames->append(storeName);
-    return transaction(context, storeNames, mode, ec);
-}
-
-PassRefPtr<IDBTransaction> IDBDatabase::transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> prpStoreNames, unsigned short mode, ExceptionCode& ec)
-{
-    // FIXME: Is this thread-safe?
-    DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Numeric transaction modes are deprecated in IDBDatabase.transaction. Use \"readonly\" or \"readwrite\".")));
-    context->addConsoleMessage(JSMessageSource, LogMessageType, WarningMessageLevel, consoleMessage);
-    AtomicString modeString = IDBTransaction::modeToString(IDBTransaction::Mode(mode), ec);
-    if (ec)
-        return 0;
-
-    return transaction(context, prpStoreNames, modeString, ec);
 }
 
 void IDBDatabase::forceClose()

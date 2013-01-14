@@ -25,8 +25,9 @@ void AdjustWindowToFit(HWND hwnd, const RECT& bounds, bool fit_to_monitor) {
       GetMonitorInfo(hmon, &mi);
       gfx::Rect window_rect(bounds);
       gfx::Rect monitor_rect(mi.rcWork);
-      gfx::Rect new_window_rect = window_rect.AdjustToFit(monitor_rect);
-      if (!new_window_rect.Equals(window_rect)) {
+      gfx::Rect new_window_rect = window_rect;
+      new_window_rect.AdjustToFit(monitor_rect);
+      if (new_window_rect != window_rect) {
         // Window doesn't fit on monitor, move and possibly resize.
         SetWindowPos(hwnd, 0, new_window_rect.x(), new_window_rect.y(),
                      new_window_rect.width(), new_window_rect.height(),

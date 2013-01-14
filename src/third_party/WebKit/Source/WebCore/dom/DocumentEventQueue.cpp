@@ -35,15 +35,11 @@
 #include "ScriptExecutionContext.h"
 #include "SuspendableTimer.h"
 #include "WebCoreMemoryInstrumentation.h"
+#include <wtf/MemoryInstrumentationHashSet.h>
+#include <wtf/MemoryInstrumentationListHashSet.h>
 
 namespace WebCore {
     
-static inline bool shouldDispatchScrollEventSynchronously(Document* document)
-{
-    ASSERT_ARG(document, document);
-    return applicationIsSafari() && (document->url().protocolIs("feed") || document->url().protocolIs("feeds"));
-}
-
 class DocumentEventQueueTimer : public SuspendableTimer {
     WTF_MAKE_NONCOPYABLE(DocumentEventQueueTimer);
 public:
@@ -96,11 +92,6 @@ void DocumentEventQueue::enqueueOrDispatchScrollEvent(PassRefPtr<Node> target, S
     bool canBubble = targetType == ScrollEventDocumentTarget;
     RefPtr<Event> scrollEvent = Event::create(eventNames().scrollEvent, canBubble, false /* non cancelleable */);
      
-    if (shouldDispatchScrollEventSynchronously(target->document())) {
-        target->dispatchEvent(scrollEvent.release());
-        return;
-    }
-
     if (!m_nodesWithQueuedScrollEvents.add(target.get()).isNewEntry)
         return;
 
@@ -112,8 +103,8 @@ void DocumentEventQueue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) c
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     info.addMember(m_pendingEventTimer);
-    info.addInstrumentedHashSet(m_queuedEvents);
-    info.addInstrumentedHashSet(m_nodesWithQueuedScrollEvents);
+    info.addMember(m_queuedEvents);
+    info.addMember(m_nodesWithQueuedScrollEvents);
 }
 
 bool DocumentEventQueue::cancelEvent(Event* event)
@@ -147,7 +138,7 @@ void DocumentEventQueue::pendingEventTimerFired()
     RefPtr<DocumentEventQueue> protector(this);
 
     while (!m_queuedEvents.isEmpty()) {
-        ListHashSet<RefPtr<Event> >::iterator iter = m_queuedEvents.begin();
+        ListHashSet<RefPtr<Event>, 16>::iterator iter = m_queuedEvents.begin();
         RefPtr<Event> event = *iter;
         m_queuedEvents.remove(iter);
         if (!event)

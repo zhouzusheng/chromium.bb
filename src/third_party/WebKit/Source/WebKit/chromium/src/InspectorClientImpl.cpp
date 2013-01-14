@@ -37,12 +37,12 @@
 #include "NotImplemented.h"
 #include "Page.h"
 #include "WebDevToolsAgentImpl.h"
-#include "platform/WebRect.h"
-#include "platform/WebURL.h"
-#include "platform/WebURLRequest.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include <public/Platform.h>
+#include <public/WebRect.h>
+#include <public/WebURL.h>
+#include <public/WebURLRequest.h>
 #include <wtf/Vector.h>
 
 using namespace WebCore;
@@ -131,6 +131,11 @@ void InspectorClientImpl::clearBrowserCookies()
         agent->clearBrowserCookies();
 }
 
+bool InspectorClientImpl::canMonitorMainThread()
+{
+    return true;
+}
+
 void InspectorClientImpl::startMainThreadMonitoring()
 {
     WebKit::Platform::current()->currentThread()->addTaskObserver(this);
@@ -161,6 +166,18 @@ void InspectorClientImpl::autoZoomPageToFitWidth()
 bool InspectorClientImpl::supportsFrameInstrumentation()
 {
     return true;
+}
+
+void InspectorClientImpl::getAllocatedObjects(HashSet<const void*>& set)
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->getAllocatedObjects(set);
+}
+
+void InspectorClientImpl::dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>& map)
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->dumpUncountedAllocatedObjects(map);
 }
 
 void InspectorClientImpl::willProcessTask()

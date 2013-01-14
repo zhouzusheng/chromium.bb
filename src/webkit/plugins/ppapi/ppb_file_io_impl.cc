@@ -22,9 +22,12 @@
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
 #include "webkit/plugins/ppapi/common.h"
+#include "webkit/plugins/ppapi/file_callbacks.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
+#include "webkit/plugins/ppapi/ppb_file_system_impl.h"
 #include "webkit/plugins/ppapi/quota_file_io.h"
 #include "webkit/plugins/ppapi/resource_helper.h"
 
@@ -35,6 +38,58 @@ using ppapi::thunk::PPB_FileRef_API;
 
 namespace webkit {
 namespace ppapi {
+
+namespace {
+
+typedef base::Callback<void (base::PlatformFileError)> PlatformGeneralCallback;
+
+class PlatformGeneralCallbackTranslator
+    : public fileapi::FileSystemCallbackDispatcher {
+ public:
+  PlatformGeneralCallbackTranslator(
+      const PlatformGeneralCallback& callback)
+    : callback_(callback) {}
+
+  virtual ~PlatformGeneralCallbackTranslator() {}
+
+  virtual void DidSucceed() OVERRIDE {
+    callback_.Run(base::PLATFORM_FILE_OK);
+  }
+
+  virtual void DidReadMetadata(
+      const base::PlatformFileInfo& file_info,
+      const FilePath& platform_path) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void DidReadDirectory(
+      const std::vector<base::FileUtilProxy::Entry>& entries,
+      bool has_more) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void DidOpenFileSystem(const std::string& name,
+                                 const GURL& root) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void DidFail(base::PlatformFileError error_code) OVERRIDE {
+    callback_.Run(error_code);
+  }
+
+  virtual void DidWrite(int64 bytes, bool complete) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void DidOpenFile(base::PlatformFile file) OVERRIDE {
+    NOTREACHED();
+  }
+
+ private:
+  PlatformGeneralCallback callback_;
+};
+
+}  // namespace
 
 PPB_FileIO_Impl::PPB_FileIO_Impl(PP_Instance instance)
     : ::ppapi::PPB_FileIO_Shared(instance),
@@ -108,13 +163,26 @@ int32_t PPB_FileIO_Impl::TouchValidated(
   if (!plugin_delegate)
     return PP_ERROR_FAILED;
 
-  if (!base::FileUtilProxy::Touch(
-          plugin_delegate->GetFileThreadMessageLoopProxy(),
-          file_, PPTimeToTime(last_access_time),
-          PPTimeToTime(last_modified_time),
-          base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
-                     weak_factory_.GetWeakPtr())))
-    return PP_ERROR_FAILED;
+  if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL) {
+    if (!plugin_delegate->Touch(
+            file_system_url_,
+            PPTimeToTime(last_access_time),
+            PPTimeToTime(last_modified_time),
+            new PlatformGeneralCallbackTranslator(
+                base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                           weak_factory_.GetWeakPtr()))))
+      return PP_ERROR_FAILED;
+  } else {
+    // TODO(nhiroki): fix a failure of FileIO.Touch for an external filesystem
+    // on Mac and Linux due to sandbox restrictions (http://crbug.com/101128).
+    if (!base::FileUtilProxy::Touch(
+            plugin_delegate->GetFileThreadMessageLoopProxy(),
+            file_, PPTimeToTime(last_access_time),
+            PPTimeToTime(last_modified_time),
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  }
 
   RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
@@ -175,13 +243,16 @@ int32_t PPB_FileIO_Impl::SetLengthValidated(
   if (!plugin_delegate)
     return PP_ERROR_FAILED;
 
-  if (quota_file_io_.get()) {
-    if (!quota_file_io_->SetLength(
-            length,
-            base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
-                       weak_factory_.GetWeakPtr())))
+  if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL) {
+    if (!plugin_delegate->SetLength(
+            file_system_url_, length,
+            new PlatformGeneralCallbackTranslator(
+                base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                           weak_factory_.GetWeakPtr()))))
       return PP_ERROR_FAILED;
   } else {
+    // TODO(nhiroki): fix a failure of FileIO.SetLength for an external
+    // filesystem on Mac due to sandbox restrictions (http://crbug.com/156077).
     if (!base::FileUtilProxy::Truncate(
             plugin_delegate->GetFileThreadMessageLoopProxy(), file_, length,
             base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,

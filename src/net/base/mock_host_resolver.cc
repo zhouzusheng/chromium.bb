@@ -145,10 +145,8 @@ int MockHostResolverBase::ResolveFromIPLiteralOrCache(const RequestInfo& info,
     const HostCache::Entry* entry = cache_->Lookup(key, base::TimeTicks::Now());
     if (entry) {
       rv = entry->error;
-      if (rv == OK) {
-        *addresses = entry->addrlist;
-        SetPortOnAddressList(info.port(), addresses);
-      }
+      if (rv == OK)
+        *addresses = AddressList::CopyWithPort(entry->addrlist, info.port());
     }
   }
   return rv;
@@ -171,12 +169,10 @@ int MockHostResolverBase::ResolveProc(size_t id,
     base::TimeDelta ttl;
     if (rv == OK)
       ttl = base::TimeDelta::FromSeconds(kCacheEntryTTLSeconds);
-    cache_->Set(key, rv, addr, base::TimeTicks::Now(), ttl);
+    cache_->Set(key, HostCache::Entry(rv, addr), base::TimeTicks::Now(), ttl);
   }
-  if (rv == OK) {
-    *addresses = addr;
-    SetPortOnAddressList(info.port(), addresses);
-  }
+  if (rv == OK)
+    *addresses = AddressList::CopyWithPort(addr, info.port());
   return rv;
 }
 

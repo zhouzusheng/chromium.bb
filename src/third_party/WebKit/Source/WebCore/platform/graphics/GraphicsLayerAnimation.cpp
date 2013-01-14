@@ -155,14 +155,23 @@ static TransformationMatrix applyTransformAnimation(const TransformOperations* f
     return matrix;
 }
 
+static const TimingFunction* timingFunctionForAnimationValue(const AnimationValue* animValue, const Animation* anim)
+{
+    if (animValue->timingFunction())
+        return animValue->timingFunction();
+    if (anim->timingFunction())
+        return anim->timingFunction().get();
 
-GraphicsLayerAnimation::GraphicsLayerAnimation(const String& name, const KeyframeValueList& keyframes, const IntSize& boxSize, const Animation* animation, double timeOffset, bool listsMatch)
+    return CubicBezierTimingFunction::defaultTimingFunction();
+}
+
+GraphicsLayerAnimation::GraphicsLayerAnimation(const String& name, const KeyframeValueList& keyframes, const IntSize& boxSize, const Animation* animation, double startTime, bool listsMatch)
     : m_keyframes(keyframes)
     , m_boxSize(boxSize)
     , m_animation(Animation::create(animation))
     , m_name(name)
     , m_listsMatch(listsMatch)
-    , m_startTime(WTF::currentTime() - timeOffset)
+    , m_startTime(startTime)
     , m_pauseTime(0)
     , m_state(PlayingState)
 {
@@ -233,7 +242,8 @@ void GraphicsLayerAnimation::apply(Client* client)
         return;
     }
     if (m_keyframes.size() == 2) {
-        normalizedValue = applyTimingFunction(m_animation->timingFunction().get(), normalizedValue, m_animation->duration());
+        const TimingFunction* timingFunction = timingFunctionForAnimationValue(m_keyframes.at(0), m_animation.get());
+        normalizedValue = applyTimingFunction(timingFunction, normalizedValue, m_animation->duration());
         applyInternal(client, m_keyframes.at(0), m_keyframes.at(1), normalizedValue);
         return;
     }
@@ -245,7 +255,8 @@ void GraphicsLayerAnimation::apply(Client* client)
             continue;
 
         normalizedValue = (normalizedValue - from->keyTime()) / (to->keyTime() - from->keyTime());
-        normalizedValue = applyTimingFunction(from->timingFunction(), normalizedValue, m_animation->duration());
+        const TimingFunction* timingFunction = timingFunctionForAnimationValue(from, m_animation.get());
+        normalizedValue = applyTimingFunction(timingFunction, normalizedValue, m_animation->duration());
         applyInternal(client, from, to, normalizedValue);
         break;
     }
@@ -285,6 +296,15 @@ void GraphicsLayerAnimations::apply(GraphicsLayerAnimation::Client* client)
         m_animations[i].apply(client);
 }
 
+GraphicsLayerAnimations GraphicsLayerAnimations::getActiveAnimations() const
+{
+    GraphicsLayerAnimations active;
+    for (size_t i = 0; i < m_animations.size(); ++i) {
+        if (m_animations[i].isActive())
+            active.add(m_animations[i]);
+    }
+    return active;
+}
 }
 #endif
 

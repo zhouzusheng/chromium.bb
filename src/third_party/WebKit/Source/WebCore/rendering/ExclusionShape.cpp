@@ -31,9 +31,10 @@
 #include "ExclusionShape.h"
 
 #include "BasicShapeFunctions.h"
+#include "ExclusionPolygon.h"
 #include "ExclusionRectangle.h"
+#include "FloatSize.h"
 #include "LengthFunctions.h"
-#include "NotImplemented.h"
 #include "WindRule.h"
 #include <wtf/MathExtras.h>
 #include <wtf/OwnPtr.h>
@@ -41,66 +42,122 @@
 
 namespace WebCore {
 
-static PassOwnPtr<ExclusionShape> createExclusionRectangle(float x, float y, float width, float height, float rx, float ry)
+static PassOwnPtr<ExclusionShape> createExclusionRectangle(const FloatRect& bounds, const FloatSize& radii)
 {
-    ASSERT(width >= 0 && height >= 0 && rx >= 0 && ry >= 0);
-    return adoptPtr(new ExclusionRectangle(x, y, width, height, rx, ry));
+    ASSERT(bounds.width() >= 0 && bounds.height() >= 0 && radii.width() >= 0 && radii.height() >= 0);
+    return adoptPtr(new ExclusionRectangle(bounds, radii));
 }
 
-static PassOwnPtr<ExclusionShape> createExclusionCircle(float cx, float cy, float radius)
+static PassOwnPtr<ExclusionShape> createExclusionCircle(const FloatPoint& center, float radius)
 {
     ASSERT(radius >= 0);
-    return adoptPtr(new ExclusionRectangle(cx - radius, cy - radius, cx + radius, cy + radius, radius, radius));
+    return adoptPtr(new ExclusionRectangle(FloatRect(center.x() - radius, center.y() - radius, radius*2, radius*2), FloatSize(radius, radius)));
 }
 
-static PassOwnPtr<ExclusionShape> createExclusionEllipse(float cx, float cy, float rx, float ry)
+static PassOwnPtr<ExclusionShape> createExclusionEllipse(const FloatPoint& center, const FloatSize& radii)
 {
-    ASSERT(rx >= 0 && ry >= 0);
-    return adoptPtr(new ExclusionRectangle(cx - rx, cy - ry, cx + rx, cy + ry, rx, ry));
+    ASSERT(radii.width() >= 0 && radii.height() >= 0);
+    return adoptPtr(new ExclusionRectangle(FloatRect(center.x() - radii.width(), center.y() - radii.height(), radii.width()*2, radii.height()*2), radii));
 }
 
-PassOwnPtr<ExclusionShape> ExclusionShape::createExclusionShape(const BasicShape* wrapShape, float borderBoxLogicalWidth, float borderBoxLogicalHeight)
+static PassOwnPtr<ExclusionShape> createExclusionPolygon(PassOwnPtr<Vector<FloatPoint> > vertices, WindRule fillRule)
 {
-    if (!wrapShape)
+    return adoptPtr(new ExclusionPolygon(vertices, fillRule));
+}
+
+// If the writingMode is vertical, then the BasicShape's (physical) x and y coordinates are swapped, so that
+// line segments are parallel to the internal coordinate system's X axis.
+
+PassOwnPtr<ExclusionShape> ExclusionShape::createExclusionShape(const BasicShape* basicShape, float logicalBoxWidth, float logicalBoxHeight, WritingMode writingMode)
+{
+    if (!basicShape)
         return nullptr;
 
-    switch (wrapShape->type()) {
+    bool horizontalWritingMode = isHorizontalWritingMode(writingMode);
+    float boxWidth = horizontalWritingMode ? logicalBoxWidth : logicalBoxHeight;
+    float boxHeight = horizontalWritingMode ? logicalBoxHeight : logicalBoxWidth;
+    OwnPtr<ExclusionShape> exclusionShape;
+
+    switch (basicShape->type()) {
+
     case BasicShape::BASIC_SHAPE_RECTANGLE: {
-        const BasicShapeRectangle* rectangle = static_cast<const BasicShapeRectangle*>(wrapShape);
-        Length rx = rectangle->cornerRadiusX();
-        Length ry = rectangle->cornerRadiusY();
-        return createExclusionRectangle(
-            floatValueForLength(rectangle->x(), borderBoxLogicalWidth),
-            floatValueForLength(rectangle->y(), borderBoxLogicalHeight),
-            floatValueForLength(rectangle->width(), borderBoxLogicalWidth),
-            floatValueForLength(rectangle->height(), borderBoxLogicalHeight),
-            rx.isUndefined() ? 0 : floatValueForLength(rx, borderBoxLogicalWidth),
-            ry.isUndefined() ? 0 : floatValueForLength(ry, borderBoxLogicalHeight) );
+        const BasicShapeRectangle* rectangle = static_cast<const BasicShapeRectangle*>(basicShape);
+        FloatRect bounds(
+            floatValueForLength(rectangle->x(), boxWidth),
+            floatValueForLength(rectangle->y(), boxHeight),
+            floatValueForLength(rectangle->width(), boxWidth),
+            floatValueForLength(rectangle->height(), boxHeight));
+        Length radiusXLength = rectangle->cornerRadiusX();
+        Length radiusYLength = rectangle->cornerRadiusY();
+        FloatSize cornerRadii(
+            radiusXLength.isUndefined() ? 0 : floatValueForLength(radiusXLength, boxWidth),
+            radiusYLength.isUndefined() ? 0 : floatValueForLength(radiusYLength, boxHeight));
+
+        exclusionShape = horizontalWritingMode
+            ? createExclusionRectangle(bounds, cornerRadii)
+            : createExclusionRectangle(bounds.transposedRect(), cornerRadii.transposedSize());
+        exclusionShape->m_boundingBox = bounds;
+        break;
     }
 
     case BasicShape::BASIC_SHAPE_CIRCLE: {
-        const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(wrapShape);
-        return createExclusionCircle(
-            floatValueForLength(circle->centerX(), borderBoxLogicalWidth),
-            floatValueForLength(circle->centerY(), borderBoxLogicalHeight),
-            floatValueForLength(circle->radius(), std::max(borderBoxLogicalHeight, borderBoxLogicalWidth)) );
+        const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
+        float centerX = floatValueForLength(circle->centerX(), boxWidth);
+        float centerY = floatValueForLength(circle->centerY(), boxHeight);
+        float radius =  floatValueForLength(circle->radius(), std::max(boxHeight, boxWidth));
+
+        exclusionShape = horizontalWritingMode
+            ? createExclusionCircle(FloatPoint(centerX, centerY), radius)
+            : createExclusionCircle(FloatPoint(centerY, centerX), radius);
+        exclusionShape->m_boundingBox = FloatRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+        break;
     }
 
     case BasicShape::BASIC_SHAPE_ELLIPSE: {
-        const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(wrapShape);
-        return createExclusionEllipse(
-            floatValueForLength(ellipse->centerX(), borderBoxLogicalWidth),
-            floatValueForLength(ellipse->centerY(), borderBoxLogicalHeight),
-            floatValueForLength(ellipse->radiusX(), borderBoxLogicalWidth),
-            floatValueForLength(ellipse->radiusY(), borderBoxLogicalHeight) );
+        const BasicShapeEllipse* ellipse = static_cast<const BasicShapeEllipse*>(basicShape);
+        float centerX = floatValueForLength(ellipse->centerX(), boxWidth);
+        float centerY = floatValueForLength(ellipse->centerY(), boxHeight);
+        float radiusX = floatValueForLength(ellipse->radiusX(), boxWidth);
+        float radiusY = floatValueForLength(ellipse->radiusY(), boxHeight);
+
+        exclusionShape = horizontalWritingMode
+            ? createExclusionEllipse(FloatPoint(centerX, centerY), FloatSize(radiusX, radiusY))
+            : createExclusionEllipse(FloatPoint(centerY, centerX), FloatSize(radiusY, radiusX));
+        exclusionShape->m_boundingBox = FloatRect(centerX - radiusX, centerY - radiusY, radiusX * 2, radiusY * 2);
+        break;
     }
 
-    case BasicShape::BASIC_SHAPE_POLYGON:
-        notImplemented();
+    case BasicShape::BASIC_SHAPE_POLYGON: {
+        const BasicShapePolygon* polygon = static_cast<const BasicShapePolygon*>(basicShape);
+        const Vector<Length>& values = polygon->values();
+        size_t valuesSize = values.size();
+        ASSERT(!(valuesSize % 2));
+        FloatRect boundingBox;
+        Vector<FloatPoint>* vertices = new Vector<FloatPoint>(valuesSize / 2);
+        for (unsigned i = 0; i < valuesSize; i += 2) {
+            FloatPoint vertex(
+                floatValueForLength(values.at(i), boxWidth),
+                floatValueForLength(values.at(i + 1), boxHeight));
+            (*vertices)[i / 2] = horizontalWritingMode ? vertex : vertex.transposedPoint();
+            if (!i)
+                boundingBox.setLocation(vertex);
+            else
+                boundingBox.extend(vertex);
+        }
+        exclusionShape = createExclusionPolygon(adoptPtr(vertices), polygon->windRule());
+        exclusionShape->m_boundingBox = boundingBox;
+        break;
     }
 
-    ASSERT_NOT_REACHED();
-    return nullptr;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+
+    exclusionShape->m_logicalBoxWidth = logicalBoxWidth;
+    exclusionShape->m_logicalBoxHeight = logicalBoxHeight;
+    exclusionShape->m_writingMode = writingMode;
+
+    return exclusionShape.release();
 }
 
 } // namespace WebCore

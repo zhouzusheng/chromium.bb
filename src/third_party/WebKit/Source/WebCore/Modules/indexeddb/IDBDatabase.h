@@ -62,13 +62,9 @@ public:
     PassRefPtr<IDBAny> version() const;
     PassRefPtr<DOMStringList> objectStoreNames() const;
 
-    // FIXME: Try to modify the code generator so this is unneeded.
-    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, ExceptionCode& ec) { return createObjectStore(name, Dictionary(), ec); }
     PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionCode&);
     PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, PassRefPtr<DOMStringList>, const String& mode, ExceptionCode&);
     PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const String&, const String& mode, ExceptionCode&);
-    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, PassRefPtr<DOMStringList>, unsigned short mode, ExceptionCode&);
-    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const String&, unsigned short mode, ExceptionCode&);
     void deleteObjectStore(const String& name, ExceptionCode&);
     PassRefPtr<IDBVersionChangeRequest> setVersion(ScriptExecutionContext*, const String& version, ExceptionCode&);
     void close();
@@ -124,6 +120,8 @@ private:
     Vector<RefPtr<Event> > m_enqueuedEvents;
 
     RefPtr<IDBDatabaseCallbacks> m_databaseCallbacks;
+
+    bool m_didSpamConsole;
 };
 
 } // namespace WebCore

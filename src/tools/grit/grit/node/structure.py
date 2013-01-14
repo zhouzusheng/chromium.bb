@@ -7,6 +7,7 @@
 '''
 
 import os
+import platform
 
 from grit import exception
 from grit import util
@@ -41,26 +42,6 @@ _GATHERERS = {
   'txt'                 : grit.gather.txt.TxtFile,
   'version'             : grit.gather.rc.Version,
   'policy_template_metafile' : grit.gather.policy_json.PolicyJson,
-}
-
-
-# Formatter instance to use for each type attribute
-# when formatting .rc files.
-_RC_FORMATTERS = {
-  'accelerators'        : grit.format.rc.RcSection(),
-  'admin_template'      : grit.format.rc.RcInclude('ADM'),
-  'chrome_html'         : grit.format.rc.RcInclude('BINDATA',
-                                                   process_html=True),
-  'chrome_scaled_image' : grit.format.rc.RcInclude('BINDATA'),
-  'dialog'              : grit.format.rc.RcSection(),
-  'igoogle'             : grit.format.rc.RcInclude('XML'),
-  'menu'                : grit.format.rc.RcSection(),
-  'muppet'              : grit.format.rc.RcInclude('XML'),
-  'rcdata'              : grit.format.rc.RcSection(),
-  'tr_html'             : grit.format.rc.RcInclude('HTML'),
-  'txt'                 : grit.format.rc.RcInclude('TXT'),
-  'version'             : grit.format.rc.RcSection(),
-  'policy_template_metafile': None,
 }
 
 
@@ -119,7 +100,14 @@ class StructureNode(base.Node):
              'expand_variables' : 'false',
              'output_filename' : '',
              'fold_whitespace': 'false',
+             # Run an arbitrary command after translation is complete
+             # so that it doesn't interfere with what's in translation
+             # console.
              'run_command' : '',
+             # Leave empty to run on all platforms, comma-separated
+             # for one or more specific platforms. Values must match
+             # output of platform.system().
+             'run_command_on_platforms' : '',
              'allowexternalscript': 'false',
              'flattenhtml': 'false',
              'fallback_to_low_resolution': 'default',
@@ -175,7 +163,7 @@ class StructureNode(base.Node):
     generate the data pack data file.
     """
     from grit.format import rc_header
-    id_map = rc_header.Item.tids_
+    id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
     data = self.gatherer.GetData(lang, encoding)
     return id, data
@@ -195,22 +183,7 @@ class StructureNode(base.Node):
       return [self.attrs['name']]
     return self.gatherer.GetTextualIds()
 
-  def ItemFormatter(self, t):
-    if t == 'rc_header':
-      return grit.format.rc_header.Item()
-    elif (t in ['rc_all', 'rc_translateable', 'rc_nontranslateable'] and
-          self.SatisfiesOutputCondition()):
-      return _RC_FORMATTERS[self.attrs['type']]
-    elif t == 'resource_map_source':
-      from grit.format import resource_map
-      return resource_map.SourceInclude()
-    elif t == 'resource_file_map_source':
-      from grit.format import resource_map
-      return resource_map.SourceFileInclude()
-    else:
-      return super(StructureNode, self).ItemFormatter(t)
-
-  def RunGatherers(self, recursive=False, debug=False):
+  def RunPreSubstitutionGatherer(self, debug=False):
     if debug:
       print 'Running gatherer %s for file %s' % (
           str(type(self.gatherer)), self.GetInputPath())
@@ -250,6 +223,13 @@ class StructureNode(base.Node):
       return (self.attrs['expand_variables'] == 'true' or
               self.attrs['file'].lower().endswith('.rc'))
 
+  def RunCommandOnCurrentPlatform(self):
+    if self.attrs['run_command_on_platforms'] == '':
+      return True
+    else:
+      target_platforms = self.attrs['run_command_on_platforms'].split(',')
+      return platform.system() in target_platforms
+
   def FileForLanguage(self, lang, output_dir, create_file=True,
                       return_if_not_generated=True):
     '''Returns the filename of the file associated with this structure,
@@ -265,7 +245,8 @@ class StructureNode(base.Node):
     # use the existing file.
     if ((not lang or lang == self.GetRoot().GetSourceLanguage()) and
         self.attrs['expand_variables'] != 'true' and
-        not self.attrs['run_command']):
+        (not self.attrs['run_command'] or
+         not self.RunCommandOnCurrentPlatform())):
       if return_if_not_generated:
         return self.ToRealPath(self.GetInputPath())
       else:
@@ -299,7 +280,7 @@ class StructureNode(base.Node):
                                               self.attrs['output_encoding'])
         output_stream.write(file_contents)
 
-      if self.attrs['run_command']:
+      if self.attrs['run_command'] and self.RunCommandOnCurrentPlatform():
         # Run arbitrary commands after translation is complete so that it
         # doesn't interfere with what's in translation console.
         command = self.attrs['run_command'] % {'filename': filename}

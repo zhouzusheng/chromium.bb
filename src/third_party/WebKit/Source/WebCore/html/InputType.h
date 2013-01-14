@@ -276,6 +276,7 @@ public:
     virtual bool supportsPlaceholder() const;
     virtual bool usesFixedPlaceholder() const;
     virtual String fixedPlaceholder();
+    virtual bool supportsReadOnly() const;
     virtual void updateInnerTextValue();
     virtual void updatePlaceholderText();
     virtual void multipleAttributeChanged();
@@ -305,6 +306,8 @@ public:
     virtual String serialize(const Decimal&) const;
 
     virtual bool supportsIndeterminateAppearance() const;
+
+    virtual bool supportsSelectionAPI() const;
 
     // Gets width and height of the input element if the type of the
     // element is image. It returns 0 if the element is not image type.

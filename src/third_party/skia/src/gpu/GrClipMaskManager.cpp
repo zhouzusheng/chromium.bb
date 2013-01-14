@@ -20,20 +20,20 @@
 
 GR_DEFINE_RESOURCE_CACHE_DOMAIN(GrClipMaskManager, GetAlphaMaskDomain)
 
-//#define GR_AA_CLIP 1
-//#define GR_SW_CLIP 1
+#define GR_AA_CLIP 1
+#define GR_SW_CLIP 1
 
 ////////////////////////////////////////////////////////////////////////////////
 namespace {
 // set up the draw state to enable the aa clipping mask. Besides setting up the
-// sampler matrix this also alters the vertex layout
+// stage matrix this also alters the vertex layout
 void setup_drawstate_aaclip(GrGpu* gpu,
                             GrTexture* result,
                             const GrIRect &devBound) {
     GrDrawState* drawState = gpu->drawState();
     GrAssert(drawState);
 
-    static const int maskStage = GrPaint::kTotalStages+1;
+    static const int kMaskStage = GrPaint::kTotalStages+1;
 
     GrMatrix mat;
     mat.setIDiv(result->width(), result->height());
@@ -41,9 +41,8 @@ void setup_drawstate_aaclip(GrGpu* gpu,
                      SkIntToScalar(-devBound.fTop));
     mat.preConcat(drawState->getViewMatrix());
 
-    drawState->sampler(maskStage)->reset(mat);
-
-    drawState->createTextureEffect(maskStage, result);
+    drawState->stage(kMaskStage)->reset();
+    drawState->createTextureEffect(kMaskStage, result, mat);
 }
 
 bool path_needs_SW_renderer(GrContext* context,
@@ -441,7 +440,7 @@ bool draw_path(GrContext* context,
         return draw_path_in_software(context, gpu, path, fill, doAA, resultBounds);
     }
 
-    pr->drawPath(path, fill, NULL, gpu, doAA);
+    pr->drawPath(path, fill, gpu, doAA);
     return true;
 }
 
@@ -495,8 +494,7 @@ void GrClipMaskManager::drawTexture(GrTexture* target,
     GrMatrix sampleM;
     sampleM.setIDiv(texture->width(), texture->height());
 
-    drawState->sampler(0)->reset(sampleM);
-    drawState->createTextureEffect(0, texture);
+    drawState->createTextureEffect(0, texture, sampleM);
 
     GrRect rect = GrRect::MakeWH(SkIntToScalar(target->width()),
                                  SkIntToScalar(target->height()));
@@ -565,9 +563,7 @@ bool GrClipMaskManager::clipMaskPreamble(const GrClipData& clipDataIn,
 
     // TODO: make sure we don't outset if bounds are still 0,0 @ min
 
-    if (fAACache.canReuse(*clipDataIn.fClipStack,
-                          devResultBounds->width(),
-                          devResultBounds->height())) {
+    if (fAACache.canReuse(*clipDataIn.fClipStack, *devResultBounds)) {
         *result = fAACache.getLastMask();
         fAACache.getLastBound(devResultBounds);
         return true;
@@ -785,11 +781,7 @@ bool GrClipMaskManager::createStencilClipMask(const GrClipData& clipDataIn,
             drawState->disableState(GrGpu::kModifyStencilClip_StateBit);
             // if the target is MSAA then we want MSAA enabled when the clip is soft
             if (rt->isMultisampled()) {
-                if (clip->fDoAA) {
-                    drawState->enableState(GrDrawState::kHWAntialias_StateBit);
-                } else {
-                    drawState->disableState(GrDrawState::kHWAntialias_StateBit);
-                }
+                drawState->setState(GrDrawState::kHWAntialias_StateBit, clip->fDoAA);
             }
 
             // Can the clip element be drawn directly to the stencil buffer
@@ -861,7 +853,7 @@ bool GrClipMaskManager::createStencilClipMask(const GrClipData& clipDataIn,
                 } else {
                     if (canRenderDirectToStencil) {
                         *drawState->stencil() = gDrawToStencil;
-                        pr->drawPath(*clipPath, fill, NULL, fGpu, false);
+                        pr->drawPath(*clipPath, fill, fGpu, false);
                     } else {
                         pr->drawPathToStencil(*clipPath, fill, fGpu);
                     }
@@ -879,7 +871,7 @@ bool GrClipMaskManager::createStencilClipMask(const GrClipData& clipDataIn,
                         fGpu->drawSimpleRect(*clip->fRect, NULL);
                     } else {
                         SET_RANDOM_COLOR
-                        pr->drawPath(*clipPath, fill, NULL, fGpu, false);
+                        pr->drawPath(*clipPath, fill, fGpu, false);
                     }
                 } else {
                     SET_RANDOM_COLOR
@@ -1167,6 +1159,8 @@ bool GrClipMaskManager::createSoftwareClipMask(const GrClipData& clipDataIn,
             if (SkRegion::kReverseDifference_Op == op) {
                 SkRect temp;
                 temp.set(*devResultBounds);
+                temp.offset(SkIntToScalar(clipDataIn.fOrigin.fX),
+                            SkIntToScalar(clipDataIn.fOrigin.fX));
 
                 // invert the entire scene
                 helper.draw(temp, SkRegion::kXOR_Op, false, 0xFF);

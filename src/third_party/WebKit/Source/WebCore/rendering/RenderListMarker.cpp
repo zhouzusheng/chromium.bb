@@ -1302,6 +1302,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
 
 void RenderListMarker::layout()
 {
+    StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
  
     if (isImage()) {
@@ -1541,7 +1542,7 @@ LayoutUnit RenderListMarker::lineHeight(bool firstLine, LineDirectionMode direct
     return RenderBox::lineHeight(firstLine, direction, linePositionMode);
 }
 
-LayoutUnit RenderListMarker::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
+int RenderListMarker::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
 {
     if (!isImage())
         return m_listItem->baselinePosition(baselineType, firstLine, direction, PositionOfInteriorLineBoxes);
@@ -1702,7 +1703,7 @@ void RenderListMarker::setSelectionState(SelectionState state)
             root->setHasSelectedChildren(state != SelectionNone);
 }
 
-LayoutRect RenderListMarker::selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent)
+LayoutRect RenderListMarker::selectionRectForRepaint(RenderLayerModelObject* repaintContainer, bool clipToVisibleContent)
 {
     ASSERT(!needsLayout());
 

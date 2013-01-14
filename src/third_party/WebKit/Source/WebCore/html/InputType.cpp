@@ -881,6 +881,11 @@ String InputType::fixedPlaceholder()
     return String();
 }
 
+bool InputType::supportsReadOnly() const
+{
+    return false;
+}
+
 void InputType::updateInnerTextValue()
 {
 }
@@ -930,6 +935,11 @@ Decimal InputType::findClosestTickMarkValue(const Decimal&)
 #endif
 
 bool InputType::supportsIndeterminateAppearance() const
+{
+    return false;
+}
+
+bool InputType::supportsSelectionAPI() const
 {
     return false;
 }

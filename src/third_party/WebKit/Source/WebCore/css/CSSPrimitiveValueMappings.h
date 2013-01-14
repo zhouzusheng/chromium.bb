@@ -1380,8 +1380,8 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EFlexWrap e)
 {
     m_primitiveUnitType = CSS_IDENT;
     switch (e) {
-    case FlexWrapNone:
-        m_value.ident = CSSValueNone;
+    case FlexNoWrap:
+        m_value.ident = CSSValueNowrap;
         break;
     case FlexWrap:
         m_value.ident = CSSValueWrap;
@@ -1395,8 +1395,8 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EFlexWrap e)
 template<> inline CSSPrimitiveValue::operator EFlexWrap() const
 {
     switch (m_value.ident) {
-    case CSSValueNone:
-        return FlexWrapNone;
+    case CSSValueNowrap:
+        return FlexNoWrap;
     case CSSValueWrap:
         return FlexWrap;
     case CSSValueWrapReverse:
@@ -1404,7 +1404,7 @@ template<> inline CSSPrimitiveValue::operator EFlexWrap() const
     }
 
     ASSERT_NOT_REACHED();
-    return FlexWrapNone;
+    return FlexNoWrap;
 }
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EFloat e)
@@ -2203,7 +2203,7 @@ template<> inline CSSPrimitiveValue::operator ETextDecoration() const
     return TDNONE;
 }
 
-#if ENABLE(CSS3_TEXT_DECORATION)
+#if ENABLE(CSS3_TEXT)
 template<> inline CSSPrimitiveValue::operator TextDecorationStyle() const
 {
     switch (m_value.ident) {
@@ -2222,7 +2222,7 @@ template<> inline CSSPrimitiveValue::operator TextDecorationStyle() const
     ASSERT_NOT_REACHED();
     return TextDecorationStyleSolid;
 }
-#endif // CSS3_TEXT_DECORATION
+#endif // CSS3_TEXT
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ETextSecurity e)
     : CSSValue(PrimitiveClass)
@@ -4275,6 +4275,33 @@ template<> inline CSSPrimitiveValue::operator EVectorEffect() const
 
     ASSERT_NOT_REACHED();
     return VE_NONE;
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EMaskType e)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_IDENT;
+    switch (e) {
+    case MT_LUMINANCE:
+        m_value.ident = CSSValueLuminance;
+        break;
+    case MT_ALPHA:
+        m_value.ident = CSSValueAlpha;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator EMaskType() const
+{
+    switch (m_value.ident) {
+    case CSSValueLuminance:
+        return MT_LUMINANCE;
+    case CSSValueAlpha:
+        return MT_ALPHA;
+    }
+
+    ASSERT_NOT_REACHED();
+    return MT_LUMINANCE;
 }
 
 #endif // ENABLE(SVG)

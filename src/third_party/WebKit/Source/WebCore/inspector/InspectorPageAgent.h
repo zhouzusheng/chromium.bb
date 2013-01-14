@@ -118,6 +118,8 @@ public:
     virtual void clearDeviceOrientationOverride(ErrorString*);
     virtual void canOverrideDeviceOrientation(ErrorString*, bool*);
     virtual void setTouchEmulationEnabled(ErrorString*, bool);
+    virtual void getCompositingBordersVisible(ErrorString*, bool* out_param);
+    virtual void setCompositingBordersVisible(ErrorString*, bool);
 
     // Geolocation override helpers.
     GeolocationPosition* overrideGeolocationPosition(GeolocationPosition*);
@@ -134,15 +136,17 @@ public:
     void loaderDetachedFromFrame(DocumentLoader*);
     void applyScreenWidthOverride(long*);
     void applyScreenHeightOverride(long*);
-    void willPaint(GraphicsContext*, const LayoutRect&);
-    void didPaint();
+    void didPaint(GraphicsContext*, const LayoutRect&);
     void didLayout();
     void didScroll();
+    void didRecalculateStyle();
 
     // Inspector Controller API
     virtual void setFrontend(InspectorFrontend*);
     virtual void clearFrontend();
     virtual void restore();
+
+    void webViewResized(const IntSize&);
 
     // Cross-agents API
     Frame* mainFrame();
@@ -160,6 +164,9 @@ private:
     void updateTouchEventEmulationInPage(bool);
 #endif
 
+    static bool mainResourceContent(Frame*, bool withBase64Encode, String* result);
+    static bool dataContent(const char* data, unsigned size, const String& textEncodingName, bool withBase64Encode, String* result);
+
     PassRefPtr<TypeBuilder::Page::Frame> buildObjectForFrame(Frame*);
     PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(Frame*);
     Page* m_page;
@@ -174,9 +181,8 @@ private:
     HashMap<Frame*, String> m_frameToIdentifier;
     HashMap<String, Frame*> m_identifierToFrame;
     HashMap<DocumentLoader*, String> m_loaderToIdentifier;
-    GraphicsContext* m_lastPaintContext;
-    LayoutRect m_lastPaintRect;
-    bool m_didLoadEventFire;
+    bool m_enabled;
+    bool m_isFirstLayoutAfterOnLoad;
     bool m_geolocationOverridden;
     RefPtr<GeolocationPosition> m_geolocationPosition;
     RefPtr<GeolocationPosition> m_platformGeolocationPosition;

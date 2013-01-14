@@ -30,6 +30,7 @@
 #include "ContentSelectorQuery.h"
 #include "ElementShadow.h"
 #include "HTMLContentElement.h"
+#include "HTMLShadowElement.h"
 #include "ShadowRoot.h"
 
 
@@ -49,6 +50,23 @@ InsertionPoint* ContentDistributor::findInsertionPointFor(const Node* key) const
     return m_nodeToInsertionPoint.get(key);
 }
 
+void ContentDistributor::populate(Node* node, ContentDistribution& pool)
+{
+    if (!isActiveInsertionPoint(node)) {
+        pool.append(node);
+        return;
+    }
+
+    InsertionPoint* insertionPoint = toInsertionPoint(node);
+    if (insertionPoint->hasDistribution()) {
+        for (size_t i = 0; i < insertionPoint->size(); ++i)
+            populate(insertionPoint->at(i), pool);
+    } else {
+        for (Node* fallbackNode = insertionPoint->firstChild(); fallbackNode; fallbackNode = fallbackNode->nextSibling())
+            pool.append(fallbackNode);
+    }
+}
+
 void ContentDistributor::distribute(Element* host)
 {
     ASSERT(needsDistribution());
@@ -58,22 +76,45 @@ void ContentDistributor::distribute(Element* host)
 
     ContentDistribution pool;
     for (Node* node = host->firstChild(); node; node = node->nextSibling())
-        pool.append(node);
+        populate(node, pool);
 
+    Vector<bool> distributed(pool.size());
+    distributed.fill(false);
+
+    Vector<HTMLShadowElement*, 8> activeShadowInsertionPoints;
     for (ShadowRoot* root = host->youngestShadowRoot(); root; root = root->olderShadowRoot()) {
+        HTMLShadowElement* firstActiveShadowInsertionPoint = 0;
+
         for (Node* node = root; node; node = node->traverseNextNode(root)) {
-            if (!isInsertionPoint(node))
+            if (!isActiveInsertionPoint(node))
                 continue;
             InsertionPoint* point = toInsertionPoint(node);
-            if (!point->isActive())
-                continue;
-            ShadowRoot* older = root->olderShadowRoot();
-            if (point->doesSelectFromHostChildren())
-                distributeSelectionsTo(point, pool);
-            else if (older && !older->assignedTo()) {
-                distributeNodeChildrenTo(point, older);
-                older->setAssignedTo(point);
+
+            if (isHTMLShadowElement(node)) {
+                if (!firstActiveShadowInsertionPoint)
+                    firstActiveShadowInsertionPoint = toHTMLShadowElement(node);
+            } else {
+                distributeSelectionsTo(point, pool, distributed);
+                if (ElementShadow* shadow = node->parentNode()->isElementNode() ? toElement(node->parentNode())->shadow() : 0)
+                    shadow->invalidateDistribution();
             }
+        }
+
+        if (firstActiveShadowInsertionPoint)
+            activeShadowInsertionPoints.append(firstActiveShadowInsertionPoint);
+    }
+
+    for (size_t i = activeShadowInsertionPoints.size(); i > 0; --i) {
+        HTMLShadowElement* shadowElement = activeShadowInsertionPoints[i - 1];
+        ShadowRoot* root = shadowElement->shadowRoot();
+        ASSERT(root);
+        if (root->olderShadowRoot()) {
+            distributeNodeChildrenTo(shadowElement, root->olderShadowRoot());
+            root->olderShadowRoot()->setAssignedTo(shadowElement);
+        } else {
+            distributeSelectionsTo(shadowElement, pool, distributed);
+            if (ElementShadow* shadow = shadowElement->parentNode()->isElementNode() ? toElement(shadowElement->parentNode())->shadow() : 0)
+                shadow->invalidateDistribution();
         }
     }
 }
@@ -106,21 +147,22 @@ void ContentDistributor::finishInivalidation()
     m_validity = Invalidated;
 }
 
-void ContentDistributor::distributeSelectionsTo(InsertionPoint* insertionPoint, ContentDistribution& pool)
+void ContentDistributor::distributeSelectionsTo(InsertionPoint* insertionPoint, const ContentDistribution& pool, Vector<bool>& distributed)
 {
     ContentDistribution distribution;
     ContentSelectorQuery query(insertionPoint);
 
     for (size_t i = 0; i < pool.size(); ++i) {
-        Node* child = pool[i].get();
-        if (!child)
-            continue;
-        if (!query.matches(child))
+        if (distributed[i])
             continue;
 
+        if (!query.matches(pool, i))
+            continue;
+
+        Node* child = pool[i].get();
         distribution.append(child);
         m_nodeToInsertionPoint.add(child, insertionPoint);
-        pool[i] = 0;
+        distributed[i] = true;
     }
 
     insertionPoint->setDistribution(distribution);
@@ -130,8 +172,25 @@ void ContentDistributor::distributeNodeChildrenTo(InsertionPoint* insertionPoint
 {
     ContentDistribution distribution;
     for (Node* node = containerNode->firstChild(); node; node = node->nextSibling()) {
-        distribution.append(node);
-        m_nodeToInsertionPoint.add(node, insertionPoint);
+        if (isActiveInsertionPoint(node)) {
+            InsertionPoint* innerInsertionPoint = toInsertionPoint(node);
+            if (innerInsertionPoint->hasDistribution()) {
+                for (size_t i = 0; i < innerInsertionPoint->size(); ++i) {
+                    distribution.append(innerInsertionPoint->at(i));
+                    if (!m_nodeToInsertionPoint.contains(innerInsertionPoint->at(i)))
+                        m_nodeToInsertionPoint.add(innerInsertionPoint->at(i), insertionPoint);
+                }
+            } else {
+                for (Node* child = innerInsertionPoint->firstChild(); child; child = child->nextSibling()) {
+                    distribution.append(child);
+                    m_nodeToInsertionPoint.add(child, insertionPoint);
+                }
+            }
+        } else {
+            distribution.append(node);
+            if (!m_nodeToInsertionPoint.contains(node))
+                m_nodeToInsertionPoint.add(node, insertionPoint);
+        }
     }
 
     insertionPoint->setDistribution(distribution);

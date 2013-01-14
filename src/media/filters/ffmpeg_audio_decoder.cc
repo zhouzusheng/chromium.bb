@@ -129,6 +129,12 @@ void FFmpegAudioDecoder::DoInitialize(
     return;
   }
 
+  if (config.is_encrypted()) {
+    DLOG(ERROR) << "Encrypted audio stream not supported";
+    status_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
+    return;
+  }
+
   // Initialize AVCodecContext structure.
   codec_context_ = avcodec_alloc_context3(NULL);
   AudioDecoderConfigToAVCodecContext(config, codec_context_);
@@ -317,10 +323,7 @@ void FFmpegAudioDecoder::DoDecodeBuffer(
           << "Decoder didn't output full frames";
 
       // Copy the audio samples into an output buffer.
-      output = new DataBuffer(decoded_audio_size);
-      output->SetDataSize(decoded_audio_size);
-      uint8* data = output->GetWritableData();
-      memcpy(data, decoded_audio_data, decoded_audio_size);
+      output = new DataBuffer(decoded_audio_data, decoded_audio_size);
 
       base::TimeDelta timestamp = GetNextOutputTimestamp();
       total_frames_decoded_ += decoded_audio_size / bytes_per_frame_;

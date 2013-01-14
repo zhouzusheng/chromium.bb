@@ -40,6 +40,7 @@
 #include "NotImplemented.h"
 #include "Page.h"
 #include "RawDataDocumentParser.h"
+#include "ResourceBuffer.h"
 #include "Settings.h"
 
 using std::min;
@@ -141,7 +142,7 @@ void ImageDocumentParser::finish()
 {
     if (!isStopped() && document()->imageElement()) {
         CachedImage* cachedImage = document()->cachedImage();
-        RefPtr<SharedBuffer> data = document()->frame()->loader()->documentLoader()->mainResourceData();
+        RefPtr<ResourceBuffer> data = document()->frame()->loader()->documentLoader()->mainResourceData();
 
         // If this is a multipart image, make a copy of the current part, since the resource data
         // will be overwritten by the next part.
@@ -153,9 +154,9 @@ void ImageDocumentParser::finish()
 
         cachedImage->setResponse(document()->frame()->loader()->documentLoader()->response());
 
-        // Report the natural image size in the page title, regardless of zoom
-        // level.
-        IntSize size = cachedImage->imageSizeForRenderer(document()->imageElement()->renderer(), 1.0f);
+        // Report the natural image size in the page title, regardless of zoom level.
+        // At a zoom level of 1 the image is guaranteed to have an integer size.
+        IntSize size = flooredIntSize(cachedImage->imageSizeForRenderer(document()->imageElement()->renderer(), 1.0f));
         if (size.width()) {
             // Compute the title, we use the decoded filename of the resource, falling
             // back on the (decoded) hostname if there is no path.

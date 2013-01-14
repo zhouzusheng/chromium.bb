@@ -13,6 +13,7 @@
 
 #include "SkCanvas.h"
 #include "SkChunkAlloc.h"
+#include "SkDevice.h"
 #include "SkPicture.h"
 #include "SkRegion.h"
 #include "SkStream.h"
@@ -185,24 +186,25 @@ SkCanvas* SkPicture::beginRecording(int width, int height,
         fRecord = NULL;
     }
 
+    SkBitmap bm;
+    bm.setConfig(SkBitmap::kNo_Config, width, height);
+    SkAutoTUnref<SkDevice> dev(SkNEW_ARGS(SkDevice, (bm)));
+
     if (recordingFlags & kOptimizeForClippedPlayback_RecordingFlag) {
         SkScalar aspectRatio = SkScalarDiv(SkIntToScalar(width),
                                            SkIntToScalar(height));
         SkRTree* tree = SkRTree::Create(kRTreeMinChildren, kRTreeMaxChildren,
                                         aspectRatio);
         SkASSERT(NULL != tree);
-        fRecord = SkNEW_ARGS(SkBBoxHierarchyRecord, (recordingFlags, tree));
+        fRecord = SkNEW_ARGS(SkBBoxHierarchyRecord, (recordingFlags, tree, dev));
         tree->unref();
     } else {
-        fRecord = SkNEW_ARGS(SkPictureRecord, (recordingFlags));
+        fRecord = SkNEW_ARGS(SkPictureRecord, (recordingFlags, dev));
     }
+    fRecord->beginRecording();
 
     fWidth = width;
     fHeight = height;
-
-    SkBitmap bm;
-    bm.setConfig(SkBitmap::kNo_Config, width, height);
-    fRecord->setBitmapDevice(bm);
 
     return fRecord;
 }
@@ -240,9 +242,13 @@ void SkPicture::draw(SkCanvas* surface) {
 // V4 : move SkPictInfo to be the header
 // V5 : don't read/write FunctionPtr on cross-process (we can detect that)
 // V6 : added serialization of SkPath's bounds (and packed its flags tighter)
-#define PICTURE_VERSION     6
+// V7 : changed drawBitmapRect(IRect) to drawBitmapRectToRect(Rect)
+// V8 : Add an option for encoding bitmaps
+// V9 : Allow the reader and writer of an SKP disagree on whether to support
+//      SK_SUPPORT_HINTING_SCALE_FACTOR
+#define PICTURE_VERSION     9
 
-SkPicture::SkPicture(SkStream* stream, bool* success) : SkRefCnt() {
+SkPicture::SkPicture(SkStream* stream, bool* success, SkSerializationHelpers::DecodeBitmap decoder) : SkRefCnt() {
     if (success) {
         *success = false;
     }
@@ -261,7 +267,7 @@ SkPicture::SkPicture(SkStream* stream, bool* success) : SkRefCnt() {
 
     if (stream->readBool()) {
         bool isValid = false;
-        fPlayback = SkNEW_ARGS(SkPicturePlayback, (stream, info, &isValid));
+        fPlayback = SkNEW_ARGS(SkPicturePlayback, (stream, info, &isValid, decoder));
         if (!isValid) {
             SkDELETE(fPlayback);
             fPlayback = NULL;
@@ -277,7 +283,7 @@ SkPicture::SkPicture(SkStream* stream, bool* success) : SkRefCnt() {
     }
 }
 
-void SkPicture::serialize(SkWStream* stream) const {
+void SkPicture::serialize(SkWStream* stream, SkSerializationHelpers::EncodeBitmap encoder) const {
     SkPicturePlayback* playback = fPlayback;
 
     if (NULL == playback && fRecord) {
@@ -300,7 +306,7 @@ void SkPicture::serialize(SkWStream* stream) const {
     stream->write(&info, sizeof(info));
     if (playback) {
         stream->writeBool(true);
-        playback->serialize(stream);
+        playback->serialize(stream, encoder);
         // delete playback if it is a local version (i.e. cons'd up just now)
         if (playback != fPlayback) {
             SkDELETE(playback);

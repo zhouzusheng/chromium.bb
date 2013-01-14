@@ -6,16 +6,17 @@
  */
 
 #include "effects/GrSingleTextureEffect.h"
-#include "gl/GrGLProgramStage.h"
+#include "gl/GrGLEffect.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
-#include "GrProgramStageFactory.h"
+#include "GrBackendEffectFactory.h"
 #include "GrTexture.h"
 
-class GrGLSingleTextureEffect : public GrGLProgramStage {
+class GrGLSingleTextureEffect : public GrGLLegacyEffect {
 public:
-    GrGLSingleTextureEffect(const GrProgramStageFactory& factory,
-                            const GrCustomStage& stage) : INHERITED (factory) { }
+    GrGLSingleTextureEffect(const GrBackendEffectFactory& factory, const GrEffect&)
+    : INHERITED (factory) {
+    }
 
     virtual void emitVS(GrGLShaderBuilder* builder,
                         const char* vertexCoords) SK_OVERRIDE { }
@@ -28,24 +29,31 @@ public:
         builder->fFSCode.append(";\n");
     }
 
-    static inline StageKey GenKey(const GrCustomStage&, const GrGLCaps&) { return 0; }
+    static inline EffectKey GenKey(const GrEffect&, const GrGLCaps&) { return 0; }
 
 private:
 
-    typedef GrGLProgramStage INHERITED;
+    typedef GrGLLegacyEffect INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrSingleTextureEffect::GrSingleTextureEffect(GrTexture* texture)
-    : fTextureAccess(texture) {
+    : INHERITED(1)
+    , fTextureAccess(texture) {
+}
+
+GrSingleTextureEffect::GrSingleTextureEffect(GrTexture* texture, bool bilerp)
+    : INHERITED(1)
+    , fTextureAccess(texture, bilerp) {
+}
+
+GrSingleTextureEffect::GrSingleTextureEffect(GrTexture* texture, const GrTextureParams& params)
+    : INHERITED(1)
+    , fTextureAccess(texture, params) {
 }
 
 GrSingleTextureEffect::~GrSingleTextureEffect() {
-}
-
-int GrSingleTextureEffect::numTextures() const {
-    return 1;
 }
 
 const GrTextureAccess& GrSingleTextureEffect::textureAccess(int index) const {
@@ -53,18 +61,18 @@ const GrTextureAccess& GrSingleTextureEffect::textureAccess(int index) const {
     return fTextureAccess;
 }
 
-const GrProgramStageFactory& GrSingleTextureEffect::getFactory() const {
-    return GrTProgramStageFactory<GrSingleTextureEffect>::getInstance();
+const GrBackendEffectFactory& GrSingleTextureEffect::getFactory() const {
+    return GrTBackendEffectFactory<GrSingleTextureEffect>::getInstance();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrSingleTextureEffect);
+GR_DEFINE_EFFECT_TEST(GrSingleTextureEffect);
 
-GrCustomStage* GrSingleTextureEffect::TestCreate(SkRandom* random,
-                                                 GrContext* context,
-                                                 GrTexture* textures[]) {
-    int texIdx = random->nextBool() ? GrCustomStageUnitTest::kSkiaPMTextureIdx :
-                                      GrCustomStageUnitTest::kAlphaTextureIdx;
+GrEffect* GrSingleTextureEffect::TestCreate(SkRandom* random,
+                                            GrContext* context,
+                                            GrTexture* textures[]) {
+    int texIdx = random->nextBool() ? GrEffectUnitTest::kSkiaPMTextureIdx :
+                                      GrEffectUnitTest::kAlphaTextureIdx;
     return SkNEW_ARGS(GrSingleTextureEffect, (textures[texIdx]));
 }

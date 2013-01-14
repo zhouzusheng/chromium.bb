@@ -28,6 +28,17 @@
 
 #include "ScriptGCEvent.h"
 #include "V8Binding.h"
+#include <wtf/MemoryInstrumentationHashMap.h>
+#include <wtf/MemoryInstrumentationVector.h>
+
+namespace WTF {
+
+// WrapperTypeInfo are statically allocated, don't count them.
+template<> struct SequenceMemoryInstrumentationTraits<WebCore::WrapperTypeInfo*> {
+    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
+};
+
+}
 
 namespace WebCore {
 
@@ -67,6 +78,13 @@ void V8PerIsolateData::ensureInitialized(v8::Isolate* isolate)
         create(isolate);
 }
 
+v8::Persistent<v8::Value> V8PerIsolateData::ensureLiveRoot()
+{
+    if (m_liveRoot.isEmpty())
+        m_liveRoot.set(v8::Null());
+    return m_liveRoot.get();
+}
+
 void V8PerIsolateData::dispose(v8::Isolate* isolate)
 {
     void* data = isolate->GetData();
@@ -84,10 +102,10 @@ v8::Handle<v8::FunctionTemplate> V8PerIsolateData::toStringTemplate()
 void V8PerIsolateData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
-    info.addHashMap(m_rawTemplates);
-    info.addHashMap(m_templates);
+    info.addMember(m_rawTemplates);
+    info.addMember(m_templates);
     info.addMember(m_stringCache);
-    info.addVector(m_domDataList);
+    info.addMember(m_domDataList);
 
     for (size_t i = 0; i < m_domDataList.size(); i++)
         info.addMember(m_domDataList[i]);
@@ -113,13 +131,6 @@ void V8PerIsolateData::visitExternalStrings(ExternalStringVisitor* visitor)
     v8::V8::VisitExternalResources(&v8Visitor);
 }
 #endif
-
-v8::Handle<v8::Context> V8PerIsolateData::ensureAuxiliaryContext()
-{
-    if (m_auxiliaryContext.isEmpty())
-        m_auxiliaryContext.adopt(v8::Context::New());
-    return m_auxiliaryContext.get();
-}
 
 v8::Handle<v8::Value> V8PerIsolateData::constructorOfToString(const v8::Arguments& args)
 {

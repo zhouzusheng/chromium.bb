@@ -1505,7 +1505,11 @@ void SkScalerContext::MakeRec(const SkPaint& paint,
                               const SkMatrix* deviceMatrix, Rec* rec) {
     SkASSERT(deviceMatrix == NULL || !deviceMatrix->hasPerspective());
 
-    rec->fOrigFontID = SkTypeface::UniqueID(paint.getTypeface());
+    SkTypeface* typeface = paint.getTypeface();
+    if (NULL == typeface) {
+        typeface = SkTypeface::GetDefaultTypeface();
+    }
+    rec->fOrigFontID = typeface->uniqueID();
     rec->fFontID = rec->fOrigFontID;
     rec->fTextSize = paint.getTextSize();
     rec->fPreScaleX = paint.getTextScaleX();
@@ -1622,7 +1626,7 @@ void SkScalerContext::MakeRec(const SkPaint& paint,
         they can modify our rec up front, so we don't create duplicate cache
         entries.
      */
-    SkFontHost::FilterRec(rec);
+    SkFontHost::FilterRec(rec, typeface);
 
     // be sure to call PostMakeRec(rec) before you actually use it!
 }
@@ -1634,58 +1638,6 @@ void SkScalerContext::MakeRec(const SkPaint& paint,
  */
 SK_DECLARE_STATIC_MUTEX(gMaskGammaCacheMutex);
 
-static SkColorSpaceLuminance* gLinearLuminance = NULL;
-
-static SkColorSpaceLuminance* gDeviceLuminance = NULL;
-static SkScalar gDeviceGammaExponent = SK_ScalarMin;
-/**
- * The caller must hold the gMaskGammaCacheMutex and continue to hold it until
- * the returned SkColorSpaceLuminance pointer is forgotten.
- */
-static SkColorSpaceLuminance* cachedDeviceLuminance(SkScalar gammaExponent) {
-    if (SK_Scalar1 == gammaExponent) {
-        if (NULL == gLinearLuminance) {
-            gLinearLuminance = SkNEW(SkLinearLuminance);
-        }
-        return gLinearLuminance;
-    }
-    if (gDeviceGammaExponent != gammaExponent) {
-        SkDELETE(gDeviceLuminance);
-        if (0 == gammaExponent) {
-            gDeviceLuminance = SkNEW(SkSRGBLuminance);
-        } else {
-            gDeviceLuminance = SkNEW_ARGS(SkGammaLuminance, (gammaExponent));
-        }
-        gDeviceGammaExponent = gammaExponent;
-    }
-    return gDeviceLuminance;
-}
-
-static SkColorSpaceLuminance* gPaintLuminance = NULL;
-static SkScalar gPaintGammaExponent = SK_ScalarMin;
-/**
- * The caller must hold the gMaskGammaCacheMutex and continue to hold it until
- * the returned SkColorSpaceLuminance pointer is forgotten.
- */
-static SkColorSpaceLuminance* cachedPaintLuminance(SkScalar gammaExponent) {
-    if (SK_Scalar1 == gammaExponent) {
-        if (NULL == gLinearLuminance) {
-            gLinearLuminance = SkNEW(SkLinearLuminance);
-        }
-        return gLinearLuminance;
-    }
-    if (gPaintGammaExponent != gammaExponent) {
-        SkDELETE(gPaintLuminance);
-        if (0 == gammaExponent) {
-            gPaintLuminance = SkNEW(SkSRGBLuminance);
-        } else {
-            gPaintLuminance = SkNEW_ARGS(SkGammaLuminance, (gammaExponent));
-        }
-        gPaintGammaExponent = gammaExponent;
-    }
-    return gPaintLuminance;
-}
-
 static SkMaskGamma* gLinearMaskGamma = NULL;
 static SkMaskGamma* gMaskGamma = NULL;
 static SkScalar gContrast = SK_ScalarMin;
@@ -1695,44 +1647,33 @@ static SkScalar gDeviceGamma = SK_ScalarMin;
  * The caller must hold the gMaskGammaCacheMutex and continue to hold it until
  * the returned SkMaskGamma pointer is refed or forgotten.
  */
-static SkMaskGamma* cachedMaskGamma(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma) {
+static const SkMaskGamma& cachedMaskGamma(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma) {
     if (0 == contrast && SK_Scalar1 == paintGamma && SK_Scalar1 == deviceGamma) {
         if (NULL == gLinearMaskGamma) {
             gLinearMaskGamma = SkNEW(SkMaskGamma);
         }
-        return gLinearMaskGamma;
+        return *gLinearMaskGamma;
     }
     if (gContrast != contrast || gPaintGamma != paintGamma || gDeviceGamma != deviceGamma) {
         SkSafeUnref(gMaskGamma);
-        SkColorSpaceLuminance* paintLuminance = cachedPaintLuminance(paintGamma);
-        SkColorSpaceLuminance* deviceLuminance = cachedDeviceLuminance(deviceGamma);
-        gMaskGamma = SkNEW_ARGS(SkMaskGamma, (contrast, *paintLuminance, *deviceLuminance));
+        gMaskGamma = SkNEW_ARGS(SkMaskGamma, (contrast, paintGamma, deviceGamma));
         gContrast = contrast;
         gPaintGamma = paintGamma;
         gDeviceGamma = deviceGamma;
     }
-    return gMaskGamma;
+    return *gMaskGamma;
 }
 
 /*static*/ void SkPaint::Term() {
     SkAutoMutexAcquire ama(gMaskGammaCacheMutex);
 
     SkSafeUnref(gLinearMaskGamma);
-
+    gLinearMaskGamma = NULL;
     SkSafeUnref(gMaskGamma);
+    gMaskGamma = NULL;
     SkDEBUGCODE(gContrast = SK_ScalarMin;)
     SkDEBUGCODE(gPaintGamma = SK_ScalarMin;)
     SkDEBUGCODE(gDeviceGamma = SK_ScalarMin;)
-
-    SkDELETE(gLinearLuminance);
-
-    SkDELETE(gPaintLuminance);
-    SkDEBUGCODE(gPaintLuminance = NULL;)
-    SkDEBUGCODE(gPaintGammaExponent = SK_ScalarMin;)
-
-    SkDELETE(gDeviceLuminance);
-    SkDEBUGCODE(gDeviceLuminance = NULL;)
-    SkDEBUGCODE(gDeviceGammaExponent = SK_ScalarMin;)
 }
 
 /**
@@ -1749,7 +1690,7 @@ void SkScalerContext::PostMakeRec(const SkPaint& paint, SkScalerContext::Rec* re
         case SkMask::kLCD32_Format: {
             // filter down the luminance color to a finite number of bits
             SkColor color = rec->getLuminanceColor();
-            rec->setLuminanceColor(SkMaskGamma::cannonicalColor(color));
+            rec->setLuminanceColor(SkMaskGamma::CannonicalColor(color));
             break;
         }
         case SkMask::kA8_Format: {
@@ -1757,8 +1698,7 @@ void SkScalerContext::PostMakeRec(const SkPaint& paint, SkScalerContext::Rec* re
             // use per-component information
 
             SkColor color = rec->getLuminanceColor();
-            SkAutoMutexAcquire ama(gMaskGammaCacheMutex);
-            U8CPU lum = cachedPaintLuminance(rec->getPaintGamma())->computeLuminance(color);
+            U8CPU lum = SkColorSpaceLuminance::computeLuminance(rec->getPaintGamma(), color);
             //If we are asked to look like LCD, look like LCD.
             if (!(rec->fFlags & SkScalerContext::kGenA8FromLCD_Flag)) {
                 // HACK: Prevents green from being pre-blended as white.
@@ -1767,7 +1707,7 @@ void SkScalerContext::PostMakeRec(const SkPaint& paint, SkScalerContext::Rec* re
 
             // reduce to our finite number of bits
             color = SkColorSetRGB(lum, lum, lum);
-            rec->setLuminanceColor(SkMaskGamma::cannonicalColor(color));
+            rec->setLuminanceColor(SkMaskGamma::CannonicalColor(color));
             break;
         }
         case SkMask::kBW_Format:
@@ -1822,6 +1762,11 @@ void SkPaint::descriptorProc(const SkMatrix* deviceMatrix,
         descSize += mfBuffer.size();
         entryCount += 1;
         rec.fMaskFormat = SkMask::kA8_Format;   // force antialiasing with maskfilters
+        /* Pre-blend is not currently applied to filtered text.
+           The primary filter is blur, for which contrast makes no sense,
+           and for which the destination guess error is more visible.
+           Also, all existing users of blur have calibrated for linear. */
+        rec.ignorePreBlend();
     }
     if (ra) {
         raBuffer.writeFlattenable(ra);
@@ -1913,10 +1858,10 @@ SkGlyphCache* SkPaint::detachCache(const SkMatrix* deviceMatrix) const {
 //static
 SkMaskGamma::PreBlend SkScalerContext::GetMaskPreBlend(const SkScalerContext::Rec& rec) {
     SkAutoMutexAcquire ama(gMaskGammaCacheMutex);
-    SkMaskGamma* maskGamma = cachedMaskGamma(rec.getContrast(),
-                                             rec.getPaintGamma(),
-                                             rec.getDeviceGamma());
-    return maskGamma->preBlend(rec.getLuminanceColor());
+    const SkMaskGamma& maskGamma = cachedMaskGamma(rec.getContrast(),
+                                                   rec.getPaintGamma(),
+                                                   rec.getDeviceGamma());
+    return maskGamma.preBlend(rec.getLuminanceColor());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1961,18 +1906,14 @@ enum FlatFlags {
 };
 
 // The size of a flat paint's POD fields
+// Include an SkScalar for hinting scale factor whether it is
+// supported or not so that an SKP is valid whether it was
+// created with support or not.
 
-#ifdef SK_SUPPORT_HINTING_SCALE_FACTOR
 static const uint32_t kPODPaintSize =   6 * sizeof(SkScalar) +
                                         1 * sizeof(SkColor) +
                                         1 * sizeof(uint16_t) +
                                         6 * sizeof(uint8_t);
-#else
-static const uint32_t kPODPaintSize =   5 * sizeof(SkScalar) +
-                                        1 * sizeof(SkColor) +
-                                        1 * sizeof(uint16_t) +
-                                        6 * sizeof(uint8_t);
-#endif
 
 /*  To save space/time, we analyze the paint, and write a truncated version of
     it if there are not tricky elements like shaders, etc.
@@ -2004,6 +1945,9 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
         ptr = write_scalar(ptr, this->getTextSkewX());
 #ifdef SK_SUPPORT_HINTING_SCALE_FACTOR
         ptr = write_scalar(ptr, this->getHintingScaleFactor());
+#else
+        // Dummy value.
+        ptr = write_scalar(ptr, SK_Scalar1);
 #endif
         ptr = write_scalar(ptr, this->getStrokeWidth());
         ptr = write_scalar(ptr, this->getStrokeMiter());
@@ -2023,6 +1967,9 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
         buffer.writeScalar(fTextSkewX);
 #ifdef SK_SUPPORT_HINTING_SCALE_FACTOR
         buffer.writeScalar(fHintingScaleFactor);
+#else
+        // Dummy value.
+        buffer.writeScalar(SK_Scalar1);
 #endif
         buffer.writeScalar(fWidth);
         buffer.writeScalar(fMiterLimit);
@@ -2071,6 +2018,9 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
         this->setTextSkewX(read_scalar(pod));
 #ifdef SK_SUPPORT_HINTING_SCALE_FACTOR
         this->setHintingScaleFactor(read_scalar(pod));
+#else
+        // Skip the hinting scalar factor, which is not supported.
+        read_scalar(pod);
 #endif
         this->setStrokeWidth(read_scalar(pod));
         this->setStrokeMiter(read_scalar(pod));
@@ -2100,6 +2050,9 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
         this->setTextSkewX(buffer.readScalar());
 #ifdef SK_SUPPORT_HINTING_SCALE_FACTOR
         this->setHintingScaleFactor(buffer.readScalar());
+#else
+        // Skip the hinting scalar factor, which is not supported.
+        buffer.readScalar();
 #endif
         this->setStrokeWidth(buffer.readScalar());
         this->setStrokeMiter(buffer.readScalar());

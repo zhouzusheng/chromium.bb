@@ -71,6 +71,13 @@ void IDBOpenDBRequest::onBlocked(int64_t oldVersion)
 void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBTransactionBackendInterface> prpTransactionBackend, PassRefPtr<IDBDatabaseBackendInterface> prpDatabaseBackend)
 {
     IDB_TRACE("IDBOpenDBRequest::onUpgradeNeeded()");
+    if (m_contextStopped || !scriptExecutionContext()) {
+        RefPtr<IDBTransactionBackendInterface> transaction = prpTransactionBackend;
+        transaction->abort();
+        RefPtr<IDBDatabaseBackendInterface> db = prpDatabaseBackend;
+        db->close(m_databaseCallbacks);
+        return;
+    }
     if (!shouldEnqueueEvent())
         return;
 
@@ -88,9 +95,11 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBTransac
     m_result = IDBAny::create(idbDatabase.release());
 
     if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
-      // This database hasn't had an integer version before.
-      oldVersion = IDBDatabaseMetadata::DefaultIntVersion;
+        // This database hasn't had an integer version before.
+        oldVersion = IDBDatabaseMetadata::DefaultIntVersion;
     }
+    if (m_version == IDBDatabaseMetadata::NoIntVersion)
+        m_version = 1;
     enqueueEvent(IDBUpgradeNeededEvent::create(oldVersion, m_version, eventNames().upgradeneededEvent));
 }
 
@@ -105,15 +114,6 @@ void IDBOpenDBRequest::onSuccess(PassRefPtr<IDBDatabaseBackendInterface> backend
         idbDatabase = m_result->idbDatabase();
         ASSERT(idbDatabase);
         ASSERT(!m_databaseCallbacks);
-
-        // If the connection closed between onUpgradeNeeded and onSuccess, an error
-        // should be fired instead of success. The back-end may not be aware of
-        // the closing state if the events are asynchronously delivered.
-        if (idbDatabase->isClosePending()) {
-            m_result.clear();
-            onError(IDBDatabaseError::create(IDBDatabaseException::IDB_ABORT_ERR, "The connection was closed."));
-            return;
-        }
     } else {
         ASSERT(m_databaseCallbacks);
         idbDatabase = IDBDatabase::create(scriptExecutionContext(), backend, m_databaseCallbacks);
@@ -134,6 +134,18 @@ bool IDBOpenDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
+bool IDBOpenDBRequest::dispatchEvent(PassRefPtr<Event> event)
+{
+    // If the connection closed between onUpgradeNeeded and the delivery of the "success" event,
+    // an "error" event should be fired instead.
+    if (event->type() == eventNames().successEvent && m_result->idbDatabase()->isClosePending()) {
+        m_result.clear();
+        onError(IDBDatabaseError::create(IDBDatabaseException::IDB_ABORT_ERR, "The connection was closed."));
+        return false;
+    }
+
+    return IDBRequest::dispatchEvent(event);
+}
 
 } // namespace WebCore
 

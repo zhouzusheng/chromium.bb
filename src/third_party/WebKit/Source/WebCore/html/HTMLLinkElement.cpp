@@ -29,7 +29,9 @@
 #include "CachedCSSStyleSheet.h"
 #include "CachedResource.h"
 #include "CachedResourceLoader.h"
+#include "CachedResourceRequest.h"
 #include "Document.h"
+#include "DocumentStyleSheetCollection.h"
 #include "EventSender.h"
 #include "Frame.h"
 #include "FrameLoader.h"
@@ -87,7 +89,7 @@ HTMLLinkElement::~HTMLLinkElement()
         m_cachedSheet->removeClient(this);
 
     if (inDocument())
-        document()->removeStyleSheetCandidateNode(this);
+        document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
 
     linkLoadEventSender().cancelEvent(this);
 }
@@ -219,8 +221,8 @@ void HTMLLinkElement::process()
 
         // Load stylesheets that are not needed for the rendering immediately with low priority.
         ResourceLoadPriority priority = blocking ? ResourceLoadPriorityUnresolved : ResourceLoadPriorityVeryLow;
-        ResourceRequest request(document()->completeURL(m_url));
-        m_cachedSheet = document()->cachedResourceLoader()->requestCSSStyleSheet(request, charset, priority);
+        CachedResourceRequest request(ResourceRequest(document()->completeURL(m_url)), charset, priority);
+        m_cachedSheet = document()->cachedResourceLoader()->requestCSSStyleSheet(request);
         
         if (m_cachedSheet)
             m_cachedSheet->addClient(this);
@@ -254,7 +256,7 @@ Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* 
     if (m_isInShadowTree)
         return InsertionDone;
 
-    document()->addStyleSheetCandidateNode(this, m_createdByParser);
+    document()->styleSheetCollection()->addStyleSheetCandidateNode(this, m_createdByParser);
 
     process();
     return InsertionDone;
@@ -272,7 +274,7 @@ void HTMLLinkElement::removedFrom(ContainerNode* insertionPoint)
         ASSERT(!m_sheet);
         return;
     }
-    document()->removeStyleSheetCandidateNode(this);
+    document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
 
     if (m_sheet)
         clearSheet();
@@ -455,7 +457,7 @@ void HTMLLinkElement::addPendingSheet(PendingSheetType type)
 
     if (m_pendingSheetType == NonBlocking)
         return;
-    document()->addPendingSheet();
+    document()->styleSheetCollection()->addPendingSheet();
 }
 
 void HTMLLinkElement::removePendingSheet(RemovePendingSheetNotificationType notification)
@@ -471,10 +473,10 @@ void HTMLLinkElement::removePendingSheet(RemovePendingSheetNotificationType noti
         return;
     }
 
-    document()->removePendingSheet(
+    document()->styleSheetCollection()->removePendingSheet(
         notification == RemovePendingSheetNotifyImmediately
-        ? Document::RemovePendingSheetNotifyImmediately
-        : Document::RemovePendingSheetNotifyLater);
+        ? DocumentStyleSheetCollection::RemovePendingSheetNotifyImmediately
+        : DocumentStyleSheetCollection::RemovePendingSheetNotifyLater);
 }
 
 DOMSettableTokenList* HTMLLinkElement::sizes() const

@@ -33,15 +33,6 @@ class UI_EXPORT PointBase {
     y_ += delta_y;
   }
 
-  Class Scale(float scale) const WARN_UNUSED_RESULT {
-    return Scale(scale, scale);
-  }
-
-  Class Scale(float x_scale, float y_scale) const WARN_UNUSED_RESULT {
-    return Class(static_cast<Type>(x_ * x_scale),
-                 static_cast<Type>(y_ * y_scale));
-  }
-
   Class Add(const Class& other) const WARN_UNUSED_RESULT {
     const Class* orig = static_cast<const Class*>(this);
     Class copy = *orig;
@@ -60,12 +51,8 @@ class UI_EXPORT PointBase {
     return Class((x_ + other.x_) / 2, (y_ + other.y_) / 2);
   }
 
-  bool operator==(const Class& rhs) const {
-    return x_ == rhs.x_ && y_ == rhs.y_;
-  }
-
-  bool operator!=(const Class& rhs) const {
-    return !(*this == rhs);
+  bool IsOrigin() const {
+    return x_ == 0 && y_ == 0;
   }
 
   // A point is less than another point if its y-value is closer

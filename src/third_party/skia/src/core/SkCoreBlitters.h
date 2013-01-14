@@ -130,6 +130,7 @@ public:
     SkARGB32_Shader_Blitter(const SkBitmap& device, const SkPaint& paint);
     virtual ~SkARGB32_Shader_Blitter();
     virtual void blitH(int x, int y, int width);
+    virtual void blitRect(int x, int y, int width, int height) SK_OVERRIDE;
     virtual void blitAntiH(int x, int y, const SkAlpha antialias[], const int16_t runs[]);
     virtual void blitMask(const SkMask&, const SkIRect&);
 

@@ -17,7 +17,9 @@ namespace win {
 enum ShortcutOperation {
   // Create a new shortcut (overwriting if necessary).
   SHORTCUT_CREATE_ALWAYS = 0,
-  // Update specified (non-null) properties only on an existing shortcut.
+  // Overwrite an existing shortcut (fails if the shortcut doesn't exist).
+  SHORTCUT_REPLACE_EXISTING,
+  // Update specified properties only on an existing shortcut.
   SHORTCUT_UPDATE_EXISTING,
 };
 
@@ -36,7 +38,7 @@ struct ShortcutProperties {
     PROPERTIES_DUAL_MODE = 1 << 6,
   };
 
-  ShortcutProperties() : options(0U) {}
+  ShortcutProperties() : icon_index(-1), dual_mode(false), options(0U) {}
 
   void set_target(const FilePath& target_in) {
     target = target_in;
@@ -96,9 +98,6 @@ struct ShortcutProperties {
   // The app model id for the shortcut (Win7+).
   string16 app_id;
   // Whether this is a dual mode shortcut (Win8+).
-  // For now this property can only be set to true (i.e. once set it cannot be
-  // unset).
-  // TODO (gab): Make it possible to set this property to false.
   bool dual_mode;
   // Bitfield made of IndividualProperties. Properties set in |options| will be
   // set on the shortcut, others will be ignored.
@@ -109,8 +108,8 @@ struct ShortcutProperties {
 // information given through |properties|.
 // Ensure you have initialized COM before calling into this function.
 // |operation|: a choice from the ShortcutOperation enum.
-// If |operation| is SHORTCUT_UPDATE_EXISTING and |shortcut_path| does not
-// exist, this method is a no-op and returns false.
+// If |operation| is SHORTCUT_REPLACE_EXISTING or SHORTCUT_UPDATE_EXISTING and
+// |shortcut_path| does not exist, this method is a no-op and returns false.
 BASE_EXPORT bool CreateOrUpdateShortcutLink(
     const FilePath& shortcut_path,
     const ShortcutProperties& properties,

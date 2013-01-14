@@ -13,6 +13,7 @@
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/gpu_export.h"
+#include "ui/gl/gl_image.h"
 
 namespace gpu {
 namespace gles2 {
@@ -124,6 +125,10 @@ class GPU_EXPORT TextureManager {
     bool GetLevelType(
         GLint face, GLint level, GLenum* type, GLenum* internal_format) const;
 
+    // Get the image bound to a particular level. Returns NULL if level
+    // does not exist.
+    gfx::GLImage* GetLevelImage(GLint face, GLint level) const;
+
     bool IsDeleted() const {
       return deleted_;
     }
@@ -170,7 +175,6 @@ class GPU_EXPORT TextureManager {
     }
 
     void SetImmutable(bool immutable) {
-      DCHECK(!immutable_);
       immutable_ = immutable;
     }
 
@@ -190,6 +194,7 @@ class GPU_EXPORT TextureManager {
     struct LevelInfo {
       LevelInfo();
       LevelInfo(const LevelInfo& rhs);
+      ~LevelInfo();
 
       bool cleared;
       GLenum target;
@@ -201,6 +206,7 @@ class GPU_EXPORT TextureManager {
       GLint border;
       GLenum format;
       GLenum type;
+      scoped_refptr<gfx::GLImage> image;
       uint32 estimated_size;
     };
 
@@ -265,6 +271,13 @@ class GPU_EXPORT TextureManager {
 
     // Update info about this texture.
     void Update(const FeatureInfo* feature_info);
+
+    // Set the image for a particular level.
+    void SetLevelImage(
+        const FeatureInfo* feature_info,
+        GLenum target,
+        GLint level,
+        gfx::GLImage* image);
 
     // Info about each face and level of texture.
     std::vector<std::vector<LevelInfo> > level_infos_;
@@ -490,6 +503,12 @@ class GPU_EXPORT TextureManager {
   uint32 mem_represented() const {
     return mem_represented_;
   }
+
+  void SetLevelImage(
+      TextureInfo* info,
+      GLenum target,
+      GLint level,
+      gfx::GLImage* image);
 
  private:
   // Helper for Initialize().

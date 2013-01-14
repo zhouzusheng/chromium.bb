@@ -31,6 +31,7 @@
 /**
  * @constructor
  * @extends {WebInspector.View}
+ * @param {!Array.<!WebInspector.AuditCategoryResult>} categoryResults
  */
 WebInspector.AuditResultView = function(categoryResults)
 {
@@ -46,13 +47,13 @@ WebInspector.AuditResultView = function(categoryResults)
 }
 
 WebInspector.AuditResultView.prototype = {
+    __proto__: WebInspector.View.prototype
 }
-
-WebInspector.AuditResultView.prototype.__proto__ = WebInspector.View.prototype;
 
 /**
  * @constructor
  * @extends {WebInspector.SidebarPane}
+ * @param {!WebInspector.AuditCategoryResult} categoryResult
  */
 WebInspector.AuditCategoryResultPane = function(categoryResult)
 {
@@ -89,6 +90,10 @@ WebInspector.AuditCategoryResultPane = function(categoryResult)
 }
 
 WebInspector.AuditCategoryResultPane.prototype = {
+    /**
+     * @param {(TreeOutline|TreeElement)} parentTreeElement
+     * @param {!WebInspector.AuditCategoryResult} result
+     */
     _appendResult: function(parentTreeElement, result)
     {
         var title = "";
@@ -118,7 +123,7 @@ WebInspector.AuditCategoryResultPane.prototype = {
             treeElement.expand();
         }
         return treeElement;
-    }
-}
+    },
 
-WebInspector.AuditCategoryResultPane.prototype.__proto__ = WebInspector.SidebarPane.prototype;
+    __proto__: WebInspector.SidebarPane.prototype
+}

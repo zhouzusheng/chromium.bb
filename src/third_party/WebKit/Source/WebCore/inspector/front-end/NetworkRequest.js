@@ -55,7 +55,6 @@ WebInspector.NetworkRequest = function(requestId, url, documentURL, frameId, loa
     this.receiveHeadersEnd = 0;
 
     this._type = WebInspector.resourceTypes.Other;
-    this._content = undefined;
     this._contentEncoded = false;
     this._pendingContentCallbacks = [];
     this._frames = [];
@@ -420,9 +419,9 @@ WebInspector.NetworkRequest.prototype = {
      */
     get requestHeadersText()
     {
-        if (this._requestHeadersText === undefined) {
+        if (typeof this._requestHeadersText === "undefined") {
             this._requestHeadersText = this.requestMethod + " " + this.url + " HTTP/1.1\r\n";
-            for (var i = 0; i < this.requestHeaders; ++i)
+            for (var i = 0; i < this.requestHeaders.length; ++i)
                 this._requestHeadersText += this.requestHeaders[i].name + ": " + this.requestHeaders[i].value + "\r\n";
         }
         return this._requestHeadersText;
@@ -522,9 +521,9 @@ WebInspector.NetworkRequest.prototype = {
      */
     get responseHeadersText()
     {
-        if (this._responseHeadersText === undefined) {
+        if (typeof this._responseHeadersText === "undefined") {
             this._responseHeadersText = "HTTP/1.1 " + this.statusCode + " " + this.statusText + "\r\n";
-            for (var i = 0; i < this.requestHeaders; ++i)
+            for (var i = 0; i < this.responseHeaders.length; ++i)
                 this._responseHeadersText += this.responseHeaders[i].name + ": " + this.responseHeaders[i].value + "\r\n";
         }
         return this._responseHeadersText;
@@ -579,16 +578,29 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
+     * @return {?string}
+     */
+    queryString: function()
+    {
+        if (this._queryString)
+            return this._queryString;
+        var queryString = this.url.split("?", 2)[1];
+        if (!queryString)
+            return null;
+        this._queryString = queryString.split("#", 2)[0];
+        return this._queryString;
+    },
+
+    /**
      * @return {?Array.<Object>}
      */
     get queryParameters()
     {
         if (this._parsedQueryParameters)
             return this._parsedQueryParameters;
-        var queryString = this.url.split("?", 2)[1];
+        var queryString = this.queryString();
         if (!queryString)
             return null;
-        queryString = queryString.split("#", 2)[0];
         this._parsedQueryParameters = this._parseParameters(queryString);
         return this._parsedQueryParameters;
     },
@@ -676,7 +688,7 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
-     * @return {?string}
+     * @return {string}
      */
     contentURL: function()
     {
@@ -761,20 +773,28 @@ WebInspector.NetworkRequest.prototype = {
     populateImageSource: function(image)
     {
         /**
+         * @this {WebInspector.NetworkRequest}
          * @param {?string} content
          * @param {boolean} contentEncoded
          * @param {string} mimeType
          */
         function onResourceContent(content, contentEncoded, mimeType)
         {
-            const maxDataUrlSize = 1024 * 1024;
-            // If resource content is not available or won't fit a data URL, fall back to using original URL.
-            if (this._content == null || this._content.length > maxDataUrlSize)
-                return this.url;
-            image.src = "data:" + this.mimeType + (this._contentEncoded ? ";base64," : ",") + this._content;
+            var imageSrc = this.asDataURL();
+            if (imageSrc === null)
+                imageSrc = this.url;
+            image.src = imageSrc;
         }
 
         this.requestContent(onResourceContent.bind(this));
+    },
+
+    /**
+     * @return {?string}
+     */
+    asDataURL: function()
+    {
+        return WebInspector.contentAsDataURL(this._content, this.mimeType, this._contentEncoded);
     },
 
     _innerRequestContent: function()
@@ -849,7 +869,7 @@ WebInspector.NetworkRequest.prototype = {
             this._frames.splice(0, 10);
         }
         this._frames.push(object);
-    }
-}
+    },
 
-WebInspector.NetworkRequest.prototype.__proto__ = WebInspector.Object.prototype;
+    __proto__: WebInspector.Object.prototype
+}

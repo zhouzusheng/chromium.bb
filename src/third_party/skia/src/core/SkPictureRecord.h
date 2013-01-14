@@ -21,7 +21,7 @@ class SkBBoxHierarchy;
 
 class SkPictureRecord : public SkCanvas {
 public:
-    SkPictureRecord(uint32_t recordFlags);
+    SkPictureRecord(uint32_t recordFlags, SkDevice*);
     virtual ~SkPictureRecord();
 
     virtual SkDevice* setDevice(SkDevice* device) SK_OVERRIDE;
@@ -46,8 +46,8 @@ public:
     virtual void drawPath(const SkPath& path, const SkPaint&) SK_OVERRIDE;
     virtual void drawBitmap(const SkBitmap&, SkScalar left, SkScalar top,
                             const SkPaint*) SK_OVERRIDE;
-    virtual void drawBitmapRect(const SkBitmap&, const SkIRect* src,
-                                const SkRect& dst, const SkPaint*) SK_OVERRIDE;
+    virtual void drawBitmapRectToRect(const SkBitmap&, const SkRect* src,
+                                      const SkRect& dst, const SkPaint*) SK_OVERRIDE;
     virtual void drawBitmapMatrix(const SkBitmap&, const SkMatrix&,
                                   const SkPaint*) SK_OVERRIDE;
     virtual void drawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,
@@ -86,7 +86,9 @@ public:
         return fWriter;
     }
 
+    void beginRecording();
     void endRecording();
+
 private:
     void recordRestoreOffsetPlaceholder(SkRegion::Op);
     void fillRestoreOffsetPlaceholdersForCurrentStackLevel(
@@ -172,8 +174,10 @@ protected:
     SkBBoxHierarchy* fBoundingHierarchy;
     SkPictureStateTree* fStateTree;
 
-private:
+    // Allocated in the constructor and managed by this class.
     SkBitmapHeap* fBitmapHeap;
+
+private:
     SkChunkFlatController fFlattenableHeap;
 
     SkMatrixDictionary fMatrices;

@@ -112,7 +112,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 160
+#   For your editing convenience: highest ID currently used: 161
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -278,6 +278,8 @@
       'caption': '''Enable network prediction''',
       'desc': '''Enables network prediction in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing this setting.
 
+      This controls not only DNS prefetching but also TCP and SSL preconnection and prerendering of web pages. The policy name refers to DNS prefetching for historical reasons.
+
       If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If this policy is left not set, this will be enabled but the user will be able to change it.''',
@@ -330,15 +332,11 @@
       'caption': '''Enable JavaScript''',
       'desc': '''This policy is deprecated, please use DefaultJavaScriptSetting instead.
 
-      Enables JavaScript in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing this setting.
+      Can be used to disabled JavaScript in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
-      If this setting is enabled or not configured, web pages can use JavaScript.
+      If this setting is disabled, web pages cannot use JavaScript and the user cannot change that setting.
 
-      If this setting is disabled, web pages cannot use JavaScript.
-
-      If this policy is left not set the default value will be used which is enabled and the user will be able to change it.
-
-      If this policy is left not set, this will be enabled but the user will be able to change it.''',
+      If this setting is enabled or not set, web pages can use JavaScript but the user can change that setting.''',
     },
     {
       'name': 'IncognitoEnabled',
@@ -441,7 +439,7 @@
           'name': 'RemoteAccessHostFirewallTraversal',
           'type': 'main',
           'schema': { 'type': 'boolean' },
-          'supported_on': ['chrome.*:14-', 'chrome_os:0.14-'],
+          'supported_on': ['chrome.*:14-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
           'id': 95,
@@ -458,7 +456,7 @@
           'name': 'RemoteAccessHostDomain',
           'type': 'string',
           'schema': { 'type': 'string' },
-          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'supported_on': ['chrome.*:22-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'my-awesome-domain.com',
           'id': 154,
@@ -473,7 +471,7 @@
           'name': 'RemoteAccessHostRequireTwoFactor',
           'type': 'main',
           'schema': { 'type': 'boolean' },
-          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'supported_on': ['chrome.*:22-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
           'id': 155,
@@ -488,7 +486,7 @@
           'name': 'RemoteAccessHostTalkGadgetPrefix',
           'type': 'string',
           'schema': { 'type': 'string' },
-          'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
+          'supported_on': ['chrome.*:22-'],
           'features': {'dynamic_refresh': True},
           'example_value': 'chromoting-host',
           'id': 156,
@@ -507,7 +505,7 @@
           'name': 'RemoteAccessHostRequireCurtain',
           'type': 'main',
           'schema': { 'type': 'boolean' },
-          'supported_on': ['chrome.*:23-', 'chrome_os:0.23-'],
+          'supported_on': ['chrome.*:23-'],
           'features': {'dynamic_refresh': True},
           'example_value': False,
           'id': 157,
@@ -560,7 +558,7 @@
       'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
       'features': {
-        'dynamic_refresh': False,
+        'dynamic_refresh': True,
         'can_be_recommended': True,
       },
       'example_value': True,
@@ -772,6 +770,8 @@
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided directory regardless whether the user has specified the '--user-data-dir' flag or not.
 
+      See http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables for a list of variables that can be used.
+
       If this policy is left not set the default profile path will be used and the user will be able to override it with the '--user-data-dir' command line flag.''',
       'label': '''Set user data directory''',
     },
@@ -787,6 +787,8 @@
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing cached files on the disk.
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided directory regardless whether the user has specified the '--disk-cache-dir' flag or not.
+
+      See http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables for a list of variables that can be used.
 
       If this policy is left not set the default cache directory will be used and the user will be able to override it with the '--disk-cache-dir' command line flag.''',
       'label': '''Set disk cache directory''',
@@ -842,6 +844,8 @@
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for downloading files.
 
       If you set this policy, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use the provided directory regardless whether the user has specified one or enabled the flag to be prompted for download location every time.
+
+      See http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables for a list of variables that can be used.
 
       If this policy is left not set the default download directory will be used and the user will be able to change it.''',
       'label': '''Set download directory''',
@@ -1256,7 +1260,7 @@
 
           For example, <ph name="EXTENSION_POLICY_EXAMPLE">lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx</ph> installs the <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME">Google SSL Web Search</ph> extension from the standard Chrome Web Store update URL. For more information about hosting extensions, see: <ph name="LINK_TO_EXTENSION_DOC2">http://code.google.com/chrome/extensions/hosting.html</ph>.
 
-          Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
+          Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. Extensions specified in this list are also automatically whitelisted for installation; the ExtensionsInstallBlacklist does not affect them.
 
           If this policy is left not set the user can uninstall any extension  in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
           'label': '''Extension IDs and update URLs to be silently installed''',
@@ -1375,8 +1379,6 @@
           Disabling this setting is equvalent to leaving it not configured. The user will still be able to change it in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
         },
         {
-          # TODO(joaodasilva): Flag this policy with 'can_be_recommended'
-          # after fixing http://crbug.com/106684
           'name': 'RestoreOnStartupURLs',
           'type': 'list',
           'schema': {
@@ -1384,7 +1386,10 @@
             'items': { 'type': 'string' },
           },
           'supported_on': ['chrome.*:8-', 'chrome_os:0.11-'],
-          'features': {'dynamic_refresh': True},
+          'features': {
+            'dynamic_refresh': True,
+            'can_be_recommended': True,
+          },
           'example_value': ['http://example.com', 'http://chromium.org'],
           'id': 38,
           'caption': '''URLs to open on startup''',
@@ -1544,6 +1549,24 @@
           'desc': '''Specifies the character encodings supported by the search provider. Encodings are code page names like UTF-8, GB2312, and ISO-8859-1. They are tried in the order provided.
 
           This policy is optional. If not set, the default will be used which is UTF-8.
+
+          This policy is only respected if the 'DefaultSearchProviderEnabled' policy is enabled.''',
+        },
+        {
+          'name': 'DefaultSearchProviderAlternateURLs',
+          'type': 'list',
+          'schema': {
+            'type': 'array',
+            'items': { 'type': 'string' },
+          },
+          'supported_on': ['chrome.*:24-', 'chrome_os:0.24-'],
+          'features': {'dynamic_refresh': True},
+          'example_value': ['http://search.my.company/suggest#q={searchTerms}', 'http://search.my.company/suggest/search#q={searchTerms}'],
+          'id': 161,
+          'caption': '''List of alternate URLs for the default search provider.''',
+          'desc': '''Specifies a list of alternate URLs that can be used to extract search terms from the search engine. The URLs should contain the string <ph name="SEARCH_TERM_MARKER">'{searchTerms}'</ph>, which will be used to extract the search terms.
+
+          This policy is optional. If not set, no alternate urls will be used to extract search terms.
 
           This policy is only respected if the 'DefaultSearchProviderEnabled' policy is enabled.''',
         },
@@ -1780,18 +1803,18 @@
           'type': 'int-enum',
           'schema': {
             'type': 'integer',
-            'enum': [ 1, 2 ],
+            'enum': [ 2, 3 ],
           },
           'items': [
-            {
-              'name': 'PromptOnAccess',
-              'value': 1,
-              'caption': '''Ask every time a site wants to access my camera and/or microphone''',
-            },
             {
               'name': 'BlockAccess',
               'value': 2,
               'caption': '''Do not allow any site to access my camera and microphone''',
+            },
+            {
+              'name': 'PromptOnAccess',
+              'value': 3,
+              'caption': '''Ask every time a site wants to access my camera and/or microphone''',
             },
           ],
           'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
@@ -2036,7 +2059,7 @@
       'type': 'main',
       'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:9-', 'chrome_os:0.11-'],
-      'features': {'dynamic_refresh': False},
+      'features': {'dynamic_refresh': True},
       'example_value': False,
       'id': 55,
       'caption': '''Disable support for 3D graphics APIs''',
@@ -2337,6 +2360,8 @@
 
       If you set this policy, <ph name="PRODUCT_FRAME_NAME">$3<ex>Google Chrome Frame</ex></ph> will use the provided directory.
 
+      See http://www.chromium.org/administrators/policy-list-3/user-data-directory-variables for a list of variables that can be used.
+
       If this setting is left not set the default profile directory will be used.''',
       'label': '''Set user data directory''',
     },
@@ -2399,10 +2424,7 @@
       'type': 'main',
       'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:15-'],
-      'features': {
-        'dynamic_refresh': True,
-        'can_be_recommended': True,
-      },
+      'features': {'dynamic_refresh': True},
       'example_value': True,
       'id': 99,
       'caption': '''Import of homepage from default browser on first run''',
@@ -2506,7 +2528,7 @@
       The optional port is a valid port number from 1 to 65535. If none is specified, all ports are blocked.
       If the optional path is specified, only paths with that prefix will be blocked.
 
-      Exceptions can be defined in the URL whitelist policy. These policies are limited to 100 entries; subsequent entries will be ignored.
+      Exceptions can be defined in the URL whitelist policy. These policies are limited to 1000 entries; subsequent entries will be ignored.
 
       If this policy is not set no URL will be blacklisted in the browser.''',
     },
@@ -2530,7 +2552,7 @@
 
       The most specific filter will determine if a URL is blocked or allowed. The whitelist takes precedence over the blacklist.
 
-      This policy is limited to 100 entries; subsequent entries will be ignored.
+      This policy is limited to 1000 entries; subsequent entries will be ignored.
 
       If this policy is not set there will be no exceptions to the blacklist from the 'URLBlacklist' policy.''',
     },
@@ -2552,7 +2574,6 @@
       'supported_on': ['chrome_os:0.16-'],
       'device_only': True,
       'features': {'dynamic_refresh': True},
-      'future': True,
       'example_value': '{ "NetworkConfigurations": [ { "GUID": "{4b224dfd-6849-7a63-5e394343244ae9c9}", "Name": "my WiFi", "Type": "WiFi", "WiFi": { "SSID": "my WiFi", "HiddenSSID": false, "Security": "None", "AutoConnect": true } } ] }',
       'id': 108,
       'caption': '''Device-level network configuration''',
@@ -2582,7 +2603,7 @@
       'example_value': 'http://company-intranet/chromeapps',
       'id': 112,
       'caption': '''Enterprise web store URL''',
-      'desc': '''Specifies the URL for the enterprise web store. When this setting is enabled, an app will appear on the new tab page which, when clicked, will take the user to the specified URL. Extensions and apps can be installed from this page without extra warnings being presented to the user. If this policy is set, the EnterpriseWebStoreName setting should also be set.
+      'desc': '''Specifies the URL for the enterprise web store. When this setting is enabled, an app will appear on the new tab page which, when clicked, will take the user to the specified URL. To actually allow extension installation from the configured website, the ExtensionInstallSources policy must be configured to allow installation from the appropriate extension download URLs. If this policy is set, the EnterpriseWebStoreName setting should also be set.
 
       If this setting is disabled, no enterprise web store app will appear on the new tab page.''',
     },
@@ -3041,36 +3062,36 @@
       If this policy is left unset, background mode is initially disabled and can be controlled by the user in the browser settings.''',
     },
     {
-      'name': 'GData',
+      'name': 'Drive',
       'type': 'group',
-      'caption': '''Configure GData options''',
-      'desc': '''Configure GData in <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph>.''',
+      'caption': '''Configure Google Drive options''',
+      'desc': '''Configure Google Drive in <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph>.''',
       'policies': [
         {
-          'name': 'GDataDisabled',
+          'name': 'DriveDisabled',
           'type': 'main',
           'schema': { 'type': 'boolean' },
           'supported_on': ['chrome_os:19-'],
           'features': {'dynamic_refresh': True},
           'example_value': True,
           'id': 139,
-          'caption': '''Disables GData''',
-          'desc': '''Disables Google Docs syncing when set to True. In that case, no data is uploaded to Google Docs.
+          'caption': '''Disables Drive''',
+          'desc': '''Disables Google Drive syncing when set to True. In that case, no data is uploaded to Google Drive.
 
-          If not set or set to False, then users will be able to transfer files to Google Docs.''',
+          If not set or set to False, then users will be able to transfer files to Google Drive.''',
         },
         {
-          'name': 'GDataDisabledOverCellular',
+          'name': 'DriveDisabledOverCellular',
           'type': 'main',
           'schema': { 'type': 'boolean' },
           'supported_on': ['chrome_os:19-'],
           'features': {'dynamic_refresh': True},
           'example_value': True,
           'id': 140,
-          'caption': '''Disables GData over Cellular connections''',
-          'desc': '''Disables Google Docs syncing when using a cellular connection when set to True. In that case, data is only synced to Google Docs when connected via WiFi or Ethernet.
+          'caption': '''Disables Google Drive over Cellular connections''',
+          'desc': '''Disables Google Drive syncing when using a cellular connection when set to True. In that case, data is only synced to Google Drive when connected via WiFi or Ethernet.
 
-          If not set or set to False, then users will be able to transfer files to Google Docs via cellular connections.''',
+          If not set or set to False, then users will be able to transfer files to Google Drive via cellular connections.''',
         },
       ],
     },
@@ -3128,7 +3149,10 @@
       'type': 'main',
       'schema': { 'type': 'boolean' },
       'supported_on': ['chrome.*:22-', 'chrome_os:0.22-'],
-      'features': {'dynamic_refresh': True},
+      'features': {
+        'dynamic_refresh': True,
+        'can_be_recommended': True,
+      },
       'example_value': False,
       'id': 151,
       'caption': '''Enable or disable spell checking web service''',

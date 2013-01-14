@@ -17,16 +17,13 @@
 
 class SkBitmap;
 
-namespace ui {
-class Transform;
-}
-
 namespace gfx {
 
 class Rect;
 class Font;
 class Point;
 class Size;
+class Transform;
 
 // Canvas is a SkCanvas wrapper that provides a number of methods for
 // common operations used throughout an application built using ui/gfx.
@@ -185,7 +182,7 @@ class UI_EXPORT Canvas {
 
   // Restores the drawing state after a call to Save*(). It is an error to
   // call Restore() more times than Save*().
-  void Restore() ;
+  void Restore();
 
   // Adds |rect| to the current clip. Returns true if the resulting clip is
   // non-empty.
@@ -261,6 +258,10 @@ class UI_EXPORT Canvas {
   // Parameters are specified relative to current canvas scale not in pixels.
   // Thus, x is 2 pixels if canvas scale = 2 & |x| = 1.
   void DrawImageInt(const gfx::ImageSkia&, int x, int y);
+
+  // Helper for DrawImageInt(..., paint) that constructs a temporary paint and
+  // calls paint.setAlpha(alpha).
+  void DrawImageInt(const gfx::ImageSkia&, int x, int y, uint8 alpha);
 
   // Draws an image with the origin at the specified location, using the
   // specified paint. The upper left corner of the bitmap is rendered at the
@@ -358,7 +359,7 @@ class UI_EXPORT Canvas {
   void EndPlatformPaint();
 
   // Apply transformation on the canvas.
-  void Transform(const ui::Transform& transform);
+  void Transform(const gfx::Transform& transform);
 
   // Draws the given string with the beginning and/or the end using a fade
   // gradient. When truncating the head

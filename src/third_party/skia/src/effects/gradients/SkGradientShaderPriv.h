@@ -192,10 +192,10 @@ private:
 
 #if SK_SUPPORT_GPU
 
-#include "gl/GrGLProgramStage.h"
+#include "gl/GrGLEffect.h"
 
-class GrSamplerState;
-class GrProgramStageFactory;
+class GrEffectStage;
+class GrBackendEffectFactory;
 
 /*
  * The intepretation of the texture matrix depends on the sample mode. The
@@ -223,24 +223,23 @@ class GrProgramStageFactory;
  class GrTextureStripAtlas;
 
 // Base class for Gr gradient effects
-class GrGradientEffect : public GrCustomStage {
+class GrGradientEffect : public GrEffect {
 public:
 
-    GrGradientEffect(GrContext* ctx, const SkGradientShaderBase& shader,
-                     GrSamplerState* sampler);
+    GrGradientEffect(GrContext* ctx,
+                     const SkGradientShaderBase& shader,
+                     SkShader::TileMode tileMode);
 
     virtual ~GrGradientEffect();
 
-    virtual int numTextures() const SK_OVERRIDE;
     virtual const GrTextureAccess& textureAccess(int index) const SK_OVERRIDE;
 
-    bool useTexture() const { return fUseTexture; }
     bool useAtlas() const { return SkToBool(-1 != fRow); }
-    GrScalar getYCoord() const { GrAssert(fUseTexture); return fYCoord; };
+    GrScalar getYCoord() const { return fYCoord; };
 
-    virtual bool isEqual(const GrCustomStage& stage) const SK_OVERRIDE {
-        const GrGradientEffect& s = static_cast<const GrGradientEffect&>(stage);
-        return INHERITED::isEqual(stage) && this->useAtlas() == s.useAtlas() &&
+    virtual bool isEqual(const GrEffect& effect) const SK_OVERRIDE {
+        const GrGradientEffect& s = static_cast<const GrGradientEffect&>(effect);
+        return INHERITED::isEqual(effect) && this->useAtlas() == s.useAtlas() &&
                fYCoord == s.getYCoord();
     }
 
@@ -261,29 +260,25 @@ protected:
 
 private:
     GrTextureAccess fTextureAccess;
-    bool fUseTexture;
     GrScalar fYCoord;
     GrTextureStripAtlas* fAtlas;
     int fRow;
 
-    typedef GrCustomStage INHERITED;
+    typedef GrEffect INHERITED;
 
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Base class for GL gradient custom stages
-class GrGLGradientStage : public GrGLProgramStage {
+// Base class for GL gradient effects
+class GrGLGradientEffect : public GrGLLegacyEffect {
 public:
 
-    GrGLGradientStage(const GrProgramStageFactory& factory);
-    virtual ~GrGLGradientStage();
+    GrGLGradientEffect(const GrBackendEffectFactory& factory);
+    virtual ~GrGLGradientEffect();
 
     virtual void setupVariables(GrGLShaderBuilder* builder) SK_OVERRIDE;
-    virtual void setData(const GrGLUniformManager&,
-                         const GrCustomStage&,
-                         const GrRenderTarget*,
-                         int stageNum) SK_OVERRIDE;
+    virtual void setData(const GrGLUniformManager&, const GrEffect&) SK_OVERRIDE;
 
     // emit code that gets a fragment's color from an expression for t; for now
     // this always uses the texture, but for simpler cases we'll be able to lerp
@@ -298,7 +293,7 @@ private:
     GrScalar fCachedYCoord;
     GrGLUniformManager::UniformHandle fFSYUni;
 
-    typedef GrGLProgramStage INHERITED;
+    typedef GrGLLegacyEffect INHERITED;
 };
 
 #endif

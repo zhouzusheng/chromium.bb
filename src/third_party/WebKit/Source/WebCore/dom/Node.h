@@ -258,8 +258,7 @@ public:
     Node* enclosingLinkEventParentOrSelf();
 
     bool isBlockFlow() const;
-    bool isBlockFlowOrBlockTable() const;
-    
+
     // These low-level calls give the caller responsibility for maintaining the integrity of the tree.
     void setPreviousSibling(Node* previous) { m_previous = previous; }
     void setNextSibling(Node* next) { m_next = next; }
@@ -350,6 +349,9 @@ public:
 
     bool hasScopedHTMLStyleChild() const { return getFlag(HasScopedHTMLStyleChildFlag); }
     void setHasScopedHTMLStyleChild(bool flag) { setFlag(flag, HasScopedHTMLStyleChildFlag); }
+
+    bool hasEventTargetData() const { return getFlag(HasEventTargetDataFlag); }
+    void setHasEventTargetData(bool flag) { setFlag(flag, HasEventTargetDataFlag); }
 
     enum ShouldSetAttached {
         SetAttached,
@@ -527,7 +529,6 @@ public:
     
     // Wrapper for nodes that don't have a renderer, but still cache the style (like HTMLOptionElement).
     RenderStyle* renderStyle() const;
-    virtual void setRenderStyle(PassRefPtr<RenderStyle>);
 
     RenderStyle* computedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return virtualComputedStyle(pseudoElementSpecifier); }
 
@@ -653,18 +654,20 @@ public:
 
 #if ENABLE(MUTATION_OBSERVERS)
     void getRegisteredMutationObserversOfType(HashMap<MutationObserver*, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
-    MutationObserverRegistration* registerMutationObserver(PassRefPtr<MutationObserver>);
+    void registerMutationObserver(MutationObserver*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     void unregisterMutationObserver(MutationObserverRegistration*);
     void registerTransientMutationObserver(MutationObserverRegistration*);
     void unregisterTransientMutationObserver(MutationObserverRegistration*);
     void notifyMutationObserversNodeWillDetach();
 #endif // ENABLE(MUTATION_OBSERVERS)
 
-    void registerScopedHTMLStyleChild();
-    void unregisterScopedHTMLStyleChild();
+    virtual void registerScopedHTMLStyleChild();
+    virtual void unregisterScopedHTMLStyleChild();
     size_t numberOfScopedHTMLStyleChildren() const;
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
+    void textRects(Vector<IntRect>&) const;
 
 private:
     enum NodeFlags {
@@ -710,10 +713,11 @@ private:
         InNamedFlowFlag = 1 << 26,
         HasAttrListFlag = 1 << 27,
         HasCustomCallbacksFlag = 1 << 28,
-        HasScopedHTMLStyleChildFlag = 1 << 29
+        HasScopedHTMLStyleChildFlag = 1 << 29,
+        HasEventTargetDataFlag = 1 << 30,
     };
 
-    // 3 bits remaining
+    // 2 bits remaining
 
     bool getFlag(NodeFlags mask) const { return m_nodeFlags & mask; }
     void setFlag(bool f, NodeFlags mask) const { m_nodeFlags = (m_nodeFlags & ~mask) | (-(int32_t)f & mask); } 
@@ -747,6 +751,8 @@ protected:
     NodeRareData* ensureRareData();
     void clearRareData();
 
+    void clearEventTargetData();
+
     void setHasCustomCallbacks() { setFlag(true, HasCustomCallbacksFlag); }
 
     Document* documentInternal() const { return m_document; }
@@ -776,7 +782,7 @@ private:
     virtual OwnPtr<NodeRareData> createRareData();
     bool rareDataFocused() const;
 
-    virtual RenderStyle* nonRendererRenderStyle() const;
+    virtual RenderStyle* nonRendererStyle() const { return 0; }
 
     virtual const AtomicString& virtualPrefix() const;
     virtual const AtomicString& virtualLocalName() const;
@@ -799,7 +805,6 @@ private:
 #if ENABLE(MUTATION_OBSERVERS)
     Vector<OwnPtr<MutationObserverRegistration> >* mutationObserverRegistry();
     HashSet<MutationObserverRegistration*>* transientMutationObserverRegistry();
-    void collectMatchingObserversForMutation(HashMap<MutationObserver*, MutationRecordDeliveryOptions>&, Node* fromNode, MutationObserver::MutationType, const QualifiedName* attributeName);
 #endif
 
     mutable uint32_t m_nodeFlags;

@@ -61,6 +61,22 @@ public:
     virtual void clearBrowserCache() { }
     virtual void clearBrowserCookies() { }
 
+    class AllocatedObjectVisitor {
+    public:
+        virtual bool visitObject(const void* ptr) = 0;
+    protected:
+        virtual ~AllocatedObjectVisitor() { }
+    };
+    virtual void visitAllocatedObjects(AllocatedObjectVisitor*) { }
+
+    class InstrumentedObjectSizeProvider {
+    public:
+        virtual size_t objectSize(const void* ptr) const = 0;
+    protected:
+        virtual ~InstrumentedObjectSizeProvider() { }
+    };
+    virtual void dumpUncountedAllocatedObjects(const InstrumentedObjectSizeProvider*) { }
+
 protected:
     ~WebDevToolsAgentClient() { }
 };

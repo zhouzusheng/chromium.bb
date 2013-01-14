@@ -462,7 +462,7 @@ int SpdySession::GetPushStream(
   if (is_secure_ && certificate_error_code_ != OK &&
       (url.SchemeIs("https") || url.SchemeIs("wss"))) {
     RecordProtocolErrorHistogram(
-        PROTOCOL_ERROR_REQUST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION);
+        PROTOCOL_ERROR_REQUEST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION);
     CloseSessionOnError(
         static_cast<net::Error>(certificate_error_code_),
         true,
@@ -567,7 +567,7 @@ int SpdySession::CreateStreamImpl(
   if (is_secure_ && certificate_error_code_ != OK &&
       (url.SchemeIs("https") || url.SchemeIs("wss"))) {
     RecordProtocolErrorHistogram(
-        PROTOCOL_ERROR_REQUST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION);
+        PROTOCOL_ERROR_REQUEST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION);
     CloseSessionOnError(
         static_cast<net::Error>(certificate_error_code_),
         true,
@@ -1845,13 +1845,13 @@ void SpdySession::SendPrefacePing() {
 void SpdySession::WritePingFrame(uint32 unique_id) {
   DCHECK(buffered_spdy_framer_.get());
   scoped_ptr<SpdyPingControlFrame> ping_frame(
-      buffered_spdy_framer_->CreatePingFrame(next_ping_id_));
+      buffered_spdy_framer_->CreatePingFrame(unique_id));
   QueueFrame(ping_frame.release(), HIGHEST);
 
   if (net_log().IsLoggingAllEvents()) {
     net_log().AddEvent(
         NetLog::TYPE_SPDY_SESSION_PING,
-        base::Bind(&NetLogSpdyPingCallback, next_ping_id_, "sent"));
+        base::Bind(&NetLogSpdyPingCallback, unique_id, "sent"));
   }
   if (unique_id % 2 != 0) {
     next_ping_id_ += 2;

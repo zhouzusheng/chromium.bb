@@ -27,7 +27,6 @@
 
 #include "Canvas2DLayerBridge.h"
 
-#include "CCRendererGL.h" // For the GLC() macro.
 #include "Canvas2DLayerManager.h"
 #include "GrContext.h"
 #include "GraphicsContext3D.h"
@@ -52,6 +51,8 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D> context, 
     , m_canvas(0)
     , m_context(context)
     , m_bytesAllocated(0)
+    , m_didRecordDrawCommand(false)
+    , m_framesPending(0)
     , m_next(0)
     , m_prev(0)
 {
@@ -67,15 +68,15 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D> context, 
 
     if (m_useDoubleBuffering) {
         m_context->makeContextCurrent();
-        GLC(m_context.get(), m_frontBufferTexture = m_context->createTexture());
-        GLC(m_context.get(), m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_frontBufferTexture));
+        m_frontBufferTexture = m_context->createTexture();
+        m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_frontBufferTexture);
         // Do basic linear filtering on resize.
-        GLC(m_context.get(), m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MIN_FILTER, GraphicsContext3D::LINEAR));
-        GLC(m_context.get(), m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MAG_FILTER, GraphicsContext3D::LINEAR));
+        m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MIN_FILTER, GraphicsContext3D::LINEAR);
+        m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MAG_FILTER, GraphicsContext3D::LINEAR);
         // NPOT textures in GL ES only work when the wrap mode is set to GraphicsContext3D::CLAMP_TO_EDGE.
-        GLC(m_context.get(), m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_S, GraphicsContext3D::CLAMP_TO_EDGE));
-        GLC(m_context.get(), m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_T, GraphicsContext3D::CLAMP_TO_EDGE));
-        GLC(m_context.get(), m_context->texImage2DResourceSafe(GraphicsContext3D::TEXTURE_2D, 0, GraphicsContext3D::RGBA, size.width(), size.height(), 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE));
+        m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_S, GraphicsContext3D::CLAMP_TO_EDGE);
+        m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_T, GraphicsContext3D::CLAMP_TO_EDGE);
+        m_context->texImage2DResourceSafe(GraphicsContext3D::TEXTURE_2D, 0, GraphicsContext3D::RGBA, size.width(), size.height(), 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE);
         if (GrContext* grContext = m_context->grContext())
             grContext->resetContext();
     }
@@ -95,7 +96,7 @@ Canvas2DLayerBridge::~Canvas2DLayerBridge()
     m_layer->setTextureId(0);
     if (m_useDoubleBuffering) {
         m_context->makeContextCurrent();
-        GLC(m_context.get(), m_context->deleteTexture(m_frontBufferTexture));
+        m_context->deleteTexture(m_frontBufferTexture);
         m_context->flush();
     }
 }
@@ -105,6 +106,16 @@ SkDeferredCanvas* Canvas2DLayerBridge::deferredCanvas()
     if (m_deferralMode == Deferred)
         return static_cast<SkDeferredCanvas*>(m_canvas);
     return 0;
+}
+
+void Canvas2DLayerBridge::limitPendingFrames()
+{
+    if (m_didRecordDrawCommand) {
+        m_framesPending++;
+        m_didRecordDrawCommand = false;
+        if (m_framesPending > 1)
+            flush();
+    }
 }
 
 void Canvas2DLayerBridge::prepareForDraw()
@@ -123,9 +134,20 @@ void Canvas2DLayerBridge::storageAllocatedForRecordingChanged(size_t bytesAlloca
     Canvas2DLayerManager::get().layerAllocatedStorageChanged(this, delta);
 }
 
+size_t Canvas2DLayerBridge::storageAllocatedForRecording()
+{
+    return deferredCanvas()->storageAllocatedForRecording();
+}
+
 void Canvas2DLayerBridge::flushedDrawCommands()
 {
-    storageAllocatedForRecordingChanged(deferredCanvas()->storageAllocatedForRecording());
+    storageAllocatedForRecordingChanged(storageAllocatedForRecording());
+    m_framesPending = 0;
+}
+
+void Canvas2DLayerBridge::skippedPendingDrawCommands()
+{
+    flushedDrawCommands();
 }
 
 size_t Canvas2DLayerBridge::freeMemoryIfPossible(size_t bytesToFree)
@@ -141,7 +163,8 @@ size_t Canvas2DLayerBridge::freeMemoryIfPossible(size_t bytesToFree)
 void Canvas2DLayerBridge::flush()
 {
     ASSERT(deferredCanvas());
-    m_canvas->flush();
+    if (deferredCanvas()->hasPendingCommands())
+        m_canvas->flush();
 }
 
 SkCanvas* Canvas2DLayerBridge::skCanvas(SkDevice* device)
@@ -197,8 +220,10 @@ void Canvas2DLayerBridge::contextAcquired()
 {
     if (m_deferralMode == NonDeferred && !m_useDoubleBuffering)
         m_layer->willModifyTexture();
-    else if (m_deferralMode == Deferred)
+    else if (m_deferralMode == Deferred) {
         Canvas2DLayerManager::get().layerDidDraw(this);
+        m_didRecordDrawCommand = true;
+    }
 }
 
 unsigned Canvas2DLayerBridge::backBufferTexture()

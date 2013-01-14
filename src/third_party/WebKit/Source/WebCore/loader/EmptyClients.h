@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Eric Seidel (eric@webkit.org)
- * Copyright (C) 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2010, 2011, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
@@ -174,7 +174,7 @@ public:
 #endif
 
 #if ENABLE(CALENDAR_PICKER)
-    virtual PassOwnPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
+    virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
 #endif
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) OVERRIDE;
@@ -191,9 +191,9 @@ public:
     virtual void scrollRectIntoView(const IntRect&) const { }
 
 #if USE(ACCELERATED_COMPOSITING)
-    virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) {}
-    virtual void setNeedsOneShotDrawingSynchronization() {}
-    virtual void scheduleCompositingLayerSync() {}
+    virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) { }
+    virtual void setNeedsOneShotDrawingSynchronization() { }
+    virtual void scheduleCompositingLayerFlush() { }
 #endif
 
 #if PLATFORM(WIN)
@@ -260,9 +260,7 @@ public:
     virtual void dispatchDidFailLoad(const ResourceError&) { }
     virtual void dispatchDidFinishDocumentLoad() { }
     virtual void dispatchDidFinishLoad() { }
-    virtual void dispatchDidFirstLayout() { }
-    virtual void dispatchDidFirstVisuallyNonEmptyLayout() { }
-    virtual void dispatchDidNewFirstVisuallyNonEmptyLayout() { }
+    virtual void dispatchDidLayout(LayoutMilestones) { }
 
     virtual Frame* dispatchCreatePage(const NavigationAction&) { return 0; }
     virtual void dispatchShow() { }
@@ -346,6 +344,7 @@ public:
     virtual void didDetectXSS(const KURL&, bool) { }
     virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int) OVERRIDE;
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) OVERRIDE;
+    virtual void recreatePlugin(Widget*) OVERRIDE;
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) OVERRIDE;
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     virtual PassRefPtr<Widget> createMediaPlayerProxyPlugin(const IntSize&, HTMLMediaElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&) OVERRIDE;

@@ -6,13 +6,13 @@
 #define WEBKIT_APPCACHE_WEB_APPLICATION_CACHE_HOST_IMPL_H_
 
 #include <string>
-#include "base/time.h"
+
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebApplicationCacheHostClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
-#include "webkit/appcache/appcache_export.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebApplicationCacheHostClient.h"
 #include "webkit/appcache/appcache_interfaces.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace WebKit {
 class WebFrame;
@@ -20,7 +20,7 @@ class WebFrame;
 
 namespace appcache {
 
-class APPCACHE_EXPORT WebApplicationCacheHostImpl
+class WEBKIT_STORAGE_EXPORT WebApplicationCacheHostImpl
     : NON_EXPORTED_BASE(public WebKit::WebApplicationCacheHost) {
  public:
   // Returns the host having given id or NULL if there is no such host.
@@ -84,4 +84,3 @@ class APPCACHE_EXPORT WebApplicationCacheHostImpl
 }  // namespace
 
 #endif  // WEBKIT_APPCACHE_WEB_APPLICATION_CACHE_HOST_IMPL_H_
-

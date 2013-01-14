@@ -107,7 +107,11 @@ namespace internal {
 
 // Use AtomicWord for a machine-sized pointer. It is assumed that
 // reads and writes of naturally aligned values of this type are atomic.
+#if defined(__OpenBSD__) && defined(__i386__)
+typedef Atomic32 AtomicWord;
+#else
 typedef intptr_t AtomicWord;
+#endif
 
 class Semaphore;
 class Mutex;
@@ -303,6 +307,9 @@ class OS {
 
   // Returns the double constant NAN
   static double nan_value();
+
+  // Support runtime detection of Cpu implementer
+  static CpuImplementer GetCpuImplementer();
 
   // Support runtime detection of VFP3 on ARM CPUs.
   static bool ArmCpuHasFeature(CpuFeature feature);

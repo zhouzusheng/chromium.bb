@@ -223,6 +223,7 @@ void compileSubtargetList(const NodeList& intersectedNodes, SubtargetGeometryLis
     HashMap<Node*, Node*> responderMap;
     HashSet<Node*> ancestorsToRespondersSet;
     Vector<Node*> candidates;
+    HashSet<Node*> editableAncestors;
 
     // A node matching the NodeFilter is called a responder. Candidate nodes must either be a
     // responder or have an ancestor that is a responder.
@@ -270,7 +271,25 @@ void compileSubtargetList(const NodeList& intersectedNodes, SubtargetGeometryLis
         ASSERT(respondingNode);
         if (ancestorsToRespondersSet.contains(respondingNode))
             continue;
-        appendSubtargetsForNode(candidate, subtargets);
+        // Consolidate bounds for editable content.
+        if (editableAncestors.contains(candidate))
+            continue;
+        if (candidate->isContentEditable()) {
+            Node* replacement = candidate;
+            Node* parent = candidate->parentOrHostNode();
+            while (parent && parent->isContentEditable()) {
+                replacement = parent;
+                if (editableAncestors.contains(replacement)) {
+                    replacement = 0;
+                    break;
+                }
+                editableAncestors.add(replacement);
+                parent = parent->parentOrHostNode();
+            }
+            candidate = replacement;
+        }
+        if (candidate)
+            appendSubtargetsForNode(candidate, subtargets);
     }
 }
 
@@ -283,23 +302,6 @@ void compileZoomableSubtargets(const NodeList& intersectedNodes, SubtargetGeomet
         if (nodeIsZoomTarget(candidate))
             appendZoomableSubtargets(candidate, subtargets);
     }
-}
-
-
-float distanceSquaredToTargetCenterLine(const IntPoint& touchHotspot, const IntRect& touchArea, const SubtargetGeometry& subtarget)
-{
-    UNUSED_PARAM(touchArea);
-    // For a better center of a line-box we use the center-line instead of the center-point.
-    // We use the center-line of the bounding box of the quad though, since it is much faster
-    // and gives the same result in all untransformed cases, and in transformed cases still
-    // gives a better distance-function than the distance to the center-point.
-    IntRect rect = subtarget.boundingBox();
-    ASSERT(subtarget.node()->document());
-    ASSERT(subtarget.node()->document()->view());
-    // Convert from frame coordinates to window coordinates.
-    rect = subtarget.node()->document()->view()->contentsToWindow(rect);
-
-    return rect.distanceSquaredFromCenterLineToPoint(touchHotspot);
 }
 
 // This returns quotient of the target area and its intersection with the touch area.
@@ -321,32 +323,30 @@ float zoomableIntersectionQuotient(const IntPoint& touchHotspot, const IntRect& 
     return rect.size().area() / (float)intersection.size().area();
 }
 
-// Uses a hybrid of distance to center and intersect ratio, normalizing each
-// score between 0 and 1 and choosing the better score. The distance to
-// centerline works best for disambiguating clicks on targets such as links,
-// where the width may be significantly larger than the touch width. Using
-// area of overlap in such cases can lead to a bias towards shorter links.
-// Conversely, percentage of overlap can provide strong confidence in tapping
-// on a small target, where the overlap is often quite high, and works well
-// for tightly packed controls.
-float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchArea, const SubtargetGeometry& subtarget)
+// Uses a hybrid of distance to adjust and intersect ratio, normalizing each score between 0 and 1
+// and combining them. The distance to adjust works best for disambiguating clicks on targets such
+// as links, where the width may be significantly larger than the touch width. Using area of overlap
+// in such cases can lead to a bias towards shorter links. Conversely, percentage of overlap can
+// provide strong confidence in tapping on a small target, where the overlap is often quite high,
+// and works well for tightly packed controls.
+float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchRect, const SubtargetGeometry& subtarget)
 {
     IntRect rect = subtarget.boundingBox();
 
     // Convert from frame coordinates to window coordinates.
     rect = subtarget.node()->document()->view()->contentsToWindow(rect);
    
-    float touchWidth = touchArea.width();
-    float touchHeight = touchArea.height();
-    float distanceScale =  touchWidth * touchWidth + touchHeight * touchHeight;
-    float distanceToCenterScore = rect.distanceSquaredFromCenterLineToPoint(touchHotspot) / distanceScale;
+    float radiusSquared = 0.25f * (touchRect.size().diagonalLengthSquared());
+    float distanceToAdjustScore = rect.distanceSquaredToPoint(touchHotspot) / radiusSquared;
 
-    float targetArea = rect.size().area();
-    rect.intersect(touchArea);
+    float targetArea = max(rect.size().area(), 1);
+    rect.intersect(touchRect);
     float intersectArea = rect.size().area();
     float intersectionScore = 1 - intersectArea / targetArea;
 
-    return intersectionScore < distanceToCenterScore ? intersectionScore : distanceToCenterScore;
+    float hybridScore = intersectionScore + distanceToAdjustScore;
+
+    return hybridScore;
 }
 
 FloatPoint contentsToWindow(FrameView *view, FloatPoint pt)
@@ -446,19 +446,6 @@ bool findNodeWithLowestDistanceMetric(Node*& targetNode, IntPoint& targetPoint, 
                     targetPoint = adjustedPoint;
                     targetNode = node;
                     targetArea = it->boundingBox();
-                } else {
-                    // Minimize adjustment distance.
-                    float dx = targetPoint.x() - touchHotspot.x();
-                    float dy = targetPoint.y() - touchHotspot.y();
-                    float bestDistance = dx * dx + dy * dy;
-                    dx = adjustedPoint.x() - touchHotspot.x();
-                    dy = adjustedPoint.y() - touchHotspot.y();
-                    float distance = dx * dx + dy * dy;
-                    if (distance < bestDistance) {
-                        targetPoint = adjustedPoint;
-                        targetNode = node;
-                        targetArea = it->boundingBox();
-                    }
                 }
             }
         }

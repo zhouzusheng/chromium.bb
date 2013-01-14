@@ -302,16 +302,34 @@ def PathFromRoot(path):
   return os.path.normpath(os.path.join(_root_dir, path))
 
 
-def FixRootForUnittest(root_node, dir=PathFromRoot('.')):
-  '''Adds a GetBaseDir() method to 'root_node', making unittesting easier.'''
-  def GetBaseDir():
-    '''Returns a fake base directory.'''
-    return dir
-  def GetSourceLanguage():
-    return 'en'
-  if not hasattr(root_node, 'GetBaseDir'):
-    setattr(root_node, 'GetBaseDir', GetBaseDir)
-    setattr(root_node, 'GetSourceLanguage', GetSourceLanguage)
+def ParseGrdForUnittest(body, base_dir=None):
+  '''Parse a skeleton .grd file and return it, for use in unit tests.
+
+  Args:
+    body: XML that goes inside the <release> element.
+    base_dir: The base_dir attribute of the <grit> tag.
+  '''
+  import StringIO
+  from grit import grd_reader
+  if isinstance(body, unicode):
+    body = body.encode('utf-8')
+  if base_dir is None:
+    base_dir = PathFromRoot('.')
+  body = '''<?xml version="1.0" encoding="UTF-8"?>
+<grit latest_public_release="2" current_release="3" source_lang_id="en" base_dir="%s">
+  <outputs>
+  </outputs>
+  <release seq="3">
+    %s
+  </release>
+</grit>''' % (base_dir, body)
+  return grd_reader.Parse(StringIO.StringIO(body), dir=".")
+
+
+def StripBlankLinesAndComments(text):
+  '''Strips blank lines and comments from C source code, for unit tests.'''
+  return '\n'.join(line for line in text.splitlines()
+                        if line and not line.startswith('//'))
 
 
 def dirname(filename):
@@ -443,10 +461,6 @@ def IsVerbose():
 
 def IsExtraVerbose():
   return extra_verbose
-
-def GetCurrentYear():
-  '''Returns the current 4-digit year as an integer.'''
-  return time.localtime()[0]
 
 def ParseDefine(define):
   '''Parses a define argument and returns the name and value.

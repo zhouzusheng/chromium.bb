@@ -23,6 +23,8 @@ extern "C" {
 }
 #endif
 
+using ui::GetLastEGLErrorString;
+
 namespace gfx {
 
 namespace {
@@ -200,12 +202,13 @@ bool NativeViewGLSurfaceEGL::Initialize() {
   };
 
   // Create a surface for the native window.
-  surface_ = eglCreateWindowSurface(GetDisplay(),
-                                    GetConfig(),
-                                    window_,
-                                    gfx::g_EGL_NV_post_sub_buffer ?
-                                        egl_window_attributes_sub_buffer :
-                                        NULL);
+  surface_ = eglCreateWindowSurface(
+      GetDisplay(),
+      GetConfig(),
+      window_,
+      gfx::g_driver_egl.ext.b_EGL_NV_post_sub_buffer ?
+          egl_window_attributes_sub_buffer :
+          NULL);
 
   if (!surface_) {
     LOG(ERROR) << "eglCreateWindowSurface failed with error "
@@ -339,7 +342,24 @@ gfx::Size NativeViewGLSurfaceEGL::GetSize() {
 }
 
 bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size) {
-  return size == GetSize();
+  if (size == GetSize())
+    return true;
+
+  GLContext* current_context = GLContext::GetCurrent();
+  bool was_current = current_context && current_context->IsCurrent(this);
+  if (was_current)
+    current_context->ReleaseCurrent(this);
+
+  Destroy();
+
+  if (!Initialize()) {
+    LOG(ERROR) << "Failed to resize pbuffer.";
+    return false;
+  }
+
+  if (was_current)
+    return current_context->MakeCurrent(this);
+  return true;
 }
 
 EGLSurface NativeViewGLSurfaceEGL::GetHandle() {
@@ -473,10 +493,10 @@ void* PbufferGLSurfaceEGL::GetShareHandle() {
   NOTREACHED();
   return NULL;
 #else
-  if (!g_EGL_ANGLE_query_surface_pointer)
+  if (!gfx::g_driver_egl.ext.b_EGL_ANGLE_query_surface_pointer)
     return NULL;
 
-  if (!g_EGL_ANGLE_surface_d3d_texture_2d_share_handle)
+  if (!gfx::g_driver_egl.ext.b_EGL_ANGLE_surface_d3d_texture_2d_share_handle)
     return NULL;
 
   void* handle;

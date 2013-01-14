@@ -40,7 +40,7 @@ void SkBBoxRecord::drawPaint(const SkPaint& paint) {
 
 void SkBBoxRecord::clear(SkColor color) {
     SkISize size = this->getDeviceSize();
-    SkRect bbox = {0, 0, size.width(), size.height()};
+    SkRect bbox = {0, 0, SkIntToScalar(size.width()), SkIntToScalar(size.height())};
     this->handleBBox(bbox);
     INHERITED::clear(color);
 }
@@ -101,17 +101,17 @@ void SkBBoxRecord::drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar to
     }
 }
 
-void SkBBoxRecord::drawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
+void SkBBoxRecord::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
                                   const SkRect& dst, const SkPaint* paint) {
     if (this->transformBounds(dst, paint)) {
-        INHERITED::drawBitmapRect(bitmap, src, dst, paint);
+        INHERITED::drawBitmapRectToRect(bitmap, src, dst, paint);
     }
 }
 
 void SkBBoxRecord::drawBitmapMatrix(const SkBitmap& bitmap, const SkMatrix& mat,
                                     const SkPaint* paint) {
     SkMatrix m = mat;
-    SkRect bbox = {0, 0, bitmap.width(), bitmap.height()};
+    SkRect bbox = {0, 0, SkIntToScalar(bitmap.width()), SkIntToScalar(bitmap.height())};
     m.mapRect(&bbox);
     if (this->transformBounds(bbox, paint)) {
         INHERITED::drawBitmapMatrix(bitmap, mat, paint);
@@ -179,7 +179,7 @@ void SkBBoxRecord::drawPosTextH(const void* text, size_t byteLength, const SkSca
 
 void SkBBoxRecord::drawSprite(const SkBitmap& bitmap, int left, int top,
                               const SkPaint* paint) {
-    SkRect bbox = {left, top, left + bitmap.width(), top + bitmap.height()};
+    SkRect bbox = {SkIntToScalar(left), SkIntToScalar(top), SkIntToScalar(left + bitmap.width()), SkIntToScalar(top + bitmap.height())};
     this->handleBBox(bbox); // directly call handleBBox, matrix is ignored
     INHERITED::drawBitmap(bitmap, left, top, paint);
 }

@@ -4,6 +4,8 @@
 
 #include "webkit/fileapi/file_system_url.h"
 
+#include <sstream>
+
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "net/base/escape.h"
@@ -12,7 +14,9 @@
 #include "webkit/fileapi/isolated_context.h"
 
 namespace fileapi {
+
 namespace {
+
 bool CrackFileSystemURL(
     const GURL& url,
     GURL* origin_url,
@@ -76,6 +80,7 @@ bool CrackFileSystemURL(
 
 FileSystemURL::FileSystemURL()
     : type_(kFileSystemTypeUnknown),
+      mount_type_(kFileSystemTypeUnknown),
       is_valid_(false) {}
 
 FileSystemURL::FileSystemURL(const GURL& url)
@@ -90,29 +95,47 @@ FileSystemURL::FileSystemURL(
     const FilePath& path)
     : origin_(origin),
       type_(type),
-      virtual_path_(path),
+      virtual_path_(path.NormalizePathSeparators()),
       is_valid_(true) {
   MayCrackIsolatedPath();
 }
 
 FileSystemURL::~FileSystemURL() {}
 
-std::string FileSystemURL::spec() const {
+std::string FileSystemURL::DebugString() const {
   if (!is_valid_)
-    return std::string();
-  return GetFileSystemRootURI(origin_, type_).spec() + "/" +
-      path_.AsUTF8Unsafe();
+    return "invalid filesystem: URL";
+  std::ostringstream ss;
+  ss << GetFileSystemRootURI(origin_, mount_type_);
+  if (!virtual_path_.empty())
+    ss << virtual_path_.value();
+  if (type_ != mount_type_ || path_ != virtual_path_) {
+    ss << " (";
+    ss << GetFileSystemTypeString(type_) << "@" << filesystem_id_ << ":";
+    ss << path_.value();
+    ss << ")";
+  }
+  return ss.str();
 }
 
 FileSystemURL FileSystemURL::WithPath(const FilePath& path) const {
-  return FileSystemURL(origin(), type(), path);
+  FileSystemURL url = *this;
+  url.path_ = path;
+  url.virtual_path_.clear();
+  return url;
+}
+
+bool FileSystemURL::IsParent(const FileSystemURL& child) const {
+  return origin() == child.origin() &&
+         type() == child.type() &&
+         filesystem_id() == child.filesystem_id() &&
+         path().IsParent(child.path());
 }
 
 bool FileSystemURL::operator==(const FileSystemURL& that) const {
   return origin_ == that.origin_ &&
       type_ == that.type_ &&
       path_ == that.path_ &&
-      virtual_path_ == that.virtual_path_ &&
       filesystem_id_ == that.filesystem_id_ &&
       is_valid_ == that.is_valid_;
 }
@@ -124,10 +147,9 @@ bool FileSystemURL::Comparator::operator()(const FileSystemURL& lhs,
     return lhs.origin_ < rhs.origin_;
   if (lhs.type_ != rhs.type_)
     return lhs.type_ < rhs.type_;
-  // Compares the virtual path, i.e. the path() part of the original URL
-  // so rhs this reflects the virtual path relationship (rather than
-  // rhs of cracked paths).
-  return lhs.virtual_path_ < rhs.virtual_path_;
+  if (lhs.filesystem_id_ != rhs.filesystem_id_)
+    return lhs.filesystem_id_ < rhs.filesystem_id_;
+  return lhs.path_ < rhs.path_;
 }
 
 void FileSystemURL::MayCrackIsolatedPath() {

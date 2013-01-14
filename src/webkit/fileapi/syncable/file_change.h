@@ -9,33 +9,29 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "webkit/fileapi/fileapi_export.h"
+#include "webkit/fileapi/syncable/sync_file_type.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace fileapi {
 
-class FILEAPI_EXPORT FileChange {
+class WEBKIT_STORAGE_EXPORT FileChange {
  public:
   enum ChangeType {
-    FILE_CHANGE_ADD,
+    FILE_CHANGE_ADD_OR_UPDATE,
     FILE_CHANGE_DELETE,
-    FILE_CHANGE_UPDATE,
   };
 
-  enum FileType {
-    FILE_TYPE_DIRECTORY,
-    FILE_TYPE_FILE,
-  };
+  FileChange(ChangeType change, SyncFileType file_type);
 
-  FileChange(ChangeType change, FileType file_type);
-
-  bool IsAdd() const { return change_ == FILE_CHANGE_ADD; }
+  bool IsAddOrUpdate() const { return change_ == FILE_CHANGE_ADD_OR_UPDATE; }
   bool IsDelete() const { return change_ == FILE_CHANGE_DELETE; }
-  bool IsUpdate() const { return change_ == FILE_CHANGE_UPDATE; }
 
-  bool IsFile() const { return file_type_ == FILE_TYPE_FILE; }
+  bool IsFile() const { return file_type_ == SYNC_FILE_TYPE_FILE; }
+  bool IsDirectory() const { return file_type_ == SYNC_FILE_TYPE_DIRECTORY; }
+  bool IsTypeUnknown() const { return !IsFile() && !IsDirectory(); }
 
   ChangeType change() const { return change_; }
-  FileType file_type() const { return file_type_; }
+  SyncFileType file_type() const { return file_type_; }
 
   std::string DebugString() const;
 
@@ -46,10 +42,10 @@ class FILEAPI_EXPORT FileChange {
 
  private:
   ChangeType change_;
-  FileType file_type_;
+  SyncFileType file_type_;
 };
 
-class FILEAPI_EXPORT FileChangeList {
+class WEBKIT_STORAGE_EXPORT FileChangeList {
  public:
   FileChangeList();
   ~FileChangeList();

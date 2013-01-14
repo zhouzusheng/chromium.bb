@@ -442,7 +442,7 @@ void ProgramManager::ForceCompileShader(const std::string* source,
         info->service_id(), max_len, &len, temp.get());
     DCHECK(max_len == 0 || len < max_len);
     DCHECK(len == 0 || temp[len] == '\0');
-    info->UpdateTranslatedSource(temp.get());
+    info->UpdateTranslatedSource(max_len ? temp.get() : NULL);
   }
 
   GLint status = GL_FALSE;
@@ -531,7 +531,7 @@ bool ProgramManager::ProgramInfo::Link(ShaderManager* manager,
 
   if (link) {
     before_time = TimeTicks::HighResNow();
-    if (cache && gfx::g_GL_ARB_get_program_binary) {
+    if (cache && gfx::g_driver_gl.ext.b_GL_ARB_get_program_binary) {
       glProgramParameteri(service_id(),
                           PROGRAM_BINARY_RETRIEVABLE_HINT,
                           GL_TRUE);

@@ -453,8 +453,9 @@ public:
 
     ~ScopedContentEntry() {
         if (fContentEntry) {
-            fDevice->finishContentEntry(fXfermode, fDstFormXObject.get());
+            fDevice->finishContentEntry(fXfermode, fDstFormXObject);
         }
+        SkSafeUnref(fDstFormXObject);
     }
 
     ContentEntry* entry() { return fContentEntry; }
@@ -462,10 +463,11 @@ private:
     SkPDFDevice* fDevice;
     ContentEntry* fContentEntry;
     SkXfermode::Mode fXfermode;
-    SkRefPtr<SkPDFFormXObject> fDstFormXObject;
+    SkPDFFormXObject* fDstFormXObject;
 
     void init(const SkClipStack* clipStack, const SkRegion& clipRegion,
               const SkMatrix& matrix, const SkPaint& paint, bool hasText) {
+        fDstFormXObject = NULL;
         if (paint.getXfermode()) {
             paint.getXfermode()->asMode(&fXfermode);
         }
@@ -546,6 +548,7 @@ SkPDFDevice::~SkPDFDevice() {
 }
 
 void SkPDFDevice::init() {
+    fAnnotations = NULL;
     fResourceDict = NULL;
     fContentEntries.reset();
     fLastContentEntry = NULL;
@@ -562,6 +565,9 @@ void SkPDFDevice::cleanUp(bool clearFontUsage) {
     fXObjectResources.unrefAll();
     fFontResources.unrefAll();
     fShaderResources.unrefAll();
+    SkSafeUnref(fAnnotations);
+    SkSafeUnref(fResourceDict);
+
     if (clearFontUsage) {
         fFontGlyphUsage->reset();
     }
@@ -995,9 +1001,8 @@ void SkPDFDevice::setDrawingArea(DrawingArea drawingArea) {
 }
 
 SkPDFDict* SkPDFDevice::getResourceDict() {
-    if (fResourceDict.get() == NULL) {
-        fResourceDict = new SkPDFDict;
-        fResourceDict->unref();  // SkRefPtr and new both took a reference.
+    if (NULL == fResourceDict) {
+        fResourceDict = SkNEW(SkPDFDict);
 
         if (fGraphicStateResources.count()) {
             SkRefPtr<SkPDFDict> extGState = new SkPDFDict();
@@ -1059,7 +1064,7 @@ SkPDFDict* SkPDFDevice::getResourceDict() {
             procSets->appendName(procs[i]);
         fResourceDict->insert("ProcSet", procSets.get());
     }
-    return fResourceDict.get();
+    return fResourceDict;
 }
 
 void SkPDFDevice::getResources(SkTDArray<SkPDFObject*>* resourceList,
@@ -1103,22 +1108,17 @@ const SkTDArray<SkPDFFont*>& SkPDFDevice::getFontResources() const {
     return fFontResources;
 }
 
-SkRefPtr<SkPDFArray> SkPDFDevice::getMediaBox() const {
-    SkRefPtr<SkPDFInt> zero = new SkPDFInt(0);
-    zero->unref();  // SkRefPtr and new both took a reference.
+SkPDFArray* SkPDFDevice::copyMediaBox() const {
+    // should this be a singleton?
+    SkAutoTUnref<SkPDFInt> zero(SkNEW_ARGS(SkPDFInt, (0)));
 
-    SkRefPtr<SkPDFArray> mediaBox = new SkPDFArray();
-    mediaBox->unref();  // SkRefPtr and new both took a reference.
+    SkPDFArray* mediaBox = SkNEW(SkPDFArray);
     mediaBox->reserve(4);
     mediaBox->append(zero.get());
     mediaBox->append(zero.get());
     mediaBox->appendInt(fPageSize.fWidth);
     mediaBox->appendInt(fPageSize.fHeight);
     return mediaBox;
-}
-
-SkRefPtr<SkPDFArray> SkPDFDevice::getAnnotations() const {
-    return SkRefPtr<SkPDFArray>(fAnnotations);
 }
 
 SkStream* SkPDFDevice::content() const {
@@ -1196,9 +1196,8 @@ bool SkPDFDevice::handleAnnotations(const SkRect& r, const SkMatrix& matrix,
     SkRect translatedRect;
     transform.mapRect(&translatedRect, r);
 
-    if (fAnnotations.get() == NULL) {
-        fAnnotations = new SkPDFArray;
-        fAnnotations->unref();  // Both new and SkRefPtr took a reference.
+    if (NULL == fAnnotations) {
+        fAnnotations = SkNEW(SkPDFArray);
     }
     SkAutoTUnref<SkPDFDict> annotation(new SkPDFDict("Annot"));
     annotation->insertName("Subtype", "Link");
@@ -1227,15 +1226,14 @@ bool SkPDFDevice::handleAnnotations(const SkRect& r, const SkMatrix& matrix,
     return p.isNoDrawAnnotation();
 }
 
-void SkPDFDevice::createFormXObjectFromDevice(
-        SkRefPtr<SkPDFFormXObject>* xobject) {
-    *xobject = new SkPDFFormXObject(this);
-    (*xobject)->unref();  // SkRefPtr and new both took a reference.
+SkPDFFormXObject* SkPDFDevice::createFormXObjectFromDevice() {
+    SkPDFFormXObject* xobject = SkNEW_ARGS(SkPDFFormXObject, (this));
     // We always draw the form xobjects that we create back into the device, so
     // we simply preserve the font usage instead of pulling it out and merging
     // it back in later.
     cleanUp(false);  // Reset this device to have no content.
     init();
+    return xobject;
 }
 
 void SkPDFDevice::clearClipFromContent(const SkClipStack* clipStack,
@@ -1243,11 +1241,10 @@ void SkPDFDevice::clearClipFromContent(const SkClipStack* clipStack,
     if (clipRegion.isEmpty() || isContentEmpty()) {
         return;
     }
-    SkRefPtr<SkPDFFormXObject> curContent;
-    createFormXObjectFromDevice(&curContent);
+    SkAutoTUnref<SkPDFFormXObject> curContent(createFormXObjectFromDevice());
 
     // Redraw what we already had, but with the clip as a mask.
-    drawFormXObjectWithClip(curContent.get(), clipStack, clipRegion, true);
+    drawFormXObjectWithClip(curContent, clipStack, clipRegion, true);
 }
 
 void SkPDFDevice::drawFormXObjectWithClip(SkPDFFormXObject* xobject,
@@ -1267,11 +1264,9 @@ void SkPDFDevice::drawFormXObjectWithClip(SkPDFFormXObject* xobject,
     draw.fClipStack = clipStack;
     SkPaint stockPaint;
     this->drawPaint(draw, stockPaint);
-    SkRefPtr<SkPDFFormXObject> maskFormXObject;
-    createFormXObjectFromDevice(&maskFormXObject);
+    SkAutoTUnref<SkPDFFormXObject> maskFormXObject(createFormXObjectFromDevice());
     SkRefPtr<SkPDFGraphicState> sMaskGS =
-        SkPDFGraphicState::GetSMaskGraphicState(maskFormXObject.get(),
-                                                invertClip);
+        SkPDFGraphicState::GetSMaskGraphicState(maskFormXObject, invertClip);
     sMaskGS->unref();  // SkRefPtr and getSMaskGraphicState both took a ref.
 
     // Draw the xobject with the clip as a mask.
@@ -1298,7 +1293,8 @@ ContentEntry* SkPDFDevice::setUpContentEntry(const SkClipStack* clipStack,
                                              const SkMatrix& matrix,
                                              const SkPaint& paint,
                                              bool hasText,
-                                             SkRefPtr<SkPDFFormXObject>* dst) {
+                                             SkPDFFormXObject** dst) {
+    *dst = NULL;
     if (clipRegion.isEmpty()) {
         return NULL;
     }
@@ -1339,7 +1335,7 @@ ContentEntry* SkPDFDevice::setUpContentEntry(const SkClipStack* clipStack,
         if (isContentEmpty()) {
             return NULL;
         } else {
-            createFormXObjectFromDevice(dst);
+            *dst = createFormXObjectFromDevice();
         }
     }
     // TODO(vandebo): Figure out how/if we can handle the following modes:
@@ -1402,9 +1398,9 @@ void SkPDFDevice::finishContentEntry(const SkXfermode::Mode xfermode,
     SkClipStack clipStack = contentEntries->fState.fClipStack;
     SkRegion clipRegion = contentEntries->fState.fClipRegion;
 
-    SkRefPtr<SkPDFFormXObject> srcFormXObject;
+    SkAutoTUnref<SkPDFFormXObject> srcFormXObject;
     if (!isContentEmpty()) {
-        createFormXObjectFromDevice(&srcFormXObject);
+        srcFormXObject.reset(createFormXObjectFromDevice());
     }
 
     drawFormXObjectWithClip(dst, &clipStack, clipRegion, true);
@@ -1430,7 +1426,7 @@ void SkPDFDevice::finishContentEntry(const SkXfermode::Mode xfermode,
         sMaskGS = SkPDFGraphicState::GetSMaskGraphicState(
                 dst, xfermode == SkXfermode::kSrcOut_Mode);
         fXObjectResources.push(srcFormXObject.get());
-        srcFormXObject->ref();
+        srcFormXObject.get()->ref();
     } else {
         sMaskGS = SkPDFGraphicState::GetSMaskGraphicState(
                 srcFormXObject.get(), xfermode == SkXfermode::kDstOut_Mode);

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/pp_content_decryptor.idl modified Mon Sep 17 09:50:39 2012. */
+/* From private/pp_content_decryptor.idl modified Thu Oct 25 16:40:07 2012. */
 
 #ifndef PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
 #define PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
@@ -129,6 +129,16 @@ PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_EncryptedBlockInfo, 240);
  * @{
  */
 /**
+ * <code>PP_DecryptedFrameFormat</code> contains video frame formats.
+ */
+typedef enum {
+  PP_DECRYPTEDFRAMEFORMAT_UNKNOWN = 0,
+  PP_DECRYPTEDFRAMEFORMAT_YV12 = 1,
+  PP_DECRYPTEDFRAMEFORMAT_I420 = 2
+} PP_DecryptedFrameFormat;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptedFrameFormat, 4);
+
+/**
  * The <code>PP_DecryptResult</code> enum contains decryption and decoding
  * result constants.
  */
@@ -137,10 +147,12 @@ typedef enum {
   PP_DECRYPTRESULT_SUCCESS = 0,
   /** The decryptor did not have the necessary decryption key. */
   PP_DECRYPTRESULT_DECRYPT_NOKEY = 1,
+  /** The input was accepted by the decoder but no frame(s) can be produced. */
+  PP_DECRYPTRESULT_NEEDMOREDATA = 2,
   /** An unexpected error happened during decryption. */
-  PP_DECRYPTRESULT_DECRYPT_ERROR = 2,
+  PP_DECRYPTRESULT_DECRYPT_ERROR = 3,
   /** An unexpected error happened during decoding. */
-  PP_DECRYPTRESULT_DECODE_ERROR = 3
+  PP_DECRYPTRESULT_DECODE_ERROR = 4
 } PP_DecryptResult;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptResult, 4);
 /**
@@ -152,25 +164,242 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptResult, 4);
  * @{
  */
 /**
- * The <code>PP_DecryptedBlockInfo</code> struct contains the tracking info and
- * the decryption (and/or decoding) result associated with the decrypted block.
+ * <code>PP_DecryptedBlockInfo</code> struct contains the decryption result and
+ * tracking info associated with the decrypted block.
  */
 struct PP_DecryptedBlockInfo {
-  /**
-   * Information needed by the client to track the block to be decrypted.
-   */
-  struct PP_DecryptTrackingInfo tracking_info;
   /**
    * Result of the decryption (and/or decoding) operation.
    */
   PP_DecryptResult result;
   /**
    * 4-byte padding to make the size of <code>PP_DecryptedBlockInfo</code>
-   * a multiple of 8 bytes. The value of this field should not be used.
+   * a multiple of 8 bytes, and ensure consistent size on all targets. This
+   * value should never be used.
    */
   uint32_t padding;
+  /**
+   * Information needed by the client to track the block to be decrypted.
+   */
+  struct PP_DecryptTrackingInfo tracking_info;
 };
 PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_DecryptedBlockInfo, 24);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
+/**
+ * <code>PP_DecryptedFramePlanes</code> provides YUV plane index values for
+ * accessing plane offsets stored in <code>PP_DecryptedFrameInfo</code>.
+ */
+typedef enum {
+  PP_DECRYPTEDFRAMEPLANES_Y = 0,
+  PP_DECRYPTEDFRAMEPLANES_U = 1,
+  PP_DECRYPTEDFRAMEPLANES_V = 2
+} PP_DecryptedFramePlanes;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptedFramePlanes, 4);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Structs
+ * @{
+ */
+/**
+ * <code>PP_DecryptedFrameInfo</code> contains the result of the
+ * decrypt and decode operation on the associated frame, information required
+ * to access the frame data in buffer, and tracking info.
+ */
+struct PP_DecryptedFrameInfo {
+  /**
+   * Result of the decrypt and decode operation.
+   */
+  PP_DecryptResult result;
+  /**
+   * Format of the decrypted frame.
+   */
+  PP_DecryptedFrameFormat format;
+  /**
+   * Offsets into the buffer resource for accessing video planes.
+   */
+  int32_t plane_offsets[3];
+  /**
+   * Stride of each plane.
+   */
+  int32_t strides[3];
+  /**
+   * Width of the video frame, in pixels.
+   */
+  int32_t width;
+  /**
+   * Height of the video frame, in pixels.
+   */
+  int32_t height;
+  /**
+   * Information needed by the client to track the decrypted frame.
+   */
+  struct PP_DecryptTrackingInfo tracking_info;
+};
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_DecryptedFrameInfo, 56);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
+/**
+ * <code>PP_AudioCodec</code> contains audio codec type constants.
+ */
+typedef enum {
+  PP_AUDIOCODEC_UNKNOWN = 0,
+  PP_AUDIOCODEC_VORBIS = 1,
+  PP_AUDIOCODEC_AAC = 2
+} PP_AudioCodec;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_AudioCodec, 4);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Structs
+ * @{
+ */
+/**
+ * <code>PP_AudioDecoderConfig</code> contains audio decoder configuration
+ * information required to initialize audio decoders, and a request ID
+ * that allows clients to associate a decoder initialization request with a
+ * status response. Note: When <code>codec</code> requires extra data for
+ * initialization, the data is sent as a <code>PP_Resource</code> carried
+ * alongside <code>PP_AudioDecoderConfig</code>.
+ */
+struct PP_AudioDecoderConfig {
+  /**
+   * The audio codec to initialize.
+   */
+  PP_AudioCodec codec;
+  /**
+   * Number of audio channels.
+   */
+  int32_t channel_count;
+  /**
+   * Size of each audio channel.
+   */
+  int32_t bits_per_channel;
+  /**
+   * Audio sampling rate.
+   */
+  int32_t samples_per_second;
+  /**
+   * Client-specified identifier for the associated audio decoder initialization
+   * request. By using this value, the client can associate a decoder
+   * initialization status response with an initialization request.
+   */
+  uint32_t request_id;
+};
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_AudioDecoderConfig, 20);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
+/**
+ * <code>PP_VideoCodec</code> contains video codec type constants.
+ */
+typedef enum {
+  PP_VIDEOCODEC_UNKNOWN = 0,
+  PP_VIDEOCODEC_VP8 = 1,
+  PP_VIDEOCODEC_H264 = 2
+} PP_VideoCodec;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodec, 4);
+
+/**
+ * <code>PP_VideoCodecProfile</code> contains video codec profile type
+ * constants required for video decoder configuration.
+ *.
+ */
+typedef enum {
+  PP_VIDEOCODECPROFILE_UNKNOWN = 0,
+  PP_VIDEOCODECPROFILE_VP8_MAIN = 1,
+  PP_VIDEOCODECPROFILE_H264_BASELINE = 2,
+  PP_VIDEOCODECPROFILE_H264_MAIN = 3,
+  PP_VIDEOCODECPROFILE_H264_EXTENDED = 4,
+  PP_VIDEOCODECPROFILE_H264_HIGH = 5,
+  PP_VIDEOCODECPROFILE_H264_HIGH_10 = 6,
+  PP_VIDEOCODECPROFILE_H264_HIGH_422 = 7,
+  PP_VIDEOCODECPROFILE_H264_HIGH_444_PREDICTIVE = 8
+} PP_VideoCodecProfile;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodecProfile, 4);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Structs
+ * @{
+ */
+/**
+ * <code>PP_VideoDecoderConfig</code> contains video decoder configuration
+ * information required to initialize video decoders, and a request ID
+ * that allows clients to associate a decoder initialization request with a
+ * status response. Note: When <code>codec</code> requires extra data for
+ * initialization, the data is sent as a <code>PP_Resource</code> carried
+ * alongside <code>PP_VideoDecoderConfig</code>.
+ */
+struct PP_VideoDecoderConfig {
+  /**
+   * The video codec to initialize.
+   */
+  PP_VideoCodec codec;
+  /**
+   * Profile to use when initializing the video codec.
+   */
+  PP_VideoCodecProfile profile;
+  /**
+   * Output video format.
+   */
+  PP_DecryptedFrameFormat format;
+  /**
+   * Width of decoded video frames, in pixels.
+   */
+  int32_t width;
+  /**
+   * Height of decoded video frames, in pixels.
+   */
+  int32_t height;
+  /**
+   * Client-specified identifier for the associated video decoder initialization
+   * request. By using this value, the client can associate a decoder
+   * initialization status response with an initialization request.
+   */
+  uint32_t request_id;
+};
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_VideoDecoderConfig, 24);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
+/**
+ * <code>PP_DecryptorStreamType</code> contains stream type constants.
+ */
+typedef enum {
+  PP_DECRYPTORSTREAMTYPE_AUDIO = 0,
+  PP_DECRYPTORSTREAMTYPE_VIDEO = 1
+} PP_DecryptorStreamType;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptorStreamType, 4);
 /**
  * @}
  */

@@ -16,6 +16,7 @@
 
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect_base.h"
+#include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
 
 #if defined(OS_WIN)
@@ -50,14 +51,6 @@ class UI_EXPORT Rect : public RectBase<Rect, Point, Size, Insets, int> {
   ~Rect();
 
 #if defined(OS_WIN)
-  Rect& operator=(const RECT& r);
-#elif defined(OS_MACOSX)
-  Rect& operator=(const CGRect& r);
-#elif defined(TOOLKIT_GTK)
-  Rect& operator=(const GdkRectangle& r);
-#endif
-
-#if defined(OS_WIN)
   // Construct an equivalent Win32 RECT object.
   RECT ToRECT() const;
 #elif defined(TOOLKIT_GTK)
@@ -67,8 +60,24 @@ class UI_EXPORT Rect : public RectBase<Rect, Point, Size, Insets, int> {
   CGRect ToCGRect() const;
 #endif
 
+  operator RectF() const {
+    return RectF(origin().x(), origin().y(), size().width(), size().height());
+  }
+
   std::string ToString() const;
 };
+
+inline bool operator==(const Rect& lhs, const Rect& rhs) {
+  return lhs.origin() == rhs.origin() && lhs.size() == rhs.size();
+}
+
+inline bool operator!=(const Rect& lhs, const Rect& rhs) {
+  return !(lhs == rhs);
+}
+
+UI_EXPORT Rect IntersectRects(const Rect& a, const Rect& b);
+UI_EXPORT Rect UnionRects(const Rect& a, const Rect& b);
+UI_EXPORT Rect SubtractRects(const Rect& a, const Rect& b);
 
 #if !defined(COMPILER_MSVC)
 extern template class RectBase<Rect, Point, Size, Insets, int>;

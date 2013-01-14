@@ -455,7 +455,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     load_state_param_ = param;
   }
 
-  // Returns the current upload progress in bytes.
+  // Returns the current upload progress in bytes. When the upload data is
+  // chunked, size is set to zero, but position will not be.
   UploadProgress GetUploadProgress() const;
 
   // Get response header(s) by ID or name.  These methods may only be called
@@ -637,10 +638,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // due to HSTS. If so, |redirect_url| is rewritten to the new HTTPS URL.
   bool GetHSTSRedirect(GURL* redirect_url) const;
 
-  // This method is intended only for unit tests, but it is being used by
-  // unit tests outside of net :(.
-  URLRequestJob* job() { return job_; }
-
   // TODO(willchan): Undo this. Only temporarily public.
   bool has_delegate() const { return delegate_ != NULL; }
 
@@ -649,6 +646,13 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Allows to setting debug info into the URLRequest.
   void set_stack_trace(const base::debug::StackTrace& stack_trace);
   const base::debug::StackTrace* stack_trace() const;
+
+  void set_received_response_content_length(int64 received_content_length) {
+    received_response_content_length_ = received_content_length;
+  }
+  int64 received_response_content_length() {
+    return received_response_content_length_;
+  }
 
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
@@ -826,6 +830,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // the authentication challenge being handled by |NotifyAuthRequired|.
   AuthCredentials auth_credentials_;
   scoped_refptr<AuthChallengeInfo> auth_info_;
+
+  int64 received_response_content_length_;
 
   base::TimeTicks creation_time_;
 

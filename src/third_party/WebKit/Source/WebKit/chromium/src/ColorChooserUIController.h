@@ -30,6 +30,7 @@
 
 #include "ColorChooser.h"
 #include "PagePopupClient.h"
+#include "PlatformLocale.h"
 #include "WebColorChooserClient.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -60,6 +61,7 @@ public:
     // PagePopupClient functions:
     virtual WebCore::IntSize contentSize() OVERRIDE;
     virtual void writeDocument(WebCore::DocumentWriter&) OVERRIDE;
+    virtual WebCore::Locale& locale() OVERRIDE;
     virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
     virtual void didClosePopup() OVERRIDE;
 
@@ -72,6 +74,7 @@ private:
     WebCore::ColorChooserClient* m_client;
     OwnPtr<WebColorChooser> m_chooser;
     WebCore::PagePopup* m_popup;
+    OwnPtr<WebCore::Locale> m_locale;
 };
 
 }

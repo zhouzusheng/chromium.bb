@@ -24,12 +24,13 @@
  */
 
 #include "config.h"
-#if ENABLE(INPUT_TYPE_TIME_MULTIPLE_FIELDS)
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFieldElements.h"
 
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "LocalizedStrings.h"
+#include <wtf/CurrentTime.h>
 #include <wtf/DateMath.h>
 
 namespace WebCore {
@@ -60,23 +61,59 @@ void DateTimeAMPMFieldElement::setValueAsDate(const DateComponents& date)
     setValueAsInteger(date.hour() >= 12 ? 1 : 0);
 }
 
-void DateTimeAMPMFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState, const DateComponents& dateForReadOnlyField)
+void DateTimeAMPMFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
 {
     if (dateTimeFieldsState.hasAMPM())
         setValueAsInteger(dateTimeFieldsState.ampm());
     else
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
 }
 
-double DateTimeAMPMFieldElement::unitInMillisecond() const
+// ----------------------------
+
+DateTimeDayFieldElement::DateTimeDayFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder)
+    : DateTimeNumericFieldElement(document, fieldOwner, 1, 31, placeholder)
 {
-    return msPerHour * 12;
+}
+
+PassRefPtr<DateTimeDayFieldElement> DateTimeDayFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder)
+{
+    DEFINE_STATIC_LOCAL(AtomicString, dayPsuedoId, ("-webkit-datetime-edit-day-field"));
+    RefPtr<DateTimeDayFieldElement> field = adoptRef(new DateTimeDayFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder));
+    field->initialize(dayPsuedoId, AXDayOfMonthFieldText());
+    return field.release();
+}
+
+void DateTimeDayFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    dateTimeFieldsState.setDayOfMonth(hasValue() ? valueAsInteger() : DateTimeFieldsState::emptyValue);
+}
+
+void DateTimeDayFieldElement::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.monthDay());
+}
+
+void DateTimeDayFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasDayOfMonth()) {
+        setEmptyValue();
+        return;
+    }
+
+    const unsigned value = dateTimeFieldsState.dayOfMonth();
+    if (range().isInRange(static_cast<int>(value))) {
+        setValueAsInteger(value);
+        return;
+    }
+
+    setEmptyValue();
 }
 
 // ----------------------------
 
 DateTimeHourFieldElement::DateTimeHourFieldElement(Document* document, FieldOwner& fieldOwner, int minimum, int maximum)
-    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum)
+    : DateTimeNumericFieldElement(document, fieldOwner, minimum, maximum, "--")
     , m_alignment(maximum + maximum % 2)
 {
     ASSERT((!minimum && (maximum == 11 || maximum == 23)) || (minimum == 1 && (maximum == 12 || maximum == 24)));
@@ -129,17 +166,17 @@ void DateTimeHourFieldElement::setValueAsDate(const DateComponents& date)
     setValueAsInteger(date.hour());
 }
 
-void DateTimeHourFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState, const DateComponents& dateForReadOnlyField)
+void DateTimeHourFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
 {
     if (!dateTimeFieldsState.hasHour()) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     const int hour12 = dateTimeFieldsState.hour();
 
     if (hour12 < 1 || hour12 > 12) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
@@ -173,11 +210,6 @@ void DateTimeHourFieldElement::setValueAsInteger(int valueAsHour23, EventBehavio
     DateTimeNumericFieldElement::setValueAsInteger(range().minimum && !value ? m_alignment : value, eventBehavior);
 }
 
-double DateTimeHourFieldElement::unitInMillisecond() const
-{
-    return msPerHour;
-}
-
 int DateTimeHourFieldElement::valueAsInteger() const
 {
     return hasValue() ? DateTimeNumericFieldElement::valueAsInteger() % m_alignment : -1;
@@ -186,7 +218,7 @@ int DateTimeHourFieldElement::valueAsInteger() const
 // ----------------------------
 
 DateTimeMillisecondFieldElement::DateTimeMillisecondFieldElement(Document* document, FieldOwner& fieldOwner)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 999)
+    : DateTimeNumericFieldElement(document, fieldOwner, 0, 999, "---")
 {
 }
 
@@ -208,31 +240,26 @@ void DateTimeMillisecondFieldElement::setValueAsDate(const DateComponents& date)
     setValueAsInteger(date.millisecond());
 }
 
-void DateTimeMillisecondFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState, const DateComponents& dateForReadOnlyField)
+void DateTimeMillisecondFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
 {
     if (!dateTimeFieldsState.hasMillisecond()) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     const unsigned value = dateTimeFieldsState.millisecond();
     if (value > static_cast<unsigned>(maximum())) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     setValueAsInteger(value);
 }
 
-double DateTimeMillisecondFieldElement::unitInMillisecond() const
-{
-    return 1;
-}
-
 // ----------------------------
 
 DateTimeMinuteFieldElement::DateTimeMinuteFieldElement(Document* document, FieldOwner& fieldOwner)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59)
+    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59, "--")
 {
 }
 
@@ -254,31 +281,67 @@ void DateTimeMinuteFieldElement::setValueAsDate(const DateComponents& date)
     setValueAsInteger(date.minute());
 }
 
-void DateTimeMinuteFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState, const DateComponents& dateForReadOnlyField)
+void DateTimeMinuteFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
 {
     if (!dateTimeFieldsState.hasMinute()) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     const unsigned value = dateTimeFieldsState.minute();
     if (value > static_cast<unsigned>(maximum())) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     setValueAsInteger(value);
 }
 
-double DateTimeMinuteFieldElement::unitInMillisecond() const
+// ----------------------------
+
+DateTimeMonthFieldElement::DateTimeMonthFieldElement(Document* document, FieldOwner& fieldOwner, const String& placeholder)
+    : DateTimeNumericFieldElement(document, fieldOwner, 1, 12, placeholder)
 {
-    return msPerMinute;
+}
+
+PassRefPtr<DateTimeMonthFieldElement> DateTimeMonthFieldElement::create(Document* document, FieldOwner& fieldOwner, const String& placeholder)
+{
+    DEFINE_STATIC_LOCAL(AtomicString, monthPsuedoId, ("-webkit-datetime-edit-month-field"));
+    RefPtr<DateTimeMonthFieldElement> field = adoptRef(new DateTimeMonthFieldElement(document, fieldOwner, placeholder.isEmpty() ? ASCIILiteral("--") : placeholder));
+    field->initialize(monthPsuedoId, AXMonthFieldText());
+    return field.release();
+}
+
+void DateTimeMonthFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    dateTimeFieldsState.setMonth(hasValue() ? valueAsInteger() : DateTimeFieldsState::emptyValue);
+}
+
+void DateTimeMonthFieldElement::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.month() + 1);
+}
+
+void DateTimeMonthFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasMonth()) {
+        setEmptyValue();
+        return;
+    }
+
+    const unsigned value = dateTimeFieldsState.month();
+    if (range().isInRange(static_cast<int>(value))) {
+        setValueAsInteger(value);
+        return;
+    }
+
+    setEmptyValue();
 }
 
 // ----------------------------
 
 DateTimeSecondFieldElement::DateTimeSecondFieldElement(Document* document, FieldOwner& fieldOwner)
-    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59)
+    : DateTimeNumericFieldElement(document, fieldOwner, 0, 59, "--")
 {
 }
 
@@ -300,25 +363,178 @@ void DateTimeSecondFieldElement::setValueAsDate(const DateComponents& date)
     setValueAsInteger(date.second());
 }
 
-void DateTimeSecondFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState, const DateComponents& dateForReadOnlyField)
+void DateTimeSecondFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
 {
     if (!dateTimeFieldsState.hasSecond()) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     const unsigned value = dateTimeFieldsState.second();
     if (value > static_cast<unsigned>(maximum())) {
-        setEmptyValue(dateForReadOnlyField);
+        setEmptyValue();
         return;
     }
 
     setValueAsInteger(value);
 }
 
-double DateTimeSecondFieldElement::unitInMillisecond() const
+// ----------------------------
+
+DateTimeSymbolicMonthFieldElement::DateTimeSymbolicMonthFieldElement(Document* document, FieldOwner& fieldOwner, const Vector<String>& labels)
+    : DateTimeSymbolicFieldElement(document, fieldOwner, labels)
 {
-    return msPerSecond;
+}
+
+PassRefPtr<DateTimeSymbolicMonthFieldElement> DateTimeSymbolicMonthFieldElement::create(Document* document, FieldOwner& fieldOwner, const Vector<String>& labels)
+{
+    DEFINE_STATIC_LOCAL(AtomicString, monthPsuedoId, ("-webkit-datetime-edit-month-field"));
+    RefPtr<DateTimeSymbolicMonthFieldElement> field = adoptRef(new DateTimeSymbolicMonthFieldElement(document, fieldOwner, labels));
+    field->initialize(monthPsuedoId, AXMonthFieldText());
+    return field.release();
+}
+
+void DateTimeSymbolicMonthFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!hasValue())
+        dateTimeFieldsState.setMonth(DateTimeFieldsState::emptyValue);
+    ASSERT(valueAsInteger() < static_cast<int>(symbolsSize()));
+    dateTimeFieldsState.setMonth(valueAsInteger() + 1);
+}
+
+void DateTimeSymbolicMonthFieldElement::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.month());
+}
+
+void DateTimeSymbolicMonthFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasMonth()) {
+        setEmptyValue();
+        return;
+    }
+
+    const unsigned value = dateTimeFieldsState.month() - 1;
+    if (value >= symbolsSize()) {
+        setEmptyValue();
+        return;
+    }
+
+    setValueAsInteger(value);
+}
+
+// ----------------------------
+
+DateTimeWeekFieldElement::DateTimeWeekFieldElement(Document* document, FieldOwner& fieldOwner)
+    : DateTimeNumericFieldElement(document, fieldOwner, DateComponents::minimumWeekNumber, DateComponents::maximumWeekNumber, "--")
+{
+}
+
+PassRefPtr<DateTimeWeekFieldElement> DateTimeWeekFieldElement::create(Document* document, FieldOwner& fieldOwner)
+{
+    DEFINE_STATIC_LOCAL(AtomicString, weekPsuedoId, ("-webkit-datetime-edit-week-field"));
+    RefPtr<DateTimeWeekFieldElement> field = adoptRef(new DateTimeWeekFieldElement(document, fieldOwner));
+    field->initialize(weekPsuedoId, AXWeekOfYearFieldText());
+    return field.release();
+}
+
+void DateTimeWeekFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    dateTimeFieldsState.setWeekOfYear(hasValue() ? valueAsInteger() : DateTimeFieldsState::emptyValue);
+}
+
+void DateTimeWeekFieldElement::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.week());
+}
+
+void DateTimeWeekFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasWeekOfYear()) {
+        setEmptyValue();
+        return;
+    }
+
+    const unsigned value = dateTimeFieldsState.weekOfYear();
+    if (range().isInRange(static_cast<int>(value))) {
+        setValueAsInteger(value);
+        return;
+    }
+
+    setEmptyValue();
+}
+
+// ----------------------------
+
+DateTimeYearFieldElement::DateTimeYearFieldElement(Document* document, FieldOwner& fieldOwner, const DateTimeYearFieldElement::Parameters& parameters)
+    : DateTimeNumericFieldElement(document, fieldOwner, parameters.minimumYear, parameters.maximumYear, parameters.placeholder.isEmpty() ? ASCIILiteral("----") : parameters.placeholder)
+    , m_minIsSpecified(parameters.minIsSpecified)
+    , m_maxIsSpecified(parameters.maxIsSpecified)
+{
+    ASSERT(parameters.minimumYear >= DateComponents::minimumYear());
+    ASSERT(parameters.maximumYear <= DateComponents::maximumYear());
+}
+
+PassRefPtr<DateTimeYearFieldElement> DateTimeYearFieldElement::create(Document* document, FieldOwner& fieldOwner, const DateTimeYearFieldElement::Parameters& parameters)
+{
+    DEFINE_STATIC_LOCAL(AtomicString, yearPsuedoId, ("-webkit-datetime-edit-year-field"));
+    RefPtr<DateTimeYearFieldElement> field = adoptRef(new DateTimeYearFieldElement(document, fieldOwner, parameters));
+    field->initialize(yearPsuedoId, AXYearFieldText());
+    return field.release();
+}
+
+int DateTimeYearFieldElement::clampValueForHardLimits(int value) const
+{
+    return Range(DateComponents::minimumYear(), DateComponents::maximumYear()).clampValue(value);
+}
+
+static int currentFullYear()
+{
+    double current = currentTimeMS();
+    double utcOffset = calculateUTCOffset();
+    double dstOffset = calculateDSTOffset(current, utcOffset);
+    int offset = static_cast<int>((utcOffset + dstOffset) / msPerMinute);
+    current += offset * msPerMinute;
+
+    DateComponents date;
+    date.setMillisecondsSinceEpochForMonth(current);
+    return date.fullYear();
+}
+
+int DateTimeYearFieldElement::defaultValueForStepDown() const
+{
+    return m_maxIsSpecified ? DateTimeNumericFieldElement::defaultValueForStepDown() : currentFullYear();
+}
+
+int DateTimeYearFieldElement::defaultValueForStepUp() const
+{
+    return m_minIsSpecified ? DateTimeNumericFieldElement::defaultValueForStepUp() : currentFullYear();
+}
+
+void DateTimeYearFieldElement::populateDateTimeFieldsState(DateTimeFieldsState& dateTimeFieldsState)
+{
+    dateTimeFieldsState.setYear(hasValue() ? valueAsInteger() : DateTimeFieldsState::emptyValue);
+}
+
+void DateTimeYearFieldElement::setValueAsDate(const DateComponents& date)
+{
+    setValueAsInteger(date.fullYear());
+}
+
+void DateTimeYearFieldElement::setValueAsDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState)
+{
+    if (!dateTimeFieldsState.hasYear()) {
+        setEmptyValue();
+        return;
+    }
+
+    const unsigned value = dateTimeFieldsState.year();
+    if (range().isInRange(static_cast<int>(value))) {
+        setValueAsInteger(value);
+        return;
+    }
+
+    setEmptyValue();
 }
 
 } // namespace WebCore

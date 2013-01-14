@@ -87,6 +87,12 @@ public:
     bool isFreshFrame() const;
 
     /**
+     *  Returns true if the canvas has recorded draw commands that have
+     *  not yet been played back.
+     */
+    bool hasPendingCommands() const;
+
+    /**
      *  Specify the maximum number of bytes to be allocated for the purpose
      *  of recording draw commands to this canvas.  The default limit, is
      *  64MB.
@@ -143,7 +149,7 @@ public:
     virtual void drawBitmap(const SkBitmap& bitmap, SkScalar left,
                             SkScalar top, const SkPaint* paint)
                             SK_OVERRIDE;
-    virtual void drawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
+    virtual void drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
                                 const SkRect& dst, const SkPaint* paint)
                                 SK_OVERRIDE;
 
@@ -196,6 +202,13 @@ public:
          *  Called after pending draw commands have been flushed
          */
         virtual void flushedDrawCommands() {}
+
+        /**
+         *  Called after pending draw commands have been skipped, meaning
+         *  that they were optimized-out because the canvas is cleared
+         *  or completely overwritten by the command currently being recorded.
+         */
+        virtual void skippedPendingDrawCommands() {}
 
     private:
         typedef SkRefCnt INHERITED;

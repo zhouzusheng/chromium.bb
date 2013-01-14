@@ -11,9 +11,12 @@
 #include "base/string_number_conversions.h"
 #include "crypto/encryptor.h"
 #include "crypto/symmetric_key.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/decryptor_client.h"
+#include "media/base/video_decoder_config.h"
+#include "media/base/video_frame.h"
 
 namespace media {
 
@@ -131,11 +134,13 @@ AesDecryptor::~AesDecryptor() {
 }
 
 bool AesDecryptor::GenerateKeyRequest(const std::string& key_system,
+                                      const std::string& type,
                                       const uint8* init_data,
                                       int init_data_length) {
   std::string session_id_string(base::UintToString(next_session_id_++));
 
-  // For now, just fire the event with the |init_data| as the request.
+  // For now, the AesDecryptor does not care about |key_system| and |type|;
+  // just fire the event with the |init_data| as the request.
   int message_length = init_data_length;
   scoped_array<uint8> message(new uint8[message_length]);
   memcpy(message.get(), init_data, message_length);
@@ -196,7 +201,8 @@ void AesDecryptor::CancelKeyRequest(const std::string& key_system,
                                     const std::string& session_id) {
 }
 
-void AesDecryptor::Decrypt(const scoped_refptr<DecoderBuffer>& encrypted,
+void AesDecryptor::Decrypt(StreamType stream_type,
+                           const scoped_refptr<DecoderBuffer>& encrypted,
                            const DecryptCB& decrypt_cb) {
   CHECK(encrypted->GetDecryptConfig());
   const std::string& key_id = encrypted->GetDecryptConfig()->key_id();
@@ -229,7 +235,42 @@ void AesDecryptor::Decrypt(const scoped_refptr<DecoderBuffer>& encrypted,
   decrypt_cb.Run(kSuccess, decrypted);
 }
 
-void AesDecryptor::Stop() {
+void AesDecryptor::CancelDecrypt(StreamType stream_type) {
+  // Decrypt() calls the DecryptCB synchronously so there's nothing to cancel.
+}
+
+void AesDecryptor::InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
+                                          const DecoderInitCB& init_cb,
+                                          const KeyAddedCB& key_added_cb) {
+  // AesDecryptor does not support audio decoding.
+  init_cb.Run(false);
+}
+
+void AesDecryptor::InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
+                                          const DecoderInitCB& init_cb,
+                                          const KeyAddedCB& key_added_cb) {
+  // AesDecryptor does not support video decoding.
+  init_cb.Run(false);
+}
+
+void AesDecryptor::DecryptAndDecodeAudio(
+    const scoped_refptr<DecoderBuffer>& encrypted,
+    const AudioDecodeCB& audio_decode_cb) {
+  NOTREACHED() << "AesDecryptor does not support audio decoding";
+}
+
+void AesDecryptor::DecryptAndDecodeVideo(
+    const scoped_refptr<DecoderBuffer>& encrypted,
+    const VideoDecodeCB& video_decode_cb) {
+  NOTREACHED() << "AesDecryptor does not support video decoding";
+}
+
+void AesDecryptor::ResetDecoder(StreamType stream_type) {
+  NOTREACHED() << "AesDecryptor does not support audio/video decoding";
+}
+
+void AesDecryptor::DeinitializeDecoder(StreamType stream_type) {
+  NOTREACHED() << "AesDecryptor does not support audio/video decoding";
 }
 
 void AesDecryptor::SetKey(const std::string& key_id,

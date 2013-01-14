@@ -62,9 +62,9 @@ bool RuntimeEnabledFeatures::isScriptedSpeechEnabled = false;
 #endif
 
 #if ENABLE(MEDIA_STREAM)
-bool RuntimeEnabledFeatures::isMediaStreamEnabled = false;
+bool RuntimeEnabledFeatures::isMediaStreamEnabled = true;
 bool RuntimeEnabledFeatures::isPeerConnectionEnabled = true;
-bool RuntimeEnabledFeatures::isDeprecatedPeerConnectionEnabled = true;
+bool RuntimeEnabledFeatures::isDeprecatedPeerConnectionEnabled = false;
 #endif
 
 #if ENABLE(GAMEPAD)
@@ -239,6 +239,10 @@ bool RuntimeEnabledFeatures::isInputTypeWeekEnabled = true;
 
 #if ENABLE(DIALOG_ELEMENT)
 bool RuntimeEnabledFeatures::isDialogElementEnabled = false;
+#endif
+
+#if ENABLE(WEB_INTENTS)
+bool RuntimeEnabledFeatures::isWebIntentsEnabled = true;
 #endif
 
 } // namespace WebCore

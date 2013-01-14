@@ -7,11 +7,10 @@
 
 #include <string>
 
-#include "base/file_path.h"
 #include "base/platform_file.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/fileapi_export.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace fileapi {
 
@@ -48,7 +47,7 @@ namespace fileapi {
 // special treatment, as it may contain paths that are illegal on the current
 // platform.  To avoid problems, use VirtualPath::BaseName and
 // VirtualPath::GetComponents instead of the FilePath methods.
-class FILEAPI_EXPORT FileSystemURL {
+class WEBKIT_STORAGE_EXPORT FileSystemURL {
  public:
   FileSystemURL();
   explicit FileSystemURL(const GURL& filesystem_url);
@@ -83,15 +82,23 @@ class FILEAPI_EXPORT FileSystemURL {
   // See the class comment for details.
   FileSystemType mount_type() const { return mount_type_; }
 
-  std::string spec() const;
+  std::string DebugString() const;
 
   // Returns a new FileSystemURL with the given path.
-  // This doesn't change the calling instance's data.
+  // This creates a new FileSystemURL, copies all fields of this instance
+  // to that one, resets the path_ to the given |path| and resets the
+  // virtual_path to *empty*.
+  // Note that the resulting FileSystemURL always has an empty virtual_path
+  // (as virtual_path is meant to represent the path that is given in the
+  // original filesystem: URL in the current implementation).
   FileSystemURL WithPath(const FilePath& path) const;
+
+  // Returns true if this URL is a strict parent of the |child|.
+  bool IsParent(const FileSystemURL& child) const;
 
   bool operator==(const FileSystemURL& that) const;
 
-  struct FILEAPI_EXPORT Comparator {
+  struct WEBKIT_STORAGE_EXPORT Comparator {
     bool operator() (const FileSystemURL& lhs, const FileSystemURL& rhs) const;
   };
 

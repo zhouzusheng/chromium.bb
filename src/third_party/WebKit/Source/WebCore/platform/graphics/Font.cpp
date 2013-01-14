@@ -64,6 +64,8 @@ const uint8_t Font::s_roundingHackCharacterTable[256] = {
 
 Font::CodePath Font::s_codePath = Auto;
 
+TypesettingFeatures Font::s_defaultTypesettingFeatures = 0;
+
 // ============================================================================================
 // Font Implementation (Cross-Platform Portion)
 // ============================================================================================
@@ -86,7 +88,7 @@ Font::Font(const FontDescription& fd, short letterSpacing, short wordSpacing)
 }
 
 Font::Font(const FontPlatformData& fontData, bool isPrinterFont, FontSmoothingMode fontSmoothingMode)
-    : m_fontList(FontFallbackList::create())
+    : m_fontFallbackList(FontFallbackList::create())
     , m_letterSpacing(0)
     , m_wordSpacing(0)
     , m_isPlatformFont(true)
@@ -94,12 +96,12 @@ Font::Font(const FontPlatformData& fontData, bool isPrinterFont, FontSmoothingMo
     m_fontDescription.setUsePrinterFont(isPrinterFont);
     m_fontDescription.setFontSmoothing(fontSmoothingMode);
     m_needsTranscoding = fontTranscoder().needsTranscoding(fontDescription());
-    m_fontList->setPlatformFont(fontData);
+    m_fontFallbackList->setPlatformFont(fontData);
 }
 
 Font::Font(const Font& other)
     : m_fontDescription(other.m_fontDescription)
-    , m_fontList(other.m_fontList)
+    , m_fontFallbackList(other.m_fontFallbackList)
     , m_letterSpacing(other.m_letterSpacing)
     , m_wordSpacing(other.m_wordSpacing)
     , m_isPlatformFont(other.m_isPlatformFont)
@@ -110,7 +112,7 @@ Font::Font(const Font& other)
 Font& Font::operator=(const Font& other)
 {
     m_fontDescription = other.m_fontDescription;
-    m_fontList = other.m_fontList;
+    m_fontFallbackList = other.m_fontFallbackList;
     m_letterSpacing = other.m_letterSpacing;
     m_wordSpacing = other.m_wordSpacing;
     m_isPlatformFont = other.m_isPlatformFont;
@@ -125,15 +127,15 @@ bool Font::operator==(const Font& other) const
     if (loadingCustomFonts() || other.loadingCustomFonts())
         return false;
     
-    FontSelector* first = m_fontList ? m_fontList->fontSelector() : 0;
-    FontSelector* second = other.m_fontList ? other.m_fontList->fontSelector() : 0;
+    FontSelector* first = m_fontFallbackList ? m_fontFallbackList->fontSelector() : 0;
+    FontSelector* second = other.m_fontFallbackList ? other.m_fontFallbackList->fontSelector() : 0;
 
     return first == second
-           && m_fontDescription == other.m_fontDescription
-           && m_letterSpacing == other.m_letterSpacing
-           && m_wordSpacing == other.m_wordSpacing
-           && (m_fontList ? m_fontList->fontSelectorVersion() : 0) == (other.m_fontList ? other.m_fontList->fontSelectorVersion() : 0)
-           && (m_fontList ? m_fontList->generation() : 0) == (other.m_fontList ? other.m_fontList->generation() : 0);
+        && m_fontDescription == other.m_fontDescription
+        && m_letterSpacing == other.m_letterSpacing
+        && m_wordSpacing == other.m_wordSpacing
+        && (m_fontFallbackList ? m_fontFallbackList->fontSelectorVersion() : 0) == (other.m_fontFallbackList ? other.m_fontFallbackList->fontSelectorVersion() : 0)
+        && (m_fontFallbackList ? m_fontFallbackList->generation() : 0) == (other.m_fontFallbackList ? other.m_fontFallbackList->generation() : 0);
 }
 
 void Font::update(PassRefPtr<FontSelector> fontSelector) const
@@ -143,9 +145,9 @@ void Font::update(PassRefPtr<FontSelector> fontSelector) const
     // style anyway. Other copies are transient, e.g., the state in the GraphicsContext, and
     // won't stick around long enough to get you in trouble). Still, this is pretty disgusting,
     // and could eventually be rectified by using RefPtrs for Fonts themselves.
-    if (!m_fontList)
-        m_fontList = FontFallbackList::create();
-    m_fontList->invalidate(fontSelector);
+    if (!m_fontFallbackList)
+        m_fontFallbackList = FontFallbackList::create();
+    m_fontFallbackList->invalidate(fontSelector);
 }
 
 void Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
@@ -157,6 +159,9 @@ void Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPoi
     to = (to == -1 ? run.length() : to);
 
     CodePath codePathToUse = codePath(run);
+    // FIXME: Use the fast code path once it handles partial runs with kerning and ligatures. See http://webkit.org/b/100050
+    if (codePathToUse != Complex && typesettingFeatures() && (from || to != run.length()))
+        codePathToUse = Complex;
 
     if (codePathToUse != Complex)
         return drawSimpleText(context, run, point, from, to);
@@ -172,7 +177,12 @@ void Font::drawEmphasisMarks(GraphicsContext* context, const TextRun& run, const
     if (to < 0)
         to = run.length();
 
-    if (codePath(run) != Complex)
+    CodePath codePathToUse = codePath(run);
+    // FIXME: Use the fast code path once it handles partial runs with kerning and ligatures. See http://webkit.org/b/100050
+    if (codePathToUse != Complex && typesettingFeatures() && (from || to != run.length()))
+        codePathToUse = Complex;
+
+    if (codePathToUse != Complex)
         drawEmphasisMarksForSimpleText(context, run, mark, point, from, to);
     else
         drawEmphasisMarksForComplexText(context, run, mark, point, from, to);
@@ -185,7 +195,7 @@ float Font::width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFo
         // If the complex text implementation cannot return fallback fonts, avoid
         // returning them for simple text as well.
         static bool returnFallbackFonts = canReturnFallbackFontsForComplexText();
-        return floatWidthForSimpleText(run, 0, returnFallbackFonts ? fallbackFonts : 0, codePathToUse == SimpleWithGlyphOverflow || (glyphOverflow && glyphOverflow->computeBounds) ? glyphOverflow : 0);
+        return floatWidthForSimpleText(run, returnFallbackFonts ? fallbackFonts : 0, codePathToUse == SimpleWithGlyphOverflow || (glyphOverflow && glyphOverflow->computeBounds) ? glyphOverflow : 0);
     }
 
     return floatWidthForComplexText(run, fallbackFonts, glyphOverflow);
@@ -202,7 +212,7 @@ float Font::width(const TextRun& run, int& charsConsumed, String& glyphName) con
     glyphName = "";
 
     if (codePath(run) != Complex)
-        return floatWidthForSimpleText(run, 0);
+        return floatWidthForSimpleText(run);
 
     return floatWidthForComplexText(run);
 }
@@ -218,7 +228,7 @@ void Font::deleteLayout(TextLayout*)
 {
 }
 
-float Font::width(TextLayout&, unsigned, unsigned)
+float Font::width(TextLayout&, unsigned, unsigned, HashSet<const SimpleFontData*>*)
 {
     ASSERT_NOT_REACHED();
     return 0;
@@ -230,7 +240,12 @@ FloatRect Font::selectionRectForText(const TextRun& run, const FloatPoint& point
 {
     to = (to == -1 ? run.length() : to);
 
-    if (codePath(run) != Complex)
+    CodePath codePathToUse = codePath(run);
+    // FIXME: Use the fast code path once it handles partial runs with kerning and ligatures. See http://webkit.org/b/100050
+    if (codePathToUse != Complex && typesettingFeatures() && (from || to != run.length()))
+        codePathToUse = Complex;
+
+    if (codePathToUse != Complex)
         return selectionRectForSimpleText(run, point, h, from, to);
 
     return selectionRectForComplexText(run, point, h, from, to);
@@ -238,7 +253,8 @@ FloatRect Font::selectionRectForText(const TextRun& run, const FloatPoint& point
 
 int Font::offsetForPosition(const TextRun& run, float x, bool includePartialGlyphs) const
 {
-    if (codePath(run) != Complex)
+    // FIXME: Use the fast code path once it handles partial runs with kerning and ligatures. See http://webkit.org/b/100050
+    if (codePath(run) != Complex && !typesettingFeatures())
         return offsetForPositionForSimpleText(run, x, includePartialGlyphs);
 
     return offsetForPositionForComplexText(run, x, includePartialGlyphs);
@@ -289,6 +305,16 @@ Font::CodePath Font::codePath()
     return s_codePath;
 }
 
+void Font::setDefaultTypesettingFeatures(TypesettingFeatures typesettingFeatures)
+{
+    s_defaultTypesettingFeatures = typesettingFeatures;
+}
+
+TypesettingFeatures Font::defaultTypesettingFeatures()
+{
+    return s_defaultTypesettingFeatures;
+}
+
 Font::CodePath Font::codePath(const TextRun& run) const
 {
     if (s_codePath != Auto)
@@ -302,7 +328,7 @@ Font::CodePath Font::codePath(const TextRun& run) const
     if (m_fontDescription.featureSettings() && m_fontDescription.featureSettings()->size() > 0)
         return Complex;
     
-    if (run.length() > 1 && typesettingFeatures())
+    if (run.length() > 1 && !WidthIterator::supportsTypesettingFeatures(*this))
         return Complex;
 
     if (!run.characterScanForCodePath())

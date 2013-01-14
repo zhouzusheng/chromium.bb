@@ -35,6 +35,10 @@ message SyncEnums {
     ACTIONABLE_ERROR = 8; // Client received an actionable error.
   }
 
+  // See content/public/common/page_transition_types.h for detailed
+  // information on the values of PageTransition and
+  // PageTransitionRedirectType below.
+
   // Types of transitions between pages.
   enum PageTransition {
     LINK = 0;
@@ -48,12 +52,16 @@ message SyncEnums {
     RELOAD = 8;
     KEYWORD = 9;
     KEYWORD_GENERATED = 10;
-    CHAIN_START = 12;
-    CHAIN_END = 13;
+    // The below two were mistakenly added but never properly used. They are
+    // actually transition qualifiers, and are set independently of other
+    // qualifiers and of the main transitions. See session_specifics.proto for
+    // the list of synced transition qualifiers.
+    // CHAIN_START = 12;     Deprecated.
+    // CHAIN_END = 13;       Deprecated.
   }
 
-  // These qualifiers further define the transition.
-  enum PageTransitionQualifier {
+  // Types of redirects that triggered a transition.
+  enum PageTransitionRedirectType {
     CLIENT_REDIRECT = 1;
     SERVER_REDIRECT = 2;
   }
@@ -95,5 +103,15 @@ message SyncEnums {
     DISABLE_SYNC_ON_CLIENT      = 4; // Wipe the client of all sync data and
                                      // stop syncing.
     UNKNOWN_ACTION              = 5; // This is the default.
+  }
+
+  enum DeviceType {
+    TYPE_WIN = 1;
+    TYPE_MAC = 2;
+    TYPE_LINUX = 3;
+    TYPE_CROS = 4;
+    TYPE_OTHER = 5;
+    TYPE_PHONE = 6;
+    TYPE_TABLET = 7;
   }
 }

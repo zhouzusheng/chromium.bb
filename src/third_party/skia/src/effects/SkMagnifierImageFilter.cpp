@@ -15,10 +15,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 #if SK_SUPPORT_GPU
 #include "effects/GrSingleTextureEffect.h"
-#include "gl/GrGLProgramStage.h"
+#include "gl/GrGLEffect.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
-#include "GrProgramStageFactory.h"
+#include "GrBackendEffectFactory.h"
 
 class GrGLMagnifierEffect;
 
@@ -44,8 +44,8 @@ public:
 
     static const char* Name() { return "Magnifier"; }
 
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE;
-    virtual bool isEqual(const GrCustomStage&) const SK_OVERRIDE;
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual bool isEqual(const GrEffect&) const SK_OVERRIDE;
 
     float x_offset() const { return fXOffset; }
     float y_offset() const { return fYOffset; }
@@ -54,10 +54,10 @@ public:
     float x_inset() const { return fXInset; }
     float y_inset() const { return fYInset; }
 
-    typedef GrGLMagnifierEffect GLProgramStage;
+    typedef GrGLMagnifierEffect GLEffect;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     float fXOffset;
     float fYOffset;
@@ -72,10 +72,10 @@ private:
 // For brevity
 typedef GrGLUniformManager::UniformHandle UniformHandle;
 
-class GrGLMagnifierEffect : public GrGLProgramStage {
+class GrGLMagnifierEffect : public GrGLLegacyEffect {
 public:
-    GrGLMagnifierEffect(const GrProgramStageFactory& factory,
-                        const GrCustomStage& stage);
+    GrGLMagnifierEffect(const GrBackendEffectFactory& factory,
+                        const GrEffect& effect);
 
     virtual void setupVariables(GrGLShaderBuilder* state) SK_OVERRIDE;
     virtual void emitVS(GrGLShaderBuilder* state,
@@ -86,11 +86,9 @@ public:
                         const TextureSamplerArray&) SK_OVERRIDE;
 
     virtual void setData(const GrGLUniformManager& uman,
-                         const GrCustomStage& data,
-                         const GrRenderTarget*,
-                         int stageNum) SK_OVERRIDE;
+                         const GrEffect& data) SK_OVERRIDE;
 
-    static inline StageKey GenKey(const GrCustomStage&, const GrGLCaps&);
+    static inline EffectKey GenKey(const GrEffect&, const GrGLCaps&);
 
 private:
 
@@ -98,12 +96,12 @@ private:
     UniformHandle  fZoomVar;
     UniformHandle  fInsetVar;
 
-    typedef GrGLProgramStage INHERITED;
+    typedef GrGLLegacyEffect INHERITED;
 };
 
-GrGLMagnifierEffect::GrGLMagnifierEffect(const GrProgramStageFactory& factory,
-                                         const GrCustomStage& stage)
-    : GrGLProgramStage(factory)
+GrGLMagnifierEffect::GrGLMagnifierEffect(const GrBackendEffectFactory& factory,
+                                         const GrEffect& effect)
+    : INHERITED(factory)
     , fOffsetVar(GrGLUniformManager::kInvalidUniformHandle)
     , fZoomVar(GrGLUniformManager::kInvalidUniformHandle)
     , fInsetVar(GrGLUniformManager::kInvalidUniformHandle) {
@@ -167,9 +165,7 @@ void GrGLMagnifierEffect::emitFS(GrGLShaderBuilder* state,
 }
 
 void GrGLMagnifierEffect::setData(const GrGLUniformManager& uman,
-                                  const GrCustomStage& data,
-                                  const GrRenderTarget*,
-                                  int stageNum) {
+                                  const GrEffect& data) {
     const GrMagnifierEffect& zoom =
         static_cast<const GrMagnifierEffect&>(data);
 
@@ -178,18 +174,18 @@ void GrGLMagnifierEffect::setData(const GrGLUniformManager& uman,
     uman.set2f(fInsetVar, zoom.x_inset(), zoom.y_inset());
 }
 
-GrGLProgramStage::StageKey GrGLMagnifierEffect::GenKey(const GrCustomStage& s,
+GrGLEffect::EffectKey GrGLMagnifierEffect::GenKey(const GrEffect& s,
                                                        const GrGLCaps& caps) {
     return 0;
 }
 
 /////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrMagnifierEffect);
+GR_DEFINE_EFFECT_TEST(GrMagnifierEffect);
 
-GrCustomStage* GrMagnifierEffect::TestCreate(SkRandom* random,
-                                             GrContext* context,
-                                             GrTexture** textures) {
+GrEffect* GrMagnifierEffect::TestCreate(SkRandom* random,
+                                        GrContext* context,
+                                        GrTexture** textures) {
     const int kMaxWidth = 200;
     const int kMaxHeight = 200;
     const int kMaxInset = 20;
@@ -204,20 +200,19 @@ GrCustomStage* GrMagnifierEffect::TestCreate(SkRandom* random,
                 SkRect::MakeXYWH(SkIntToScalar(x), SkIntToScalar(y),
                                  SkIntToScalar(width), SkIntToScalar(height)),
                 inset));
-    GrSamplerState sampler;
-    GrCustomStage* stage;
-    filter->asNewCustomStage(&stage, textures[0]);
-    GrAssert(NULL != stage);
-    return stage;
+    GrEffect* effect;
+    filter->asNewEffect(&effect, textures[0]);
+    GrAssert(NULL != effect);
+    return effect;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const GrProgramStageFactory& GrMagnifierEffect::getFactory() const {
-    return GrTProgramStageFactory<GrMagnifierEffect>::getInstance();
+const GrBackendEffectFactory& GrMagnifierEffect::getFactory() const {
+    return GrTBackendEffectFactory<GrMagnifierEffect>::getInstance();
 }
 
-bool GrMagnifierEffect::isEqual(const GrCustomStage& sBase) const {
+bool GrMagnifierEffect::isEqual(const GrEffect& sBase) const {
      const GrMagnifierEffect& s =
         static_cast<const GrMagnifierEffect&>(sBase);
     return (this->fXOffset == s.fXOffset &&
@@ -241,23 +236,23 @@ SkMagnifierImageFilter::SkMagnifierImageFilter(SkFlattenableReadBuffer& buffer)
     fInset = buffer.readScalar();
 }
 
+// FIXME:  implement single-input semantics
 SkMagnifierImageFilter::SkMagnifierImageFilter(SkRect srcRect, SkScalar inset)
-    : fSrcRect(srcRect), fInset(inset) {
+    : INHERITED(0), fSrcRect(srcRect), fInset(inset) {
     SkASSERT(srcRect.x() >= 0 && srcRect.y() >= 0 && inset >= 0);
 }
 
-bool SkMagnifierImageFilter::asNewCustomStage(GrCustomStage** stage,
-                                              GrTexture* texture) const {
+bool SkMagnifierImageFilter::asNewEffect(GrEffect** effect,
+                                         GrTexture* texture) const {
 #if SK_SUPPORT_GPU
-    if (stage) {
-      *stage =
-          SkNEW_ARGS(GrMagnifierEffect, (texture,
-                                         fSrcRect.x() / texture->width(),
-                                         fSrcRect.y() / texture->height(),
-                                         texture->width() / fSrcRect.width(),
-                                         texture->height() / fSrcRect.height(),
-                                         fInset / texture->width(),
-                                         fInset / texture->height()));
+    if (effect) {
+      *effect = SkNEW_ARGS(GrMagnifierEffect, (texture,
+                                               fSrcRect.x() / texture->width(),
+                                               fSrcRect.y() / texture->height(),
+                                               texture->width() / fSrcRect.width(),
+                                               texture->height() / fSrcRect.height(),
+                                               fInset / texture->width(),
+                                               fInset / texture->height()));
     }
     return true;
 #else
@@ -339,5 +334,3 @@ bool SkMagnifierImageFilter::onFilterImage(Proxy*, const SkBitmap& src,
     }
     return true;
 }
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkMagnifierImageFilter)

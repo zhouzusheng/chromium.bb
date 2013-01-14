@@ -40,7 +40,9 @@
 #include "TransformState.h"
 #include "VisiblePosition.h"
 
-#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
+#include <wtf/TemporaryChange.h>
+
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(DRAGGABLE_REGION)
 #include "Frame.h"
 #endif
 
@@ -118,9 +120,9 @@ RenderInline* RenderInline::inlineElementContinuation() const
     return toRenderBlock(continuation)->inlineElementContinuation();
 }
 
-void RenderInline::updateBoxModelInfoFromStyle()
+void RenderInline::updateFromStyle()
 {
-    RenderBoxModelObject::updateBoxModelInfoFromStyle();
+    RenderBoxModelObject::updateFromStyle();
 
     setInline(true); // Needed for run-ins, since run-in is considered a block display type.
 
@@ -167,11 +169,18 @@ void RenderInline::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     // need to pass its style on to anyone else.
     RenderStyle* newStyle = style();
     RenderInline* continuation = inlineElementContinuation();
-    for (RenderInline* currCont = continuation; currCont; currCont = currCont->inlineElementContinuation()) {
-        RenderBoxModelObject* nextCont = currCont->continuation();
-        currCont->setContinuation(0);
-        currCont->setStyle(newStyle);
-        currCont->setContinuation(nextCont);
+    {
+        TemporaryChange<bool> enableAfter(RenderObjectChildList::s_enableUpdateBeforeAfterContent, false);
+        RenderInline* nextInlineElementCont = 0;
+        for (RenderInline* currCont = continuation; currCont; currCont = nextInlineElementCont) {
+            nextInlineElementCont = currCont->inlineElementContinuation();
+            // We need to update :after content for the last continuation in the chain.
+            RenderObjectChildList::s_enableUpdateBeforeAfterContent = !nextInlineElementCont;
+            RenderBoxModelObject* nextCont = currCont->continuation();
+            currCont->setContinuation(0);
+            currCont->setStyle(newStyle);
+            currCont->setContinuation(nextCont);
+        }
     }
 
     // If an inline's in-flow positioning has changed then any descendant blocks will need to change their in-flow positioning accordingly.
@@ -194,7 +203,7 @@ void RenderInline::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     }
 
     // Update pseudos for :before and :after now.
-    if (!isAnonymous() && document()->usesBeforeAfterRules()) {
+    if (!isAnonymous() && document()->styleSheetCollection()->usesBeforeAfterRules()) {
         children()->updateBeforeAfterContent(this, BEFORE);
         children()->updateBeforeAfterContent(this, AFTER);
     }
@@ -218,7 +227,7 @@ void RenderInline::updateAlwaysCreateLineBoxes(bool fullLayout)
         || parentStyle->lineHeight() != style()->lineHeight()))
         || (inRenderFlowThread() && enclosingRenderFlowThread()->hasRegionsWithStyling());
 
-    if (!alwaysCreateLineBoxes && checkFonts && document()->usesFirstLineRules()) {
+    if (!alwaysCreateLineBoxes && checkFonts && document()->styleSheetCollection()->usesFirstLineRules()) {
         // Have to check the first line style as well.
         parentStyle = parent()->style(true);
         RenderStyle* childStyle = style(true);
@@ -324,7 +333,7 @@ void RenderInline::addChildIgnoringContinuation(RenderObject* newChild, RenderOb
         // has to move into the inline continuation.  Call updateBeforeAfterContent to ensure that our :after
         // content gets properly destroyed.
         bool isLastChild = (beforeChild == lastChild());
-        if (document()->usesBeforeAfterRules())
+        if (document()->styleSheetCollection()->usesBeforeAfterRules())
             children()->updateBeforeAfterContent(this, AFTER);
         if (isLastChild && beforeChild != lastChild())
             beforeChild = 0; // We destroyed the last child, so now we need to update our insertion
@@ -399,7 +408,7 @@ void RenderInline::splitInlines(RenderBlock* fromBlock, RenderBlock* toBlock,
             // Someone may have indirectly caused a <q> to split.  When this happens, the :after content
             // has to move into the inline continuation.  Call updateBeforeAfterContent to ensure that the inline's :after
             // content gets properly destroyed.
-            if (document()->usesBeforeAfterRules())
+            if (document()->styleSheetCollection()->usesBeforeAfterRules())
                 inlineCurr->children()->updateBeforeAfterContent(inlineCurr, AFTER);
 
             // Now we need to take all of the children starting from the first child
@@ -446,6 +455,7 @@ void RenderInline::splitFlow(RenderObject* beforeChild, RenderBlock* newBlockBox
         // We can reuse this block and make it the preBlock of the next continuation.
         pre = block;
         pre->removePositionedObjects(0);
+        pre->removeFloatingObjects();
         block = block->containingBlock();
     } else {
         // No anonymous block available for use.  Make one.
@@ -960,7 +970,7 @@ LayoutRect RenderInline::linesVisualOverflowBoundingBox() const
     return rect;
 }
 
-LayoutRect RenderInline::clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const
+LayoutRect RenderInline::clippedOverflowRectForRepaint(RenderLayerModelObject* repaintContainer) const
 {
     // Only run-ins are allowed in here during layout.
     ASSERT(!view() || !view()->layoutStateEnabled() || isRunIn());
@@ -1011,7 +1021,7 @@ LayoutRect RenderInline::clippedOverflowRectForRepaint(RenderBoxModelObject* rep
     return repaintRect;
 }
 
-LayoutRect RenderInline::rectWithOutlineForRepaint(RenderBoxModelObject* repaintContainer, LayoutUnit outlineWidth) const
+LayoutRect RenderInline::rectWithOutlineForRepaint(RenderLayerModelObject* repaintContainer, LayoutUnit outlineWidth) const
 {
     LayoutRect r(RenderBoxModelObject::rectWithOutlineForRepaint(repaintContainer, outlineWidth));
     for (RenderObject* curr = firstChild(); curr; curr = curr->nextSibling()) {
@@ -1021,7 +1031,7 @@ LayoutRect RenderInline::rectWithOutlineForRepaint(RenderBoxModelObject* repaint
     return r;
 }
 
-void RenderInline::computeRectForRepaint(RenderBoxModelObject* repaintContainer, LayoutRect& rect, bool fixed) const
+void RenderInline::computeRectForRepaint(RenderLayerModelObject* repaintContainer, LayoutRect& rect, bool fixed) const
 {
     if (RenderView* v = view()) {
         // LayoutState is only valid for root-relative repainting
@@ -1103,7 +1113,7 @@ LayoutSize RenderInline::offsetFromContainer(RenderObject* container, const Layo
     return offset;
 }
 
-void RenderInline::mapLocalToContainer(RenderBoxModelObject* repaintContainer, TransformState& transformState, MapLocalToContainerFlags mode, bool* wasFixed) const
+void RenderInline::mapLocalToContainer(RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed) const
 {
     if (repaintContainer == this)
         return;
@@ -1133,8 +1143,6 @@ void RenderInline::mapLocalToContainer(RenderBoxModelObject* repaintContainer, T
     }
 
     LayoutSize containerOffset = offsetFromContainer(o, roundedLayoutPoint(transformState.mappedPoint()));
-    if (mode & SnapOffsetForTransforms)
-        containerOffset = roundedIntSize(containerOffset);
 
     bool preserve3D = mode & UseTransforms && (o->style()->preserves3D() || style()->preserves3D());
     if (mode & UseTransforms && shouldUseTransformFromContainer(o)) {
@@ -1155,7 +1163,7 @@ void RenderInline::mapLocalToContainer(RenderBoxModelObject* repaintContainer, T
     o->mapLocalToContainer(repaintContainer, transformState, mode, wasFixed);
 }
 
-const RenderObject* RenderInline::pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+const RenderObject* RenderInline::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
 {
     ASSERT(ancestorToStopAt != this);
 
@@ -1283,7 +1291,7 @@ InlineFlowBox* RenderInline::createAndAppendInlineFlowBox()
 
 LayoutUnit RenderInline::lineHeight(bool firstLine, LineDirectionMode /*direction*/, LinePositionMode /*linePositionMode*/) const
 {
-    if (firstLine && document()->usesFirstLineRules()) {
+    if (firstLine && document()->styleSheetCollection()->usesFirstLineRules()) {
         RenderStyle* s = style(firstLine);
         if (s != style())
             return s->computedLineHeight(view());
@@ -1292,7 +1300,7 @@ LayoutUnit RenderInline::lineHeight(bool firstLine, LineDirectionMode /*directio
     return style()->computedLineHeight(view());
 }
 
-LayoutUnit RenderInline::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
+int RenderInline::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
 {
     const FontMetrics& fontMetrics = style(firstLine)->fontMetrics();
     return fontMetrics.ascent(baselineType) + (lineHeight(firstLine, direction, linePositionMode) - fontMetrics.height()) / 2;
@@ -1525,13 +1533,14 @@ void RenderInline::paintOutlineForLine(GraphicsContext* graphicsContext, const L
             antialias);
 }
 
-#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(WIDGET_REGION)
-void RenderInline::addDashboardRegions(Vector<DashboardRegionValue>& regions)
+#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(DRAGGABLE_REGION)
+void RenderInline::addAnnotatedRegions(Vector<AnnotatedRegionValue>& regions)
 {
     // Convert the style regions to absolute coordinates.
     if (style()->visibility() != VISIBLE)
         return;
 
+#if ENABLE(DASHBOARD_SUPPORT)
     const Vector<StyleDashboardRegion>& styleRegions = style()->dashboardRegions();
     unsigned i, count = styleRegions.size();
     for (i = 0; i < count; i++) {
@@ -1541,7 +1550,7 @@ void RenderInline::addDashboardRegions(Vector<DashboardRegionValue>& regions)
         LayoutUnit w = linesBoundingBox.width();
         LayoutUnit h = linesBoundingBox.height();
 
-        DashboardRegionValue region;
+        AnnotatedRegionValue region;
         region.label = styleRegion.label;
         region.bounds = LayoutRect(linesBoundingBox.x() + styleRegion.offset.left().value(),
                                 linesBoundingBox.y() + styleRegion.offset.top().value(),
@@ -1566,6 +1575,24 @@ void RenderInline::addDashboardRegions(Vector<DashboardRegionValue>& regions)
 
         regions.append(region);
     }
+#else // ENABLE(DRAGGABLE_REGION)
+    if (style()->getDraggableRegionMode() == DraggableRegionNone)
+        return;
+
+    AnnotatedRegionValue region;
+    region.draggable = style()->getDraggableRegionMode() == DraggableRegionDrag;
+    region.bounds = linesBoundingBox();
+
+    RenderObject* container = containingBlock();
+    if (!container)
+        container = this;
+
+    FloatPoint absPos = container->localToAbsolute();
+    region.bounds.setX(absPos.x() + region.bounds.x());
+    region.bounds.setY(absPos.y() + region.bounds.y());
+    
+    regions.append(region);
+#endif
 }
 #endif
 

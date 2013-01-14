@@ -7,32 +7,69 @@
 #include "base/bind.h"
 #include "media/base/filter_collection.h"
 #include "media/base/message_loop_factory.h"
+#include "media/filters/decrypting_audio_decoder.h"
+#include "media/filters/decrypting_video_decoder.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/dummy_demuxer.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "webkit/media/crypto/proxy_decryptor.h"
 #include "webkit/media/media_stream_client.h"
 
 namespace webkit_media {
 
 // Constructs and adds the default audio/video decoders to |filter_collection|.
+// Note that decoders in the |filter_collection| are ordered. The first
+// audio/video decoder in the |filter_collection| that supports the input
+// audio/video stream will be selected as the audio/video decoder in the media
+// pipeline. This is done by trying to initialize the decoder with the input
+// stream. Some decoder may only accept certain types of streams. For example,
+// DecryptingVideoDecoder only supports encrypted video stream.
 static void AddDefaultDecodersToCollection(
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::Decryptor* decryptor) {
-  filter_collection->AddAudioDecoder(new media::FFmpegAudioDecoder(
-      base::Bind(&media::MessageLoopFactory::GetMessageLoop,
-                 base::Unretained(message_loop_factory),
-                 media::MessageLoopFactory::kDecoder)));
+    ProxyDecryptor* proxy_decryptor) {
+  scoped_refptr<media::FFmpegAudioDecoder> ffmpeg_audio_decoder =
+      new media::FFmpegAudioDecoder(
+          base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                     base::Unretained(message_loop_factory),
+                     media::MessageLoopFactory::kDecoder));
+
+  scoped_refptr<media::DecryptingAudioDecoder> decrypting_audio_decoder =
+      new media::DecryptingAudioDecoder(
+          base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                     base::Unretained(message_loop_factory),
+                     media::MessageLoopFactory::kDecoder),
+          base::Bind(&ProxyDecryptor::RequestDecryptorNotification,
+                     base::Unretained(proxy_decryptor)));
+
+  filter_collection->GetAudioDecoders()->push_back(ffmpeg_audio_decoder);
+  filter_collection->GetAudioDecoders()->push_back(decrypting_audio_decoder);
+
+  scoped_refptr<media::DecryptingVideoDecoder> decrypting_video_decoder =
+      new media::DecryptingVideoDecoder(
+          base::Bind(&media::MessageLoopFactory::GetMessageLoop,
+                     base::Unretained(message_loop_factory),
+                     media::MessageLoopFactory::kDecoder),
+          base::Bind(&ProxyDecryptor::RequestDecryptorNotification,
+                     base::Unretained(proxy_decryptor)));
 
   scoped_refptr<media::FFmpegVideoDecoder> ffmpeg_video_decoder =
       new media::FFmpegVideoDecoder(
           base::Bind(&media::MessageLoopFactory::GetMessageLoop,
                      base::Unretained(message_loop_factory),
                      media::MessageLoopFactory::kDecoder),
-          decryptor);
+          proxy_decryptor);
+
+  // TODO(xhwang): Ideally we should have decrypting video decoder after
+  // regular video decoder since in the real world most videos are not
+  // encrypted. For now FFmpegVideoDecoder can also do decryption
+  // (decrypt-only), and we perfer DecryptingVideoDecoder (decrypt-and-decode)
+  // to FFmpegVideoDecoder. Fix this order when we move decryption out of
+  // FFmpegVideoDecoder.
+  filter_collection->GetVideoDecoders()->push_back(decrypting_video_decoder);
   filter_collection->GetVideoDecoders()->push_back(ffmpeg_video_decoder);
 }
 
@@ -63,7 +100,7 @@ void BuildMediaSourceCollection(
     const scoped_refptr<media::ChunkDemuxer>& demuxer,
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::Decryptor* decryptor) {
+    ProxyDecryptor* proxy_decryptor) {
   DCHECK(demuxer);
   filter_collection->SetDemuxer(demuxer);
 
@@ -73,21 +110,21 @@ void BuildMediaSourceCollection(
   filter_collection->GetVideoDecoders()->clear();
 
   AddDefaultDecodersToCollection(message_loop_factory, filter_collection,
-                                 decryptor);
+                                 proxy_decryptor);
 }
 
 void BuildDefaultCollection(
     const scoped_refptr<media::DataSource>& data_source,
     media::MessageLoopFactory* message_loop_factory,
     media::FilterCollection* filter_collection,
-    media::Decryptor* decryptor) {
+    ProxyDecryptor* proxy_decryptor) {
   filter_collection->SetDemuxer(new media::FFmpegDemuxer(
       message_loop_factory->GetMessageLoop(
           media::MessageLoopFactory::kPipeline),
       data_source));
 
   AddDefaultDecodersToCollection(message_loop_factory, filter_collection,
-                                 decryptor);
+                                 proxy_decryptor);
 }
 
 }  // webkit_media

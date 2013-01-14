@@ -18,12 +18,6 @@ from grit import util
 
 import grit.extern.FP
 
-# Copyright notice
-_COPYRIGHT = """\
-GRIT - the Google Resource and Internationalization Tool
-Copyright (c) Google Inc. %d
-""" % util.GetCurrentYear()
-
 # Tool info factories; these import only within each factory to avoid
 # importing most of the GRIT code until required.
 def ToolFactoryBuild():
@@ -112,8 +106,6 @@ _TOOLS = [
 
 
 def PrintUsage():
-  print _COPYRIGHT
-
   tool_list = ''
   for (tool, info) in _TOOLS:
     if not _HIDDEN in info.keys():
@@ -125,7 +117,9 @@ def PrintUsage():
   #        e.g. Perforce.
   #
   #  -c    Use the specified Perforce CLIENT when talking to Perforce.
-  print """Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
+  print """GRIT - the Google Resource and Internationalization Tool
+
+Usage: grit [GLOBALOPTIONS] TOOL [args to tool]
 
 Global options:
 

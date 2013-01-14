@@ -41,6 +41,42 @@ namespace Private {
     void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer*);
 };
 
+class NoEventDispatchAssertion {
+public:
+    NoEventDispatchAssertion()
+    {
+#ifndef NDEBUG
+        if (!isMainThread())
+            return;
+        s_count++;
+#endif
+    }
+
+    ~NoEventDispatchAssertion()
+    {
+#ifndef NDEBUG
+        if (!isMainThread())
+            return;
+        ASSERT(s_count);
+        s_count--;
+#endif
+    }
+
+#ifndef NDEBUG
+    static bool isEventDispatchForbidden()
+    {
+        if (!isMainThread())
+            return false;
+        return s_count;
+    }
+#endif
+
+private:
+#ifndef NDEBUG
+    static unsigned s_count;
+#endif
+};
+
 class ContainerNode : public Node {
 public:
     virtual ~ContainerNode();
@@ -60,7 +96,7 @@ public:
     // These methods are only used during parsing.
     // They don't send DOM mutation events or handle reparenting.
     // However, arbitrary code may be run by beforeload handlers.
-    void parserAddChild(PassRefPtr<Node>);
+    void parserAppendChild(PassRefPtr<Node>);
     void parserRemoveChild(Node*);
     void parserInsertBefore(PassRefPtr<Node> newChild, Node* refChild);
 
@@ -88,9 +124,7 @@ public:
     // node that is of the type CDATA_SECTION_NODE, TEXT_NODE or COMMENT_NODE has changed its value.
     virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    void attachAsNode();
     void attachChildren();
-    void attachChildrenIfNeeded();
     void attachChildrenLazily();
     void detachChildren();
     void detachChildrenIfNeeded();
@@ -139,6 +173,10 @@ private:
     Node* m_lastChild;
 };
 
+#ifndef NDEBUG
+bool childAttachedAllowedWhenAttachingChildren(ContainerNode*);
+#endif
+
 inline ContainerNode* toContainerNode(Node* node)
 {
     ASSERT(!node || node->isContainerNode());
@@ -161,20 +199,10 @@ inline ContainerNode::ContainerNode(Document* document, ConstructionType type)
 {
 }
 
-inline void ContainerNode::attachAsNode()
-{
-    Node::attach();
-}
-
 inline void ContainerNode::attachChildren()
 {
-    for (Node* child = firstChild(); child; child = child->nextSibling())
-        child->attach();
-}
-
-inline void ContainerNode::attachChildrenIfNeeded()
-{
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
+        ASSERT(!child->attached() || childAttachedAllowedWhenAttachingChildren(this));
         if (!child->attached())
             child->attach();
     }
@@ -313,18 +341,18 @@ public:
     }
 
     // Returns 0 if there is no next Node.
-    Node* nextNode()
+    PassRefPtr<Node> nextNode()
     {
         if (LIKELY(!hasSnapshot())) {
-            Node* node = m_currentNode;
-            if (m_currentNode)
-                m_currentNode = m_currentNode->nextSibling();
+            RefPtr<Node> node = m_currentNode;
+            if (node.get())
+                m_currentNode = node->nextSibling();
             return node;
         }
         Vector<RefPtr<Node> >* nodeVector = m_childNodes.get();
         if (m_currentIndex >= nodeVector->size())
             return 0;
-        return (*nodeVector)[m_currentIndex++].get();
+        return (*nodeVector)[m_currentIndex++];
     }
 
     void takeSnapshot()
@@ -332,7 +360,7 @@ public:
         if (hasSnapshot())
             return;
         m_childNodes = adoptPtr(new Vector<RefPtr<Node> >());
-        Node* node = m_currentNode;
+        Node* node = m_currentNode.get();
         while (node) {
             m_childNodes->append(node);
             node = node->nextSibling();
@@ -354,7 +382,7 @@ public:
 private:
     static ChildNodesLazySnapshot* latestSnapshot;
 
-    Node* m_currentNode;
+    RefPtr<Node> m_currentNode;
     unsigned m_currentIndex;
     OwnPtr<Vector<RefPtr<Node> > > m_childNodes; // Lazily instantiated.
     ChildNodesLazySnapshot* m_nextSnapshot;

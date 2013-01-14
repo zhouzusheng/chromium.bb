@@ -30,6 +30,7 @@
 #include "HTMLNames.h"
 #include "HTMLTableColElement.h"
 #include "RenderTable.h"
+#include "RenderTableCell.h"
 
 namespace WebCore {
 
@@ -69,14 +70,16 @@ void RenderTableCol::updateFromElement()
         setNeedsLayoutAndPrefWidthsRecalc();
 }
 
+void RenderTableCol::insertedIntoTree()
+{
+    RenderBox::insertedIntoTree();
+    table()->addColumn(this);
+}
+
 void RenderTableCol::willBeRemovedFromTree()
 {
     RenderBox::willBeRemovedFromTree();
-
-    // We don't really need to recompute our sections, but we need to update our
-    // column count and whether we have a column. Currently, we only have one
-    // size-fit-all flag but we may have to consider splitting it.
-    table()->setNeedsSectionRecalc();
+    table()->removeColumn(this);
 }
 
 bool RenderTableCol::isChildAllowed(RenderObject* child, RenderStyle* style) const
@@ -92,7 +95,7 @@ bool RenderTableCol::canHaveChildren() const
     return isTableColumnGroup();
 }
 
-LayoutRect RenderTableCol::clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const
+LayoutRect RenderTableCol::clippedOverflowRectForRepaint(RenderLayerModelObject* repaintContainer) const
 {
     // For now, just repaint the whole table.
     // FIXME: Find a better way to do this, e.g., need to repaint all the cells that we
@@ -160,6 +163,28 @@ RenderTableCol* RenderTableCol::nextColumn() const
     }
 
     return toRenderTableCol(next);
+}
+
+const BorderValue& RenderTableCol::borderAdjoiningCellStartBorder(const RenderTableCell*) const
+{
+    return style()->borderStart();
+}
+
+const BorderValue& RenderTableCol::borderAdjoiningCellEndBorder(const RenderTableCell*) const
+{
+    return style()->borderEnd();
+}
+
+const BorderValue& RenderTableCol::borderAdjoiningCellBefore(const RenderTableCell* cell) const
+{
+    ASSERT_UNUSED(cell, table()->colElement(cell->col() + cell->colSpan()) == this);
+    return style()->borderStart();
+}
+
+const BorderValue& RenderTableCol::borderAdjoiningCellAfter(const RenderTableCell* cell) const
+{
+    ASSERT_UNUSED(cell, table()->colElement(cell->col() - 1) == this);
+    return style()->borderEnd();
 }
 
 }

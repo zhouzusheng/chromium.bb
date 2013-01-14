@@ -32,6 +32,7 @@
 
 #include "GraphicsContext.h"
 #include "MathMLNames.h"
+#include "RenderView.h"
 
 #if ENABLE(DEBUG_MATH_LAYOUT)
 #include "PaintInfo.h"
@@ -165,25 +166,35 @@ void RenderMathMLBlock::computeChildrenPreferredLogicalHeights()
     // Ensure a full repaint will happen after layout finishes.
     setNeedsLayout(true, MarkOnlyThis);
     
-    LayoutUnit oldAvailableLogicalWidth = availableLogicalWidth();
-    setLogicalWidth(cLargeLogicalWidth);
-    
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->isBox())
-            continue;
+    RenderView* renderView = view();
+    bool hadLayoutState = renderView->layoutState();
+    if (!hadLayoutState)
+        renderView->pushLayoutState(this);
+    {
+        LayoutStateDisabler layoutStateDisabler(renderView);
         
-        // Because our width changed, |child| may need layout.
-        if (child->maxPreferredLogicalWidth() > oldAvailableLogicalWidth)
-            child->setNeedsLayout(true, MarkOnlyThis);
+        LayoutUnit oldAvailableLogicalWidth = availableLogicalWidth();
+        setLogicalWidth(cLargeLogicalWidth);
         
-        RenderMathMLBlock* childMathMLBlock = child->isRenderMathMLBlock() ? toRenderMathMLBlock(child) : 0;
-        if (childMathMLBlock && !childMathMLBlock->isPreferredLogicalHeightDirty())
-            continue;
-        // Layout our child to compute its preferred logical height.
-        child->layoutIfNeeded();
-        if (childMathMLBlock)
-            childMathMLBlock->setPreferredLogicalHeight(childMathMLBlock->logicalHeight());
+        for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+            if (!child->isBox())
+                continue;
+            
+            // Because our width changed, |child| may need layout.
+            if (child->maxPreferredLogicalWidth() > oldAvailableLogicalWidth)
+                child->setNeedsLayout(true, MarkOnlyThis);
+            
+            RenderMathMLBlock* childMathMLBlock = child->isRenderMathMLBlock() ? toRenderMathMLBlock(child) : 0;
+            if (childMathMLBlock && !childMathMLBlock->isPreferredLogicalHeightDirty())
+                continue;
+            // Layout our child to compute its preferred logical height.
+            child->layoutIfNeeded();
+            if (childMathMLBlock)
+                childMathMLBlock->setPreferredLogicalHeight(childMathMLBlock->logicalHeight());
+        }
     }
+    if (!hadLayoutState)
+        renderView->popLayoutState(this);
 }
 
 LayoutUnit RenderMathMLBlock::preferredLogicalHeightAfterSizing(RenderObject* child)
@@ -198,7 +209,7 @@ LayoutUnit RenderMathMLBlock::preferredLogicalHeightAfterSizing(RenderObject* ch
     return child->style()->fontSize();
 }
 
-LayoutUnit RenderMathMLBlock::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
+int RenderMathMLBlock::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
 {
     // mathml.css sets math { -webkit-line-box-contain: glyphs replaced; line-height: 0; }, so when linePositionMode == PositionOfInteriorLineBoxes we want to
     // return 0 here to match our line-height. This matters when RootInlineBox::ascentAndDescentForBox is called on a RootInlineBox for an inline-block.
@@ -259,7 +270,7 @@ void RenderMathMLBlock::paint(PaintInfo& info, const LayoutPoint& paintOffset)
 }
 #endif // ENABLE(DEBUG_MATH_LAYOUT)
 
-LayoutUnit RenderMathMLTable::firstLineBoxBaseline() const
+int RenderMathMLTable::firstLineBoxBaseline() const
 {
     // In legal MathML, we'll have a MathML parent. That RenderFlexibleBox parent will use our firstLineBoxBaseline() for baseline alignment, per
     // http://dev.w3.org/csswg/css3-flexbox/#flex-baselines. We want to vertically center an <mtable>, such as a matrix. Essentially the whole <mtable> element fits on a

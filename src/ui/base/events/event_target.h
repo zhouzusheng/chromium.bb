@@ -32,6 +32,21 @@ class UI_EXPORT EventTarget : public EventHandler {
     DISALLOW_COPY_AND_ASSIGN(TestApi);
   };
 
+  class DispatcherApi {
+   public:
+    explicit DispatcherApi(EventTarget* target) : target_(target) {}
+
+    const EventHandlerList& pre_target_list() const {
+      return target_->pre_target_list_;
+    }
+
+   private:
+    DispatcherApi();
+    EventTarget* target_;
+
+    DISALLOW_COPY_AND_ASSIGN(DispatcherApi);
+  };
+
   EventTarget();
   virtual ~EventTarget();
 
@@ -72,7 +87,7 @@ class UI_EXPORT EventTarget : public EventHandler {
   virtual EventResult OnKeyEvent(KeyEvent* event) OVERRIDE;
   virtual EventResult OnMouseEvent(MouseEvent* event) OVERRIDE;
   virtual EventResult OnScrollEvent(ScrollEvent* event) OVERRIDE;
-  virtual TouchStatus OnTouchEvent(TouchEvent* event) OVERRIDE;
+  virtual EventResult OnTouchEvent(TouchEvent* event) OVERRIDE;
   virtual EventResult OnGestureEvent(GestureEvent* event) OVERRIDE;
 
   EventHandlerList pre_target_list_;

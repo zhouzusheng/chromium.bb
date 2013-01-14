@@ -43,6 +43,7 @@ class ProxyScriptFetcher;
 // HTTP(S) URL.  It uses the given ProxyResolver to handle the actual proxy
 // resolution.  See ProxyResolverV8 for example.
 class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
+                                public NetworkChangeNotifier::DNSObserver,
                                 public ProxyConfigService::Observer,
                                 NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
@@ -144,6 +145,12 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
                                 const CompletionCallback& callback,
                                 PacRequest** pac_request,
                                 const BoundNetLog& net_log);
+
+  // Explicitly trigger proxy fallback for the given |results| by updating our
+  // list of bad proxies to include the first entry of |results|. Returns true
+  // if there will be at least one proxy remaining in the list after fallback
+  // and false otherwise.
+  bool MarkProxyAsBad(const ProxyInfo& results, const BoundNetLog& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -324,6 +331,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // NetworkChangeNotifier::IPAddressObserver
   // When this is called, we re-fetch PAC scripts and re-run WPAD.
   virtual void OnIPAddressChanged() OVERRIDE;
+
+  // NetworkChangeNotifier::DNSObserver
+  // We respond as above.
+  virtual void OnDNSChanged() OVERRIDE;
 
   // ProxyConfigService::Observer
   virtual void OnProxyConfigChanged(

@@ -78,6 +78,8 @@ public:
     // PluginViewBase methods
     virtual bool getFormValue(String&);
     virtual bool supportsKeyboardFocus() const;
+    virtual bool canProcessDrag() const;
+    virtual bool wantsWheelEvents();
 
     // Widget methods
     virtual void setFrameRect(const WebCore::IntRect&);
@@ -112,6 +114,7 @@ public:
     virtual void setOpaque(bool);
     virtual bool isRectTopmost(const WebRect&);
     virtual void setIsAcceptingTouchEvents(bool);
+    virtual void setWantsWheelEvents(bool);
 
     // This cannot be null.
     WebPlugin* plugin() { return m_webPlugin; }
@@ -165,6 +168,7 @@ private:
     ~WebPluginContainerImpl();
 
     void handleMouseEvent(WebCore::MouseEvent*);
+    void handleDragEvent(WebCore::MouseEvent*);
     void handleWheelEvent(WebCore::WheelEvent*);
     void handleKeyboardEvent(WebCore::KeyboardEvent*);
     void handleTouchEvent(WebCore::TouchEvent*);
@@ -197,6 +201,7 @@ private:
     OwnPtr<ScrollbarGroup> m_scrollbarGroup;
 
     bool m_isAcceptingTouchEvents;
+    bool m_wantsWheelEvents;
 };
 
 } // namespace WebKit

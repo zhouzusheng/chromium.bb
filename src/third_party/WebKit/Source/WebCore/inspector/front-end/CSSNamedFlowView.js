@@ -81,7 +81,7 @@ WebInspector.CSSNamedFlowView.prototype = {
         treeOutline.wireToDomAgent();
         WebInspector.domAgent.removeEventListener(WebInspector.DOMAgent.Events.DocumentUpdated, treeOutline._elementsTreeUpdater._documentUpdated, treeOutline._elementsTreeUpdater);
 
-        return treeOutline;        
+        return treeOutline;
     },
 
     /**
@@ -250,7 +250,7 @@ WebInspector.CSSNamedFlowView.prototype = {
         this._mergeRegions(this._flow.regions, newFlow.regions);
 
         this._flow = newFlow;
-    }
-}
+    },
 
-WebInspector.CSSNamedFlowView.prototype.__proto__ = WebInspector.View.prototype;
+    __proto__: WebInspector.View.prototype
+}

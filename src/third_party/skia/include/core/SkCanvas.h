@@ -25,6 +25,7 @@ class SkBounder;
 class SkDevice;
 class SkDraw;
 class SkDrawFilter;
+class SkMetaData;
 class SkPicture;
 class SkSurface_Base;
 
@@ -61,6 +62,8 @@ public:
     */
     explicit SkCanvas(const SkBitmap& bitmap);
     virtual ~SkCanvas();
+
+    SkMetaData& getMetaData();
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -102,12 +105,6 @@ public:
      *        sometimes.
      */
     SkDevice* getTopDevice(bool updateMatrixClip = false) const;
-
-    /**
-     *  Create a new raster device and make it current. This also returns
-     *  the new device.
-     */
-    SkDevice* setBitmapDevice(const SkBitmap& bitmap);
 
     /**
      *  Shortcut for getDevice()->createCompatibleDevice(...).
@@ -644,8 +641,25 @@ public:
                         image will be drawn
         @param paint    The paint used to draw the bitmap, or NULL
     */
-    virtual void drawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
-                                const SkRect& dst, const SkPaint* paint = NULL);
+    virtual void drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
+                                      const SkRect& dst,
+                                      const SkPaint* paint);
+
+    void drawBitmapRect(const SkBitmap& bitmap, const SkRect& dst,
+                        const SkPaint* paint) {
+        this->drawBitmapRectToRect(bitmap, NULL, dst, paint);
+    }
+
+    void drawBitmapRect(const SkBitmap& bitmap, const SkIRect* isrc,
+                        const SkRect& dst, const SkPaint* paint = NULL) {
+        SkRect realSrcStorage;
+        SkRect* realSrcPtr = NULL;
+        if (isrc) {
+            realSrcStorage.set(*isrc);
+            realSrcPtr = &realSrcStorage;
+        }
+        this->drawBitmapRectToRect(bitmap, realSrcPtr, dst, paint);
+    }
 
     virtual void drawBitmapMatrix(const SkBitmap& bitmap, const SkMatrix& m,
                                   const SkPaint* paint = NULL);
@@ -879,8 +893,6 @@ public:
         return &fClipStack;
     }
 
-    void setExternalMatrix(const SkMatrix* = NULL);
-
     class ClipVisitor {
     public:
         virtual ~ClipVisitor();
@@ -966,8 +978,9 @@ private:
     uint32_t    fMCRecStorage[32];
 
     SkBounder*  fBounder;
-    SkDevice*   fLastDeviceToGainFocus;
     int         fSaveLayerCount;    // number of successful saveLayer calls
+
+    SkMetaData* fMetaData;
 
     SkSurface_Base*  fSurfaceBase;
     SkSurface_Base* getSurfaceBase() const { return fSurfaceBase; }
@@ -975,8 +988,6 @@ private:
         fSurfaceBase = sb;
     }
     friend class SkSurface_Base;
-
-    void prepareForDeviceDraw(SkDevice*, const SkMatrix&, const SkRegion&);
 
     bool fDeviceCMDirty;            // cleared by updateDeviceCMCache()
     void updateDeviceCMCache();
@@ -993,7 +1004,7 @@ private:
     // canvas apis, without confusing subclasses (like SkPictureRecording)
     void internalDrawBitmap(const SkBitmap&, const SkIRect*, const SkMatrix& m,
                                   const SkPaint* paint);
-    void internalDrawBitmapRect(const SkBitmap& bitmap, const SkIRect* src,
+    void internalDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src,
                                 const SkRect& dst, const SkPaint* paint);
     void internalDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,
                                 const SkRect& dst, const SkPaint* paint);
@@ -1025,9 +1036,6 @@ private:
         return fLocalBoundsCompareType;
     }
     void computeLocalClipBoundsCompareType() const;
-
-    SkMatrix    fExternalMatrix, fExternalInverse;
-    bool        fUseExternalMatrix;
 
     class AutoValidateClip : ::SkNoncopyable {
     public:

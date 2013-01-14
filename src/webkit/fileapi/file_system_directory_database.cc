@@ -4,8 +4,10 @@
 
 #include "webkit/fileapi/file_system_directory_database.h"
 
-#include <algorithm>
 #include <math.h>
+#include <algorithm>
+#include <set>
+#include <stack>
 
 #include "base/file_util.h"
 #include "base/location.h"
@@ -256,8 +258,8 @@ bool DatabaseCheckHelper::ScanDatabase() {
 }
 
 bool DatabaseCheckHelper::ScanDirectory() {
-  // Scans all local file system entries to verify each of them has a database
-  // entry.
+  // TODO(kinuko): Scans all local file system entries to verify each of them
+  // has a database entry.
   const FilePath kExcludes[] = {
     FilePath(kDirectoryDatabaseName),
     FilePath(fileapi::FileSystemUsageCache::kUsageFileName),
@@ -367,6 +369,27 @@ bool DatabaseCheckHelper::ScanHierarchy() {
       num_hierarchy_links_in_db_ == visited_links;
 }
 
+// Returns true if the given |data_path| contains no parent references ("..")
+// and does not refer to special system files.
+// This is called in GetFileInfo, AddFileInfo and UpdateFileInfo to
+// ensure we're only dealing with valid data paths.
+bool VerifyDataPath(const FilePath& data_path) {
+  // |data_path| should not contain any ".." and should be a relative path
+  // (to the filesystem_data_directory_).
+  if (data_path.ReferencesParent() || data_path.IsAbsolute())
+    return false;
+  // See if it's not pointing to the special system paths.
+  const FilePath kExcludes[] = {
+    FilePath(kDirectoryDatabaseName),
+    FilePath(fileapi::FileSystemUsageCache::kUsageFileName),
+  };
+  for (size_t i = 0; i < arraysize(kExcludes); ++i) {
+    if (data_path == kExcludes[i] || kExcludes[i].IsParent(data_path))
+      return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 namespace fileapi {
@@ -459,8 +482,16 @@ bool FileSystemDirectoryDatabase::GetFileInfo(FileId file_id, FileInfo* info) {
   leveldb::Status status =
       db_->Get(leveldb::ReadOptions(), file_key, &file_data_string);
   if (status.ok()) {
-    return FileInfoFromPickle(
+    bool success = FileInfoFromPickle(
         Pickle(file_data_string.data(), file_data_string.length()), info);
+    if (!success)
+      return false;
+    if (!VerifyDataPath(info->data_path)) {
+      LOG(ERROR) << "Resolved data path is invalid: "
+                 << info->data_path.value();
+      return false;
+    }
+    return true;
   }
   // Special-case the root, for databases that haven't been initialized yet.
   // Without this, a query for the root's file info, made before creating the
@@ -535,8 +566,8 @@ bool FileSystemDirectoryDatabase::RemoveFileInfo(FileId file_id) {
 
 bool FileSystemDirectoryDatabase::UpdateFileInfo(
     FileId file_id, const FileInfo& new_info) {
-  // TODO: We should also check to see that this doesn't create a loop, but
-  // perhaps only in a debug build.
+  // TODO(ericu): We should also check to see that this doesn't create a loop,
+  // but perhaps only in a debug build.
   if (!Init(REPAIR_ON_CORRUPTION))
     return false;
   DCHECK(file_id);  // You can't remove the root, ever.  Just delete the DB.
@@ -819,6 +850,10 @@ bool FileSystemDirectoryDatabase::VerifyIsDirectory(FileId file_id) {
 // This does very few safety checks!
 bool FileSystemDirectoryDatabase::AddFileInfoHelper(
     const FileInfo& info, FileId file_id, leveldb::WriteBatch* batch) {
+  if (!VerifyDataPath(info.data_path)) {
+    LOG(ERROR) << "Invalid data path is given: " << info.data_path.value();
+    return false;
+  }
   std::string id_string = GetFileLookupKey(file_id);
   if (!file_id) {
     // The root directory doesn't need to be looked up by path from its parent.

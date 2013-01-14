@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006, 2007, 2008, 2009, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2006, 2007, 2008, 2009, 2011, 2012 Apple Inc. All rights reserved.
  *           (C) 2006 Graham Dennis (graham.dennis@gmail.com)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 
 #include "EditingBehaviorTypes.h"
 #include "FontRenderingMode.h"
+#include "IntSize.h"
 #include "KURL.h"
 #include "SecurityOrigin.h"
 #include "Timer.h"
@@ -36,10 +37,6 @@
 #include <wtf/text/AtomicString.h>
 #include <wtf/text/AtomicStringHash.h>
 #include <wtf/unicode/Unicode.h>
-
-#if ENABLE(TEXT_AUTOSIZING)
-#include "IntSize.h"
-#endif
 
 namespace WebCore {
 
@@ -108,6 +105,9 @@ namespace WebCore {
         void setDefaultFixedFontSize(int);
         int defaultFixedFontSize() const { return m_defaultFixedFontSize; }
 
+        void setScreenFontSubstitutionEnabled(bool);
+        bool screenFontSubstitutionEnabled() const { return m_screenFontSubstitutionEnabled; }
+
 #if ENABLE(TEXT_AUTOSIZING)
         void setTextAutosizingEnabled(bool);
         bool textAutosizingEnabled() const { return m_textAutosizingEnabled; }
@@ -119,6 +119,14 @@ namespace WebCore {
         void setTextAutosizingWindowSizeOverride(const IntSize&);
         const IntSize& textAutosizingWindowSizeOverride() const { return m_textAutosizingWindowSizeOverride; }
 #endif
+
+        // Only set by Layout Tests.
+        void setResolutionOverride(const IntSize&);
+        const IntSize& resolutionOverride() const { return m_resolutionDensityPerInchOverride; }
+
+        // Only set by Layout Tests.
+        void setMediaTypeOverride(const String&);
+        const String& mediaTypeOverride() const { return m_mediaTypeOverride; }
 
         // Unlike areImagesEnabled, this only suppresses the network load of
         // the image URL.  A cached image will still be rendered if requested.
@@ -147,6 +155,9 @@ namespace WebCore {
 
         void setJavaScriptCanOpenWindowsAutomatically(bool);
         bool javaScriptCanOpenWindowsAutomatically() const { return m_javaScriptCanOpenWindowsAutomatically; }
+
+        void setSupportsMultipleWindows(bool);
+        bool supportsMultipleWindows() const { return m_supportsMultipleWindows; }
 
         void setJavaScriptCanAccessClipboard(bool);
         bool javaScriptCanAccessClipboard() const { return m_javaScriptCanAccessClipboard; }
@@ -250,6 +261,12 @@ namespace WebCore {
         
         void setMinDOMTimerInterval(double); // Per-page; initialized to default value.
         double minDOMTimerInterval();
+
+        static void setDefaultDOMTimerAlignmentInterval(double);
+        static double defaultDOMTimerAlignmentInterval();
+
+        void setDOMTimerAlignmentInterval(double);
+        double domTimerAlignmentInterval() const;
 
         void setUsesPageCache(bool);
         bool usesPageCache() const { return m_usesPageCache; }
@@ -548,6 +565,9 @@ namespace WebCore {
         static void setMockScrollbarsEnabled(bool flag);
         static bool mockScrollbarsEnabled();
 
+        static void setUsesOverlayScrollbars(bool flag);
+        static bool usesOverlayScrollbars();
+
         void setVisualWordMovementEnabled(bool enabled) { m_visualWordMovementEnabled = enabled; }
         bool visualWordMovementEnabled() const { return m_visualWordMovementEnabled; }
 
@@ -627,6 +647,12 @@ namespace WebCore {
         void setDiagnosticLoggingEnabled(bool enabled) { m_diagnosticLoggingEnabled = enabled; }
         bool diagnosticLoggingEnabled() const { return m_diagnosticLoggingEnabled; }
 
+        void setApplyPageScaleFactorInCompositor(bool enabled) { m_applyPageScaleFactorInCompositor = enabled; }
+        bool applyPageScaleFactorInCompositor() const { return m_applyPageScaleFactorInCompositor; }
+
+        void setPlugInSnapshottingEnabled(bool enabled) { m_plugInSnapshottingEnabled = enabled; }
+        bool plugInSnapshottingEnabled() const { return m_plugInSnapshottingEnabled; }
+
     private:
         explicit Settings(Page*);
 
@@ -637,6 +663,7 @@ namespace WebCore {
         String m_defaultTextEncodingName;
         String m_ftpDirectoryTemplatePath;
         String m_localStorageDatabasePath;
+        String m_mediaTypeOverride;
         KURL m_userStyleSheetLocation;
         ScriptFontFamilyMap m_standardFontFamilyMap;
         ScriptFontFamilyMap m_serifFontFamilyMap;
@@ -652,6 +679,7 @@ namespace WebCore {
         int m_minimumLogicalFontSize;
         int m_defaultFontSize;
         int m_defaultFixedFontSize;
+        bool m_screenFontSubstitutionEnabled;
         int m_validationMessageTimerMagnification;
         int m_minimumAccelerated2dCanvasSize;
         int m_layoutFallbackWidth;
@@ -667,6 +695,7 @@ namespace WebCore {
         IntSize m_textAutosizingWindowSizeOverride;
         bool m_textAutosizingEnabled : 1;
 #endif
+        IntSize m_resolutionDensityPerInchOverride;
         bool m_isSpatialNavigationEnabled : 1;
         bool m_isJavaEnabled : 1;
         bool m_isJavaEnabledForLocalFiles : 1;
@@ -683,6 +712,7 @@ namespace WebCore {
         bool m_allowUniversalAccessFromFileURLs: 1;
         bool m_allowFileAccessFromFileURLs: 1;
         bool m_javaScriptCanOpenWindowsAutomatically : 1;
+        bool m_supportsMultipleWindows : 1;
         bool m_javaScriptCanAccessClipboard : 1;
         bool m_shouldPrintBackgrounds : 1;
         bool m_textAreasAreResizable : 1;
@@ -811,15 +841,22 @@ namespace WebCore {
 
         bool m_scrollingPerformanceLoggingEnabled : 1;
 
-        Timer<Settings> m_loadsImagesAutomaticallyTimer;
-        void loadsImagesAutomaticallyTimerFired(Timer<Settings>*);
-        
+        bool m_applyPageScaleFactorInCompositor : 1;
+        bool m_plugInSnapshottingEnabled : 1;
+
+        Timer<Settings> m_setImageLoadingSettingsTimer;
+        void imageLoadingSettingsTimerFired(Timer<Settings>*);
+
         double m_incrementalRenderingSuppressionTimeoutInSeconds;
+
+        static double gDefaultMinDOMTimerInterval;
+        static double gDefaultDOMTimerAlignmentInterval;
 
 #if USE(AVFOUNDATION)
         static bool gAVFoundationEnabled;
 #endif
         static bool gMockScrollbarsEnabled;
+        static bool gUsesOverlayScrollbars;
 
 #if USE(SAFARI_THEME)
         static bool gShouldPaintNativeControls;

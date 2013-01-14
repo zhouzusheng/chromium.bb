@@ -57,9 +57,8 @@ void GrStencilAndCoverPathRenderer::drawPathToStencil(const SkPath& path,
 
 bool GrStencilAndCoverPathRenderer::onDrawPath(const SkPath& path,
                                                GrPathFill fill,
-                                               const GrVec* translate,
                                                GrDrawTarget* target,
-                                               bool antiAlias){
+                                               bool antiAlias) {
     GrAssert(!antiAlias);
     GrAssert(kHairLine_GrPathFill != fill);
 
@@ -67,11 +66,7 @@ bool GrStencilAndCoverPathRenderer::onDrawPath(const SkPath& path,
     GrAssert(drawState->getStencil().isDisabled());
 
     SkAutoTUnref<GrPath> p(fGpu->createPath(path));
-    GrDrawState::AutoViewMatrixRestore avmr;
-    if (translate) {
-        avmr.set(drawState);
-        drawState->viewMatrix()->postTranslate(translate->fX, translate->fY);
-    }
+
     GrPathFill nonInvertedFill = GrNonInvertedFill(fill);
     target->stencilPath(p, nonInvertedFill);
 
@@ -81,6 +76,8 @@ bool GrStencilAndCoverPathRenderer::onDrawPath(const SkPath& path,
     // fill the path, zero out the stencil
     GrRect bounds = p->getBounds();
     GrScalar bloat = drawState->getViewMatrix().getMaxStretch() * GR_ScalarHalf;
+    GrDrawState::AutoDeviceCoordDraw adcd;
+
     if (nonInvertedFill == fill) {
         GR_STATIC_CONST_SAME_STENCIL(kStencilPass,
             kZero_StencilOp,
@@ -111,14 +108,7 @@ bool GrStencilAndCoverPathRenderer::onDrawPath(const SkPath& path,
             // theoretically could set bloat = 0, instead leave it because of matrix inversion
             // precision.
         } else {
-            if (!drawState->preConcatSamplerMatricesWithInverse(drawState->getViewMatrix())) {
-                GrPrintf("Could not invert matrix.\n");
-                return false;
-            }
-            if (avmr.isSet()) {
-                avmr.set(drawState);
-            }
-            drawState->viewMatrix()->reset();
+            adcd.set(drawState);
             bloat = 0;
         }
         *drawState->stencil() = kInvertedStencilPass;

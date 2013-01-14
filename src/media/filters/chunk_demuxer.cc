@@ -263,12 +263,13 @@ ChunkDemuxerStream::ChunkDemuxerStream(const VideoDecoderConfig& video_config)
 }
 
 void ChunkDemuxerStream::StartWaitingForSeek() {
-  DVLOG(1) << "StartWaitingForSeek()";
+  DVLOG(1) << "ChunkDemuxerStream::StartWaitingForSeek()";
   ReadCBQueue read_cbs;
   {
     base::AutoLock auto_lock(lock_);
+    if (state_ != CANCELED)
+      end_of_stream_ = false;
     ChangeState_Locked(WAITING_FOR_SEEK);
-    end_of_stream_ = false;
     std::swap(read_cbs_, read_cbs);
   }
 
@@ -292,11 +293,12 @@ void ChunkDemuxerStream::Seek(TimeDelta time) {
 }
 
 void ChunkDemuxerStream::CancelPendingSeek() {
-  DVLOG(1) << "CancelPendingSeek()";
+  DVLOG(1) << "ChunkDemuxerStream::CancelPendingSeek()";
   ReadCBQueue read_cbs;
   {
     base::AutoLock auto_lock(lock_);
     ChangeState_Locked(CANCELED);
+    end_of_stream_ = false;
     std::swap(read_cbs_, read_cbs);
   }
 
@@ -638,6 +640,9 @@ void ChunkDemuxer::CancelPendingSeek() {
 
     if (video_)
       video_->CancelPendingSeek();
+
+    if (state_ == ENDED)
+      ChangeState_Locked(INITIALIZED);
   }
 
   if (!cb.is_null())
@@ -1111,10 +1116,11 @@ bool ChunkDemuxer::OnVideoBuffers(const StreamParser::BufferQueue& buffers) {
 // TODO(acolwell): Remove bool from StreamParser::NeedKeyCB so that
 // this method can be removed and need_key_cb_ can be passed directly
 // to the parser.
-bool ChunkDemuxer::OnNeedKey(scoped_array<uint8> init_data,
+bool ChunkDemuxer::OnNeedKey(const std::string& type,
+                             scoped_array<uint8> init_data,
                              int init_data_size) {
   lock_.AssertAcquired();
-  need_key_cb_.Run(init_data.Pass(), init_data_size);
+  need_key_cb_.Run(type, init_data.Pass(), init_data_size);
   return true;
 }
 

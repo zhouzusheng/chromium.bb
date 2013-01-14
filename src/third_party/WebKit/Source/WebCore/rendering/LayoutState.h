@@ -38,6 +38,9 @@ class RenderBlock;
 class RenderBox;
 class RenderObject;
 class RenderFlowThread;
+#if ENABLE(CSS_EXCLUSIONS)
+class ExclusionShapeInsideInfo;
+#endif
 
 class LayoutState {
     WTF_MAKE_NONCOPYABLE(LayoutState);
@@ -45,6 +48,10 @@ public:
     LayoutState()
         : m_clipped(false)
         , m_isPaginated(false)
+#if !ASSERT_DISABLED && ENABLE(SATURATED_LAYOUT_ARITHMETIC)
+        , m_layoutDeltaXSaturated(false)
+        , m_layoutDeltaYSaturated(false)
+#endif
         , m_pageLogicalHeight(0)
         , m_pageLogicalHeightChanged(false)
         , m_columnInfo(0)
@@ -52,6 +59,9 @@ public:
         , m_next(0)
 #ifndef NDEBUG
         , m_renderer(0)
+#endif
+#if ENABLE(CSS_EXCLUSIONS)
+        , m_exclusionShapeInsideInfo(0)
 #endif
     {
     }
@@ -88,6 +98,9 @@ public:
 
     bool needsBlockDirectionLocationSetBeforeLayout() const { return m_lineGrid || (m_isPaginated && m_pageLogicalHeight); }
 
+#if ENABLE(CSS_EXCLUSIONS)
+    ExclusionShapeInsideInfo* exclusionShapeInsideInfo() const { return m_exclusionShapeInsideInfo; }
+#endif
 private:
     // The normal operator new is disallowed.
     void* operator new(size_t) throw();
@@ -100,6 +113,10 @@ private:
 public:
     bool m_clipped;
     bool m_isPaginated;
+#if !ASSERT_DISABLED && ENABLE(SATURATED_LAYOUT_ARITHMETIC)
+    bool m_layoutDeltaXSaturated;
+    bool m_layoutDeltaYSaturated;
+#endif
     LayoutRect m_clipRect;
     
     // x/y offset from container. Includes relative positioning and scroll offsets.
@@ -128,6 +145,9 @@ public:
     LayoutState* m_next;
 #ifndef NDEBUG
     RenderObject* m_renderer;
+#endif
+#if ENABLE(CSS_EXCLUSIONS)
+    ExclusionShapeInsideInfo* m_exclusionShapeInsideInfo;
 #endif
 };
 

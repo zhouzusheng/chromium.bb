@@ -47,16 +47,18 @@ class ChromeClientImpl;
 
 class DateTimeChooserImpl : public WebCore::DateTimeChooser, public WebCore::PagePopupClient {
 public:
-    DateTimeChooserImpl(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    static PassRefPtr<DateTimeChooserImpl> create(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
     virtual ~DateTimeChooserImpl();
 
     // DateTimeChooser functions:
     virtual void endChooser() OVERRIDE;
 
 private:
+    DateTimeChooserImpl(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
     // PagePopupClient functions:
     virtual WebCore::IntSize contentSize() OVERRIDE;
     virtual void writeDocument(WebCore::DocumentWriter&) OVERRIDE;
+    virtual WebCore::Locale& locale() OVERRIDE;
     virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
     virtual void didClosePopup() OVERRIDE;
 
@@ -64,6 +66,7 @@ private:
     WebCore::DateTimeChooserClient* m_client;
     WebCore::PagePopup* m_popup;
     WebCore::DateTimeChooserParameters m_parameters;
+    OwnPtr<WebCore::Locale> m_locale;
 };
 
 }

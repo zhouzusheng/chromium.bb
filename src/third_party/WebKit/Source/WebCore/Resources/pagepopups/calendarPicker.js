@@ -72,7 +72,8 @@ var ClassNames = {
  */
 var global = {
     argumentsReceived: false,
-    params: null
+    params: null,
+    picker: null
 };
 
 // ----------------------------------------------------------------
@@ -233,31 +234,32 @@ function handleArgumentsTimeout() {
         cancelLabel : "Cancel",
         currentValue : "",
         weekStartDay : 0,
-        step : 1
+        step : CalendarPicker.DefaultStepScaleFactor,
+        stepBase: CalendarPicker.DefaultStepBase
     };
     initialize(args);
 }
 
 /**
- * @param {!Object} args
+ * @param {!Object} config
  * @return {?string} An error message, or null if the argument has no errors.
  */
-function validateArguments(args) {
-    if (!args.monthLabels)
+CalendarPicker.validateConfig = function(config) {
+    if (!config.monthLabels)
         return "No monthLabels.";
-    if (args.monthLabels.length != 12)
+    if (config.monthLabels.length != 12)
         return "monthLabels is not an array with 12 elements.";
-    if (!args.dayLabels)
+    if (!config.dayLabels)
         return "No dayLabels.";
-    if (args.dayLabels.length != 7)
+    if (config.dayLabels.length != 7)
         return "dayLabels is not an array with 7 elements.";
-    if (!args.clearLabel)
+    if (!config.clearLabel)
         return "No clearLabel.";
-    if (!args.todayLabel)
+    if (!config.todayLabel)
         return "No todayLabel.";
-    if (args.weekStartDay) {
-        if (args.weekStartDay < 0 || args.weekStartDay > 6)
-            return "Invalid weekStartDay: " + args.weekStartDay;
+    if (config.weekStartDay) {
+        if (config.weekStartDay < 0 || config.weekStartDay > 6)
+            return "Invalid weekStartDay: " + config.weekStartDay;
     }
     return null;
 }
@@ -265,27 +267,39 @@ function validateArguments(args) {
 /**
  * @param {!Object} args
  */
-function initialize(args) {
-    var errorString = validateArguments(args);
+function initialize(args) { 
+    global.params = args;
+    var errorString = CalendarPicker.validateConfig(args);
+    if (args.suggestionValues)
+        errorString = errorString || SuggestionPicker.validateConfig(args)
     if (errorString) {
         var main = $("main");
         main.textContent = "Internal error: " + errorString;
         resizeWindow(main.offsetWidth, main.offsetHeight);
     } else {
-        global.params = args;
-        openCalendarPicker();
+        if (global.params.suggestionValues && global.params.suggestionValues.length)
+            openSuggestionPicker();
+        else
+            openCalendarPicker();
     }
 }
 
-function resetMain() {
+function closePicker() {
+    if (global.picker)
+        global.picker.cleanup();
     var main = $("main");
     main.innerHTML = "";
     main.className = "";
 };
 
+function openSuggestionPicker() {
+    closePicker();
+    global.picker = new SuggestionPicker($("main"), global.params);
+};
+
 function openCalendarPicker() {
-    resetMain();
-    new CalendarPicker($("main"), global.params);
+    closePicker();
+    global.picker = new CalendarPicker($("main"), global.params);
 };
 
 /**
@@ -295,11 +309,16 @@ function openCalendarPicker() {
  */
 function CalendarPicker(element, config) {
     Picker.call(this, element, config);
+    this._element.classList.add("calendar-picker");
+    this._element.classList.add("preparing");
+    this._handleWindowResizeBound = this._handleWindowResize.bind(this);
+    window.addEventListener("resize", this._handleWindowResizeBound, false);
     // We assume this._config.min is a valid date.
     this.minimumDate = (typeof this._config.min !== "undefined") ? parseDateString(this._config.min) : CalendarPicker.MinimumPossibleDate;
     // We assume this._config.max is a valid date.
     this.maximumDate = (typeof this._config.max !== "undefined") ? parseDateString(this._config.max) : CalendarPicker.MaximumPossibleDate;
-    this.step = (typeof this._config.step !== undefined) ? this._config.step : CalendarPicker.BaseStep;
+    this.step = (typeof this._config.step !== undefined) ? Number(this._config.step) : CalendarPicker.DefaultStepScaleFactor;
+    this.stepBase = (typeof this._config.stepBase !== "undefined") ? Number(this._config.stepBase) : CalendarPicker.DefaultStepBase;
     this.yearMonthController = new YearMonthController(this);
     this.daysTable = new DaysTable(this);
     this._hadKeyEvent = false;
@@ -311,7 +330,8 @@ function CalendarPicker(element, config) {
         initialDate = this.maximumDate;
     this.daysTable.selectDate(initialDate);
     this.fixWindowSize();
-    document.body.addEventListener("keydown", this._handleBodyKeyDown.bind(this), false);
+    this._handleBodyKeyDownBound = this._handleBodyKeyDown.bind(this);
+    document.body.addEventListener("keydown", this._handleBodyKeyDownBound, false);
 }
 CalendarPicker.prototype = Object.create(Picker.prototype);
 
@@ -319,10 +339,20 @@ CalendarPicker.prototype = Object.create(Picker.prototype);
 CalendarPicker.MinimumPossibleDate = new Date(-62135596800000.0);
 CalendarPicker.MaximumPossibleDate = new Date(8640000000000000.0);
 // See WebCore/html/DateInputType.cpp.
-CalendarPicker.BaseStep = 86400000;
+CalendarPicker.DefaultStepScaleFactor = 86400000;
+CalendarPicker.DefaultStepBase = 0.0;
+
+CalendarPicker.prototype._handleWindowResize = function() {
+    this._element.classList.remove("preparing");
+};
+
+CalendarPicker.prototype.cleanup = function() {
+    document.body.removeEventListener("keydown", this._handleBodyKeyDownBound, false);
+};
 
 CalendarPicker.prototype._layout = function() {
-    this._element.style.direction = global.params.isRTL ? "rtl" : "ltr";
+    if (this._config.isCalendarRTL)
+        this._element.classList.add("rtl");
     this.yearMonthController.attachTo(this._element);
     this.daysTable.attachTo(this._element);
     this._layoutButtons();
@@ -352,7 +382,7 @@ CalendarPicker.prototype.fixWindowSize = function() {
     var DaysAreaContainerBorder = 1;
     var yearMonthEnd;
     var daysAreaEnd;
-    if (global.params.isRTL) {
+    if (global.params.isCalendarRTL) {
         var startOffset = this._element.offsetLeft + this._element.offsetWidth;
         yearMonthEnd = startOffset - yearMonthRightElement.offsetLeft;
         daysAreaEnd = startOffset - (daysAreaElement.offsetLeft + daysAreaElement.offsetWidth) + maxCellWidth * 7 + DaysAreaContainerBorder;
@@ -460,7 +490,7 @@ YearMonthController.prototype.attachTo = function(element) {
     }
     this._month.style.minWidth = maxWidth + 'px';
 
-    global.firstFocusableControl = this._left2; // FIXME: Should it be this.month?
+    this.picker.firstFocusableControl = this._left2; // FIXME: Should it be this.month?
 };
 
 YearMonthController.addTenYearsButtons = false;
@@ -773,14 +803,6 @@ function DaysTable(picker) {
     /**
      * @type {!number}
      */
-    this._x = -1;
-    /**
-     * @type {!number}
-     */
-    this._y = -1;
-    /**
-     * @type {!number}
-     */
     this._currentYear = -1;
     /**
      * @type {!number}
@@ -792,7 +814,7 @@ function DaysTable(picker) {
  * @return {!boolean}
  */
 DaysTable.prototype._hasSelection = function() {
-    return this._x >= 0 && this._y >= 0;
+    return !!this._firstNodeInSelectedRange();
 }
 
 /**
@@ -844,7 +866,7 @@ DaysTable.prototype.attachTo = function(element) {
  * @return {!boolean}
  */
 CalendarPicker.prototype.stepMismatch = function(time) {
-    return (time - this.minimumDate.getTime()) % this.step != 0;
+    return (time - this.stepBase) % this.step != 0;
 }
 
 /**
@@ -958,27 +980,62 @@ DaysTable.prototype._moveInDays = function() {
 DaysTable.prototype.navigateToMonthAndKeepSelectionPosition = function(year, month) {
     if (year == this._currentYear && month == this._currentMonth)
         return;
+    var firstNodeInSelectedRange = this._firstNodeInSelectedRange();
     this._navigateToMonthWithAnimation(year, month);
-    if (this._hasSelection())
-        this._days[this._y][this._x].classList.add(ClassNames.Selected);
+    if (firstNodeInSelectedRange) {
+        var x = parseInt(firstNodeInSelectedRange.dataset.positionX, 10);
+        var y = parseInt(firstNodeInSelectedRange.dataset.positionY, 10);
+        this._selectRangeAtPosition(x, y);
+    }
 };
 
 /**
  * @param {!Date} date
  */
 DaysTable.prototype.selectDate = function(date) {
+    this._deselect();
     this._navigateToMonthWithAnimation(date.getUTCFullYear(), date.getUTCMonth());
     var dateString = serializeDate(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
     for (var w = 0; w < DaysTable._Weeks; w++) {
         for (var d = 0; d < 7; d++) {
             if (this._days[w][d].dataset.submitValue == dateString) {
                 this._days[w][d].classList.add(ClassNames.Selected);
-                this._x = d;
-                this._y = w;
                 break;
             }
         }
     }
+};
+
+/**
+ * @param {!Element} dayNode
+ */
+DaysTable.prototype._selectRangeContainingNode = function(dayNode) {
+    this._deselect();
+    if (!dayNode || !dayNode.classList.contains(ClassNames.Day) || !dayNode.classList.contains(ClassNames.Available))
+        return;
+    // FIXME: Select date, week or month depending on the config.
+    dayNode.classList.add(ClassNames.Selected);
+};
+
+/**
+ * @param {!number} x
+ * @param {!number} y
+ */
+DaysTable.prototype._selectRangeAtPosition = function(x, y) {
+    this._selectRangeContainingNode(this._days[y][x]);
+};
+
+/**
+ * @return {!Element}
+ */
+DaysTable.prototype._firstNodeInSelectedRange = function() {
+    return this._daysContainer.getElementsByClassName(ClassNames.Selected)[0];
+};
+
+DaysTable.prototype._deselect = function() {
+    var selectedNodes = this._daysContainer.getElementsByClassName(ClassNames.Selected);
+    for (var node = selectedNodes[0]; node; node = selectedNodes[0])
+        node.classList.remove(ClassNames.Selected);
 };
 
 /**
@@ -1030,26 +1087,16 @@ DaysTable.prototype._handleDayClick = function(event) {
  */
 DaysTable.prototype._handleMouseOver = function(event) {
     var node = event.target;
-    if (this._hasSelection())
-        this._days[this._y][this._x].classList.remove(ClassNames.Selected);
-    if (!node.classList.contains(ClassNames.Day)) {
-        this._x = -1;
-        this._y = -1;
+    if (node.classList.contains(ClassNames.Selected))
         return;
-    }
-    node.classList.add(ClassNames.Selected);
-    this._x = Number(node.dataset.positionX);
-    this._y = Number(node.dataset.positionY);
+    this._selectRangeContainingNode(node);
 };
 
 /**
  * @param {Event} event
  */
 DaysTable.prototype._handleMouseOut = function(event) {
-    if (this._hasSelection())
-        this._days[this._y][this._x].classList.remove(ClassNames.Selected);
-    this._x = -1;
-    this._y = -1;
+    this._deselect();
 };
 
 /**
@@ -1057,16 +1104,21 @@ DaysTable.prototype._handleMouseOut = function(event) {
  */
 DaysTable.prototype._handleKey = function(event) {
     this.picker.maybeUpdateFocusStyle();
-    var x = this._x;
-    var y = this._y;
+    var x = -1;
+    var y = -1;
     var key = event.keyIdentifier;
+    var firstNodeInSelectedRange = this._firstNodeInSelectedRange();
+    if (firstNodeInSelectedRange) {
+        x = parseInt(firstNodeInSelectedRange.dataset.positionX, 10);
+        y = parseInt(firstNodeInSelectedRange.dataset.positionY, 10);
+    }
     if (!this._hasSelection() && (key == "Left" || key == "Up" || key == "Right" || key == "Down")) {
         // Put the selection on a center cell.
         this.updateSelection(event, 3, Math.floor(DaysTable._Weeks / 2 - 1));
         return;
     }
 
-    if (key == (global.params.isRTL ? "Right" : "Left")) {
+    if (key == (global.params.isCalendarRTL ? "Right" : "Left")) {
         if (x == 0) {
             if (y == 0) {
                 if (!this._maybeSetPreviousMonth())
@@ -1088,7 +1140,7 @@ DaysTable.prototype._handleKey = function(event) {
             y--;
         this.updateSelection(event, x, y);
 
-    } else if (key == (global.params.isRTL ? "Left" : "Right")) {
+    } else if (key == (global.params.isCalendarRTL ? "Left" : "Right")) {
         if (x == 6) {
             if (y == DaysTable._Weeks - 1) {
                 if (!this._maybeSetNextMonth())
@@ -1128,7 +1180,6 @@ DaysTable.prototype._handleKey = function(event) {
         }
 
     } else if (key == "U+0054") { // 't'
-        this._days[this._y][this._x].classList.remove(ClassNames.Selected);
         this.selectDate(new Date());
         event.stopPropagation();
         event.preventDefault();
@@ -1141,13 +1192,7 @@ DaysTable.prototype._handleKey = function(event) {
  * @param {!number} y
  */
 DaysTable.prototype.updateSelection = function(event, x, y) {
-    if (this._hasSelection())
-        this._days[this._y][this._x].classList.remove(ClassNames.Selected);
-    if (x >= 0 && y >= 0) {
-        this._days[y][x].classList.add(ClassNames.Selected);
-        this._x = x;
-        this._y = y;
-    }
+    this._selectRangeAtPosition(x, y);
     event.stopPropagation();
     event.preventDefault();
 };
@@ -1159,11 +1204,11 @@ CalendarPicker.prototype._handleBodyKeyDown = function(event) {
     this.maybeUpdateFocusStyle();
     var key = event.keyIdentifier;
     if (key == "U+0009") {
-        if (!event.shiftKey && document.activeElement == global.lastFocusableControl) {
+        if (!event.shiftKey && document.activeElement == this.lastFocusableControl) {
             event.stopPropagation();
             event.preventDefault();
             this.firstFocusableControl.focus();
-        } else if (event.shiftKey && document.activeElement == global.firstFocusableControl) {
+        } else if (event.shiftKey && document.activeElement == this.firstFocusableControl) {
             event.stopPropagation();
             event.preventDefault();
             this.lastFocusableControl.focus();

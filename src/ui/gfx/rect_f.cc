@@ -36,14 +36,34 @@ RectF::RectF(const gfx::PointF& origin, const gfx::SizeF& size)
 
 RectF::~RectF() {}
 
-Rect RectF::ToRect() const {
-  return Rect(origin().ToPoint(), size().ToSize());
-}
-
 std::string RectF::ToString() const {
   return base::StringPrintf("%s %s",
                             origin().ToString().c_str(),
                             size().ToString().c_str());
+}
+
+RectF IntersectRects(const RectF& a, const RectF& b) {
+  RectF result = a;
+  result.Intersect(b);
+  return result;
+}
+
+RectF UnionRects(const RectF& a, const RectF& b) {
+  RectF result = a;
+  result.Union(b);
+  return result;
+}
+
+RectF SubtractRects(const RectF& a, const RectF& b) {
+  RectF result = a;
+  result.Subtract(b);
+  return result;
+}
+
+RectF ScaleRect(const RectF& r, float x_scale, float y_scale) {
+  RectF result = r;
+  result.Scale(x_scale, y_scale);
+  return result;
 }
 
 }  // namespace gfx

@@ -11,6 +11,7 @@
 #include "base/nullable_string16.h"
 #include "base/string16.h"
 #include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 class GURL;
 
@@ -26,7 +27,7 @@ class DomStorageArea;
 // This class is single threaded, and performs blocking file reads/writes,
 // so it shouldn't be used on chrome's IO thread.
 // See class comments for DomStorageContext for a larger overview.
-class DomStorageHost {
+class WEBKIT_STORAGE_EXPORT DomStorageHost {
  public:
   explicit DomStorageHost(DomStorageContext* context);
   ~DomStorageHost();

@@ -35,6 +35,7 @@
 #include "CSSParserMode.h"
 #include "Document.h"
 #include "DocumentLoader.h"
+#include "DocumentStyleSheetCollection.h"
 #include "DocumentType.h"
 #include "Element.h"
 #include "HTMLAllCollection.h"
@@ -55,8 +56,7 @@
 #include "WebFrameImpl.h"
 #include "WebNodeCollection.h"
 #include "WebNodeList.h"
-#include "platform/WebURL.h"
-
+#include <public/WebURL.h>
 #include <wtf/PassRefPtr.h>
 
 using namespace WebCore;
@@ -78,6 +78,11 @@ WebSecurityOrigin WebDocument::securityOrigin() const
 WebString WebDocument::encoding() const
 {
     return constUnwrap<Document>()->encoding();
+}
+
+WebString WebDocument::contentLanguage() const
+{
+    return constUnwrap<Document>()->contentLanguage();
 }
 
 WebURL WebDocument::openSearchDescriptionURL() const
@@ -189,14 +194,17 @@ WebDocumentType WebDocument::doctype() const
     return WebDocumentType(constUnwrap<Document>()->doctype());
 }
 
-void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel level)
+void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel styleLevel)
 {
     RefPtr<Document> document = unwrap<Document>();
 
     RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(document.get());
-    parsedSheet->setIsUserStyleSheet(level == UserStyleUserLevel);
+    parsedSheet->setIsUserStyleSheet(styleLevel == UserStyleUserLevel);
     parsedSheet->parseString(sourceCode);
-    document->addUserSheet(parsedSheet.release());
+    if (parsedSheet->isUserStyleSheet())
+        document->styleSheetCollection()->addUserSheet(parsedSheet);
+    else
+        document->styleSheetCollection()->addAuthorSheet(parsedSheet);
 }
 
 void WebDocument::cancelFullScreen()
@@ -255,16 +263,15 @@ WebAccessibilityObject WebDocument::accessibilityObjectFromID(int axID) const
 WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
 {
     WebVector<WebDraggableRegion> draggableRegions;
-#if ENABLE(WIDGET_REGION)
+#if ENABLE(DRAGGABLE_REGION)
     const Document* document = constUnwrap<Document>();
-    if (document->hasDashboardRegions()) {
-        const Vector<DashboardRegionValue>& regions = document->dashboardRegions();
+    if (document->hasAnnotatedRegions()) {
+        const Vector<AnnotatedRegionValue>& regions = document->annotatedRegions();
         draggableRegions = WebVector<WebDraggableRegion>(regions.size());
         for (size_t i = 0; i < regions.size(); i++) {
-            const DashboardRegionValue& value = regions[i];
-            draggableRegions[i].label = value.label;
+            const AnnotatedRegionValue& value = regions[i];
+            draggableRegions[i].draggable = value.draggable;
             draggableRegions[i].bounds = WebCore::IntRect(value.bounds);
-            draggableRegions[i].clip = WebCore::IntRect(value.clip);
         }
     }
 #endif

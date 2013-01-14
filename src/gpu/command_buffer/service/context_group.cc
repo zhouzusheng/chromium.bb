@@ -9,11 +9,13 @@
 
 #include "base/command_line.h"
 #include "base/string_util.h"
+#include "base/sys_info.h"
 #include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_manager.h"
@@ -28,9 +30,11 @@ namespace gles2 {
 
 ContextGroup::ContextGroup(
     MailboxManager* mailbox_manager,
+    ImageManager* image_manager,
     MemoryTracker* memory_tracker,
     bool bind_generates_resource)
     : mailbox_manager_(mailbox_manager ? mailbox_manager : new MailboxManager),
+      image_manager_(image_manager ? image_manager : new ImageManager),
       memory_tracker_(memory_tracker),
       num_contexts_(0),
       enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -58,6 +62,7 @@ ContextGroup::ContextGroup(
   id_namespaces_[id_namespaces::kRenderbuffers].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kTextures].reset(new IdAllocator);
   id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
+  id_namespaces_[id_namespaces::kVertexArrays].reset(new IdAllocator);
 }
 
 static void GetIntegerv(GLenum pname, uint32* var) {
@@ -134,26 +139,16 @@ bool ContextGroup::Initialize(const DisallowedFeatures& disallowed_features,
     return false;
   }
 
-  // Limit Intel on Mac to 4096 max tex size and 512 max cube map tex size.
-  // Limit AMD on Mac to 4096 max tex size and max cube map tex size.
-  // TODO(gman): Update this code to check for a specific version of
-  // the drivers above which we no longer need this fix.
-#if defined(OS_MACOSX)
-  if (!feature_info_->feature_flags().disable_workarounds) {
-    if (feature_info_->feature_flags().is_intel) {
-      max_texture_size = std::min(
-          static_cast<GLint>(4096), max_texture_size);
-      max_cube_map_texture_size = std::min(
-          static_cast<GLint>(512), max_cube_map_texture_size);
-    }
-    if (feature_info_->feature_flags().is_amd) {
-      max_texture_size = std::min(
-          static_cast<GLint>(4096), max_texture_size);
-      max_cube_map_texture_size = std::min(
-          static_cast<GLint>(4096), max_cube_map_texture_size);
-    }
+  if (feature_info_->workarounds().max_texture_size) {
+    max_texture_size = std::min(
+        max_texture_size, feature_info_->workarounds().max_texture_size);
   }
-#endif
+  if (feature_info_->workarounds().max_cube_map_texture_size) {
+    max_cube_map_texture_size = std::min(
+        max_cube_map_texture_size,
+        feature_info_->workarounds().max_cube_map_texture_size);
+  }
+
   texture_manager_.reset(new TextureManager(memory_tracker_,
                                             feature_info_.get(),
                                             max_texture_size,

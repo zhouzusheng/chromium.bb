@@ -9,7 +9,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
 #include "media/webm/webm_content_encodings_client.h"
 #include "media/webm/webm_parser.h"
 
@@ -30,8 +29,12 @@ class WebMTracksParser : public WebMParserClient {
 
   int64 audio_track_num() const { return audio_track_num_; }
   int64 video_track_num() const { return video_track_num_; }
-
-  const std::string& video_encryption_key_id() const;
+  const std::string& audio_encryption_key_id() const {
+    return audio_encryption_key_id_;
+  }
+  const std::string& video_encryption_key_id() const {
+    return video_encryption_key_id_;
+  }
 
  private:
   // WebMParserClient methods
@@ -47,10 +50,9 @@ class WebMTracksParser : public WebMParserClient {
   scoped_ptr<WebMContentEncodingsClient> track_content_encodings_client_;
 
   int64 audio_track_num_;
-  scoped_ptr<WebMContentEncodingsClient> audio_content_encodings_client_;
-
   int64 video_track_num_;
-  scoped_ptr<WebMContentEncodingsClient> video_content_encodings_client_;
+  std::string audio_encryption_key_id_;
+  std::string video_encryption_key_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMTracksParser);
 };

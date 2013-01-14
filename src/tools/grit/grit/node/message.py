@@ -102,24 +102,6 @@ class MessageNode(base.ContentNode):
   def IsTranslateable(self):
     return self.attrs['translateable'] == 'true'
 
-  def ItemFormatter(self, t):
-    # Only generate an output if the if condition is satisfied.
-    if not self.SatisfiesOutputCondition():
-      return super(MessageNode, self).ItemFormatter(t)
-
-    if t == 'rc_header':
-      return grit.format.rc_header.Item()
-    elif t in ('rc_all', 'rc_translateable', 'rc_nontranslateable'):
-      return grit.format.rc.Message()
-    elif t == 'c_format' and self.SatisfiesOutputCondition():
-      return grit.format.c_format.Message()
-    elif t == 'js_map_format':
-      return grit.format.js_map_format.Message()
-    elif t == 'android':
-      return grit.format.android_xml.Message()
-    else:
-      return super(MessageNode, self).ItemFormatter(t)
-
   def EndParsing(self):
     super(MessageNode, self).EndParsing()
 
@@ -155,8 +137,7 @@ class MessageNode(base.ContentNode):
       description_or_id = 'ID: %s' % self.attrs['name']
 
     assigned_id = None
-    if (self.attrs['use_name_for_id'] == 'true' and
-        self.SatisfiesOutputCondition()):
+    if self.attrs['use_name_for_id'] == 'true':
       assigned_id = self.attrs['name']
     message = tclib.Message(text=text, placeholders=placeholders,
                             description=description_or_id,
@@ -221,7 +202,7 @@ class MessageNode(base.ContentNode):
     in utf8.  This is used to generate the data pack data file.
     '''
     from grit.format import rc_header
-    id_map = rc_header.Item.tids_
+    id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
 
     message = self.ws_at_start + self.Translate(lang) + self.ws_at_end
@@ -295,6 +276,10 @@ class PhNode(base.ContentNode):
     # We only allow a single example for each placeholder
     if len(self.children) > 1:
       raise exception.TooManyExamples()
+
+  def GetTextualIds(self):
+    # The 'name' attribute is not an ID.
+    return []
 
 
 class ExNode(base.ContentNode):

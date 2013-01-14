@@ -66,10 +66,8 @@ protected:
     virtual GrIndexBuffer* onCreateIndexBuffer(uint32_t size,
                                                bool dynamic) SK_OVERRIDE;
     virtual GrPath* onCreatePath(const SkPath&) SK_OVERRIDE;
-    virtual GrTexture* onCreatePlatformTexture(
-        const GrPlatformTextureDesc& desc) SK_OVERRIDE;
-    virtual GrRenderTarget* onCreatePlatformRenderTarget(
-        const GrPlatformRenderTargetDesc& desc) SK_OVERRIDE;
+    virtual GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&) SK_OVERRIDE;
+    virtual GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&) SK_OVERRIDE;
     virtual bool createStencilBufferForRenderTarget(GrRenderTarget* rt,
                                                     int width,
                                                     int height) SK_OVERRIDE;
@@ -151,11 +149,9 @@ private:
     static void AdjustTextureMatrix(const GrGLTexture* texture,
                                     GrMatrix* matrix);
 
-    // subclass may try to take advantage of identity tex matrices.
-    // This helper determines if matrix will be identity after all
-    // adjustments are applied.
-    static bool TextureMatrixIsIdentity(const GrGLTexture* texture,
-                                        const GrSamplerState& sampler);
+    // This helper determines if what optimizations can be applied to the matrix after any coord
+    // adjustments are applied. The return is a bitfield of GrGLProgram::StageDesc::OptFlags.
+    static int TextureMatrixOptFlags(const GrGLTexture* texture, const GrEffectStage& sampler);
 
     static bool BlendCoeffReferencesConstant(GrBlendCoeff coeff);
 
@@ -168,7 +164,7 @@ private:
         ProgramCache(const GrGLContextInfo& gl);
 
         void abandon();
-        GrGLProgram* getProgram(const GrGLProgram::Desc& desc, const GrCustomStage** stages);
+        GrGLProgram* getProgram(const GrGLProgram::Desc& desc, const GrEffect** stages);
     private:
         enum {
             kKeySize = sizeof(ProgramDesc),
@@ -220,7 +216,7 @@ private:
                                     GrGLTexture* nextTexture);
 
     // sets the texture matrix for the currently bound program
-    void flushTextureMatrix(int stage);
+    void flushTextureMatrix(int stageIdx);
 
     // sets the color specified by GrDrawState::setColor()
     void flushColor(GrColor color);
@@ -231,14 +227,6 @@ private:
     // sets the MVP matrix uniform for currently bound program
     void flushViewMatrix(DrawType type);
 
-    // flushes the parameters to two point radial gradient
-    void flushRadial2(int stage);
-
-    // flushes the parameters for convolution
-    void flushConvolution(int stage);
-
-    // flushes the color matrix
-    void flushColorMatrix();
 
     // flushes dithering, color-mask, and face culling stat
     void flushMiscFixedFunctionState();
@@ -250,10 +238,10 @@ private:
     void buildProgram(bool isPoints,
                       BlendOptFlags blendOpts,
                       GrBlendCoeff dstCoeff,
-                      const GrCustomStage** customStages,
+                      const GrEffect** effects,
                       ProgramDesc* desc);
 
-    // Inits GrDrawTarget::Caps, sublcass may enable additional caps.
+    // Inits GrDrawTarget::Caps, subclass may enable additional caps.
     void initCaps();
 
     void initFSAASupport();

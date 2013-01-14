@@ -476,13 +476,13 @@ void GrGpuGL::onResetContext() {
     fHWConstAttribCoverage = GrColor_ILLEGAL;
 }
 
-GrTexture* GrGpuGL::onCreatePlatformTexture(const GrPlatformTextureDesc& desc) {
+GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
     GrGLTexture::Desc glTexDesc;
-    if (!configToGLFormats(desc.fConfig, false, NULL, NULL, NULL)) {
+    if (!this->configToGLFormats(desc.fConfig, false, NULL, NULL, NULL)) {
         return NULL;
     }
 
-    // next line relies on PlatformTextureDesc's flags matching GrTexture's
+    // next line relies on GrBackendTextureDesc's flags matching GrTexture's
     glTexDesc.fFlags = (GrTextureFlags) desc.fFlags;
     glTexDesc.fWidth = desc.fWidth;
     glTexDesc.fHeight = desc.fHeight;
@@ -493,7 +493,7 @@ GrTexture* GrGpuGL::onCreatePlatformTexture(const GrPlatformTextureDesc& desc) {
     glTexDesc.fOrientation = GrGLTexture::kBottomUp_Orientation;
 
     GrGLTexture* texture = NULL;
-    if (desc.fFlags & kRenderTarget_GrPlatformTextureFlag) {
+    if (desc.fFlags & kRenderTarget_GrBackendTextureFlag) {
         GrGLRenderTarget::Desc glRTDesc;
         glRTDesc.fRTFBOID = 0;
         glRTDesc.fTexFBOID = 0;
@@ -519,7 +519,7 @@ GrTexture* GrGpuGL::onCreatePlatformTexture(const GrPlatformTextureDesc& desc) {
     return texture;
 }
 
-GrRenderTarget* GrGpuGL::onCreatePlatformRenderTarget(const GrPlatformRenderTargetDesc& desc) {
+GrRenderTarget* GrGpuGL::onWrapBackendRenderTarget(const GrBackendRenderTargetDesc& desc) {
     GrGLRenderTarget::Desc glDesc;
     glDesc.fConfig = desc.fConfig;
     glDesc.fRTFBOID = static_cast<GrGLuint>(desc.fRenderTargetHandle);
@@ -1072,8 +1072,6 @@ bool GrGpuGL::createStencilBufferForRenderTarget(GrRenderTarget* rt,
     if (!sbID) {
         return false;
     }
-
-    GrGLStencilBuffer* sb = NULL;
 
     int stencilFmtCnt = this->glCaps().stencilFormats().count();
     for (int i = 0; i < stencilFmtCnt; ++i) {
@@ -2018,23 +2016,22 @@ inline GrGLenum tile_to_gl_wrap(SkShader::TileMode tm) {
 
 }
 
-void GrGpuGL::flushBoundTextureAndParams(int stage) {
+void GrGpuGL::flushBoundTextureAndParams(int stageIdx) {
     GrDrawState* drawState = this->drawState();
-    // FIXME: Assuming at most one texture per custom stage
-    const GrCustomStage* customStage = drawState->sampler(stage)->getCustomStage();
-    GrGLTexture* nextTexture =  static_cast<GrGLTexture*>(customStage->texture(0));
-    if (NULL != nextTexture) {
-        // Currently we always use the texture params from the GrSamplerState. Soon custom stages
-        // will provide their own params.
-        const GrTextureParams& texParams = drawState->getSampler(stage).getTextureParams();
-        this->flushBoundTextureAndParams(stage, texParams, nextTexture);
+    // FIXME: Assuming at most one texture per effect
+    const GrEffect* effect = drawState->stage(stageIdx)->getEffect();
+    if (effect->numTextures() > 0) {
+        GrGLTexture* nextTexture =  static_cast<GrGLTexture*>(effect->texture(0));
+        if (NULL != nextTexture) {
+            const GrTextureParams& texParams = effect->textureAccess(0).getParams();
+            this->flushBoundTextureAndParams(stageIdx, texParams, nextTexture);
+        }
     }
 }
 
-void GrGpuGL::flushBoundTextureAndParams(int stage,
+void GrGpuGL::flushBoundTextureAndParams(int stageIdx,
                                          const GrTextureParams& params,
                                          GrGLTexture* nextTexture) {
-    GrDrawState* drawState = this->drawState();
 
     // true for now, but maybe not with GrEffect.
     GrAssert(NULL != nextTexture);
@@ -2046,11 +2043,11 @@ void GrGpuGL::flushBoundTextureAndParams(int stage,
         this->onResolveRenderTarget(texRT);
     }
 
-    if (fHWBoundTextures[stage] != nextTexture) {
-        this->setTextureUnit(stage);
+    if (fHWBoundTextures[stageIdx] != nextTexture) {
+        this->setTextureUnit(stageIdx);
         GL_CALL(BindTexture(GR_GL_TEXTURE_2D, nextTexture->textureID()));
         //GrPrintf("---- bindtexture %d\n", nextTexture->textureID());
-        fHWBoundTextures[stage] = nextTexture;
+        fHWBoundTextures[stageIdx] = nextTexture;
     }
 
     ResetTimestamp timestamp;
@@ -2067,7 +2064,7 @@ void GrGpuGL::flushBoundTextureAndParams(int stage,
            GrGLShaderBuilder::GetTexParamSwizzle(nextTexture->config(), this->glCaps()),
            sizeof(newTexParams.fSwizzleRGBA));
     if (setAll || newTexParams.fFilter != oldTexParams.fFilter) {
-        this->setTextureUnit(stage);
+        this->setTextureUnit(stageIdx);
         GL_CALL(TexParameteri(GR_GL_TEXTURE_2D,
                               GR_GL_TEXTURE_MAG_FILTER,
                               newTexParams.fFilter));
@@ -2076,13 +2073,13 @@ void GrGpuGL::flushBoundTextureAndParams(int stage,
                               newTexParams.fFilter));
     }
     if (setAll || newTexParams.fWrapS != oldTexParams.fWrapS) {
-        this->setTextureUnit(stage);
+        this->setTextureUnit(stageIdx);
         GL_CALL(TexParameteri(GR_GL_TEXTURE_2D,
                               GR_GL_TEXTURE_WRAP_S,
                               newTexParams.fWrapS));
     }
     if (setAll || newTexParams.fWrapT != oldTexParams.fWrapT) {
-        this->setTextureUnit(stage);
+        this->setTextureUnit(stageIdx);
         GL_CALL(TexParameteri(GR_GL_TEXTURE_2D,
                               GR_GL_TEXTURE_WRAP_T,
                               newTexParams.fWrapT));
@@ -2091,7 +2088,7 @@ void GrGpuGL::flushBoundTextureAndParams(int stage,
         (setAll || memcmp(newTexParams.fSwizzleRGBA,
                           oldTexParams.fSwizzleRGBA,
                           sizeof(newTexParams.fSwizzleRGBA)))) {
-        this->setTextureUnit(stage);
+        this->setTextureUnit(stageIdx);
         set_tex_swizzle(newTexParams.fSwizzleRGBA,
                         this->glInterface());
     }

@@ -353,12 +353,12 @@ void SkTwoPointRadialGradient::init() {
 typedef GrGLUniformManager::UniformHandle UniformHandle;
 static const UniformHandle kInvalidUniformHandle = GrGLUniformManager::kInvalidUniformHandle;
 
-class GrGLRadial2Gradient : public GrGLGradientStage {
+class GrGLRadial2Gradient : public GrGLGradientEffect {
 
 public:
 
-    GrGLRadial2Gradient(const GrProgramStageFactory& factory,
-                        const GrCustomStage&);
+    GrGLRadial2Gradient(const GrBackendEffectFactory& factory,
+                        const GrEffect&);
     virtual ~GrGLRadial2Gradient() { }
 
     virtual void setupVariables(GrGLShaderBuilder* builder) SK_OVERRIDE;
@@ -368,12 +368,9 @@ public:
                         const char* outputColor,
                         const char* inputColor,
                         const TextureSamplerArray&) SK_OVERRIDE;
-    virtual void setData(const GrGLUniformManager&,
-                         const GrCustomStage&,
-                         const GrRenderTarget*,
-                         int stageNum) SK_OVERRIDE;
+    virtual void setData(const GrGLUniformManager&, const GrEffect&) SK_OVERRIDE;
 
-    static StageKey GenKey(const GrCustomStage& s, const GrGLCaps& caps);
+    static EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps);
 
 protected:
 
@@ -396,7 +393,7 @@ protected:
 
 private:
 
-    typedef GrGLGradientStage INHERITED;
+    typedef GrGLGradientEffect INHERITED;
 
 };
 
@@ -405,19 +402,18 @@ private:
 class GrRadial2Gradient : public GrGradientEffect {
 public:
 
-    GrRadial2Gradient(GrContext* ctx, const SkTwoPointRadialGradient& shader,
-                      GrSamplerState* sampler)
-        : INHERITED(ctx, shader, sampler)
+    GrRadial2Gradient(GrContext* ctx, const SkTwoPointRadialGradient& shader, SkShader::TileMode tm)
+        : INHERITED(ctx, shader, tm)
         , fCenterX1(shader.getCenterX1())
         , fRadius0(shader.getStartRadius())
         , fPosRoot(shader.getDiffRadius() < 0) { }
     virtual ~GrRadial2Gradient() { }
 
     static const char* Name() { return "Two-Point Radial Gradient"; }
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE {
-        return GrTProgramStageFactory<GrRadial2Gradient>::getInstance();
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
+        return GrTBackendEffectFactory<GrRadial2Gradient>::getInstance();
     }
-    virtual bool isEqual(const GrCustomStage& sBase) const SK_OVERRIDE {
+    virtual bool isEqual(const GrEffect& sBase) const SK_OVERRIDE {
         const GrRadial2Gradient& s = static_cast<const GrRadial2Gradient&>(sBase);
         return (INHERITED::isEqual(sBase) &&
                 this->fCenterX1 == s.fCenterX1 &&
@@ -431,10 +427,10 @@ public:
     GrScalar radius() const { return fRadius0; }
     bool isPosRoot() const { return SkToBool(fPosRoot); }
 
-    typedef GrGLRadial2Gradient GLProgramStage;
+    typedef GrGLRadial2Gradient GLEffect;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     // @{
     // Cache of values - these can change arbitrarily, EXCEPT
@@ -451,11 +447,11 @@ private:
 
 /////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_CUSTOM_STAGE_TEST(GrRadial2Gradient);
+GR_DEFINE_EFFECT_TEST(GrRadial2Gradient);
 
-GrCustomStage* GrRadial2Gradient::TestCreate(SkRandom* random,
-                                             GrContext* context,
-                                             GrTexture**) {
+GrEffect* GrRadial2Gradient::TestCreate(SkRandom* random,
+                                        GrContext* context,
+                                        GrTexture**) {
     SkPoint center1 = {random->nextUScalar1(), random->nextUScalar1()};
     SkScalar radius1 = random->nextUScalar1();
     SkPoint center2;
@@ -475,17 +471,19 @@ GrCustomStage* GrRadial2Gradient::TestCreate(SkRandom* random,
                                                                          center2, radius2,
                                                                          colors, stops, colorCount,
                                                                          tm));
-    GrSamplerState sampler;
-    GrCustomStage* stage = shader->asNewCustomStage(context, &sampler);
-    GrAssert(NULL != stage);
-    return stage;
+    GrEffectStage stage;
+    shader->asNewEffect(context, &stage);
+    GrAssert(NULL != stage.getEffect());
+    // const_cast and ref is a hack! Will remove when asNewEffect returns GrEffect*
+    stage.getEffect()->ref();
+    return const_cast<GrEffect*>(stage.getEffect());
 }
 
 /////////////////////////////////////////////////////////////////////
 
 GrGLRadial2Gradient::GrGLRadial2Gradient(
-        const GrProgramStageFactory& factory,
-        const GrCustomStage& baseData)
+        const GrBackendEffectFactory& factory,
+        const GrEffect& baseData)
     : INHERITED(factory)
     , fVSParamUni(kInvalidUniformHandle)
     , fFSParamUni(kInvalidUniformHandle)
@@ -565,7 +563,6 @@ void GrGLRadial2Gradient::emitFS(GrGLShaderBuilder* builder,
         bVar = fFSVaryingName;
     } else {
         bVar = "b";
-        //bVar.appendS32(stageNum);
         code->appendf("\tfloat %s = 2.0 * (%s * %s.x - %s);\n",
                       bVar.c_str(), p2.c_str(),
                       builder->defaultTexCoordsName(), p3.c_str());
@@ -604,11 +601,8 @@ void GrGLRadial2Gradient::emitFS(GrGLShaderBuilder* builder,
     this->emitColorLookup(builder, t.c_str(), outputColor, inputColor, samplers[0]);
 }
 
-void GrGLRadial2Gradient::setData(const GrGLUniformManager& uman,
-                                  const GrCustomStage& baseData,
-                                  const GrRenderTarget* target,
-                                  int stageNum) {
-    INHERITED::setData(uman, baseData, target, stageNum);
+void GrGLRadial2Gradient::setData(const GrGLUniformManager& uman, const GrEffect& baseData) {
+    INHERITED::setData(uman, baseData);
     const GrRadial2Gradient& data =
         static_cast<const GrRadial2Gradient&>(baseData);
     GrAssert(data.isDegenerate() == fIsDegenerate);
@@ -642,36 +636,44 @@ void GrGLRadial2Gradient::setData(const GrGLUniformManager& uman,
     }
 }
 
-GrCustomStage::StageKey GrGLRadial2Gradient::GenKey(const GrCustomStage& s, const GrGLCaps& caps) {
+GrEffect::EffectKey GrGLRadial2Gradient::GenKey(const GrEffect& s, const GrGLCaps& caps) {
     return (static_cast<const GrRadial2Gradient&>(s).isDegenerate());
 }
 
 /////////////////////////////////////////////////////////////////////
 
-GrCustomStage* SkTwoPointRadialGradient::asNewCustomStage(
-    GrContext* context, GrSamplerState* sampler) const {
-    SkASSERT(NULL != context && NULL != sampler);
+bool SkTwoPointRadialGradient::asNewEffect(GrContext* context,
+                                           GrEffectStage* stage) const {
+    SkASSERT(NULL != context && NULL != stage);
     SkScalar diffLen = fDiff.length();
+    SkMatrix matrix;
     if (0 != diffLen) {
         SkScalar invDiffLen = SkScalarInvert(diffLen);
-        sampler->matrix()->setSinCos(-SkScalarMul(invDiffLen, fDiff.fY),
-                                     SkScalarMul(invDiffLen, fDiff.fX));
+        matrix.setSinCos(-SkScalarMul(invDiffLen, fDiff.fY),
+                         SkScalarMul(invDiffLen, fDiff.fX));
     } else {
-        sampler->matrix()->reset();
+        matrix.reset();
     }
-    sampler->matrix()->preConcat(fPtsToUnit);
-    sampler->textureParams()->setTileModeX(fTileMode);
-    sampler->textureParams()->setTileModeY(kClamp_TileMode);
-    sampler->textureParams()->setBilerp(true);
-    return SkNEW_ARGS(GrRadial2Gradient, (context, *this, sampler));
+
+    matrix.preConcat(fPtsToUnit);
+
+    SkMatrix localM;
+    if (this->getLocalMatrix(&localM)) {
+        if (!localM.invert(&localM)) {
+            return false;
+        }
+        matrix.preConcat(localM);
+    }
+
+    stage->setEffect(SkNEW_ARGS(GrRadial2Gradient, (context, *this, fTileMode)), matrix)->unref();
+    return true;
 }
 
 #else
 
-GrCustomStage* SkTwoPointRadialGradient::asNewCustomStage(
-    GrContext* context, GrSamplerState* sampler) const {
+bool SkTwoPointRadialGradient::asNewEffect(GrContext*, GrEffectStage*) const {
     SkDEBUGFAIL("Should not call in GPU-less build");
-    return NULL;
+    return false;
 }
 
 #endif

@@ -553,6 +553,18 @@ void GLES2PushGroupMarkerEXT(GLsizei length, const GLchar* marker) {
 void GLES2PopGroupMarkerEXT() {
   gles2::GetGLContext()->PopGroupMarkerEXT();
 }
+void GLES2GenVertexArraysOES(GLsizei n, GLuint* arrays) {
+  gles2::GetGLContext()->GenVertexArraysOES(n, arrays);
+}
+void GLES2DeleteVertexArraysOES(GLsizei n, const GLuint* arrays) {
+  gles2::GetGLContext()->DeleteVertexArraysOES(n, arrays);
+}
+GLboolean GLES2IsVertexArrayOES(GLuint array) {
+  return gles2::GetGLContext()->IsVertexArrayOES(array);
+}
+void GLES2BindVertexArrayOES(GLuint array) {
+  gles2::GetGLContext()->BindVertexArrayOES(array);
+}
 void GLES2SwapBuffers() {
   gles2::GetGLContext()->SwapBuffers();
 }
@@ -666,6 +678,12 @@ void GLES2ConsumeTextureCHROMIUM(GLenum target, const GLbyte* mailbox) {
 void GLES2BindUniformLocationCHROMIUM(
     GLuint program, GLint location, const char* name) {
   gles2::GetGLContext()->BindUniformLocationCHROMIUM(program, location, name);
+}
+void GLES2BindTexImage2DCHROMIUM(GLenum target, GLint imageId) {
+  gles2::GetGLContext()->BindTexImage2DCHROMIUM(target, imageId);
+}
+void GLES2ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) {
+  gles2::GetGLContext()->ReleaseTexImage2DCHROMIUM(target, imageId);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_C_LIB_AUTOGEN_H_

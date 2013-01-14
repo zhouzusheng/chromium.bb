@@ -45,7 +45,6 @@
 #include "Image.h"
 #include "MIMETypeRegistry.h"
 #include "NamedNodeMap.h"
-#include "PlatformSupport.h"
 #include "Range.h"
 #include "RenderImage.h"
 #include "StringCallback.h"
@@ -276,10 +275,10 @@ bool ClipboardChromium::setData(const String& type, const String& data)
 }
 
 // extensions beyond IE's API
-HashSet<String> ClipboardChromium::types() const
+ListHashSet<String> ClipboardChromium::types() const
 {
     if (policy() != ClipboardReadable && policy() != ClipboardTypesReadable)
-        return HashSet<String>();
+        return ListHashSet<String>();
 
     return m_dataObject->types();
 }

@@ -42,6 +42,9 @@
 #include "IDBCallbacks.h"
 #include "IDBCursor.h"
 #include "IDBCursorBackendInterface.h"
+#if USE(V8)
+#include "WorldContextHandle.h"
+#endif
 
 namespace WebCore {
 
@@ -61,6 +64,7 @@ public:
     String webkitErrorMessage(ExceptionCode&) const;
     PassRefPtr<IDBAny> source() const;
     PassRefPtr<IDBTransaction> transaction() const;
+    void preventPropagation() { m_preventPropagation = true; }
 
     // Defined in the IDL
     enum ReadyState {
@@ -88,6 +92,8 @@ public:
     virtual void onSuccess(PassRefPtr<IDBTransactionBackendInterface>);
     virtual void onSuccess(PassRefPtr<SerializedScriptValue>);
     virtual void onSuccess(PassRefPtr<SerializedScriptValue>, PassRefPtr<IDBKey>, const IDBKeyPath&);
+    virtual void onSuccess(int64_t);
+    virtual void onSuccess();
     virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
     virtual void onSuccessWithPrefetch(const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<IDBKey> >&, const Vector<RefPtr<SerializedScriptValue> >&) { ASSERT_NOT_REACHED(); } // Not implemented. Callback should not reach the renderer side.
 
@@ -113,6 +119,7 @@ protected:
     IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransactionBackendInterface::TaskType, IDBTransaction*);
     void enqueueEvent(PassRefPtr<Event>);
     virtual bool shouldEnqueueEvent() const;
+    void onSuccessInternal(const ScriptValue&);
 
     RefPtr<IDBAny> m_result;
     unsigned short m_errorCode;
@@ -131,7 +138,7 @@ private:
     virtual EventTargetData* ensureEventTargetData();
 
     PassRefPtr<IDBCursor> getResultCursor();
-    void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
+    void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, const ScriptValue&);
 
     RefPtr<IDBAny> m_source;
     const IDBTransactionBackendInterface::TaskType m_taskType;
@@ -146,10 +153,14 @@ private:
     RefPtr<IDBCursor> m_pendingCursor;
     RefPtr<IDBKey> m_cursorKey;
     RefPtr<IDBKey> m_cursorPrimaryKey;
-    RefPtr<SerializedScriptValue> m_cursorValue;
+    ScriptValue m_cursorValue;
     bool m_didFireUpgradeNeededEvent;
+    bool m_preventPropagation;
 
     EventTargetData m_eventTargetData;
+#if USE(V8)
+    WorldContextHandle m_worldContextHandle;
+#endif
 };
 
 } // namespace WebCore

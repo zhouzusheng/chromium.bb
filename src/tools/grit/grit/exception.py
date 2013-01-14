@@ -70,8 +70,8 @@ class TooManyExamples(Parsing):
 
 
 class GotPathExpectedFilenameOnly(Parsing):
-  '''The 'filename' attribute of an <output> node must not be a path, only
-  a filename.
+  '''The 'filename' attribute of <output> and the 'file' attribute of <part>
+  must be bare filenames, not paths.
   '''
   pass
 

@@ -197,7 +197,6 @@ int num_quad_subdivs(const SkPoint p[3]) {
  */
 int generate_lines_and_quads(const SkPath& path,
                              const SkMatrix& m,
-                             const SkVector& translate,
                              const GrIRect& devClipBounds,
                              PtArray* lines,
                              PtArray* quads,
@@ -218,7 +217,6 @@ int generate_lines_and_quads(const SkPath& path,
             case kMove_PathCmd:
                 break;
             case kLine_PathCmd:
-                SkPoint::Offset(pts, 2, translate);
                 m.mapPoints(devPts, pts, 2);
                 bounds.setBounds(devPts, 2);
                 bounds.outset(SK_Scalar1, SK_Scalar1);
@@ -230,7 +228,6 @@ int generate_lines_and_quads(const SkPath& path,
                 }
                 break;
             case kQuadratic_PathCmd:
-                SkPoint::Offset(pts, 3, translate);
                 m.mapPoints(devPts, pts, 3);
                 bounds.setBounds(devPts, 3);
                 bounds.outset(SK_Scalar1, SK_Scalar1);
@@ -257,7 +254,6 @@ int generate_lines_and_quads(const SkPath& path,
                 }
                 break;
             case kCubic_PathCmd:
-                SkPoint::Offset(pts, 4, translate);
                 m.mapPoints(devPts, pts, 4);
                 bounds.setBounds(devPts, 4);
                 bounds.outset(SK_Scalar1, SK_Scalar1);
@@ -462,16 +458,7 @@ void add_line(const SkPoint p[2],
     if (orthVec.setLength(SK_Scalar1)) {
         orthVec.setOrthog(orthVec);
 
-        // the values we pass down to the frag shader
-        // have to be in y-points-up space;
-        SkVector normal;
-        normal.fX = orthVec.fX;
-        normal.fY = -orthVec.fY;
-        SkPoint aYDown;
-        aYDown.fX = a.fX;
-        aYDown.fY = rtHeight - a.fY;
-
-        SkScalar lineC = -(aYDown.dot(normal));
+        SkScalar lineC = -(a.dot(orthVec));
         for (int i = 0; i < kVertsPerLineSeg; ++i) {
             (*vert)[i].fPos = (i < 2) ? a : b;
             if (0 == i || 3 == i) {
@@ -479,8 +466,8 @@ void add_line(const SkPoint p[2],
             } else {
                 (*vert)[i].fPos += orthVec;
             }
-            (*vert)[i].fLine.fA = normal.fX;
-            (*vert)[i].fLine.fB = normal.fY;
+            (*vert)[i].fLine.fA = orthVec.fX;
+            (*vert)[i].fLine.fB = orthVec.fY;
             (*vert)[i].fLine.fC = lineC;
         }
         if (NULL != toSrc) {
@@ -503,7 +490,6 @@ void add_line(const SkPoint p[2],
 
 bool GrAAHairLinePathRenderer::createGeom(
             const SkPath& path,
-            const GrVec* translate,
             GrDrawTarget* target,
             int* lineCnt,
             int* quadCnt,
@@ -521,11 +507,7 @@ bool GrAAHairLinePathRenderer::createGeom(
     PREALLOC_PTARRAY(128) lines;
     PREALLOC_PTARRAY(128) quads;
     IntArray qSubdivs;
-    static const GrVec gZeroVec = {0, 0};
-    if (NULL == translate) {
-        translate = &gZeroVec;
-    }
-    *quadCnt = generate_lines_and_quads(path, viewM, *translate, devClipBounds,
+    *quadCnt = generate_lines_and_quads(path, viewM, devClipBounds,
                                         &lines, &quads, &qSubdivs);
 
     *lineCnt = lines.count() / 2;
@@ -582,7 +564,6 @@ bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
 
 bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
                                           GrPathFill fill,
-                                          const GrVec* translate,
                                           GrDrawTarget* target,
                                           bool antiAlias) {
 
@@ -590,7 +571,6 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
     int quadCnt;
     GrDrawTarget::AutoReleaseGeometry arg;
     if (!this->createGeom(path,
-                          translate,
                           target,
                           &lineCnt,
                           &quadCnt,
@@ -598,29 +578,28 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
         return false;
     }
 
-    GrDrawTarget::AutoStateRestore asr;
+    GrDrawState::AutoDeviceCoordDraw adcd;
     GrDrawState* drawState = target->drawState();
+    // createGeom transforms the geometry to device space when the matrix does not have
+    // perspective.
     if (!drawState->getViewMatrix().hasPerspective()) {
-        // we are going to whack the view matrix to identity to remove
-        // perspective.
-        asr.set(target,
-                GrDrawTarget::kPreserve_ASRInit);
-        drawState = target->drawState();
-        if (!drawState->preConcatSamplerMatricesWithInverse(drawState->getViewMatrix())) {
+        adcd.set(drawState);
+        if (!adcd.succeeded()) {
             return false;
         }
-        drawState->viewMatrix()->reset();
     }
-
 
     // TODO: See whether rendering lines as degenerate quads improves perf
     // when we have a mix
+
+    GrDrawState::VertexEdgeType oldEdgeType = drawState->getVertexEdgeType();
+
     target->setIndexSourceToBuffer(fLinesIndexBuffer);
     int lines = 0;
     int nBufLines = fLinesIndexBuffer->maxQuads();
+    drawState->setVertexEdgeType(GrDrawState::kHairLine_EdgeType);
     while (lines < lineCnt) {
         int n = GrMin(lineCnt - lines, nBufLines);
-        drawState->setVertexEdgeType(GrDrawState::kHairLine_EdgeType);
         target->drawIndexed(kTriangles_GrPrimitiveType,
                             kVertsPerLineSeg*lines,    // startV
                             0,                         // startI
@@ -631,9 +610,9 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
 
     target->setIndexSourceToBuffer(fQuadsIndexBuffer);
     int quads = 0;
+    drawState->setVertexEdgeType(GrDrawState::kHairQuad_EdgeType);
     while (quads < quadCnt) {
         int n = GrMin(quadCnt - quads, kNumQuadsInIdxBuffer);
-        drawState->setVertexEdgeType(GrDrawState::kHairQuad_EdgeType);
         target->drawIndexed(kTriangles_GrPrimitiveType,
                             4 * lineCnt + kVertsPerQuad*quads, // startV
                             0,                                 // startI
@@ -641,6 +620,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
                             kIdxsPerQuad*n);                   // iCount
         quads += n;
     }
+    drawState->setVertexEdgeType(oldEdgeType);
     return true;
 }
 

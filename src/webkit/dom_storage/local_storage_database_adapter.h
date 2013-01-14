@@ -8,6 +8,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/dom_storage/dom_storage_database_adapter.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 class FilePath;
 
@@ -15,7 +16,8 @@ namespace dom_storage {
 
 class DomStorageDatabase;
 
-class LocalStorageDatabaseAdapter : public DomStorageDatabaseAdapter {
+class WEBKIT_STORAGE_EXPORT LocalStorageDatabaseAdapter :
+      public DomStorageDatabaseAdapter {
  public:
   explicit LocalStorageDatabaseAdapter(const FilePath& path);
   virtual ~LocalStorageDatabaseAdapter();

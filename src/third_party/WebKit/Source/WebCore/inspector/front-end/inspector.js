@@ -72,13 +72,10 @@ var WebInspector = {
     _createGlobalStatusBarItems: function()
     {
         var bottomStatusBarContainer = document.getElementById("bottom-status-bar-container");
-        this._dockToggleButton = new WebInspector.StatusBarButton("", "dock-status-bar-item", 3);
-        this._dockToggleButton.makeLongClickEnabled(this._createDockOptions.bind(this));
-        this._dockToggleButton.addEventListener("click", this._toggleAttach.bind(this), false);
-        this._updateDockButtonState();
 
+        // Create main dock button and options.
         var mainStatusBar = document.getElementById("main-status-bar");
-        mainStatusBar.insertBefore(this._dockToggleButton.element, bottomStatusBarContainer);
+        mainStatusBar.insertBefore(this.dockController.element, bottomStatusBarContainer);
 
         this._toggleConsoleButton = new WebInspector.StatusBarButton(WebInspector.UIString("Show console."), "console-status-bar-item");
         this._toggleConsoleButton.addEventListener("click", this._toggleConsoleButtonClicked.bind(this), false);
@@ -91,68 +88,6 @@ var WebInspector = {
         }
 
         mainStatusBar.appendChild(this.settingsController.statusBarItem);
-    },
-
-    _createDockOptions: function()
-    {
-        var alternateDockToggleButton1 = new WebInspector.StatusBarButton("Dock to main window.", "dock-status-bar-item", 3);
-        var alternateDockToggleButton2 = new WebInspector.StatusBarButton("Undock into separate window.", "dock-status-bar-item", 3);
-
-        if (this.attached) {
-            alternateDockToggleButton1.state = WebInspector.settings.dockToRight.get() ? "bottom" : "right";
-            alternateDockToggleButton2.state = "undock";
-        } else {
-            alternateDockToggleButton1.state = WebInspector.settings.dockToRight.get() ? "bottom" : "right";
-            alternateDockToggleButton2.state = WebInspector.settings.dockToRight.get() ? "right" : "bottom";
-        }
-
-        alternateDockToggleButton1.addEventListener("click", onClick.bind(this), false);
-        alternateDockToggleButton2.addEventListener("click", onClick.bind(this), false);
-
-        function onClick(e)
-        {
-            var state = e.target.state;
-            if (state === "undock")
-                this._toggleAttach();
-            else if (state === "right") {
-                if (!this.attached)
-                    this._toggleAttach();
-                WebInspector.settings.dockToRight.set(true);
-            } else if (state === "bottom") {
-                if (!this.attached)
-                    this._toggleAttach();
-                WebInspector.settings.dockToRight.set(false);
-            }
-        }
-
-        return [alternateDockToggleButton1, alternateDockToggleButton2];
-    },
-
-    _updateDockButtonState: function()
-    {
-        if (!this._dockToggleButton)
-            return;
-
-        if (this.attached) {
-            this._dockToggleButton.disabled = false;
-            this._dockToggleButton.state = "undock";
-            this._dockToggleButton.title = WebInspector.UIString("Undock into separate window.");
-        } else {
-            this._dockToggleButton.disabled = this._isDockingUnavailable;
-            this._dockToggleButton.state = WebInspector.settings.dockToRight.get() ? "right" : "bottom";
-            this._dockToggleButton.title = WebInspector.UIString("Dock to main window.");
-        }
-    },
-
-    _toggleAttach: function()
-    {
-        if (!this._attached) {
-            InspectorFrontendHost.requestAttachWindow();
-            WebInspector.userMetrics.WindowDocked.record();
-        } else {
-            InspectorFrontendHost.requestDetachWindow();
-            WebInspector.userMetrics.WindowUndocked.record();
-        }
     },
 
     _toggleConsoleButtonClicked: function()
@@ -221,42 +156,6 @@ var WebInspector = {
                 this._drawerStatusBarHeader.onclose();
             delete this._drawerStatusBarHeader;
         }
-    },
-
-    get attached()
-    {
-        return this._attached;
-    },
-
-    set attached(x)
-    {
-        if (this._attached === x)
-            return;
-
-        this._attached = x;
-
-        if (x)
-            document.body.removeStyleClass("detached");
-        else
-            document.body.addStyleClass("detached");
-
-        this._setCompactMode(x && !WebInspector.settings.dockToRight.get());
-        this._updateDockButtonState();
-    },
-
-    isCompactMode: function()
-    {
-        return this.attached && !WebInspector.settings.dockToRight.get();
-    },
-
-    _setCompactMode: function(x)
-    {
-        var body = document.body;
-        if (x)
-            body.addStyleClass("compact");
-        else
-            body.removeStyleClass("compact");
-        WebInspector.windowResize();
     },
 
     _updateErrorAndWarningCounts: function()
@@ -334,13 +233,13 @@ var WebInspector = {
 
     _zoomIn: function()
     {
-        ++this._zoomLevel;
+        this._zoomLevel = Math.min(this._zoomLevel + 1, WebInspector.Zoom.Table.length - WebInspector.Zoom.DefaultOffset - 1);
         this._requestZoom();
     },
 
     _zoomOut: function()
     {
-        --this._zoomLevel;
+        this._zoomLevel = Math.max(this._zoomLevel - 1, -WebInspector.Zoom.DefaultOffset);
         this._requestZoom();
     },
 
@@ -353,7 +252,11 @@ var WebInspector = {
     _requestZoom: function()
     {
         WebInspector.settings.zoomLevel.set(this._zoomLevel);
-        InspectorFrontendHost.setZoomFactor(Math.pow(1.2, this._zoomLevel));
+        // For backwards compatibility, zoomLevel takes integers (with 0 being default zoom).
+        var index = this._zoomLevel + WebInspector.Zoom.DefaultOffset;
+        index = Math.min(WebInspector.Zoom.Table.length - 1, index);
+        index = Math.max(0, index);
+        InspectorFrontendHost.setZoomFactor(WebInspector.Zoom.Table[index]);
     },
 
     toggleSearchingForNode: function()
@@ -407,6 +310,7 @@ WebInspector.Events = {
 WebInspector.loaded = function()
 {
     InspectorBackend.loadFromJSONIfNeeded("../Inspector.json");
+    WebInspector.dockController = new WebInspector.DockController();
 
     if (WebInspector.WorkerManager.isDedicatedWorkerFrontend()) {
         // Do not create socket for the worker front-end.
@@ -430,6 +334,9 @@ WebInspector.loaded = function()
         WebInspector.socket.onopen = function() {
             InspectorFrontendHost.sendMessageToBackend = WebInspector.socket.send.bind(WebInspector.socket);
             WebInspector.doLoadedDone();
+        }
+        WebInspector.socket.onclose = function() {
+            (new WebInspector.RemoteDebuggingTerminatedScreen()).showModal();
         }
         return;
     }
@@ -462,6 +369,7 @@ WebInspector.doLoadedDone = function()
     ProfilerAgent.isSampling(WebInspector._initializeCapability.bind(WebInspector, "samplingCPUProfiler", null));
     ProfilerAgent.hasHeapProfiler(WebInspector._initializeCapability.bind(WebInspector, "heapProfilerPresent", null));
     TimelineAgent.supportsFrameInstrumentation(WebInspector._initializeCapability.bind(WebInspector, "timelineSupportsFrameInstrumentation", null));
+    TimelineAgent.canMonitorMainThread(WebInspector._initializeCapability.bind(WebInspector, "timelineCanMonitorMainThread", null));
     PageAgent.canOverrideDeviceMetrics(WebInspector._initializeCapability.bind(WebInspector, "canOverrideDeviceMetrics", null));
     PageAgent.canOverrideGeolocation(WebInspector._initializeCapability.bind(WebInspector, "canOverrideGeolocation", null));
     PageAgent.canOverrideDeviceOrientation(WebInspector._initializeCapability.bind(WebInspector, "canOverrideDeviceOrientation", WebInspector._doLoadedDoneWithCapabilities.bind(WebInspector)));
@@ -469,10 +377,11 @@ WebInspector.doLoadedDone = function()
 
 WebInspector._doLoadedDoneWithCapabilities = function()
 {
-    WebInspector.shortcutsScreen = new WebInspector.ShortcutsScreen();
-    this._registerShortcuts();
+    var panelDescriptors = this._panelDescriptors();
+    WebInspector.shortcutsScreen = new WebInspector.ShortcutsScreen(this._registerShortcuts.bind(this, panelDescriptors));
 
     // set order of some sections explicitly
+    WebInspector.shortcutsScreen.section(WebInspector.UIString("All Panels"));
     WebInspector.shortcutsScreen.section(WebInspector.UIString("Console"));
     WebInspector.shortcutsScreen.section(WebInspector.UIString("Elements Panel"));
 
@@ -516,27 +425,27 @@ WebInspector._doLoadedDoneWithCapabilities = function()
     this.openAnchorLocationRegistry = new WebInspector.HandlerRegistry(openAnchorLocationSetting);
     this.openAnchorLocationRegistry.registerHandler(autoselectPanel, function() { return false; });
 
+    this.networkWorkspaceProvider = new WebInspector.NetworkWorkspaceProvider();
     this.workspace = new WebInspector.Workspace();
+    this.workspace.addProject("network", this.networkWorkspaceProvider);
     this.workspaceController = new WebInspector.WorkspaceController(this.workspace);
 
     this.breakpointManager = new WebInspector.BreakpointManager(WebInspector.settings.breakpoints, this.debuggerModel, this.workspace);
 
-    this.scriptSnippetModel = new WebInspector.ScriptSnippetModel(this.workspace);
-    new WebInspector.DebuggerScriptMapping(this.workspace);
-    new WebInspector.NetworkUISourceCodeProvider(this.workspace);
+    this.scriptSnippetModel = new WebInspector.ScriptSnippetModel(this.workspace, this.networkWorkspaceProvider);
+    new WebInspector.DebuggerScriptMapping(this.workspace, this.networkWorkspaceProvider);
+    this.styleContentBinding = new WebInspector.StyleContentBinding(this.cssModel);
+    new WebInspector.NetworkUISourceCodeProvider(this.workspace, this.networkWorkspaceProvider);
     new WebInspector.StylesSourceMapping(this.workspace);
     if (WebInspector.experimentsSettings.sass.isEnabled())
-        new WebInspector.SASSSourceMapping(this.workspace);
+        new WebInspector.SASSSourceMapping(this.workspace, this.networkWorkspaceProvider);
 
     new WebInspector.PresentationConsoleMessageHelper(this.workspace);
 
     this._createGlobalStatusBarItems();
 
-    WebInspector._installDockToRight();
-
     this.toolbar = new WebInspector.Toolbar();
     WebInspector.startBatchUpdate();
-    var panelDescriptors = this._panelDescriptors();
     for (var i = 0; i < panelDescriptors.length; ++i)
         WebInspector.inspectorView.addPanel(panelDescriptors[i]);
     WebInspector.endBatchUpdate();
@@ -579,36 +488,6 @@ WebInspector._doLoadedDoneWithCapabilities = function()
     InspectorFrontendAPI.loadCompleted();
 }
 
-WebInspector._installDockToRight = function()
-{
-    // Re-use Settings infrastructure for the dock-to-right settings UI
-    WebInspector.settings.dockToRight.set(WebInspector.queryParamsObject.dockSide === "right");
-
-    if (WebInspector.settings.dockToRight.get())
-        document.body.addStyleClass("dock-to-right");
-
-    if (WebInspector.attached)
-        WebInspector._setCompactMode(!WebInspector.settings.dockToRight.get());
-
-    WebInspector.settings.dockToRight.addChangeListener(listener.bind(this));
-
-    function listener(event)
-    {
-        var value = WebInspector.settings.dockToRight.get();
-        if (value) {
-            InspectorFrontendHost.requestSetDockSide("right");
-            document.body.addStyleClass("dock-to-right");
-        } else {
-            InspectorFrontendHost.requestSetDockSide("bottom");
-            document.body.removeStyleClass("dock-to-right");
-        }
-        if (WebInspector.attached)
-            WebInspector._setCompactMode(!value);
-        else
-            WebInspector._updateDockButtonState();
-    }
-}
-
 var windowLoaded = function()
 {
     var localizedStringsURL = InspectorFrontendHost.localizedStringsURL();
@@ -620,8 +499,6 @@ var windowLoaded = function()
         document.head.appendChild(localizedStringsScriptElement);
     } else
         WebInspector.loaded();
-
-    WebInspector.attached = WebInspector.queryParamsObject.docked === "true";
 
     window.removeEventListener("DOMContentLoaded", windowLoaded, false);
     delete windowLoaded;
@@ -667,8 +544,8 @@ WebInspector.windowResize = function(event)
 
 WebInspector.setDockingUnavailable = function(unavailable)
 {
-    this._isDockingUnavailable = unavailable;
-    this._updateDockButtonState();
+    if (this.dockController)
+        this.dockController.setDockingUnavailable(unavailable);
 }
 
 WebInspector.close = function(event)
@@ -736,7 +613,7 @@ WebInspector.openResource = function(resourceURL, inResourcesPanel)
         InspectorFrontendHost.openInNewTab(resourceURL);
 }
 
-WebInspector._registerShortcuts = function()
+WebInspector._registerShortcuts = function(panelDescriptors)
 {
     var shortcut = WebInspector.KeyboardShortcut;
     var section = WebInspector.shortcutsScreen.section(WebInspector.UIString("All Panels"));
@@ -771,6 +648,9 @@ WebInspector._registerShortcuts = function()
 
     var goToShortcut = WebInspector.GoToLineDialog.createShortcut();
     section.addKey(goToShortcut.name, WebInspector.UIString("Go to line"));
+
+    for (var i = 0; i < panelDescriptors.length; ++i)
+        panelDescriptors[i].panel();
 }
 
 WebInspector.documentKeyDown = function(event)
@@ -1095,3 +975,8 @@ WebInspector.addMainEventListeners = function(doc)
 }
 
 WebInspector.ProfileURLRegExp = /webkit-profile:\/\/(.+)\/(.+)#([0-9]+)/;
+
+WebInspector.Zoom = {
+    Table: [0.25, 0.33, 0.5, 0.66, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5],
+    DefaultOffset: 6
+}

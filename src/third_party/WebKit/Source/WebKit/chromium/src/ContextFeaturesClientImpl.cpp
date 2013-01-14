@@ -147,6 +147,8 @@ bool ContextFeaturesClientImpl::askIfIsEnabled(Document* document, ContextFeatur
         return m_client->allowHTMLNotifications(WebDocument(document));
     case ContextFeatures::MutationEvents:
         return m_client->allowMutationEvents(WebDocument(document), defaultValue);
+    case ContextFeatures::PushState:
+        return m_client->allowPushState(WebDocument(document));
     default:
         return defaultValue;
     }

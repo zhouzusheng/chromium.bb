@@ -15,56 +15,45 @@
 #include "SkGrPixelRef.h"
 #endif
 
-SkSingleInputImageFilter::SkSingleInputImageFilter(SkImageFilter* input) : fInput(input) {
-    SkSafeRef(fInput);
+SkSingleInputImageFilter::SkSingleInputImageFilter(SkImageFilter* input) : INHERITED(input) {
 }
 
 SkSingleInputImageFilter::~SkSingleInputImageFilter() {
-    SkSafeUnref(fInput);
 }
 
-SkSingleInputImageFilter::SkSingleInputImageFilter(SkFlattenableReadBuffer& rb) {
-    if (rb.readBool()) {
-        fInput = rb.readFlattenableT<SkImageFilter>();
-    } else {
-        fInput = NULL;
-    }
+SkSingleInputImageFilter::SkSingleInputImageFilter(SkFlattenableReadBuffer& rb)
+    : INHERITED(rb) {
 }
 
 void SkSingleInputImageFilter::flatten(SkFlattenableWriteBuffer& wb) const {
-    wb.writeBool(NULL != fInput);
-    if (NULL != fInput) {
-        wb.writeFlattenable(fInput);
-    }
+    this->INHERITED::flatten(wb);
 }
 
 SkBitmap SkSingleInputImageFilter::getInputResult(Proxy* proxy,
                                                   const SkBitmap& src,
                                                   const SkMatrix& ctm,
                                                   SkIPoint* offset) {
-    SkBitmap result;
-    if (fInput && fInput->filterImage(proxy, src, ctm, &result, offset)) {
-        return result;
-    } else {
-        return src;
-    }
+    return this->INHERITED::getInputResult(0, proxy, src, ctm, offset);
 }
 
 #if SK_SUPPORT_GPU
-GrTexture* SkSingleInputImageFilter::getInputResultAsTexture(GrTexture* src,
+// FIXME:  generalize and move to base class
+GrTexture* SkSingleInputImageFilter::getInputResultAsTexture(Proxy* proxy,
+                                                             GrTexture* src,
                                                              const SkRect& rect) {
-    GrTexture* resultTex;
-    if (!fInput) {
+    GrTexture* resultTex = NULL;
+    SkImageFilter* input = getInput(0);
+    if (!input) {
         resultTex = src;
-    } else if (fInput->canFilterImageGPU()) {
+    } else if (input->canFilterImageGPU()) {
         // onFilterImageGPU() already refs the result, so just return it here.
-        return fInput->onFilterImageGPU(src, rect);
+        return input->onFilterImageGPU(proxy, src, rect);
     } else {
         SkBitmap srcBitmap, result;
         srcBitmap.setConfig(SkBitmap::kARGB_8888_Config, src->width(), src->height());
         srcBitmap.setPixelRef(new SkGrPixelRef(src))->unref();
         SkIPoint offset;
-        if (fInput->filterImage(NULL, srcBitmap, SkMatrix(), &result, &offset)) {
+        if (input->filterImage(proxy, srcBitmap, SkMatrix(), &result, &offset)) {
             if (result.getTexture()) {
                 resultTex = (GrTexture*) result.getTexture();
             } else {
@@ -81,5 +70,3 @@ GrTexture* SkSingleInputImageFilter::getInputResultAsTexture(GrTexture* src,
     return resultTex;
 }
 #endif
-
-SK_DEFINE_FLATTENABLE_REGISTRAR(SkSingleInputImageFilter)

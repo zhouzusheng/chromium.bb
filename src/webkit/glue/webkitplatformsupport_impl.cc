@@ -40,8 +40,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "ui/base/layout.h"
+#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
-#include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
@@ -199,6 +199,20 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_FILE_MULTIPLE_UPLOAD;
     case WebLocalizedString::OtherColorLabel:
       return IDS_FORM_OTHER_COLOR_LABEL;
+    case WebLocalizedString::OtherDateLabel:
+        return IDS_FORM_OTHER_DATE_LABEL;
+    case WebLocalizedString::OtherMonthLabel:
+      return IDS_FORM_OTHER_MONTH_LABEL;
+    case WebLocalizedString::OtherTimeLabel:
+      return IDS_FORM_OTHER_TIME_LABEL;
+    case WebLocalizedString::OtherWeekLabel:
+      return IDS_FORM_OTHER_WEEK_LABEL;
+    case WebLocalizedString::PlaceholderForDayOfMonthField:
+      return IDS_FORM_PLACEHOLDER_FOR_DAY_OF_MONTH_FIELD;
+    case WebLocalizedString::PlaceholderForMonthField:
+      return IDS_FORM_PLACEHOLDER_FOR_MONTH_FIELD;
+    case WebLocalizedString::PlaceholderForYearField:
+      return IDS_FORM_PLACEHOLDER_FOR_YEAR_FIELD;
     case WebLocalizedString::ResetButtonDefaultLabel:
       return IDS_FORM_RESET_LABEL;
     case WebLocalizedString::SearchableIndexIntroduction:
@@ -211,6 +225,10 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_RECENT_SEARCHES;
     case WebLocalizedString::SubmitButtonDefaultLabel:
       return IDS_FORM_SUBMIT_LABEL;
+    case WebLocalizedString::ThisMonthButtonLabel:
+      return IDS_FORM_THIS_MONTH_LABEL;
+    case WebLocalizedString::ThisWeekButtonLabel:
+      return IDS_FORM_THIS_WEEK_LABEL;
     case WebLocalizedString::ValidationPatternMismatch:
       return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
     case WebLocalizedString::ValidationRangeOverflow:
@@ -241,6 +259,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_VALUE_MISSING_RADIO;
     case WebLocalizedString::ValidationValueMissingForSelect:
       return IDS_FORM_VALIDATION_VALUE_MISSING_SELECT;
+    case WebLocalizedString::WeekFormatTemplate:
+      return IDS_FORM_INPUT_WEEK_TEMPLATE;
     // This "default:" line exists to avoid compile warnings about enum
     // coverage when we add a new symbol to WebLocalizedString.h in WebKit.
     // After a planned WebKit patch is landed, we need to add a case statement
@@ -289,7 +309,7 @@ void WebKitPlatformSupportImpl::getPluginList(bool refresh,
 
     builder->addPlugin(
         plugin.name, plugin.desc,
-        FilePathStringToWebString(plugin.path.BaseName().value()));
+        webkit_base::FilePathStringToWebString(plugin.path.BaseName().value()));
 
     for (size_t j = 0; j < plugin.mime_types.size(); ++j) {
       const webkit::WebPluginMimeType& mime_type = plugin.mime_types[j];
@@ -525,6 +545,8 @@ const DataResource kDataResources[] = {
   { "soloCC", IDR_AUTOFILL_CC_SOLO, ui::SCALE_FACTOR_100P },
   { "visaCC", IDR_AUTOFILL_CC_VISA, ui::SCALE_FACTOR_100P },
   { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
+  { "generatePasswordHover",
+    IDR_PASSWORD_GENERATION_ICON_HOVER, ui::SCALE_FACTOR_100P },
 };
 
 }  // namespace
@@ -740,6 +762,10 @@ static size_t memoryUsageMB() {
   v8::HeapStatistics stat;
   v8::V8::GetHeapStatistics(&stat);
   return mem_usage + (static_cast<uint64_t>(stat.total_heap_size()) >> 20);
+}
+#elif defined(OS_MACOSX)
+static size_t memoryUsageMB() {
+  return CurrentProcessMetrics()->GetWorkingSetSize() >> 20;
 }
 #else
 static size_t memoryUsageMB() {

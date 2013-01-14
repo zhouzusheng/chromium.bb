@@ -95,7 +95,7 @@ v8::Local<v8::Value> V8WorkerContextEventListener::callListenerFunction(ScriptEx
         return v8::Local<v8::Value>();
 
     InspectorInstrumentationCookie cookie;
-    if (InspectorInstrumentation::hasFrontends()) {
+    if (InspectorInstrumentation::timelineAgentEnabled(context)) {
         String resourceName("undefined");
         int lineNumber = 1;
         v8::ScriptOrigin origin = handlerFunction->GetScriptOrigin();
@@ -109,9 +109,6 @@ v8::Local<v8::Value> V8WorkerContextEventListener::callListenerFunction(ScriptEx
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
     V8RecursionScope recursionScope(context);
     v8::Local<v8::Value> result = handlerFunction->Call(receiver, 1, parameters);
-
-    if (WorkerContextExecutionProxy* proxy = workerProxy(context))
-        proxy->trackEvent(event);
 
     InspectorInstrumentation::didCallFunction(cookie);
 

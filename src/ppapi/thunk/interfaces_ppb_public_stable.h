@@ -71,12 +71,14 @@ PROXIED_IFACE(NoAPIName, PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0,
               PPB_TouchInputEvent_1_0)
 PROXIED_IFACE(PPB_Instance, PPB_FULLSCREEN_INTERFACE_1_0, PPB_Fullscreen_1_0)
 PROXIED_IFACE(PPB_Instance, PPB_MESSAGING_INTERFACE_1_0, PPB_Messaging_1_0)
+PROXIED_IFACE(PPB_Instance, PPB_MOUSECURSOR_INTERFACE_1_0, PPB_MouseCursor_1_0)
 PROXIED_IFACE(PPB_Instance, PPB_MOUSELOCK_INTERFACE_1_0, PPB_MouseLock_1_0)
 PROXIED_IFACE(PPB_URLLoader, PPB_URLLOADER_INTERFACE_1_0, PPB_URLLoader_1_0)
 PROXIED_IFACE(NoAPIName, PPB_URLREQUESTINFO_INTERFACE_1_0,
               PPB_URLRequestInfo_1_0)
 PROXIED_IFACE(PPB_URLResponseInfo, PPB_URLRESPONSEINFO_INTERFACE_1_0,
               PPB_URLResponseInfo_1_0)
+PROXIED_IFACE(NoAPIName, PPB_WEBSOCKET_INTERFACE_1_0, PPB_WebSocket_1_0)
 
 // Note: PPB_Var and PPB_VarArrayBuffer are special and registered manually.
 PROXIED_IFACE(NoAPIName, PPB_VIEW_INTERFACE_1_0, PPB_View_1_0)
@@ -84,9 +86,5 @@ PROXIED_IFACE(NoAPIName, PPB_VIEW_INTERFACE_1_0, PPB_View_1_0)
 // This has no corresponding _Proxy object since it does no IPC.
 PROXIED_IFACE(NoAPIName, PPB_AUDIO_CONFIG_INTERFACE_1_0, PPB_AudioConfig_1_0)
 PROXIED_IFACE(NoAPIName, PPB_AUDIO_CONFIG_INTERFACE_1_1, PPB_AudioConfig_1_1)
-
-#if !defined(OS_NACL)  // TODO(bbudge) Port to NaCl.
-PROXIED_IFACE(PPB_Instance, PPB_MOUSECURSOR_INTERFACE_1_0, PPB_MouseCursor_1_0)
-#endif  // !defined(OS_NACL)
 
 #include "ppapi/thunk/interfaces_postamble.h"

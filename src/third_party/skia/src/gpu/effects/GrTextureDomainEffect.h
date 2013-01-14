@@ -8,7 +8,6 @@
 #ifndef GrTextureDomainEffect_DEFINED
 #define GrTextureDomainEffect_DEFINED
 
-//#include "GrCustomStage.h"
 #include "GrSingleTextureEffect.h"
 #include "GrRect.h"
 
@@ -20,16 +19,19 @@ class GrGLTextureDomainEffect;
 class GrTextureDomainEffect : public GrSingleTextureEffect {
 
 public:
+    /** Uses default texture params (no filter, clamp) */
+    GrTextureDomainEffect(GrTexture*, const GrRect& domain);
 
-    GrTextureDomainEffect(GrTexture*, GrRect domain);
+    GrTextureDomainEffect(GrTexture*, const GrRect& domain, const GrTextureParams& params);
+
     virtual ~GrTextureDomainEffect();
 
     static const char* Name() { return "TextureDomain"; }
 
-    typedef GrGLTextureDomainEffect GLProgramStage;
+    typedef GrGLTextureDomainEffect GLEffect;
 
-    virtual const GrProgramStageFactory& getFactory() const SK_OVERRIDE;
-    virtual bool isEqual(const GrCustomStage&) const SK_OVERRIDE;
+    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual bool isEqual(const GrEffect&) const SK_OVERRIDE;
 
     const GrRect& domain() const { return fTextureDomain; }
 
@@ -38,7 +40,7 @@ protected:
     GrRect fTextureDomain;
 
 private:
-    GR_DECLARE_CUSTOM_STAGE_TEST;
+    GR_DECLARE_EFFECT_TEST;
 
     typedef GrSingleTextureEffect INHERITED;
 };

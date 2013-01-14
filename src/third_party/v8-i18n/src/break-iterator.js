@@ -64,10 +64,10 @@ function initializeBreakIterator(iterator, locales, options) {
  *
  * @constructor
  */
-v8Intl.v8BreakIterator = function(locales, options) {
-  if (!this || this === v8Intl) {
+Intl.v8BreakIterator = function(locales, options) {
+  if (!this || this === Intl) {
     // Constructor is called as a function.
-    return new v8Intl.v8BreakIterator(locales, options);
+    return new Intl.v8BreakIterator(locales, options);
   }
 
   return initializeBreakIterator(toObject(this), locales, options);
@@ -77,7 +77,7 @@ v8Intl.v8BreakIterator = function(locales, options) {
 /**
  * BreakIterator resolvedOptions method.
  */
-v8Intl.v8BreakIterator.prototype.resolvedOptions = function() {
+Intl.v8BreakIterator.prototype.resolvedOptions = function() {
   if (!this || typeof this !== 'object' ||
       this.__initializedIntlObject !== 'breakiterator') {
     throw new TypeError(['resolvedOptions method called on a non-object or',
@@ -100,7 +100,7 @@ v8Intl.v8BreakIterator.prototype.resolvedOptions = function() {
  * has a matching (possibly fallback) locale. Locales appear in the same
  * order in the returned list as in the input list.
  */
-v8Intl.v8BreakIterator.supportedLocalesOf = function(locales, options) {
+Intl.v8BreakIterator.supportedLocalesOf = function(locales, options) {
   return supportedLocalesOf('breakiterator', locales, options);
 };
 
@@ -151,8 +151,8 @@ function breakType(iterator) {
 }
 
 
-addBoundMethod(v8Intl.v8BreakIterator, 'adoptText', adoptText, 1);
-addBoundMethod(v8Intl.v8BreakIterator, 'first', first, 0);
-addBoundMethod(v8Intl.v8BreakIterator, 'next', next, 0);
-addBoundMethod(v8Intl.v8BreakIterator, 'current', current, 0);
-addBoundMethod(v8Intl.v8BreakIterator, 'breakType', breakType, 0);
+addBoundMethod(Intl.v8BreakIterator, 'adoptText', adoptText, 1);
+addBoundMethod(Intl.v8BreakIterator, 'first', first, 0);
+addBoundMethod(Intl.v8BreakIterator, 'next', next, 0);
+addBoundMethod(Intl.v8BreakIterator, 'current', current, 0);
+addBoundMethod(Intl.v8BreakIterator, 'breakType', breakType, 0);

@@ -146,13 +146,13 @@ size_t GrDrawTarget::VertexSize(GrVertexLayout vertexLayout) {
  * Coverage
  */
 
-int GrDrawTarget::VertexStageCoordOffset(int stage, GrVertexLayout vertexLayout) {
+int GrDrawTarget::VertexStageCoordOffset(int stageIdx, GrVertexLayout vertexLayout) {
     GrAssert(check_layout(vertexLayout));
 
-    if (!StageUsesTexCoords(vertexLayout, stage)) {
+    if (!StageUsesTexCoords(vertexLayout, stageIdx)) {
         return 0;
     }
-    int tcIdx = VertexTexCoordsForStage(stage, vertexLayout);
+    int tcIdx = VertexTexCoordsForStage(stageIdx, vertexLayout);
     if (tcIdx >= 0) {
 
         int vecSize = (vertexLayout & kTextFormat_VertexLayoutBit) ?
@@ -313,11 +313,11 @@ bool GrDrawTarget::VertexUsesTexCoordIdx(int coordIndex,
     return !!(gTexCoordMasks[coordIndex] & vertexLayout);
 }
 
-int GrDrawTarget::VertexTexCoordsForStage(int stage,
+int GrDrawTarget::VertexTexCoordsForStage(int stageIdx,
                                           GrVertexLayout vertexLayout) {
-    GrAssert(stage < GrDrawState::kNumStages);
+    GrAssert(stageIdx < GrDrawState::kNumStages);
     GrAssert(check_layout(vertexLayout));
-    int bit = vertexLayout & gStageTexCoordMasks[stage];
+    int bit = vertexLayout & gStageTexCoordMasks[stageIdx];
     if (bit) {
         // figure out which set of texture coordates is used
         // bits are ordered T0S0, T0S1, T0S2, ..., T1S0, T1S1, ...
@@ -542,8 +542,8 @@ bool GrDrawTarget::reserveIndexSpace(int indexCount,
 
 }
 
-bool GrDrawTarget::StageUsesTexCoords(GrVertexLayout layout, int stage) {
-    return SkToBool(layout & gStageTexCoordMasks[stage]);
+bool GrDrawTarget::StageUsesTexCoords(GrVertexLayout layout, int stageIdx) {
+    return SkToBool(layout & gStageTexCoordMasks[stageIdx]);
 }
 
 bool GrDrawTarget::reserveVertexAndIndexSpace(GrVertexLayout vertexLayout,
@@ -748,10 +748,10 @@ bool GrDrawTarget::checkDraw(GrPrimitiveType type, int startVertex,
     GrAssert(NULL != drawState.getRenderTarget());
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
         if (drawState.isStageEnabled(s)) {
-            const GrCustomStage* stage = drawState.getSampler(s).getCustomStage();
-            int numTextures = stage->numTextures();
+            const GrEffect* effect = drawState.getStage(s).getEffect();
+            int numTextures = effect->numTextures();
             for (int t = 0; t < numTextures; ++t) {
-                GrTexture* texture = stage->texture(t);
+                GrTexture* texture = effect->texture(t);
                 GrAssert(texture->asRenderTarget() != drawState.getRenderTarget());
             }
         }
@@ -831,11 +831,11 @@ bool GrDrawTarget::srcAlphaWillBeOne(GrVertexLayout layout) const {
     // Check if a color stage could create a partial alpha
     for (int s = 0; s < drawState.getFirstCoverageStage(); ++s) {
         if (this->isStageEnabled(s)) {
-            const GrCustomStage* stage = drawState.getSampler(s).getCustomStage();
-            // FIXME: The param indicates whether the texture is opaque or not. However, the stage
+            const GrEffect* effect = drawState.getStage(s).getEffect();
+            // FIXME: The param indicates whether the texture is opaque or not. However, the effect
             // already controls its textures. It really needs to know whether the incoming color
             // (from a uni, per-vertex colors, or previous stage) is opaque or not.
-            if (!stage->isOpaque(true)) {
+            if (!effect->isOpaque(true)) {
                 return false;
             }
         }
@@ -913,7 +913,7 @@ GrDrawTarget::getBlendOpts(bool forceCoverage,
     }
 
     // check for coverage due to constant coverage, per-vertex coverage,
-    // edge aa or coverage texture stage
+    // edge aa or coverage stage
     bool hasCoverage = forceCoverage ||
                        0xffffffff != drawState.getCoverage() ||
                        (layout & kCoverage_VertexLayoutBit) ||
@@ -1039,7 +1039,7 @@ void GrDrawTarget::drawRect(const GrRect& rect,
     }
 
     SetRectVertices(rect, matrix, srcRects,
-                    srcMatrices, layout, geo.vertices());
+                    srcMatrices, SK_ColorBLACK, layout, geo.vertices());
 
     drawNonIndexed(kTriangleFan_GrPrimitiveType, 0, 4);
 }
@@ -1060,10 +1060,20 @@ GrVertexLayout GrDrawTarget::GetRectVertexLayout(const GrRect* srcRects[]) {
     return layout;
 }
 
+// This method fills int the four vertices for drawing 'rect'.
+//      matrix - is applied to each vertex
+//      srcRects - provide the uvs for each vertex
+//      srcMatrices - are applied to the corresponding 'srcRect'
+//      color - vertex color (replicated in each vertex)
+//      layout - specifies which uvs and/or color are present
+//      vertices - storage for the resulting vertices
+// Note: the color parameter will only be used when kColor_VertexLayoutBit
+// is present in 'layout'
 void GrDrawTarget::SetRectVertices(const GrRect& rect,
                                    const GrMatrix* matrix,
                                    const GrRect* srcRects[],
                                    const GrMatrix* srcMatrices[],
+                                   GrColor color,
                                    GrVertexLayout layout,
                                    void* vertices) {
 #if GR_DEBUG
@@ -1077,9 +1087,9 @@ void GrDrawTarget::SetRectVertices(const GrRect& rect,
     }
 #endif
 
-    int stageOffsets[GrDrawState::kNumStages];
+    int stageOffsets[GrDrawState::kNumStages], colorOffset;
     int vsize = VertexSizeAndOffsetsByStage(layout, stageOffsets,
-                                            NULL, NULL, NULL);
+                                            &colorOffset, NULL, NULL);
 
     GrTCast<GrPoint*>(vertices)->setRectFan(rect.fLeft, rect.fTop,
                                             rect.fRight, rect.fBottom,
@@ -1098,6 +1108,16 @@ void GrDrawTarget::SetRectVertices(const GrRect& rect,
             if (NULL != srcMatrices && NULL != srcMatrices[i]) {
                 srcMatrices[i]->mapPointsWithStride(coords, vsize, 4);
             }
+        }
+    }
+
+    if (layout & kColor_VertexLayoutBit) {
+
+        GrColor* vertCol = GrTCast<GrColor*>(GrTCast<intptr_t>(vertices) + colorOffset);
+
+        for (int i = 0; i < 4; ++i) {
+            *vertCol = color;
+            vertCol = (GrColor*) ((intptr_t) vertCol + vsize);
         }
     }
 }
@@ -1136,47 +1156,6 @@ void GrDrawTarget::AutoStateRestore::set(GrDrawTarget* target, ASRInit init) {
         fTempState.set(*fSavedState);
     }
     target->setDrawState(fTempState.get());
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-GrDrawTarget::AutoDeviceCoordDraw::AutoDeviceCoordDraw(GrDrawTarget* target,
-                                                       uint32_t explicitCoordStageMask) {
-    GrAssert(NULL != target);
-    GrDrawState* drawState = target->drawState();
-
-    fDrawTarget = target;
-    fViewMatrix = drawState->getViewMatrix();
-    fRestoreMask = 0;
-    GrMatrix invVM;
-    bool inverted = false;
-
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        if (!(explicitCoordStageMask & (1 << s)) && drawState->isStageEnabled(s)) {
-            if (!inverted && !fViewMatrix.invert(&invVM)) {
-                // sad trombone sound
-                fDrawTarget = NULL;
-                return;
-            } else {
-                inverted = true;
-            }
-            fRestoreMask |= (1 << s);
-            GrSamplerState* sampler = drawState->sampler(s);
-            fSamplerMatrices[s] = sampler->getMatrix();
-            sampler->preConcatMatrix(invVM);
-        }
-    }
-    drawState->viewMatrix()->reset();
-}
-
-GrDrawTarget::AutoDeviceCoordDraw::~AutoDeviceCoordDraw() {
-    GrDrawState* drawState = fDrawTarget->drawState();
-    drawState->setViewMatrix(fViewMatrix);
-    for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        if (fRestoreMask & (1 << s)) {
-            *drawState->sampler(s)->matrix() = fSamplerMatrices[s];
-        }
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

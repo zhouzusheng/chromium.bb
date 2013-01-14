@@ -31,7 +31,6 @@
 #include "AlternativeTextController.h"
 #include "ApplyStyleCommand.h"
 #include "CSSComputedStyleDeclaration.h"
-#include "CSSProperty.h"
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "CachedResourceLoader.h"
@@ -2490,7 +2489,7 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection,  
     // change the caret's DOM position (["hello", 0]). In these situations the above FrameSelection::setSelection call
     // does not call EditorClient::respondToChangedSelection(), which, on the Mac, sends selection change notifications and
     // starts a new kill ring sequence, but we want to do these things (matches AppKit).
-    if (selectionDidNotChangeDOMPosition)
+    if (selectionDidNotChangeDOMPosition && client())
         client()->respondToChangedSelection(m_frame);
 }
 

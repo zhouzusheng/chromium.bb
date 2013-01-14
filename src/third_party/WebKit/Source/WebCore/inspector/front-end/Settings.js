@@ -43,7 +43,8 @@ var Preferences = {
     exposeDisableCache: false,
     applicationTitle: "Web Inspector - %s",
     showDockToRight: false,
-    exposeFileSystemInspection: false
+    exposeFileSystemInspection: false,
+    experimentsEnabled: true
 }
 
 var Capabilities = {
@@ -54,6 +55,7 @@ var Capabilities = {
     heapProfilerPresent: false,
     canOverrideDeviceMetrics: false,
     timelineSupportsFrameInstrumentation: false,
+    canMonitorMainThread: false,
     canOverrideGeolocation: false,
     canOverrideDeviceOrientation: false,
 }
@@ -65,7 +67,7 @@ WebInspector.Settings = function()
 {
     this._eventSupport = new WebInspector.Object();
 
-    this.colorFormat = this.createSetting("colorFormat", "hex");
+    this.colorFormat = this.createSetting("colorFormat", "original");
     this.consoleHistory = this.createSetting("consoleHistory", []);
     this.debuggerEnabled = this.createSetting("debuggerEnabled", false);
     this.domWordWrap = this.createSetting("domWordWrap", true);
@@ -92,9 +94,9 @@ WebInspector.Settings = function()
     this.deviceMetrics = this.createSetting("deviceMetrics", "");
     this.deviceFitWindow = this.createSetting("deviceFitWindow", false);
     this.showScriptFolders = this.createSetting("showScriptFolders", true);
-    this.dockToRight = this.createSetting("dockToRight", false);
     this.emulateTouchEvents = this.createSetting("emulateTouchEvents", false);
     this.showPaintRects = this.createSetting("showPaintRects", false);
+    this.showShadowDOM = this.createSetting("showShadowDOM", false);
     this.zoomLevel = this.createSetting("zoomLevel", 0);
     this.savedURLs = this.createSetting("savedURLs", {});
     this.javaScriptDisabled = this.createSetting("javaScriptDisabled", false);
@@ -103,6 +105,10 @@ WebInspector.Settings = function()
     this.showHeapSnapshotObjectsHiddenProperties = this.createSetting("showHeaSnapshotObjectsHiddenProperties", false);
     this.searchInContentScripts = this.createSetting("searchInContentScripts", false);
     this.textEditorIndent = this.createSetting("textEditorIndent", "    ");
+    this.lastDockState = this.createSetting("lastDockState", "");
+    this.cssReloadEnabled = this.createSetting("cssReloadEnabled", false);
+    this.cssReloadTimeout = this.createSetting("cssReloadTimeout", 1000);
+    this.showMetricsRulers = this.createSetting("showMetricsRulers", false);
 
     // If there are too many breakpoints in a storage, it is likely due to a recent bug that caused
     // periodical breakpoints duplication leading to inspector slowness.
@@ -186,15 +192,12 @@ WebInspector.ExperimentsSettings = function()
     this._enabledForTest = {};
     
     // Add currently running experiments here.
-    this.showShadowDOM = this._createExperiment("showShadowDOM", "Show shadow DOM");
     this.snippetsSupport = this._createExperiment("snippetsSupport", "Snippets support");
     this.nativeMemorySnapshots = this._createExperiment("nativeMemorySnapshots", "Native memory profiling");
     this.liveNativeMemoryChart = this._createExperiment("liveNativeMemoryChart", "Live native memory chart");
     this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
-    this.webGLInspection = this._createExperiment("webGLInspection ", "WebGL inspection");
+    this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
     this.mainThreadMonitoring = this._createExperiment("mainThreadMonitoring", "Show CPU activity in Timeline");
-    this.geolocationOverride = this._createExperiment("geolocationOverride", "Override Device Geolocation");
-    this.deviceOrientationOverride = this._createExperiment("deviceOrientationOverride", "Override Device Orientation");
     this.sass = this._createExperiment("sass", "Support for SASS");
     this.codemirror = this._createExperiment("codemirror", "Use CodeMirror editor");
     this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
@@ -216,7 +219,7 @@ WebInspector.ExperimentsSettings.prototype = {
      */
     get experimentsEnabled()
     {
-        return "experiments" in WebInspector.queryParamsObject;
+        return Preferences.experimentsEnabled || ("experiments" in WebInspector.queryParamsObject);
     },
     
     /**

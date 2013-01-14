@@ -86,7 +86,13 @@ need to be translated for each locale.-->
          be 'nb'. -->
     <output filename="ui_strings_nb.pak" type="data_package" lang="no" />
     <output filename="ui_strings_pl.pak" type="data_package" lang="pl" />
-    <output filename="ui_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
+    <if expr="pp_ifdef('ios')">
+      <!-- iOS uses pt for pt-BR -->
+      <output filename="ui_strings_pt.pak" type="data_package" lang="pt-BR" />
+    </if>
+    <if expr="not pp_ifdef('ios')">
+      <output filename="ui_strings_pt-BR.pak" type="data_package" lang="pt-BR" />
+    </if>
     <output filename="ui_strings_pt-PT.pak" type="data_package" lang="pt-PT" />
     <output filename="ui_strings_ro.pak" type="data_package" lang="ro" />
     <output filename="ui_strings_ru.pak" type="data_package" lang="ru" />
@@ -110,44 +116,64 @@ need to be translated for each locale.-->
   <translations>
     <file path="ui_strings_am.xtb" lang="am" />
     <file path="ui_strings_ar.xtb" lang="ar" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ast.xtb" lang="ast" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_ast.xtb" lang="ast" />
+    </if>
     <file path="ui_strings_bg.xtb" lang="bg" />
     <file path="ui_strings_bn.xtb" lang="bn" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_bs.xtb" lang="bs" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_bs.xtb" lang="bs" />
+    </if>
     <file path="ui_strings_ca.xtb" lang="ca" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ca-valencia.xtb" lang="ca@valencia" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_ca-valencia.xtb" lang="ca@valencia" />
+    </if>
     <file path="ui_strings_cs.xtb" lang="cs" />
     <file path="ui_strings_da.xtb" lang="da" />
     <file path="ui_strings_de.xtb" lang="de" />
     <file path="ui_strings_el.xtb" lang="el" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_en-AU.xtb" lang="en-AU" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_en-AU.xtb" lang="en-AU" />
+    </if>
     <file path="ui_strings_en-GB.xtb" lang="en-GB" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_eo.xtb" lang="eo" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_eo.xtb" lang="eo" />
+    </if>
     <file path="ui_strings_es.xtb" lang="es" />
     <file path="ui_strings_es-419.xtb" lang="es-419" />
     <file path="ui_strings_et.xtb" lang="et" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_eu.xtb" lang="eu" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_eu.xtb" lang="eu" />
+    </if>
     <file path="ui_strings_fa.xtb" lang="fa" />
     <file path="ui_strings_fi.xtb" lang="fi" />
     <file path="ui_strings_fil.xtb" lang="fil" />
     <file path="ui_strings_fr.xtb" lang="fr" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_gl.xtb" lang="gl" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_gl.xtb" lang="gl" />
+    </if>
     <file path="ui_strings_gu.xtb" lang="gu" />
     <file path="ui_strings_hi.xtb" lang="hi" />
     <file path="ui_strings_hr.xtb" lang="hr" />
     <file path="ui_strings_hu.xtb" lang="hu" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_hy.xtb" lang="hy" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ia.xtb" lang="ia" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_hy.xtb" lang="hy" />
+      <file path="../../../third_party/launchpad_translations/ui_strings_ia.xtb" lang="ia" />
+    </if>
     <file path="ui_strings_id.xtb" lang="id" />
     <file path="ui_strings_it.xtb" lang="it" />
     <!-- The translation console uses 'iw' for Hebrew, but we use 'he'. -->
     <file path="ui_strings_iw.xtb" lang="he" />
     <file path="ui_strings_ja.xtb" lang="ja" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ka.xtb" lang="ka" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_ka.xtb" lang="ka" />
+    </if>
     <file path="ui_strings_kn.xtb" lang="kn" />
     <file path="ui_strings_ko.xtb" lang="ko" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ku.xtb" lang="ku" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_kw.xtb" lang="kw" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_ku.xtb" lang="ku" />
+      <file path="../../../third_party/launchpad_translations/ui_strings_kw.xtb" lang="kw" />
+    </if>
     <file path="ui_strings_lt.xtb" lang="lt" />
     <file path="ui_strings_lv.xtb" lang="lv" />
     <file path="ui_strings_ml.xtb" lang="ml" />
@@ -169,7 +195,9 @@ need to be translated for each locale.-->
     <file path="ui_strings_te.xtb" lang="te" />
     <file path="ui_strings_th.xtb" lang="th" />
     <file path="ui_strings_tr.xtb" lang="tr" />
-    <file path="../../../third_party/launchpad_translations/ui_strings_ug.xtb" lang="ug" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <file path="../../../third_party/launchpad_translations/ui_strings_ug.xtb" lang="ug" />
+    </if>
     <file path="ui_strings_uk.xtb" lang="uk" />
     <file path="ui_strings_vi.xtb" lang="vi" />
     <file path="ui_strings_zh-CN.xtb" lang="zh-CN" />
@@ -401,6 +429,24 @@ need to be translated for each locale.-->
       <message name="IDS_APP_PEBIBYTES_PER_SECOND" desc="Units tag indicating a speed of petabytes/second">
         <ph name="QUANTITY">$1<ex>42.0</ex></ph> PB/s
       </message>
+
+      <!-- Message center -->
+      <message name="IDS_MESSAGE_CENTER_EXTENSIONS_DISABLE" desc="The menu entry for disabling extensions from a notification.">
+        Disable extension
+      </message>
+      <message name="IDS_MESSAGE_CENTER_SITE_DISABLE" desc="The menu entry for disabling notification from a site.">
+        Disable notifications from <ph name="site">$1<ex>mail.google.com</ex></ph>
+      </message>
+      <message name="IDS_MESSAGE_CENTER_SETTINGS" desc="The menu entry or button for visiting the appropriate settings page.">
+        Settings...
+      </message>
+      <message name="IDS_MESSAGE_CENTER_CLEAR_ALL" desc="The button for clearing all notifications.">
+        Clear All
+      </message>
+      <message name="IDS_MESSAGE_CENTER_NO_MESSAGES" desc="The message displayed in the message center when there are no notifications.">
+        You have no notifications. Relax!
+      </message>
+      
     </messages>
   </release>
 </grit>

@@ -470,7 +470,7 @@ Node* InspectorDOMAgent::nodeForId(int id)
 
     HashMap<int, Node*>::iterator it = m_idToNode.find(id);
     if (it != m_idToNode.end())
-        return it->second;
+        return it->value;
     return 0;
 }
 
@@ -916,9 +916,9 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
     SearchResults::iterator resultsIt = m_searchResults.add(*searchId, Vector<RefPtr<Node> >()).iterator;
 
     for (ListHashSet<Node*>::iterator it = resultCollector.begin(); it != resultCollector.end(); ++it)
-        resultsIt->second.append(*it);
+        resultsIt->value.append(*it);
 
-    *resultCount = resultsIt->second.size();
+    *resultCount = resultsIt->value.size();
 }
 
 void InspectorDOMAgent::getSearchResults(ErrorString* errorString, const String& searchId, int fromIndex, int toIndex, RefPtr<TypeBuilder::Array<int> >& nodeIds)
@@ -929,7 +929,7 @@ void InspectorDOMAgent::getSearchResults(ErrorString* errorString, const String&
         return;
     }
 
-    int size = it->second.size();
+    int size = it->value.size();
     if (fromIndex < 0 || toIndex > size || fromIndex >= toIndex) {
         *errorString = "Invalid search result range";
         return;
@@ -937,7 +937,7 @@ void InspectorDOMAgent::getSearchResults(ErrorString* errorString, const String&
 
     nodeIds = TypeBuilder::Array<int>::create();
     for (int i = fromIndex; i < toIndex; ++i)
-        nodeIds->addItem(pushNodePathToFrontend((it->second)[i].get()));
+        nodeIds->addItem(pushNodePathToFrontend((it->value)[i].get()));
 }
 
 void InspectorDOMAgent::discardSearchResults(ErrorString*, const String& searchId)
@@ -951,6 +951,18 @@ bool InspectorDOMAgent::handleMousePress()
         return false;
 
     if (Node* node = m_overlay->highlightedNode()) {
+        inspect(node);
+        return true;
+    }
+    return false;
+}
+
+bool InspectorDOMAgent::handleTouchEvent(Node* node)
+{
+    if (!m_searchingForNode)
+        return false;
+    if (node && m_inspectModeHighlightConfig) {
+        m_overlay->highlightNode(node, *m_inspectModeHighlightConfig);
         inspect(node);
         return true;
     }
@@ -1030,6 +1042,9 @@ PassOwnPtr<HighlightConfig> InspectorDOMAgent::highlightConfigFromInspectorObjec
     bool showInfo = false; // Default: false (do not show a tooltip).
     highlightInspectorObject->getBoolean("showInfo", &showInfo);
     highlightConfig->showInfo = showInfo;
+    bool showRulers = false; // Default: false (do not show rulers).
+    highlightInspectorObject->getBoolean("showRulers", &showRulers);
+    highlightConfig->showRulers = showRulers;
     highlightConfig->content = parseConfigColor("contentColor", highlightInspectorObject);
     highlightConfig->contentOutline = parseConfigColor("contentOutlineColor", highlightInspectorObject);
     highlightConfig->padding = parseConfigColor("paddingColor", highlightInspectorObject);
@@ -1177,6 +1192,11 @@ String InspectorDOMAgent::documentURLString(Document* document)
     return document->url().string();
 }
 
+static String documentBaseURLString(Document* document)
+{
+    return document->completeURL("").string();
+}
+
 PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* node, int depth, NodeToIdMap* nodesMap)
 {
     int id = bind(node, nodesMap);
@@ -1241,6 +1261,7 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
     } else if (node->isDocumentNode()) {
         Document* document = static_cast<Document*>(node);
         value->setDocumentURL(documentURLString(document));
+        value->setBaseURL(documentBaseURLString(document));
         value->setXmlVersion(document->xmlVersion());
     } else if (node->nodeType() == Node::DOCUMENT_TYPE_NODE) {
         DocumentType* docType = static_cast<DocumentType*>(node);
@@ -1305,12 +1326,15 @@ PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEve
         .setNodeId(pushNodePathToFrontend(node))
         .setHandlerBody(eventListenerHandlerBody(node->document(), eventListener.get()));
     String sourceName;
+    String scriptId;
     int lineNumber;
-    if (eventListenerHandlerLocation(node->document(), eventListener.get(), sourceName, lineNumber)) {
+    if (eventListenerHandlerLocation(node->document(), eventListener.get(), sourceName, scriptId, lineNumber)) {
         RefPtr<TypeBuilder::Debugger::Location> location = TypeBuilder::Debugger::Location::create()
-            .setScriptId(sourceName)
+            .setScriptId(scriptId)
             .setLineNumber(lineNumber);
         value->setLocation(location);
+        if (!sourceName.isEmpty())
+            value->setSourceName(sourceName);
     }
     return value.release();
 }

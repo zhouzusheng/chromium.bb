@@ -11,15 +11,13 @@ import sys
 import types
 from xml.sax import saxutils
 
+from grit import clique
 from grit import exception
 from grit import util
-from grit import clique
-import grit.format.interface
 
 
-class Node(grit.format.interface.ItemFormatter):
-  '''An item in the tree that has children.  Also implements the
-  ItemFormatter interface to allow formatting a node as a GRD document.'''
+class Node(object):
+  '''An item in the tree that has children.'''
 
   # Valid content types that can be returned by _ContentType()
   _CONTENT_TYPE_NONE = 0   # No CDATA content but may have children
@@ -39,18 +37,40 @@ class Node(grit.format.interface.ItemFormatter):
     self.parent = None        # Our parent unless we are the root element.
     self.uberclique = None    # Allows overriding uberclique for parts of tree
 
-  def __iter__(self):
-    '''An in-order iteration through the tree that this node is the
-    root of.'''
-    return self.inorder()
+  # This context handler allows you to write "with node:" and get a
+  # line identifying the offending node if an exception escapes from the body
+  # of the with statement.
+  def __enter__(self):
+    return self
 
-  def inorder(self):
+  def __exit__(self, exc_type, exc_value, traceback):
+    if exc_type is not None:
+      print u'Error processing node %s' % unicode(self)
+
+  def __iter__(self):
+    '''A preorder iteration through the tree that this node is the root of.'''
+    return self.Preorder()
+
+  def Preorder(self):
     '''Generator that generates first this node, then the same generator for
     any child nodes.'''
     yield self
     for child in self.children:
-      for iterchild in child.inorder():
+      for iterchild in child.Preorder():
         yield iterchild
+
+  def ActiveChildren(self):
+    '''Returns the children of this node that should be included in the current
+    configuration. Overridden by <if>.'''
+    return [node for node in self.children if not node.WhitelistMarkedAsSkip()]
+
+  def ActiveDescendants(self):
+    '''Yields the current node and all descendants that should be included in
+    the current configuration, in preorder.'''
+    yield self
+    for child in self.ActiveChildren():
+      for descendant in child.ActiveDescendants():
+        yield descendant
 
   def GetRoot(self):
     '''Returns the root Node in the tree this Node belongs to.'''
@@ -218,10 +238,6 @@ class Node(grit.format.interface.ItemFormatter):
     header = u'<?xml version="1.0" encoding="UTF-8"?>\n'
     return header + self.FormatXml()
 
-  # Compliance with ItemFormatter interface.
-  def Format(self, item, lang_re = None):
-    return item.FormatXml()
-
   def FormatXml(self, indent = u'', one_line = False):
     '''Returns this node and all nodes below it as an XML
     element in a Unicode string.  This differs from __unicode__ in that it does
@@ -236,14 +252,12 @@ class Node(grit.format.interface.ItemFormatter):
     inside_content = self.ContentsAsXml(indent, content_one_line)
 
     # Then the attributes for this node.
-    attribs = u' '
-    for (attrib, value) in self.attrs.iteritems():
+    attribs = u''
+    default_attribs = self.DefaultAttributes()
+    for attrib, value in sorted(self.attrs.items()):
       # Only print an attribute if it is other than the default value.
-      if (not self.DefaultAttributes().has_key(attrib) or
-          value != self.DefaultAttributes()[attrib]):
-        attribs += u'%s=%s ' % (attrib, saxutils.quoteattr(value))
-    attribs = attribs.rstrip()  # if no attribs, we end up with '', otherwise
-                                # we end up with a space-prefixed string
+      if attrib not in default_attribs or value != default_attribs[attrib]:
+        attribs += u' %s=%s' % (attrib, saxutils.quoteattr(value))
 
     # Finally build the XML for our node and return it
     if len(inside_content) > 0:
@@ -297,17 +311,6 @@ class Node(grit.format.interface.ItemFormatter):
 
     return u''.join(inside_parts)
 
-  def RunGatherers(self, recursive=0, debug=False, substitute_messages=False):
-    '''Runs all gatherers on this object, which may add to the data stored
-    by the object.  If 'recursive' is true, will call RunGatherers() recursively
-    on all child nodes first.  If 'debug' is True, will print out information
-    as it is running each nodes' gatherers.
-    '''
-    if recursive:
-      for child in self.children:
-        assert child.name != 'translations'  # <grit> node overrides
-        child.RunGatherers(recursive=recursive, debug=debug)
-
   def SubstituteMessages(self, substituter):
     '''Applies substitutions to all messages in the tree.
 
@@ -318,33 +321,6 @@ class Node(grit.format.interface.ItemFormatter):
     '''
     for child in self.children:
       child.SubstituteMessages(substituter)
-
-  def ItemFormatter(self, type):
-    '''Returns an instance of the item formatter for this object of the
-    specified type, or None if not supported.
-
-    Args:
-      type: 'rc-header'
-
-    Return:
-      (object RcHeaderItemFormatter)
-    '''
-    if type == 'xml':
-      return self
-    else:
-      return None
-
-  def SatisfiesOutputCondition(self):
-    '''Returns true if this node is either not a descendant of an <if> element,
-    or if all conditions on its <if> element ancestors are satisfied.
-
-    Used to determine whether to return item formatters for formats that
-    obey conditional output of resources (e.g. the RC formatters).
-    '''
-    if self.parent:
-      return self.parent.SatisfiesOutputCondition()
-    else:
-      return True
 
   def _IsValidChild(self, child):
     '''Returns true if 'child' is a valid child of this node.
@@ -441,7 +417,7 @@ class Node(grit.format.interface.ItemFormatter):
 
   def GetChildrenOfType(self, type):
     '''Returns a list of all subnodes (recursing to all leaves) of this node
-    that are of the indicated type.
+    that are of the indicated type (or tuple of types).
 
     Args:
       type: A type you could use with isinstance().
@@ -452,12 +428,11 @@ class Node(grit.format.interface.ItemFormatter):
     return [child for child in self if isinstance(child, type)]
 
   def GetTextualIds(self):
-    '''Returns the textual ids of this node, if it has some.
-    Otherwise it just returns None.
+    '''Returns a list of the textual ids of this node.
     '''
     if 'name' in self.attrs:
       return [self.attrs['name']]
-    return None
+    return []
 
   def EvaluateCondition(self, expr):
     '''Returns true if and only if the Python expression 'expr' evaluates

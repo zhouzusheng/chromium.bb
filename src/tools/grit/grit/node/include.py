@@ -51,24 +51,6 @@ class IncludeNode(base.Node):
             'relativepath': 'false',
            }
 
-  def ItemFormatter(self, t):
-    if t == 'rc_header':
-      return grit.format.rc_header.Item()
-    elif (t in ['rc_all', 'rc_translateable', 'rc_nontranslateable'] and
-          self.SatisfiesOutputCondition()):
-      return grit.format.rc.RcInclude(self.attrs['type'].upper(),
-                                      self.attrs['filenameonly'] == 'true',
-                                      self.attrs['relativepath'] == 'true',
-                                      self.attrs['flattenhtml'] == 'true')
-    elif t == 'resource_map_source':
-      from grit.format import resource_map
-      return resource_map.SourceInclude()
-    elif t == 'resource_file_map_source':
-      from grit.format import resource_map
-      return resource_map.SourceFileInclude()
-    else:
-      return super(IncludeNode, self).ItemFormatter(t)
-
   def FileForLanguage(self, lang, output_dir):
     """Returns the file for the specified language.  This allows us to return
     different files for different language variants of the include file.
@@ -79,8 +61,10 @@ class IncludeNode(base.Node):
     """Returns a (id, string) pair that represents the resource id and raw
     bytes of the data.  This is used to generate the data pack data file.
     """
+    # TODO(benrg/joi): Move this and other implementations of GetDataPackPair
+    # to grit.format.data_pack?
     from grit.format import rc_header
-    id_map = rc_header.Item.tids_
+    id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
     if self.attrs['flattenhtml'] == 'true':
       allow_external_script = self.attrs['allowexternalscript'] == 'true'

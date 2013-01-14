@@ -26,6 +26,9 @@ PROXIED_IFACE(PPB_Flash,
 PROXIED_IFACE(PPB_Flash,
               PPB_FLASH_INTERFACE_12_5,
               PPB_Flash_12_5)
+PROXIED_IFACE(PPB_Flash,
+              PPB_FLASH_INTERFACE_12_6,
+              PPB_Flash_12_6)
 
 PROXIED_IFACE(PPB_Flash,
               PPB_FLASH_CLIPBOARD_INTERFACE_3_LEGACY,
@@ -49,6 +52,10 @@ PROXIED_IFACE(PPB_Flash,
 PROXIED_IFACE(NoAPIName,
               PPB_FLASH_DEVICEID_INTERFACE_1_0,
               PPB_Flash_DeviceID_1_0)
+
+PROXIED_IFACE(NoAPIName,
+              PPB_FLASH_FONTFILE_INTERFACE_0_1,
+              PPB_Flash_FontFile_0_1)
 
 PROXIED_API(PPB_Flash_Menu)
 PROXIED_IFACE(PPB_Flash_Menu,

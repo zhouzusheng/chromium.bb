@@ -573,6 +573,15 @@ typedef void* GLeglImageOES;
 /* GL_NV_texture_npot_2D_mipmap */
 /* No new tokens introduced by this extension. */
 
+/* GL_NVX_gpu_memory_info */
+#ifndef GL_NVX_gpu_memory_info
+#define GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX                 0x9047
+#define GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX           0x9048
+#define GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX         0x9049
+#define GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX                   0x904A
+#define GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX                   0x904B
+#endif
+
 /*------------------------------------------------------------------------*
  * QCOM extension tokens
  *------------------------------------------------------------------------*/
@@ -1994,6 +2003,13 @@ typedef void (GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUM) (GLenum target, GLenum sour
 #define GL_GET_ERROR_QUERY_CHROMIUM 0x84F3
 #endif
 
+/* GL_CHROMIUM_command_buffer_latency_query */
+#ifndef GL_CHROMIUM_command_buffer_latency_query
+#define GL_CHROMIUM_command_buffer_latency_query 1
+// TODO: Get official numbers for these constants.
+#define GL_LATENCY_QUERY_CHROMIUM 0x84F4
+#endif
+
 /* GL_CHROMIUM_texture_mailbox */
 #ifndef GL_CHROMIUM_texture_mailbox
 #define GL_CHROMIUM_texture_mailbox 1
@@ -2025,6 +2041,22 @@ GL_APICALL void GL_APIENTRY glBindUniformLocationCHROMIUM (GLuint program, GLint
 #endif
 #else
 typedef void (GL_APIENTRYP PFNGLBINDUNIFORMLOCATIONCHROMIUM) (GLuint program, GLint location, const GLchar* name);
+#endif
+#endif
+
+/* GL_CHROMIUM_texture_from_image */
+#ifndef GL_CHROMIUM_texture_from_image
+#define GL_CHROMIUM_texture_from_image 1
+#ifdef GL_GLEXT_PROTOTYPES
+#define glBindTexImage2DCHROMIUM GLES2_GET_FUN(BindTexImage2DCHROMIUM)
+#define glReleaseTexImage2DCHROMIUM GLES2_GET_FUN(ReleaseTexImage2DCHROMIUM)
+#if !defined(GLES2_USE_CPP_BINDINGS)
+GL_APICALL void GL_APIENTRY glBindTexImage2DCHROMIUM (GLenum target, GLint imageId);
+GL_APICALL void GL_APIENTRY glReleaseTexImage2DCHROMIUM (GLenum target, GLint imageId);
+#endif
+#else
+typedef void (GL_APIENTRYP PFNGLBINDTEXIMAGE2DCHROMIUM) (GLenum target, GLint imageId);
+typedef void (GL_APIENTRYP PFNGLRELEASETEXIMAGE2DCHROMIUM) (GLenum target, GLint imageId);
 #endif
 #endif
 

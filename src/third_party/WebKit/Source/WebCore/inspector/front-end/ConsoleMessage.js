@@ -318,19 +318,45 @@ WebInspector.ConsoleMessageImpl.prototype = {
                 titleElement.createTextChild(": ");
             }
 
-            var span = titleElement.createChild("span", "console-formatted-" + property.type);
-            if (property.type === "object") {
-                if (property.subtype === "node")
-                    span.addStyleClass("console-formatted-preview-node");
-                else if (property.subtype === "regexp")
-                    span.addStyleClass("console-formatted-string");
-            }
-            span.textContent = property.value;
+            this._appendPropertyPreview(titleElement, property);
         }
         if (preview.overflow)
             titleElement.createChild("span").textContent = "\u2026";
         titleElement.createTextChild(isArray ? "]" : "}");
         return preview.lossless;
+    },
+
+    /**
+     * @param {Element} titleElement
+     * @param {RuntimeAgent.PropertyPreview} property
+     */
+    _appendPropertyPreview: function(titleElement, property)
+    {
+        var span = titleElement.createChild("span", "console-formatted-" + property.type);
+
+        if (property.type === "function") {
+            span.textContent = "function";
+            return;
+        }
+
+        if (property.type === "object" && property.subtype === "regexp") {
+            span.addStyleClass("console-formatted-string");
+            span.textContent = property.value;
+            return;
+        }
+
+        if (property.type === "object" && property.subtype === "node") {
+            span.addStyleClass("console-formatted-preview-node");
+            var match = property.value.match(/([^#.]+)(#[^.]+)?(\..*)?/);
+            span.createChild("span", "webkit-html-tag-name").textContent = match[1];
+            if (match[2])
+                span.createChild("span", "webkit-html-attribute-value").textContent = match[2];
+            if (match[3])
+                span.createChild("span", "webkit-html-attribute-name").textContent = match[3];
+            return;
+        }
+
+        span.textContent = property.value;
     },
 
     _formatParameterAsNode: function(object, elem)
@@ -447,6 +473,27 @@ WebInspector.ConsoleMessageImpl.prototype = {
             return obj.description;
         }
 
+        function styleFormatter(obj)
+        {
+            var buffer = document.createElement("span");
+            buffer.setAttribute("style", obj.description);
+            for (var i = 0; i < buffer.style.length; i++) {
+                var property = buffer.style[i];
+                if (isWhitelistedProperty(property))
+                    formattedResult.style[property] = buffer.style[property];
+            }
+        }
+
+        function isWhitelistedProperty(property)
+        {
+            var prefixes = ["background", "border", "color", "font", "line", "margin", "padding", "text", "-webkit-background", "-webkit-border", "-webkit-font", "-webkit-margin", "-webkit-padding", "-webkit-text"];
+            for (var i = 0; i < prefixes.length; i++) {
+                if (property.startsWith(prefixes[i]))
+                    return true;
+            }
+            return false;
+        }
+
         // Firebug uses %o for formatting objects.
         formatters.o = parameterFormatter.bind(this, false);
         formatters.s = valueFormatter;
@@ -455,15 +502,18 @@ WebInspector.ConsoleMessageImpl.prototype = {
         formatters.i = valueFormatter;
         formatters.d = valueFormatter;
 
+        // Firebug uses %c for styling the message.
+        formatters.c = styleFormatter;
+
         // Support %O to force object formatting, instead of the type-based %o formatting.
         formatters.O = parameterFormatter.bind(this, true);
 
         function append(a, b)
         {
-            if (!(b instanceof Node))
-                a.appendChild(WebInspector.linkifyStringAsFragment(b.toString()));
-            else
+            if (b instanceof Node)
                 a.appendChild(b);
+            else if (b)
+                a.appendChild(WebInspector.linkifyStringAsFragment(b.toString()));
             return a;
         }
 
@@ -687,6 +737,8 @@ WebInspector.ConsoleMessageImpl.prototype = {
                 return false;
             var l = this._stackTrace;
             var r = msg._stackTrace;
+            if (l.length !== r.length) 
+                return false;
             for (var i = 0; i < l.length; i++) {
                 if (l[i].url !== r[i].url ||
                     l[i].functionName !== r[i].functionName ||
@@ -716,7 +768,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
     clone: function()
     {
         return WebInspector.ConsoleMessage.create(this.source, this.level, this._messageText, this.type, this.url, this.line, this.repeatCount, this._parameters, this._stackTrace, this._request ? this._request.requestId : undefined, this._isOutdated);
-    }
-}
+    },
 
-WebInspector.ConsoleMessageImpl.prototype.__proto__ = WebInspector.ConsoleMessage.prototype;
+    __proto__: WebInspector.ConsoleMessage.prototype
+}

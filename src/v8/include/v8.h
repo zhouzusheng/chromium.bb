@@ -390,7 +390,7 @@ template <class T> class Persistent : public Handle<T> {
    */
   inline void MakeWeak(void* parameters, WeakReferenceCallback callback);
 
-  /** Clears the weak reference to this object.*/
+  /** Clears the weak reference to this object. */
   inline void ClearWeak();
 
   /**
@@ -402,14 +402,13 @@ template <class T> class Persistent : public Handle<T> {
    */
   inline void MarkIndependent();
 
-  /**
-   *Checks if the handle holds the only reference to an object.
-   */
+  /** Returns true if this handle was previously marked as independent. */
+  inline bool IsIndependent() const;
+
+  /** Checks if the handle holds the only reference to an object. */
   inline bool IsNearDeath() const;
 
-  /**
-   * Returns true if the handle's reference is weak.
-   */
+  /** Returns true if the handle's reference is weak.  */
   inline bool IsWeak() const;
 
   /**
@@ -417,6 +416,12 @@ template <class T> class Persistent : public Handle<T> {
    * interface description in v8-profiler.h for details.
    */
   inline void SetWrapperClassId(uint16_t class_id);
+
+  /**
+   * Returns the class ID previously assigned to this handle or 0 if no class
+   * ID was previously assigned.
+   */
+  inline uint16_t WrapperClassId() const;
 
  private:
   friend class ImplementationUtilities;
@@ -1018,6 +1023,11 @@ class Boolean : public Primitive {
  */
 class String : public Primitive {
  public:
+  enum Encoding {
+    UNKNOWN_ENCODING = 0x1,
+    TWO_BYTE_ENCODING = 0x0,
+    ASCII_ENCODING = 0x4
+  };
   /**
    * Returns the number of characters in this string.
    */
@@ -1179,6 +1189,14 @@ class String : public Primitive {
    protected:
     ExternalAsciiStringResource() {}
   };
+
+  /**
+   * If the string is an external string, return the ExternalStringResourceBase
+   * regardless of the encoding, otherwise return NULL.  The encoding of the
+   * string is returned in encoding_out.
+   */
+  inline ExternalStringResourceBase* GetExternalStringResourceBase(
+      Encoding* encoding_out) const;
 
   /**
    * Get the ExternalStringResource for an external string.  Returns
@@ -1343,6 +1361,8 @@ class String : public Primitive {
   };
 
  private:
+  V8EXPORT void VerifyExternalStringResourceBase(ExternalStringResourceBase* v,
+                                                 Encoding encoding) const;
   V8EXPORT void VerifyExternalStringResource(ExternalStringResource* val) const;
   V8EXPORT static void CheckCast(v8::Value* obj);
 };
@@ -1369,6 +1389,8 @@ class Integer : public Number {
  public:
   V8EXPORT static Local<Integer> New(int32_t value);
   V8EXPORT static Local<Integer> NewFromUnsigned(uint32_t value);
+  V8EXPORT static Local<Integer> New(int32_t value, Isolate*);
+  V8EXPORT static Local<Integer> NewFromUnsigned(uint32_t value, Isolate*);
   V8EXPORT int64_t Value() const;
   static inline Integer* Cast(v8::Value* obj);
  private:
@@ -2638,7 +2660,7 @@ bool V8EXPORT SetResourceConstraints(ResourceConstraints* constraints);
 typedef void (*FatalErrorCallback)(const char* location, const char* message);
 
 
-typedef void (*MessageCallback)(Handle<Message> message, Handle<Value> data);
+typedef void (*MessageCallback)(Handle<Message> message, Handle<Value> error);
 
 
 /**
@@ -2996,12 +3018,23 @@ typedef void (*JitCodeEventHandler)(const JitCodeEvent* event);
 
 
 /**
- * Interface for iterating though all external resources in the heap.
+ * Interface for iterating through all external resources in the heap.
  */
 class V8EXPORT ExternalResourceVisitor {  // NOLINT
  public:
   virtual ~ExternalResourceVisitor() {}
   virtual void VisitExternalString(Handle<String> string) {}
+};
+
+
+/**
+ * Interface for iterating through all the persistent handles in the heap.
+ */
+class V8EXPORT PersistentHandleVisitor {  // NOLINT
+ public:
+  virtual ~PersistentHandleVisitor() {}
+  virtual void VisitPersistentHandle(Persistent<Value> value,
+                                     uint16_t class_id) {}
 };
 
 
@@ -3070,8 +3103,7 @@ class V8EXPORT V8 {
    * The same message listener can be added more than once and in that
    * case it will be called more than once for each message.
    */
-  static bool AddMessageListener(MessageCallback that,
-                                 Handle<Value> data = Handle<Value>());
+  static bool AddMessageListener(MessageCallback that);
 
   /**
    * Remove all message listeners from the specified callback function.
@@ -3413,6 +3445,12 @@ class V8EXPORT V8 {
   static void VisitExternalResources(ExternalResourceVisitor* visitor);
 
   /**
+   * Iterates through all the persistent handles in the current isolate's heap
+   * that have class_ids.
+   */
+  static void VisitHandlesWithClassIds(PersistentHandleVisitor* visitor);
+
+  /**
    * Optional notification that the embedder is idle.
    * V8 uses the notification to reduce memory footprint.
    * This call can be used repeatedly if the embedder remains idle.
@@ -3450,10 +3488,12 @@ class V8EXPORT V8 {
                        WeakReferenceCallback);
   static void ClearWeak(internal::Object** global_handle);
   static void MarkIndependent(internal::Object** global_handle);
+  static bool IsGlobalIndependent(internal::Object** global_handle);
   static bool IsGlobalNearDeath(internal::Object** global_handle);
   static bool IsGlobalWeak(internal::Object** global_handle);
   static void SetWrapperClassId(internal::Object** global_handle,
                                 uint16_t class_id);
+  static uint16_t GetWrapperClassId(internal::Object** global_handle);
 
   template <class T> friend class Handle;
   template <class T> friend class Local;
@@ -3703,7 +3743,7 @@ class V8EXPORT Context {
    * with the debugger to provide additional information on the context through
    * the debugger API.
    */
-  void SetData(Handle<String> data);
+  void SetData(Handle<Value> data);
   Local<Value> GetData();
 
   /**
@@ -3726,6 +3766,13 @@ class V8EXPORT Context {
    * For more details see AllowCodeGenerationFromStrings(bool) documentation.
    */
   bool IsCodeGenerationFromStringsAllowed();
+
+  /**
+   * Sets the error description for the exception that is thrown when
+   * code generation from strings is not allowed and 'eval' or the 'Function'
+   * constructor are called.
+   */
+  void SetErrorMessageForCodeGenerationFromStrings(Handle<String> message);
 
   /**
    * Stack-allocated class which sets the execution context for all
@@ -4033,7 +4080,9 @@ class Internals {
   static const int kForeignAddressOffset = kApiPointerSize;
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFullStringRepresentationMask = 0x07;
+  static const int kStringEncodingMask = 0x4;
   static const int kExternalTwoByteRepresentationTag = 0x02;
+  static const int kExternalAsciiRepresentationTag = 0x06;
 
   static const int kIsolateStateOffset = 0;
   static const int kIsolateEmbedderDataOffset = 1 * kApiPointerSize;
@@ -4042,7 +4091,7 @@ class Internals {
   static const int kNullValueRootIndex = 7;
   static const int kTrueValueRootIndex = 8;
   static const int kFalseValueRootIndex = 9;
-  static const int kEmptySymbolRootIndex = 116;
+  static const int kEmptySymbolRootIndex = 117;
 
   static const int kJSObjectType = 0xaa;
   static const int kFirstNonstringType = 0x80;
@@ -4162,6 +4211,13 @@ Persistent<T> Persistent<T>::New(Handle<T> that) {
 
 
 template <class T>
+bool Persistent<T>::IsIndependent() const {
+  if (this->IsEmpty()) return false;
+  return V8::IsGlobalIndependent(reinterpret_cast<internal::Object**>(**this));
+}
+
+
+template <class T>
 bool Persistent<T>::IsNearDeath() const {
   if (this->IsEmpty()) return false;
   return V8::IsGlobalNearDeath(reinterpret_cast<internal::Object**>(**this));
@@ -4205,6 +4261,11 @@ void Persistent<T>::MarkIndependent() {
 template <class T>
 void Persistent<T>::SetWrapperClassId(uint16_t class_id) {
   V8::SetWrapperClassId(reinterpret_cast<internal::Object**>(**this), class_id);
+}
+
+template <class T>
+uint16_t Persistent<T>::WrapperClassId() const {
+  return V8::GetWrapperClassId(reinterpret_cast<internal::Object**>(**this));
 }
 
 Arguments::Arguments(internal::Object** implicit_args,
@@ -4385,6 +4446,26 @@ String::ExternalStringResource* String::GetExternalStringResource() const {
   VerifyExternalStringResource(result);
 #endif
   return result;
+}
+
+
+String::ExternalStringResourceBase* String::GetExternalStringResourceBase(
+    String::Encoding* encoding_out) const {
+  typedef internal::Object O;
+  typedef internal::Internals I;
+  O* obj = *reinterpret_cast<O**>(const_cast<String*>(this));
+  int type = I::GetInstanceType(obj) & I::kFullStringRepresentationMask;
+  *encoding_out = static_cast<Encoding>(type & I::kStringEncodingMask);
+  ExternalStringResourceBase* resource = NULL;
+  if (type == I::kExternalAsciiRepresentationTag ||
+      type == I::kExternalTwoByteRepresentationTag) {
+    void* value = I::ReadField<void*>(obj, I::kStringResourceOffset);
+    resource = static_cast<ExternalStringResourceBase*>(value);
+  }
+#ifdef V8_ENABLE_CHECKS
+    VerifyExternalStringResourceBase(resource, *encoding_out);
+#endif
+  return resource;
 }
 
 

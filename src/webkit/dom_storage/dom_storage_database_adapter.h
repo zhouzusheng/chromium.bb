@@ -10,10 +10,11 @@
 // SessionStorageDatabase which stores multiple origins.
 
 #include "webkit/dom_storage/dom_storage_types.h"
+#include "webkit/storage/webkit_storage_export.h"
 
 namespace dom_storage {
 
-class DomStorageDatabaseAdapter {
+class WEBKIT_STORAGE_EXPORT DomStorageDatabaseAdapter {
  public:
   virtual ~DomStorageDatabaseAdapter() {}
   virtual void ReadAllValues(ValuesMap* result) = 0;

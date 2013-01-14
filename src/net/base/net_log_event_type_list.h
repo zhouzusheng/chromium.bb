@@ -699,6 +699,8 @@ EVENT_TYPE(SOCKET_POOL_CONNECTING_N_SOCKETS)
 //      "url": <String of URL being loaded>,
 //      "method": <The method ("POST" or "GET" or "HEAD" etc..)>,
 //      "load_flags": <Numeric value of the combined load flags>,
+//      "priority": <Numeric priority of the request>,
+//      "upload_id" <String of upload body identifier, if present>,
 //   }
 //
 // For the END phase, if there was an error, the following parameters are
@@ -913,6 +915,16 @@ EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST)
 //     "headers": <The list of header:value pairs>,
 //   }
 EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST_HEADERS)
+
+// Logged when a request body is sent.
+// The following parameters are attached:
+//   {
+//     "did_merge": <True if the body was merged with the headers for writing>,
+//     "is_chunked": <True if chunked>,
+//     "length": <The length of the body.  May not be accurate when body is not
+//                in memory>
+//   }
+EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST_BODY)
 
 // This event is sent for a HTTP request over a SPDY stream.
 // The following parameters are attached:
@@ -1283,9 +1295,16 @@ EVENT_TYPE(APPCACHE_DELIVERING_ERROR_RESPONSE)
 // These are events which are not grouped by source id, as they have no
 // context.
 
-// This event is emitted whenever NetworkChangeNotifier determines that the
-// underlying network has changed.
+// This event is emitted whenever NetworkChangeNotifier determines that an
+// active network adapter's IP address has changed.
 EVENT_TYPE(NETWORK_IP_ADDRESSES_CHANGED)
+
+// This event is emitted whenever NetworkChangeNotifier determines that an
+// active network adapter's connectivity status has changed.
+//   {
+//     "new_connection_type": <Type of the new connection>
+//   }
+EVENT_TYPE(NETWORK_CONNECTIVITY_CHANGED)
 
 
 // This event is emitted whenever HostResolverImpl receives a new DnsConfig
@@ -1569,7 +1588,7 @@ EVENT_TYPE(DOWNLOAD_ITEM_RENAMED)
 
 // This event is created when a download item is interrupted.
 //   {
-//     "reason": <The reason for the interruption>,
+//     "interrupt_reason": <The reason for the interruption>,
 //     "bytes_so_far": <Number of bytes received>,
 //     "hash_state": <Current hash state, as a hex-encoded binary string>,
 //   }
@@ -1584,10 +1603,16 @@ EVENT_TYPE(DOWNLOAD_ITEM_INTERRUPTED)
 //   }
 EVENT_TYPE(DOWNLOAD_ITEM_RESUMED)
 
-// This event is created when a download item is finished.
+// This event is created when a download item is completing.
 //   {
 //     "bytes_so_far": <Number of bytes received>,
 //     "final_hash": <Final hash, as a hex-encoded binary string>,
+//   }
+EVENT_TYPE(DOWNLOAD_ITEM_COMPLETING)
+
+// This event is created when a download item is finished.
+//   {
+//     "auto_opened": <Whether or not the download was auto-opened>
 //   }
 EVENT_TYPE(DOWNLOAD_ITEM_FINISHED)
 
@@ -1640,6 +1665,8 @@ EVENT_TYPE(DOWNLOAD_FILE_DELETED)
 //   {
 //     "operation": <open, write, close, etc>,
 //     "net_error": <net::Error code>,
+//     "os_error": <OS depedent error code>
+//     "interrupt_reason": <Download interrupt reason>
 //   }
 EVENT_TYPE(DOWNLOAD_FILE_ERROR)
 

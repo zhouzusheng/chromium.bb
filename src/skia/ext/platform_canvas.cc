@@ -11,11 +11,6 @@ namespace skia {
 
 PlatformCanvas::PlatformCanvas() {}
 
-SkDevice* PlatformCanvas::setBitmapDevice(const SkBitmap&) {
-  SkASSERT(false);  // Should not be called.
-  return NULL;
-}
-
 // static
 size_t PlatformCanvas::StrideForWidth(unsigned width) {
   return 4 * width;
@@ -91,5 +86,7 @@ void MakeOpaque(SkCanvas* canvas, int x, int y, int width, int height) {
   paint.setXfermode(new SkProcXfermode(MakeOpaqueXfermodeProc))->unref();
   canvas->drawRect(rect, paint);
 }
+
+PlatformBitmap::PlatformBitmap() : surface_(0), platform_extra_(0) {}
 
 }  // namespace skia

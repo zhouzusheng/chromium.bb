@@ -28,7 +28,6 @@
 #include "AtomicString.h"
 #include "StringBuffer.h"
 #include "StringHash.h"
-#include <wtf/MemoryInstrumentation.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/WTFThreadData.h>
 #include <wtf/unicode/CharacterNames.h>
@@ -259,6 +258,23 @@ PassRefPtr<StringImpl> StringImpl::create(const LChar* characters, unsigned leng
     LChar* data;
     RefPtr<StringImpl> string = createUninitialized(length, data);
     memcpy(data, characters, length * sizeof(LChar));
+    return string.release();
+}
+
+PassRefPtr<StringImpl> StringImpl::create8BitIfPossible(const UChar* characters, unsigned length)
+{
+    if (!characters || !length)
+        return empty();
+
+    LChar* data;
+    RefPtr<StringImpl> string = createUninitialized(length, data);
+
+    for (size_t i = 0; i < length; ++i) {
+        if (characters[i] & 0xff00)
+            return create(characters, length);
+        data[i] = static_cast<LChar>(characters[i]);
+    }
+
     return string.release();
 }
 
@@ -1022,14 +1038,9 @@ size_t StringImpl::find(StringImpl* matchString, unsigned index)
 
     // Optimization 1: fast case for strings of length 1.
     if (matchLength == 1) {
-        if (is8Bit()) {
-            if (matchString->is8Bit())
-                return WTF::find(characters8(), length(), matchString->characters8()[0], index);
-            return WTF::find(characters8(), length(), matchString->characters16()[0], index);
-        }
-        if (matchString->is8Bit())
-            return WTF::find(characters16(), length(), matchString->characters8()[0], index);
-        return WTF::find(characters16(), length(), matchString->characters16()[0], index);
+        if (is8Bit())
+            return WTF::find(characters8(), length(), (*matchString)[0], index);
+        return WTF::find(characters16(), length(), (*matchString)[0], index);
     }
 
     if (UNLIKELY(!matchLength))
@@ -1054,6 +1065,22 @@ size_t StringImpl::find(StringImpl* matchString, unsigned index)
     return findInner(characters16() + index, matchString->characters16(), index, searchLength, matchLength);
 }
 
+template <typename SearchCharacterType, typename MatchCharacterType>
+ALWAYS_INLINE static size_t findIgnoringCaseInner(const SearchCharacterType* searchCharacters, const MatchCharacterType* matchCharacters, unsigned index, unsigned searchLength, unsigned matchLength)
+{
+    // delta is the number of additional times to test; delta == 0 means test only once.
+    unsigned delta = searchLength - matchLength;
+
+    unsigned i = 0;
+    // keep looping until we match
+    while (!equalIgnoringCase(searchCharacters + i, matchCharacters, matchLength)) {
+        if (i == delta)
+            return notFound;
+        ++i;
+    }
+    return index + i;
+}
+
 size_t StringImpl::findIgnoringCase(StringImpl* matchString, unsigned index)
 {
     // Check for null or empty string to match against
@@ -1069,20 +1096,17 @@ size_t StringImpl::findIgnoringCase(StringImpl* matchString, unsigned index)
     unsigned searchLength = length() - index;
     if (matchLength > searchLength)
         return notFound;
-    // delta is the number of additional times to test; delta == 0 means test only once.
-    unsigned delta = searchLength - matchLength;
 
-    const UChar* searchCharacters = characters() + index;
-    const UChar* matchCharacters = matchString->characters();
-
-    unsigned i = 0;
-    // keep looping until we match
-    while (!equalIgnoringCase(searchCharacters + i, matchCharacters, matchLength)) {
-        if (i == delta)
-            return notFound;
-        ++i;
+    if (is8Bit()) {
+        if (matchString->is8Bit())
+            return findIgnoringCaseInner(characters8() + index, matchString->characters8(), index, searchLength, matchLength);
+        return findIgnoringCaseInner(characters8() + index, matchString->characters16(), index, searchLength, matchLength);
     }
-    return index + i;
+
+    if (matchString->is8Bit())
+        return findIgnoringCaseInner(characters16() + index, matchString->characters8(), index, searchLength, matchLength);
+
+    return findIgnoringCaseInner(characters16() + index, matchString->characters16(), index, searchLength, matchLength);
 }
 
 size_t StringImpl::reverseFind(UChar c, unsigned index)
@@ -1131,9 +1155,9 @@ size_t StringImpl::reverseFind(StringImpl* matchString, unsigned index)
 
     // Optimization 1: fast case for strings of length 1.
     if (matchLength == 1) {
-        if (is8Bit() && matchString->is8Bit())
-            return WTF::reverseFind(characters8(), ourLength, matchString->characters8()[0], index);
-        return WTF::reverseFind(characters(), ourLength, matchString->characters()[0], index);
+        if (is8Bit())
+            return WTF::reverseFind(characters8(), ourLength, (*matchString)[0], index);
+        return WTF::reverseFind(characters16(), ourLength, (*matchString)[0], index);
     }
 
     // Check index & matchLength are in range.
@@ -1152,36 +1176,11 @@ size_t StringImpl::reverseFind(StringImpl* matchString, unsigned index)
     return reverseFindInner(characters16(), matchString->characters16(), index, ourLength, matchLength);
 }
 
-size_t StringImpl::reverseFindIgnoringCase(StringImpl* matchString, unsigned index)
+template <typename SearchCharacterType, typename MatchCharacterType>
+ALWAYS_INLINE static size_t reverseFindIgnoringCaseInner(const SearchCharacterType* searchCharacters, const MatchCharacterType* matchCharacters, unsigned index, unsigned length, unsigned matchLength)
 {
-    // Check for null or empty string to match against
-    if (!matchString)
-        return notFound;
-    unsigned matchLength = matchString->length();
-    if (!matchLength)
-        return min(index, length());
-
-    // Check index & matchLength are in range.
-    if (matchLength > length())
-        return notFound;
     // delta is the number of additional times to test; delta == 0 means test only once.
-    unsigned delta = min(index, length() - matchLength);
-
-    if (is8Bit() && matchString->is8Bit()) {
-        const LChar *searchCharacters = characters8();
-        const LChar *matchCharacters = matchString->characters8();
-
-        // keep looping until we match
-        while (!equalIgnoringCase(searchCharacters + delta, matchCharacters, matchLength)) {
-            if (!delta)
-                return notFound;
-            delta--;
-        }
-        return delta;
-    }
-
-    const UChar *searchCharacters = characters();
-    const UChar *matchCharacters = matchString->characters();
+    unsigned delta = min(index, length - matchLength);
 
     // keep looping until we match
     while (!equalIgnoringCase(searchCharacters + delta, matchCharacters, matchLength)) {
@@ -1190,6 +1189,32 @@ size_t StringImpl::reverseFindIgnoringCase(StringImpl* matchString, unsigned ind
         delta--;
     }
     return delta;
+}
+
+size_t StringImpl::reverseFindIgnoringCase(StringImpl* matchString, unsigned index)
+{
+    // Check for null or empty string to match against
+    if (!matchString)
+        return notFound;
+    unsigned matchLength = matchString->length();
+    unsigned ourLength = length();
+    if (!matchLength)
+        return min(index, ourLength);
+
+    // Check index & matchLength are in range.
+    if (matchLength > ourLength)
+        return notFound;
+
+    if (is8Bit()) {
+        if (matchString->is8Bit())
+            return reverseFindIgnoringCaseInner(characters8(), matchString->characters8(), index, ourLength, matchLength);
+        return reverseFindIgnoringCaseInner(characters8(), matchString->characters16(), index, ourLength, matchLength);
+    }
+
+    if (matchString->is8Bit())
+        return reverseFindIgnoringCaseInner(characters16(), matchString->characters8(), index, ourLength, matchLength);
+
+    return reverseFindIgnoringCaseInner(characters16(), matchString->characters16(), index, ourLength, matchLength);
 }
 
 ALWAYS_INLINE static bool equalInner(const StringImpl* stringImpl, unsigned startOffset, const char* matchString, unsigned matchLength, bool caseSensitive)
@@ -1790,26 +1815,6 @@ size_t StringImpl::sizeInBytes() const
     } else
         size *= 2;
     return size + sizeof(*this);
-}
-
-void StringImpl::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    size_t selfSize = sizeof(StringImpl);
-
-        // Count size used by internal buffer but skip strings that were constructed from literals.
-    if ((m_hashAndFlags & BufferInternal) && !hasTerminatingNullCharacter())
-        // Three cases are covered here:
-        // 1) a normal 8-bit string with internal storage (BufferInternal)
-        // 2) a normal 16-bit string with internal storage (BufferInternal)
-        // 3) empty unique string with length = 0 (BufferInternal)
-        selfSize += m_length * (m_hashAndFlags & s_hashFlag8BitBuffer ? sizeof(LChar) : sizeof(UChar));
-
-    MemoryClassInfo info(memoryObjectInfo, this, 0, selfSize);
-
-    if (m_hashAndFlags & BufferSubstring)
-        info.addMember(m_substringBuffer);
-    else if (m_hashAndFlags & s_hashFlagHas16BitShadow) // Substring never has its own shadow.
-        info.addRawBuffer(m_copyData16, (m_length + (hasTerminatingNullCharacter() ? 1 : 0)) * sizeof(UChar));
 }
 
 } // namespace WTF

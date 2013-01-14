@@ -179,7 +179,11 @@ void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
     return;
   }
 
+  DCHECK(reset_cb_.is_null());
   reset_cb_ = closure;
+
+  if (decryptor_)
+    decryptor_->CancelDecrypt(Decryptor::kVideo);
 
   // Defer the reset if a read is pending.
   if (!read_cb_.is_null())
@@ -204,37 +208,33 @@ void FFmpegVideoDecoder::Stop(const base::Closure& closure) {
     return;
   }
 
-  if (decryptor_)
-    decryptor_->Stop();
-
-  stop_cb_ = closure;
-
-  // Defer stopping if a read is pending.
-  if (!read_cb_.is_null())
+  if (state_ == kUninitialized) {
+    closure.Run();
     return;
+  }
 
-  DoStop();
-}
+  if (decryptor_)
+    decryptor_->CancelDecrypt(Decryptor::kVideo);
 
-void FFmpegVideoDecoder::DoStop() {
+  if (!read_cb_.is_null())
+    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
+
   ReleaseFFmpegResources();
   state_ = kUninitialized;
-  base::ResetAndReturn(&stop_cb_).Run();
+  closure.Run();
 }
 
 FFmpegVideoDecoder::~FFmpegVideoDecoder() {
-  ReleaseFFmpegResources();
+  DCHECK_EQ(kUninitialized, state_);
+  DCHECK(!codec_context_);
+  DCHECK(!av_frame_);
 }
 
 void FFmpegVideoDecoder::DoRead(const ReadCB& read_cb) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(!read_cb.is_null());
+  CHECK_NE(state_, kUninitialized);
   CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
-
-  // This can happen during shutdown after Stop() has been called.
-  if (state_ == kUninitialized) {
-    return;
-  }
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
@@ -245,7 +245,6 @@ void FFmpegVideoDecoder::DoRead(const ReadCB& read_cb) {
   read_cb_ = read_cb;
   ReadFromDemuxerStream();
 }
-
 
 void FFmpegVideoDecoder::ReadFromDemuxerStream() {
   DCHECK_NE(state_, kUninitialized);
@@ -270,15 +269,12 @@ void FFmpegVideoDecoder::DoDecryptOrDecodeBuffer(
     DemuxerStream::Status status,
     const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
-  DCHECK(!read_cb_.is_null());
 
-  if (!stop_cb_.is_null()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
-    DoStop();
+  if (state_ == kUninitialized)
     return;
-  }
+
+  DCHECK(!read_cb_.is_null());
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
@@ -304,7 +300,8 @@ void FFmpegVideoDecoder::DoDecryptOrDecodeBuffer(
   DCHECK_EQ(status, DemuxerStream::kOk);
 
   if (buffer->GetDecryptConfig() && buffer->GetDataSize()) {
-    decryptor_->Decrypt(buffer,
+    decryptor_->Decrypt(Decryptor::kVideo,
+                        buffer,
                         base::Bind(&FFmpegVideoDecoder::BufferDecrypted, this));
     return;
   }
@@ -323,8 +320,11 @@ void FFmpegVideoDecoder::DoBufferDecrypted(
     Decryptor::Status decrypt_status,
     const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
+
+  if (state_ == kUninitialized)
+    return;
+
   DCHECK(!read_cb_.is_null());
 
   if (!reset_cb_.is_null()) {
@@ -524,11 +524,10 @@ bool FFmpegVideoDecoder::ConfigureDecoder() {
   codec_context_->release_buffer = ReleaseVideoBufferImpl;
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
-  if (!codec)
+  if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
+    ReleaseFFmpegResources();
     return false;
-
-  if (avcodec_open2(codec_context_, codec, NULL) < 0)
-    return false;
+  }
 
   av_frame_ = avcodec_alloc_frame();
   return true;

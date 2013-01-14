@@ -87,7 +87,14 @@ bool PinMatchesCategory(IPin* pin, REFGUID category) {
     hr = ks_property->Get(AMPROPSETID_Pin, AMPROPERTY_PIN_CATEGORY, NULL, 0,
                           &pin_category, sizeof(pin_category), &return_value);
     if (SUCCEEDED(hr) && (return_value == sizeof(pin_category))) {
-      found = (pin_category == category) ? true : false;
+      // SHEZ: Changed upstream code here to disable warning 4800.  GUID has
+      //       operator== defined to return int in VS2008, which is being
+      //       forced to bool.  The warning breaks the build because warnings
+      //       are treated as errors.
+#pragma warning(push)
+#pragma warning(disable:4800)
+      found = (pin_category == category);
+#pragma warning(pop)
     }
   }
   return found;

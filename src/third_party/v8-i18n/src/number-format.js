@@ -138,15 +138,15 @@ function initializeNumberFormat(numberFormat, locales, options) {
 
 
 /**
- * Constructs v8Intl.NumberFormat object given optional locales and options
+ * Constructs Intl.NumberFormat object given optional locales and options
  * parameters.
  *
  * @constructor
  */
-v8Intl.NumberFormat = function(locales, options) {
-  if (!this || this === v8Intl) {
+Intl.NumberFormat = function(locales, options) {
+  if (!this || this === Intl) {
     // Constructor is called as a function.
-    return new v8Intl.NumberFormat(locales, options);
+    return new Intl.NumberFormat(locales, options);
   }
 
   return initializeNumberFormat(toObject(this), locales, options);
@@ -156,7 +156,7 @@ v8Intl.NumberFormat = function(locales, options) {
 /**
  * NumberFormat resolvedOptions method.
  */
-v8Intl.NumberFormat.prototype.resolvedOptions = function() {
+Intl.NumberFormat.prototype.resolvedOptions = function() {
   if (!this || typeof this !== 'object' ||
       this.__initializedIntlObject !== 'numberformat') {
     throw new TypeError(['resolvedOptions method called on a non-object',
@@ -202,7 +202,7 @@ v8Intl.NumberFormat.prototype.resolvedOptions = function() {
  * has a matching (possibly fallback) locale. Locales appear in the same
  * order in the returned list as in the input list.
  */
-v8Intl.NumberFormat.supportedLocalesOf = function(locales, options) {
+Intl.NumberFormat.supportedLocalesOf = function(locales, options) {
   return supportedLocalesOf('numberformat', locales, options);
 };
 
@@ -235,5 +235,5 @@ function parseNumber(formatter, value) {
 }
 
 
-addBoundMethod(v8Intl.NumberFormat, 'format', formatNumber, 1);
-addBoundMethod(v8Intl.NumberFormat, 'v8Parse', parseNumber, 1);
+addBoundMethod(Intl.NumberFormat, 'format', formatNumber, 1);
+addBoundMethod(Intl.NumberFormat, 'v8Parse', parseNumber, 1);

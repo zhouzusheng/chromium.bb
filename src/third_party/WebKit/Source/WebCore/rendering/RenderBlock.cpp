@@ -1604,6 +1604,10 @@ void RenderBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeigh
         setPaginationStrut(0);
     }
 
+    if (hasColumns() && view()->layoutState()->m_columnInfo) {
+        view()->layoutState()->m_columnInfo->setSpanningHeaderSizeChanged(false);
+    }
+
     LayoutUnit repaintLogicalTop = ZERO_LAYOUT_UNIT;
     LayoutUnit repaintLogicalBottom = ZERO_LAYOUT_UNIT;
     LayoutUnit maxFloatLogicalBottom = ZERO_LAYOUT_UNIT;
@@ -2491,7 +2495,9 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
 {
     ColumnInfo* columnInfo = view()->layoutState()->m_columnInfo;
     RenderBox* previousBox = child->previousSiblingBox();
-    bool shouldSetSpanningHeaderInfo = columnInfo && previousBox && previousBox->style()->columnSpan() > 1 && !previousBox->style()->hasSpanAllColumns();
+    bool previousBoxWasFirst = (previousBox == firstChildBox());
+    bool shouldSetSpanningHeaderInfo = hasColumns() && columnInfo && previousBoxWasFirst;
+    bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpan() > 1 && !previousBox->style()->hasSpanAllColumns();
 
     LayoutUnit oldPosMarginBefore = maxPositiveMarginBefore();
     LayoutUnit oldNegMarginBefore = maxNegativeMarginBefore();
@@ -2526,8 +2532,8 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
         // of the current child as the header "height".  The first line in any column within the column span
         // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
         // from the previous child).
-        columnInfo->setSpanningHeaderColumnCount(previousBox->style()->columnSpan());
-        columnInfo->setSpanningHeaderHeight(logicalTopEstimate);
+        columnInfo->setSpanningHeaderColumnCount(previousBoxIsSpanningHeader ? previousBox->style()->columnSpan() : 1);
+        columnInfo->setSpanningHeaderHeight(previousBoxIsSpanningHeader ? logicalTopEstimate : 0);
     }
 
     RenderBlock* childRenderBlock = child->isRenderBlock() ? toRenderBlock(child) : 0;
@@ -2579,13 +2585,7 @@ void RenderBlock::layoutBlockChild(RenderBox* child, MarginInfo& marginInfo, Lay
     // when collapseMargins dynamically adds overhanging floats because of a child with negative margins.
     if (logicalTopAfterClear != logicalTopEstimate || child->needsLayout()) {
         if (shouldSetSpanningHeaderInfo) {
-            columnInfo->setSpanningHeaderHeight(logicalTopEstimate);
-            if (logicalTopAfterClear + child->logicalHeight() >= view()->layoutState()->pageLogicalHeight()) {
-                // If the child's bottom has exceeded the pageLogicalHeight (i.e. the child
-                // spans multiple columns), then it needs a relayout in order to reset the
-                // pagination struts of its lineboxes to match the new spanning header height.
-                child->setChildNeedsLayout(true, MarkOnlyThis);
-            }
+            columnInfo->setSpanningHeaderHeight(previousBoxIsSpanningHeader ? logicalTopAfterClear : 0);
         }
 
         if (child->shrinkToAvoidFloats()) {
@@ -2794,7 +2794,7 @@ void RenderBlock::markForPaginationRelayoutIfNeeded()
     if (needsLayout())
         return;
 
-    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(this, logicalTop()) != pageLogicalOffset()))
+    if (view()->layoutState()->pageLogicalHeightChanged() || (view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(this, logicalTop()) != pageLogicalOffset()) || (view()->layoutState()->m_columnInfo && view()->layoutState()->m_columnInfo->spanningHeaderSizeChanged()))
         setChildNeedsLayout(true, MarkOnlyThis);
 }
 

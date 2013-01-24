@@ -78,7 +78,7 @@ autonomously to pickup our `offsetleft` changes.
    <code>
        set GYP_GENERATORS=msvs
        set GYP_MSVS_VERSION=2008
-       set CHROMIUM_GYP_FILE=src/webkit/webkit.sln
+       set CHROMIUM_GYP_FILE=src/webkit/webkit.gyp
    </code>
 ** Run the following command from inside the top-level `chromium/` directory:
    <code>

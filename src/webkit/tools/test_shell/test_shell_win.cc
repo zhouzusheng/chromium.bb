@@ -687,27 +687,17 @@ base::StringPiece TestShellWebKitInit::GetDataResource(
   switch (resource_id) {
   case IDR_BROKENIMAGE: {
     // Use webkit's broken image icon (16x16)
-    static std::string broken_image_data;
+    static base::StringPiece broken_image_data;
     if (broken_image_data.empty()) {
-      FilePath path = GetResourcesFilePath();
-      path = path.AppendASCII("missingImage.gif");
-      bool success = file_util::ReadFileToString(path, &broken_image_data);
-      if (!success) {
-        LOG(FATAL) << "Failed reading: " << path.value();
-      }
+      broken_image_data = TestShell::ResourceProvider(IDR_TESTSHELL_MISSING_IMAGE);
     }
     return broken_image_data;
   }
   case IDR_TEXTAREA_RESIZER: {
     // Use webkit's text area resizer image.
-    static std::string resize_corner_data;
+    static base::StringPiece resize_corner_data;
     if (resize_corner_data.empty()) {
-      FilePath path = GetResourcesFilePath();
-      path = path.AppendASCII("textAreaResizeCorner.png");
-      bool success = file_util::ReadFileToString(path, &resize_corner_data);
-      if (!success) {
-        LOG(FATAL) << "Failed reading: " << path.value();
-      }
+      resize_corner_data = TestShell::ResourceProvider(IDR_TESTSHELL_CORNER_RESIZE);
     }
     return resize_corner_data;
   }

@@ -3057,6 +3057,9 @@ bool FrameView::hasCustomScrollbars() const
 
 FrameView* FrameView::parentFrameView() const
 {
+    if (!parent())
+        return 0;
+
     if (Frame* parentFrame = m_frame->tree()->parent())
         return parentFrame->view();
 

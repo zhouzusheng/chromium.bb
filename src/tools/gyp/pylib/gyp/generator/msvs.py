@@ -20,6 +20,11 @@ import gyp.MSVSUserFile as MSVSUserFile
 import gyp.MSVSVersion as MSVSVersion
 from gyp.common import GypError
 
+# SHEZ: Made the following changes:
+# * Fix msvs_list_excluded_files=0, which was not working because copied files
+#   and scripts for actions were not being added to the project.
+# * Add 'msvs_print_missing_sources' option to suppress printing the list of
+#   missing files.
 
 # Regular expression for validating Visual Studio GUIDs.  If the GUID
 # contains lowercase hex letters, MSVS will be fine. However,
@@ -909,8 +914,9 @@ def _GenerateMSVSProject(project, options, version, generator_flags):
 
   # Prepare list of sources and excluded sources.
   gyp_file = os.path.split(project.build_file)[1]
-  sources, excluded_sources = _PrepareListOfSources(spec, generator_flags,
-                                                    gyp_file)
+  sources, excluded_sources, mustkeep_sources = _PrepareListOfSources(spec,
+                                                                      generator_flags,
+                                                                      gyp_file)
 
   # Add rules.
   actions_to_add = {}
@@ -920,7 +926,7 @@ def _GenerateMSVSProject(project, options, version, generator_flags):
   list_excluded = generator_flags.get('msvs_list_excluded_files', True)
   sources, excluded_sources, excluded_idl = (
       _AdjustSourcesAndConvertToFilterHierarchy(
-          spec, options, project_dir, sources, excluded_sources, list_excluded))
+          spec, options, project_dir, sources, excluded_sources, list_excluded, mustkeep_sources))
 
   # Add in files.
   missing_sources = _VerifySourcesExist(sources, project_dir)
@@ -1303,6 +1309,7 @@ def _PrepareListOfSources(spec, generator_flags, gyp_file):
   sources = set()
   _AddNormalizedSources(sources, spec.get('sources', []))
   excluded_sources = set()
+  mustkeep_sources = set()
   # Add in the gyp file.
   if not generator_flags.get('standalone'):
     sources.add(gyp_file)
@@ -1312,19 +1319,27 @@ def _PrepareListOfSources(spec, generator_flags, gyp_file):
     inputs = a['inputs']
     inputs = [_NormalizedSource(i) for i in inputs]
     # Add all inputs to sources and excluded sources.
+    # SHEZ: Must keep the primary input otherwise msvs_list_excluded_files does
+    #       not work.
+    mustkeep_sources.add(inputs[0])
     inputs = set(inputs)
     sources.update(inputs)
     excluded_sources.update(inputs)
     if int(a.get('process_outputs_as_sources', False)):
       _AddNormalizedSources(sources, a.get('outputs', []))
   # Add in 'copies' inputs and outputs.
+  # SHEZ: Must keep copied files otherwise msvs_list_excluded_files does not
+  #       work.
+  copied_files = set()
   for cpy in spec.get('copies', []):
-    _AddNormalizedSources(sources, cpy.get('files', []))
-  return (sources, excluded_sources)
+    _AddNormalizedSources(copied_files, cpy.get('files', []))
+  sources.update(copied_files)
+  mustkeep_sources.update(copied_files)
+  return (sources, excluded_sources, mustkeep_sources)
 
 
 def _AdjustSourcesAndConvertToFilterHierarchy(
-    spec, options, gyp_dir, sources, excluded_sources, list_excluded):
+    spec, options, gyp_dir, sources, excluded_sources, list_excluded, mustkeep_sources):
   """Adjusts the list of sources and excluded sources.
 
   Also converts the sets to lists.
@@ -1349,6 +1364,10 @@ def _AdjustSourcesAndConvertToFilterHierarchy(
   sources = _FixPaths(sources)
   # Convert to proper windows form.
   excluded_sources = _FixPaths(excluded_sources)
+
+  # SHEZ: Remove mustkeep_sources from excluded_sources
+  mustkeep_sources = _FixPaths(mustkeep_sources)
+  excluded_sources = filter(lambda src: not src in mustkeep_sources, excluded_sources)
 
   excluded_idl = _IdlFilesHandledNonNatively(spec, sources)
 
@@ -1402,6 +1421,14 @@ def _ExcludeFilesFromBeingBuilt(p, spec, excluded_sources, excluded_idl,
     else:
       for config_name, config in excluded_configs:
         p.AddFileConfig(file_name, _ConfigFullName(config_name, config),
+                        {'ExcludedFromBuild': 'true'})
+
+  # SHEZ: make msvs_list_excluded_files=0 work for idl files.  The previous
+  #       logic doesn't seem to make any sense for idl files
+  if not list_excluded:
+    for f in excluded_idl:
+      for config_name, config in spec['configurations'].iteritems():
+        p.AddFileConfig(f, _ConfigFullName(config_name, config),
                         {'ExcludedFromBuild': 'true'})
 
 
@@ -1873,7 +1900,7 @@ def GenerateOutput(target_list, target_dicts, data, params):
                     '\n'.join(set(missing_sources))
     if generator_flags.get('msvs_error_on_missing_sources', False):
       raise Exception(error_message)
-    else:
+    elif generator_flags.get('msvs_print_missing_sources', True):
       print >>sys.stdout, "Warning: " + error_message
 
 
@@ -3002,8 +3029,9 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   relative_path_of_gyp_file = gyp.common.RelativePath(gyp_path, project_dir)
 
   gyp_file = os.path.split(project.build_file)[1]
-  sources, excluded_sources = _PrepareListOfSources(spec, generator_flags,
-                                                    gyp_file)
+  sources, excluded_sources, mustkeep_sources = _PrepareListOfSources(spec,
+                                                                      generator_flags,
+                                                                      gyp_file)
   # Add rules.
   actions_to_add = {}
   props_files_of_rules = set()
@@ -3018,7 +3046,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       _AdjustSourcesAndConvertToFilterHierarchy(spec, options,
                                                 project_dir, sources,
                                                 excluded_sources,
-                                                list_excluded))
+                                                list_excluded, mustkeep_sources))
   _AddActions(actions_to_add, spec, project.build_file)
   _AddCopies(actions_to_add, spec)
 

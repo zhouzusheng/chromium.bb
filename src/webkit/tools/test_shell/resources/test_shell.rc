@@ -29,7 +29,8 @@ IDI_TESTSHELL           ICON         "test_shell.ico"
 IDI_SMALL               ICON         "small.ico"
 
 IDR_AHEM_FONT           BINDATA      "AHEM____.TTF"
-
+IDR_TESTSHELL_MISSING_IMAGE   BINDATA      "missingImage.gif"
+IDR_TESTSHELL_CORNER_RESIZE   BINDATA      "textAreaResizeCorner.png"
 
 /////////////////////////////////////////////////////////////////////////////
 //

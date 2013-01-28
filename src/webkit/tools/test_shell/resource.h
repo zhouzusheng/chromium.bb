@@ -24,6 +24,8 @@
 #define IDI_SMALL                 108
 #define IDC_TESTSHELL             109
 #define IDR_AHEM_FONT             113
+#define IDR_TESTSHELL_MISSING_IMAGE 214
+#define IDR_TESTSHELL_CORNER_RESIZE 215
 #define IDC_MYICON                2
 #define IDC_NAV_BACK              1001
 #define IDC_NAV_FORWARD           1002

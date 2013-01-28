@@ -1917,16 +1917,24 @@ void Document::updateStyleForAllDocuments()
 void Document::updateLayout()
 {
     ASSERT(isMainThread());
+
+    FrameView* frameView = view();
+    if (frameView && frameView->isInLayout()) {
+        // View layout should not be re-entrant.
+        ASSERT_NOT_REACHED();
+        return;
+    }
+
     if (Element* oe = ownerElement())
         oe->document()->updateLayout();
 
     updateStyleIfNeeded();
 
     StackStats::LayoutCheckPoint layoutCheckPoint;
+
     // Only do a layout if changes have occurred that make it necessary.      
-    FrameView* v = view();
-    if (v && renderer() && (v->layoutPending() || renderer()->needsLayout()))
-        v->layout();
+    if (frameView && renderer() && (frameView->layoutPending() || renderer()->needsLayout()))
+        frameView->layout();
 }
 
 // FIXME: This is a bad idea and needs to be removed eventually.
@@ -2434,8 +2442,8 @@ void Document::close()
 
 void Document::explicitClose()
 {
-    if (m_parser)
-        m_parser->finish();
+    if (RefPtr<DocumentParser> parser = m_parser)
+        parser->finish();
 
     if (!m_frame) {
         // Because we have no frame, we don't know if all loading has completed,
@@ -2461,6 +2469,9 @@ void Document::implicitClose()
     
     if (!doload)
         return;
+
+    // Call to dispatchWindowLoadEvent can blow us from underneath.
+    RefPtr<Document> protect(this);
 
     m_processingLoadEvent = true;
 

@@ -286,6 +286,7 @@ void RenderListItem::computePreferredLogicalWidths()
 
 LayoutUnit RenderListItem::additionalMarginStart() const
 {
+    const_cast<RenderListItem*>(this)->updateMarkerLocation();
     return m_marker && !m_marker->isInside() ? m_marker->minPreferredLogicalWidth() : ZERO_LAYOUT_UNIT;
 }
 

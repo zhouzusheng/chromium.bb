@@ -1239,7 +1239,7 @@ iframe.panel.extension {
 
 .outline-disclosure, .outline-disclosure ol {
     list-style-type: none;
-    -webkit-padding-start: 24px;
+    -webkit-padding-start: 12px;
     margin: 0;
 }
 

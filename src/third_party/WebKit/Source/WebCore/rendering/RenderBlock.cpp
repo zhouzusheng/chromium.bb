@@ -1990,15 +1990,8 @@ LayoutUnit RenderBlock::additionalMarginStart() const
         return ZERO_LAYOUT_UNIT;
     }
 
-    RenderBox *prevListItem = previousSiblingBox();
-    while (prevListItem && !prevListItem->isListItem()) {
-        prevListItem = prevListItem->previousSiblingBox();
-    }
-
-    if (!prevListItem)
-        return 40;
-
-    return prevListItem->style()->listStylePosition() == INSIDE ? 40 : prevListItem->marginStart();
+    RenderBox *previousBox = previousSiblingBox();
+    return previousBox ? previousBox->additionalMarginStart() : 40;
 }
 
 LayoutUnit RenderBlock::collapseMargins(RenderBox* child, MarginInfo& marginInfo)

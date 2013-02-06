@@ -328,6 +328,12 @@ void HTMLElement::parseAttribute(const Attribute& attribute)
     } else if (attribute.name() == onwebkitfullscreenerrorAttr) {
         setAttributeEventListener(eventNames().webkitfullscreenerrorEvent, createAttributeEventListener(this, attribute));
 #endif
+    } else if (attribute.name() == contenteditableAttr) {
+        if (attribute.value().isNull() || equalIgnoringCase(attribute.value(), "false")) {
+            RefPtr<Range> range = Range::create(document());
+            range->selectNode(this);
+            document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+        }
     }
 }
 

@@ -430,6 +430,8 @@ LayoutUnit RootInlineBox::lineSnapAdjustment(LayoutUnit delta) const
 GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, 
                                          LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo* paintInfo)
 {
+    RenderObject::SelectionState lineState = selectionState();
+
     bool leftGap, rightGap;
     block()->getSelectionGapInfo(rootBlock, leftGap, rightGap);
 
@@ -443,6 +445,9 @@ GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoi
     if (rightGap)
         result.uniteRight(block()->logicalRightSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
                                                             lastBox->parent()->renderer(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
+    else if (lineState == RenderObject::SelectionStart || lineState == RenderObject::SelectionInside)
+        result.uniteRight(block()->lineEndingSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
+                                                          lastBox->parent()->renderer(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
 
     // When dealing with bidi text, a non-contiguous selection region is possible.
     // e.g. The logical text aaaAAAbbb (capitals denote RTL text and non-capitals LTR) is layed out

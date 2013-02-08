@@ -211,8 +211,9 @@ public:
     LayoutRect logicalRightSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
                                         RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*);
     LayoutRect lineEndingSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                      RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*);
-    LayoutUnit getLineEndingGapLogicalRight(RenderBlock* rootBlock, LayoutUnit lineEndingLogicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight);
+                                      RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*);
+    void getLineEndingGapLogicalLeftAndRight(RenderBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
+                                             LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight);
     void getSelectionGapInfo(RenderBlock* rootBlock, bool& leftGap, bool& rightGap);
     RenderBlock* blockBeforeWithinSelectionRoot(LayoutSize& offset) const;
 

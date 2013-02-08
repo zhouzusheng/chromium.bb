@@ -3461,7 +3461,15 @@ LayoutRect RenderBlock::lineEndingSelectionGap(RenderBlock* rootBlock, const Lay
 
 LayoutUnit RenderBlock::getLineEndingGapLogicalRight(RenderBlock* rootBlock, LayoutUnit lineEndingLogicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight)
 {
-    return min(lineEndingLogicalLeft + 5, min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+    LayoutUnit lineEndingGapWidth = logicalHeight / 4;
+    LayoutUnit rightPaddingToRoot = paddingRight();
+    RenderBlock* cb = containingBlock();
+    while (cb && cb != rootBlock) {
+        rightPaddingToRoot += cb->paddingRight();
+        cb = cb->containingBlock();
+    }
+    rightPaddingToRoot += rootBlock->paddingRight();
+    return min(lineEndingLogicalLeft + lineEndingGapWidth, rightPaddingToRoot + min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
 }
 
 void RenderBlock::getSelectionGapInfo(RenderBlock* rootBlock, bool& leftGap, bool& rightGap)

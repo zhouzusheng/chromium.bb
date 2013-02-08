@@ -3310,16 +3310,19 @@ GapRects RenderBlock::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPo
         // Go ahead and update our lastY to be the bottom of the last selected line.
         lastLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->selectionBottom();
 
+        bool selectionStartsOnLastLine = lastSelectedLine->selectionState() == SelectionStart;
         bool leftGap, rightGap;
         getSelectionGapInfo(rootBlock, leftGap, rightGap);
         lastLogicalLeft = leftGap ? logicalLeftSelectionOffset(rootBlock, lastSelectedLine->selectionBottom())
-                                  : inlineDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->logicalLeft();
+                                  : selectionStartsOnLastLine ? inlineDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->logicalRight()
+                                                              : inlineDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->logicalLeft();
         lastLogicalRight = rightGap ? logicalRightSelectionOffset(rootBlock, lastSelectedLine->selectionBottom())
                                     : getLineEndingGapLogicalRight(rootBlock, inlineDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->logicalRight(), lastSelectedLine->selectionTopAdjustedForPrecedingBlock(), lastSelectedLine->selectionHeightAdjustedForPrecedingBlock());
-        if (lastSelectedLine->selectionState() == SelectionStart) {
+        if (selectionStartsOnLastLine) {
             InlineBox* firstBox = lastSelectedLine->firstSelectedBox();
-            LayoutRect selRect = firstBox->renderer()->selectionRectForRepaint(rootBlock, false);
-            lastLogicalLeft = max(lastLogicalLeft, selRect.x());
+            LayoutRect selRect = firstBox ? firstBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            if (!selRect.isEmpty())
+                lastLogicalLeft = min(lastLogicalLeft, selRect.x());
         }
     }
     return result;

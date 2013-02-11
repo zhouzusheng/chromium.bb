@@ -1984,6 +1984,16 @@ void RenderBlock::moveRunInToOriginalPosition(RenderObject* runIn)
     parent()->setNeedsLayoutAndPrefWidthsRecalc();
 }
 
+LayoutUnit RenderBlock::additionalMarginStart() const
+{
+    if (!parent() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
+        return ZERO_LAYOUT_UNIT;
+    }
+
+    RenderBox *previousBox = previousSiblingBox();
+    return previousBox ? previousBox->additionalMarginStart() : 40;
+}
+
 LayoutUnit RenderBlock::collapseMargins(RenderBox* child, MarginInfo& marginInfo)
 {
     // Get the four margin values for the child and cache them.
@@ -3569,17 +3579,25 @@ void RenderBlock::getSelectionGapInfo(SelectionState state, bool& leftGap, bool&
                (state == RenderObject::SelectionEnd && !ltr);
 }
 
+extern bool isListElement(const Node*);
+
 LayoutUnit RenderBlock::logicalLeftSelectionOffset(RenderBlock* rootBlock, LayoutUnit position)
 {
     LayoutUnit logicalLeft = logicalLeftOffsetForLine(position, false);
     if (logicalLeft == logicalLeftOffsetForContent()) {
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
-            return containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+            logicalLeft = containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+        if (isListElement(node())) {
+            logicalLeft += paddingStart();
+        }
         return logicalLeft;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
+            if (isListElement(cb->node())) {
+                logicalLeft += cb->paddingStart();
+            }
             logicalLeft += cb->logicalLeft();
             cb = cb->containingBlock();
         }
@@ -6079,6 +6097,9 @@ void RenderBlock::computeBlockPreferredLogicalWidths()
             marginStart += startMarginLength.value();
         if (endMarginLength.isFixed())
             marginEnd += endMarginLength.value();
+        // SHEZ: additionalMarginStart is treated as fixed margin
+        if (child->isBox())
+            marginStart += toRenderBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;

@@ -224,6 +224,14 @@ static RenderObject* firstNonMarkerChild(RenderObject* parent)
     return result;
 }
 
+RenderObject* firstRenderText(RenderObject* curr, RenderObject* stayWithin)
+{
+    while (curr && !curr->isText()) {
+        curr = curr->nextInPreOrder(stayWithin);
+    }
+    return curr;
+}
+
 void RenderListItem::updateMarkerLocation()
 {
     // Sanity check the location of our marker.
@@ -241,15 +249,24 @@ void RenderListItem::updateMarkerLocation()
                 lineBoxParent = this;
         }
 
-        if (markerPar != lineBoxParent || m_marker->preferredLogicalWidthsDirty()) {
+        bool fontsAreDifferent = false;
+        RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+        RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+        if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
+            fontsAreDifferent = true;
+        }
+
+        if (markerPar != lineBoxParent || m_marker->preferredLogicalWidthsDirty() || fontsAreDifferent) {
             // Removing and adding the marker can trigger repainting in
             // containers other than ourselves, so we need to disable LayoutState.
             LayoutStateDisabler layoutStateDisabler(view());
             updateFirstLetter();
             m_marker->remove();
-            if (!lineBoxParent)
-                lineBoxParent = this;
-            lineBoxParent->addChild(m_marker, firstNonMarkerChild(lineBoxParent));
+            if (fontsAreDifferent) {
+                m_marker->style()->setFontDescription(firstText->style()->fontDescription());
+                m_marker->style()->font().update(m_marker->style()->font().fontSelector());
+            }
+            lineBoxParent->addChild(m_marker, firstNonMarker);
             if (m_marker->preferredLogicalWidthsDirty())
                 m_marker->computePreferredLogicalWidths();
             // If markerPar is an anonymous block that has lost all its children, destroy it.

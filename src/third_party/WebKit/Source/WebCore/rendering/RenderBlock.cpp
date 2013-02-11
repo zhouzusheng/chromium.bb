@@ -3359,17 +3359,25 @@ void RenderBlock::getSelectionGapInfo(SelectionState state, bool& leftGap, bool&
                (state == RenderObject::SelectionEnd && !ltr);
 }
 
+extern bool isListElement(const Node*);
+
 LayoutUnit RenderBlock::logicalLeftSelectionOffset(RenderBlock* rootBlock, LayoutUnit position)
 {
     LayoutUnit logicalLeft = logicalLeftOffsetForLine(position, false);
     if (logicalLeft == logicalLeftOffsetForContent()) {
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
-            return containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+            logicalLeft = containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+        if (isListElement(node())) {
+            logicalLeft += paddingStart();
+        }
         return logicalLeft;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
+            if (isListElement(cb->node())) {
+                logicalLeft += cb->paddingStart();
+            }
             logicalLeft += cb->logicalLeft();
             cb = cb->containingBlock();
         }

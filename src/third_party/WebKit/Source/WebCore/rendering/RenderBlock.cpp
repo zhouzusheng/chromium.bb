@@ -3579,8 +3579,6 @@ void RenderBlock::getSelectionGapInfo(SelectionState state, bool& leftGap, bool&
                (state == RenderObject::SelectionEnd && !ltr);
 }
 
-extern bool isListElement(const Node*);
-
 LayoutUnit RenderBlock::logicalLeftSelectionOffset(RenderBlock* rootBlock, LayoutUnit position)
 {
     LayoutUnit logicalLeft = logicalLeftOffsetForLine(position, false);
@@ -3588,15 +3586,15 @@ LayoutUnit RenderBlock::logicalLeftSelectionOffset(RenderBlock* rootBlock, Layou
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
             logicalLeft = containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
-        if (isListElement(node())) {
-            logicalLeft += paddingStart();
+        if (isListItem() && style()->isLeftToRightDirection()) {
+            logicalLeft += additionalMarginStart();
         }
         return logicalLeft;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
-            if (isListElement(cb->node())) {
-                logicalLeft += cb->paddingStart();
+            if (cb->isListItem() && cb->style()->isLeftToRightDirection()) {
+                logicalLeft += cb->additionalMarginStart();
             }
             logicalLeft += cb->logicalLeft();
             cb = cb->containingBlock();
@@ -3611,11 +3609,17 @@ LayoutUnit RenderBlock::logicalRightSelectionOffset(RenderBlock* rootBlock, Layo
     if (logicalRight == logicalRightOffsetForContent()) {
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
-            return containingBlock()->logicalRightSelectionOffset(rootBlock, position + logicalTop());
+            logicalRight = containingBlock()->logicalRightSelectionOffset(rootBlock, position + logicalTop());
+        if (isListItem() && !style()->isLeftToRightDirection()) {
+            logicalRight -= additionalMarginStart();
+        }
         return logicalRight;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
+            if (cb->isListItem() && !cb->style()->isLeftToRightDirection()) {
+                logicalRight -= cb->additionalMarginStart();
+            }
             logicalRight += cb->logicalLeft();
             cb = cb->containingBlock();
         }

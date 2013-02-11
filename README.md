@@ -74,16 +74,16 @@ autonomously to pickup our `offsetleft` changes.
 * If you are using `upstream/stable/24.0.1312.52` or later, you will need to
   generate your projects.  Note that in previous versions, the generated
   project files were checked into the repo, so this step was not necessary.
-** Open a command-prompt window and set the following environment variables:
-   <code>
-       set GYP_GENERATORS=msvs
-       set GYP_MSVS_VERSION=2008
-       set CHROMIUM_GYP_FILE=src/webkit/webkit.gyp
-   </code>
-** Run the following command from inside the top-level `chromium/` directory:
-   <code>
-       gclient runhooks
-   </code>
+    * Open a command-prompt window and set the following environment variables:
+
+            set GYP_GENERATORS=msvs
+            set GYP_MSVS_VERSION=2008
+            set CHROMIUM_GYP_FILE=src/webkit/webkit.gyp
+
+    * Run the following command from inside the top-level `chromium/` directory:
+
+            gclient runhooks
+
 * Open `chromium/src/webkit/webkit.sln`.  This is the generated solution file
   for `test_shell`.
 * Build the `test_shell` project.

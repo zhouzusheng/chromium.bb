@@ -237,6 +237,7 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
     v8::Handle<v8::Object> global = context->Global();
     ASSERT(!global.IsEmpty());
     global = global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    if (global.IsEmpty()) return 0;
     ASSERT(!global.IsEmpty());
     return V8DOMWindow::toNative(global);
 }
@@ -259,6 +260,7 @@ ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context
 Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
 {
     DOMWindow* window = toDOMWindow(context);
+    if (!window) return 0;
     if (window->isCurrentlyDisplayedInFrame())
         return window->frame();
     // We return 0 here because |context| is detached from the Frame. If we

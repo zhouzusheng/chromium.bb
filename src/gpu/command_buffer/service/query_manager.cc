@@ -4,11 +4,13 @@
 
 #include "gpu/command_buffer/service/query_manager.h"
 #include "base/atomicops.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/feature_info.h"
+#include "ui/gl/async_pixel_transfer_delegate.h"
 
 namespace gpu {
 namespace gles2 {
@@ -162,6 +164,68 @@ void CommandLatencyQuery::Destroy(bool /* have_context */) {
 CommandLatencyQuery::~CommandLatencyQuery() {
 }
 
+class AsyncPixelTransfersCompletedQuery
+    : public QueryManager::Query
+    , public base::SupportsWeakPtr<AsyncPixelTransfersCompletedQuery> {
+ public:
+  AsyncPixelTransfersCompletedQuery(
+      QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
+
+  virtual bool Begin() OVERRIDE;
+  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool Process() OVERRIDE;
+  virtual void Destroy(bool have_context) OVERRIDE;
+
+  void MarkAsCompletedCallback() { MarkAsCompleted(1); }
+
+ protected:
+  virtual ~AsyncPixelTransfersCompletedQuery();
+};
+
+AsyncPixelTransfersCompletedQuery::AsyncPixelTransfersCompletedQuery(
+    QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
+    : Query(manager, target, shm_id, shm_offset) {
+}
+
+bool AsyncPixelTransfersCompletedQuery::Begin() {
+  return true;
+}
+
+bool AsyncPixelTransfersCompletedQuery::End(uint32 submit_count) {
+  MarkAsPending(submit_count);
+
+  // This will call MarkAsCompleted(1) as a reply to a task on
+  // the async upload thread, such that it occurs after all previous
+  // async transfers have completed.
+  manager()->decoder()->GetAsyncPixelTransferDelegate()->AsyncNotifyCompletion(
+      base::Bind(
+          &AsyncPixelTransfersCompletedQuery::MarkAsCompletedCallback,
+          AsWeakPtr()));
+
+  // TODO(epenner): The async task occurs outside the normal
+  // flow, via a callback on this thread. Is there anything
+  // missing or wrong with that?
+
+  // TODO(epenner): Could we possibly trigger the completion on
+  // the upload thread by writing to the query shared memory
+  // directly?
+  return true;
+}
+
+bool AsyncPixelTransfersCompletedQuery::Process() {
+  NOTREACHED();
+  return true;
+}
+
+void AsyncPixelTransfersCompletedQuery::Destroy(bool /* have_context */) {
+  if (!IsDeleted()) {
+    MarkAsDeleted();
+  }
+}
+
+AsyncPixelTransfersCompletedQuery::~AsyncPixelTransfersCompletedQuery() {
+}
+
 class GetErrorQuery : public QueryManager::Query {
  public:
   GetErrorQuery(
@@ -247,6 +311,10 @@ QueryManager::Query* QueryManager::CreateQuery(
       break;
     case GL_LATENCY_QUERY_CHROMIUM:
       query = new CommandLatencyQuery(this, target, shm_id, shm_offset);
+      break;
+    case GL_ASYNC_PIXEL_TRANSFERS_COMPLETED_CHROMIUM:
+      query = new AsyncPixelTransfersCompletedQuery(
+          this, target, shm_id, shm_offset);
       break;
     case GL_GET_ERROR_QUERY_CHROMIUM:
       query = new GetErrorQuery(this, target, shm_id, shm_offset);

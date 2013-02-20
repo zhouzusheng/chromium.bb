@@ -2,22 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCScrollbarLayerImpl_h
-#define CCScrollbarLayerImpl_h
+#ifndef CC_SCROLLBAR_LAYER_IMPL_H_
+#define CC_SCROLLBAR_LAYER_IMPL_H_
 
-#include "cc/layer_impl.h"
+#include "cc/cc_export.h"
 #include "cc/scrollbar_geometry_fixed_thumb.h"
+#include "cc/scrollbar_layer_impl_base.h"
 #include <public/WebRect.h>
-#include <public/WebScrollbar.h>
 #include <public/WebVector.h>
 
 namespace cc {
 
 class ScrollView;
 
-class ScrollbarLayerImpl : public LayerImpl {
+class CC_EXPORT ScrollbarLayerImpl : public ScrollbarLayerImplBase {
 public:
-    static scoped_ptr<ScrollbarLayerImpl> create(int id);
+    static scoped_ptr<ScrollbarLayerImpl> create(LayerTreeImpl* treeImpl, int id);
     virtual ~ScrollbarLayerImpl();
 
     ScrollbarGeometryFixedThumb* scrollbarGeometry() const { return m_geometry.get(); }
@@ -28,23 +28,23 @@ public:
     void setForeTrackResourceId(ResourceProvider::ResourceId id) { m_foreTrackResourceId = id; }
     void setThumbResourceId(ResourceProvider::ResourceId id) { m_thumbResourceId = id; }
 
-    float currentPos() const { return m_currentPos; }
+    virtual float currentPos() const OVERRIDE;
     void setCurrentPos(float currentPos) { m_currentPos = currentPos; }
 
-    int totalSize() const { return m_totalSize; }
+    virtual int totalSize() const OVERRIDE;
     void setTotalSize(int totalSize) { m_totalSize = totalSize; }
 
-    int maximum() const { return m_maximum; }
+    virtual int maximum() const OVERRIDE;
     void setMaximum(int maximum) { m_maximum = maximum; }
 
-    WebKit::WebScrollbar::Orientation orientation() const { return m_orientation; }
+    virtual WebKit::WebScrollbar::Orientation orientation() const OVERRIDE;
 
     virtual void appendQuads(QuadSink&, AppendQuadsData&) OVERRIDE;
 
-    virtual void didLoseContext() OVERRIDE;
+    virtual void didLoseOutputSurface() OVERRIDE;
 
 protected:
-    explicit ScrollbarLayerImpl(int id);
+    ScrollbarLayerImpl(LayerTreeImpl* treeImpl, int id);
 
 private:
     // nested class only to avoid namespace problem
@@ -77,6 +77,8 @@ private:
 
     virtual const char* layerTypeAsString() const OVERRIDE;
 
+    gfx::Rect scrollbarLayerRectToContentRect(const gfx::Rect& layerRect) const;
+
     Scrollbar m_scrollbar;
 
     ResourceProvider::ResourceId m_backTrackResourceId;
@@ -105,4 +107,4 @@ private:
 };
 
 }
-#endif
+#endif  // CC_SCROLLBAR_LAYER_IMPL_H_

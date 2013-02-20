@@ -47,6 +47,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       delegate_(delegate),
       media_stream_client_(media_stream_client),
       paused_(true),
+      current_frame_used_(false),
       pending_repaint_(false),
       received_first_frame_(false),
       sequence_started_(false),
@@ -97,12 +98,27 @@ void WebMediaPlayerMS::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   audio_renderer_ = media_stream_client_->GetAudioRenderer(url);
 
   if (video_frame_provider_ || audio_renderer_) {
-    SetNetworkState(WebMediaPlayer::NetworkStateLoaded);
     GetClient()->sourceOpened();
     GetClient()->setOpaque(true);
     if (video_frame_provider_) {
       video_frame_provider_->Start();
-    } else {
+    }
+
+    if (audio_renderer_) {
+      if (audio_renderer_->IsLocalRenderer()) {
+        // TODO(henrika): I would like to mute local audio by default but the
+        // approach here is not perfect. The right-click pop-up menu for a video
+        // element is not properly updated and does not reflect that the stream
+        // is muted. The control UI works and we are OK for audio elements.
+        // Tracking this issue at: http://crbug.com/164811.
+        setVolume(0);
+        GetClient()->volumeChanged(0);
+        GetClient()->muteChanged(true);
+      }
+      audio_renderer_->Start();
+    }
+
+    if (audio_renderer_ && !video_frame_provider_) {
       // This is audio-only mode.
       SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
       SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
@@ -141,7 +157,7 @@ void WebMediaPlayerMS::pause() {
   if (video_frame_provider_)
     video_frame_provider_->Pause();
 
-  if (audio_renderer_)
+  if (audio_renderer_ && !paused_)
     audio_renderer_->Pause();
 
   paused_ = true;
@@ -232,6 +248,8 @@ float WebMediaPlayerMS::currentTime() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (current_frame_.get()) {
     return current_frame_->GetTimestamp().InSecondsF();
+  } else if (audio_renderer_) {
+    return audio_renderer_->GetCurrentRenderTime().InSecondsF();
   }
   return 0.0f;
 }
@@ -265,7 +283,7 @@ float WebMediaPlayerMS::maxTimeSeekable() const {
 
 bool WebMediaPlayerMS::didLoadingProgress() const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return false;
+  return true;
 }
 
 unsigned long long WebMediaPlayerMS::totalBytes() const {
@@ -286,6 +304,12 @@ void WebMediaPlayerMS::paint(WebCanvas* canvas,
 
   gfx::RectF dest_rect(rect.x, rect.y, rect.width, rect.height);
   video_renderer_.Paint(current_frame_, canvas, dest_rect, alpha);
+
+  {
+    base::AutoLock auto_lock(current_frame_lock_);
+    if (current_frame_.get())
+      current_frame_used_ = true;
+  }
 }
 
 bool WebMediaPlayerMS::hasSingleSecurityOrigin() const {
@@ -333,10 +357,11 @@ unsigned WebMediaPlayerMS::videoDecodedByteCount() const {
 
 WebKit::WebVideoFrame* WebMediaPlayerMS::getCurrentFrame() {
   DVLOG(3) << "WebMediaPlayerMS::getCurrentFrame";
-  DCHECK(thread_checker_.CalledOnValidThread());
+  base::AutoLock auto_lock(current_frame_lock_);
   DCHECK(!pending_repaint_);
   if (current_frame_.get()) {
     pending_repaint_ = true;
+    current_frame_used_ = true;
     return new webkit_media::WebVideoFrameImpl(current_frame_);
   }
   return NULL;
@@ -345,7 +370,7 @@ WebKit::WebVideoFrame* WebMediaPlayerMS::getCurrentFrame() {
 void WebMediaPlayerMS::putCurrentFrame(
     WebKit::WebVideoFrame* web_video_frame) {
   DVLOG(3) << "WebMediaPlayerMS::putCurrentFrame";
-  DCHECK(thread_checker_.CalledOnValidThread());
+  base::AutoLock auto_lock(current_frame_lock_);
   DCHECK(pending_repaint_);
   pending_repaint_ = false;
   if (web_video_frame) {
@@ -360,7 +385,12 @@ void WebMediaPlayerMS::OnFrameAvailable(
   ++total_frame_count_;
   if (!received_first_frame_) {
     received_first_frame_ = true;
-    current_frame_ = media::VideoFrame::CreateBlackFrame(frame->natural_size());
+    {
+      base::AutoLock auto_lock(current_frame_lock_);
+      DCHECK(!current_frame_used_);
+      current_frame_ =
+          media::VideoFrame::CreateBlackFrame(frame->natural_size());
+    }
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
     GetClient()->sizeChanged();
@@ -377,27 +407,25 @@ void WebMediaPlayerMS::OnFrameAvailable(
   bool size_changed = !current_frame_ ||
       current_frame_->natural_size() != frame->natural_size();
 
-  current_frame_ = frame;
-  current_frame_->SetTimestamp(frame->GetTimestamp() - start_time_);
+  {
+    base::AutoLock auto_lock(current_frame_lock_);
+    if (!current_frame_used_ && current_frame_.get())
+      ++dropped_frame_count_;
+    current_frame_ = frame;
+    current_frame_->SetTimestamp(frame->GetTimestamp() - start_time_);
+    current_frame_used_ = false;
+  }
 
   if (size_changed)
     GetClient()->sizeChanged();
 
-  if (pending_repaint_) {
-    // TODO(wjia): Figure out how to calculate dropped frame count for
-    // both S/W and H/W compositing.
-    // ++dropped_frame_count_;
-  } else {
-    GetClient()->repaint();
-  }
+  GetClient()->repaint();
 }
 
 void WebMediaPlayerMS::RepaintInternal() {
   DVLOG(1) << "WebMediaPlayerMS::RepaintInternal";
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!pending_repaint_) {
-    GetClient()->repaint();
-  }
+  GetClient()->repaint();
 }
 
 void WebMediaPlayerMS::OnSourceError() {

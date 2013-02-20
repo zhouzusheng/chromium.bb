@@ -118,7 +118,7 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     , m_containsUncommonAttributeSelector(WebCore::containsUncommonAttributeSelector(selector()))
     , m_linkMatchType(SelectorChecker::determineLinkMatchType(selector()))
     , m_hasDocumentSecurityOrigin(addRuleFlags & RuleHasDocumentSecurityOrigin)
-    , m_isInRegionRule(addRuleFlags & RuleIsInRegionRule)
+    , m_isInRegionRule(!!(addRuleFlags & RuleIsInRegionRule))
 {
     ASSERT(m_position == position);
     ASSERT(m_selectorIndex == selectorIndex);
@@ -157,36 +157,17 @@ void RuleSet::RuleSetSelectorPair::reportMemoryUsage(MemoryObjectInfo* memoryObj
     info.addMember(ruleSet);
 }
 
-static inline void collectFeaturesFromSelector(RuleFeatureSet& features, const CSSSelector* selector)
-{
-    if (selector->m_match == CSSSelector::Id)
-        features.idsInRules.add(selector->value().impl());
-    if (selector->isAttributeSelector())
-        features.attrsInRules.add(selector->attribute().localName().impl());
-    switch (selector->pseudoType()) {
-    case CSSSelector::PseudoFirstLine:
-        features.usesFirstLineRules = true;
-        break;
-    case CSSSelector::PseudoBefore:
-    case CSSSelector::PseudoAfter:
-        features.usesBeforeAfterRules = true;
-        break;
-    default:
-        break;
-    }
-}
-
 static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
 {
     bool foundSiblingSelector = false;
     for (CSSSelector* selector = ruleData.selector(); selector; selector = selector->tagHistory()) {
-        collectFeaturesFromSelector(features, selector);
+        features.collectFeaturesFromSelector(selector);
         
         if (CSSSelectorList* selectorList = selector->selectorList()) {
             for (CSSSelector* subSelector = selectorList->first(); subSelector; subSelector = CSSSelectorList::next(subSelector)) {
                 if (!foundSiblingSelector && selector->isSiblingSelector())
                     foundSiblingSelector = true;
-                collectFeaturesFromSelector(features, subSelector);
+                features.collectFeaturesFromSelector(subSelector);
             }
         } else if (!foundSiblingSelector && selector->isSiblingSelector())
             foundSiblingSelector = true;
@@ -210,10 +191,6 @@ void RuleSet::addToRuleSet(AtomicStringImpl* key, AtomRuleMap& map, const RuleDa
 void RuleSet::addRule(StyleRule* rule, unsigned selectorIndex, AddRuleFlags addRuleFlags)
 {
     RuleData ruleData(rule, selectorIndex, m_ruleCount++, addRuleFlags);
-    static const unsigned athostRuleSpecificity = 0x100000;
-
-    if (addRuleFlags & RuleIsHostRule)
-        ruleData.increaseSpecificity(athostRuleSpecificity);
 
     collectFeaturesFromRuleData(m_features, ruleData);
 
@@ -227,7 +204,7 @@ void RuleSet::addRule(StyleRule* rule, unsigned selectorIndex, AddRuleFlags addR
         addToRuleSet(selector->value().impl(), m_classRules, ruleData);
         return;
     }
-    if (selector->isUnknownPseudoElement()) {
+    if (selector->isCustomPseudoElement()) {
         addToRuleSet(selector->value().impl(), m_shadowPseudoElementRules, ruleData);
         return;
     }
@@ -331,6 +308,14 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
                             continue;
                         resolver->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(childRule));
                     }
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+                    else if (childRule->isViewportRule() && resolver && !resolver->affectedByViewportChange()) {
+                        // @viewport should not be scoped.
+                        if (scope)
+                            continue;
+                        resolver->viewportStyleResolver()->addViewportRule(static_cast<StyleRuleViewport*>(childRule));
+                    }
+#endif
                 } // for rules
             } // if rules
         } else if (rule->isFontFaceRule() && resolver) {
@@ -358,6 +343,14 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
 #if ENABLE(SHADOW_DOM)
         else if (rule->isHostRule())
             resolver->addHostRule(static_cast<StyleRuleHost*>(rule), hasDocumentSecurityOrigin, scope);
+#endif
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+        else if (rule->isViewportRule() && resolver) {
+            // @viewport should not be scoped.
+            if (scope)
+                continue;
+            resolver->viewportStyleResolver()->addViewportRule(static_cast<StyleRuleViewport*>(rule));
+        }
 #endif
     }
     if (m_autoShrinkToFitEnabled)

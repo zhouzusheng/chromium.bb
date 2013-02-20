@@ -108,6 +108,7 @@
                 'public/WebBindings.h',
                 'public/WebBlob.h',
                 'public/WebCache.h',
+                'public/WebCachedURLRequest.h',
                 'public/WebColorChooser.h',
                 'public/WebColorChooserClient.h',
                 'public/WebColorName.h',
@@ -120,6 +121,7 @@
                 'public/WebContextMenuData.h',
                 'public/WebCrossOriginPreflightResultCache.h',
                 'public/WebCursorInfo.h',
+                'public/WebDOMCustomEvent.h',
                 'public/WebDOMEvent.h',
                 'public/WebDOMEventListener.h',
                 'public/WebDOMMessageEvent.h',
@@ -129,6 +131,9 @@
                 'public/WebDataSource.h',
                 'public/WebDatabase.h',
                 'public/WebDatabaseObserver.h',
+                'public/WebDateTimeInputType.h',
+                'public/WebDateTimeChooserCompletion.h',
+                'public/WebDateTimeChooserParams.h',
                 'public/WebDeliveredIntentClient.h',
                 'public/WebDevToolsAgent.h',
                 'public/WebDevToolsAgentClient.h',
@@ -285,10 +290,10 @@
                 'public/WebWorkerInfo.h',
                 'public/android/WebInputEventFactory.h',
                 'public/android/WebSandboxSupport.h',
+                'public/default/WebRenderTheme.h',
                 'public/gtk/WebInputEventFactory.h',
                 'public/linux/WebFontRenderStyle.h',
                 'public/linux/WebFontRendering.h',
-                'public/linux/WebRenderTheme.h',
                 'public/mac/WebInputEventFactory.h',
                 'public/mac/WebSandboxSupport.h',
                 'public/mac/WebScreenInfoFactory.h',
@@ -359,6 +364,8 @@
                 'src/DateTimeChooserImpl.h',
                 'src/ChromeClientImpl.cpp',
                 'src/ChromeClientImpl.h',
+                'src/ColorChooserPopupUIController.cpp',
+                'src/ColorChooserPopupUIController.h',
                 'src/ColorChooserUIController.cpp',
                 'src/ColorChooserUIController.h',
                 'src/CompositionUnderlineBuilder.h',
@@ -383,12 +390,15 @@
                 'src/EditorClientImpl.h',
                 'src/EventListenerWrapper.cpp',
                 'src/EventListenerWrapper.h',
+                'src/ExternalDateTimeChooser.cpp',
+                'src/ExternalDateTimeChooser.h',
                 'src/ExternalPopupMenu.cpp',
                 'src/ExternalPopupMenu.h',
                 'src/FindInPageCoordinates.cpp',
                 'src/FindInPageCoordinates.h',
                 'src/FrameLoaderClientImpl.cpp',
                 'src/FrameLoaderClientImpl.h',
+                'src/FrameNetworkingContextImpl.cpp',
                 'src/FrameNetworkingContextImpl.h',
                 'src/GeolocationClientProxy.cpp',
                 'src/GeolocationClientProxy.h',
@@ -424,10 +434,10 @@
                 'src/PrerendererClientImpl.h',
                 'src/PrerendererClientImpl.cpp',
                 'src/android/WebInputEventFactory.cpp',
+                'src/default/WebRenderTheme.cpp',
                 'src/linux/WebFontInfo.cpp',
                 'src/linux/WebFontRendering.cpp',
                 'src/linux/WebFontRenderStyle.cpp',
-                'src/linux/WebRenderTheme.cpp',
                 'src/x11/WebScreenInfoFactory.cpp',
                 'src/mac/WebInputEventFactory.mm',
                 'src/mac/WebScreenInfoFactory.mm',
@@ -481,12 +491,14 @@
                 'src/WebBlob.cpp',
                 'src/WebBlobData.cpp',
                 'src/WebCache.cpp',
+                'src/WebCachedURLRequest.cpp',
                 'src/WebColorName.cpp',
                 'src/WebCommon.cpp',
                 'src/WebCompositorInputHandlerImpl.cpp',
                 'src/WebCompositorInputHandlerImpl.h',
                 'src/WebCrossOriginPreflightResultCache.cpp',
                 'src/WebCursorInfo.cpp',
+                'src/WebDOMCustomEvent.cpp',
                 'src/WebDOMEvent.cpp',
                 'src/WebDOMEventListener.cpp',
                 'src/WebDOMEventListenerPrivate.cpp',
@@ -590,8 +602,6 @@
                 'src/WebPluginContainerImpl.cpp',
                 'src/WebPluginContainerImpl.h',
                 'src/WebPluginDocument.cpp',
-                'src/WebPluginListBuilderImpl.cpp',
-                'src/WebPluginListBuilderImpl.h',
                 'src/WebPluginLoadObserver.cpp',
                 'src/WebPluginLoadObserver.h',
                 'src/WebPluginScrollbarImpl.cpp',
@@ -612,7 +622,6 @@
                 'src/WebSecurityPolicy.cpp',
                 'src/WebSelectElement.cpp',
                 'src/WebSerializedScriptValue.cpp',
-                'src/WebSessionDescriptionDescriptor.cpp',
                 'src/WebSettingsImpl.cpp',
                 'src/WebSettingsImpl.h',
                 'src/WebSharedWorkerImpl.cpp',
@@ -648,6 +657,7 @@
                 'src/WorkerAsyncFileSystemChromium.h',
                 'src/WorkerAsyncFileWriterChromium.cpp',
                 'src/WorkerAsyncFileWriterChromium.h',
+                'src/WorkerContextProxy.cpp',
                 'src/WorkerFileSystemCallbacksBridge.cpp',
                 'src/WorkerFileSystemCallbacksBridge.h',
                 'src/WorkerFileWriterCallbacksBridge.cpp',
@@ -692,29 +702,22 @@
                                 '<(chromium_src_dir)/build/temp_gyp/googleurl.gyp:googleurl',
                                 '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
                             ],
-                            'include_dirs': [
-                                # WARNING: Do not view this particular case as a precedent for
-                                # including WebCore headers in DumpRenderTree project.
-                                '../../WebCore/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
-                            ],
-                            'sources': [
-                                '<@(webkit_unittest_files)',
-                                'src/WebTestingSupport.cpp',
-                                'public/WebTestingSupport.h',
-                                'tests/WebUnitTests.cpp',   # Components test runner support.
-                            ],
+                            # SHEZ: Removed upstream code here, used for testing only.
                             'sources!': [
                                 # We should not include files depending on webkit_support.
                                 # These tests depend on webkit_support and
                                 # functions defined only in !WEBKIT_IMPLEMENTATION.
                                 'tests/AssociatedURLLoaderTest.cpp',
                                 'tests/EventListenerTest.cpp',
+                                'tests/FakeWebPlugin.cpp',
                                 'tests/FrameTestHelpers.cpp',
                                 'tests/IDBBindingUtilitiesTest.cpp',
+                                'tests/IDBRequestTest.cpp',
                                 'tests/LevelDBTest.cpp',
                                 'tests/ListenerLeakTest.cpp',
                                 'tests/LinkHighlightTest.cpp',
                                 'tests/PopupMenuTest.cpp',
+                                'tests/PrerenderingTest.cpp',
                                 'tests/RenderTableCellTest.cpp',
                                 'tests/RenderTableRowTest.cpp',
                                 'tests/ScrollingCoordinatorChromiumTest.cpp',
@@ -723,6 +726,7 @@
                                 'tests/WebImageTest.cpp',
                                 'tests/WebPageNewSerializerTest.cpp',
                                 'tests/WebPageSerializerTest.cpp',
+                                'tests/WebPluginContainerTest.cpp',
                                 'tests/WebViewTest.cpp',
                             ],
                             'conditions': [
@@ -827,6 +831,16 @@
                                 ],
                             },
                         }],
+                    ],
+                }],
+                ['use_default_render_theme==1', {
+                    'include_dirs': [
+                        'public/default',
+                    ],
+                }, { # else use_default_render_theme==0
+                    'sources/': [
+                        ['exclude', 'src/default/WebRenderTheme.cpp'],
+                        ['exclude', 'public/default/WebRenderTheme.h'],
                     ],
                 }],
             ],
@@ -1067,7 +1081,7 @@
         },
     ], # targets
     'conditions': [
-        ['os_posix==1 and OS!="mac" and gcc_version>=46', {
+        ['os_posix==1 and OS!="mac" and OS!="ios" and gcc_version>=46', {
             'target_defaults': {
                 # Disable warnings about c++0x compatibility, as some names (such
                 # as nullptr) conflict with upcoming c++0x types.

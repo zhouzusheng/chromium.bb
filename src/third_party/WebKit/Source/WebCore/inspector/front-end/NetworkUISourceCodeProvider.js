@@ -67,8 +67,10 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
      */
     _parsedScriptSource: function(event)
     {
-        var script = /** @type {WebInspector.Script} */ event.data;
+        var script = /** @type {WebInspector.Script} */ (event.data);
         if (!script.sourceURL || script.isInlineScript())
+            return;
+        if (WebInspector.experimentsSettings.snippetsSupport.isEnabled() && script.isSnippet())
             return;
         var isDynamicAnonymousScript;
         // Only add uiSourceCodes for
@@ -76,7 +78,8 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
         // - scripts with explicit sourceURL comment;
         // - dynamic scripts (script elements with src attribute) when inspector is opened after the script was loaded.
         if (!script.hasSourceURL && !script.isContentScript) {
-            if (WebInspector.resourceForURL(script.sourceURL) || WebInspector.networkLog.requestForURL(script.sourceURL))
+            var requestURL = script.sourceURL.replace(/#.*/, "");
+            if (WebInspector.resourceForURL(requestURL) || WebInspector.networkLog.requestForURL(requestURL))
                 return;
         }
         // Filter out embedder injected content scripts.
@@ -93,7 +96,7 @@ WebInspector.NetworkUISourceCodeProvider.prototype = {
      */
     _resourceAdded: function(event)
     {
-        var resource = /** @type {WebInspector.Resource} */ event.data;
+        var resource = /** @type {WebInspector.Resource} */ (event.data);
         this._addFile(resource.url, resource);
     },
 

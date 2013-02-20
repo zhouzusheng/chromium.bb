@@ -204,12 +204,16 @@ bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
 
 bool ShellCopy(const FilePath& from_path, const FilePath& to_path,
                bool recursive) {
+  // WinXP SHFileOperation doesn't like trailing separators.
+  FilePath stripped_from = from_path.StripTrailingSeparators();
+  FilePath stripped_to = to_path.StripTrailingSeparators();
+
   base::ThreadRestrictions::AssertIOAllowed();
 
   // NOTE: I suspect we could support longer paths, but that would involve
   // analyzing all our usage of files.
-  if (from_path.value().length() >= MAX_PATH ||
-      to_path.value().length() >= MAX_PATH) {
+  if (stripped_from.value().length() >= MAX_PATH ||
+      stripped_to.value().length() >= MAX_PATH) {
     return false;
   }
 
@@ -219,9 +223,9 @@ bool ShellCopy(const FilePath& from_path, const FilePath& to_path,
   wchar_t double_terminated_path_from[MAX_PATH + 1] = {0};
   wchar_t double_terminated_path_to[MAX_PATH + 1] = {0};
 #pragma warning(suppress:4996)  // don't complain about wcscpy deprecation
-  wcscpy(double_terminated_path_from, from_path.value().c_str());
+  wcscpy(double_terminated_path_from, stripped_from.value().c_str());
 #pragma warning(suppress:4996)  // don't complain about wcscpy deprecation
-  wcscpy(double_terminated_path_to, to_path.value().c_str());
+  wcscpy(double_terminated_path_to, stripped_to.value().c_str());
 
   SHFILEOPSTRUCT file_operation = {0};
   file_operation.wFunc = FO_COPY;
@@ -393,15 +397,17 @@ bool CreateTemporaryFileInDir(const FilePath& dir,
     return false;
   }
 
-  DWORD path_len = GetLongPathName(temp_name, temp_name, MAX_PATH);
-  if (path_len > MAX_PATH + 1 || path_len == 0) {
-    DPLOG(WARNING) << "Failed to get long path name for " << temp_name;
-    return false;
+  wchar_t long_temp_name[MAX_PATH + 1];
+  DWORD long_name_len = GetLongPathName(temp_name, long_temp_name, MAX_PATH);
+  if (long_name_len > MAX_PATH || long_name_len == 0) {
+    // GetLongPathName() failed, but we still have a temporary file.
+    *temp_file = FilePath(temp_name);
+    return true;
   }
 
-  std::wstring temp_file_str;
-  temp_file_str.assign(temp_name, path_len);
-  *temp_file = FilePath(temp_file_str);
+  FilePath::StringType long_temp_name_str;
+  long_temp_name_str.assign(long_temp_name, long_name_len);
+  *temp_file = FilePath(long_temp_name_str);
   return true;
 }
 

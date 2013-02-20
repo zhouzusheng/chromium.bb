@@ -124,15 +124,36 @@ unsigned SharedBuffer::size() const
     return m_size;
 }
 
+void SharedBuffer::createPurgeableBuffer() const
+{
+    if (m_purgeableBuffer)
+        return;
+
+    if (hasPlatformData())
+        return;
+
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
+    if (singleDataArrayBuffer())
+        return;
+#endif
+
+    m_purgeableBuffer = PurgeableBuffer::create(buffer().data(), m_size);
+}
+
 const char* SharedBuffer::data() const
 {
     if (hasPlatformData())
         return platformData();
+
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
+    if (const char* buffer = singleDataArrayBuffer())
+        return buffer;
+#endif
     
     if (m_purgeableBuffer)
         return m_purgeableBuffer->data();
     
-    return buffer().data();
+    return this->buffer().data();
 }
 
 void SharedBuffer::append(SharedBuffer* data)
@@ -158,6 +179,8 @@ void SharedBuffer::append(const char* data, unsigned length)
 
     if (m_size <= segmentSize) {
         // No need to use segments for small resource data
+        if (m_buffer.isEmpty())
+            m_buffer.reserveInitialCapacity(length);
         m_buffer.append(data, length);
         return;
     }
@@ -202,7 +225,7 @@ void SharedBuffer::clear()
 
     m_buffer.clear();
     m_purgeableBuffer.clear();
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
     m_dataArray.clear();
 #endif
 }
@@ -244,7 +267,7 @@ const Vector<char>& SharedBuffer::buffer() const
             freeSegment(m_segments[i]);
         }
         m_segments.clear();
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
         copyDataArrayAndClear(destination, bytesLeft);
 #endif
     }
@@ -294,7 +317,7 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
         someData = m_segments[segment] + positionInSegment;
         return segment == segments - 1 ? segmentedSize - position : segmentSize - positionInSegment;
     }
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
     ASSERT(maxSegmentedSize <= position);
     position -= maxSegmentedSize;
     return copySomeDataFromDataArray(someData, position);

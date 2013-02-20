@@ -97,7 +97,7 @@ public:
     virtual void disable(ErrorString*);
     virtual void addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* result);
     virtual void removeScriptToEvaluateOnLoad(ErrorString*, const String& identifier);
-    virtual void reload(ErrorString*, const bool* optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad);
+    virtual void reload(ErrorString*, const bool* optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad, const String* optionalScriptPreprocessor);
     virtual void navigate(ErrorString*, const String& url);
     virtual void getCookies(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::Cookie> >& cookies, WTF::String* cookiesString);
     virtual void deleteCookie(ErrorString*, const String& cookieName, const String& domain);
@@ -109,6 +109,8 @@ public:
     virtual void canOverrideDeviceMetrics(ErrorString*, bool*);
     virtual void setDeviceMetricsOverride(ErrorString*, int width, int height, double fontScaleFactor, bool fitWindow);
     virtual void setShowPaintRects(ErrorString*, bool show);
+    virtual void canShowFPSCounter(ErrorString*, bool*);
+    virtual void setShowFPSCounter(ErrorString*, bool show);
     virtual void getScriptExecutionStatus(ErrorString*, PageCommandHandler::Result::Enum*);
     virtual void setScriptExecutionDisabled(ErrorString*, bool);
     virtual void setGeolocationOverride(ErrorString*, const double*, const double*, const double*);
@@ -118,6 +120,7 @@ public:
     virtual void clearDeviceOrientationOverride(ErrorString*);
     virtual void canOverrideDeviceOrientation(ErrorString*, bool*);
     virtual void setTouchEmulationEnabled(ErrorString*, bool);
+    virtual void setEmulatedMedia(ErrorString*, const String&);
     virtual void getCompositingBordersVisible(ErrorString*, bool* out_param);
     virtual void setCompositingBordersVisible(ErrorString*, bool);
 
@@ -136,6 +139,7 @@ public:
     void loaderDetachedFromFrame(DocumentLoader*);
     void applyScreenWidthOverride(long*);
     void applyScreenHeightOverride(long*);
+    void applyEmulatedMedia(String*);
     void didPaint(GraphicsContext*, const LayoutRect&);
     void didLayout();
     void didScroll();
@@ -149,12 +153,14 @@ public:
     void webViewResized(const IntSize&);
 
     // Cross-agents API
+    Page* page() { return m_page; }
     Frame* mainFrame();
     String createIdentifier();
     Frame* frameForId(const String& frameId);
     String frameId(Frame*);
     String loaderId(DocumentLoader*);
     Frame* assertFrame(ErrorString*, String frameId);
+    String scriptPreprocessor() { return m_scriptPreprocessor; }
     static DocumentLoader* assertDocumentLoader(ErrorString*, Frame*);
 
 private:
@@ -178,6 +184,8 @@ private:
     long m_lastScriptIdentifier;
     String m_pendingScriptToEvaluateOnLoadOnce;
     String m_scriptToEvaluateOnLoadOnce;
+    String m_pendingScriptPreprocessor;
+    String m_scriptPreprocessor;
     HashMap<Frame*, String> m_frameToIdentifier;
     HashMap<String, Frame*> m_identifierToFrame;
     HashMap<DocumentLoader*, String> m_loaderToIdentifier;

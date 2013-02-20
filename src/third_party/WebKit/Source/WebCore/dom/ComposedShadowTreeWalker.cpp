@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2012 Google Inc. All rights reserved.
  *
@@ -33,6 +34,7 @@
 #include "HTMLContentElement.h"
 #include "HTMLShadowElement.h"
 #include "InsertionPoint.h"
+#include "PseudoElement.h"
 
 namespace WebCore {
 
@@ -53,17 +55,6 @@ static inline ElementShadow* shadowOfParent(const Node* node)
     return 0;
 }
 
-static inline ElementShadow* shadowOfParentForDistribution(const Node* node)
-{
-    if (!node)
-        return 0;
-
-    if (Element* parent = parentElementForDistribution(node))
-        return parent->shadow();
-
-    return 0;    
-}
-
 static inline bool nodeCanBeDistributed(const Node* node)
 {
     ASSERT(node);
@@ -80,65 +71,11 @@ static inline bool nodeCanBeDistributed(const Node* node)
     return false;
 }
 
-static inline InsertionPoint* resolveReprojection(const Node* projectedNode)
-{
-    InsertionPoint* insertionPoint = 0;
-    const Node* current = projectedNode;
-
-    while (true) {
-        if (ElementShadow* shadow = shadowOfParentForDistribution(current)) {
-            shadow->ensureDistribution();
-            if (InsertionPoint* insertedTo = shadow->insertionPointFor(projectedNode)) {
-                current = insertedTo;
-                insertionPoint = insertedTo;
-                continue;
-            }
-        }
-
-        if (Node* parent = parentNodeForDistribution(current)) {
-            if (InsertionPoint* insertedTo = parent->isShadowRoot() ? toShadowRoot(parent)->assignedTo() : 0) {
-                current = insertedTo;
-                insertionPoint = insertedTo;
-                continue;
-            }
-        }
-
-        break;
-    }
-
-    return insertionPoint;
-}
-
-inline void ComposedShadowTreeWalker::ParentTraversalDetails::didTraverseInsertionPoint(InsertionPoint* insertionPoint)
-{
-    if (!m_insertionPoint)
-        m_insertionPoint = insertionPoint;
-}
-
-inline void ComposedShadowTreeWalker::ParentTraversalDetails::didTraverseShadowRoot(const ShadowRoot* root)
-{
-    m_resetStyleInheritance  = m_resetStyleInheritance || root->resetStyleInheritance();
-}
-
-inline void ComposedShadowTreeWalker::ParentTraversalDetails::didFindNode(ContainerNode* node)
-{
-    if (!m_outOfComposition)
-        m_node = node;
-}
-
 ComposedShadowTreeWalker ComposedShadowTreeWalker::fromFirstChild(const Node* node, Policy policy)
 {
     ComposedShadowTreeWalker walker(node, policy);
     walker.firstChild();
     return walker;
-}
-
-void ComposedShadowTreeWalker::findParent(const Node* node, ParentTraversalDetails* details)
-{
-    ComposedShadowTreeWalker walker(node, CrossUpperBoundary, CanStartFromShadowBoundary);
-    ContainerNode* found = toContainerNode(walker.traverseParent(walker.get(), details));
-    if (found)
-        details->didFindNode(found);
 }
 
 void ComposedShadowTreeWalker::firstChild()
@@ -280,7 +217,7 @@ inline Node* ComposedShadowTreeWalker::escapeFallbackContentElement(const Node* 
 inline Node* ComposedShadowTreeWalker::traverseNodeEscapingFallbackContents(const Node* node, ParentTraversalDetails* details) const
 {
     ASSERT(node);
-    if (!isInsertionPoint(node))
+    if (!node->isInsertionPoint())
         return const_cast<Node*>(node);
     const InsertionPoint* insertionPoint = toInsertionPoint(node);
     return insertionPoint->hasDistribution() ? 0 :
@@ -298,6 +235,9 @@ void ComposedShadowTreeWalker::parent()
 // https://bugs.webkit.org/show_bug.cgi?id=90415
 Node* ComposedShadowTreeWalker::traverseParent(const Node* node, ParentTraversalDetails* details) const
 {
+    if (node->isPseudoElement())
+        return node->parentOrHostNode();
+
     if (!canCrossUpperBoundary() && node->isShadowRoot()) {
         ASSERT(toShadowRoot(node)->isYoungest());
         return 0;
@@ -395,7 +335,7 @@ void AncestorChainWalker::parent()
     ASSERT(m_node);
     ASSERT(m_distributedNode);
     if (ElementShadow* shadow = shadowOfParent(m_node)) {
-        if (InsertionPoint* insertionPoint = shadow->insertionPointFor(m_distributedNode)) {
+        if (InsertionPoint* insertionPoint = shadow->distributor().findInsertionPointFor(m_distributedNode)) {
             m_node = insertionPoint;
             m_isCrossingInsertionPoint = true;
             return;

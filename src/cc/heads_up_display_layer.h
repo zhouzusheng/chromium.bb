@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef HeadsUpDisplayLayerChromium_h
-#define HeadsUpDisplayLayerChromium_h
+#ifndef CC_HEADS_UP_DISPLAY_LAYER_H_
+#define CC_HEADS_UP_DISPLAY_LAYER_H_
 
-#include "IntSize.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/font_atlas.h"
 #include "cc/layer.h"
@@ -21,8 +20,10 @@ public:
 
     void setFontAtlas(scoped_ptr<FontAtlas>);
 
-    virtual scoped_ptr<LayerImpl> createLayerImpl() OVERRIDE;
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl) OVERRIDE;
     virtual void pushPropertiesTo(LayerImpl*) OVERRIDE;
+
+    bool hasFontAtlas() const { return m_hasFontAtlas; }
 
 protected:
     HeadsUpDisplayLayer();
@@ -31,8 +32,9 @@ private:
     virtual ~HeadsUpDisplayLayer();
 
     scoped_ptr<FontAtlas> m_fontAtlas;
+    bool m_hasFontAtlas;
 };
 
 }  // namespace cc
 
-#endif
+#endif  // CC_HEADS_UP_DISPLAY_LAYER_H_

@@ -56,6 +56,7 @@
 #include "WebFrameImpl.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
+#include <public/Platform.h>
 #include <public/WebRect.h>
 #include <public/WebString.h>
 #include <public/WebURL.h>
@@ -348,6 +349,15 @@ private:
     double m_originalZoomFactor;
 };
 
+class SerializingFrontendChannel : public InspectorFrontendChannel {
+public:
+    virtual bool sendMessageToFrontend(const String& message)
+    {
+        m_message = message;
+        return true;
+    }
+    String m_message;
+};
 
 WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     WebViewImpl* webViewImpl,
@@ -363,6 +373,8 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
 WebDevToolsAgentImpl::~WebDevToolsAgentImpl()
 {
     ClientMessageLoopAdapter::inspectedViewClosed(m_webViewImpl);
+    if (m_attached)
+        WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
 }
 
 void WebDevToolsAgentImpl::attach()
@@ -373,6 +385,7 @@ void WebDevToolsAgentImpl::attach()
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
     inspectorController()->connectFrontend(this);
     inspectorController()->webViewResized(m_webViewImpl->size());
+    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
     m_attached = true;
 }
 
@@ -388,6 +401,8 @@ void WebDevToolsAgentImpl::reattach(const WebString& savedState)
 
 void WebDevToolsAgentImpl::detach()
 {
+    WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
+
     // Prevent controller from sending messages to the frontend.
     InspectorController* ic = inspectorController();
     ic->disconnectFrontend();
@@ -647,6 +662,18 @@ void WebDevToolsAgentImpl::evaluateInWebInspector(long callId, const WebString& 
     ic->evaluateForTestInFrontend(callId, script);
 }
 
+void WebDevToolsAgentImpl::willProcessTask()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->willProcessTask();
+}
+
+void WebDevToolsAgentImpl::didProcessTask()
+{
+    if (InspectorController* ic = inspectorController())
+        ic->didProcessTask();
+}
+
 WebString WebDevToolsAgent::inspectorProtocolVersion()
 {
     return WebCore::inspectorProtocolVersion();
@@ -685,22 +712,28 @@ void WebDevToolsAgent::processPendingMessages()
     PageScriptDebugServer::shared().runPendingTasks();
 }
 
-WebString WebDevToolsAgent::disconnectEventAsText()
+WebString WebDevToolsAgent::inspectorDetachedEvent(const WebString& reason)
 {
-    class ChannelImpl : public InspectorFrontendChannel {
-    public:
-        virtual bool sendMessageToFrontend(const String& message)
-        {
-            m_message = message;
-            return true;
-        }
-        String m_message;
-    } channel;
+    SerializingFrontendChannel channel;
+    InspectorFrontend::Inspector inspector(&channel);
+    inspector.detached(reason);
+    return channel.m_message;
+}
+
+WebString WebDevToolsAgent::workerDisconnectedFromWorkerEvent()
+{
+    SerializingFrontendChannel channel;
 #if ENABLE(WORKERS)
     InspectorFrontend::Worker inspector(&channel);
     inspector.disconnectedFromWorker();
 #endif
     return channel.m_message;
+}
+
+// FIXME: remove this once migrated to workerDisconnectedFromWorkerEvent().
+WebString WebDevToolsAgent::disconnectEventAsText()
+{
+    return WebDevToolsAgent::workerDisconnectedFromWorkerEvent();
 }
 
 } // namespace WebKit

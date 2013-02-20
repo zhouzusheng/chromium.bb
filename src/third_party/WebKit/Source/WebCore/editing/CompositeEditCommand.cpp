@@ -45,6 +45,7 @@
 #include "InsertParagraphSeparatorCommand.h"
 #include "InsertTextCommand.h"
 #include "MergeIdenticalElementsCommand.h"
+#include "NodeTraversal.h"
 #include "Range.h"
 #include "RemoveCSSPropertyCommand.h"
 #include "RemoveNodeCommand.h"
@@ -317,10 +318,10 @@ bool CompositeEditCommand::isRemovableBlock(const Node* node)
     return false;
 }
 
-void CompositeEditCommand::insertNodeBefore(PassRefPtr<Node> insertChild, PassRefPtr<Node> refChild)
+void CompositeEditCommand::insertNodeBefore(PassRefPtr<Node> insertChild, PassRefPtr<Node> refChild, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
 {
     ASSERT(!refChild->hasTagName(bodyTag));
-    applyCommandToComposite(InsertNodeBeforeCommand::create(insertChild, refChild));
+    applyCommandToComposite(InsertNodeBeforeCommand::create(insertChild, refChild, shouldAssumeContentIsAlwaysEditable));
 }
 
 void CompositeEditCommand::insertNodeAfter(PassRefPtr<Node> insertChild, PassRefPtr<Node> refChild)
@@ -387,16 +388,16 @@ void CompositeEditCommand::removeChildrenInRange(PassRefPtr<Node> node, unsigned
         removeNode(children[i].release());
 }
 
-void CompositeEditCommand::removeNode(PassRefPtr<Node> node)
+void CompositeEditCommand::removeNode(PassRefPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
 {
     if (!node || !node->nonShadowBoundaryParentNode())
         return;
-    applyCommandToComposite(RemoveNodeCommand::create(node));
+    applyCommandToComposite(RemoveNodeCommand::create(node, shouldAssumeContentIsAlwaysEditable));
 }
 
-void CompositeEditCommand::removeNodePreservingChildren(PassRefPtr<Node> node)
+void CompositeEditCommand::removeNodePreservingChildren(PassRefPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
 {
-    applyCommandToComposite(RemoveNodePreservingChildrenCommand::create(node));
+    applyCommandToComposite(RemoveNodePreservingChildrenCommand::create(node, shouldAssumeContentIsAlwaysEditable));
 }
 
 void CompositeEditCommand::removeNodeAndPruneAncestors(PassRefPtr<Node> node)
@@ -808,7 +809,7 @@ void CompositeEditCommand::deleteInsignificantText(const Position& start, const 
         return;
 
     Vector<RefPtr<Text> > nodes;
-    for (Node* node = start.deprecatedNode(); node; node = node->traverseNextNode()) {
+    for (Node* node = start.deprecatedNode(); node; node = NodeTraversal::next(node)) {
         if (node->isTextNode())
             nodes.append(toText(node));
         if (node == end.deprecatedNode())
@@ -1022,9 +1023,9 @@ void CompositeEditCommand::cloneParagraphUnderNewElement(Position& start, Positi
         }
 
         Node* startNode = start.deprecatedNode();
-        for (Node* node = startNode->traverseNextSibling(outerNode.get()); node; node = node->traverseNextSibling(outerNode.get())) {
+        for (Node* node = NodeTraversal::nextSkippingChildren(startNode, outerNode.get()); node; node = NodeTraversal::nextSkippingChildren(node, outerNode.get())) {
             // Move lastNode up in the tree as much as node was moved up in the
-            // tree by traverseNextSibling, so that the relative depth between
+            // tree by NodeTraversal::nextSkippingChildren, so that the relative depth between
             // node and the original start node is maintained in the clone.
             while (startNode->parentNode() != node->parentNode()) {
                 startNode = startNode->parentNode();

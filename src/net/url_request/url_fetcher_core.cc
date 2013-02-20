@@ -15,6 +15,8 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/upload_bytes_element_reader.h"
+#include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
@@ -26,6 +28,7 @@ namespace {
 const int kBufferSize = 4096;
 const int kUploadProgressTimerInterval = 100;
 bool g_interception_enabled = false;
+bool g_ignore_certificate_requests = false;
 
 }  // namespace
 
@@ -279,13 +282,15 @@ URLFetcherCore::URLFetcherCore(URLFetcher* fetcher,
       url_request_data_key_(NULL),
       was_fetched_via_proxy_(false),
       is_chunked_upload_(false),
-      num_retries_(0),
       was_cancelled_(false),
       response_destination_(STRING),
       stop_on_redirect_(false),
       stopped_on_redirect_(false),
       automatically_retry_on_5xx_(true),
-      max_retries_(0),
+      num_retries_on_5xx_(0),
+      max_retries_on_5xx_(0),
+      num_retries_on_network_changes_(0),
+      max_retries_on_network_changes_(0),
       current_upload_bytes_(-1),
       current_response_bytes_(0),
       total_response_bytes_(-1) {
@@ -406,16 +411,20 @@ void URLFetcherCore::SetAutomaticallyRetryOn5xx(bool retry) {
   automatically_retry_on_5xx_ = retry;
 }
 
-void URLFetcherCore::SetMaxRetries(int max_retries) {
-  max_retries_ = max_retries;
+void URLFetcherCore::SetMaxRetriesOn5xx(int max_retries) {
+  max_retries_on_5xx_ = max_retries;
 }
 
-int URLFetcherCore::GetMaxRetries() const {
-  return max_retries_;
+int URLFetcherCore::GetMaxRetriesOn5xx() const {
+  return max_retries_on_5xx_;
 }
 
 base::TimeDelta URLFetcherCore::GetBackoffDelay() const {
   return backoff_delay_;
+}
+
+void URLFetcherCore::SetAutomaticallyRetryOnNetworkChanges(int max_retries) {
+  max_retries_on_network_changes_ = max_retries;
 }
 
 void URLFetcherCore::SaveResponseToFileAtPath(
@@ -552,6 +561,19 @@ void URLFetcherCore::OnResponseStarted(URLRequest* request) {
   ReadResponse();
 }
 
+void URLFetcherCore::OnCertificateRequested(
+    URLRequest* request,
+    SSLCertRequestInfo* cert_request_info) {
+  DCHECK_EQ(request, request_.get());
+  DCHECK(network_task_runner_->BelongsToCurrentThread());
+
+  if (g_ignore_certificate_requests) {
+    request->ContinueWithCertificate(NULL);
+  } else {
+    request->Cancel();
+  }
+}
+
 void URLFetcherCore::OnReadCompleted(URLRequest* request,
                                      int bytes_read) {
   DCHECK(request == request_);
@@ -615,6 +637,10 @@ int URLFetcherCore::GetNumFetcherCores() {
 
 void URLFetcherCore::SetEnableInterceptionForTests(bool enabled) {
   g_interception_enabled = enabled;
+}
+
+void URLFetcherCore::SetIgnoreCertificateRequests(bool ignored) {
+  g_ignore_certificate_requests = ignored;
 }
 
 URLFetcherCore::~URLFetcherCore() {
@@ -702,8 +728,10 @@ void URLFetcherCore::StartURLRequest() {
       extra_request_headers_.SetHeader(HttpRequestHeaders::kContentType,
                                        upload_content_type_);
       if (!upload_content_.empty()) {
-        request_->AppendBytesToUpload(
-            upload_content_.data(), static_cast<int>(upload_content_.length()));
+        scoped_ptr<UploadElementReader> reader(new UploadBytesElementReader(
+            upload_content_.data(), upload_content_.size()));
+        request_->set_upload(make_scoped_ptr(
+            UploadDataStream::CreateWithReader(reader.Pass(), 0)));
       }
 
       current_upload_bytes_ = -1;
@@ -835,7 +863,7 @@ void URLFetcherCore::RetryOrCompleteUrlFetch() {
       status_.error() == ERR_TEMPORARILY_THROTTLED) {
     // When encountering a server error, we will send the request again
     // after backoff time.
-    ++num_retries_;
+    ++num_retries_on_5xx_;
 
     // Note that backoff_delay may be 0 because (a) the
     // URLRequestThrottlerManager and related code does not
@@ -847,13 +875,27 @@ void URLFetcherCore::RetryOrCompleteUrlFetch() {
     if (backoff_delay < base::TimeDelta())
       backoff_delay = base::TimeDelta();
 
-    if (automatically_retry_on_5xx_ && num_retries_ <= max_retries_) {
+    if (automatically_retry_on_5xx_ &&
+        num_retries_on_5xx_ <= max_retries_on_5xx_) {
       StartOnIOThread();
       return;
     }
   } else {
     backoff_delay = base::TimeDelta();
   }
+
+  // Retry if the request failed due to network changes.
+  if (status_.error() == ERR_NETWORK_CHANGED &&
+      num_retries_on_network_changes_ < max_retries_on_network_changes_) {
+    ++num_retries_on_network_changes_;
+
+    // Retry soon, after flushing all the current tasks which may include
+    // further network change observers.
+    network_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&URLFetcherCore::StartOnIOThread, this));
+    return;
+  }
+
   request_context_getter_ = NULL;
   first_party_for_cookies_ = GURL();
   url_request_data_key_ = NULL;

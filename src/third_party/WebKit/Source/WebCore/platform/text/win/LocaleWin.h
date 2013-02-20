@@ -46,32 +46,24 @@ class LocaleWin : public Locale {
 public:
     static PassOwnPtr<LocaleWin> create(LCID);
     ~LocaleWin();
-    virtual double parseDateTime(const String&, DateComponents::Type) OVERRIDE;
 #if ENABLE(CALENDAR_PICKER)
-    virtual String dateFormatText() OVERRIDE;
     virtual const Vector<String>& weekDayShortLabels() OVERRIDE;
     virtual unsigned firstDayOfWeek() OVERRIDE;
     virtual bool isRTL() OVERRIDE;
 #endif
-#if ENABLE(CALENDAR_PICKER) || ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual const Vector<String>& monthLabels() OVERRIDE;
-#endif
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     virtual String dateFormat() OVERRIDE;
     virtual String monthFormat() OVERRIDE;
     virtual String timeFormat() OVERRIDE;
     virtual String shortTimeFormat() OVERRIDE;
+    virtual String dateTimeFormatWithSeconds() OVERRIDE;
+    virtual String dateTimeFormatWithoutSeconds() OVERRIDE;
+    virtual const Vector<String>& monthLabels() OVERRIDE;
     virtual const Vector<String>& shortMonthLabels() OVERRIDE;
     virtual const Vector<String>& standAloneMonthLabels() OVERRIDE;
     virtual const Vector<String>& shortStandAloneMonthLabels() OVERRIDE;
     virtual const Vector<String>& timeAMPMLabels() OVERRIDE;
-#endif
 
-    // For testing.
-    double parseDate(const String& format, int baseYear, const String& input);
-    String formatDate(const String& format, int baseYear, int year, int month, int day);
-    static String dateFormatText(const String& format, const String& yearText, const String& monthText, const String& dayText);
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     static String dateFormat(const String&);
 #endif
 
@@ -81,15 +73,6 @@ private:
     void getLocaleInfo(LCTYPE, DWORD&);
     void ensureShortMonthLabels();
     void ensureMonthLabels();
-    void ensureShortDateTokens();
-    bool isLocalizedDigit(UChar);
-    int parseNumber(const String&, unsigned& index);
-    int parseNumberOrMonth(const String&, unsigned& index);
-    double parseDate(const Vector<DateFormatToken>&, int baseYear, const String&);
-    void appendNumber(int, StringBuilder&);
-    void appendTwoDigitsNumber(int, StringBuilder&);
-    void appendFourDigitsNumber(int, StringBuilder&);
-    String formatDate(const Vector<DateFormatToken>&, int baseYear, int year, int month, int day);
 #if ENABLE(CALENDAR_PICKER)
     void ensureWeekDayShortLabels();
 #endif
@@ -97,15 +80,15 @@ private:
     virtual void initializeLocaleData() OVERRIDE;
 
     LCID m_lcid;
-    int m_baseYear;
-    Vector<DateFormatToken> m_shortDateTokens;
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     Vector<String> m_shortMonthLabels;
     Vector<String> m_monthLabels;
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     String m_dateFormat;
     String m_monthFormat;
     String m_timeFormatWithSeconds;
     String m_timeFormatWithoutSeconds;
+    String m_dateTimeFormatWithSeconds;
+    String m_dateTimeFormatWithoutSeconds;
     Vector<String> m_timeAMPMLabels;
 #endif
 #if ENABLE(CALENDAR_PICKER)

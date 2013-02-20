@@ -2,41 +2,50 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCIOSurfaceDrawQuad_h
-#define CCIOSurfaceDrawQuad_h
+#ifndef CC_IO_SURFACE_DRAW_QUAD_H_
+#define CC_IO_SURFACE_DRAW_QUAD_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
 #include "cc/draw_quad.h"
 #include "ui/gfx/size.h"
 
 namespace cc {
 
-#pragma pack(push, 4)
+class CC_EXPORT IOSurfaceDrawQuad : public DrawQuad {
+ public:
+  enum Orientation {
+    FLIPPED,
+    UNFLIPPED
+  };
 
-class IOSurfaceDrawQuad : public DrawQuad {
-public:
-    enum Orientation {
-      Flipped,
-      Unflipped
-    };
+  static scoped_ptr<IOSurfaceDrawQuad> Create();
 
-    static scoped_ptr<IOSurfaceDrawQuad> create(const SharedQuadState*, const gfx::Rect&, const gfx::Size& ioSurfaceSize, unsigned ioSurfaceTextureId, Orientation);
+  void SetNew(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::Size io_surface_size,
+              unsigned io_surface_texture_id,
+              Orientation orientation);
 
-    gfx::Size ioSurfaceSize() const { return m_ioSurfaceSize; }
-    unsigned ioSurfaceTextureId() const { return m_ioSurfaceTextureId; }
-    Orientation orientation() const { return m_orientation; }
+  void SetAll(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::Rect visible_rect,
+              bool needs_blending,
+              gfx::Size io_surface_size,
+              unsigned io_surface_texture_id,
+              Orientation orientation);
 
-    static const IOSurfaceDrawQuad* materialCast(const DrawQuad*);
-private:
-    IOSurfaceDrawQuad(const SharedQuadState*, const gfx::Rect&, const gfx::Size& ioSurfaceSize, unsigned ioSurfaceTextureId, Orientation);
+  gfx::Size io_surface_size;
+  unsigned io_surface_texture_id;
+  Orientation orientation;
 
-    gfx::Size m_ioSurfaceSize;
-    unsigned m_ioSurfaceTextureId;
-    Orientation m_orientation;
+  static const IOSurfaceDrawQuad* MaterialCast(const DrawQuad*);
+ private:
+  IOSurfaceDrawQuad();
 };
-
-#pragma pack(pop)
 
 }
 
-#endif
+#endif  // CC_IO_SURFACE_DRAW_QUAD_H_

@@ -63,8 +63,6 @@ public:
     virtual void setFilter(SkImageFilter*);
     virtual void setFilters(const WebFilterOperations&) OVERRIDE;
     virtual void setBackgroundFilters(const WebFilterOperations&) OVERRIDE;
-    virtual void setDebugBorderColor(const WebColor&) OVERRIDE;
-    virtual void setDebugBorderWidth(float) OVERRIDE;
     virtual void setDebugName(WebString) OVERRIDE;
     virtual void setAnimationDelegate(WebAnimationDelegate*) OVERRIDE;
     virtual bool addAnimation(WebAnimation*) OVERRIDE;
@@ -88,6 +86,8 @@ public:
     virtual bool shouldScrollOnMainThread() const;
     virtual void setNonFastScrollableRegion(const WebVector<WebRect>&) OVERRIDE;
     virtual WebVector<WebRect> nonFastScrollableRegion() const;
+    virtual void setTouchEventHandlerRegion(const WebVector<WebRect>&);
+    virtual WebVector<WebRect> touchEventHandlerRegion() const;
     virtual void setIsContainerForFixedPositionLayers(bool) OVERRIDE;
     virtual bool isContainerForFixedPositionLayers() const;
     virtual void setFixedToContainerLayer(bool) OVERRIDE;

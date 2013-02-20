@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "ui/base/ui_export.h"
 #include "ui/gfx/size_base.h"
 
@@ -15,16 +16,16 @@ namespace gfx {
 // A floating version of gfx::Size.
 class UI_EXPORT SizeF : public SizeBase<SizeF, float> {
  public:
-  SizeF();
-  SizeF(float width, float height);
-  ~SizeF();
+  SizeF() : SizeBase<SizeF, float>(0, 0) {}
+  SizeF(float width, float height) : SizeBase<SizeF, float>(width, height) {}
+  ~SizeF() {}
 
-  SizeF Scale(float scale) const WARN_UNUSED_RESULT {
-    return Scale(scale, scale);
+  void Scale(float scale) {
+    Scale(scale, scale);
   }
 
-  SizeF Scale(float x_scale, float y_scale) const WARN_UNUSED_RESULT {
-    return SizeF(width() * x_scale, height() * y_scale);
+  void Scale(float x_scale, float y_scale) {
+    SetSize(width() * x_scale, height() * y_scale);
   }
 
   std::string ToString() const;
@@ -36,6 +37,12 @@ inline bool operator==(const SizeF& lhs, const SizeF& rhs) {
 
 inline bool operator!=(const SizeF& lhs, const SizeF& rhs) {
   return !(lhs == rhs);
+}
+
+UI_EXPORT SizeF ScaleSize(const SizeF& p, float x_scale, float y_scale);
+
+inline SizeF ScaleSize(const SizeF& p, float scale) {
+  return ScaleSize(p, scale, scale);
 }
 
 #if !defined(COMPILER_MSVC)

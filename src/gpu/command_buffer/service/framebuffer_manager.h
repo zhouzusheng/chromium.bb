@@ -37,13 +37,16 @@ class GPU_EXPORT FramebufferManager {
       virtual bool cleared() const = 0;
       virtual void SetCleared(
           RenderbufferManager* renderbuffer_manager,
-          TextureManager* texture_manager) = 0;
+          TextureManager* texture_manager,
+          bool cleared) = 0;
       virtual bool IsTexture(TextureManager::TextureInfo* texture) const = 0;
       virtual bool IsRenderbuffer(
           RenderbufferManager::RenderbufferInfo* renderbuffer) const = 0;
       virtual bool CanRenderTo() const = 0;
-      virtual void DetachFromFramebuffer() = 0;
+      virtual void DetachFromFramebuffer() const = 0;
       virtual bool ValidForAttachmentType(GLenum attachment_type) = 0;
+      virtual void AddToSignature(
+          TextureManager* texture_manager, std::string* signature) const = 0;
 
      protected:
       friend class base::RefCounted<Attachment>;
@@ -57,6 +60,12 @@ class GPU_EXPORT FramebufferManager {
     }
 
     bool HasUnclearedAttachment(GLenum attachment) const;
+
+    void MarkAttachmentAsCleared(
+      RenderbufferManager* renderbuffer_manager,
+      TextureManager* texture_manager,
+      GLenum attachment,
+      bool cleared);
 
     // Attaches a renderbuffer to a particlar attachment.
     // Pass null to detach.
@@ -103,8 +112,13 @@ class GPU_EXPORT FramebufferManager {
     // means it passed our tests.
     GLenum IsPossiblyComplete() const;
 
+    // Implements optimized glGetFramebufferStatus.
+    GLenum GetStatus(TextureManager* texture_manager, GLenum target) const;
+
     // Check all attachments are cleared
     bool IsCleared() const;
+
+    static void ClearFramebufferCompleteComboMap();
 
    private:
     friend class FramebufferManager;
@@ -116,7 +130,8 @@ class GPU_EXPORT FramebufferManager {
 
     void MarkAttachmentsAsCleared(
       RenderbufferManager* renderbuffer_manager,
-      TextureManager* texture_manager);
+      TextureManager* texture_manager,
+      bool cleared);
 
     void MarkAsComplete(unsigned state_id) {
       framebuffer_complete_state_count_id_ = state_id;
@@ -143,6 +158,11 @@ class GPU_EXPORT FramebufferManager {
     // A map of attachments.
     typedef base::hash_map<GLenum, Attachment::Ref> AttachmentMap;
     AttachmentMap attachments_;
+
+    // A map of successful frame buffer combos. If it's in the map
+    // it should be FRAMEBUFFER_COMPLETE.
+    typedef base::hash_map<std::string, bool> FramebufferComboCompleteMap;
+    static FramebufferComboCompleteMap* framebuffer_combo_complete_map_;
 
     DISALLOW_COPY_AND_ASSIGN(FramebufferInfo);
   };

@@ -6,6 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_VERTEX_ATTRIB_MANAGER_H_
 
 #include <list>
+#include <vector>
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
@@ -32,9 +33,6 @@ class GPU_EXPORT VertexAttribManager :
   class GPU_EXPORT VertexAttribInfo {
    public:
     typedef std::list<VertexAttribInfo*> VertexAttribInfoList;
-    struct Vec4 {
-      float v[4];
-    };
 
     VertexAttribInfo();
     ~VertexAttribInfo();
@@ -76,14 +74,6 @@ class GPU_EXPORT VertexAttribManager :
 
     bool enabled() const {
       return enabled_;
-    }
-
-    void set_value(const Vec4& value) {
-      value_ = value;
-    }
-
-    const Vec4& value() const {
-      return value_;
     }
 
     // Find the maximum vertex accessed, accounting for instancing.
@@ -170,9 +160,6 @@ class GPU_EXPORT VertexAttribManager :
 
     GLsizei divisor_;
 
-    // The current value of the attrib.
-    Vec4 value_;
-
     // The buffer bound to this attribute.
     BufferManager::BufferInfo::Ref buffer_;
 
@@ -200,7 +187,7 @@ class GPU_EXPORT VertexAttribManager :
   }
 
   VertexAttribInfo* GetVertexAttribInfo(GLuint index) {
-    if (index < max_vertex_attribs_) {
+    if (index < vertex_attrib_infos_.size()) {
       return &vertex_attrib_infos_[index];
     }
     return NULL;
@@ -257,6 +244,10 @@ class GPU_EXPORT VertexAttribManager :
     return !IsDeleted();
   }
 
+  size_t num_attribs() const {
+    return vertex_attrib_infos_.size();
+  }
+
  private:
   friend class VertexArrayManager;
   friend class VertexArrayManagerTest;
@@ -272,14 +263,12 @@ class GPU_EXPORT VertexAttribManager :
     deleted_ = true;
   }
 
-  uint32 max_vertex_attribs_;
-
   // number of attribs using type GL_FIXED.
   int num_fixed_attribs_;
 
   // Info for each vertex attribute saved so we can check at glDrawXXX time
   // if it is safe to draw.
-  scoped_array<VertexAttribInfo> vertex_attrib_infos_;
+  std::vector<VertexAttribInfo> vertex_attrib_infos_;
 
   // The currently bound element array buffer. If this is 0 it is illegal
   // to call glDrawElements.

@@ -49,9 +49,14 @@ typedef WebCore::LayerCompiledProgram PlatformCompiledProgram;
 
 namespace WebCore {
 
-class ANGLEWebKitBridge;
+struct ANGLEShaderSymbol;
 class CustomFilterCompiledProgram;
 class CustomFilterGlobalContext;
+
+#if USE(TEXTURE_MAPPER)
+class TextureMapperPlatformCompiledProgram;
+typedef TextureMapperPlatformCompiledProgram PlatformCompiledProgram;
+#endif
 
 //
 // A unique combination of vertex shader and fragment shader is only validated and compiled once.
@@ -77,9 +82,23 @@ public:
     ~CustomFilterValidatedProgram();
 
     const CustomFilterProgramInfo& programInfo() const { return m_programInfo; }
+    CustomFilterProgramInfo validatedProgramInfo() const;
+    
     PassRefPtr<CustomFilterCompiledProgram> compiledProgram();
 
-#if PLATFORM(BLACKBERRY)
+    const String& validatedVertexShader() const 
+    {
+        ASSERT(m_isInitialized); 
+        return m_validatedVertexShader; 
+    }
+
+    const String& validatedFragmentShader() const 
+    { 
+        ASSERT(m_isInitialized); 
+        return m_validatedFragmentShader; 
+    }
+
+#if PLATFORM(BLACKBERRY) || USE(TEXTURE_MAPPER)
     PlatformCompiledProgram* platformCompiledProgram();
 #endif
 
@@ -100,7 +119,7 @@ private:
     static String blendFunctionString(BlendMode);
     static String compositeFunctionString(CompositeOperator);
 
-    void rewriteMixVertexShader();
+    void rewriteMixVertexShader(const Vector<ANGLEShaderSymbol>& symbols);
     void rewriteMixFragmentShader();
 
     bool needsInputTexture() const;
@@ -112,7 +131,7 @@ private:
     String m_validatedFragmentShader;
 
     RefPtr<CustomFilterCompiledProgram> m_compiledProgram;
-#if PLATFORM(BLACKBERRY)
+#if PLATFORM(BLACKBERRY) || USE(TEXTURE_MAPPER)
     PlatformCompiledProgram* m_platformCompiledProgram;
 #endif
 

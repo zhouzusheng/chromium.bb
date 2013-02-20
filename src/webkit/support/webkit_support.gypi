@@ -20,6 +20,7 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/hyphen/hyphen.gyp:hyphen',
+        '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/ui.gyp:ui',
         'glue',
         'user_agent',
@@ -66,6 +67,8 @@
         'weburl_loader_mock_factory.h',
         'web_audio_device_mock.cc',
         'web_audio_device_mock.h',
+        'web_gesture_curve_mock.cc',
+        'web_gesture_curve_mock.h',
       ],
       'conditions': [
         ['OS=="mac"', {

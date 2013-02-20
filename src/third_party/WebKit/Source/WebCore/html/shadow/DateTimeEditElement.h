@@ -86,9 +86,11 @@ public:
 
     virtual ~DateTimeEditElement();
     void addField(PassRefPtr<DateTimeFieldElement>);
+    bool anyEditableFieldsHaveValues() const;
     void blurByOwner();
     virtual void defaultEventHandler(Event*) OVERRIDE;
     void disabledStateChanged();
+    Element* fieldsWrapperElement() const;
     void focusIfNoFocus();
     void focusByOwner();
     bool hasFocusedField();
@@ -98,6 +100,7 @@ public:
     void setEmptyValue(const LayoutParameters&, const DateComponents& dateForReadOnlyField);
     void setValueAsDate(const LayoutParameters&, const DateComponents&);
     void setValueAsDateTimeFieldsState(const DateTimeFieldsState&);
+    void setOnlyYearMonthDay(const DateComponents&);
     void stepDown();
     void stepUp();
     String value() const;

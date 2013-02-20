@@ -6,14 +6,12 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/values.h"
-#include "net/base/address_list.h"
-#include "net/base/auth.h"
 #include "net/base/io_buffer.h"
-#include "net/base/ssl_cert_request_info.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/upload_data_stream.h"
+#include "net/http/http_chunked_decoder.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
@@ -39,7 +37,8 @@ std::string GetResponseHeaderLines(const net::HttpResponseHeaders& headers) {
   return cr_separated_headers;
 }
 
-// Return true if |headers| contain multiple |field_name| fields.
+// Return true if |headers| contain multiple |field_name| fields with different
+// values.
 bool HeadersContainMultipleCopiesOfField(
     const net::HttpResponseHeaders& headers,
     const std::string& field_name) {
@@ -48,8 +47,7 @@ bool HeadersContainMultipleCopiesOfField(
   if (!headers.EnumerateHeader(&it, field_name, &field_value))
     return false;
   // There's at least one |field_name| header.  Check if there are any more
-  // such headers, and if so, return true if they have different values or
-  // |count_same_value| is true.
+  // such headers, and if so, return true if they have different values.
   std::string field_value2;
   while (headers.EnumerateHeader(&it, field_name, &field_value2)) {
     if (field_value != field_value2)
@@ -177,7 +175,6 @@ HttpStreamParser::HttpStreamParser(ClientSocketHandle* connection,
     : io_state_(STATE_NONE),
       request_(request),
       request_headers_(NULL),
-      request_body_(NULL),
       read_buf_(read_buffer),
       read_buf_unused_offset_(0),
       response_header_start_offset_(-1),
@@ -199,7 +196,6 @@ HttpStreamParser::~HttpStreamParser() {
 
 int HttpStreamParser::SendRequest(const std::string& request_line,
                                   const HttpRequestHeaders& headers,
-                                  scoped_ptr<UploadDataStream> request_body,
                                   HttpResponseInfo* response,
                                   const CompletionCallback& callback) {
   DCHECK_EQ(STATE_NONE, io_state_);
@@ -227,10 +223,9 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
 
   std::string request = request_line + headers.ToString();
 
-  request_body_.reset(request_body.release());
-  if (request_body_ != NULL) {
+  if (request_->upload_data_stream != NULL) {
     request_body_send_buf_ = new SeekableIOBuffer(kRequestBodyBufferSize);
-    if (request_body_->is_chunked()) {
+    if (request_->upload_data_stream->is_chunked()) {
       // Read buffer is adjusted to guarantee that |request_body_send_buf_| is
       // large enough to hold the encoded chunk.
       request_body_read_buf_ =
@@ -246,8 +241,8 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
   // If we have a small request body, then we'll merge with the headers into a
   // single write.
   bool did_merge = false;
-  if (ShouldMergeRequestHeadersAndBody(request, request_body_.get())) {
-    size_t merged_size = request.size() + request_body_->size();
+  if (ShouldMergeRequestHeadersAndBody(request, request_->upload_data_stream)) {
+    size_t merged_size = request.size() + request_->upload_data_stream->size();
     scoped_refptr<IOBuffer> merged_request_headers_and_body(
         new IOBuffer(merged_size));
     // We'll repurpose |request_headers_| to store the merged headers and
@@ -258,14 +253,15 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
     memcpy(request_headers_->data(), request.data(), request.size());
     request_headers_->DidConsume(request.size());
 
-    size_t todo = request_body_->size();
+    size_t todo = request_->upload_data_stream->size();
     while (todo) {
-      int consumed = request_body_->ReadSync(request_headers_, todo);
+      int consumed = request_->upload_data_stream->ReadSync(request_headers_,
+                                                            todo);
       DCHECK_GT(consumed, 0);  // Read() won't fail if not chunked.
       request_headers_->DidConsume(consumed);
       todo -= consumed;
     }
-    DCHECK(request_body_->IsEOF());
+    DCHECK(request_->upload_data_stream->IsEOF());
     // Reset the offset, so the buffer can be read from the beginning.
     request_headers_->SetOffset(0);
     did_merge = true;
@@ -273,7 +269,7 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
     net_log_.AddEvent(
         NetLog::TYPE_HTTP_TRANSACTION_SEND_REQUEST_BODY,
         base::Bind(&NetLogSendRequestBodyCallback,
-                   request_body_->size(),
+                   request_->upload_data_stream->size(),
                    false, /* not chunked */
                    true /* merged */));
   }
@@ -429,15 +425,16 @@ int HttpStreamParser::DoSendHeaders(int result) {
     result = connection_->socket()->Write(request_headers_,
                                           bytes_remaining,
                                           io_callback_);
-  } else if (request_body_ != NULL &&
-             (request_body_->is_chunked() ||
+  } else if (request_->upload_data_stream != NULL &&
+             (request_->upload_data_stream->is_chunked() ||
               // !IsEOF() indicates that the body wasn't merged.
-              (request_body_->size() > 0 && !request_body_->IsEOF()))) {
+              (request_->upload_data_stream->size() > 0 &&
+               !request_->upload_data_stream->IsEOF()))) {
     net_log_.AddEvent(
         NetLog::TYPE_HTTP_TRANSACTION_SEND_REQUEST_BODY,
         base::Bind(&NetLogSendRequestBodyCallback,
-                   request_body_->size(),
-                   request_body_->is_chunked(),
+                   request_->upload_data_stream->size(),
+                   request_->upload_data_stream->is_chunked(),
                    false /* not merged */));
     io_state_ = STATE_SENDING_BODY;
     result = OK;
@@ -460,16 +457,16 @@ int HttpStreamParser::DoSendBody(int result) {
         io_callback_);
   }
 
-  if (request_body_->is_chunked() && sent_last_chunk_) {
+  if (request_->upload_data_stream->is_chunked() && sent_last_chunk_) {
     io_state_ = STATE_REQUEST_SENT;
     return OK;
   }
 
   request_body_read_buf_->Clear();
   io_state_ = STATE_SEND_REQUEST_READING_BODY;
-  return request_body_->Read(request_body_read_buf_,
-                             request_body_read_buf_->capacity(),
-                             io_callback_);
+  return request_->upload_data_stream->Read(request_body_read_buf_,
+                                            request_body_read_buf_->capacity(),
+                                            io_callback_);
 }
 
 int HttpStreamParser::DoSendRequestReadingBody(int result) {
@@ -478,9 +475,9 @@ int HttpStreamParser::DoSendRequestReadingBody(int result) {
   DCHECK_GE(result, 0);  // There won't be errors.
 
   // Chunked data needs to be encoded.
-  if (request_body_->is_chunked()) {
+  if (request_->upload_data_stream->is_chunked()) {
     if (result == 0) {  // Reached the end.
-      DCHECK(request_body_->IsEOF());
+      DCHECK(request_->upload_data_stream->IsEOF());
       sent_last_chunk_ = true;
     }
     // Encode the buffer as 1 chunk.
@@ -494,8 +491,8 @@ int HttpStreamParser::DoSendRequestReadingBody(int result) {
   if (result == 0) {  // Reached the end.
     // Reaching EOF means we can finish sending request body unless the data is
     // chunked. (i.e. No need to send the terminal chunk.)
-    DCHECK(request_body_->IsEOF());
-    DCHECK(!request_body_->is_chunked());
+    DCHECK(request_->upload_data_stream->IsEOF());
+    DCHECK(!request_->upload_data_stream->is_chunked());
     io_state_ = STATE_REQUEST_SENT;
   } else if (result > 0) {
     request_body_send_buf_->DidAppend(result);
@@ -852,10 +849,11 @@ void HttpStreamParser::CalculateResponseBodySize() {
 }
 
 UploadProgress HttpStreamParser::GetUploadProgress() const {
-  if (!request_body_.get())
+  if (!request_->upload_data_stream)
     return UploadProgress();
 
-  return UploadProgress(request_body_->position(), request_body_->size());
+  return UploadProgress(request_->upload_data_stream->position(),
+                        request_->upload_data_stream->size());
 }
 
 HttpResponseInfo* HttpStreamParser::GetResponseInfo() {

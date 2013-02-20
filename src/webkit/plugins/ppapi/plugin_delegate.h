@@ -35,9 +35,14 @@
 
 class GURL;
 class SkBitmap;
+class SkCanvas;
 class TransportDIB;
 struct PP_HostResolver_Private_Hint;
 struct PP_NetAddress_Private;
+
+namespace WebKit {
+class WebGraphicsContext3D;
+}
 
 namespace base {
 class MessageLoopProxy;
@@ -70,11 +75,8 @@ class ResourceCreationAPI;
 
 }  // namespace ppapi
 
-namespace skia {
-class PlatformCanvas;
-}
-
 namespace WebKit {
+typedef SkCanvas WebCanvas;
 class WebGamepads;
 class WebPlugin;
 struct WebCompositionUnderline;
@@ -96,6 +98,7 @@ class PluginInstance;
 class PluginModule;
 class PPB_Broker_Impl;
 class PPB_Flash_Menu_Impl;
+class PPB_ImageData_Impl;
 class PPB_TCPSocket_Private_Impl;
 class PPB_UDPSocket_Private_Impl;
 
@@ -160,7 +163,7 @@ class PluginDelegate {
     virtual ~PlatformImage2D() {}
 
     // Caller will own the returned pointer, returns NULL on failure.
-    virtual skia::PlatformCanvas* Map() = 0;
+    virtual SkCanvas* Map() = 0;
 
     // Returns the platform-specific shared memory handle of the data backing
     // this image. This is used by PPAPI proxying to send the image to the
@@ -169,6 +172,33 @@ class PluginDelegate {
     virtual intptr_t GetSharedMemoryHandle(uint32* byte_count) const = 0;
 
     virtual TransportDIB* GetTransportDIB() const = 0;
+  };
+
+  class PlatformGraphics2D {
+   public:
+    virtual bool ReadImageData(PP_Resource image, const PP_Point* top_left) = 0;
+
+    // Assciates this device with the given plugin instance. You can pass NULL
+    // to clear the existing device. Returns true on success. In this case, a
+    // repaint of the page will also be scheduled. Failure means that the device
+    // is already bound to a different instance, and nothing will happen.
+    virtual bool BindToInstance(PluginInstance* new_instance) = 0;
+
+    // Paints the current backing store to the web page.
+    virtual void Paint(WebKit::WebCanvas* canvas,
+                       const gfx::Rect& plugin_rect,
+                       const gfx::Rect& paint_rect) = 0;
+
+    // Notifications about the view's progress painting.  See PluginInstance.
+    // These messages are used to send Flush callbacks to the plugin.
+    virtual void ViewWillInitiatePaint() = 0;
+    virtual void ViewInitiatedPaint() = 0;
+    virtual void ViewFlushedPaint() = 0;
+
+    virtual bool IsAlwaysOpaque() const = 0;
+    virtual void SetScale(float scale) = 0;
+    virtual float GetScale() const = 0;
+    virtual PPB_ImageData_Impl* ImageData() = 0;
   };
 
   class PlatformContext3D {
@@ -182,6 +212,9 @@ class PluginDelegate {
     // If the plugin instance is backed by an OpenGL, return its ID in the
     // compositors namespace. Otherwise return 0. Returns 0 by default.
     virtual unsigned GetBackingTextureId() = 0;
+
+    // Returns the parent context that allocated the backing texture ID.
+    virtual WebKit::WebGraphicsContext3D* GetParentContext() = 0;
 
     // Returns true if the backing texture is always opaque.
     virtual bool IsOpaque() = 0;
@@ -362,6 +395,10 @@ class PluginDelegate {
   // The caller will own the pointer returned from this.
   virtual PlatformImage2D* CreateImage2D(int width, int height) = 0;
 
+  // Returns the internal PlatformGraphics2D implementation.
+  virtual PlatformGraphics2D* GetGraphics2D(PluginInstance* instance,
+                                            PP_Resource graphics_2d) = 0;
+
   // The caller will own the pointer returned from this.
   virtual PlatformContext3D* CreateContext3D() = 0;
 
@@ -477,27 +514,6 @@ class PluginDelegate {
   virtual void WillUpdateFile(const GURL& file_path) = 0;
   virtual void DidUpdateFile(const GURL& file_path, int64_t delta) = 0;
 
-  virtual base::PlatformFileError OpenFile(
-      const ::ppapi::PepperFilePath& path,
-      int flags,
-      base::PlatformFile* file) = 0;
-  virtual base::PlatformFileError RenameFile(
-      const ::ppapi::PepperFilePath& from_path,
-      const ::ppapi::PepperFilePath& to_path) = 0;
-  virtual base::PlatformFileError DeleteFileOrDir(
-      const ::ppapi::PepperFilePath& path,
-      bool recursive) = 0;
-  virtual base::PlatformFileError CreateDir(
-      const ::ppapi::PepperFilePath& path) = 0;
-  virtual base::PlatformFileError QueryFile(
-      const ::ppapi::PepperFilePath& path,
-      base::PlatformFileInfo* info) = 0;
-  virtual base::PlatformFileError GetDirContents(
-      const ::ppapi::PepperFilePath& path,
-      ::ppapi::DirContents* contents) = 0;
-  virtual base::PlatformFileError CreateTemporaryFile(
-      base::PlatformFile* file) = 0;
-
   // Synchronously returns the platform file path for a filesystem URL.
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,
                                              FilePath* platform_path) = 0;
@@ -574,13 +590,6 @@ class PluginDelegate {
       const std::vector<char>& der,
       ::ppapi::PPB_X509Certificate_Fields* fields) = 0;
 
-  // Show the given context menu at the given position (in the plugin's
-  // coordinates).
-  virtual int32_t ShowContextMenu(
-      PluginInstance* instance,
-      webkit::ppapi::PPB_Flash_Menu_Impl* menu,
-      const gfx::Point& position) = 0;
-
   // Create a fullscreen container for a plugin instance. This effectively
   // switches the plugin to fullscreen.
   virtual FullscreenContainer* CreateFullscreenContainer(
@@ -597,10 +606,6 @@ class PluginDelegate {
   virtual void ZoomLimitsChanged(double minimum_factor,
                                  double maximum_factor) = 0;
 
-  // Retrieves the proxy information for the given URL in PAC format. On error,
-  // this will return an empty string.
-  virtual std::string ResolveProxy(const GURL& url) = 0;
-
   // Tell the browser when resource loading starts/ends.
   virtual void DidStartLoading() = 0;
   virtual void DidStopLoading() = 0;
@@ -611,11 +616,9 @@ class PluginDelegate {
   // Tells the browser to bring up SaveAs dialog to save specified URL.
   virtual void SaveURLAs(const GURL& url) = 0;
 
-  virtual double GetLocalTimeZoneOffset(base::Time t) = 0;
-
   // Create an anonymous shared memory segment of size |size| bytes, and return
   // a pointer to it, or NULL on error.  Caller owns the returned pointer.
-  virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size) = 0;
+  virtual base::SharedMemory* CreateAnonymousSharedMemory(size_t size) = 0;
 
   // Returns the current preferences.
   virtual ::ppapi::Preferences GetPreferences() = 0;
@@ -668,12 +671,6 @@ class PluginDelegate {
   // Stop enumerating devices of the specified |request_id|. The |request_id|
   // is the return value of EnumerateDevicesCallback.
   virtual void StopEnumerateDevices(int request_id) = 0;
-  // Create a ClipboardClient for writing to the clipboard. The caller will own
-  // the pointer to this.
-  virtual webkit_glue::ClipboardClient* CreateClipboardClient() const = 0;
-
-  // Returns a Device ID
-  virtual std::string GetDeviceID() = 0;
 
   // Returns restrictions on local data handled by the plug-in.
   virtual PP_FlashLSORestrictions GetLocalDataRestrictions(

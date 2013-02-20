@@ -5,6 +5,7 @@
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "base/logging.h"
 #include "base/debug/trace_event.h"
+#include "base/stringprintf.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
@@ -16,14 +17,14 @@ RenderbufferManager::RenderbufferManager(
     MemoryTracker* memory_tracker,
     GLint max_renderbuffer_size,
     GLint max_samples)
-    : renderbuffer_memory_tracker_(new MemoryTypeTracker(memory_tracker)),
+    : memory_tracker_(
+          new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
       num_uncleared_renderbuffers_(0),
-      mem_represented_(0),
       renderbuffer_info_count_(0),
       have_context_(true) {
-  UpdateMemRepresented();
+  memory_tracker_->UpdateMemRepresented();
 }
 
 RenderbufferManager::~RenderbufferManager() {
@@ -40,6 +41,14 @@ size_t RenderbufferManager::RenderbufferInfo::EstimatedSize() {
          GLES2Util::RenderbufferBytesPerPixel(internal_format_);
 }
 
+void RenderbufferManager::RenderbufferInfo::AddToSignature(
+    std::string* signature) const {
+  DCHECK(signature);
+  *signature += base::StringPrintf(
+      "|Renderbuffer|internal_format=%04x|samples=%d|width=%d|height=%d",
+      internal_format_, samples_, width_, height_);
+}
+
 RenderbufferManager::RenderbufferInfo::~RenderbufferInfo() {
   if (manager_) {
     if (manager_->have_context_) {
@@ -51,15 +60,11 @@ RenderbufferManager::RenderbufferInfo::~RenderbufferInfo() {
   }
 }
 
-void RenderbufferManager::UpdateMemRepresented() {
-  renderbuffer_memory_tracker_->UpdateMemRepresented(mem_represented_);
-}
-
 void RenderbufferManager::Destroy(bool have_context) {
   have_context_ = have_context;
   renderbuffer_infos_.clear();
-  DCHECK_EQ(0u, mem_represented_);
-  UpdateMemRepresented();
+  DCHECK_EQ(0u, memory_tracker_->GetMemRepresented());
+  memory_tracker_->UpdateMemRepresented();
 }
 
 void RenderbufferManager::StartTracking(RenderbufferInfo* /* renderbuffer */) {
@@ -71,7 +76,8 @@ void RenderbufferManager::StopTracking(RenderbufferInfo* renderbuffer) {
   if (!renderbuffer->cleared()) {
     --num_uncleared_renderbuffers_;
   }
-  mem_represented_ -= renderbuffer->EstimatedSize();
+  memory_tracker_->TrackMemFree(renderbuffer->EstimatedSize());
+  memory_tracker_->UpdateMemRepresented();
 }
 
 void RenderbufferManager::SetInfo(
@@ -81,21 +87,22 @@ void RenderbufferManager::SetInfo(
   if (!renderbuffer->cleared()) {
     --num_uncleared_renderbuffers_;
   }
-  mem_represented_ -= renderbuffer->EstimatedSize();
+  memory_tracker_->TrackMemFree(renderbuffer->EstimatedSize());
   renderbuffer->SetInfo(samples, internalformat, width, height);
-  mem_represented_ += renderbuffer->EstimatedSize();
-  UpdateMemRepresented();
+  memory_tracker_->TrackMemAlloc(renderbuffer->EstimatedSize());
+  memory_tracker_->UpdateMemRepresented();
   if (!renderbuffer->cleared()) {
     ++num_uncleared_renderbuffers_;
   }
 }
 
-void RenderbufferManager::SetCleared(RenderbufferInfo* renderbuffer) {
+void RenderbufferManager::SetCleared(RenderbufferInfo* renderbuffer,
+                                     bool cleared) {
   DCHECK(renderbuffer);
   if (!renderbuffer->cleared()) {
     --num_uncleared_renderbuffers_;
   }
-  renderbuffer->set_cleared();
+  renderbuffer->set_cleared(cleared);
   if (!renderbuffer->cleared()) {
     ++num_uncleared_renderbuffers_;
   }

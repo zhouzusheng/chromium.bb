@@ -82,7 +82,7 @@ public:
 
     void setSize(const IntSize& newSize)
     { 
-        if (newSize == size())
+        if (newSize == size() && targetDeviceScaleFactor() == m_deviceScaleFactor)
             return;
         m_ignoreReset = true; 
         setWidth(newSize.width());
@@ -99,6 +99,7 @@ public:
 
     // Used for rendering
     void didDraw(const FloatRect&);
+    void notifyObserversCanvasChanged(const FloatRect&);
 
     void paint(GraphicsContext*, const LayoutRect&, bool useLowQualityScale = false);
 
@@ -143,12 +144,14 @@ public:
 private:
     HTMLCanvasElement(const QualifiedName&, Document*);
 
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual void attach();
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void reset();
+
+    float targetDeviceScaleFactor() const;
 
     void createImageBuffer() const;
     void clearImageBuffer() const;

@@ -328,9 +328,10 @@ class GritNode(base.Node):
       return None
 
     path = self.attrs['first_ids_file']
-    GRIT_DIR_PREFIX = 'GRIT_DIR/'
-    if path.startswith(GRIT_DIR_PREFIX):
-      return util.PathFromRoot(path[len(GRIT_DIR_PREFIX):])
+    GRIT_DIR_PREFIX = 'GRIT_DIR'
+    if (path.startswith(GRIT_DIR_PREFIX)
+        and path[len(GRIT_DIR_PREFIX)] in ['/', '\\']):
+      return util.PathFromRoot(path[len(GRIT_DIR_PREFIX) + 1:])
     else:
       return self.ToRealPath(path)
 

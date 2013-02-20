@@ -26,7 +26,9 @@
 [
     Conditional=INDEXED_DATABASE,
     ActiveDOMObject,
-    EventTarget
+    EventTarget,
+    JSNoStaticTables,
+    JSGenerateToJSObject
 ] interface IDBOpenDBRequest : IDBRequest {
     attribute EventListener onblocked;
     attribute EventListener onupgradeneeded;

@@ -127,8 +127,8 @@ public:
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
 
     struct ColumnStruct {
-        ColumnStruct()
-            : span(1)
+        explicit ColumnStruct(unsigned initialSpan = 1)
+            : span(initialSpan)
         {
         }
 
@@ -191,14 +191,13 @@ public:
         if (unsigned effectiveColumnCount = numEffCols())
             return static_cast<LayoutUnit>(effectiveColumnCount + 1) * hBorderSpacing();
 
-        return ZERO_LAYOUT_UNIT;
+        return 0;
     }
 
     LayoutUnit bordersPaddingAndSpacingInRowDirection() const
     {
         // 'border-spacing' only applies to separate borders (see 17.6.1 The separated borders model).
-        return borderStart() + borderEnd() +
-               (collapseBorders() ? ZERO_LAYOUT_UNIT : (paddingStart() + paddingEnd() + borderSpacingInRowDirection()));
+        return borderStart() + borderEnd() + (collapseBorders() ? LayoutUnit() : (paddingStart() + paddingEnd() + borderSpacingInRowDirection()));
     }
 
     // Return the first column or column-group.
@@ -292,6 +291,7 @@ private:
     virtual void updateLogicalWidth() OVERRIDE;
 
     LayoutUnit convertStyleLogicalWidthToComputedWidth(const Length& styleLogicalWidth, LayoutUnit availableWidth);
+    LayoutUnit convertStyleLogicalHeightToComputedHeight(const Length& styleLogicalHeight);
 
     virtual LayoutRect overflowClipRect(const LayoutPoint& location, RenderRegion*, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize);
 

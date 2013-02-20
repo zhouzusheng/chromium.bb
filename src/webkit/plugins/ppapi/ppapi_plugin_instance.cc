@@ -15,15 +15,7 @@
 #include "base/time.h"
 #include "base/utf_offset_string_conversions.h"
 #include "base/utf_string_conversions.h"
-// TODO(xhwang): Move media specific code out of this class.
-#include "media/base/audio_decoder_config.h"
-#include "media/base/channel_layout.h"
-#include "media/base/data_buffer.h"
-#include "media/base/decoder_buffer.h"
-#include "media/base/decryptor_client.h"
-#include "media/base/video_decoder_config.h"
-#include "media/base/video_frame.h"
-#include "media/base/video_util.h"
+#include "cc/texture_layer.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
 #include "ppapi/c/dev/ppp_find_dev.h"
@@ -38,7 +30,6 @@
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
 #include "ppapi/c/ppp_mouse_lock.h"
-#include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/ppp_instance_private.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_gamepad_shared.h"
@@ -75,8 +66,10 @@
 #include "ui/base/range/range.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/rect_conversions.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
 #include "webkit/plugins/plugin_constants.h"
 #include "webkit/plugins/ppapi/common.h"
+#include "webkit/plugins/ppapi/content_decryptor_delegate.h"
 #include "webkit/plugins/ppapi/event_conversion.h"
 #include "webkit/plugins/ppapi/fullscreen_container.h"
 #include "webkit/plugins/ppapi/gfx_conversion.h"
@@ -86,12 +79,11 @@
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/plugin_object.h"
 #include "webkit/plugins/ppapi/ppb_buffer_impl.h"
-#include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_3d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
-#include "webkit/plugins/ppapi/url_request_info_util.h"
 #include "webkit/plugins/ppapi/ppp_pdf.h"
+#include "webkit/plugins/ppapi/url_request_info_util.h"
 #include "webkit/plugins/sad_plugin.h"
 
 #if defined(OS_MACOSX)
@@ -122,11 +114,13 @@ using ppapi::PpapiGlobals;
 using ppapi::PPB_InputEvent_Shared;
 using ppapi::PPB_View_Shared;
 using ppapi::PPP_Instance_Combined;
+using ppapi::Resource;
 using ppapi::ScopedPPResource;
 using ppapi::StringVar;
 using ppapi::TrackedCallback;
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_Buffer_API;
+using ppapi::thunk::PPB_Gamepad_API;
 using ppapi::thunk::PPB_Graphics2D_API;
 using ppapi::thunk::PPB_Graphics3D_API;
 using ppapi::thunk::PPB_ImageData_API;
@@ -312,242 +306,30 @@ scoped_array<const char*> StringVectorToArgArray(
   return array.Pass();
 }
 
-// Creates a PP_Resource containing a PPB_Buffer_Impl, copies |data| into the
-// buffer resource, and returns it. Returns a an invalid PP_Resource with an ID
-// of 0 on failure. Upon success, the returned Buffer resource has a reference
-// count of 1.
-PP_Resource MakeBufferResource(PP_Instance instance,
-                               const uint8* data, int size) {
-  if (!data || !size)
-    return 0;
-
-  ScopedPPResource resource(PPB_Buffer_Impl::Create(instance, size));
-  if (!resource.get())
-    return 0;
-
-  EnterResourceNoLock<PPB_Buffer_API> enter(resource, true);
-  if (enter.failed())
-    return 0;
-
-  BufferAutoMapper mapper(enter.object());
-  if (!mapper.data() || mapper.size() < static_cast<size_t>(size))
-    return 0;
-
-  memcpy(mapper.data(), data, size);
-  return resource.get();
-}
-
-// Copies the content of |str| into |array|.
-// Returns true if copy succeeded. Returns false if copy failed, e.g. if the
-// |array_size| is smaller than the |str| length.
-template <uint32_t array_size>
-bool CopyStringToArray(const std::string& str, uint8 (&array)[array_size]) {
-  if (array_size < str.size())
-    return false;
-
-  memcpy(array, str.data(), str.size());
-  return true;
-}
-
-// Fills the |block_info| with information from |decrypt_config|, |timestamp|
-// and |request_id|. |decrypt_config| can be NULL if the block is not encrypted.
-// This is useful for end-of-stream blocks.
-// Returns true if |block_info| is successfully filled. Returns false
-// otherwise.
-bool MakeEncryptedBlockInfo(
-    const media::DecryptConfig* decrypt_config,
-    int64_t timestamp,
-    uint32_t request_id,
-    PP_EncryptedBlockInfo* block_info) {
-  DCHECK(block_info);
-
-  // TODO(xhwang): Fix initialization of PP_EncryptedBlockInfo here and
-  // anywhere else.
-  memset(block_info, 0, sizeof(*block_info));
-
-  block_info->tracking_info.request_id = request_id;
-  block_info->tracking_info.timestamp = timestamp;
-
-  if (!decrypt_config)
-    return true;
-
-  block_info->data_offset = decrypt_config->data_offset();
-
-  if (!CopyStringToArray(decrypt_config->key_id(), block_info->key_id) ||
-      !CopyStringToArray(decrypt_config->iv(), block_info->iv))
-    return false;
-
-  block_info->key_id_size = decrypt_config->key_id().size();
-  block_info->iv_size = decrypt_config->iv().size();
-
-  if (decrypt_config->subsamples().size() > arraysize(block_info->subsamples))
-    return false;
-
-  block_info->num_subsamples = decrypt_config->subsamples().size();
-  for (uint32_t i = 0; i < block_info->num_subsamples; ++i) {
-    block_info->subsamples[i].clear_bytes =
-        decrypt_config->subsamples()[i].clear_bytes;
-    block_info->subsamples[i].cipher_bytes =
-        decrypt_config->subsamples()[i].cypher_bytes;
-  }
-
-  return true;
-}
-
-// Deserializes audio data stored in |audio_frames| into individual audio
-// buffers in |frames|. Returns true upon success.
-bool DeserializeAudioFrames(PP_Resource audio_frames,
-                            media::Decryptor::AudioBuffers* frames) {
-  DCHECK(frames);
-  EnterResourceNoLock<PPB_Buffer_API> enter(audio_frames, true);
-  if (!enter.succeeded())
-    return false;
-
-  BufferAutoMapper mapper(enter.object());
-  if (!mapper.data() || !mapper.size())
-    return false;
-
-  const uint8* cur = static_cast<uint8*>(mapper.data());
-  int bytes_left = mapper.size();
-
-  do {
-    int64 timestamp = 0;
-    int64 frame_size = -1;
-    const int kHeaderSize = sizeof(timestamp) + sizeof(frame_size);
-
-    if (bytes_left < kHeaderSize)
-      return false;
-
-    memcpy(&timestamp, cur, sizeof(timestamp));
-    cur += sizeof(timestamp);
-    bytes_left -= sizeof(timestamp);
-
-    memcpy(&frame_size, cur, sizeof(frame_size));
-    cur += sizeof(frame_size);
-    bytes_left -= sizeof(frame_size);
-
-    // We should *not* have empty frame in the list.
-    if (frame_size <= 0 || bytes_left < frame_size)
-      return false;
-
-    scoped_refptr<media::DataBuffer> frame(new media::DataBuffer(cur,
-                                                                 frame_size));
-    frame->SetTimestamp(base::TimeDelta::FromMicroseconds(timestamp));
-    frames->push_back(frame);
-
-    cur += frame_size;
-    bytes_left -= frame_size;
-  } while (bytes_left > 0);
-
-  return true;
-}
-
-PP_AudioCodec MediaAudioCodecToPpAudioCodec(media::AudioCodec codec) {
-  switch (codec) {
-    case media::kCodecVorbis:
-      return PP_AUDIOCODEC_VORBIS;
-    case media::kCodecAAC:
-      return PP_AUDIOCODEC_AAC;
-    default:
-      return PP_AUDIOCODEC_UNKNOWN;
-  }
-}
-
-PP_VideoCodec MediaVideoCodecToPpVideoCodec(media::VideoCodec codec) {
-  switch (codec) {
-    case media::kCodecVP8:
-      return PP_VIDEOCODEC_VP8;
-    case media::kCodecH264:
-      return PP_VIDEOCODEC_H264;
-    default:
-      return PP_VIDEOCODEC_UNKNOWN;
-  }
-}
-
-PP_VideoCodecProfile MediaVideoCodecProfileToPpVideoCodecProfile(
-    media::VideoCodecProfile profile) {
-  switch (profile) {
-    case media::VP8PROFILE_MAIN:
-      return PP_VIDEOCODECPROFILE_VP8_MAIN;
-    case media::H264PROFILE_BASELINE:
-      return PP_VIDEOCODECPROFILE_H264_BASELINE;
-    case media::H264PROFILE_MAIN:
-      return PP_VIDEOCODECPROFILE_H264_MAIN;
-    case media::H264PROFILE_EXTENDED:
-      return PP_VIDEOCODECPROFILE_H264_EXTENDED;
-    case media::H264PROFILE_HIGH:
-      return PP_VIDEOCODECPROFILE_H264_HIGH;
-    case media::H264PROFILE_HIGH10PROFILE:
-      return PP_VIDEOCODECPROFILE_H264_HIGH_10;
-    case media::H264PROFILE_HIGH422PROFILE:
-      return PP_VIDEOCODECPROFILE_H264_HIGH_422;
-    case media::H264PROFILE_HIGH444PREDICTIVEPROFILE:
-      return PP_VIDEOCODECPROFILE_H264_HIGH_444_PREDICTIVE;
-    default:
-      return PP_VIDEOCODECPROFILE_UNKNOWN;
-  }
-}
-
-PP_DecryptedFrameFormat MediaVideoFormatToPpDecryptedFrameFormat(
-    media::VideoFrame::Format format) {
-  switch (format) {
-    case media::VideoFrame::YV12:
-      return PP_DECRYPTEDFRAMEFORMAT_YV12;
-    case media::VideoFrame::I420:
-      return PP_DECRYPTEDFRAMEFORMAT_I420;
-    default:
-      return PP_DECRYPTEDFRAMEFORMAT_UNKNOWN;
-  }
-}
-
-media::Decryptor::Status PpDecryptResultToMediaDecryptorStatus(
-    PP_DecryptResult result) {
-  switch (result) {
-    case PP_DECRYPTRESULT_SUCCESS:
-      return media::Decryptor::kSuccess;
-    case PP_DECRYPTRESULT_DECRYPT_NOKEY:
-      return media::Decryptor::kNoKey;
-    case PP_DECRYPTRESULT_NEEDMOREDATA:
-      return media::Decryptor::kNeedMoreData;
-    case PP_DECRYPTRESULT_DECRYPT_ERROR:
-      return media::Decryptor::kError;
-    case PP_DECRYPTRESULT_DECODE_ERROR:
-      return media::Decryptor::kError;
-    default:
-      NOTREACHED();
-      return media::Decryptor::kError;
-  }
-}
-
-PP_DecryptorStreamType MediaDecryptorStreamTypeToPpStreamType(
-    media::Decryptor::StreamType stream_type) {
-  switch (stream_type) {
-    case media::Decryptor::kAudio:
-      return PP_DECRYPTORSTREAMTYPE_AUDIO;
-    case media::Decryptor::kVideo:
-      return PP_DECRYPTORSTREAMTYPE_VIDEO;
-    default:
-      NOTREACHED();
-      return PP_DECRYPTORSTREAMTYPE_VIDEO;
-  }
-}
-
 }  // namespace
 
 // static
 PluginInstance* PluginInstance::Create(PluginDelegate* delegate,
-                                       PluginModule* module) {
+                                       PluginModule* module,
+                                       WebPluginContainer* container,
+                                       const GURL& plugin_url) {
   base::Callback<const void*(const char*)> get_plugin_interface_func =
       base::Bind(&PluginModule::GetPluginInterface, module);
   PPP_Instance_Combined* ppp_instance_combined =
       PPP_Instance_Combined::Create(get_plugin_interface_func);
   if (!ppp_instance_combined)
     return NULL;
-  return new PluginInstance(delegate, module, ppp_instance_combined);
+  return new PluginInstance(delegate, module, ppp_instance_combined, container,
+                            plugin_url);
 }
 
 PluginInstance::GamepadImpl::GamepadImpl(PluginDelegate* delegate)
-    : delegate_(delegate) {
+    : Resource(::ppapi::Resource::Untracked()),
+      delegate_(delegate) {
+}
+
+PPB_Gamepad_API* PluginInstance::GamepadImpl::AsPPB_Gamepad_API() {
+  return this;
 }
 
 void PluginInstance::GamepadImpl::Sample(PP_GamepadsSampleData* data) {
@@ -560,19 +342,22 @@ void PluginInstance::GamepadImpl::Sample(PP_GamepadsSampleData* data) {
 PluginInstance::PluginInstance(
     PluginDelegate* delegate,
     PluginModule* module,
-    ::ppapi::PPP_Instance_Combined* instance_interface)
+    ::ppapi::PPP_Instance_Combined* instance_interface,
+    WebPluginContainer* container,
+    const GURL& plugin_url)
     : delegate_(delegate),
       module_(module),
       instance_interface_(instance_interface),
       pp_instance_(0),
-      container_(NULL),
+      container_(container),
+      plugin_url_(plugin_url),
       full_frame_(false),
       sent_initial_did_change_view_(false),
       view_change_weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      bound_graphics_2d_platform_(NULL),
       has_webkit_focus_(false),
       has_content_area_focus_(false),
       find_identifier_(-1),
-      plugin_decryption_interface_(NULL),
       plugin_find_interface_(NULL),
       plugin_input_event_interface_(NULL),
       plugin_messaging_interface_(NULL),
@@ -585,7 +370,7 @@ PluginInstance::PluginInstance(
       checked_for_plugin_input_event_interface_(false),
       checked_for_plugin_messaging_interface_(false),
       checked_for_plugin_pdf_interface_(false),
-      gamepad_impl_(delegate),
+      gamepad_impl_(new GamepadImpl(delegate)),
       plugin_print_interface_(NULL),
       plugin_graphics_3d_interface_(NULL),
       always_on_top_(false),
@@ -603,15 +388,7 @@ PluginInstance::PluginInstance(
       selection_caret_(0),
       selection_anchor_(0),
       pending_user_gesture_(0.0),
-      flash_impl_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      decryptor_client_(NULL),
-      next_decryption_request_id_(1),
-      pending_audio_decrypt_request_id_(0),
-      pending_video_decrypt_request_id_(0),
-      pending_audio_decoder_init_request_id_(0),
-      pending_video_decoder_init_request_id_(0),
-      pending_audio_decode_request_id_(0),
-      pending_video_decode_request_id_(0) {
+      flash_impl_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -628,6 +405,11 @@ PluginInstance::PluginInstance(
 PluginInstance::~PluginInstance() {
   DCHECK(!fullscreen_container_);
 
+  // Force-unbind any Graphics. In the case of Graphics2D, if the plugin
+  // leaks the graphics 2D, it may actually get cleaned up after our
+  // destruction, so we need its pointers to be up-to-date.
+  BindGraphics(pp_instance(), 0);
+
   // Free all the plugin objects. This will automatically clear the back-
   // pointer from the NPObject so WebKit can't call into the plugin any more.
   //
@@ -639,8 +421,8 @@ PluginInstance::~PluginInstance() {
        i != plugin_object_copy.end(); ++i)
     delete *i;
 
-  if (lock_mouse_callback_)
-    TrackedCallback::ClearAndAbort(&lock_mouse_callback_);
+  if (TrackedCallback::IsPending(lock_mouse_callback_))
+    lock_mouse_callback_->Abort();
 
   delegate_->InstanceDeleted(this);
   module_->InstanceDeleted(this);
@@ -679,6 +461,8 @@ void PluginInstance::Delete() {
     fullscreen_container_->Destroy();
     fullscreen_container_ = NULL;
   }
+  bound_graphics_3d_ = NULL;
+  UpdateLayer();
   container_ = NULL;
 }
 
@@ -695,7 +479,7 @@ void PluginInstance::Paint(WebCanvas* canvas,
     return;
   }
 
-  PPB_Graphics2D_Impl* bound_graphics_2d = GetBoundGraphics2D();
+  PluginDelegate::PlatformGraphics2D* bound_graphics_2d = GetBoundGraphics2D();
   if (bound_graphics_2d)
     bound_graphics_2d->Paint(canvas, plugin_rect, paint_rect);
 }
@@ -733,8 +517,8 @@ void PluginInstance::ScrollRect(int dx, int dy, const gfx::Rect& rect) {
 }
 
 unsigned PluginInstance::GetBackingTextureId() {
-  if (GetBoundGraphics3D())
-    return GetBoundGraphics3D()->GetBackingTextureId();
+  if (bound_graphics_3d_.get())
+    return bound_graphics_3d_->GetBackingTextureId();
 
   return 0;
 }
@@ -742,8 +526,8 @@ unsigned PluginInstance::GetBackingTextureId() {
 void PluginInstance::CommitBackingTexture() {
   if (fullscreen_container_)
     fullscreen_container_->Invalidate();
-  else if (container_)
-    container_->commitBackingTexture();
+  else if (texture_layer_)
+    texture_layer_->setNeedsDisplay();
 }
 
 void PluginInstance::InstanceCrashed() {
@@ -791,16 +575,12 @@ static void SetGPUHistogram(const ::ppapi::Preferences& prefs,
 #endif
 }
 
-bool PluginInstance::Initialize(WebPluginContainer* container,
-                                const std::vector<std::string>& arg_names,
+bool PluginInstance::Initialize(const std::vector<std::string>& arg_names,
                                 const std::vector<std::string>& arg_values,
-                                const GURL& plugin_url,
                                 bool full_frame) {
-  container_ = container;
-  plugin_url_ = plugin_url;
   full_frame_ = full_frame;
 
-  container_->setIsAcceptingTouchEvents(IsAcceptingTouchEvents());
+  UpdateTouchEventRequest();
   container_->setWantsWheelEvents(IsAcceptingWheelEvents());
 
   SetGPUHistogram(delegate_->GetPreferences(), arg_names, arg_values);
@@ -809,10 +589,13 @@ bool PluginInstance::Initialize(WebPluginContainer* container,
   argv_ = arg_values;
   scoped_array<const char*> argn_array(StringVectorToArgArray(argn_));
   scoped_array<const char*> argv_array(StringVectorToArgArray(argv_));
-  return PP_ToBool(instance_interface_->DidCreate(pp_instance(),
-                                                  argn_.size(),
-                                                  argn_array.get(),
-                                                  argv_array.get()));
+  bool success =  PP_ToBool(instance_interface_->DidCreate(pp_instance(),
+                                                           argn_.size(),
+                                                           argn_array.get(),
+                                                           argv_array.get()));
+  if (success)
+    message_channel_->StopQueueingJavaScriptMessages();
+  return success;
 }
 
 bool PluginInstance::HandleDocumentLoad(PPB_URLLoader_Impl* loader) {
@@ -910,7 +693,7 @@ bool PluginInstance::SendCompositionEventWithUnderlineInformationToPlugin(
 
 void PluginInstance::RequestInputEventsHelper(uint32_t event_classes) {
   if (event_classes & PP_INPUTEVENT_CLASS_TOUCH)
-    container_->setIsAcceptingTouchEvents(IsAcceptingTouchEvents());
+    UpdateTouchEventRequest();
   if (event_classes & PP_INPUTEVENT_CLASS_WHEEL)
     container_->setWantsWheelEvents(IsAcceptingWheelEvents());
 }
@@ -1138,15 +921,15 @@ void PluginInstance::PageVisibilityChanged(bool is_visible) {
 void PluginInstance::ViewWillInitiatePaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewWillInitiatePaint();
-  else if (GetBoundGraphics3D())
-    GetBoundGraphics3D()->ViewWillInitiatePaint();
+  else if (bound_graphics_3d_.get())
+    bound_graphics_3d_->ViewWillInitiatePaint();
 }
 
 void PluginInstance::ViewInitiatedPaint() {
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewInitiatedPaint();
-  else if (GetBoundGraphics3D())
-    GetBoundGraphics3D()->ViewInitiatedPaint();
+  else if (bound_graphics_3d_.get())
+    bound_graphics_3d_->ViewInitiatedPaint();
 }
 
 void PluginInstance::ViewFlushedPaint() {
@@ -1154,8 +937,8 @@ void PluginInstance::ViewFlushedPaint() {
   scoped_refptr<PluginInstance> ref(this);
   if (GetBoundGraphics2D())
     GetBoundGraphics2D()->ViewFlushedPaint();
-  else if (GetBoundGraphics3D())
-    GetBoundGraphics3D()->ViewFlushedPaint();
+  else if (bound_graphics_3d_.get())
+    bound_graphics_3d_->ViewFlushedPaint();
 }
 
 bool PluginInstance::GetBitmapForOptimizedPluginPaint(
@@ -1166,32 +949,27 @@ bool PluginInstance::GetBitmapForOptimizedPluginPaint(
     float* scale_factor) {
   if (!always_on_top_)
     return false;
-  if (!GetBoundGraphics2D() || !GetBoundGraphics2D()->is_always_opaque())
+  if (!GetBoundGraphics2D() || !GetBoundGraphics2D()->IsAlwaysOpaque())
     return false;
 
   // We specifically want to compare against the area covered by the backing
   // store when seeing if we cover the given paint bounds, since the backing
   // store could be smaller than the declared plugin area.
-  PPB_ImageData_Impl* image_data = GetBoundGraphics2D()->image_data();
+  PPB_ImageData_Impl* image_data = GetBoundGraphics2D()->ImageData();
   // ImageDatas created by NaCl don't have a PlatformImage, so can't be
   // optimized this way.
   if (!image_data->PlatformImage())
     return false;
 
   gfx::Point plugin_origin = PP_ToGfxPoint(view_data_.rect.point);
+  gfx::Vector2d plugin_offset = plugin_origin.OffsetFromOrigin();
   // Convert |paint_bounds| to be relative to the left-top corner of the plugin.
   gfx::Rect relative_paint_bounds(paint_bounds);
-  relative_paint_bounds.Offset(-plugin_origin.x(), -plugin_origin.y());
+  relative_paint_bounds.Offset(-plugin_offset);
 
   gfx::Rect pixel_plugin_backing_store_rect(
       0, 0, image_data->width(), image_data->height());
   float scale = GetBoundGraphics2D()->GetScale();
-#if !defined(USE_AURA) && (defined(OS_WIN) || defined(OS_LINUX))
-  // Linux and Windows don't yet support scaled UpdateRects
-  // TODO(jbauman): Add support and remove this.
-  if (scale != 1.0f)
-    return false;
-#endif
   gfx::Rect plugin_backing_store_rect = gfx::ToEnclosedRect(
       gfx::ScaleRect(pixel_plugin_backing_store_rect, scale));
 
@@ -1210,9 +988,9 @@ bool PluginInstance::GetBitmapForOptimizedPluginPaint(
   }
 
   *dib = image_data->PlatformImage()->GetTransportDIB();
-  plugin_backing_store_rect.Offset(plugin_origin);
+  plugin_backing_store_rect.Offset(plugin_offset);
   *location = plugin_backing_store_rect;
-  clip_page.Offset(plugin_origin);
+  clip_page.Offset(plugin_offset);
   *clip = clip_page;
   // The plugin scale factor is inverted, e.g. for a device scale factor of 2x
   // the plugin scale factor is 0.5.
@@ -1306,16 +1084,6 @@ void PluginInstance::StopFind() {
   plugin_find_interface_->StopFind(pp_instance());
 }
 
-bool PluginInstance::LoadContentDecryptorInterface() {
-  if (!plugin_decryption_interface_) {
-    plugin_decryption_interface_ =
-        static_cast<const PPP_ContentDecryptor_Private*>(
-          module_->GetPluginInterface(
-              PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE));
-  }
-  return !!plugin_decryption_interface_;
-}
-
 bool PluginInstance::LoadFindInterface() {
   if (!plugin_find_interface_) {
     plugin_find_interface_ =
@@ -1368,6 +1136,9 @@ bool PluginInstance::LoadPdfInterface() {
 }
 
 bool PluginInstance::LoadPrintInterface() {
+  // Only check for the interface if the plugin has dev permission.
+  if (!module_->permissions().HasPermission(::ppapi::PERMISSION_DEV))
+    return false;
   if (!plugin_print_interface_) {
     plugin_print_interface_ = static_cast<const PPP_Printing_Dev*>(
         module_->GetPluginInterface(PPP_PRINTING_DEV_INTERFACE));
@@ -1376,6 +1147,9 @@ bool PluginInstance::LoadPrintInterface() {
 }
 
 bool PluginInstance::LoadPrivateInterface() {
+  // Only check for the interface if the plugin has private permission.
+  if (!module_->permissions().HasPermission(::ppapi::PERMISSION_PRIVATE))
+    return false;
   if (!plugin_private_interface_) {
     plugin_private_interface_ = static_cast<const PPP_Instance_Private*>(
         module_->GetPluginInterface(PPP_INSTANCE_PRIVATE_INTERFACE));
@@ -1423,9 +1197,12 @@ void PluginInstance::SendFocusChangeNotification() {
   instance_interface_->DidChangeFocus(pp_instance(), PP_FromBool(has_focus));
 }
 
-bool PluginInstance::IsAcceptingTouchEvents() const {
-  return (filtered_input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH) ||
-      (input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH);
+void PluginInstance::UpdateTouchEventRequest() {
+  bool raw_touch = (filtered_input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH) ||
+                   (input_event_mask_ & PP_INPUTEVENT_CLASS_TOUCH);
+  container_->requestTouchEventType(raw_touch ?
+      WebKit::WebPluginContainer::TouchEventRequestTypeRaw :
+      WebKit::WebPluginContainer::TouchEventRequestTypeSynthesizedMouse);
 }
 
 bool PluginInstance::IsAcceptingWheelEvents() const {
@@ -1639,334 +1416,6 @@ void PluginInstance::RotateView(WebPlugin::RotationType type) {
   // NOTE: plugin instance may have been deleted.
 }
 
-void PluginInstance::set_decrypt_client(
-    media::DecryptorClient* decryptor_client) {
-  decryptor_client_ = decryptor_client;
-}
-
-bool PluginInstance::GenerateKeyRequest(const std::string& key_system,
-                                        const std::string& type,
-                                        const std::string& init_data) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-  if (key_system.empty())
-    return false;
-
-  PP_Var init_data_array =
-      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          init_data.size(), init_data.data());
-
-  plugin_decryption_interface_->GenerateKeyRequest(
-      pp_instance(),
-      StringVar::StringToPPVar(key_system),
-      StringVar::StringToPPVar(type),
-      init_data_array);
-  return true;
-}
-
-bool PluginInstance::AddKey(const std::string& session_id,
-                            const std::string& key,
-                            const std::string& init_data) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-  PP_Var key_array =
-      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(key.size(),
-                                                                 key.data());
-  PP_Var init_data_array =
-      PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          init_data.size(),
-          init_data.data());
-
-  plugin_decryption_interface_->AddKey(
-      pp_instance(),
-      StringVar::StringToPPVar(session_id),
-      key_array,
-      init_data_array);
-  return true;
-}
-
-bool PluginInstance::CancelKeyRequest(const std::string& session_id) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-  plugin_decryption_interface_->CancelKeyRequest(
-      pp_instance(),
-      StringVar::StringToPPVar(session_id));
-  return true;
-}
-
-// TODO(xhwang): Remove duplication of code in Decrypt(),
-// DecryptAndDecodeAudio() and DecryptAndDecodeVideo().
-bool PluginInstance::Decrypt(
-    media::Decryptor::StreamType stream_type,
-    const scoped_refptr<media::DecoderBuffer>& encrypted_buffer,
-    const media::Decryptor::DecryptCB& decrypt_cb) {
-  DVLOG(3) << "Decrypt() - stream_type: " << stream_type;
-  if (!LoadContentDecryptorInterface())
-    return false;
-
-  ScopedPPResource encrypted_resource(
-      ScopedPPResource::PassRef(),
-      MakeBufferResource(pp_instance(),
-                         encrypted_buffer->GetData(),
-                         encrypted_buffer->GetDataSize()));
-  if (!encrypted_resource.get())
-    return false;
-
-  const uint32_t request_id = next_decryption_request_id_++;
-  DVLOG(2) << "Decrypt() - request_id " << request_id;
-
-  PP_EncryptedBlockInfo block_info;
-  DCHECK(encrypted_buffer->GetDecryptConfig());
-  if (!MakeEncryptedBlockInfo(encrypted_buffer->GetDecryptConfig(),
-                              encrypted_buffer->GetTimestamp().InMicroseconds(),
-                              request_id,
-                              &block_info)) {
-    return false;
-  }
-
-  // There is only one pending decrypt request at any time per stream. This is
-  // enforced by the media pipeline.
-  switch (stream_type) {
-    case media::Decryptor::kAudio:
-      DCHECK_EQ(pending_audio_decrypt_request_id_, 0u);
-      DCHECK(pending_audio_decrypt_cb_.is_null());
-      pending_audio_decrypt_request_id_ = request_id;
-      pending_audio_decrypt_cb_ = decrypt_cb;
-      break;
-    case media::Decryptor::kVideo:
-      DCHECK_EQ(pending_video_decrypt_request_id_, 0u);
-      DCHECK(pending_video_decrypt_cb_.is_null());
-      pending_video_decrypt_request_id_ = request_id;
-      pending_video_decrypt_cb_ = decrypt_cb;
-      break;
-    default:
-      NOTREACHED();
-      return false;
-  }
-
-  plugin_decryption_interface_->Decrypt(pp_instance(),
-                                        encrypted_resource,
-                                        &block_info);
-  return true;
-}
-
-bool PluginInstance::CancelDecrypt(media::Decryptor::StreamType stream_type) {
-  DVLOG(3) << "CancelDecrypt() - stream_type: " << stream_type;
-
-  media::Decryptor::DecryptCB decrypt_cb;
-  switch (stream_type) {
-    case media::Decryptor::kAudio:
-      pending_audio_decrypt_request_id_ = 0;
-      decrypt_cb = base::ResetAndReturn(&pending_audio_decrypt_cb_);
-      break;
-    case media::Decryptor::kVideo:
-      pending_video_decrypt_request_id_ = 0;
-      decrypt_cb = base::ResetAndReturn(&pending_video_decrypt_cb_);
-      break;
-    default:
-      NOTREACHED();
-      return false;
-  }
-
-  if (!decrypt_cb.is_null())
-    decrypt_cb.Run(media::Decryptor::kSuccess, NULL);
-
-  return true;
-}
-
-bool PluginInstance::InitializeAudioDecoder(
-    const media::AudioDecoderConfig& decoder_config,
-    const media::Decryptor::DecoderInitCB& init_cb) {
-  PP_AudioDecoderConfig pp_decoder_config;
-  pp_decoder_config.codec =
-      MediaAudioCodecToPpAudioCodec(decoder_config.codec());
-  pp_decoder_config.channel_count =
-      media::ChannelLayoutToChannelCount(decoder_config.channel_layout());
-  pp_decoder_config.bits_per_channel = decoder_config.bits_per_channel();
-  pp_decoder_config.samples_per_second = decoder_config.samples_per_second();
-  pp_decoder_config.request_id = next_decryption_request_id_++;
-
-  ScopedPPResource extra_data_resource(
-      ScopedPPResource::PassRef(),
-      MakeBufferResource(pp_instance(),
-                         decoder_config.extra_data(),
-                         decoder_config.extra_data_size()));
-
-  DCHECK_EQ(pending_audio_decoder_init_request_id_, 0u);
-  DCHECK(pending_audio_decoder_init_cb_.is_null());
-  pending_audio_decoder_init_request_id_ = pp_decoder_config.request_id;
-  pending_audio_decoder_init_cb_ = init_cb;
-
-  plugin_decryption_interface_->InitializeAudioDecoder(pp_instance(),
-                                                       &pp_decoder_config,
-                                                       extra_data_resource);
-  return true;
-}
-
-bool PluginInstance::InitializeVideoDecoder(
-    const media::VideoDecoderConfig& decoder_config,
-    const media::Decryptor::DecoderInitCB& init_cb) {
-  PP_VideoDecoderConfig pp_decoder_config;
-  pp_decoder_config.codec =
-      MediaVideoCodecToPpVideoCodec(decoder_config.codec());
-  pp_decoder_config.profile =
-      MediaVideoCodecProfileToPpVideoCodecProfile(decoder_config.profile());
-  pp_decoder_config.format =
-      MediaVideoFormatToPpDecryptedFrameFormat(decoder_config.format());
-  pp_decoder_config.width = decoder_config.coded_size().width();
-  pp_decoder_config.height = decoder_config.coded_size().height();
-  pp_decoder_config.request_id = next_decryption_request_id_++;
-
-  ScopedPPResource extra_data_resource(
-      ScopedPPResource::PassRef(),
-      MakeBufferResource(pp_instance(),
-                         decoder_config.extra_data(),
-                         decoder_config.extra_data_size()));
-
-  DCHECK_EQ(pending_video_decoder_init_request_id_, 0u);
-  DCHECK(pending_video_decoder_init_cb_.is_null());
-  pending_video_decoder_init_request_id_ = pp_decoder_config.request_id;
-  pending_video_decoder_init_cb_ = init_cb;
-
-  plugin_decryption_interface_->InitializeVideoDecoder(pp_instance(),
-                                                       &pp_decoder_config,
-                                                       extra_data_resource);
-  return true;
-}
-
-// TODO(xhwang): Try to remove duplicate logic here and in CancelDecrypt().
-void PluginInstance::CancelDecode(media::Decryptor::StreamType stream_type) {
-  switch (stream_type) {
-    case media::Decryptor::kAudio:
-      pending_audio_decode_request_id_ = 0;
-      if (!pending_audio_decode_cb_.is_null())
-        base::ResetAndReturn(&pending_audio_decode_cb_).Run(
-            media::Decryptor::kSuccess, media::Decryptor::AudioBuffers());
-      break;
-    case media::Decryptor::kVideo:
-      pending_video_decode_request_id_ = 0;
-      if (!pending_video_decode_cb_.is_null())
-        base::ResetAndReturn(&pending_video_decode_cb_).Run(
-            media::Decryptor::kSuccess, NULL);
-      break;
-    default:
-      NOTREACHED();
-  }
-}
-
-bool PluginInstance::DeinitializeDecoder(
-    media::Decryptor::StreamType stream_type) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-
-  CancelDecode(stream_type);
-
-  // TODO(tomfinegan): Add decoder deinitialize request tracking, and get
-  // stream type from media stack.
-  plugin_decryption_interface_->DeinitializeDecoder(
-      pp_instance(), MediaDecryptorStreamTypeToPpStreamType(stream_type), 0);
-  return true;
-}
-
-bool PluginInstance::ResetDecoder(media::Decryptor::StreamType stream_type) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-
-  CancelDecode(stream_type);
-
-  // TODO(tomfinegan): Add decoder reset request tracking.
-  plugin_decryption_interface_->ResetDecoder(
-      pp_instance(), MediaDecryptorStreamTypeToPpStreamType(stream_type), 0);
-  return true;
-}
-
-bool PluginInstance::DecryptAndDecodeAudio(
-    const scoped_refptr<media::DecoderBuffer>& encrypted_buffer,
-    const media::Decryptor::AudioDecodeCB& audio_decode_cb) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-
-  // If |encrypted_buffer| is end-of-stream buffer, GetData() and GetDataSize()
-  // return NULL and 0 respectively. In that case, we'll just create a 0
-  // resource.
-  ScopedPPResource encrypted_resource(
-      ScopedPPResource::PassRef(),
-      MakeBufferResource(pp_instance(),
-                         encrypted_buffer->GetData(),
-                         encrypted_buffer->GetDataSize()));
-  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource.get())
-    return false;
-
-  const uint32_t request_id = next_decryption_request_id_++;
-  DVLOG(2) << "DecryptAndDecodeAudio() - request_id " << request_id;
-
-  PP_EncryptedBlockInfo block_info;
-  if (!MakeEncryptedBlockInfo(
-      encrypted_buffer->GetDecryptConfig(),
-      encrypted_buffer->GetTimestamp().InMicroseconds(),
-      request_id,
-      &block_info)) {
-    return false;
-  }
-
-  // There is only one pending audio decode request at any time. This is
-  // enforced by the media pipeline.
-  DCHECK_EQ(pending_audio_decode_request_id_, 0u);
-  DCHECK(pending_audio_decode_cb_.is_null());
-  pending_audio_decode_request_id_ = request_id;
-  pending_audio_decode_cb_ = audio_decode_cb;
-
-  plugin_decryption_interface_->DecryptAndDecode(pp_instance(),
-                                                 PP_DECRYPTORSTREAMTYPE_AUDIO,
-                                                 encrypted_resource,
-                                                 &block_info);
-  return true;
-}
-
-bool PluginInstance::DecryptAndDecodeVideo(
-    const scoped_refptr<media::DecoderBuffer>& encrypted_buffer,
-    const media::Decryptor::VideoDecodeCB& video_decode_cb) {
-  if (!LoadContentDecryptorInterface())
-    return false;
-
-  // If |encrypted_buffer| is end-of-stream buffer, GetData() and GetDataSize()
-  // return NULL and 0 respectively. In that case, we'll just create a 0
-  // resource.
-  ScopedPPResource encrypted_resource(
-      ScopedPPResource::PassRef(),
-      MakeBufferResource(pp_instance(),
-                         encrypted_buffer->GetData(),
-                         encrypted_buffer->GetDataSize()));
-  if (!encrypted_buffer->IsEndOfStream() && !encrypted_resource.get())
-    return false;
-
-  const uint32_t request_id = next_decryption_request_id_++;
-  DVLOG(2) << "DecryptAndDecodeVideo() - request_id " << request_id;
-
-  PP_EncryptedBlockInfo block_info;
-  if (!MakeEncryptedBlockInfo(
-      encrypted_buffer->GetDecryptConfig(),
-      encrypted_buffer->GetTimestamp().InMicroseconds(),
-      request_id,
-      &block_info)) {
-    return false;
-  }
-
-  // Only one pending video decode request at any time. This is enforced by the
-  // media pipeline.
-  DCHECK_EQ(pending_video_decode_request_id_, 0u);
-  DCHECK(pending_video_decode_cb_.is_null());
-  pending_video_decode_request_id_ = request_id;
-  pending_video_decode_cb_ = video_decode_cb;
-
-  // TODO(tomfinegan): Need to get stream type from media stack.
-  plugin_decryption_interface_->DecryptAndDecode(pp_instance(),
-                                                 PP_DECRYPTORSTREAMTYPE_VIDEO,
-                                                 encrypted_resource,
-                                                 &block_info);
-  return true;
-}
-
 bool PluginInstance::FlashIsFullscreenOrPending() {
   return fullscreen_container_ != NULL;
 }
@@ -2026,8 +1475,8 @@ void PluginInstance::FlashSetFullscreen(bool fullscreen, bool delay_report) {
   VLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
   if (fullscreen) {
     DCHECK(!fullscreen_container_);
-    setBackingTextureId(0, false);
     fullscreen_container_ = delegate_->CreateFullscreenContainer(this);
+    UpdateLayer();
   } else {
     DCHECK(fullscreen_container_);
     fullscreen_container_->Destroy();
@@ -2048,26 +1497,34 @@ void PluginInstance::UpdateFlashFullscreenState(bool flash_fullscreen) {
   if (flash_fullscreen == flash_fullscreen_) {
     // Manually clear callback when fullscreen fails with mouselock pending.
     if (!flash_fullscreen && is_mouselock_pending)
-      TrackedCallback::ClearAndRun(&lock_mouse_callback_, PP_ERROR_FAILED);
+      lock_mouse_callback_->Run(PP_ERROR_FAILED);
     return;
   }
 
-  PPB_Graphics3D_Impl* graphics_3d  = GetBoundGraphics3D();
+  PPB_Graphics3D_Impl* graphics_3d  = bound_graphics_3d_.get();
   if (graphics_3d) {
     if (flash_fullscreen) {
       fullscreen_container_->ReparentContext(graphics_3d->platform_context());
     } else {
       delegate_->ReparentContext(graphics_3d->platform_context());
-      setBackingTextureId(graphics_3d->GetBackingTextureId(),
-                          graphics_3d->IsOpaque());
     }
+    UpdateLayer();
   }
 
   bool old_plugin_focus = PluginHasFocus();
   flash_fullscreen_ = flash_fullscreen;
   if (is_mouselock_pending && !delegate()->IsMouseLocked(this)) {
-    if (!delegate()->LockMouse(this))
-      TrackedCallback::ClearAndRun(&lock_mouse_callback_, PP_ERROR_FAILED);
+    if (!IsProcessingUserGesture() &&
+        !module_->permissions().HasPermission(
+            ::ppapi::PERMISSION_BYPASS_USER_GESTURE)) {
+      lock_mouse_callback_->Run(PP_ERROR_NO_USER_GESTURE);
+    } else {
+      // Open a user gesture here so the Webkit user gesture checks will succeed
+      // for out-of-process plugins.
+      WebScopedUserGesture user_gesture;
+      if (!delegate()->LockMouse(this))
+        lock_mouse_callback_->Run(PP_ERROR_FAILED);
+    }
   }
 
   if (PluginHasFocus() != old_plugin_focus)
@@ -2122,16 +1579,7 @@ bool PluginInstance::IsRectTopmost(const gfx::Rect& rect) {
   if (flash_fullscreen_)
     return true;
 
-#if 0
-  WebView* web_view = container()->element().document().frame()->view();
-  if (!web_view) {
-    NOTREACHED();
-    return false;
-  }
-#else
-//FIXME
   return container_->isRectTopmost(rect);
-#endif
 }
 
 bool PluginInstance::IsViewAccelerated() {
@@ -2266,40 +1714,34 @@ bool PluginInstance::PrintPDFOutput(PP_Resource print_output,
 #endif
 }
 
-PPB_Graphics2D_Impl* PluginInstance::GetBoundGraphics2D() const {
-  if (bound_graphics_.get() == NULL)
-    return NULL;
-
-  if (bound_graphics_->AsPPB_Graphics2D_API())
-    return static_cast<PPB_Graphics2D_Impl*>(bound_graphics_.get());
-  return NULL;
+PluginDelegate::PlatformGraphics2D* PluginInstance::GetBoundGraphics2D() const {
+  return bound_graphics_2d_platform_;
 }
 
-PPB_Graphics3D_Impl* PluginInstance::GetBoundGraphics3D() const {
-  if (bound_graphics_.get() == NULL)
-    return NULL;
-
-  if (bound_graphics_->AsPPB_Graphics3D_API())
-    return static_cast<PPB_Graphics3D_Impl*>(bound_graphics_.get());
-  return NULL;
-}
-
-void PluginInstance::setBackingTextureId(unsigned int id, bool is_opaque) {
-  // If we have a fullscreen_container_ (under PPB_FlashFullscreen)
-  // or desired_fullscreen_state is true (under PPB_Fullscreen),
-  // then the plugin is fullscreen or transitioning to fullscreen
-  // and the parent context is not the one for the browser page,
-  // but for the fullscreen window, and so the parent texture ID
-  // doesn't correspond to anything in the page's context.
-  //
-  // TODO(alokp): It would be better at some point to have the equivalent
-  // in the FullscreenContainer so that we don't need to poll
-  if (fullscreen_container_ || desired_fullscreen_state_)
+void PluginInstance::UpdateLayer() {
+  if (!container_)
     return;
 
-  if (container_) {
-    container_->setBackingTextureId(id);
-    container_->setOpaque(is_opaque);
+  // If we have a fullscreen_container_ (under PPB_FlashFullscreen) then the
+  // plugin is fullscreen (for Flash) or transitioning to fullscreen. In either
+  // case we do not want a layer.
+  bool want_layer = GetBackingTextureId() && !fullscreen_container_;
+
+  if (want_layer == !!texture_layer_.get())
+    return;
+
+  if (!want_layer) {
+    texture_layer_->willModifyTexture();
+    texture_layer_->clearClient();
+    container_->setWebLayer(NULL);
+    web_layer_.reset();
+    texture_layer_ = NULL;
+  } else {
+    DCHECK(bound_graphics_3d_.get());
+    texture_layer_ = cc::TextureLayer::create(this);
+    web_layer_.reset(new WebKit::WebLayerImpl(texture_layer_));
+    container_->setWebLayer(web_layer_.get());
+    texture_layer_->setContentsOpaque(bound_graphics_3d_->IsOpaque());
   }
 }
 
@@ -2330,10 +1772,8 @@ bool PluginInstance::IsProcessingUserGesture() {
 }
 
 void PluginInstance::OnLockMouseACK(bool succeeded) {
-  if (TrackedCallback::IsPending(lock_mouse_callback_)) {
-    TrackedCallback::ClearAndRun(&lock_mouse_callback_,
-                                 succeeded ? PP_OK : PP_ERROR_FAILED);
-  }
+  if (TrackedCallback::IsPending(lock_mouse_callback_))
+    lock_mouse_callback_->Run(succeeded ? PP_OK : PP_ERROR_FAILED);
 }
 
 void PluginInstance::OnMouseLockLost() {
@@ -2416,6 +1856,22 @@ void PluginInstance::SimulateImeSetCompositionEvent(
       utf16_text, underlines, offsets[0], offsets[1]);
 }
 
+ContentDecryptorDelegate* PluginInstance::GetContentDecryptorDelegate() {
+  if (content_decryptor_delegate_)
+    return content_decryptor_delegate_.get();
+
+  const PPP_ContentDecryptor_Private* plugin_decryption_interface =
+      static_cast<const PPP_ContentDecryptor_Private*>(
+          module_->GetPluginInterface(
+              PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE));
+  if (!plugin_decryption_interface)
+    return NULL;
+
+  content_decryptor_delegate_.reset(
+      new ContentDecryptorDelegate(pp_instance_, plugin_decryption_interface));
+  return content_decryptor_delegate_.get();
+}
+
 void PluginInstance::ClosePendingUserGesture(PP_Instance instance,
                                              PP_TimeTicks timestamp) {
   // Do nothing so that the pending user gesture will stay open for
@@ -2427,20 +1883,20 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
                                      PP_Resource device) {
   TRACE_EVENT0("ppapi", "PluginInstance::BindGraphics");
   // The Graphics3D instance can't be destroyed until we call
-  // setBackingTextureId.
-  scoped_refptr< ::ppapi::Resource> old_graphics = bound_graphics_;
-  if (bound_graphics_.get()) {
-    if (GetBoundGraphics2D()) {
-      GetBoundGraphics2D()->BindToInstance(NULL);
-    } else if (GetBoundGraphics3D()) {
-      GetBoundGraphics3D()->BindToInstance(false);
-    }
-    bound_graphics_ = NULL;
+  // UpdateLayer().
+  scoped_refptr< ::ppapi::Resource> old_graphics = bound_graphics_3d_.get();
+  if (bound_graphics_3d_.get()) {
+    bound_graphics_3d_->BindToInstance(false);
+    bound_graphics_3d_ = NULL;
+  }
+  if (bound_graphics_2d_platform_) {
+    GetBoundGraphics2D()->BindToInstance(NULL);
+    bound_graphics_2d_platform_ = NULL;
   }
 
   // Special-case clearing the current device.
   if (!device) {
-    setBackingTextureId(0, false);
+    UpdateLayer();
     InvalidateRect(gfx::Rect());
     return PP_TRUE;
   }
@@ -2451,22 +1907,14 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
       desired_fullscreen_state_ != view_data_.is_fullscreen)
     return PP_FALSE;
 
-  EnterResourceNoLock<PPB_Graphics2D_API> enter_2d(device, false);
-  PPB_Graphics2D_Impl* graphics_2d = enter_2d.succeeded() ?
-      static_cast<PPB_Graphics2D_Impl*>(enter_2d.object()) : NULL;
+  bound_graphics_2d_platform_ = delegate_->GetGraphics2D(this, device);
   EnterResourceNoLock<PPB_Graphics3D_API> enter_3d(device, false);
   PPB_Graphics3D_Impl* graphics_3d = enter_3d.succeeded() ?
       static_cast<PPB_Graphics3D_Impl*>(enter_3d.object()) : NULL;
 
-  if (graphics_2d) {
-    if (graphics_2d->pp_instance() != pp_instance())
-      return PP_FALSE;  // Can't bind other instance's contexts.
-    if (!graphics_2d->BindToInstance(this))
+  if (bound_graphics_2d_platform_) {
+    if (!bound_graphics_2d_platform_->BindToInstance(this))
       return PP_FALSE;  // Can't bind to more than one instance.
-
-    bound_graphics_ = graphics_2d;
-    setBackingTextureId(0, graphics_2d->is_always_opaque());
-    // BindToInstance will have invalidated the plugin if necessary.
   } else if (graphics_3d) {
     // Make sure graphics can only be bound to the instance it is
     // associated with.
@@ -2475,13 +1923,12 @@ PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
     if (!graphics_3d->BindToInstance(true))
       return PP_FALSE;
 
-    bound_graphics_ = graphics_3d;
-    setBackingTextureId(graphics_3d->GetBackingTextureId(),
-                        graphics_3d->IsOpaque());
+    bound_graphics_3d_ = graphics_3d;
   } else {
     // The device is not a valid resource type.
     return PP_FALSE;
   }
+  UpdateLayer();
 
   return PP_TRUE;
 }
@@ -2492,6 +1939,10 @@ PP_Bool PluginInstance::IsFullFrame(PP_Instance instance) {
 
 const ViewData* PluginInstance::GetViewData(PP_Instance instance) {
   return &view_data_;
+}
+
+PP_Bool PluginInstance::FlashIsFullscreen(PP_Instance instance) {
+  return PP_FromBool(flash_fullscreen_);
 }
 
 PP_Var PluginInstance::GetWindowObject(PP_Instance instance) {
@@ -2582,66 +2033,31 @@ PP_Var PluginInstance::GetFontFamilies(PP_Instance instance) {
   return PP_MakeUndefined();
 }
 
+// These PPB_ContentDecryptor_Private calls are responses to
+// PPP_ContentDecryptor_Private calls made on |content_decryptor_delegate_|.
+// Therefore, |content_decryptor_delegate_| must have been initialized when
+// the following methods are called.
 void PluginInstance::NeedKey(PP_Instance instance,
                              PP_Var key_system_var,
                              PP_Var session_id_var,
                              PP_Var init_data_var) {
-  // TODO(tomfinegan): send the data to media stack.
+  content_decryptor_delegate_->NeedKey(
+      key_system_var, session_id_var, init_data_var);
 }
 
 void PluginInstance::KeyAdded(PP_Instance instance,
                               PP_Var key_system_var,
                               PP_Var session_id_var) {
-  if (!decryptor_client_)
-    return;
-
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  if (!key_system_string || !session_id_string) {
-    decryptor_client_->KeyError("", "", media::Decryptor::kUnknownError, 0);
-    return;
-  }
-
-  decryptor_client_->KeyAdded(key_system_string->value(),
-                              session_id_string->value());
+  content_decryptor_delegate_->KeyAdded(key_system_var, session_id_var);
 }
 
 void PluginInstance::KeyMessage(PP_Instance instance,
                                 PP_Var key_system_var,
                                 PP_Var session_id_var,
-                                PP_Resource message_resource,
+                                PP_Var message_var,
                                 PP_Var default_url_var) {
-  if (!decryptor_client_)
-    return;
-
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  StringVar* default_url_string = StringVar::FromPPVar(default_url_var);
-
-  if (!key_system_string || !session_id_string || !default_url_string) {
-    decryptor_client_->KeyError("", "", media::Decryptor::kUnknownError, 0);
-    return;
-  }
-
-  EnterResourceNoLock<PPB_Buffer_API> enter(message_resource, true);
-  if (!enter.succeeded()) {
-    decryptor_client_->KeyError(key_system_string->value(),
-                                session_id_string->value(),
-                                media::Decryptor::kUnknownError,
-                                0);
-    return;
-  }
-
-  BufferAutoMapper mapper(enter.object());
-  scoped_array<uint8> message_array(new uint8[mapper.size()]);
-  if (mapper.data() && mapper.size())
-    memcpy(message_array.get(), mapper.data(), mapper.size());
-
-  decryptor_client_->KeyMessage(key_system_string->value(),
-                                session_id_string->value(),
-                                message_array.Pass(),
-                                mapper.size(),
-                                default_url_string->value());
+  content_decryptor_delegate_->KeyMessage(
+      key_system_var, session_id_var, message_var, default_url_var);
 }
 
 void PluginInstance::KeyError(PP_Instance instance,
@@ -2649,224 +2065,59 @@ void PluginInstance::KeyError(PP_Instance instance,
                               PP_Var session_id_var,
                               int32_t media_error,
                               int32_t system_code) {
-  if (!decryptor_client_)
-    return;
+  content_decryptor_delegate_->KeyError(
+      key_system_var, session_id_var, media_error, system_code);
+}
 
-  StringVar* key_system_string = StringVar::FromPPVar(key_system_var);
-  StringVar* session_id_string = StringVar::FromPPVar(session_id_var);
-  if (!key_system_string || !session_id_string) {
-    decryptor_client_->KeyError("", "", media::Decryptor::kUnknownError, 0);
-    return;
-  }
-
-  decryptor_client_->KeyError(
-      key_system_string->value(),
-      session_id_string->value(),
-      static_cast<media::Decryptor::KeyError>(media_error),
-      system_code);
+void PluginInstance::DeliverBlock(PP_Instance instance,
+                                  PP_Resource decrypted_block,
+                                  const PP_DecryptedBlockInfo* block_info) {
+  content_decryptor_delegate_->DeliverBlock(decrypted_block, block_info);
 }
 
 void PluginInstance::DecoderInitializeDone(PP_Instance instance,
                                            PP_DecryptorStreamType decoder_type,
                                            uint32_t request_id,
                                            PP_Bool success) {
-  if (decoder_type == PP_DECRYPTORSTREAMTYPE_AUDIO) {
-    // If the request ID is not valid or does not match what's saved, do
-    // nothing.
-    if (request_id == 0 ||
-        request_id != pending_audio_decoder_init_request_id_)
-      return;
-
-      DCHECK(!pending_audio_decoder_init_cb_.is_null());
-      pending_audio_decoder_init_request_id_ = 0;
-      base::ResetAndReturn(
-          &pending_audio_decoder_init_cb_).Run(PP_ToBool(success));
-  } else {
-    if (request_id == 0 ||
-        request_id != pending_video_decoder_init_request_id_)
-      return;
-
-      DCHECK(!pending_video_decoder_init_cb_.is_null());
-      pending_video_decoder_init_request_id_ = 0;
-      base::ResetAndReturn(
-          &pending_video_decoder_init_cb_).Run(PP_ToBool(success));
-  }
+  content_decryptor_delegate_->DecoderInitializeDone(
+      decoder_type, request_id, success);
 }
 
 void PluginInstance::DecoderDeinitializeDone(
     PP_Instance instance,
     PP_DecryptorStreamType decoder_type,
     uint32_t request_id) {
-  // TODO(tomfinegan): Add decoder stop completion handling.
+  content_decryptor_delegate_->DecoderDeinitializeDone(decoder_type,
+                                                       request_id);
 }
 
 void PluginInstance::DecoderResetDone(PP_Instance instance,
                                       PP_DecryptorStreamType decoder_type,
                                       uint32_t request_id) {
-  // TODO(tomfinegan): Add decoder reset completion handling.
+  content_decryptor_delegate_->DecoderResetDone(decoder_type, request_id);
 }
 
-void PluginInstance::DeliverBlock(PP_Instance instance,
-                                  PP_Resource decrypted_block,
-                                  const PP_DecryptedBlockInfo* block_info) {
-  DCHECK(block_info);
-  const uint32_t request_id = block_info->tracking_info.request_id;
-  DVLOG(2) << "DeliverBlock() - request_id: " << request_id;
-
-  // If the request ID is not valid or does not match what's saved, do nothing.
-  if (request_id == 0) {
-    DVLOG(1) << "DeliverBlock() - invalid request_id " << request_id;
-    return;
-  }
-
-  media::Decryptor::DecryptCB decrypt_cb;
-  if (request_id == pending_audio_decrypt_request_id_) {
-    DCHECK(!pending_audio_decrypt_cb_.is_null());
-    pending_audio_decrypt_request_id_ = 0;
-    decrypt_cb = base::ResetAndReturn(&pending_audio_decrypt_cb_);
-  } else if (request_id == pending_video_decrypt_request_id_) {
-    DCHECK(!pending_video_decrypt_cb_.is_null());
-    pending_video_decrypt_request_id_ = 0;
-    decrypt_cb = base::ResetAndReturn(&pending_video_decrypt_cb_);
-  } else {
-    DVLOG(1) << "DeliverBlock() - request_id " << request_id << " not found";
-    return;
-  }
-
-  media::Decryptor::Status status =
-      PpDecryptResultToMediaDecryptorStatus(block_info->result);
-  if (status != media::Decryptor::kSuccess) {
-    decrypt_cb.Run(status, NULL);
-    return;
-  }
-
-  EnterResourceNoLock<PPB_Buffer_API> enter(decrypted_block, true);
-  if (!enter.succeeded()) {
-    decrypt_cb.Run(media::Decryptor::kError, NULL);
-    return;
-  }
-  BufferAutoMapper mapper(enter.object());
-  if (!mapper.data() || !mapper.size()) {
-    decrypt_cb.Run(media::Decryptor::kError, NULL);
-    return;
-  }
-
-  // TODO(tomfinegan): Find a way to take ownership of the shared memory
-  // managed by the PPB_Buffer_Dev, and avoid the extra copy.
-  scoped_refptr<media::DecoderBuffer> decrypted_buffer(
-      media::DecoderBuffer::CopyFrom(
-          static_cast<uint8*>(mapper.data()), mapper.size()));
-  decrypted_buffer->SetTimestamp(base::TimeDelta::FromMicroseconds(
-      block_info->tracking_info.timestamp));
-  decrypt_cb.Run(media::Decryptor::kSuccess, decrypted_buffer);
-}
 
 void PluginInstance::DeliverFrame(PP_Instance instance,
                                   PP_Resource decrypted_frame,
                                   const PP_DecryptedFrameInfo* frame_info) {
-  DCHECK(frame_info);
-  const uint32_t request_id = frame_info->tracking_info.request_id;
-  DVLOG(2) << "DeliverFrame() - request_id: " << request_id;
-
-  // If the request ID is not valid or does not match what's saved, do nothing.
-  if (request_id == 0 || request_id != pending_video_decode_request_id_) {
-    DVLOG(1) << "DeliverFrame() - request_id " << request_id << " not found";
-    return;
-  }
-
-  DCHECK(!pending_video_decode_cb_.is_null());
-  pending_video_decode_request_id_ = 0;
-  media::Decryptor::VideoDecodeCB video_decode_cb =
-      base::ResetAndReturn(&pending_video_decode_cb_);
-
-  media::Decryptor::Status status =
-      PpDecryptResultToMediaDecryptorStatus(frame_info->result);
-  if (status != media::Decryptor::kSuccess) {
-    video_decode_cb.Run(status, NULL);
-    return;
-  }
-
-  EnterResourceNoLock<PPB_Buffer_API> enter(decrypted_frame, true);
-  if (!enter.succeeded()) {
-    video_decode_cb.Run(media::Decryptor::kError, NULL);
-    return;
-  }
-  BufferAutoMapper mapper(enter.object());
-  if (!mapper.data() || !mapper.size()) {
-    video_decode_cb.Run(media::Decryptor::kError, NULL);
-    return;
-  }
-
-  const uint8* frame_data = static_cast<uint8*>(mapper.data());
-  gfx::Size frame_size(frame_info->width, frame_info->height);
-
-  DCHECK(frame_info->format == PP_DECRYPTEDFRAMEFORMAT_YV12);
-  const media::VideoFrame::Format format = media::VideoFrame::YV12;
-
-  // TODO(tomfinegan): Find a way to take ownership of the shared memory
-  // managed by the PPB_Buffer_Dev, and avoid the extra copy.
-  scoped_refptr<media::VideoFrame> decoded_frame(
-      media::VideoFrame::CreateFrame(
-          format, frame_size, frame_size,
-          base::TimeDelta::FromMicroseconds(
-              frame_info->tracking_info.timestamp)));
-
-  media::CopyYPlane(
-      frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_Y],
-      frame_info->strides[PP_DECRYPTEDFRAMEPLANES_Y],
-      frame_info->height,
-      decoded_frame.get());
-
-  media::CopyUPlane(
-      frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_U],
-      frame_info->strides[PP_DECRYPTEDFRAMEPLANES_U],
-      frame_info->height,
-      decoded_frame.get());
-
-  media::CopyVPlane(
-      frame_data + frame_info->plane_offsets[PP_DECRYPTEDFRAMEPLANES_V],
-      frame_info->strides[PP_DECRYPTEDFRAMEPLANES_V],
-      frame_info->height,
-      decoded_frame.get());
-
-  video_decode_cb.Run(media::Decryptor::kSuccess, decoded_frame);
+  content_decryptor_delegate_->DeliverFrame(decrypted_frame, frame_info);
 }
 
 void PluginInstance::DeliverSamples(PP_Instance instance,
                                     PP_Resource audio_frames,
                                     const PP_DecryptedBlockInfo* block_info) {
-  DCHECK(block_info);
-  const uint32_t request_id = block_info->tracking_info.request_id;
-  DVLOG(2) << "DeliverSamples() - request_id: " << request_id;
+  content_decryptor_delegate_->DeliverSamples(audio_frames, block_info);
+}
 
-  // If the request ID is not valid or does not match what's saved, do nothing.
-  if (request_id == 0 || request_id != pending_audio_decode_request_id_) {
-    DVLOG(1) << "DeliverSamples() - request_id " << request_id << " not found";
-    return;
-  }
+unsigned PluginInstance::prepareTexture(cc::ResourceUpdateQueue&) {
+  return GetBackingTextureId();
+}
 
-  DCHECK(!pending_audio_decode_cb_.is_null());
-  pending_audio_decode_request_id_ = 0;
-  media::Decryptor::AudioDecodeCB audio_decode_cb =
-      base::ResetAndReturn(&pending_audio_decode_cb_);
-
-  const media::Decryptor::AudioBuffers empty_frames;
-
-  media::Decryptor::Status status =
-      PpDecryptResultToMediaDecryptorStatus(block_info->result);
-  if (status != media::Decryptor::kSuccess) {
-    audio_decode_cb.Run(status, empty_frames);
-    return;
-  }
-
-  media::Decryptor::AudioBuffers audio_frame_list;
-  if (!DeserializeAudioFrames(audio_frames, &audio_frame_list)) {
-    NOTREACHED() << "CDM did not serialize the buffer correctly.";
-    audio_decode_cb.Run(media::Decryptor::kError, empty_frames);
-    return;
-  }
-
-  audio_decode_cb.Run(media::Decryptor::kSuccess, audio_frame_list);
+WebKit::WebGraphicsContext3D* PluginInstance::context() {
+  DCHECK(bound_graphics_3d_.get());
+  DCHECK(bound_graphics_3d_->platform_context());
+  return bound_graphics_3d_->platform_context()->GetParentContext();
 }
 
 void PluginInstance::NumberOfFindResultsChanged(PP_Instance instance,
@@ -2898,15 +2149,24 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
   return &flash_impl_;
 }
 
-::ppapi::thunk::PPB_Flash_Functions_API*
-PluginInstance::GetFlashFunctionsAPI(PP_Instance /*instance*/) {
-  NOTIMPLEMENTED();
-  return NULL;
-}
+::ppapi::Resource* PluginInstance::GetSingletonResource(
+    PP_Instance instance,
+    ::ppapi::SingletonResourceID id) {
+  // Flash APIs and some others aren't implemented in-process.
+  switch (id) {
+    case ::ppapi::BROKER_SINGLETON_ID:
+    case ::ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
+    case ::ppapi::FLASH_FILE_SINGLETON_ID:
+    case ::ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
+    case ::ppapi::FLASH_SINGLETON_ID:
+      NOTIMPLEMENTED();
+      return NULL;
+    case ::ppapi::GAMEPAD_SINGLETON_ID:
+      return gamepad_impl_;
+  }
 
-::ppapi::thunk::PPB_Gamepad_API* PluginInstance::GetGamepadAPI(
-    PP_Instance /* instance */) {
-  return &gamepad_impl_;
+  NOTREACHED();
+  return NULL;
 }
 
 int32_t PluginInstance::RequestInputEvents(PP_Instance instance,
@@ -3004,9 +2264,15 @@ int32_t PluginInstance::LockMouse(PP_Instance instance,
   if (!CanAccessMainFrame())
     return PP_ERROR_NOACCESS;
 
+  if (!IsProcessingUserGesture())
+    return PP_ERROR_NO_USER_GESTURE;
+
   // Attempt mouselock only if Flash isn't waiting on fullscreen, otherwise
   // we wait and call LockMouse() in UpdateFlashFullscreenState().
   if (!FlashIsFullscreenOrPending() || flash_fullscreen()) {
+    // Open a user gesture here so the Webkit user gesture checks will succeed
+    // for out-of-process plugins.
+    WebScopedUserGesture user_gesture;
     if (!delegate()->LockMouse(this))
       return PP_ERROR_FAILED;
   }
@@ -3125,11 +2391,15 @@ PP_Var PluginInstance::GetPluginInstanceURL(
                                                         components);
 }
 
-bool PluginInstance::ResetAsProxied(scoped_refptr<PluginModule> module) {
+PP_NaClResult PluginInstance::ResetAsProxied(
+    scoped_refptr<PluginModule> module) {
   // Save the original module and switch over to the new one now that this
   // plugin is using the IPC-based proxy.
   original_module_ = module_;
   module_ = module;
+
+  // Don't send any messages to the plugin until DidCreate() has finished.
+  message_channel_->QueueJavaScriptMessages();
 
   // For NaCl instances, remember the NaCl plugin instance interface, so we
   // can shut it down by calling its DidDestroy in our Delete() method.
@@ -3141,9 +2411,12 @@ bool PluginInstance::ResetAsProxied(scoped_refptr<PluginModule> module) {
       PPP_Instance_Combined::Create(get_plugin_interface_func);
   if (!ppp_instance_combined) {
     // The proxy must support at least one usable PPP_Instance interface.
-    NOTREACHED();
-    return false;
+    // While this could be a failure to implement the interface in the NaCl
+    // module, it is more likely that the NaCl process has crashed. Either
+    // way, report that module initialization failed.
+    return PP_NACL_ERROR_MODULE;
   }
+
   instance_interface_.reset(ppp_instance_combined);
   // Clear all PPP interfaces we may have cached.
   plugin_find_interface_ = NULL;
@@ -3164,7 +2437,8 @@ bool PluginInstance::ResetAsProxied(scoped_refptr<PluginModule> module) {
   scoped_array<const char*> argv_array(StringVectorToArgArray(argv_));
   if (!instance_interface_->DidCreate(pp_instance(), argn_.size(),
                                       argn_array.get(), argv_array.get()))
-    return false;
+    return PP_NACL_ERROR_INSTANCE;
+  message_channel_->StopQueueingJavaScriptMessages();
 
   // Clear sent_initial_did_change_view_ and cancel any pending DidChangeView
   // event. This way, SendDidChangeView will send the "current" view
@@ -3176,7 +2450,7 @@ bool PluginInstance::ResetAsProxied(scoped_refptr<PluginModule> module) {
   // If we received HandleDocumentLoad, re-send it now via the proxy.
   if (document_loader_)
     HandleDocumentLoad(document_loader_.get());
-  return true;
+  return PP_NACL_OK;
 }
 
 void PluginInstance::DoSetCursor(WebCursorInfo* cursor) {

@@ -24,7 +24,9 @@
 
 [
     Conditional=MEDIA_STREAM,
+    ImplementationLacksVTable
 ] interface RTCStatsElement {
     readonly attribute Date timestamp;
     DOMString stat(in DOMString name);
+    sequence<DOMString> names();
 };

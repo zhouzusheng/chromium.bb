@@ -101,7 +101,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
         name, val = util.ParseDefine(val)
         self.defines[name] = val
       elif key == '-E':
-        (env_name, env_value) = val.split('=')
+        (env_name, env_value) = val.split('=', 1)
         os.environ[env_name] = env_value
       elif key == '-f':
         # TODO(joi@chromium.org): Remove this override once change
@@ -228,9 +228,11 @@ are exported to translation interchange files (e.g. XMB files), etc.
           'resource_map_source', 'resource_file_map_source'):
         encoding = 'cp1252'
       elif output.GetType() in ('android', 'c_format', 'js_map_format', 'plist',
-                                'plist_strings', 'doc', 'json',
-                                'chrome_messages_json'):
+                                'plist_strings', 'doc', 'json'):
         encoding = 'utf_8'
+      elif output.GetType() in ('chrome_messages_json'):
+        # Chrome Web Store currently expects BOM for UTF-8 files :-(
+        encoding = 'utf-8-sig'
       else:
         # TODO(gfeher) modify here to set utf-8 encoding for admx/adml
         encoding = 'utf_16'

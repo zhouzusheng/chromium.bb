@@ -5,35 +5,42 @@
 #include "net/base/upload_bytes_element_reader.h"
 
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 
 namespace net {
 
 UploadBytesElementReader::UploadBytesElementReader(const char* bytes,
-                                                   int bytes_length)
+                                                   uint64 length)
     : bytes_(bytes),
-      bytes_length_(bytes_length),
+      length_(length),
       offset_(0) {
 }
 
 UploadBytesElementReader::~UploadBytesElementReader() {
 }
 
+const UploadBytesElementReader*
+UploadBytesElementReader::AsBytesReader() const {
+  return this;
+}
+
 int UploadBytesElementReader::Init(const CompletionCallback& callback) {
-  return OK;
+  return InitSync();
 }
 
 int UploadBytesElementReader::InitSync() {
+  offset_ = 0;
   return OK;
 }
 
 uint64 UploadBytesElementReader::GetContentLength() const {
-  return bytes_length_;
+  return length_;
 }
 
 uint64 UploadBytesElementReader::BytesRemaining() const {
-  return bytes_length_ - offset_;
+  return length_ - offset_;
 }
 
 bool UploadBytesElementReader::IsInMemory() const {
@@ -61,6 +68,21 @@ int UploadBytesElementReader::ReadSync(IOBuffer* buf, int buf_length) {
 
   offset_ += num_bytes_to_read;
   return num_bytes_to_read;
+}
+
+
+UploadOwnedBytesElementReader::UploadOwnedBytesElementReader(
+    std::vector<char>* data)
+    : UploadBytesElementReader(vector_as_array(data), data->size()) {
+  data_.swap(*data);
+}
+
+UploadOwnedBytesElementReader::~UploadOwnedBytesElementReader() {}
+
+UploadOwnedBytesElementReader*
+UploadOwnedBytesElementReader::CreateWithString(const std::string& string) {
+  std::vector<char> data(string.begin(), string.end());
+  return new UploadOwnedBytesElementReader(&data);
 }
 
 }  // namespace net

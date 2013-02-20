@@ -24,123 +24,190 @@
 
 #include "ClassList.h"
 #include "DatasetDOMStringMap.h"
-#include "Element.h"
 #include "ElementShadow.h"
-#include "HTMLCollection.h"
 #include "NamedNodeMap.h"
 #include "NodeRareData.h"
+#include "PseudoElement.h"
 #include "StyleInheritedData.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
-class HTMLCollection;
-
 class ElementRareData : public NodeRareData {
 public:
-    ElementRareData();
+    ElementRareData(Document*);
     virtual ~ElementRareData();
 
-    void resetComputedStyle();
+    void setPseudoElement(PseudoId, PassRefPtr<PseudoElement>);
+    PseudoElement* pseudoElement(PseudoId) const;
+    bool hasPseudoElements() const { return m_generatedBefore || m_generatedAfter; }
 
-    using NodeRareData::needsFocusAppearanceUpdateSoonAfterAttach;
-    using NodeRareData::setNeedsFocusAppearanceUpdateSoonAfterAttach;
-    using NodeRareData::styleAffectedByEmpty;
-    using NodeRareData::setStyleAffectedByEmpty;
-    using NodeRareData::isInCanvasSubtree;
-    using NodeRareData::setIsInCanvasSubtree;
+    void resetComputedStyle();
+    void resetDynamicRestyleObservations();
+
+    bool needsFocusAppearanceUpdateSoonAfterAttach() const { return m_needsFocusAppearanceUpdateSoonAfterAttach; }
+    void setNeedsFocusAppearanceUpdateSoonAfterAttach(bool needs) { m_needsFocusAppearanceUpdateSoonAfterAttach = needs; }
+
+    bool styleAffectedByEmpty() const { return m_styleAffectedByEmpty; }
+    void setStyleAffectedByEmpty(bool value) { m_styleAffectedByEmpty = value; }
+
+    bool isInCanvasSubtree() const { return m_isInCanvasSubtree; }
+    void setIsInCanvasSubtree(bool value) { m_isInCanvasSubtree = value; }
+
 #if ENABLE(FULLSCREEN_API)
-    using NodeRareData::containsFullScreenElement;
-    using NodeRareData::setContainsFullScreenElement;
+    bool containsFullScreenElement() { return m_containsFullScreenElement; }
+    void setContainsFullScreenElement(bool value) { m_containsFullScreenElement = value; }
 #endif
 
-    bool hasCachedHTMLCollections() const
-    {
-        return m_cachedCollections;
-    }
+#if ENABLE(DIALOG_ELEMENT)
+    bool isInTopLayer() const { return m_isInTopLayer; }
+    void setIsInTopLayer(bool value) { m_isInTopLayer = value; }
+#endif
 
-    PassRefPtr<HTMLCollection> ensureCachedHTMLCollection(Element*, CollectionType);
-    HTMLCollection* cachedHTMLCollection(CollectionType type)
-    {
-        if (!m_cachedCollections)
-            return 0;
+    bool childrenAffectedByHover() const { return m_childrenAffectedByHover; }
+    void setChildrenAffectedByHover(bool value) { m_childrenAffectedByHover = value; }
+    bool childrenAffectedByActive() const { return m_childrenAffectedByActive; }
+    void setChildrenAffectedByActive(bool value) { m_childrenAffectedByActive = value; }
+    bool childrenAffectedByDrag() const { return m_childrenAffectedByDrag; }
+    void setChildrenAffectedByDrag(bool value) { m_childrenAffectedByDrag = value; }
 
-        return (*m_cachedCollections)[type - FirstNodeCollectionType];
-    }
+    bool childrenAffectedByFirstChildRules() const { return m_childrenAffectedByFirstChildRules; }
+    void setChildrenAffectedByFirstChildRules(bool value) { m_childrenAffectedByFirstChildRules = value; }
+    bool childrenAffectedByLastChildRules() const { return m_childrenAffectedByLastChildRules; }
+    void setChildrenAffectedByLastChildRules(bool value) { m_childrenAffectedByLastChildRules = value; }
+    bool childrenAffectedByDirectAdjacentRules() const { return m_childrenAffectedByDirectAdjacentRules; }
+    void setChildrenAffectedByDirectAdjacentRules(bool value) { m_childrenAffectedByDirectAdjacentRules = value; }
+    bool childrenAffectedByForwardPositionalRules() const { return m_childrenAffectedByForwardPositionalRules; }
+    void setChildrenAffectedByForwardPositionalRules(bool value) { m_childrenAffectedByForwardPositionalRules = value; }
+    bool childrenAffectedByBackwardPositionalRules() const { return m_childrenAffectedByBackwardPositionalRules; }
+    void setChildrenAffectedByBackwardPositionalRules(bool value) { m_childrenAffectedByBackwardPositionalRules = value; }
+    unsigned childIndex() const { return m_childIndex; }
+    void setChildIndex(unsigned index) { m_childIndex = index; }
 
-    void removeCachedHTMLCollection(HTMLCollection* collection, CollectionType type)
-    {
-        ASSERT(m_cachedCollections);
-        ASSERT_UNUSED(collection, (*m_cachedCollections)[type - FirstNodeCollectionType] == collection);
-        (*m_cachedCollections)[type - FirstNodeCollectionType] = 0;
-    }
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
-    void clearHTMLCollectionCaches(const QualifiedName* attrName)
-    {
-        if (!m_cachedCollections)
-            return;
+    ElementShadow* shadow() const { return m_shadow.get(); }
+    void setShadow(PassOwnPtr<ElementShadow> shadow) { m_shadow = shadow; }
 
-        bool shouldIgnoreType = !attrName || *attrName == HTMLNames::idAttr || *attrName == HTMLNames::nameAttr;
+    NamedNodeMap* attributeMap() const { return m_attributeMap.get(); }
+    void setAttributeMap(PassOwnPtr<NamedNodeMap> attributeMap) { m_attributeMap = attributeMap; }
 
-        for (unsigned i = 0; i < (*m_cachedCollections).size(); i++) {
-            if (HTMLCollection* collection = (*m_cachedCollections)[i]) {
-                if (shouldIgnoreType || DynamicNodeListCacheBase::shouldInvalidateTypeOnAttributeChange(collection->invalidationType(), *attrName))
-                    collection->invalidateCache();
-            }
-        }
-    }
+    RenderStyle* computedStyle() const { return m_computedStyle.get(); }
+    void setComputedStyle(PassRefPtr<RenderStyle> computedStyle) { m_computedStyle = computedStyle; }
 
-    void adoptTreeScope(Document* oldDocument, Document* newDocument)
-    {
-        if (!m_cachedCollections)
-            return;
+    ClassList* classList() const { return m_classList.get(); }
+    void setClassList(PassOwnPtr<ClassList> classList) { m_classList = classList; }
 
-        for (unsigned i = 0; i < (*m_cachedCollections).size(); i++) {
-            HTMLCollection* collection = (*m_cachedCollections)[i];
-            if (!collection)
-                continue;
-            collection->invalidateCache();
-            if (oldDocument != newDocument) {
-                oldDocument->unregisterNodeListCache(collection);
-                newDocument->registerNodeListCache(collection);
-            }
-        }
-    }
+    DatasetDOMStringMap* dataset() const { return m_dataset.get(); }
+    void setDataset(PassOwnPtr<DatasetDOMStringMap> dataset) { m_dataset = dataset; }
 
-    typedef FixedArray<HTMLCollection*, NumNodeCollectionTypes> CachedHTMLCollectionArray;
-    OwnPtr<CachedHTMLCollectionArray> m_cachedCollections;
+    LayoutSize minimumSizeForResizing() const { return m_minimumSizeForResizing; }
+    void setMinimumSizeForResizing(LayoutSize size) { m_minimumSizeForResizing = size; }
 
+    IntSize savedLayerScrollOffset() const { return m_savedLayerScrollOffset; }
+    void setSavedLayerScrollOffset(IntSize size) { m_savedLayerScrollOffset = size; }
+
+private:
+    // Many fields are in NodeRareData for better packing.
     LayoutSize m_minimumSizeForResizing;
     RefPtr<RenderStyle> m_computedStyle;
-    AtomicString m_shadowPseudoId;
 
-    OwnPtr<DatasetDOMStringMap> m_datasetDOMStringMap;
+    OwnPtr<DatasetDOMStringMap> m_dataset;
     OwnPtr<ClassList> m_classList;
     OwnPtr<ElementShadow> m_shadow;
     OwnPtr<NamedNodeMap> m_attributeMap;
 
+    RefPtr<PseudoElement> m_generatedBefore;
+    RefPtr<PseudoElement> m_generatedAfter;
+
     IntSize m_savedLayerScrollOffset;
+
+private:
+    void releasePseudoElement(PseudoElement*);
 };
 
 inline IntSize defaultMinimumSizeForResizing()
 {
-    return IntSize(MAX_LAYOUT_UNIT, MAX_LAYOUT_UNIT);
+    return IntSize(LayoutUnit::max(), LayoutUnit::max());
 }
 
-inline ElementRareData::ElementRareData()
-    : m_minimumSizeForResizing(defaultMinimumSizeForResizing())
+inline ElementRareData::ElementRareData(Document* document)
+    : NodeRareData(document)
+    , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
+    , m_generatedBefore(0)
+    , m_generatedAfter(0)
 {
 }
 
 inline ElementRareData::~ElementRareData()
 {
     ASSERT(!m_shadow);
+    ASSERT(!m_generatedBefore);
+    ASSERT(!m_generatedAfter);
+}
+
+inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> element)
+{
+    switch (pseudoId) {
+    case BEFORE:
+        releasePseudoElement(m_generatedBefore.get());
+        m_generatedBefore = element;
+        break;
+    case AFTER:
+        releasePseudoElement(m_generatedAfter.get());
+        m_generatedAfter = element;
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+}
+
+inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
+{
+    switch (pseudoId) {
+    case BEFORE:
+        return m_generatedBefore.get();
+    case AFTER:
+        return m_generatedAfter.get();
+    default:
+        ASSERT_NOT_REACHED();
+        return 0;
+    }
+}
+
+inline void ElementRareData::releasePseudoElement(PseudoElement* element)
+{
+    if (!element)
+        return;
+
+    if (element->attached())
+        element->detach();
+
+    ASSERT(!element->nextSibling());
+    ASSERT(!element->previousSibling());
+
+    element->setParentOrHostNode(0);
 }
 
 inline void ElementRareData::resetComputedStyle()
 {
-    m_computedStyle.clear();
+    setComputedStyle(0);
+    setStyleAffectedByEmpty(false);
+    setChildIndex(0);
 }
 
+inline void ElementRareData::resetDynamicRestyleObservations()
+{
+    setChildrenAffectedByHover(false);
+    setChildrenAffectedByActive(false);
+    setChildrenAffectedByDrag(false);
+    setChildrenAffectedByFirstChildRules(false);
+    setChildrenAffectedByLastChildRules(false);
+    setChildrenAffectedByDirectAdjacentRules(false);
+    setChildrenAffectedByForwardPositionalRules(false);
+    setChildrenAffectedByBackwardPositionalRules(false);
 }
+
+} // namespace
+
 #endif // ElementRareData_h

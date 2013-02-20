@@ -2,17 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/solid_color_layer.h"
 
 #include "cc/solid_color_layer_impl.h"
 
 namespace cc {
 
-scoped_ptr<LayerImpl> SolidColorLayer::createLayerImpl()
+scoped_ptr<LayerImpl> SolidColorLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return SolidColorLayerImpl::create(id()).PassAs<LayerImpl>();
+    return SolidColorLayerImpl::create(treeImpl, id()).PassAs<LayerImpl>();
 }
 
 scoped_refptr<SolidColorLayer> SolidColorLayer::create()
@@ -29,4 +27,10 @@ SolidColorLayer::~SolidColorLayer()
 {
 }
 
-} // namespace cc
+void SolidColorLayer::setBackgroundColor(SkColor color)
+{
+    setContentsOpaque(SkColorGetA(color) == 255);
+    Layer::setBackgroundColor(color);
+}
+
+}  // namespace cc

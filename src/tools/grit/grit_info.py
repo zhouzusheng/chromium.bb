@@ -122,6 +122,10 @@ def DoMain(argv):
     name, val = util.ParseDefine(define)
     defines[name] = val
 
+  for env_pair in options.build_env:
+    (env_name, env_value) = env_pair.split('=', 1)
+    os.environ[env_name] = env_value
+
   if options.inputs:
     if len(args) > 1:
       raise WrongNumberOfArguments("Expected 0 or 1 arguments for --inputs.")

@@ -29,7 +29,8 @@
 #if ENABLE(CSS_FILTERS)
 
 #include "Color.h"
-#include "LayoutTypes.h"
+#include "FilterEffect.h"
+#include "LayoutSize.h"
 #include "Length.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -38,6 +39,10 @@
 
 #if PLATFORM(BLACKBERRY)
 #include <wtf/ThreadSafeRefCounted.h>
+#endif
+
+#if ENABLE(SVG)
+#include "CachedSVGDocumentReference.h"
 #endif
 
 // Annoyingly, wingdi.h #defines this.
@@ -69,6 +74,7 @@ public:
         DROP_SHADOW,
 #if ENABLE(CSS_SHADERS)
         CUSTOM,
+        VALIDATED_CUSTOM,
 #endif
         PASSTHROUGH,
         NONE
@@ -161,19 +167,19 @@ public:
         return adoptRef(new ReferenceFilterOperation(url, fragment, type));
     }
 
-    class Data {
-    public:
-        virtual ~Data() { }
-    };
-
     virtual bool affectsOpacity() const { return true; }
     virtual bool movesPixels() const { return true; }
 
     const String& url() const { return m_url; }
     const String& fragment() const { return m_fragment; }
 
-    Data* data() const { return m_data.get(); }
-    void setData(PassOwnPtr<Data> data) { m_data = data; }
+#if ENABLE(SVG)
+    CachedSVGDocumentReference* cachedSVGDocumentReference() const { return m_cachedSVGDocumentReference.get(); }
+    void setCachedSVGDocumentReference(PassOwnPtr<CachedSVGDocumentReference> cachedSVGDocumentReference) { m_cachedSVGDocumentReference = cachedSVGDocumentReference; }
+#endif
+
+    FilterEffect* filterEffect() const { return m_filterEffect.get(); }
+    void setFilterEffect(PassRefPtr<FilterEffect> filterEffect) { m_filterEffect = filterEffect; }
 
 private:
 
@@ -194,7 +200,10 @@ private:
 
     String m_url;
     String m_fragment;
-    OwnPtr<Data> m_data;
+#if ENABLE(SVG)
+    OwnPtr<CachedSVGDocumentReference> m_cachedSVGDocumentReference;
+#endif
+    RefPtr<FilterEffect> m_filterEffect;
 };
 
 // GRAYSCALE, SEPIA, SATURATE and HUE_ROTATE are variations on a basic color matrix effect.

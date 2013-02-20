@@ -2,42 +2,43 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCIOSurfaceLayerImpl_h
-#define CCIOSurfaceLayerImpl_h
+#ifndef CC_IO_SURFACE_LAYER_IMPL_H_
+#define CC_IO_SURFACE_LAYER_IMPL_H_
 
-#include "IntSize.h"
+#include "cc/cc_export.h"
 #include "cc/layer_impl.h"
+#include "ui/gfx/size.h"
 
 namespace cc {
 
-class IOSurfaceLayerImpl : public LayerImpl {
+class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
 public:
-    static scoped_ptr<IOSurfaceLayerImpl> create(int id)
+    static scoped_ptr<IOSurfaceLayerImpl> create(LayerTreeImpl* treeImpl, int id)
     {
-        return make_scoped_ptr(new IOSurfaceLayerImpl(id));
+        return make_scoped_ptr(new IOSurfaceLayerImpl(treeImpl, id));
     }
     virtual ~IOSurfaceLayerImpl();
 
-    void setIOSurfaceProperties(unsigned ioSurfaceId, const IntSize&);
+    void setIOSurfaceProperties(unsigned ioSurfaceId, const gfx::Size&);
 
     virtual void appendQuads(QuadSink&, AppendQuadsData&) OVERRIDE;
 
     virtual void willDraw(ResourceProvider*) OVERRIDE;
-    virtual void didLoseContext() OVERRIDE;
+    virtual void didLoseOutputSurface() OVERRIDE;
 
     virtual void dumpLayerProperties(std::string*, int indent) const OVERRIDE;
 
 private:
-    explicit IOSurfaceLayerImpl(int);
+    IOSurfaceLayerImpl(LayerTreeImpl* treeImpl, int id);
 
     virtual const char* layerTypeAsString() const OVERRIDE;
 
     unsigned m_ioSurfaceId;
-    IntSize m_ioSurfaceSize;
+    gfx::Size m_ioSurfaceSize;
     bool m_ioSurfaceChanged;
     unsigned m_ioSurfaceTextureId;
 };
 
 }
 
-#endif // CCIOSurfaceLayerImpl_h
+#endif  // CC_IO_SURFACE_LAYER_IMPL_H_

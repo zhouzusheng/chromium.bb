@@ -47,9 +47,9 @@ WebIDBTransactionImpl::~WebIDBTransactionImpl()
 {
 }
 
-WebIDBObjectStore* WebIDBTransactionImpl::objectStore(const WebString& name, ExceptionCode& ec)
+WebIDBObjectStore* WebIDBTransactionImpl::objectStore(long long indexId, ExceptionCode& ec)
 {
-    RefPtr<IDBObjectStoreBackendInterface> objectStore = m_backend->objectStore(name, ec);
+    RefPtr<IDBObjectStoreBackendInterface> objectStore = m_backend->objectStore(indexId, ec);
     if (!objectStore)
         return 0;
     return new WebIDBObjectStoreImpl(objectStore);
@@ -63,11 +63,6 @@ void WebIDBTransactionImpl::commit()
 void WebIDBTransactionImpl::abort()
 {
     m_backend->abort();
-}
-
-void WebIDBTransactionImpl::didCompleteTaskEvents()
-{
-    m_backend->didCompleteTaskEvents();
 }
 
 void WebIDBTransactionImpl::setCallbacks(WebIDBTransactionCallbacks* callbacks)

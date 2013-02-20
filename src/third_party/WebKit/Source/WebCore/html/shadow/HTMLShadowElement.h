@@ -42,17 +42,17 @@ public:
 
     virtual ~HTMLShadowElement();
 
-    const AtomicString& select() const;
-    bool isSelectValid() const OVERRIDE { return true; }
+    virtual const AtomicString& select() const;
+    virtual bool isSelectValid() OVERRIDE { return true; }
+    virtual const CSSSelectorList& selectorList() { return emptySelectorList(); }
+    virtual Type insertionPointType() const OVERRIDE { return ShadowInsertionPoint; }
 
-protected:
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    ShadowRoot* olderShadowRoot();
 
 private:
     HTMLShadowElement(const QualifiedName&, Document*);
 
-    bool m_registeredWithShadowRoot;
+    static const CSSSelectorList& emptySelectorList();
 };
 
 inline bool isHTMLShadowElement(const Node* node)

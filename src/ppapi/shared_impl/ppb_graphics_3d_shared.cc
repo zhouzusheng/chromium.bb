@@ -60,6 +60,8 @@ int32_t PPB_Graphics3D_Shared::SwapBuffers(
     scoped_refptr<TrackedCallback> callback) {
   ScopedNoLocking already_locked(this);
   if (HasPendingSwap()) {
+    Log(PP_LOGLEVEL_ERROR, "PPB_Graphics3D.SwapBuffers: Plugin attempted swap "
+                           "with previous swap still pending.");
     // Already a pending SwapBuffers that hasn't returned yet.
     return PP_ERROR_INPROGRESS;
   }
@@ -89,7 +91,7 @@ void PPB_Graphics3D_Shared::UnmapTexSubImage2DCHROMIUM(const void* mem) {
 
 void PPB_Graphics3D_Shared::SwapBuffersACK(int32_t pp_error) {
   DCHECK(HasPendingSwap());
-  TrackedCallback::ClearAndRun(&swap_callback_, pp_error);
+  swap_callback_->Run(pp_error);
 }
 
 bool PPB_Graphics3D_Shared::HasPendingSwap() const {

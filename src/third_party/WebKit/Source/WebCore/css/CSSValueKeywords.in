@@ -621,6 +621,10 @@ space
 //
 // CSS_PROP__KHTML_LINE_BREAK
 //
+// auto
+loose
+// normal
+strict
 after-white-space
 
 // -webkit-appearance
@@ -771,6 +775,24 @@ step-end
 document
 reset
 
+#if defined(ENABLE_CSS_DEVICE_ADAPTATION) && ENABLE_CSS_DEVICE_ADAPTATION
+//
+// CSS_PROP_USER_ZOOM
+//
+// fixed
+zoom
+
+//
+// CSS_PROP_MIN_WIDTH
+// CSS_PROP_MAX_WIDTH
+// CSS_PROP_MIN_HEIGHT
+// CSS_PROP_MAX_HEIGHT
+//
+// auto
+device-width
+device-height
+#endif
+
 //
 // CSS_PROP_POINTER_EVENTS
 //
@@ -849,6 +871,10 @@ vertical-rl
 vertical-lr
 horizontal-bt
 
+// -webkit-ruby-position
+after
+before
+
 // -webkit-text-emphasis-position
 over
 under
@@ -873,6 +899,8 @@ farthest-corner
 // cover
 
 // -webkit-text-orientation
+sideways
+sideways-right
 upright
 vertical-right
 
@@ -892,9 +920,11 @@ off
 optimizeQuality
 -webkit-optimize-contrast
 
-// -webkit-wrap-shape
+// -webkit-shape-inside
+// -webkit-shape-outside
 nonzero
 evenodd
+outside-shape
 
 // -webkit-region-overflow
 // auto

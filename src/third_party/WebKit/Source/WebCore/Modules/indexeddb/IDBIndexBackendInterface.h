@@ -27,8 +27,7 @@
 #define IDBIndexBackendInterface_h
 
 #include <wtf/Forward.h>
-#include <wtf/ThreadSafeRefCounted.h>
-#include <wtf/text/WTFString.h>
+#include <wtf/RefCounted.h>
 
 #if ENABLE(INDEXED_DATABASE)
 
@@ -42,7 +41,7 @@ class IDBTransactionBackendInterface;
 
 typedef int ExceptionCode;
 
-class IDBIndexBackendInterface : public ThreadSafeRefCounted<IDBIndexBackendInterface> {
+class IDBIndexBackendInterface : public RefCounted<IDBIndexBackendInterface> {
 public:
     virtual ~IDBIndexBackendInterface() { }
 

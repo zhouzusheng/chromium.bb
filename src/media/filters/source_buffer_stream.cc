@@ -205,6 +205,11 @@ class SourceBufferRange {
   // Maps keyframe timestamps to its index position in |buffers_|.
   KeyframeMap keyframe_map_;
 
+  // Index base of all positions in |keyframe_map_|. In other words, the
+  // real position of entry |k| of |keyframe_map_| in the range is:
+  //   keyframe_map_[k] - keyframe_map_index_base_
+  int keyframe_map_index_base_;
+
   // Index into |buffers_| for the next buffer to be returned by
   // GetNextBuffer(), set to -1 before Seek().
   int next_buffer_index_;
@@ -286,8 +291,10 @@ static int kDefaultVideoMemoryLimit = 150 * 1024 * 1024;
 
 namespace media {
 
-SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config)
-    : current_config_index_(0),
+SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
+                                       const LogCB& log_cb)
+    : log_cb_(log_cb),
+      current_config_index_(0),
       append_config_index_(0),
       seek_pending_(false),
       seek_buffer_timestamp_(kNoTimestamp()),
@@ -304,8 +311,10 @@ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config)
   audio_configs_.back()->CopyFrom(audio_config);
 }
 
-SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config)
-    : current_config_index_(0),
+SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
+                                       const LogCB& log_cb)
+    : log_cb_(log_cb),
+      current_config_index_(0),
       append_config_index_(0),
       seek_pending_(false),
       seek_buffer_timestamp_(kNoTimestamp()),
@@ -358,19 +367,20 @@ bool SourceBufferStream::Append(
 
   // New media segments must begin with a keyframe.
   if (new_media_segment_ && !buffers.front()->IsKeyframe()) {
-    DVLOG(1) << "Media segment did not begin with keyframe.";
+    MEDIA_LOG(log_cb_) <<"Media segment did not begin with keyframe.";
     return false;
   }
 
   // Buffers within a media segment should be monotonically increasing.
   if (!IsMonotonicallyIncreasing(buffers)) {
-    DVLOG(1) << "Buffers were not monotonically increasing.";
+    MEDIA_LOG(log_cb_) <<"Buffers were not monotonically increasing.";
     return false;
   }
 
   if (media_segment_start_time_ < base::TimeDelta() ||
       buffers.front()->GetDecodeTimestamp() < base::TimeDelta()) {
-    DVLOG(1) << "Cannot append a media segment with negative timestamps.";
+    MEDIA_LOG(log_cb_)
+        << "Cannot append a media segment with negative timestamps.";
     return false;
   }
 
@@ -552,7 +562,6 @@ int SourceBufferStream::FreeBuffers(int total_bytes_to_free,
   SourceBufferRange* new_range_for_append = NULL;
 
   while (!ranges_.empty() && bytes_to_free > 0) {
-
     SourceBufferRange* current_range = NULL;
     BufferQueue buffers;
     int bytes_deleted = 0;
@@ -1037,22 +1046,27 @@ bool SourceBufferStream::UpdateAudioConfig(const AudioDecoderConfig& config) {
   DCHECK(video_configs_.empty());
 
   if (audio_configs_[0]->codec() != config.codec()) {
-    DVLOG(1) << "UpdateAudioConfig() : Codec changes not allowed.";
+    MEDIA_LOG(log_cb_) << "Audio codec changes not allowed.";
     return false;
   }
 
   if (audio_configs_[0]->samples_per_second() != config.samples_per_second()) {
-    DVLOG(1) << "UpdateAudioConfig() : Sample rate changes not allowed.";
+    MEDIA_LOG(log_cb_) << "Audio sample rate changes not allowed.";
     return false;
   }
 
   if (audio_configs_[0]->channel_layout() != config.channel_layout()) {
-    DVLOG(1) << "UpdateAudioConfig() : Channel layout changes not allowed.";
+    MEDIA_LOG(log_cb_) << "Audio channel layout changes not allowed.";
     return false;
   }
 
   if (audio_configs_[0]->bits_per_channel() != config.bits_per_channel()) {
-    DVLOG(1) << "UpdateAudioConfig() : Bits per channel changes not allowed.";
+    MEDIA_LOG(log_cb_) << "Audio bits per channel changes not allowed.";
+    return false;
+  }
+
+  if (audio_configs_[0]->is_encrypted() != config.is_encrypted()) {
+    MEDIA_LOG(log_cb_) << "Audio encryption changes not allowed.";
     return false;
   }
 
@@ -1077,12 +1091,17 @@ bool SourceBufferStream::UpdateVideoConfig(const VideoDecoderConfig& config) {
   DCHECK(audio_configs_.empty());
 
   if (video_configs_[0]->is_encrypted() != config.is_encrypted()) {
-    DVLOG(1) << "UpdateVideoConfig() : Encryption changes not allowed.";
+    MEDIA_LOG(log_cb_) <<"Video Encryption changes not allowed.";
     return false;
   }
 
   if (video_configs_[0]->codec() != config.codec()) {
-    DVLOG(1) << "UpdateVideoConfig() : Codec changes not allowed.";
+    MEDIA_LOG(log_cb_) <<"Video codec changes not allowed.";
+    return false;
+  }
+
+  if (video_configs_[0]->is_encrypted() != config.is_encrypted()) {
+    MEDIA_LOG(log_cb_) << "Video encryption changes not allowed.";
     return false;
   }
 
@@ -1117,7 +1136,8 @@ void SourceBufferStream::CompleteConfigChange() {
 SourceBufferRange::SourceBufferRange(
     const BufferQueue& new_buffers, base::TimeDelta media_segment_start_time,
     const InterbufferDistanceCB& interbuffer_distance_cb)
-    : next_buffer_index_(-1),
+    : keyframe_map_index_base_(0),
+      next_buffer_index_(-1),
       waiting_for_keyframe_(false),
       next_keyframe_timestamp_(kNoTimestamp()),
       media_segment_start_time_(media_segment_start_time),
@@ -1138,7 +1158,8 @@ void SourceBufferRange::AppendBuffersToEnd(const BufferQueue& new_buffers) {
 
     if ((*itr)->IsKeyframe()) {
       keyframe_map_.insert(
-          std::make_pair((*itr)->GetDecodeTimestamp(), buffers_.size() - 1));
+          std::make_pair((*itr)->GetDecodeTimestamp(),
+                         buffers_.size() - 1 + keyframe_map_index_base_));
 
       if (waiting_for_keyframe_ &&
           (*itr)->GetDecodeTimestamp() >= next_keyframe_timestamp_) {
@@ -1158,7 +1179,7 @@ void SourceBufferRange::Seek(base::TimeDelta timestamp) {
   waiting_for_keyframe_ = false;
 
   KeyframeMap::iterator result = GetFirstKeyframeBefore(timestamp);
-  next_buffer_index_ = result->second;
+  next_buffer_index_ = result->second - keyframe_map_index_base_;
   DCHECK_LT(next_buffer_index_, static_cast<int>(buffers_.size()));
 }
 
@@ -1185,7 +1206,7 @@ void SourceBufferRange::SeekAhead(base::TimeDelta timestamp,
     next_keyframe_timestamp_ = timestamp;
     return;
   }
-  next_buffer_index_ = result->second;
+  next_buffer_index_ = result->second - keyframe_map_index_base_;
   DCHECK_LT(next_buffer_index_, static_cast<int>(buffers_.size()));
 }
 
@@ -1207,7 +1228,8 @@ SourceBufferRange* SourceBufferRange::SplitRange(
 
   // Remove the data beginning at |keyframe_index| from |buffers_| and save it
   // into |removed_buffers|.
-  int keyframe_index = new_beginning_keyframe->second;
+  int keyframe_index =
+      new_beginning_keyframe->second - keyframe_map_index_base_;
   DCHECK_LT(keyframe_index, static_cast<int>(buffers_.size()));
   BufferQueue::iterator starting_point = buffers_.begin() + keyframe_index;
   BufferQueue removed_buffers(starting_point, buffers_.end());
@@ -1300,7 +1322,8 @@ int SourceBufferRange::DeleteGOPFromFront(BufferQueue* deleted_buffers) {
   // Now we need to delete all the buffers that depend on the keyframe we've
   // just deleted.
   int end_index = keyframe_map_.size() > 0 ?
-      keyframe_map_.begin()->second : buffers_.size();
+      keyframe_map_.begin()->second - keyframe_map_index_base_ :
+      buffers_.size();
 
   // Delete buffers from the beginning of the buffered range up until (but not
   // including) the next keyframe.
@@ -1313,12 +1336,9 @@ int SourceBufferRange::DeleteGOPFromFront(BufferQueue* deleted_buffers) {
     ++buffers_deleted;
   }
 
-  // Update indices to account for the deleted buffers.
-  for (KeyframeMap::iterator itr = keyframe_map_.begin();
-       itr != keyframe_map_.end(); ++itr) {
-    itr->second -= buffers_deleted;
-    DCHECK_GE(itr->second, 0);
-  }
+  // Update |keyframe_map_index_base_| to account for the deleted buffers.
+  keyframe_map_index_base_ += buffers_deleted;
+
   if (next_buffer_index_ > -1) {
     next_buffer_index_ -= buffers_deleted;
     DCHECK_GE(next_buffer_index_, 0);
@@ -1343,7 +1363,7 @@ int SourceBufferRange::DeleteGOPFromBack(BufferQueue* deleted_buffers) {
 
   // The index of the first buffer in the last GOP is equal to the new size of
   // |buffers_| after that GOP is deleted.
-  size_t goal_size = back->second;
+  size_t goal_size = back->second - keyframe_map_index_base_;
   keyframe_map_.erase(back);
 
   int total_bytes_deleted = 0;
@@ -1371,7 +1391,8 @@ bool SourceBufferRange::FirstGOPContainsNextBufferPosition() const {
 
   KeyframeMap::const_iterator second_gop = keyframe_map_.begin();
   ++second_gop;
-  return !waiting_for_keyframe_ && next_buffer_index_ < second_gop->second;
+  return !waiting_for_keyframe_ &&
+      next_buffer_index_ < second_gop->second - keyframe_map_index_base_;
 }
 
 bool SourceBufferRange::LastGOPContainsNextBufferPosition() const {
@@ -1384,7 +1405,8 @@ bool SourceBufferRange::LastGOPContainsNextBufferPosition() const {
 
   KeyframeMap::const_iterator last_gop = keyframe_map_.end();
   --last_gop;
-  return waiting_for_keyframe_ || last_gop->second <= next_buffer_index_;
+  return waiting_for_keyframe_ ||
+      last_gop->second - keyframe_map_index_base_ <= next_buffer_index_;
 }
 
 void SourceBufferRange::FreeBufferRange(

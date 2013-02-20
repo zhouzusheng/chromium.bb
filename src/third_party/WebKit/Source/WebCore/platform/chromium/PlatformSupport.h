@@ -31,46 +31,11 @@
 #ifndef PlatformSupport_h
 #define PlatformSupport_h
 
-#if ENABLE(WEB_AUDIO)
-#include "AudioBus.h"
-#endif
-
-#include "FileSystem.h"
-#include "ImageSource.h"
-#include "LinkHash.h"
-#include "PluginData.h"
-
 #include <wtf/Forward.h>
-#include <wtf/HashSet.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Vector.h>
-
-typedef struct NPObject NPObject;
-typedef struct _NPP NPP_t;
-typedef NPP_t* NPP;
-
-#if OS(WINDOWS)
-typedef struct HFONT__* HFONT;
-#endif
 
 namespace WebCore {
 
-class Color;
-class Cursor;
-class Document;
-class Frame;
-class GeolocationServiceBridge;
-class GeolocationServiceChromium;
-class GraphicsContext;
-class Image;
 class IDBFactoryBackendInterface;
-class IntRect;
-class KURL;
-class SerializedScriptValue;
-class Widget;
-
-struct Cookie;
-struct FontRenderStyle;
 
 // PlatformSupport an interface to the embedding layer that lets the embedder
 // supply implementations for Platform functionality that WebCore cannot access
@@ -78,47 +43,8 @@ struct FontRenderStyle;
 
 class PlatformSupport {
 public:
-    // Cookies ------------------------------------------------------------
-    static void setCookies(const Document*, const KURL&, const String& value);
-    static String cookies(const Document*, const KURL&);
-    static String cookieRequestHeaderFieldValue(const Document*, const KURL&);
-    static bool rawCookies(const Document*, const KURL&, Vector<Cookie>&);
-    static void deleteCookie(const Document*, const KURL&, const String& cookieName);
-    static bool cookiesEnabled(const Document*);
-
-    // Font ---------------------------------------------------------------
-#if OS(WINDOWS)
-    static bool ensureFontLoaded(HFONT);
-#endif
-
     // IndexedDB ----------------------------------------------------------
     static PassRefPtr<IDBFactoryBackendInterface> idbFactory();
-
-    // Plugin -------------------------------------------------------------
-    static bool plugins(bool refresh, Vector<PluginInfo>*);
-    static NPObject* pluginScriptableObject(Widget*);
-
-    // Theming ------------------------------------------------------------
-#if OS(WINDOWS)
-    static void paintButton(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&);
-    static void paintMenuList(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&);
-    static void paintScrollbarArrow(
-        GraphicsContext*, int state, int classicState, const IntRect&);
-    static void paintScrollbarThumb(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&);
-    static void paintScrollbarTrack(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&, const IntRect& alignRect);
-    static void paintSpinButton(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&);
-    static void paintTextField(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&, const Color&, bool fillContentArea, bool drawEdges);
-    static void paintTrackbar(
-        GraphicsContext*, int part, int state, int classicState, const IntRect&);
-    static void paintProgressBar(
-        GraphicsContext*, const IntRect& barRect, const IntRect& valueRect, bool determinate, double animatedSeconds);
-#endif
 };
 
 } // namespace WebCore

@@ -29,7 +29,8 @@
  */
 
 [
-    Conditional=MUTATION_OBSERVERS
+    Conditional=MUTATION_OBSERVERS,
+    V8SkipVTableValidation
 ] interface MutationRecord {
     readonly attribute DOMString type;
     readonly attribute Node target;

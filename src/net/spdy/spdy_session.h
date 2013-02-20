@@ -94,6 +94,8 @@ COMPILE_ASSERT(PROTOCOL_ERROR_UNEXPECTED_PING ==
 class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                                public BufferedSpdyFramerVisitorInterface {
  public:
+  typedef base::TimeTicks (*TimeFunc)(void);
+
   // Defines an interface for producing SpdyIOBuffers.
   class NET_EXPORT_PRIVATE SpdyIOBufferProducer {
    public:
@@ -132,6 +134,14 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
               HttpServerProperties* http_server_properties,
               bool verify_domain_authentication,
               bool enable_sending_initial_settings,
+              bool enable_credential_frames,
+              bool enable_compression,
+              bool enable_ping_based_connection_checking,
+              NextProto default_protocol_,
+              size_t initial_recv_window_size,
+              size_t initial_max_concurrent_streams,
+              size_t max_concurrent_streams_limit,
+              TimeFunc time_func,
               const HostPortPair& trusted_spdy_proxy,
               NetLog* net_log);
 
@@ -249,30 +259,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // if server bound certs are not supported in this session.
   ServerBoundCertService* GetServerBoundCertService() const;
 
-  // Reset all static settings to initialized values. Used to init test suite.
-  static void ResetStaticSettingsToInit();
-
-  // Specify the SPDY protocol to be used for SPDY session which do not use NPN
-  // to negotiate a particular protocol.
-  static void set_default_protocol(NextProto default_protocol);
-
-  // Sets the max concurrent streams per session, as a ceiling on any server
-  // specific SETTINGS value.
-  static void set_max_concurrent_streams(size_t value);
-
-  // Enable sending of PING frame with each request.
-  static void set_enable_ping_based_connection_checking(bool enable);
-
-  // Enable the sending of CREDENTIAL frames.
-  static void set_enable_credential_frames(bool enable);
-
-  // The initial max concurrent streams per session, can be overridden by the
-  // server via SETTINGS.
-  static void set_init_max_concurrent_streams(size_t value);
-
-  // Sets the initial receive window size for newly created sessions.
-  static void set_default_initial_recv_window_size(size_t value);
-
   // Send WINDOW_UPDATE frame, called by a stream whenever receive window
   // size is increased.
   void SendWindowUpdate(SpdyStreamId stream_id, int32 delta_window_size);
@@ -321,6 +307,11 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       return unclaimed_pushed_streams_.size();
   }
   size_t num_created_streams() const { return created_streams_.size(); }
+
+  size_t pending_create_stream_queues(int priority) {
+    DCHECK_LT(priority, NUM_PRIORITIES);
+    return pending_create_stream_queues_[priority].size();
+  }
 
   // Returns true if flow control is enabled for the session.
   bool is_flow_control_enabled() const {
@@ -424,8 +415,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
     CONNECTED,
     CLOSED
   };
-
-  typedef base::TimeTicks (*TimeFunc)(void);
 
   virtual ~SpdySession();
 
@@ -560,8 +549,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Helper methods for testing
   // --------------------------
 
-  static TimeFunc set_time_func(TimeFunc new_time_func);
-
   void set_connection_at_risk_of_loss_time(base::TimeDelta duration) {
     connection_at_risk_of_loss_time_ = duration;
   }
@@ -616,7 +603,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   // Queue, for each priority, of pending Create Streams that have not
   // yet been satisfied
-  PendingCreateStreamQueue create_stream_queues_[NUM_PRIORITIES];
+  PendingCreateStreamQueue pending_create_stream_queues_[NUM_PRIORITIES];
 
   // Map from stream id to all active streams.  Streams are active in the sense
   // that they have a consumer (typically SpdyNetworkTransaction and regardless
@@ -666,6 +653,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   // Limits
   size_t max_concurrent_streams_;  // 0 if no limit
+  size_t max_concurrent_streams_limit_;
 
   // Some statistics counters for the session.
   int streams_initiated_count_;
@@ -717,6 +705,10 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Outside of tests, these should always be true.
   bool verify_domain_authentication_;
   bool enable_sending_initial_settings_;
+  bool enable_credential_frames_;
+  bool enable_compression_;
+  bool enable_ping_based_connection_checking_;
+  NextProto default_protocol_;
 
   SpdyCredentialState credential_state_;
 
@@ -745,6 +737,8 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // This SPDY proxy is allowed to push resources from origins that are
   // different from those of their associated streams.
   HostPortPair trusted_spdy_proxy_;
+
+  TimeFunc time_func_;
 };
 
 }  // namespace net

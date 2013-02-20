@@ -111,6 +111,11 @@ public:
     static Vector<char> encode();
 };
 
+class DataVersionKey {
+public:
+    static Vector<char> encode();
+};
+
 class DatabaseFreeListKey {
 public:
     DatabaseFreeListKey();
@@ -146,7 +151,8 @@ public:
         DatabaseName = 1,
         UserVersion = 2,
         MaxObjectStoreId = 3,
-        UserIntVersion = 4
+        UserIntVersion = 4,
+        MaxSimpleMetaDataType = 5
     };
 
     static Vector<char> encode(int64_t databaseId, MetaDataType);

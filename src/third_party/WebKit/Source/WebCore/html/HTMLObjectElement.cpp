@@ -41,6 +41,7 @@
 #include "HTMLParserIdioms.h"
 #include "MIMETypeRegistry.h"
 #include "NodeList.h"
+#include "NodeTraversal.h"
 #include "Page.h"
 #include "PluginViewBase.h"
 #include "RenderEmbeddedObject.h"
@@ -86,27 +87,27 @@ bool HTMLObjectElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLPlugInImageElement::isPresentationAttribute(name);
 }
 
-void HTMLObjectElement::collectStyleForAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLObjectElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
 {
     if (attribute.name() == borderAttr)
         applyBorderAttributeToStyle(attribute, style);
     else
-        HTMLPlugInImageElement::collectStyleForAttribute(attribute, style);
+        HTMLPlugInImageElement::collectStyleForPresentationAttribute(attribute, style);
 }
 
-void HTMLObjectElement::parseAttribute(const Attribute& attribute)
+void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (attribute.name() == formAttr)
+    if (name == formAttr)
         formAttributeChanged();
-    else if (attribute.name() == typeAttr) {
-        m_serviceType = attribute.value().lower();
+    else if (name == typeAttr) {
+        m_serviceType = value.lower();
         size_t pos = m_serviceType.find(";");
         if (pos != notFound)
             m_serviceType = m_serviceType.left(pos);
         if (renderer())
             setNeedsWidgetUpdate(true);
-    } else if (attribute.name() == dataAttr) {
-        m_url = stripLeadingAndTrailingHTMLSpaces(attribute.value());
+    } else if (name == dataAttr) {
+        m_url = stripLeadingAndTrailingHTMLSpaces(value);
         if (renderer()) {
             setNeedsWidgetUpdate(true);
             if (isImageType()) {
@@ -115,16 +116,16 @@ void HTMLObjectElement::parseAttribute(const Attribute& attribute)
                 m_imageLoader->updateFromElementIgnoringPreviousError();
             }
         }
-    } else if (attribute.name() == classidAttr) {
-        m_classId = attribute.value();
+    } else if (name == classidAttr) {
+        m_classId = value;
         if (renderer())
             setNeedsWidgetUpdate(true);
-    } else if (attribute.name() == onloadAttr)
-        setAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(this, attribute));
-    else if (attribute.name() == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, attribute));
+    } else if (name == onloadAttr)
+        setAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(this, name, value));
+    else if (name == onbeforeloadAttr)
+        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
     else
-        HTMLPlugInImageElement::parseAttribute(attribute);
+        HTMLPlugInImageElement::parseAttribute(name, value);
 }
 
 static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramValues)
@@ -282,7 +283,13 @@ void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
     if (!isFinishedParsingChildren())
         return;
-    
+
+    // FIXME: I'm not sure it's ever possible to get into updateWidget during a
+    // removal, but just in case we should avoid loading the frame to prevent
+    // security bugs.
+    if (!SubframeLoadingDisabler::canLoadFrame(this))
+        return;
+
     String url = this->url();
     String serviceType = this->serviceType();
 
@@ -451,7 +458,7 @@ bool HTMLObjectElement::containsJavaApplet() const
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
         
-    for (Element* child = firstElementChild(); child; child = child->nextElementSibling()) {
+    for (Element* child = ElementTraversal::firstWithin(this); child; child = ElementTraversal::nextSkippingChildren(child, this)) {
         if (child->hasTagName(paramTag)
                 && equalIgnoringCase(child->getNameAttribute(), "type")
                 && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))

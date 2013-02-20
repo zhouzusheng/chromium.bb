@@ -29,6 +29,7 @@
 #include "ElementRareData.h"
 #include "ElementShadow.h"
 #include "NodeRareData.h"
+#include "NodeTraversal.h"
 #include "RenderStyle.h"
 #include "ShadowRoot.h"
 
@@ -48,16 +49,15 @@ void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
     if (oldDocument && willMoveToNewDocument)
         oldDocument->incDOMTreeVersion();
 
-    for (Node* node = root; node; node = node->traverseNextNode(root)) {
-        if (NodeRareData* rareData = node->setTreeScope(newDocument == m_newScope ? 0 : m_newScope)) {
-            if (rareData->nodeLists())
-                rareData->nodeLists()->adoptTreeScope(oldDocument, newDocument);
-            if (node->isElementNode())
-                static_cast<ElementRareData*>(rareData)->adoptTreeScope(oldDocument, newDocument);
-        }
-
+    for (Node* node = root; node; node = NodeTraversal::next(node, root)) {
+        node->setTreeScope(m_newScope);
         if (willMoveToNewDocument)
             moveNodeToNewDocument(node, oldDocument, newDocument);
+        else if (node->hasRareData()) {
+            NodeRareData* rareData = node->rareData();
+            if (rareData->nodeLists())
+                rareData->nodeLists()->adoptTreeScope();
+        }
 
         for (ShadowRoot* shadow = node->youngestShadowRoot(); shadow; shadow = shadow->olderShadowRoot()) {
             shadow->setParentTreeScope(m_newScope);
@@ -69,7 +69,7 @@ void TreeScopeAdopter::moveTreeToNewScope(Node* root) const
 
 void TreeScopeAdopter::moveTreeToNewDocument(Node* root, Document* oldDocument, Document* newDocument) const
 {
-    for (Node* node = root; node; node = node->traverseNextNode(root)) {
+    for (Node* node = root; node; node = NodeTraversal::next(node, root)) {
         moveNodeToNewDocument(node, oldDocument, newDocument);
         for (ShadowRoot* shadow = node->youngestShadowRoot(); shadow; shadow = shadow->olderShadowRoot())
             moveTreeToNewDocument(shadow, oldDocument, newDocument);
@@ -91,6 +91,12 @@ void TreeScopeAdopter::ensureDidMoveToNewDocumentWasCalled(Document* oldDocument
 inline void TreeScopeAdopter::moveNodeToNewDocument(Node* node, Document* oldDocument, Document* newDocument) const
 {
     ASSERT(!node->inDocument() || oldDocument != newDocument);
+
+    if (node->hasRareData()) {
+        NodeRareData* rareData = node->rareData();
+        if (rareData->nodeLists())
+            rareData->nodeLists()->adoptDocument(oldDocument, newDocument);
+    }
 
     newDocument->guardRef();
     if (oldDocument)

@@ -104,7 +104,7 @@ PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClien
 }
 #endif
 
-#if ENABLE(CALENDAR_PICKER)
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
 PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
     return PassRefPtr<DateTimeChooser>();
@@ -192,6 +192,12 @@ PassOwnPtr<ContextMenu> EmptyContextMenuClient::customizeMenu(PassOwnPtr<Context
     return nullptr;
 }
 #endif
+#endif
+
+#if ENABLE(REQUEST_AUTOCOMPLETE)
+void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)
+{
+}
 #endif
 
 }

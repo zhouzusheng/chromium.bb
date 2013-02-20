@@ -16,16 +16,11 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
-      'all_dependent_settings': {
-        'include_dirs': [
-          # For GLES2/gl2.h
-          '<(DEPTH)/third_party/khronos',
-        ],
-      },
       'defines': [
         'GLES2_IMPL_IMPLEMENTATION',
       ],
@@ -43,16 +38,11 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
-      'all_dependent_settings': {
-        'include_dirs': [
-          # For GLES2/gl2.h
-          '<(DEPTH)/third_party/khronos',
-        ],
-      },
       'sources': [
         '<@(gles2_implementation_source_files)',
       ],
@@ -68,15 +58,10 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../third_party/khronos/khronos.gyp:khronos_headers',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
-      'all_dependent_settings': {
-        'include_dirs': [
-          # For GLES2/gl2.h
-          '<(DEPTH)/third_party/khronos',
-        ],
-      },
       'sources': [
         '<@(gles2_implementation_source_files)',
       ],
@@ -145,6 +130,7 @@
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
+        'command_buffer/client/buffer_tracker_unittest.cc',
         'command_buffer/client/client_test_helper.cc',
         'command_buffer/client/client_test_helper.h',
         'command_buffer/client/cmd_buffer_helper_test.cc',
@@ -157,6 +143,7 @@
         'command_buffer/client/program_info_manager_unittest.cc',
         'command_buffer/client/ring_buffer_test.cc',
         'command_buffer/client/transfer_buffer_unittest.cc',
+        'command_buffer/client/vertex_array_object_manager_unittest.cc',
         'command_buffer/common/bitfield_helpers_test.cc',
         'command_buffer/common/command_buffer_mock.cc',
         'command_buffer/common/command_buffer_mock.h',
@@ -168,6 +155,8 @@
         'command_buffer/common/id_allocator_test.cc',
         'command_buffer/common/trace_event.h',
         'command_buffer/common/unittest_main.cc',
+        'command_buffer/service/async_pixel_transfer_delegate_mock.h',
+        'command_buffer/service/async_pixel_transfer_delegate_mock.cc',
         'command_buffer/service/buffer_manager_unittest.cc',
         'command_buffer/service/cmd_parser_test.cc',
         'command_buffer/service/command_buffer_service_unittest.cc',
@@ -245,18 +234,23 @@
       'sources': [
         '<@(gles2_c_lib_source_files)',
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
+        'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
         'command_buffer/tests/gl_query_unittests.cc',
+        'command_buffer/tests/gl_lose_context_chromium_unittests.cc',
         'command_buffer/tests/gl_manager.cc',
         'command_buffer/tests/gl_manager.h',
         'command_buffer/tests/gl_pointcoord_unittest.cc',
         'command_buffer/tests/gl_program_unittests.cc',
+        'command_buffer/tests/gl_shared_resources_unittests.cc',
         'command_buffer/tests/gl_tests_main.cc',
         'command_buffer/tests/gl_test_utils.cc',
         'command_buffer/tests/gl_test_utils.h',
         'command_buffer/tests/gl_texture_mailbox_unittests.cc',
+        'command_buffer/tests/gl_texture_storage_unittests.cc',
         'command_buffer/tests/gl_unittests.cc',
+        'command_buffer/tests/gl_virtual_contexts_unittests.cc',
         'command_buffer/tests/occlusion_query_unittests.cc',
       ],
     },
@@ -266,15 +260,13 @@
       'dependencies': [
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '../ui/gl/gl.gyp:gl',
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+        '../ui/gl/gl.gyp:gl_unittest_utils',
       ],
       'include_dirs': [
         '..',
-        '<(DEPTH)/third_party/khronos',
       ],
       'sources': [
-        'command_buffer/common/gl_mock.h',
-        'command_buffer/common/gl_mock.cc',
         'command_buffer/service/gles2_cmd_decoder_mock.cc',
         'command_buffer/service/gles2_cmd_decoder_mock.cc',
       ],

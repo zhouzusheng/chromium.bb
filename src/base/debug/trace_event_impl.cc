@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/debug/leak_annotations.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
@@ -69,50 +68,6 @@ int g_category_index = 3; // skip initial 3 categories
 // The most-recently captured name of the current thread
 LazyInstance<ThreadLocalPointer<const char> >::Leaky
     g_current_thread_name = LAZY_INSTANCE_INITIALIZER;
-
-void AppendValueAsJSON(unsigned char type,
-                       TraceEvent::TraceValue value,
-                       std::string* out) {
-  std::string::size_type start_pos;
-  switch (type) {
-    case TRACE_VALUE_TYPE_BOOL:
-      *out += value.as_bool ? "true" : "false";
-      break;
-    case TRACE_VALUE_TYPE_UINT:
-      StringAppendF(out, "%" PRIu64, static_cast<uint64>(value.as_uint));
-      break;
-    case TRACE_VALUE_TYPE_INT:
-      StringAppendF(out, "%" PRId64, static_cast<int64>(value.as_int));
-      break;
-    case TRACE_VALUE_TYPE_DOUBLE:
-      StringAppendF(out, "%f", value.as_double);
-      break;
-    case TRACE_VALUE_TYPE_POINTER:
-      // JSON only supports double and int numbers.
-      // So as not to lose bits from a 64-bit pointer, output as a hex string.
-      StringAppendF(out, "\"%" PRIx64 "\"", static_cast<uint64>(
-                                     reinterpret_cast<intptr_t>(
-                                     value.as_pointer)));
-      break;
-    case TRACE_VALUE_TYPE_STRING:
-    case TRACE_VALUE_TYPE_COPY_STRING:
-      *out += "\"";
-      start_pos = out->size();
-      *out += value.as_string ? value.as_string : "NULL";
-      // insert backslash before special characters for proper json format.
-      while ((start_pos = out->find_first_of("\\\"", start_pos)) !=
-             std::string::npos) {
-        out->insert(start_pos, 1, '\\');
-        // skip inserted escape character and following character.
-        start_pos += 2;
-      }
-      *out += "\"";
-      break;
-    default:
-      NOTREACHED() << "Don't know how to print this value";
-      break;
-  }
-}
 
 }  // namespace
 
@@ -223,6 +178,51 @@ TraceEvent::TraceEvent(int thread_id,
 }
 
 TraceEvent::~TraceEvent() {
+}
+
+// static
+void TraceEvent::AppendValueAsJSON(unsigned char type,
+                                   TraceEvent::TraceValue value,
+                                   std::string* out) {
+  std::string::size_type start_pos;
+  switch (type) {
+    case TRACE_VALUE_TYPE_BOOL:
+      *out += value.as_bool ? "true" : "false";
+      break;
+    case TRACE_VALUE_TYPE_UINT:
+      StringAppendF(out, "%" PRIu64, static_cast<uint64>(value.as_uint));
+      break;
+    case TRACE_VALUE_TYPE_INT:
+      StringAppendF(out, "%" PRId64, static_cast<int64>(value.as_int));
+      break;
+    case TRACE_VALUE_TYPE_DOUBLE:
+      StringAppendF(out, "%f", value.as_double);
+      break;
+    case TRACE_VALUE_TYPE_POINTER:
+      // JSON only supports double and int numbers.
+      // So as not to lose bits from a 64-bit pointer, output as a hex string.
+      StringAppendF(out, "\"%" PRIx64 "\"", static_cast<uint64>(
+                                     reinterpret_cast<intptr_t>(
+                                     value.as_pointer)));
+      break;
+    case TRACE_VALUE_TYPE_STRING:
+    case TRACE_VALUE_TYPE_COPY_STRING:
+      *out += "\"";
+      start_pos = out->size();
+      *out += value.as_string ? value.as_string : "NULL";
+      // insert backslash before special characters for proper json format.
+      while ((start_pos = out->find_first_of("\\\"", start_pos)) !=
+             std::string::npos) {
+        out->insert(start_pos, 1, '\\');
+        // skip inserted escape character and following character.
+        start_pos += 2;
+      }
+      *out += "\"";
+      break;
+    default:
+      NOTREACHED() << "Don't know how to print this value";
+      break;
+  }
 }
 
 void TraceEvent::AppendEventsAsJSON(const std::vector<TraceEvent>& events,
@@ -395,7 +395,8 @@ const char* TraceLog::GetCategoryName(const unsigned char* category_enabled) {
 
 static void EnableMatchingCategory(int category_index,
                                    const std::vector<std::string>& patterns,
-                                   unsigned char is_included) {
+                                   unsigned char matched_value,
+                                   unsigned char unmatched_value) {
   std::vector<std::string>::const_iterator ci = patterns.begin();
   bool is_match = false;
   for (; ci != patterns.end(); ++ci) {
@@ -404,53 +405,67 @@ static void EnableMatchingCategory(int category_index,
       break;
   }
   g_category_enabled[category_index] = is_match ?
-      is_included : (is_included ^ 1);
+      matched_value : unmatched_value;
 }
 
 // Enable/disable each category based on the category filters in |patterns|.
 // If the category name matches one of the patterns, its enabled status is set
-// to |is_included|. Otherwise its enabled status is set to !|is_included|.
+// to |matched_value|. Otherwise its enabled status is set to |unmatched_value|.
 static void EnableMatchingCategories(const std::vector<std::string>& patterns,
-                                     unsigned char is_included) {
+                                     unsigned char matched_value,
+                                     unsigned char unmatched_value) {
   for (int i = 0; i < g_category_index; i++)
-    EnableMatchingCategory(i, patterns, is_included);
+    EnableMatchingCategory(i, patterns, matched_value, unmatched_value);
 }
 
 const unsigned char* TraceLog::GetCategoryEnabledInternal(const char* name) {
   AutoLock lock(lock_);
   DCHECK(!strchr(name, '"')) << "Category names may not contain double quote";
 
+  unsigned char* category_enabled = NULL;
   // Search for pre-existing category matching this name
   for (int i = 0; i < g_category_index; i++) {
-    if (strcmp(g_categories[i], name) == 0)
-      return &g_category_enabled[i];
+    if (strcmp(g_categories[i], name) == 0) {
+      category_enabled = &g_category_enabled[i];
+      break;
+    }
   }
 
-  // Create a new category
-  DCHECK(g_category_index < TRACE_EVENT_MAX_CATEGORIES) <<
-      "must increase TRACE_EVENT_MAX_CATEGORIES";
-  if (g_category_index < TRACE_EVENT_MAX_CATEGORIES) {
-    int new_index = g_category_index++;
-    // Don't hold on to the name pointer, so that we can create categories with
-    // strings not known at compile time (this is required by SetWatchEvent).
-    const char* new_name = base::strdup(name);
-    ANNOTATE_LEAKING_OBJECT_PTR(new_name);
-    g_categories[new_index] = new_name;
-    DCHECK(!g_category_enabled[new_index]);
-    if (enabled_) {
-      // Note that if both included and excluded_categories are empty, the else
-      // clause below excludes nothing, thereby enabling this category.
-      if (!included_categories_.empty())
-        EnableMatchingCategory(new_index, included_categories_, 1);
-      else
-        EnableMatchingCategory(new_index, excluded_categories_, 0);
+  if (!category_enabled) {
+    // Create a new category
+    DCHECK(g_category_index < TRACE_EVENT_MAX_CATEGORIES) <<
+        "must increase TRACE_EVENT_MAX_CATEGORIES";
+    if (g_category_index < TRACE_EVENT_MAX_CATEGORIES) {
+      int new_index = g_category_index++;
+      // Don't hold on to the name pointer, so that we can create categories
+      // with strings not known at compile time (this is required by
+      // SetWatchEvent).
+      const char* new_name = base::strdup(name);
+      ANNOTATE_LEAKING_OBJECT_PTR(new_name);
+      g_categories[new_index] = new_name;
+      DCHECK(!g_category_enabled[new_index]);
+      if (enabled_) {
+        // Note that if both included and excluded_categories are empty, the
+        // else clause below excludes nothing, thereby enabling this category.
+        if (!included_categories_.empty()) {
+          EnableMatchingCategory(new_index, included_categories_,
+                                 CATEGORY_ENABLED, 0);
+        } else {
+          EnableMatchingCategory(new_index, excluded_categories_,
+                                 0, CATEGORY_ENABLED);
+        }
+      } else {
+        g_category_enabled[new_index] = 0;
+      }
+      category_enabled = &g_category_enabled[new_index];
     } else {
-      g_category_enabled[new_index] = 0;
+      category_enabled = &g_category_enabled[g_category_categories_exhausted];
     }
-    return &g_category_enabled[new_index];
-  } else {
-    return &g_category_enabled[g_category_categories_exhausted];
   }
+#if defined(OS_ANDROID)
+  ApplyATraceEnabledFlag(category_enabled);
+#endif
+  return category_enabled;
 }
 
 void TraceLog::GetKnownCategories(std::vector<std::string>* categories) {
@@ -483,9 +498,9 @@ void TraceLog::SetEnabled(const std::vector<std::string>& included_categories,
   // Note that if both included and excluded_categories are empty, the else
   // clause below excludes nothing, thereby enabling all categories.
   if (!included_categories_.empty())
-    EnableMatchingCategories(included_categories_, 1);
+    EnableMatchingCategories(included_categories_, CATEGORY_ENABLED, 0);
   else
-    EnableMatchingCategories(excluded_categories_, 0);
+    EnableMatchingCategories(excluded_categories_, 0, CATEGORY_ENABLED);
 }
 
 void TraceLog::SetEnabled(const std::string& categories) {
@@ -543,7 +558,9 @@ void TraceLog::SetDisabled() {
   for (int i = 0; i < g_category_index; i++)
     g_category_enabled[i] = 0;
   AddThreadNameMetadataEvents();
+#if defined(OS_ANDROID)
   AddClockSyncMetadataEvents();
+#endif
 }
 
 void TraceLog::SetEnabled(bool enabled) {
@@ -592,7 +609,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
   }
 }
 
-int TraceLog::AddTraceEvent(char phase,
+void TraceLog::AddTraceEvent(char phase,
                             const unsigned char* category_enabled,
                             const char* name,
                             unsigned long long id,
@@ -600,19 +617,22 @@ int TraceLog::AddTraceEvent(char phase,
                             const char** arg_names,
                             const unsigned char* arg_types,
                             const unsigned long long* arg_values,
-                            int threshold_begin_id,
-                            long long threshold,
                             unsigned char flags) {
   DCHECK(name);
-  TimeTicks now = TimeTicks::NowFromSystemTraceTime();
+
+#if defined(OS_ANDROID)
+  SendToATrace(phase, GetCategoryName(category_enabled), name,
+               num_args, arg_names, arg_types, arg_values);
+#endif
+
+  TimeTicks now = TimeTicks::NowFromSystemTraceTime() - time_offset_;
   NotificationHelper notifier(this);
-  int ret_begin_id = -1;
   {
     AutoLock lock(lock_);
-    if (!*category_enabled)
-      return -1;
+    if (*category_enabled != CATEGORY_ENABLED)
+      return;
     if (logged_events_.size() >= kTraceEventBufferSize)
-      return -1;
+      return;
 
     int thread_id = static_cast<int>(PlatformThread::CurrentId());
 
@@ -644,27 +664,9 @@ int TraceLog::AddTraceEvent(char phase,
       }
     }
 
-    if (threshold_begin_id > -1) {
-      DCHECK(phase == TRACE_EVENT_PHASE_END);
-      size_t begin_i = static_cast<size_t>(threshold_begin_id);
-      // Return now if there has been a flush since the begin event was posted.
-      if (begin_i >= logged_events_.size())
-        return -1;
-      // Determine whether to drop the begin/end pair.
-      TimeDelta elapsed = now - logged_events_[begin_i].timestamp();
-      if (elapsed < TimeDelta::FromMicroseconds(threshold)) {
-        // Remove begin event and do not add end event.
-        // This will be expensive if there have been other events in the
-        // mean time (should be rare).
-        logged_events_.erase(logged_events_.begin() + begin_i);
-        return -1;
-      }
-    }
-
     if (flags & TRACE_EVENT_FLAG_MANGLE_ID)
       id ^= process_id_hash_;
 
-    ret_begin_id = static_cast<int>(logged_events_.size());
     logged_events_.push_back(
         TraceEvent(thread_id,
                    now, phase, category_enabled, name, id,
@@ -679,8 +681,6 @@ int TraceLog::AddTraceEvent(char phase,
   }  // release lock
 
   notifier.SendNotificationIfAny();
-
-  return ret_begin_id;
 }
 
 void TraceLog::AddTraceEventEtw(char phase,
@@ -741,45 +741,6 @@ void TraceLog::CancelWatchEvent() {
   watch_event_name_ = "";
 }
 
-void TraceLog::AddClockSyncMetadataEvents() {
-#if defined(OS_ANDROID)
-  // Since Android does not support sched_setaffinity, we cannot establish clock
-  // sync unless the scheduler clock is set to global. If the trace_clock file
-  // can't be read, we will assume the kernel doesn't support tracing and do
-  // nothing.
-  std::string clock_mode;
-  if (!file_util::ReadFileToString(
-          FilePath("/sys/kernel/debug/tracing/trace_clock"),
-          &clock_mode))
-    return;
-
-  if (clock_mode != "local [global]\n") {
-    DLOG(WARNING) <<
-        "The kernel's tracing clock must be set to global in order for " <<
-        "trace_event to be synchronized with . Do this by\n" <<
-        "  echo global > /sys/kerel/debug/tracing/trace_clock";
-    return;
-  }
-
-  // Android's kernel trace system has a trace_marker feature: this is a file on
-  // debugfs that takes the written data and pushes it onto the trace
-  // buffer. So, to establish clock sync, we write our monotonic clock into that
-  // trace buffer.
-  TimeTicks now = TimeTicks::NowFromSystemTraceTime();
-
-  double now_in_seconds = now.ToInternalValue() / 1000000.0;
-  std::string marker =
-      StringPrintf("trace_event_clock_sync: parent_ts=%f\n",
-                   now_in_seconds);
-  if (file_util::WriteFile(
-          FilePath("/sys/kernel/debug/tracing/trace_marker"),
-          marker.c_str(), marker.size()) == -1) {
-    DLOG(WARNING) << "Couldn't write to /sys/kernel/debug/tracing/trace_marker";
-    return;
-  }
-#endif
-}
-
 void TraceLog::AddThreadNameMetadataEvents() {
   lock_.AssertAcquired();
   for(base::hash_map<int, std::string>::iterator it = thread_names_.begin();
@@ -818,6 +779,10 @@ void TraceLog::SetProcessID(int process_id) {
   unsigned long long fnv_prime = 1099511628211ull;
   unsigned long long pid = static_cast<unsigned long long>(process_id_);
   process_id_hash_ = (offset_basis ^ pid) * fnv_prime;
+}
+
+void TraceLog::SetTimeOffset(TimeDelta offset) {
+  time_offset_ = offset;
 }
 
 }  // namespace debug

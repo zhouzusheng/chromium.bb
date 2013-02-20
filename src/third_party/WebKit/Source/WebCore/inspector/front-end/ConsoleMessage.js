@@ -76,6 +76,10 @@ WebInspector.ConsoleMessageImpl.prototype = {
                 case WebInspector.ConsoleMessage.MessageType.Trace:
                     this._messageElement = document.createTextNode("console.trace()");
                     break;
+                case WebInspector.ConsoleMessage.MessageType.Clear:
+                    this._messageElement = document.createTextNode(WebInspector.UIString("Console was cleared"));
+                    this._formattedMessage.addStyleClass("console-info");
+                    break;
                 case WebInspector.ConsoleMessage.MessageType.Assert:
                     var args = [WebInspector.UIString("Assertion failed:")];
                     if (this._parameters)
@@ -345,14 +349,9 @@ WebInspector.ConsoleMessageImpl.prototype = {
             return;
         }
 
-        if (property.type === "object" && property.subtype === "node") {
+        if (property.type === "object" && property.subtype === "node" && property.value) {
             span.addStyleClass("console-formatted-preview-node");
-            var match = property.value.match(/([^#.]+)(#[^.]+)?(\..*)?/);
-            span.createChild("span", "webkit-html-tag-name").textContent = match[1];
-            if (match[2])
-                span.createChild("span", "webkit-html-attribute-value").textContent = match[2];
-            if (match[3])
-                span.createChild("span", "webkit-html-attribute-name").textContent = match[3];
+            WebInspector.DOMPresentationUtils.createSpansForNodeTitle(span, property.value);
             return;
         }
 
@@ -381,9 +380,18 @@ WebInspector.ConsoleMessageImpl.prototype = {
         object.pushNodeToFrontend(printNode.bind(this));
     },
 
+    /**
+     * @param {WebInspector.RemoteObject} array
+     * @return {boolean}
+     */
+    useArrayPreviewInFormatter: function(array)
+    {
+        return this.type !== WebInspector.ConsoleMessage.MessageType.DirXML && !!array.preview;
+    },
+
     _formatParameterAsArray: function(array, elem)
     {
-        if (array.preview) {
+        if (this.useArrayPreviewInFormatter(array)) {
             this._formatParameterAsArrayOrObject(array, "", elem, true);
             return;
         }
@@ -468,19 +476,35 @@ WebInspector.ConsoleMessageImpl.prototype = {
             return this._formatParameter(obj, force, false);
         }
 
-        function valueFormatter(obj)
+        function stringFormatter(obj)
         {
             return obj.description;
         }
 
+        function floatFormatter(obj)
+        {
+            if (typeof obj.value !== "number")
+                return "NaN";
+            return obj.value;
+        }
+
+        function integerFormatter(obj)
+        {
+            if (typeof obj.value !== "number")
+                return "NaN";
+            return Math.floor(obj.value);
+        }
+
+        var currentStyle = null;
         function styleFormatter(obj)
         {
+            currentStyle = {};
             var buffer = document.createElement("span");
             buffer.setAttribute("style", obj.description);
             for (var i = 0; i < buffer.style.length; i++) {
                 var property = buffer.style[i];
                 if (isWhitelistedProperty(property))
-                    formattedResult.style[property] = buffer.style[property];
+                    currentStyle[property] = buffer.style[property];
             }
         }
 
@@ -496,11 +520,11 @@ WebInspector.ConsoleMessageImpl.prototype = {
 
         // Firebug uses %o for formatting objects.
         formatters.o = parameterFormatter.bind(this, false);
-        formatters.s = valueFormatter;
-        formatters.f = valueFormatter;
+        formatters.s = stringFormatter;
+        formatters.f = floatFormatter;
         // Firebug allows both %i and %d for formatting integers.
-        formatters.i = valueFormatter;
-        formatters.d = valueFormatter;
+        formatters.i = integerFormatter;
+        formatters.d = integerFormatter;
 
         // Firebug uses %c for styling the message.
         formatters.c = styleFormatter;
@@ -512,8 +536,17 @@ WebInspector.ConsoleMessageImpl.prototype = {
         {
             if (b instanceof Node)
                 a.appendChild(b);
-            else if (b)
-                a.appendChild(WebInspector.linkifyStringAsFragment(b.toString()));
+            else if (b) {
+                var toAppend = WebInspector.linkifyStringAsFragment(b.toString());
+                if (currentStyle) {
+                    var wrapper = document.createElement('span');
+                    for (var key in currentStyle)
+                        wrapper.style[key] = currentStyle[key];
+                    wrapper.appendChild(toAppend);
+                    toAppend = wrapper;
+                }
+                a.appendChild(toAppend);
+            }
             return a;
         }
 
@@ -577,21 +610,21 @@ WebInspector.ConsoleMessageImpl.prototype = {
         this._element = element;
 
         switch (this.level) {
-            case WebInspector.ConsoleMessage.MessageLevel.Tip:
-                element.addStyleClass("console-tip-level");
-                break;
-            case WebInspector.ConsoleMessage.MessageLevel.Log:
-                element.addStyleClass("console-log-level");
-                break;
-            case WebInspector.ConsoleMessage.MessageLevel.Debug:
-                element.addStyleClass("console-debug-level");
-                break;
-            case WebInspector.ConsoleMessage.MessageLevel.Warning:
-                element.addStyleClass("console-warning-level");
-                break;
-            case WebInspector.ConsoleMessage.MessageLevel.Error:
-                element.addStyleClass("console-error-level");
-                break;
+        case WebInspector.ConsoleMessage.MessageLevel.Tip:
+            element.addStyleClass("console-tip-level");
+            break;
+        case WebInspector.ConsoleMessage.MessageLevel.Log:
+            element.addStyleClass("console-log-level");
+            break;
+        case WebInspector.ConsoleMessage.MessageLevel.Debug:
+            element.addStyleClass("console-debug-level");
+            break;
+        case WebInspector.ConsoleMessage.MessageLevel.Warning:
+            element.addStyleClass("console-warning-level");
+            break;
+        case WebInspector.ConsoleMessage.MessageLevel.Error:
+            element.addStyleClass("console-error-level");
+            break;
         }
 
         if (this.type === WebInspector.ConsoleMessage.MessageType.StartGroup || this.type === WebInspector.ConsoleMessage.MessageType.StartGroupCollapsed)

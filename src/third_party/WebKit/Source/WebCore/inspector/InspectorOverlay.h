@@ -31,7 +31,7 @@
 
 #include "Color.h"
 #include "FloatQuad.h"
-#include "LayoutTypes.h"
+#include "LayoutRect.h"
 
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -121,6 +121,7 @@ public:
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
+    void freePage();
 private:
     InspectorOverlay(Page*, InspectorClient*);
 

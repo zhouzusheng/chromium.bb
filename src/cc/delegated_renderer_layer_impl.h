@@ -2,27 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCDelegatedRendererLayerImpl_h
-#define CCDelegatedRendererLayerImpl_h
+#ifndef CC_DELEGATED_RENDERER_LAYER_IMPL_H_
+#define CC_DELEGATED_RENDERER_LAYER_IMPL_H_
 
+#include "cc/cc_export.h"
 #include "cc/layer_impl.h"
 #include "cc/scoped_ptr_vector.h"
 
 namespace cc {
 
-class DelegatedRendererLayerImpl : public LayerImpl {
+class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
 public:
-    static scoped_ptr<DelegatedRendererLayerImpl> create(int id) { return make_scoped_ptr(new DelegatedRendererLayerImpl(id)); }
+    static scoped_ptr<DelegatedRendererLayerImpl> create(LayerTreeImpl* treeImpl, int id) { return make_scoped_ptr(new DelegatedRendererLayerImpl(treeImpl, id)); }
     virtual ~DelegatedRendererLayerImpl();
 
-    virtual bool descendantDrawsContent() OVERRIDE;
+    virtual bool hasDelegatedContent() const OVERRIDE;
     virtual bool hasContributingDelegatedRenderPasses() const OVERRIDE;
 
     // This gives ownership of the RenderPasses to the layer.
     void setRenderPasses(ScopedPtrVector<RenderPass>&);
     void clearRenderPasses();
 
-    virtual void didLoseContext() OVERRIDE;
+    virtual void didLoseOutputSurface() OVERRIDE;
 
     virtual RenderPass::Id firstContributingRenderPassId() const OVERRIDE;
     virtual RenderPass::Id nextContributingRenderPassId(RenderPass::Id) const OVERRIDE;
@@ -31,11 +32,11 @@ public:
     virtual void appendQuads(QuadSink&, AppendQuadsData&) OVERRIDE;
 
 private:
-    explicit DelegatedRendererLayerImpl(int);
+    DelegatedRendererLayerImpl(LayerTreeImpl* treeImpl, int id);
 
     RenderPass::Id convertDelegatedRenderPassId(RenderPass::Id delegatedRenderPassId) const;
 
-    void appendRenderPassQuads(QuadSink&, AppendQuadsData&, RenderPass* fromDelegatedRenderPass) const;
+    void appendRenderPassQuads(QuadSink&, AppendQuadsData&, const RenderPass* fromDelegatedRenderPass) const;
 
     virtual const char* layerTypeAsString() const OVERRIDE;
 
@@ -45,4 +46,4 @@ private:
 
 }
 
-#endif // CCDelegatedRendererLayerImpl_h
+#endif  // CC_DELEGATED_RENDERER_LAYER_IMPL_H_

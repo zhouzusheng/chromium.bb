@@ -5,9 +5,11 @@
 #ifndef PPAPI_THUNK_PPB_FLASH_FUNCTIONS_API_H_
 #define PPAPI_THUNK_PPB_FLASH_FUNCTIONS_API_H_
 
-#include "ppapi/thunk/ppapi_thunk_export.h"
+#include <string>
 
-struct PP_ArrayOutput;
+#include "ppapi/c/private/ppb_flash.h"
+#include "ppapi/shared_impl/singleton_resource_id.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
 
 namespace ppapi {
 namespace thunk {
@@ -19,11 +21,15 @@ class PPAPI_THUNK_EXPORT PPB_Flash_Functions_API {
  public:
   virtual ~PPB_Flash_Functions_API() {}
 
- // PPB_Flash.
- virtual int32_t EnumerateVideoCaptureDevices(
-     PP_Instance instance,
-     PP_Resource video_capture,
-     const PP_ArrayOutput& devices) = 0;
+  virtual PP_Var GetProxyForURL(PP_Instance instance,
+                                const std::string& url) = 0;
+  virtual void UpdateActivity(PP_Instance instance) = 0;
+  virtual PP_Bool SetCrashData(PP_Instance instance,
+                               PP_FlashCrashKey key,
+                               PP_Var value) = 0;
+  virtual double GetLocalTimeZoneOffset(PP_Instance instance, PP_Time t) = 0;
+
+  static const SingletonResourceID kSingletonResourceID = FLASH_SINGLETON_ID;
 };
 
 }  // namespace thunk

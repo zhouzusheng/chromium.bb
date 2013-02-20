@@ -4,6 +4,7 @@
 
 #include "webkit/glue/webpreferences.h"
 
+#include "base/basictypes.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
@@ -37,6 +38,9 @@ WebPreferences::WebPreferences()
       minimum_logical_font_size(6),
       default_encoding("ISO-8859-1"),
       apply_default_device_scale_factor_in_compositor(false),
+      apply_page_scale_factor_in_compositor(false),
+      per_tile_painting_enabled(false),
+      accelerated_animation_enabled(false),
       javascript_enabled(true),
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
@@ -79,6 +83,8 @@ WebPreferences::WebPreferences()
       show_composited_layer_tree(false),
       show_fps_counter(false),
       accelerated_compositing_for_overflow_scroll_enabled(false),
+      accelerated_compositing_for_scrollable_frames_enabled(false),
+      composited_scrolling_for_frames_enabled(false),
       show_paint_rects(false),
       render_vsync_enabled(true),
       asynchronous_spell_checking_enabled(true),
@@ -86,35 +92,32 @@ WebPreferences::WebPreferences()
       accelerated_compositing_enabled(false),
       force_compositing_mode(false),
       fixed_position_compositing_enabled(false),
-      accelerated_layers_enabled(false),
-      accelerated_animation_enabled(false),
-      accelerated_video_enabled(false),
+      accelerated_compositing_for_3d_transforms_enabled(false),
+      accelerated_compositing_for_animation_enabled(false),
+      accelerated_compositing_for_video_enabled(false),
       accelerated_2d_canvas_enabled(false),
       deferred_2d_canvas_enabled(false),
+      antialiased_2d_canvas_disabled(false),
       accelerated_painting_enabled(false),
       accelerated_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
-      accelerated_plugins_enabled(false),
+      accelerated_compositing_for_plugins_enabled(false),
       memory_info_enabled(false),
       fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
-#if defined(OS_ANDROID)
-      text_autosizing_enabled(true),
-      font_scale_factor(1.0f),
-      force_enable_zoom(false),
-      user_gesture_required_for_media_playback(true),
-#endif
       password_echo_enabled(false),
       should_print_backgrounds(false),
       enable_scroll_animator(false),
       visual_word_movement_enabled(false),
       css_sticky_position_enabled(false),
-      css_regions_enabled(false),
       css_shaders_enabled(false),
       css_variables_enabled(false),
+      css_grid_layout_enabled(false),
+      touch_enabled(false),
       device_supports_touch(false),
       device_supports_mouse(true),
+      touch_adjustment_enabled(true),
       default_tile_width(256),
       default_tile_height(256),
       max_untiled_layer_width(512),
@@ -123,8 +126,25 @@ WebPreferences::WebPreferences()
       sync_xhr_in_documents_enabled(true),
       deferred_image_decoding_enabled(false),
       number_of_cpu_cores(1),
-      cookie_enabled(true),
-      apply_page_scale_factor_in_compositor(false) {
+#if defined(OS_MACOSX)
+      editing_behavior(EDITING_BEHAVIOR_MAC),
+#elif defined(OS_WIN)
+      editing_behavior(EDITING_BEHAVIOR_WIN),
+#elif defined(OS_POSIX)
+      editing_behavior(EDITING_BEHAVIOR_UNIX),
+#else
+      editing_behavior(EDITING_BEHAVIOR_MAC),
+#endif
+      cookie_enabled(true)
+#if defined(OS_ANDROID)
+      ,
+      text_autosizing_enabled(true),
+      font_scale_factor(1.0f),
+      force_enable_zoom(false),
+      user_gesture_required_for_media_playback(true),
+      supports_multiple_windows(true)
+#endif
+{
   standard_font_family_map[kCommonScript] =
       ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[kCommonScript] =
@@ -251,6 +271,8 @@ void WebPreferences::Apply(WebView* web_view) const {
       apply_default_device_scale_factor_in_compositor);
   settings->setApplyPageScaleFactorInCompositor(
       apply_page_scale_factor_in_compositor);
+  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
+  settings->setAcceleratedAnimationEnabled(accelerated_animation_enabled);
   settings->setJavaScriptEnabled(javascript_enabled);
   settings->setWebSecurityEnabled(web_security_enabled);
   settings->setJavaScriptCanOpenWindowsAutomatically(
@@ -335,6 +357,15 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setAcceleratedCompositingForOverflowScrollEnabled(
       accelerated_compositing_for_overflow_scroll_enabled);
 
+  // Enables accelerated compositing for scrollable frames if requested on
+  // command line.
+  settings->setAcceleratedCompositingForScrollableFramesEnabled(
+      accelerated_compositing_for_scrollable_frames_enabled);
+
+  // Enables composited scrolling for frames if requested on command line.
+  settings->setCompositedScrollingForFramesEnabled(
+      composited_scrolling_for_frames_enabled);
+
   // Display the current compositor tree as overlay if requested on
   // the command line
   settings->setShowPlatformLayerTree(show_composited_layer_tree);
@@ -360,6 +391,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Enable deferred 2d canvas if requested on the command line.
   settings->setDeferred2dCanvasEnabled(deferred_2d_canvas_enabled);
 
+  // Disable antialiasing for 2d canvas if requested on the command line.
+  settings->setAntialiased2dCanvasEnabled(!antialiased_2d_canvas_disabled);
+
   // Enable gpu-accelerated painting if requested on the command line.
   settings->setAcceleratedPaintingEnabled(accelerated_painting_enabled);
 
@@ -372,15 +406,15 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Enabling accelerated layers from the command line enabled accelerated
   // 3D CSS, Video, and Animations.
   settings->setAcceleratedCompositingFor3DTransformsEnabled(
-      accelerated_layers_enabled);
+      accelerated_compositing_for_3d_transforms_enabled);
   settings->setAcceleratedCompositingForVideoEnabled(
-      accelerated_video_enabled);
+      accelerated_compositing_for_video_enabled);
   settings->setAcceleratedCompositingForAnimationEnabled(
-      accelerated_animation_enabled);
+      accelerated_compositing_for_animation_enabled);
 
   // Enabling accelerated plugins if specified from the command line.
   settings->setAcceleratedCompositingForPluginsEnabled(
-      accelerated_plugins_enabled);
+      accelerated_compositing_for_plugins_enabled);
 
   // WebGL and accelerated 2D canvas are always gpu composited.
   settings->setAcceleratedCompositingForCanvasEnabled(
@@ -407,27 +441,20 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setFullScreenEnabled(fullscreen_enabled);
   settings->setAllowDisplayOfInsecureContent(allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(allow_running_insecure_content);
-#if defined(OS_ANDROID)
-  settings->setTextAutosizingEnabled(text_autosizing_enabled);
-  settings->setTextAutosizingFontScaleFactor(font_scale_factor);
-  web_view->setIgnoreViewportTagMaximumScale(force_enable_zoom);
-  settings->setAutoZoomFocusedNodeToLegibleScale(true);
-  settings->setDoubleTapToZoomEnabled(true);
-  settings->setMediaPlaybackRequiresUserGesture(
-      user_gesture_required_for_media_playback);
-#endif
   settings->setPasswordEchoEnabled(password_echo_enabled);
   settings->setShouldPrintBackgrounds(should_print_backgrounds);
   settings->setEnableScrollAnimator(enable_scroll_animator);
   settings->setVisualWordMovementEnabled(visual_word_movement_enabled);
 
   settings->setCSSStickyPositionEnabled(css_sticky_position_enabled);
-  settings->setExperimentalCSSRegionsEnabled(css_regions_enabled);
   settings->setExperimentalCSSCustomFilterEnabled(css_shaders_enabled);
   settings->setExperimentalCSSVariablesEnabled(css_variables_enabled);
+  settings->setExperimentalCSSGridLayoutEnabled(css_grid_layout_enabled);
 
+  WebRuntimeFeatures::enableTouch(touch_enabled);
   settings->setDeviceSupportsTouch(device_supports_touch);
   settings->setDeviceSupportsMouse(device_supports_mouse);
+  settings->setEnableTouchAdjustment(touch_adjustment_enabled);
 
   settings->setDefaultTileSize(
       WebSize(default_tile_width, default_tile_height));
@@ -437,12 +464,36 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setFixedPositionCreatesStackingContext(
       fixed_position_creates_stacking_context);
 
-  settings->setApplyPageScaleFactorInCompositor(
-      apply_page_scale_factor_in_compositor);
-
   settings->setDeferredImageDecodingEnabled(deferred_image_decoding_enabled);
+
+  settings->setEditingBehavior(
+      static_cast<WebSettings::EditingBehavior>(editing_behavior));
+
+#if defined(OS_ANDROID)
+  settings->setAllowCustomScrollbarInMainFrame(false);
+  settings->setTextAutosizingEnabled(text_autosizing_enabled);
+  settings->setTextAutosizingFontScaleFactor(font_scale_factor);
+  web_view->setIgnoreViewportTagMaximumScale(force_enable_zoom);
+  settings->setAutoZoomFocusedNodeToLegibleScale(true);
+  settings->setDoubleTapToZoomEnabled(true);
+  settings->setMediaPlaybackRequiresUserGesture(
+      user_gesture_required_for_media_playback);
+  settings->setSupportsMultipleWindows(supports_multiple_windows);
+#endif
 
   WebNetworkStateNotifier::setOnLine(is_online);
 }
+
+#define COMPILE_ASSERT_MATCHING_ENUMS(webkit_glue_name, webkit_name)         \
+    COMPILE_ASSERT(                                                          \
+        static_cast<int>(webkit_glue_name) == static_cast<int>(webkit_name), \
+        mismatching_enums)
+
+COMPILE_ASSERT_MATCHING_ENUMS(
+    WebPreferences::EDITING_BEHAVIOR_MAC, WebSettings::EditingBehaviorMac);
+COMPILE_ASSERT_MATCHING_ENUMS(
+    WebPreferences::EDITING_BEHAVIOR_WIN, WebSettings::EditingBehaviorWin);
+COMPILE_ASSERT_MATCHING_ENUMS(
+    WebPreferences::EDITING_BEHAVIOR_UNIX, WebSettings::EditingBehaviorUnix);
 
 }  // namespace webkit_glue

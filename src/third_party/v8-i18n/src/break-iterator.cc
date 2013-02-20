@@ -45,7 +45,7 @@ icu::BreakIterator* BreakIterator::UnpackBreakIterator(
   // Collator and DateTimeFormat.
   if (obj->HasOwnProperty(v8::String::New("breakIterator"))) {
     return static_cast<icu::BreakIterator*>(
-        obj->GetPointerFromInternalField(0));
+        obj->GetAlignedPointerFromInternalField(0));
   }
 
   return NULL;
@@ -63,7 +63,7 @@ void BreakIterator::DeleteBreakIterator(
   delete UnpackBreakIterator(persistent_object);
 
   delete static_cast<icu::UnicodeString*>(
-      persistent_object->GetPointerFromInternalField(1));
+      persistent_object->GetAlignedPointerFromInternalField(1));
 
   // Then dispose of the persistent handle to JS object.
   persistent_object.Dispose();
@@ -83,14 +83,14 @@ icu::UnicodeString* ResetAdoptedText(
     v8::Handle<v8::Object> obj, v8::Handle<v8::Value> value) {
   // Get the previous value from the internal field.
   icu::UnicodeString* text = static_cast<icu::UnicodeString*>(
-      obj->GetPointerFromInternalField(1));
+      obj->GetAlignedPointerFromInternalField(1));
   delete text;
 
   // Assign new value to the internal pointer.
   v8::String::Value text_value(value);
   text = new icu::UnicodeString(
       reinterpret_cast<const UChar*>(*text_value), text_value.length());
-  obj->SetPointerInInternalField(1, text);
+  obj->SetAlignedPointerInInternalField(1, text);
 
   // Return new unicode string pointer.
   return text;
@@ -188,6 +188,12 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
 
   // Create an empty object wrapper.
   v8::Local<v8::Object> local_object = break_iterator_template->NewInstance();
+  // But the handle shouldn't be empty.
+  // That can happen if there was a stack overflow when creating the object.
+  if (local_object.IsEmpty()) {
+    return local_object;
+  }
+
   v8::Persistent<v8::Object> wrapper =
       v8::Persistent<v8::Object>::New(local_object);
 
@@ -199,9 +205,9 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
     return v8::ThrowException(v8::Exception::Error(v8::String::New(
         "Internal error. Couldn't create ICU break iterator.")));
   } else {
-    wrapper->SetPointerInInternalField(0, break_iterator);
+    wrapper->SetAlignedPointerInInternalField(0, break_iterator);
     // Make sure that the pointer to adopted text is NULL.
-    wrapper->SetPointerInInternalField(1, NULL);
+    wrapper->SetAlignedPointerInInternalField(1, NULL);
 
     v8::TryCatch try_catch;
     wrapper->Set(v8::String::New("breakIterator"), v8::String::New("valid"));

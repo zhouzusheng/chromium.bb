@@ -30,7 +30,8 @@ class TextureManager;
 // Identifies a mailbox where a texture definition can be stored for
 // transferring textures between contexts that are not in the same context
 // group. It is a random key signed with a hash of a private key.
-struct MailboxName {
+struct GPU_EXPORT MailboxName {
+  MailboxName();
   GLbyte key[GL_MAILBOX_SIZE_CHROMIUM / 2];
   GLbyte signature[GL_MAILBOX_SIZE_CHROMIUM / 2];
 };
@@ -55,6 +56,10 @@ class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
   // Destroy any texture definitions and mailboxes owned by the given texture
   // manager.
   void DestroyOwnedTextures(TextureManager* owner, bool have_context);
+
+  std::string private_key() {
+    return std::string(private_key_, sizeof(private_key_));
+  }
 
  private:
   friend class base::RefCounted<MailboxManager>;
@@ -86,6 +91,7 @@ class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
       std::pointer_to_binary_function<
           const TargetName&, const TargetName&, bool> > TextureDefinitionMap;
 
+  char private_key_[GL_MAILBOX_SIZE_CHROMIUM / 2];
   crypto::HMAC hmac_;
   TextureDefinitionMap textures_;
 

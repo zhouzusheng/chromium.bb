@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/heads_up_display_layer.h"
 
 #include "base/debug/trace_event.h"
@@ -19,9 +17,9 @@ scoped_refptr<HeadsUpDisplayLayer> HeadsUpDisplayLayer::create()
 
 HeadsUpDisplayLayer::HeadsUpDisplayLayer()
     : Layer()
+    , m_hasFontAtlas(false)
 {
-
-    setBounds(IntSize(512, 128));
+    setBounds(gfx::Size(256, 128));
 }
 
 HeadsUpDisplayLayer::~HeadsUpDisplayLayer()
@@ -30,19 +28,24 @@ HeadsUpDisplayLayer::~HeadsUpDisplayLayer()
 
 void HeadsUpDisplayLayer::update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&)
 {
-    const LayerTreeSettings& settings = layerTreeHost()->settings();
+    const LayerTreeDebugState& debugState = layerTreeHost()->debugState();
     int maxTextureSize = layerTreeHost()->rendererCapabilities().maxTextureSize;
 
-    IntSize bounds;
-    if (settings.showPlatformLayerTree || settings.showDebugRects()) {
-        bounds.setWidth(std::min(maxTextureSize, layerTreeHost()->deviceViewportSize().width()));
-        bounds.setHeight(std::min(maxTextureSize, layerTreeHost()->deviceViewportSize().height()));
+    gfx::Size bounds;
+    gfx::Transform matrix;
+    matrix.MakeIdentity();
+
+    if (debugState.showPlatformLayerTree || debugState.showHudRects()) {
+        int width = std::min(maxTextureSize, layerTreeHost()->layoutViewportSize().width());
+        int height = std::min(maxTextureSize, layerTreeHost()->layoutViewportSize().height());
+        bounds = gfx::Size(width, height);
     } else {
-        bounds.setWidth(512);
-        bounds.setHeight(128);
+        bounds = gfx::Size(256, 128);
+        matrix.Translate(layerTreeHost()->layoutViewportSize().width() - 256, 0);
     }
 
     setBounds(bounds);
+    setTransform(matrix);
 }
 
 bool HeadsUpDisplayLayer::drawsContent() const
@@ -53,23 +56,23 @@ bool HeadsUpDisplayLayer::drawsContent() const
 void HeadsUpDisplayLayer::setFontAtlas(scoped_ptr<FontAtlas> fontAtlas)
 {
     m_fontAtlas = fontAtlas.Pass();
-    setNeedsCommit();
+    m_hasFontAtlas = true;
 }
 
-scoped_ptr<LayerImpl> HeadsUpDisplayLayer::createLayerImpl()
+scoped_ptr<LayerImpl> HeadsUpDisplayLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return HeadsUpDisplayLayerImpl::create(m_layerId).PassAs<LayerImpl>();
+    return HeadsUpDisplayLayerImpl::create(treeImpl, m_layerId).PassAs<LayerImpl>();
 }
 
 void HeadsUpDisplayLayer::pushPropertiesTo(LayerImpl* layerImpl)
 {
     Layer::pushPropertiesTo(layerImpl);
 
-    if (!m_fontAtlas.get())
+    if (!m_fontAtlas)
         return;
 
     HeadsUpDisplayLayerImpl* hudLayerImpl = static_cast<HeadsUpDisplayLayerImpl*>(layerImpl);
     hudLayerImpl->setFontAtlas(m_fontAtlas.Pass());
 }
 
-}
+}  // namespace cc

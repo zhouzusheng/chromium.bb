@@ -49,6 +49,7 @@ class AudioBuffer;
 class AudioBufferCallback;
 class AudioBufferSourceNode;
 class MediaElementAudioSourceNode;
+class MediaStreamAudioDestinationNode;
 class MediaStreamAudioSourceNode;
 class HTMLMediaElement;
 class ChannelMergerNode;
@@ -118,12 +119,13 @@ public:
 #endif
 #if ENABLE(MEDIA_STREAM)
     PassRefPtr<MediaStreamAudioSourceNode> createMediaStreamSource(MediaStream*, ExceptionCode&);
+    PassRefPtr<MediaStreamAudioDestinationNode> createMediaStreamDestination();
 #endif
     PassRefPtr<GainNode> createGain();
     PassRefPtr<BiquadFilterNode> createBiquadFilter();
     PassRefPtr<WaveShaperNode> createWaveShaper();
-    PassRefPtr<DelayNode> createDelay();
-    PassRefPtr<DelayNode> createDelay(double maxDelayTime);
+    PassRefPtr<DelayNode> createDelay(ExceptionCode&);
+    PassRefPtr<DelayNode> createDelay(double maxDelayTime, ExceptionCode&);
     PassRefPtr<PannerNode> createPanner();
     PassRefPtr<ConvolverNode> createConvolver();
     PassRefPtr<DynamicsCompressorNode> createDynamicsCompressor();    
@@ -245,23 +247,32 @@ public:
     void fireCompletionEvent();
     
     static unsigned s_hardwareContextCount;
-    
-private:
+
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+protected:
     explicit AudioContext(Document*);
     AudioContext(Document*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
+    
+    static bool isSampleRateRangeGood(float sampleRate);
+    
+private:
     void constructCommon();
 
     void lazyInitialize();
     void uninitialize();
-    static void uninitializeDispatch(void* userData);
+
+    // ScriptExecutionContext calls stop twice.
+    // We'd like to schedule only one stop action for them.
+    bool m_isStopScheduled;
+    static void stopDispatch(void* userData);
+    void clear();
 
     void scheduleNodeDeletion();
     static void deleteMarkedNodesDispatch(void* userData);
     
     bool m_isInitialized;
     bool m_isAudioThreadFinished;
-
-    Document* m_document;
 
     // The context itself keeps a reference to all source nodes.  The source nodes, then reference all nodes they're connected to.
     // In turn, these nodes reference all nodes they're connected to.  All nodes are ultimately connected to the AudioDestinationNode.
@@ -286,6 +297,11 @@ private:
     Vector<AudioNode*> m_referencedNodes;
 
     // Accumulate nodes which need to be deleted here.
+    // This is copied to m_nodesToDelete at the end of a render cycle in handlePostRenderTasks(), where we're assured of a stable graph
+    // state which will have no references to any of the nodes in m_nodesToDelete once the context lock is released
+    // (when handlePostRenderTasks() has completed).
+    Vector<AudioNode*> m_nodesMarkedForDeletion;
+
     // They will be scheduled for deletion (on the main thread) at the end of a render cycle (in realtime thread).
     Vector<AudioNode*> m_nodesToDelete;
     bool m_isDeletionScheduled;

@@ -113,8 +113,9 @@ public:
     virtual void zoomLevelChanged(double zoomLevel);    
     virtual void setOpaque(bool);
     virtual bool isRectTopmost(const WebRect&);
-    virtual void setIsAcceptingTouchEvents(bool);
+    virtual void requestTouchEventType(TouchEventRequestType);
     virtual void setWantsWheelEvents(bool);
+    virtual WebPoint windowToLocalPoint(const WebPoint&);
 
     // This cannot be null.
     WebPlugin* plugin() { return m_webPlugin; }
@@ -123,6 +124,8 @@ public:
     virtual float deviceScaleFactor();
     virtual float pageScaleFactor();
     virtual float pageZoomFactor();
+
+    virtual void setWebLayer(WebLayer*);
 
     // Printing interface. The plugin can support custom printing
     // (which means it controls the layout, number of pages etc).
@@ -148,7 +151,7 @@ public:
     void didFinishLoading();
     void didFailLoading(const WebCore::ResourceError&);
 
-    NPObject* scriptableObject();
+    virtual NPObject* scriptableObject() OVERRIDE;
 
     void willDestroyPluginLoadObserver(WebPluginLoadObserver*);
 
@@ -174,6 +177,8 @@ private:
     void handleTouchEvent(WebCore::TouchEvent*);
     void handleGestureEvent(WebCore::GestureEvent*);
 
+    void synthesizeMouseEventIfPossible(WebCore::TouchEvent*);
+
     void calculateGeometry(const WebCore::IntRect& frameRect,
                            WebCore::IntRect& windowRect,
                            WebCore::IntRect& clipRect,
@@ -196,11 +201,13 @@ private:
     OwnPtr<WebIOSurfaceLayer> m_ioSurfaceLayer;
 #endif
 
+    WebLayer* m_webLayer;
+
     // The associated scrollbar group object, created lazily. Used for Pepper
     // scrollbars.
     OwnPtr<ScrollbarGroup> m_scrollbarGroup;
 
-    bool m_isAcceptingTouchEvents;
+    TouchEventRequestType m_touchEventRequestType;
     bool m_wantsWheelEvents;
 };
 

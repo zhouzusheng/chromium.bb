@@ -6,7 +6,7 @@
  * Implementation of OCSP services, for both client and server.
  * (XXX, really, mostly just for client right now, but intended to do both.)
  *
- * $Id: ocsp.c,v 1.71 2012/05/31 22:03:36 emaldona%redhat.com Exp $
+ * $Id: ocsp.c,v 1.74.2.1 2012/12/12 16:38:39 wtc%google.com Exp $
  */
 
 #include "prerror.h"
@@ -105,7 +105,7 @@ static struct OCSPGlobalStruct {
 static SECItem *
 ocsp_GetEncodedOCSPResponseFromRequest(PRArenaPool *arena, 
                                        CERTOCSPRequest *request,
-                                       char *location, int64 time,
+                                       const char *location, int64 time,
                                        PRBool addServiceLocator,
                                        void *pwArg,
                                        CERTOCSPRequest **pRequest);
@@ -151,8 +151,8 @@ ocsp_CertRevokedAfter(ocspRevokedInfo *revokedInfo, int64 time);
 #define OCSP_TRACE_CERT(cert) dumpCertificate(cert)
 #define OCSP_TRACE_CERTID(certid) dumpCertID(certid)
 
-#if (defined(XP_UNIX) || defined(XP_WIN32) || defined(XP_BEOS) \
-     || defined(XP_MACOSX)) && !defined(_WIN32_WCE)
+#if defined(XP_UNIX) || defined(XP_WIN32) || defined(XP_BEOS) \
+     || defined(XP_MACOSX)
 #define NSS_HAVE_GETENV 1
 #endif
 
@@ -1161,7 +1161,7 @@ const SEC_ASN1Template ocsp_CertIDTemplate[] = {
  *	responseStatus		OCSPResponseStatus,
  *	responseBytes		[0] EXPLICIT ResponseBytes OPTIONAL }
  */
-static const SEC_ASN1Template ocsp_OCSPResponseTemplate[] = {
+const SEC_ASN1Template ocsp_OCSPResponseTemplate[] = {
     { SEC_ASN1_SEQUENCE, 
 	0, NULL, sizeof(CERTOCSPResponse) },
     { SEC_ASN1_ENUMERATED, 
@@ -1178,7 +1178,7 @@ static const SEC_ASN1Template ocsp_OCSPResponseTemplate[] = {
  *	responseType		OBJECT IDENTIFIER,
  *	response		OCTET STRING }
  */
-static const SEC_ASN1Template ocsp_ResponseBytesTemplate[] = {
+const SEC_ASN1Template ocsp_ResponseBytesTemplate[] = {
     { SEC_ASN1_SEQUENCE,
 	0, NULL, sizeof(ocspResponseBytes) },
     { SEC_ASN1_OBJECT_ID,
@@ -1275,12 +1275,12 @@ const SEC_ASN1Template ocsp_ResponseDataTemplate[] = {
  * can all be simplified down into a single template.  Anyway, for
  * now we list each choice as its own template:
  */
-static const SEC_ASN1Template ocsp_ResponderIDByNameTemplate[] = {
+const SEC_ASN1Template ocsp_ResponderIDByNameTemplate[] = {
     { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 1,
 	offsetof(ocspResponderID, responderIDValue.name),
 	CERT_NameTemplate }
 };
-static const SEC_ASN1Template ocsp_ResponderIDByKeyTemplate[] = {
+const SEC_ASN1Template ocsp_ResponderIDByKeyTemplate[] = {
     { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC |
         SEC_ASN1_XTRN | 2,
 	offsetof(ocspResponderID, responderIDValue.keyHash),
@@ -1476,7 +1476,7 @@ CERT_EncodeOCSPRequest(PRArenaPool *arena, CERTOCSPRequest *request,
  *   (SEC_ERROR_OCSP_MALFORMED_REQUEST), or low-level problem (no memory).
  */
 CERTOCSPRequest *
-CERT_DecodeOCSPRequest(SECItem *src)
+CERT_DecodeOCSPRequest(const SECItem *src)
 {
     PRArenaPool *arena = NULL;
     SECStatus rv = SECFailure;
@@ -2226,7 +2226,7 @@ CERT_DestroyOCSPRequest(CERTOCSPRequest *request)
  * given type, return the associated template for that choice.
  */
 static const SEC_ASN1Template *
-ocsp_ResponderIDTemplateByType(ocspResponderIDType responderIDType)
+ocsp_ResponderIDTemplateByType(CERTOCSPResponderIDType responderIDType)
 {
     const SEC_ASN1Template *responderIDTemplate;
 
@@ -2371,10 +2371,10 @@ loser:
  * Helper function for decoding a responderID -- turn the actual DER tag
  * into our local translation.
  */
-static ocspResponderIDType
+static CERTOCSPResponderIDType
 ocsp_ResponderIDTypeByTag(int derTag)
 {
-    ocspResponderIDType responderIDType;
+    CERTOCSPResponderIDType responderIDType;
 
     switch (derTag) {
 	case 1:
@@ -2401,7 +2401,7 @@ ocsp_DecodeBasicOCSPResponse(PRArenaPool *arena, SECItem *src)
     ocspBasicOCSPResponse *basicResponse;
     ocspResponseData *responseData;
     ocspResponderID *responderID;
-    ocspResponderIDType responderIDType;
+    CERTOCSPResponderIDType responderIDType;
     const SEC_ASN1Template *responderIDTemplate;
     int derTag;
     SECStatus rv;
@@ -2908,7 +2908,7 @@ loser:
  * errors appropriate to the problem will be set.
  */
 static PRFileDesc *
-ocsp_SendEncodedRequest(char *location, SECItem *encodedRequest)
+ocsp_SendEncodedRequest(const char *location, SECItem *encodedRequest)
 {
     char *hostname = NULL;
     char *path = NULL;
@@ -3267,7 +3267,7 @@ CERT_ParseURL(const char *url, char **pHostname, PRUint16 *pPort, char **pPath)
 static SECItem *
 fetchOcspHttpClientV1(PRArenaPool *arena, 
                       const SEC_HttpClientFcnV1 *hcv1, 
-                      char *location, 
+                      const char *location, 
                       SECItem *encodedRequest)
 {
     char *hostname = NULL;
@@ -3386,7 +3386,7 @@ loser:
  *     must be handled by the caller (and thus by having multiple calls
  *     to this routine), who knows about where the request(s) are being
  *     sent and whether there are any trusted responders in place.
- *   char *location
+ *   const char *location
  *     The location of the OCSP responder (a URL).
  *   int64 time
  *     Indicates the time for which the certificate status is to be 
@@ -3417,7 +3417,7 @@ loser:
  */
 SECItem *
 CERT_GetEncodedOCSPResponse(PRArenaPool *arena, CERTCertList *certList,
-			    char *location, int64 time,
+			    const char *location, int64 time,
 			    PRBool addServiceLocator,
 			    CERTCertificate *signerCert, void *pwArg,
 			    CERTOCSPRequest **pRequest)
@@ -3435,7 +3435,7 @@ CERT_GetEncodedOCSPResponse(PRArenaPool *arena, CERTCertList *certList,
 static SECItem *
 ocsp_GetEncodedOCSPResponseFromRequest(PRArenaPool *arena, 
                                        CERTOCSPRequest *request,
-                                       char *location, int64 time,
+                                       const char *location, int64 time,
                                        PRBool addServiceLocator,
                                        void *pwArg,
                                        CERTOCSPRequest **pRequest)
@@ -3496,7 +3496,7 @@ static SECItem *
 ocsp_GetEncodedOCSPResponseForSingleCert(PRArenaPool *arena, 
                                          CERTOCSPCertID *certID, 
                                          CERTCertificate *singleCert, 
-                                         char *location, int64 time,
+                                         const char *location, int64 time,
                                          PRBool addServiceLocator,
                                          void *pwArg,
                                          CERTOCSPRequest **pRequest)

@@ -42,7 +42,7 @@ icu::SimpleDateFormat* DateFormat::UnpackDateFormat(
 
   if (obj->HasOwnProperty(v8::String::New("dateFormat"))) {
     return static_cast<icu::SimpleDateFormat*>(
-        obj->GetPointerFromInternalField(0));
+        obj->GetAlignedPointerFromInternalField(0));
   }
 
   return NULL;
@@ -138,6 +138,12 @@ v8::Handle<v8::Value> DateFormat::JSCreateDateTimeFormat(
 
   // Create an empty object wrapper.
   v8::Local<v8::Object> local_object = date_format_template->NewInstance();
+  // But the handle shouldn't be empty.
+  // That can happen if there was a stack overflow when creating the object.
+  if (local_object.IsEmpty()) {
+    return local_object;
+  }
+
   v8::Persistent<v8::Object> wrapper =
       v8::Persistent<v8::Object>::New(local_object);
 
@@ -149,7 +155,7 @@ v8::Handle<v8::Value> DateFormat::JSCreateDateTimeFormat(
     return v8::ThrowException(v8::Exception::Error(v8::String::New(
         "Internal error. Couldn't create ICU date time formatter.")));
   } else {
-    wrapper->SetPointerInInternalField(0, date_format);
+    wrapper->SetAlignedPointerInInternalField(0, date_format);
 
     v8::TryCatch try_catch;
     wrapper->Set(v8::String::New("dateFormat"), v8::String::New("valid"));

@@ -34,12 +34,14 @@
 #include "Page.h"
 #include "RenderGeometryMap.h"
 #include "RenderLayer.h"
+#include "RenderLayerBacking.h"
 #include "RenderNamedFlowThread.h"
 #include "RenderSelectionInfo.h"
 #include "RenderWidget.h"
 #include "RenderWidgetProtector.h"
 #include "StyleInheritedData.h"
 #include "TransformState.h"
+#include "WebCoreMemoryInstrumentation.h"
 
 #if USE(ACCELERATED_COMPOSITING)
 #include "RenderLayerCompositor.h"
@@ -190,7 +192,9 @@ void RenderView::layout()
     m_layoutState = &state;
 
     m_layoutPhase = RenderViewNormalLayout;
-    bool needsTwoPassLayoutForAutoLogicalHeightRegions = hasRenderNamedFlowThreads() && flowThreadController()->hasAutoLogicalHeightRegions();
+    bool needsTwoPassLayoutForAutoLogicalHeightRegions = hasRenderNamedFlowThreads()
+        && flowThreadController()->hasAutoLogicalHeightRegions()
+        && flowThreadController()->hasRenderNamedFlowThreadsNeedingLayout();
 
     if (needsTwoPassLayoutForAutoLogicalHeightRegions)
         flowThreadController()->resetRegionsOverrideLogicalContentHeight();
@@ -210,7 +214,7 @@ void RenderView::layout()
     setNeedsLayout(false);
 }
 
-void RenderView::mapLocalToContainer(RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed) const
+void RenderView::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed) const
 {
     // If a container was specified, and was not 0 or the RenderView,
     // then we should have found it by now.
@@ -305,14 +309,27 @@ static inline bool isComposited(RenderObject* object)
     return object->hasLayer() && toRenderLayerModelObject(object)->layer()->isComposited();
 }
 
-static inline bool rendererObscuresBackground(RenderObject* object)
+static inline bool rendererObscuresBackground(RenderObject* rootObject)
 {
-    return object && object->style()->visibility() == VISIBLE
-        && object->style()->opacity() == 1
-        && !object->style()->hasTransform()
-        && !isComposited(object);
-}
+    if (!rootObject)
+        return false;
     
+    RenderStyle* style = rootObject->style();
+    if (style->visibility() != VISIBLE
+        || style->opacity() != 1
+        || style->hasTransform())
+        return false;
+    
+    if (isComposited(rootObject))
+        return false;
+
+    const RenderObject* rootRenderer = rootObject->rendererForRootBackground();
+    if (rootRenderer->style()->backgroundClip() == TextFillBox)
+        return false;
+
+    return true;
+}
+
 void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
 {
     // Check to see if we are enclosed by a layer that requires complex painting rules.  If so, we cannot blit
@@ -342,18 +359,20 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
         return;
 
     bool rootFillsViewport = false;
+    bool rootObscuresBackground = false;
     Node* documentElement = document()->documentElement();
     if (RenderObject* rootRenderer = documentElement ? documentElement->renderer() : 0) {
         // The document element's renderer is currently forced to be a block, but may not always be.
         RenderBox* rootBox = rootRenderer->isBox() ? toRenderBox(rootRenderer) : 0;
         rootFillsViewport = rootBox && !rootBox->x() && !rootBox->y() && rootBox->width() >= width() && rootBox->height() >= height();
+        rootObscuresBackground = rendererObscuresBackground(rootRenderer);
     }
     
     Page* page = document()->page();
     float pageScaleFactor = page ? page->pageScaleFactor() : 1;
 
     // If painting will entirely fill the view, no need to fill the background.
-    if (rootFillsViewport && rendererObscuresBackground(firstChild()) && pageScaleFactor >= 1)
+    if (rootFillsViewport && rootObscuresBackground && pageScaleFactor >= 1)
         return;
 
     // This code typically only executes if the root element's visibility has been set to hidden,
@@ -388,7 +407,7 @@ bool RenderView::shouldRepaint(const LayoutRect& r) const
     return true;
 }
 
-void RenderView::repaintViewRectangle(const LayoutRect& ur, bool immediate)
+void RenderView::repaintViewRectangle(const LayoutRect& ur, bool immediate) const
 {
     if (!shouldRepaint(ur))
         return;
@@ -420,12 +439,24 @@ void RenderView::repaintRectangleInViewAndCompositedLayers(const LayoutRect& ur,
     repaintViewRectangle(ur, immediate);
     
 #if USE(ACCELERATED_COMPOSITING)
-    if (compositor()->inCompositingMode())
-        compositor()->repaintCompositedLayersAbsoluteRect(pixelSnappedIntRect(ur));
+    if (compositor()->inCompositingMode()) {
+        IntRect repaintRect = pixelSnappedIntRect(ur);
+        compositor()->repaintCompositedLayers(&repaintRect);
+    }
 #endif
 }
 
-void RenderView::computeRectForRepaint(RenderLayerModelObject* repaintContainer, LayoutRect& rect, bool fixed) const
+void RenderView::repaintViewAndCompositedLayers()
+{
+    repaint();
+    
+#if USE(ACCELERATED_COMPOSITING)
+    if (compositor()->inCompositingMode())
+        compositor()->repaintCompositedLayers();
+#endif
+}
+
+void RenderView::computeRectForRepaint(const RenderLayerModelObject* repaintContainer, LayoutRect& rect, bool fixed) const
 {
     // If a container was specified, and was not 0 or the RenderView,
     // then we should have found it by now.
@@ -512,6 +543,31 @@ IntRect RenderView::selectionBounds(bool clipToVisibleContent) const
         selRect.unite(currRect);
     }
     return pixelSnappedIntRect(selRect);
+}
+
+void RenderView::repaintSelection() const
+{
+    document()->updateStyleIfNeeded();
+
+    HashSet<RenderBlock*> processedBlocks;
+
+    RenderObject* end = rendererAfterPosition(m_selectionEnd, m_selectionEndPos);
+    for (RenderObject* o = m_selectionStart; o && o != end; o = o->nextInPreOrder()) {
+        if (!o->canBeSelectionLeaf() && o != m_selectionStart && o != m_selectionEnd)
+            continue;
+        if (o->selectionState() == SelectionNone)
+            continue;
+
+        RenderSelectionInfo(o, true).repaint();
+
+        // Blocks are responsible for painting line gaps and margin gaps. They must be examined as well.
+        for (RenderBlock* block = o->containingBlock(); block && !block->isRenderView(); block = block->containingBlock()) {
+            if (processedBlocks.contains(block))
+                break;
+            processedBlocks.add(block);
+            RenderSelectionInfo(block, true).repaint();
+        }
+    }
 }
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -979,6 +1035,26 @@ RenderBlock::IntervalArena* RenderView::intervalArena()
     if (!m_intervalArena)
         m_intervalArena = IntervalArena::create();
     return m_intervalArena.get();
+}
+
+void RenderView::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
+    RenderBlock::reportMemoryUsage(memoryObjectInfo);
+    info.addWeakPointer(m_frameView);
+    info.addWeakPointer(m_selectionStart);
+    info.addWeakPointer(m_selectionEnd);
+    info.addMember(m_widgets);
+    info.addMember(m_layoutState);
+#if USE(ACCELERATED_COMPOSITING)
+    info.addMember(m_compositor);
+#endif
+#if ENABLE(CSS_SHADERS) && USE(3D_GRAPHICS)
+    info.addMember(m_customFilterGlobalContext);
+#endif
+    info.addMember(m_flowThreadController);
+    info.addMember(m_intervalArena);
+    info.addWeakPointer(m_renderQuoteHead);
 }
 
 } // namespace WebCore

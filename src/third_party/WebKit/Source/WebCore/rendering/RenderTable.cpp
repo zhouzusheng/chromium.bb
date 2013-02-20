@@ -113,10 +113,6 @@ static inline void resetSectionPointerIfNotBefore(RenderTableSection*& ptr, Rend
 
 void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
 {
-    // Make sure we don't append things after :after-generated content if we have it.
-    if (!beforeChild)
-        beforeChild = afterPseudoElementRenderer();
-
     bool wrapInAnonymousSection = !child->isOutOfFlowPositioned();
 
     if (child->isTableCaption())
@@ -318,12 +314,34 @@ LayoutUnit RenderTable::convertStyleLogicalWidthToComputedWidth(const Length& st
     // HTML tables' width styles already include borders and paddings, but CSS tables' width styles do not.
     LayoutUnit borders = 0;
     bool isCSSTable = !node() || !node()->hasTagName(tableTag);
-    if (isCSSTable && styleLogicalWidth.isFixed() && styleLogicalWidth.isPositive()) {
+    if (isCSSTable && styleLogicalWidth.isSpecified() && styleLogicalWidth.isPositive()) {
         recalcBordersInRowDirection();
         if (style()->boxSizing() == CONTENT_BOX)
-            borders = borderStart() + borderEnd() + (collapseBorders() ? ZERO_LAYOUT_UNIT : paddingStart() + paddingEnd());
+            borders = borderStart() + borderEnd() + (collapseBorders() ? LayoutUnit() : paddingStart() + paddingEnd());
     }
     return minimumValueForLength(styleLogicalWidth, availableWidth, view()) + borders;
+}
+
+LayoutUnit RenderTable::convertStyleLogicalHeightToComputedHeight(const Length& styleLogicalHeight)
+{
+    LayoutUnit computedLogicalHeight = 0;
+    if (styleLogicalHeight.isFixed()) {
+        // HTML tables size as though CSS height includes border/padding, CSS tables do not.
+        LayoutUnit borders = LayoutUnit();
+        // FIXME: We cannot apply box-sizing: content-box on <table> which other browsers allow.
+        if ((node() && node()->hasTagName(tableTag)) || style()->boxSizing() == BORDER_BOX) {
+            LayoutUnit borderAndPaddingBefore = borderBefore() + (collapseBorders() ? LayoutUnit() : paddingBefore());
+            LayoutUnit borderAndPaddingAfter = borderAfter() + (collapseBorders() ? LayoutUnit() : paddingAfter());
+            borders = borderAndPaddingBefore + borderAndPaddingAfter;
+        }
+        computedLogicalHeight = styleLogicalHeight.value() - borders;
+    } else if (styleLogicalHeight.isPercent())
+        computedLogicalHeight = computePercentageLogicalHeight(styleLogicalHeight);
+    else if (styleLogicalHeight.isViewportPercentage())
+        computedLogicalHeight = minimumValueForLength(styleLogicalHeight, 0, view());
+    else
+        ASSERT_NOT_REACHED();
+    return max<LayoutUnit>(0, computedLogicalHeight);
 }
 
 void RenderTable::layoutCaption(RenderTableCaption* caption)
@@ -434,26 +452,31 @@ void RenderTable::layout()
         }
     }
 
-    LayoutUnit borderAndPaddingBefore = borderBefore() + (collapsing ? ZERO_LAYOUT_UNIT : paddingBefore());
-    LayoutUnit borderAndPaddingAfter = borderAfter() + (collapsing ? ZERO_LAYOUT_UNIT : paddingAfter());
+    LayoutUnit borderAndPaddingBefore = borderBefore() + (collapsing ? LayoutUnit() : paddingBefore());
+    LayoutUnit borderAndPaddingAfter = borderAfter() + (collapsing ? LayoutUnit() : paddingAfter());
 
     setLogicalHeight(logicalHeight() + borderAndPaddingBefore);
 
     if (!isOutOfFlowPositioned())
         updateLogicalHeight();
 
-    Length logicalHeightLength = style()->logicalHeight();
     LayoutUnit computedLogicalHeight = 0;
-    if (logicalHeightLength.isFixed()) {
-        // HTML tables size as though CSS height includes border/padding, CSS tables do not.
-        LayoutUnit borders = ZERO_LAYOUT_UNIT;
-        // FIXME: We cannot apply box-sizing: content-box on <table> which other browsers allow.
-        if ((node() && node()->hasTagName(tableTag)) || style()->boxSizing() == BORDER_BOX)
-            borders = borderAndPaddingBefore + borderAndPaddingAfter;
-        computedLogicalHeight = logicalHeightLength.value() - borders;
-    } else if (logicalHeightLength.isPercent())
-        computedLogicalHeight = computePercentageLogicalHeight(logicalHeightLength);
-    computedLogicalHeight = max<LayoutUnit>(0, computedLogicalHeight);
+    
+    Length logicalHeightLength = style()->logicalHeight();
+    if (logicalHeightLength.isSpecified() && logicalHeightLength.isPositive())
+        computedLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalHeightLength);
+    
+    Length logicalMaxHeightLength = style()->logicalMaxHeight();
+    if (logicalMaxHeightLength.isSpecified() && !logicalMaxHeightLength.isNegative()) {
+        LayoutUnit computedMaxLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMaxHeightLength);
+        computedLogicalHeight = min(computedLogicalHeight, computedMaxLogicalHeight);
+    }
+
+    Length logicalMinHeightLength = style()->logicalMinHeight();
+    if (logicalMinHeightLength.isSpecified() && !logicalMinHeightLength.isNegative()) {
+        LayoutUnit computedMinLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMinHeightLength);
+        computedLogicalHeight = max(computedLogicalHeight, computedMinLogicalHeight);
+    }
 
     distributeExtraLogicalHeight(floorToInt(computedLogicalHeight - totalSectionLogicalHeight));
 
@@ -716,14 +739,10 @@ RenderTableSection* RenderTable::topNonEmptySection() const
 
 void RenderTable::splitColumn(unsigned position, unsigned firstSpan)
 {
-    // we need to add a new columnStruct
-    unsigned oldSize = m_columns.size();
-    m_columns.grow(oldSize + 1);
-    unsigned oldSpan = m_columns[position].span;
-    ASSERT(oldSpan > firstSpan);
-    m_columns[position].span = firstSpan;
-    memmove(m_columns.data() + position + 1, m_columns.data() + position, (oldSize - position) * sizeof(ColumnStruct));
-    m_columns[position + 1].span = oldSpan - firstSpan;
+    // We split the column at "position", taking "firstSpan" cells from the span.
+    ASSERT(m_columns[position].span > firstSpan);
+    m_columns.insert(position, ColumnStruct(firstSpan));
+    m_columns[position + 1].span -= firstSpan;
 
     // Propagate the change in our columns representation to the sections that don't need
     // cell recalc. If they do, they will be synced up directly with m_columns later.
@@ -744,10 +763,8 @@ void RenderTable::splitColumn(unsigned position, unsigned firstSpan)
 
 void RenderTable::appendColumn(unsigned span)
 {
-    unsigned pos = m_columns.size();
-    unsigned newSize = pos + 1;
-    m_columns.grow(newSize);
-    m_columns[pos].span = span;
+    unsigned newColumnIndex = m_columns.size();
+    m_columns.append(ColumnStruct(span));
 
     // Propagate the change in our columns representation to the sections that don't need
     // cell recalc. If they do, they will be synced up directly with m_columns later.
@@ -759,7 +776,7 @@ void RenderTable::appendColumn(unsigned span)
         if (section->needsCellRecalc())
             continue;
 
-        section->appendColumn(pos);
+        section->appendColumn(newColumnIndex);
     }
 
     m_columnPos.grow(numEffCols() + 1);
@@ -1355,7 +1372,7 @@ RenderTable* RenderTable::createAnonymousWithParentRenderer(const RenderObject* 
 const BorderValue& RenderTable::tableStartBorderAdjoiningCell(const RenderTableCell* cell) const
 {
     ASSERT(cell->isFirstOrLastCellInRow());
-    if (hasSameDirectionAs(cell->section()))
+    if (hasSameDirectionAs(cell->row()))
         return style()->borderStart();
 
     return style()->borderEnd();
@@ -1364,7 +1381,7 @@ const BorderValue& RenderTable::tableStartBorderAdjoiningCell(const RenderTableC
 const BorderValue& RenderTable::tableEndBorderAdjoiningCell(const RenderTableCell* cell) const
 {
     ASSERT(cell->isFirstOrLastCellInRow());
-    if (hasSameDirectionAs(cell->section()))
+    if (hasSameDirectionAs(cell->row()))
         return style()->borderEnd();
 
     return style()->borderStart();

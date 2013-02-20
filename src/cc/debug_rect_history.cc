@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/debug_rect_history.h"
 
 #include "cc/damage_tracker.h"
@@ -26,26 +24,29 @@ DebugRectHistory::~DebugRectHistory()
 {
 }
 
-void DebugRectHistory::saveDebugRectsForCurrentFrame(LayerImpl* rootLayer, const std::vector<LayerImpl*>& renderSurfaceLayerList, const std::vector<IntRect>& occludingScreenSpaceRects, const LayerTreeSettings& settings)
+void DebugRectHistory::saveDebugRectsForCurrentFrame(LayerImpl* rootLayer, const std::vector<LayerImpl*>& renderSurfaceLayerList, const std::vector<gfx::Rect>& occludingScreenSpaceRects, const std::vector<gfx::Rect>& nonOccludingScreenSpaceRects, const LayerTreeDebugState& debugState)
 {
     // For now, clear all rects from previous frames. In the future we may want to store
     // all debug rects for a history of many frames.
     m_debugRects.clear();
 
-    if (settings.showPaintRects)
+    if (debugState.showPaintRects)
         savePaintRects(rootLayer);
 
-    if (settings.showPropertyChangedRects)
+    if (debugState.showPropertyChangedRects)
         savePropertyChangedRects(renderSurfaceLayerList);
 
-    if (settings.showSurfaceDamageRects)
+    if (debugState.showSurfaceDamageRects)
         saveSurfaceDamageRects(renderSurfaceLayerList);
 
-    if (settings.showScreenSpaceRects)
+    if (debugState.showScreenSpaceRects)
         saveScreenSpaceRects(renderSurfaceLayerList);
 
-    if (settings.showOccludingRects)
+    if (debugState.showOccludingRects)
         saveOccludingRects(occludingScreenSpaceRects);
+
+    if (debugState.showNonOccludingRects)
+        saveNonOccludingRects(nonOccludingScreenSpaceRects);
 }
 
 
@@ -55,9 +56,10 @@ void DebugRectHistory::savePaintRects(LayerImpl* layer)
     // regardless of whether this layer is skipped for actual drawing or not. Therefore
     // we traverse recursively over all layers, not just the render surface list.
 
-    if (!layer->updateRect().isEmpty() && layer->drawsContent()) {
-        FloatRect updateContentRect = layer->updateRect();
-        updateContentRect.scale(layer->contentBounds().width() / static_cast<float>(layer->bounds().width()), layer->contentBounds().height() / static_cast<float>(layer->bounds().height()));
+    if (!layer->updateRect().IsEmpty() && layer->drawsContent()) {
+        float widthScale = layer->contentBounds().width() / static_cast<float>(layer->bounds().width());
+        float heightScale = layer->contentBounds().height() / static_cast<float>(layer->bounds().height());
+        gfx::RectF updateContentRect = gfx::ScaleRect(layer->updateRect(), widthScale, heightScale);
         m_debugRects.push_back(DebugRect(PaintRectType, MathUtil::mapClippedRect(layer->screenSpaceTransform(), updateContentRect)));
     }
 
@@ -83,7 +85,7 @@ void DebugRectHistory::savePropertyChangedRects(const std::vector<LayerImpl*>& r
                 continue;
 
             if (layer->layerPropertyChanged() || layer->layerSurfacePropertyChanged())
-                m_debugRects.push_back(DebugRect(PropertyChangedRectType, MathUtil::mapClippedRect(layer->screenSpaceTransform(), FloatRect(FloatPoint::zero(), layer->contentBounds()))));
+                m_debugRects.push_back(DebugRect(PropertyChangedRectType, MathUtil::mapClippedRect(layer->screenSpaceTransform(), gfx::RectF(gfx::PointF(), layer->contentBounds()))));
         }
     }
 }
@@ -113,10 +115,16 @@ void DebugRectHistory::saveScreenSpaceRects(const std::vector<LayerImpl* >& rend
     }
 }
 
-void DebugRectHistory::saveOccludingRects(const std::vector<IntRect>& occludingRects)
+void DebugRectHistory::saveOccludingRects(const std::vector<gfx::Rect>& occludingRects)
 {
     for (size_t i = 0; i < occludingRects.size(); ++i)
         m_debugRects.push_back(DebugRect(OccludingRectType, occludingRects[i]));
+}
+
+void DebugRectHistory::saveNonOccludingRects(const std::vector<gfx::Rect>& nonOccludingRects)
+{
+    for (size_t i = 0; i < nonOccludingRects.size(); ++i)
+        m_debugRects.push_back(DebugRect(NonOccludingRectType, nonOccludingRects[i]));
 }
 
 }  // namespace cc

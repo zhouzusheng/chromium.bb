@@ -16,6 +16,10 @@ namespace ui {
 
 class UI_EXPORT GestureConfiguration {
  public:
+  // Number of parameters in the array of parameters for the fling acceleration
+  // curve.
+  static const int NumAccelParams = 4;
+
   // Ordered alphabetically ignoring underscores, to align with the
   // associated list of prefs in gesture_prefs_aura.cc.
   static int default_radius() {
@@ -109,6 +113,18 @@ class UI_EXPORT GestureConfiguration {
   static void set_min_scroll_delta_squared(double val) {
     min_scroll_delta_squared_ = val;
   }
+  static int min_scroll_successive_velocity_events() {
+    return min_scroll_successive_velocity_events_;
+  }
+  static void set_min_scroll_successive_velocity_events(int val) {
+    min_scroll_successive_velocity_events_ = val;
+  }
+  static float min_scroll_velocity() {
+    return min_scroll_velocity_;
+  }
+  static void set_min_scroll_velocity(float val) {
+    min_scroll_velocity_ = val;
+  }
   static double min_swipe_speed() {
     return min_swipe_speed_;
   }
@@ -139,11 +155,17 @@ class UI_EXPORT GestureConfiguration {
   static void set_rail_start_proportion(double val) {
     rail_start_proportion_ = val;
   }
-  static double touchscreen_fling_acceleration_adjustment() {
-    return touchscreen_fling_acceleration_adjustment_;
+  static void set_fling_acceleration_curve_coefficients(int i, float val) {
+    fling_acceleration_curve_coefficients_[i] = val;
   }
-  static void set_touchscreen_fling_acceleration_adjustment(double val) {
-    touchscreen_fling_acceleration_adjustment_ = val;
+  static float fling_acceleration_curve_coefficients(int i) {
+    return fling_acceleration_curve_coefficients_[i];
+  }
+  static float fling_velocity_cap() {
+    return fling_velocity_cap_;
+  }
+  static void set_fling_velocity_cap(float val) {
+    fling_velocity_cap_ = val;
   }
 
  private:
@@ -177,12 +199,16 @@ class UI_EXPORT GestureConfiguration {
   static double min_pinch_update_distance_in_pixels_;
   static double min_rail_break_velocity_;
   static double min_scroll_delta_squared_;
+  // TODO(rjkroege): Expose these in chrome://gesture
+  static int min_scroll_successive_velocity_events_;
+  static float min_scroll_velocity_;
   static double min_swipe_speed_;
   static double min_touch_down_duration_in_seconds_for_click_;
   static int points_buffered_for_velocity_;
   static double rail_break_proportion_;
   static double rail_start_proportion_;
-  static double touchscreen_fling_acceleration_adjustment_;
+  static float fling_acceleration_curve_coefficients_[NumAccelParams];
+  static float fling_velocity_cap_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureConfiguration);
 };

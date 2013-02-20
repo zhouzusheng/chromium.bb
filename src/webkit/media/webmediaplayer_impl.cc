@@ -10,7 +10,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "base/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
@@ -20,12 +19,12 @@
 #include "media/base/filter_collection.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
-#include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_frame.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/video_renderer_base.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebVideoFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
@@ -119,6 +118,11 @@ typedef base::Callback<void(const std::string&,
                             scoped_array<uint8>,
                             int)> OnNeedKeyCB;
 
+static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
+                                const std::string& error) {
+  media_log->AddEvent(media_log->CreateMediaSourceErrorEvent(error));
+}
+
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     WebKit::WebFrame* frame,
     WebKit::WebMediaPlayerClient* client,
@@ -151,11 +155,6 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       audio_renderer_sink_(audio_renderer_sink),
       is_local_source_(false),
       supports_save_(true),
-      decryptor_(message_loop_factory_->GetMessageLoop(
-                     media::MessageLoopFactory::kDecoder),
-                 proxy_.get(),
-                 client,
-                 frame),
       starting_(false) {
   media_log_->AddEvent(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_CREATED));
@@ -179,18 +178,30 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
   // Also we want to be notified of |main_loop_| destruction.
   main_loop_->AddDestructionObserver(this);
 
+  media::SetDecryptorReadyCB set_decryptor_ready_cb;
+  if (WebKit::WebRuntimeFeatures::isEncryptedMediaEnabled()) {
+    decryptor_.reset(new ProxyDecryptor(proxy_.get(), client, frame));
+    set_decryptor_ready_cb = base::Bind(&ProxyDecryptor::SetDecryptorReadyCB,
+                                        base::Unretained(decryptor_.get()));
+  }
+
   // Create default video renderer.
   scoped_refptr<media::VideoRendererBase> video_renderer =
       new media::VideoRendererBase(
+          pipeline_message_loop,
+          set_decryptor_ready_cb,
           base::Bind(&WebMediaPlayerProxy::Repaint, proxy_),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::SetOpaque),
           true);
   filter_collection_->AddVideoRenderer(video_renderer);
   proxy_->set_frame_provider(video_renderer);
 
-  // Create default audio renderer.
-  filter_collection_->AddAudioRenderer(
-      new media::AudioRendererImpl(new media::NullAudioSink()));
+  // Create default audio renderer using the null sink if no sink was provided.
+  if (!audio_renderer_sink)
+    audio_renderer_sink = new media::NullAudioSink();
+
+  filter_collection_->AddAudioRenderer(new media::AudioRendererImpl(
+      audio_renderer_sink, set_decryptor_ready_cb));
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
@@ -257,9 +268,13 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
 
+  scoped_refptr<base::MessageLoopProxy> message_loop =
+      message_loop_factory_->GetMessageLoop(
+          media::MessageLoopFactory::kPipeline);
+
   // Media streams pipelines can start immediately.
   if (BuildMediaStreamCollection(url, media_stream_client_,
-                                 message_loop_factory_.get(),
+                                 message_loop,
                                  filter_collection_.get())) {
     supports_save_ = false;
     StartPipeline();
@@ -270,12 +285,12 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   if (!url.isEmpty() && url == GetClient()->sourceURL()) {
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
-        BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""));
+        BIND_TO_RENDER_LOOP_2(&WebMediaPlayerImpl::OnNeedKey, "", ""),
+        base::Bind(&LogMediaSourceError, media_log_));
 
     BuildMediaSourceCollection(chunk_demuxer_,
-                               message_loop_factory_.get(),
-                               filter_collection_.get(),
-                               &decryptor_);
+                               message_loop,
+                               filter_collection_.get());
     supports_save_ = false;
     StartPipeline();
     return;
@@ -295,9 +310,8 @@ void WebMediaPlayerImpl::load(const WebKit::WebURL& url, CORSMode cors_mode) {
   is_local_source_ = !gurl.SchemeIs("http") && !gurl.SchemeIs("https");
 
   BuildDefaultCollection(proxy_->data_source(),
-                         message_loop_factory_.get(),
-                         filter_collection_.get(),
-                         &decryptor_);
+                         message_loop,
+                         filter_collection_.get());
 }
 
 void WebMediaPlayerImpl::cancelLoad() {
@@ -473,6 +487,9 @@ bool WebMediaPlayerImpl::seeking() const {
 
 float WebMediaPlayerImpl::duration() const {
   DCHECK_EQ(main_loop_, MessageLoop::current());
+
+  if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing)
+    return std::numeric_limits<float>::quiet_NaN();
 
   base::TimeDelta duration = pipeline_->GetMediaDuration();
 
@@ -802,7 +819,7 @@ WebMediaPlayerImpl::GenerateKeyRequestInternal(
   // TODO(xhwang): We assume all streams are from the same container (thus have
   // the same "type") for now. In the future, the "type" should be passed down
   // from the application.
-  if (!decryptor_.GenerateKeyRequest(key_system.utf8(),
+  if (!decryptor_->GenerateKeyRequest(key_system.utf8(),
                                      init_data_type_,
                                      init_data, init_data_length)) {
     current_key_system_.reset();
@@ -849,7 +866,7 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerImpl::AddKeyInternal(
                           static_cast<size_t>(init_data_length))
            << " [" << session_id.utf8().data() << "]";
 
-  decryptor_.AddKey(key_system.utf8(), key, key_length,
+  decryptor_->AddKey(key_system.utf8(), key, key_length,
                     init_data, init_data_length, session_id.utf8());
   return WebMediaPlayer::MediaKeyExceptionNoError;
 }
@@ -873,7 +890,7 @@ WebMediaPlayerImpl::CancelKeyRequestInternal(
   if (current_key_system_.isEmpty() || key_system != current_key_system_)
     return WebMediaPlayer::MediaKeyExceptionInvalidPlayerState;
 
-  decryptor_.CancelKeyRequest(key_system.utf8(), session_id.utf8());
+  decryptor_->CancelKeyRequest(key_system.utf8(), session_id.utf8());
   return WebMediaPlayer::MediaKeyExceptionNoError;
 }
 
@@ -1022,6 +1039,10 @@ void WebMediaPlayerImpl::OnNeedKey(const std::string& key_system,
                                    int init_data_size) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
+  // Do not fire NeedKey event if encrypted media is not enabled.
+  if (!decryptor_)
+    return;
+
   UMA_HISTOGRAM_COUNTS(kMediaEme + std::string("NeedKey"), 1);
 
   DCHECK(init_data_type_.empty() || type.empty() || type == init_data_type_);
@@ -1066,15 +1087,15 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& key_system,
 
 void WebMediaPlayerImpl::OnKeyMessage(const std::string& key_system,
                                       const std::string& session_id,
-                                      scoped_array<uint8> message,
-                                      int message_length,
-                                      const std::string& /* default_url */) {
+                                      const std::string& message,
+                                      const GURL& default_url) {
   DCHECK_EQ(main_loop_, MessageLoop::current());
 
   GetClient()->keyMessage(WebString::fromUTF8(key_system),
                           WebString::fromUTF8(session_id),
-                          message.get(),
-                          message_length);
+                          reinterpret_cast<const uint8*>(message.data()),
+                          message.size(),
+                          default_url);
 }
 
 void WebMediaPlayerImpl::SetOpaque(bool opaque) {

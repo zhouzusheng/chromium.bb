@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCLayerTreeHostClient_h
-#define CCLayerTreeHostClient_h
+#ifndef CC_LAYER_TREE_HOST_CLIENT_H_
+#define CC_LAYER_TREE_HOST_CLIENT_H_
 
 #include "base/memory/scoped_ptr.h"
 
-namespace WebKit {
-class WebCompositorOutputSurface;
+namespace gfx {
+class Vector2d;
 }
 
 namespace cc {
+class FontAtlas;
 class InputHandler;
-class IntSize;
+class OutputSurface;
 
 class LayerTreeHostClient {
 public:
@@ -22,8 +23,8 @@ public:
     virtual void didBeginFrame() = 0;
     virtual void animate(double frameBeginTime) = 0;
     virtual void layout() = 0;
-    virtual void applyScrollAndScale(const IntSize& scrollDelta, float pageScale) = 0;
-    virtual scoped_ptr<WebKit::WebCompositorOutputSurface> createOutputSurface() = 0;
+    virtual void applyScrollAndScale(gfx::Vector2d scrollDelta, float pageScale) = 0;
+    virtual scoped_ptr<OutputSurface> createOutputSurface() = 0;
     virtual void didRecreateOutputSurface(bool success) = 0;
     virtual scoped_ptr<InputHandler> createInputHandler() = 0;
     virtual void willCommit() = 0;
@@ -34,10 +35,13 @@ public:
     // Used only in the single-threaded path.
     virtual void scheduleComposite() = 0;
 
+    // Creates a font atlas to use for debug visualizations.
+    virtual scoped_ptr<FontAtlas> createFontAtlas() = 0;
+
 protected:
     virtual ~LayerTreeHostClient() { }
 };
 
 }
 
-#endif // CCLayerTreeHostClient_h
+#endif  // CC_LAYER_TREE_HOST_CLIENT_H_

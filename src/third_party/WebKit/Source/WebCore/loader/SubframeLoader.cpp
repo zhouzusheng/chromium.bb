@@ -198,16 +198,20 @@ static void logPluginRequest(Page* page, const String& mimeType, const String& u
             return;
     }
 
+    PluginData* pluginData = page->pluginData();
+    String pluginFile = pluginData ? pluginData->pluginFileForMimeType(newMIMEType) : String();
+    String description = !pluginFile ? newMIMEType : pluginFile;
+
     ChromeClient* client = page->chrome()->client();
-    client->logDiagnosticMessage(success ? DiagnosticLoggingKeys::pluginLoadedKey() : DiagnosticLoggingKeys::pluginLoadingFailedKey(), newMIMEType, DiagnosticLoggingKeys::noopKey());
-    
+    client->logDiagnosticMessage(success ? DiagnosticLoggingKeys::pluginLoadedKey() : DiagnosticLoggingKeys::pluginLoadingFailedKey(), description, DiagnosticLoggingKeys::noopKey());
+
     if (!page->hasSeenAnyPlugin())
         client->logDiagnosticMessage(DiagnosticLoggingKeys::pageContainsAtLeastOnePluginKey(), emptyString(), DiagnosticLoggingKeys::noopKey());
     
-    if (!page->hasSeenPlugin(newMIMEType))
-        client->logDiagnosticMessage(DiagnosticLoggingKeys::pageContainsPluginKey(), newMIMEType, DiagnosticLoggingKeys::noopKey());
+    if (!page->hasSeenPlugin(description))
+        client->logDiagnosticMessage(DiagnosticLoggingKeys::pageContainsPluginKey(), description, DiagnosticLoggingKeys::noopKey());
 
-    page->sawPlugin(newMIMEType);
+    page->sawPlugin(description);
 }
 
 bool SubframeLoader::requestObject(HTMLPlugInImageElement* ownerElement, const String& url, const AtomicString& frameName, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues)
@@ -446,6 +450,8 @@ bool SubframeLoader::loadPlugin(HTMLPlugInImageElement* pluginElement, const KUR
     if (!renderer || useFallback)
         return false;
 
+    pluginElement->subframeLoaderWillCreatePlugIn(url);
+
     IntSize contentSize = roundedIntSize(LayoutSize(renderer->contentWidth(), renderer->contentHeight()));
     bool loadManually = document()->isPluginDocument() && !m_containsPlugins && toPluginDocument(document())->shouldLoadPluginManually();
     RefPtr<Widget> widget = m_frame->loader()->client()->createPlugin(contentSize,
@@ -457,6 +463,7 @@ bool SubframeLoader::loadPlugin(HTMLPlugInImageElement* pluginElement, const KUR
         return false;
     }
 
+    pluginElement->subframeLoaderDidCreatePlugIn(widget.get());
     renderer->setWidget(widget);
     m_containsPlugins = true;
  

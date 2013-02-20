@@ -28,7 +28,7 @@
 #include "AdjustViewSizeOrNot.h"
 #include "Color.h"
 #include "Frame.h"
-#include "LayoutTypes.h"
+#include "LayoutRect.h"
 #include "Pagination.h"
 #include "PaintPhase.h"
 #include "ScrollView.h"
@@ -156,6 +156,7 @@ public:
 
     void resetScrollbars();
     void resetScrollbarsAndClearContentsSize();
+    void prepareForDetach();
     void detachCustomScrollbars();
     virtual void recalculateScrollbarOverlayStyle();
 
@@ -216,7 +217,7 @@ public:
 
     void beginDeferredRepaints();
     void endDeferredRepaints();
-    void checkFlushDeferredRepaintsAfterLoadComplete();
+    void handleLoadCompleted();
     void flushDeferredRepaints();
     void startDeferredRepaintTimer(double delay);
     void resetDeferredRepaintDelay();
@@ -322,7 +323,7 @@ public:
     // On each repaint the delay increses by this amount
     static void setRepaintThrottlingDeferredRepaintDelayIncrementDuringLoading(double p);
 
-    virtual IntPoint currentMousePosition() const;
+    virtual IntPoint lastKnownMousePosition() const;
 
     virtual bool scrollbarsCanBeActive() const OVERRIDE;
 
@@ -338,12 +339,15 @@ public:
     
     void setTracksRepaints(bool);
     bool isTrackingRepaints() const { return m_isTrackingRepaints; }
-    void resetTrackedRepaints() { m_trackedRepaintRects.clear(); }
+    void resetTrackedRepaints();
     const Vector<IntRect>& trackedRepaintRects() const { return m_trackedRepaintRects; }
+    String trackedRepaintRectsAsText() const;
 
     typedef HashSet<ScrollableArea*> ScrollableAreaSet;
-    void addScrollableArea(ScrollableArea*);
-    void removeScrollableArea(ScrollableArea*);
+    // Returns whether the scrollable area has just been newly added.
+    bool addScrollableArea(ScrollableArea*);
+    // Returns whether the scrollable area has just been removed.
+    bool removeScrollableArea(ScrollableArea*);
     bool containsScrollableArea(ScrollableArea*) const;
     const ScrollableAreaSet* scrollableAreas() const { return m_scrollableAreas.get(); }
 
@@ -368,6 +372,15 @@ public:
     bool inProgrammaticScroll() const { return m_inProgrammaticScroll; }
     void setInProgrammaticScroll(bool programmaticScroll) { m_inProgrammaticScroll = programmaticScroll; }
 
+#if ENABLE(CSS_FILTERS)
+    void setHasSoftwareFilters(bool hasSoftwareFilters) { m_hasSoftwareFilters = hasSoftwareFilters; }
+    bool hasSoftwareFilters() const { return m_hasSoftwareFilters; }
+#endif
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+    IntSize initialViewportSize() const { return m_initialViewportSize; }
+    void setInitialViewportSize(const IntSize& size) { m_initialViewportSize = size; }
+#endif
+
 protected:
     virtual bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect);
     virtual void scrollContentsSlowPath(const IntRect& updateRect);
@@ -388,6 +401,8 @@ private:
     bool useSlowRepaintsIfNotOverlapped() const;
     void updateCanBlitOnScrollRecursively();
     bool contentsInCompositedLayer() const;
+
+    bool shouldUpdateFixedElementsAfterScrolling();
 
     void applyOverflowToViewport(RenderObject*, ScrollbarMode& hMode, ScrollbarMode& vMode);
     void applyPaginationToViewport();
@@ -423,6 +438,7 @@ private:
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
     virtual bool scrollAnimatorEnabled() const OVERRIDE;
 #if USE(ACCELERATED_COMPOSITING)
+    virtual bool usesCompositedScrolling() const OVERRIDE;
     virtual GraphicsLayer* layerForHorizontalScrollbar() const OVERRIDE;
     virtual GraphicsLayer* layerForVerticalScrollbar() const OVERRIDE;
     virtual GraphicsLayer* layerForScrollCorner() const OVERRIDE;
@@ -458,6 +474,7 @@ private:
 
     virtual AXObjectCache* axObjectCache() const;
     void notifyWidgetsInAllFrames(WidgetNotification);
+    void removeFromAXObjectCache();
     
     static double sCurrentPaintTimeStamp; // used for detecting decoded resource thrash in the cache
 
@@ -484,6 +501,7 @@ private:
     
     bool m_layoutSchedulingEnabled;
     bool m_inLayout;
+    bool m_doingPreLayoutStyleUpdate;
     bool m_inSynchronousPostLayout;
     int m_layoutCount;
     unsigned m_nestedLayoutCount;
@@ -560,6 +578,15 @@ private:
     static double s_initialDeferredRepaintDelayDuringLoading;
     static double s_maxDeferredRepaintDelayDuringLoading;
     static double s_deferredRepaintDelayIncrementDuringLoading;
+
+#if ENABLE(CSS_FILTERS)
+    bool m_hasSoftwareFilters;
+#endif
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+    // Size of viewport before any UA or author styles have overridden
+    // the viewport given by the window or viewing area of the UA.
+    IntSize m_initialViewportSize;
+#endif
 };
 
 inline void FrameView::incrementVisuallyNonEmptyCharacterCount(unsigned count)

@@ -28,6 +28,7 @@
 
 #include "DOMWindowProperty.h"
 #include "KURL.h"
+#include "ScriptWrappable.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
@@ -39,12 +40,12 @@ class ScriptExecutionContext;
 class SerializedScriptValue;
 typedef int ExceptionCode;
 
-class History : public RefCounted<History>, public DOMWindowProperty {
+class History : public ScriptWrappable, public RefCounted<History>, public DOMWindowProperty {
 public:
     static PassRefPtr<History> create(Frame* frame) { return adoptRef(new History(frame)); }
 
     unsigned length() const;
-    SerializedScriptValue* state();
+    PassRefPtr<SerializedScriptValue> state();
     void back();
     void forward();
     void go(int distance);
@@ -67,9 +68,9 @@ private:
 
     KURL urlForState(const String& url);
 
-    SerializedScriptValue* stateInternal() const;
+    PassRefPtr<SerializedScriptValue> stateInternal() const;
 
-    SerializedScriptValue* m_lastStateObjectRequested;
+    RefPtr<SerializedScriptValue> m_lastStateObjectRequested;
 };
 
 } // namespace WebCore

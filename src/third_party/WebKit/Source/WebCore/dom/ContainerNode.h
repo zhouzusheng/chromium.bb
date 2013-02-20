@@ -78,6 +78,7 @@ private:
 };
 
 class ContainerNode : public Node {
+    friend class PostAttachCallbackDisabler;
 public:
     virtual ~ContainerNode();
 
@@ -131,9 +132,7 @@ public:
 
     void disconnectDescendantFrames();
 
-    // More efficient versions of these two functions for the case where we are starting with a ContainerNode.
-    Node* traverseNextNode() const;
-    Node* traverseNextNode(const Node* stayWithin) const;
+    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const { return true; }
 
     virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     {
@@ -148,8 +147,6 @@ protected:
 
     static void queuePostAttachCallback(NodeCallback, Node*, unsigned = 0);
     static bool postAttachCallbacksAreSuspended();
-    void suspendPostAttachCallbacks();
-    void resumePostAttachCallbacks();
 
     template<class GenericNode, class GenericNodeContainer>
     friend void appendChildToContainer(GenericNode* child, GenericNodeContainer*);
@@ -165,6 +162,8 @@ private:
     void insertBeforeCommon(Node* nextChild, Node* oldChild);
 
     static void dispatchPostAttachCallbacks();
+    void suspendPostAttachCallbacks();
+    void resumePostAttachCallbacks();
 
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
@@ -266,55 +265,19 @@ inline Node* Node::highestAncestor() const
     return highest;
 }
 
-inline Node* Node::traverseNextSibling() const
+inline bool Node::needsShadowTreeWalker() const
 {
-    if (nextSibling())
-        return nextSibling();
-    return traverseNextAncestorSibling();
+    if (getFlag(NeedsShadowTreeWalkerFlag))
+        return true;
+    ContainerNode* parent = parentOrHostNode();
+    return parent && parent->getFlag(NeedsShadowTreeWalkerFlag);
 }
 
-inline Node* Node::traverseNextNode() const
-{
-    if (firstChild())
-        return firstChild();
-    return traverseNextSibling();
-}
-
-inline Node* ContainerNode::traverseNextNode() const
-{
-    // More efficient than the Node::traverseNextNode above, because
-    // this does not need to do the isContainerNode check inside firstChild.
-    if (firstChild())
-        return firstChild();
-    return traverseNextSibling();
-}
-
-inline Node* Node::traverseNextSibling(const Node* stayWithin) const
-{
-    if (this == stayWithin)
-        return 0;
-    if (nextSibling())
-        return nextSibling();
-    return traverseNextAncestorSibling(stayWithin);
-}
-
-inline Node* Node::traverseNextNode(const Node* stayWithin) const
-{
-    if (firstChild())
-        return firstChild();
-    return traverseNextSibling(stayWithin);
-}
-
-inline Node* ContainerNode::traverseNextNode(const Node* stayWithin) const
-{
-    // More efficient than the Node::traverseNextNode above, because
-    // this does not need to do the isContainerNode check inside firstChild.
-    if (firstChild())
-        return firstChild();
-    return traverseNextSibling(stayWithin);
-}
-
-typedef Vector<RefPtr<Node>, 11> NodeVector;
+// This constant controls how much buffer is initially allocated
+// for a Node Vector that is used to store child Nodes of a given Node.
+// FIXME: Optimize the value.
+const int initialNodeVectorSize = 11;
+typedef Vector<RefPtr<Node>, initialNodeVectorSize> NodeVector;
 
 inline void getChildNodes(Node* node, NodeVector& nodes)
 {
@@ -386,6 +349,24 @@ private:
     unsigned m_currentIndex;
     OwnPtr<Vector<RefPtr<Node> > > m_childNodes; // Lazily instantiated.
     ChildNodesLazySnapshot* m_nextSnapshot;
+};
+
+class PostAttachCallbackDisabler {
+public:
+    PostAttachCallbackDisabler(ContainerNode* node)
+        : m_node(node)
+    {
+        ASSERT(m_node);
+        m_node->suspendPostAttachCallbacks();
+    }
+
+    ~PostAttachCallbackDisabler()
+    {
+        m_node->resumePostAttachCallbacks();
+    }
+
+private:
+    ContainerNode* m_node;
 };
 
 } // namespace WebCore

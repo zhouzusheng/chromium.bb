@@ -28,6 +28,7 @@
 #include "Document.h"
 #include "EventNames.h"
 #include "HTMLNames.h"
+#include "NodeTraversal.h"
 #include "RenderObject.h"
 #include "RenderSVGResource.h"
 #include "RenderSVGResourceClipper.h"
@@ -74,14 +75,6 @@ SVGStyledElement::SVGStyledElement(const QualifiedName& tagName, Document* docum
     registerAnimatedPropertiesForSVGStyledElement();
 }
 
-SVGStyledElement::~SVGStyledElement()
-{
-    if (hasPendingResources() && document())
-        document()->accessSVGExtensions()->removeElementFromPendingResources(this);
-
-    ASSERT(!hasPendingResources());
-}
-
 String SVGStyledElement::title() const
 {
     // According to spec, we should not return titles when hovering over root <svg> elements (those
@@ -108,8 +101,8 @@ String SVGStyledElement::title() const
 
     // If we aren't an instance in a <use> or the <use> title was not found, then find the first
     // <title> child of this element.
-    Element* titleElement = firstElementChild();
-    for (; titleElement; titleElement = titleElement->nextElementSibling()) {
+    Element* titleElement = ElementTraversal::firstWithin(this);
+    for (; titleElement; titleElement = ElementTraversal::nextSkippingChildren(titleElement, this)) {
         if (titleElement->hasTagName(SVGNames::titleTag) && titleElement->isSVGElement())
             break;
     }
@@ -299,26 +292,26 @@ bool SVGStyledElement::isPresentationAttribute(const QualifiedName& name) const
     return SVGElement::isPresentationAttribute(name);
 }
 
-void SVGStyledElement::collectStyleForAttribute(const Attribute& attribute, StylePropertySet* style)
+void SVGStyledElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
 {
     CSSPropertyID propertyID = SVGStyledElement::cssPropertyIdForSVGAttributeName(attribute.name());
     if (propertyID > 0)
-        addPropertyToAttributeStyle(style, propertyID, attribute.value());
+        addPropertyToPresentationAttributeStyle(style, propertyID, attribute.value());
 }
 
-void SVGStyledElement::parseAttribute(const Attribute& attribute)
+void SVGStyledElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     // SVG animation has currently requires special storage of values so we set
     // the className here.  svgAttributeChanged actually causes the resulting
     // style updates (instead of StyledElement::parseAttribute). We don't
     // tell StyledElement about the change to avoid parsing the class list twice
-    if (attribute.name() == HTMLNames::classAttr) {
-        setClassNameBaseValue(attribute.value());
+    if (name == HTMLNames::classAttr) {
+        setClassNameBaseValue(value);
         return;
     }
 
     // id is handled by StyledElement which SVGElement inherits from
-    SVGElement::parseAttribute(attribute);
+    SVGElement::parseAttribute(name, value);
 }
 
 bool SVGStyledElement::isKnownAttribute(const QualifiedName& attrName)
@@ -363,7 +356,7 @@ Node::InsertionNotificationRequest SVGStyledElement::insertedInto(ContainerNode*
 void SVGStyledElement::buildPendingResourcesIfNeeded()
 {
     Document* document = this->document();
-    if (!needsPendingResourceHandling() || !document)
+    if (!needsPendingResourceHandling() || !document || !inDocument() || isInShadowTree())
         return;
 
     SVGDocumentExtensions* extensions = document->accessSVGExtensions();
@@ -375,7 +368,7 @@ void SVGStyledElement::buildPendingResourcesIfNeeded()
     extensions->markPendingResourcesForRemoval(resourceId);
 
     // Rebuild pending resources for each client of a pending resource that is being removed.
-    while (SVGStyledElement* clientElement = extensions->removeElementFromPendingResourcesForRemoval(resourceId)) {
+    while (SVGElement* clientElement = extensions->removeElementFromPendingResourcesForRemoval(resourceId)) {
         ASSERT(clientElement->hasPendingResources());
         if (clientElement->hasPendingResources()) {
             clientElement->buildPendingResource();
@@ -390,11 +383,6 @@ void SVGStyledElement::removedFrom(ContainerNode* rootParent)
         updateRelativeLengthsInformation(false, this);
     SVGElement::removedFrom(rootParent);
     SVGElementInstance::invalidateAllInstancesOfElement(this);
-    Document* document = this->document();
-    if (!rootParent->inDocument() || !document)
-        return;
-
-    document->accessSVGExtensions()->removeElementFromPendingResources(this);
 }
 
 void SVGStyledElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -432,22 +420,6 @@ void SVGStyledElement::setInstanceUpdatesBlocked(bool value)
 {
     if (hasSVGRareData())
         svgRareData()->setInstanceUpdatesBlocked(value);
-}
-
-bool SVGStyledElement::hasPendingResources() const
-{
-    return hasSVGRareData() && svgRareData()->hasPendingResources();
-}
-
-void SVGStyledElement::setHasPendingResources()
-{
-    ensureSVGRareData()->setHasPendingResources(true);
-}
-
-void SVGStyledElement::clearHasPendingResourcesIfPossible()
-{
-    if (!document()->accessSVGExtensions()->isElementPendingResources(this))
-        ensureSVGRareData()->setHasPendingResources(false);
 }
 
 AffineTransform SVGStyledElement::localCoordinateSpaceTransform(SVGLocatable::CTMScope) const

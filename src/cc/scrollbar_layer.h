@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 
-#ifndef ScrollbarLayerChromium_h
-#define ScrollbarLayerChromium_h
+#ifndef CC_SCROLLBAR_LAYER_H_
+#define CC_SCROLLBAR_LAYER_H_
 
-#include "caching_bitmap_content_layer_updater.h"
-#include "cc/layer.h"
+#include "cc/caching_bitmap_content_layer_updater.h"
+#include "cc/cc_export.h"
+#include "cc/contents_scaling_layer.h"
 #include <public/WebScrollbar.h>
 #include <public/WebScrollbarThemeGeometry.h>
 #include <public/WebScrollbarThemePainter.h>
@@ -18,22 +19,25 @@ class ResourceUpdateQueue;
 class Scrollbar;
 class ScrollbarThemeComposite;
 
-class ScrollbarLayer : public Layer {
+class CC_EXPORT ScrollbarLayer : public ContentsScalingLayer {
 public:
-    virtual scoped_ptr<LayerImpl> createLayerImpl() OVERRIDE;
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl) OVERRIDE;
 
     static scoped_refptr<ScrollbarLayer> create(scoped_ptr<WebKit::WebScrollbar>, WebKit::WebScrollbarThemePainter, scoped_ptr<WebKit::WebScrollbarThemeGeometry>, int scrollLayerId);
 
+    int scrollLayerId() const { return m_scrollLayerId; }
+    void setScrollLayerId(int id);
+
     // Layer interface
-    virtual bool needsContentsScale() const OVERRIDE;
-    virtual IntSize contentBounds() const OVERRIDE;
     virtual void setTexturePriorities(const PriorityCalculator&) OVERRIDE;
     virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) OVERRIDE;
     virtual void setLayerTreeHost(LayerTreeHost*) OVERRIDE;
     virtual void pushPropertiesTo(LayerImpl*) OVERRIDE;
-
-    int scrollLayerId() const { return m_scrollLayerId; }
-    void setScrollLayerId(int id) { m_scrollLayerId = id; }
+    virtual void calculateContentsScale(
+        float idealContentsScale,
+        float* contentsScaleX,
+        float* contentsScaleY,
+        gfx::Size* contentBounds) OVERRIDE;
 
     virtual ScrollbarLayer* toScrollbarLayer() OVERRIDE;
 
@@ -42,8 +46,12 @@ protected:
     virtual ~ScrollbarLayer();
 
 private:
-    void updatePart(CachingBitmapContentLayerUpdater*, LayerUpdater::Resource*, const IntRect&, ResourceUpdateQueue&, RenderingStats&);
+    void updatePart(CachingBitmapContentLayerUpdater*, LayerUpdater::Resource*, const gfx::Rect&, ResourceUpdateQueue&, RenderingStats&);
     void createUpdaterIfNeeded();
+    gfx::Rect scrollbarLayerRectToContentRect(const gfx::Rect& layerRect) const;
+
+    int maxTextureSize();
+    float clampScaleToMaxTextureSize(float scale);
 
     scoped_ptr<WebKit::WebScrollbar> m_scrollbar;
     WebKit::WebScrollbarThemePainter m_painter;
@@ -63,4 +71,4 @@ private:
 };
 
 }
-#endif
+#endif  // CC_SCROLLBAR_LAYER_H_

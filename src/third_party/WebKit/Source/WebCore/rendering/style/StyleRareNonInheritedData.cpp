@@ -33,6 +33,7 @@
 #include "WebCoreMemoryInstrumentation.h"
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/MemoryInstrumentationVector.h>
+#include <wtf/MemoryObjectInfo.h>
 
 namespace WebCore {
 
@@ -51,8 +52,8 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_pageSize()
     , m_shapeInside(RenderStyle::initialShapeInside())
     , m_shapeOutside(RenderStyle::initialShapeOutside())
-    , m_wrapMargin(RenderStyle::initialWrapMargin())
-    , m_wrapPadding(RenderStyle::initialWrapPadding())
+    , m_shapeMargin(RenderStyle::initialShapeMargin())
+    , m_shapePadding(RenderStyle::initialShapePadding())
     , m_clipPath(RenderStyle::initialClipPath())
     , m_visitedLinkBackgroundColor(RenderStyle::initialBackgroundColor())
     , m_order(RenderStyle::initialOrder())
@@ -125,8 +126,8 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_pageSize(o.m_pageSize)
     , m_shapeInside(o.m_shapeInside)
     , m_shapeOutside(o.m_shapeOutside)
-    , m_wrapMargin(o.m_wrapMargin)
-    , m_wrapPadding(o.m_wrapPadding)
+    , m_shapeMargin(o.m_shapeMargin)
+    , m_shapePadding(o.m_shapePadding)
     , m_clipPath(o.m_clipPath)
     , m_visitedLinkBackgroundColor(o.m_visitedLinkBackgroundColor)
     , m_visitedLinkOutlineColor(o.m_visitedLinkOutlineColor)
@@ -210,8 +211,8 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_pageSize == o.m_pageSize
         && m_shapeInside == o.m_shapeInside
         && m_shapeOutside == o.m_shapeOutside
-        && m_wrapMargin == o.m_wrapMargin
-        && m_wrapPadding == o.m_wrapPadding
+        && m_shapeMargin == o.m_shapeMargin
+        && m_shapePadding == o.m_shapePadding
         && m_clipPath == o.m_clipPath
         && m_visitedLinkBackgroundColor == o.m_visitedLinkBackgroundColor
         && m_visitedLinkOutlineColor == o.m_visitedLinkOutlineColor

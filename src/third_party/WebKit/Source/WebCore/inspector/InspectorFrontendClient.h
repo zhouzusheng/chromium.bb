@@ -71,6 +71,8 @@ public:
     virtual void inspectedURLChanged(const String&) = 0;
 
     virtual void sendMessageToBackend(const String&) = 0;
+
+    virtual bool isUnderTest() = 0;
 };
 
 } // namespace WebCore

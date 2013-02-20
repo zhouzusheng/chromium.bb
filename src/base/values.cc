@@ -174,7 +174,13 @@ bool Value::Equals(const Value* a, const Value* b) {
   return a->Equals(b);
 }
 
-Value::Value(Type type) : type_(type) {
+Value::Value(Type type) : type_(type) {}
+
+Value::Value(const Value& that) : type_(that.type_) {}
+
+Value& Value::operator=(const Value& that) {
+  type_ = that.type_;
+  return *this;
 }
 
 ///////////////////// FundamentalValue ////////////////////
@@ -631,6 +637,15 @@ bool DictionaryValue::GetWithoutPathExpansion(const std::string& key,
   return static_cast<const DictionaryValue&>(*this).GetWithoutPathExpansion(
       key,
       const_cast<const Value**>(out_value));
+}
+
+bool DictionaryValue::GetBooleanWithoutPathExpansion(const std::string& key,
+                                                     bool* out_value) const {
+  const Value* value;
+  if (!GetWithoutPathExpansion(key, &value))
+    return false;
+
+  return value->GetAsBoolean(out_value);
 }
 
 bool DictionaryValue::GetIntegerWithoutPathExpansion(const std::string& key,

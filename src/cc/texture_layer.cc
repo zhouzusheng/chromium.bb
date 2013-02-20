@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/texture_layer.h"
 
-#include "third_party/khronos/GLES2/gl2.h"
 #include "cc/layer_tree_host.h"
 #include "cc/texture_layer_client.h"
 #include "cc/texture_layer_impl.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/khronos/GLES2/gl2.h"
 
 namespace cc {
 
@@ -29,6 +28,10 @@ TextureLayer::TextureLayer(TextureLayerClient* client)
     , m_textureId(0)
     , m_contentCommitted(false)
 {
+  m_vertexOpacity[0] = 1.0f;
+  m_vertexOpacity[1] = 1.0f;
+  m_vertexOpacity[2] = 1.0f;
+  m_vertexOpacity[3] = 1.0f;
 }
 
 TextureLayer::~TextureLayer()
@@ -41,9 +44,9 @@ TextureLayer::~TextureLayer()
     }
 }
 
-scoped_ptr<LayerImpl> TextureLayer::createLayerImpl()
+scoped_ptr<LayerImpl> TextureLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return TextureLayerImpl::create(m_layerId).PassAs<LayerImpl>();
+    return TextureLayerImpl::create(treeImpl, m_layerId).PassAs<LayerImpl>();
 }
 
 void TextureLayer::setFlipped(bool flipped)
@@ -52,10 +55,25 @@ void TextureLayer::setFlipped(bool flipped)
     setNeedsCommit();
 }
 
-void TextureLayer::setUVRect(const FloatRect& rect)
+void TextureLayer::setUVRect(const gfx::RectF& rect)
 {
     m_uvRect = rect;
     setNeedsCommit();
+}
+
+void TextureLayer::setVertexOpacity(float bottomLeft,
+                                    float topLeft,
+                                    float topRight,
+                                    float bottomRight) {
+  // Indexing according to the quad vertex generation:
+  // 1--2
+  // |  |
+  // 0--3
+  m_vertexOpacity[0] = bottomLeft;
+  m_vertexOpacity[1] = topLeft;
+  m_vertexOpacity[2] = topRight;
+  m_vertexOpacity[3] = bottomRight;
+  setNeedsCommit();
 }
 
 void TextureLayer::setPremultipliedAlpha(bool premultipliedAlpha)
@@ -90,7 +108,7 @@ void TextureLayer::willModifyTexture()
     }
 }
 
-void TextureLayer::setNeedsDisplayRect(const FloatRect& dirtyRect)
+void TextureLayer::setNeedsDisplayRect(const gfx::RectF& dirtyRect)
 {
     Layer::setNeedsDisplayRect(dirtyRect);
 
@@ -127,9 +145,18 @@ void TextureLayer::pushPropertiesTo(LayerImpl* layer)
     TextureLayerImpl* textureLayer = static_cast<TextureLayerImpl*>(layer);
     textureLayer->setFlipped(m_flipped);
     textureLayer->setUVRect(m_uvRect);
+    textureLayer->setVertexOpacity(m_vertexOpacity);
     textureLayer->setPremultipliedAlpha(m_premultipliedAlpha);
     textureLayer->setTextureId(m_textureId);
     m_contentCommitted = drawsContent();
 }
 
+bool TextureLayer::blocksPendingCommit() const
+{
+    // Double-buffered texture layers need to be blocked until they can be made
+    // triple-buffered.  Single-buffered layers already prevent draws, so
+    // can block too for simplicity.
+    return true;
 }
+
+}  // namespace cc

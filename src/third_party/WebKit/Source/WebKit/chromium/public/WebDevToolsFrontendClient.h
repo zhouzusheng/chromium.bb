@@ -53,6 +53,8 @@ public:
     virtual void save(const WebString& url, const WebString& content, bool saveAs) { }
     virtual void append(const WebString& url, const WebString& content) { }
 
+    virtual bool isUnderTest() { return false; }
+
 protected:
     virtual ~WebDevToolsFrontendClient() {}
 };

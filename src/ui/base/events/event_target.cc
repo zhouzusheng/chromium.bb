@@ -44,6 +44,44 @@ void EventTarget::RemovePostTargetHandler(EventHandler* handler) {
     post_target_list_.erase(find);
 }
 
+void EventTarget::OnEvent(Event* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnEvent(event);
+  else
+    EventHandler::OnEvent(event);
+}
+
+void EventTarget::OnKeyEvent(KeyEvent* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnKeyEvent(event);
+}
+
+void EventTarget::OnMouseEvent(MouseEvent* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnMouseEvent(event);
+}
+
+void EventTarget::OnScrollEvent(ScrollEvent* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnScrollEvent(event);
+}
+
+void EventTarget::OnTouchEvent(TouchEvent* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnTouchEvent(event);
+}
+
+void EventTarget::OnGestureEvent(GestureEvent* event) {
+  CHECK_EQ(this, event->target());
+  if (target_handler_)
+    target_handler_->OnGestureEvent(event);
+}
+
 void EventTarget::GetPreTargetHandlers(EventHandlerList* list) {
   EventTarget* target = this;
   while (target) {
@@ -67,33 +105,6 @@ void EventTarget::GetPostTargetHandlers(EventHandlerList* list) {
     }
     target = target->GetParentTarget();
   }
-}
-
-EventResult EventTarget::OnKeyEvent(KeyEvent* event) {
-  CHECK_EQ(this, event->target());
-  return target_handler_ ? target_handler_->OnKeyEvent(event) : ER_UNHANDLED;
-}
-
-EventResult EventTarget::OnMouseEvent(MouseEvent* event) {
-  CHECK_EQ(this, event->target());
-  return target_handler_ ? target_handler_->OnMouseEvent(event) : ER_UNHANDLED;
-}
-
-EventResult EventTarget::OnScrollEvent(ScrollEvent* event) {
-  CHECK_EQ(this, event->target());
-  return target_handler_ ? target_handler_->OnScrollEvent(event) : ER_UNHANDLED;
-}
-
-EventResult EventTarget::OnTouchEvent(TouchEvent* event) {
-  CHECK_EQ(this, event->target());
-  return target_handler_ ? target_handler_->OnTouchEvent(event) :
-                           ER_UNHANDLED;
-}
-
-EventResult EventTarget::OnGestureEvent(GestureEvent* event) {
-  CHECK_EQ(this, event->target());
-  return target_handler_ ? target_handler_->OnGestureEvent(event) :
-                           ER_UNHANDLED;
 }
 
 }  // namespace ui

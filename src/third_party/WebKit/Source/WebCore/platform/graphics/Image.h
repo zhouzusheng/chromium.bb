@@ -61,6 +61,11 @@ typedef struct HBITMAP__ *HBITMAP;
 typedef struct _GdkPixbuf GdkPixbuf;
 #endif
 
+#if PLATFORM(EFL)
+typedef struct _Evas Evas;
+typedef struct _Evas_Object Evas_Object;
+#endif
+
 namespace WebCore {
 
 class AffineTransform;
@@ -161,6 +166,10 @@ public:
     static void setPlatformResource(const char* name, const QPixmap&);
 #endif
 
+#if PLATFORM(EFL)
+    virtual Evas_Object* getEvasObject(Evas*) { return 0; }
+#endif
+
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
                              const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect);
 
@@ -183,8 +192,8 @@ protected:
 #if PLATFORM(WIN)
     virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, ColorSpace styleColorSpace, CompositeOperator) { }
 #endif
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator) = 0;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, RespectImageOrientationEnum);
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode) = 0;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode, RespectImageOrientationEnum);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize, ColorSpace styleColorSpace, CompositeOperator);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator);
 

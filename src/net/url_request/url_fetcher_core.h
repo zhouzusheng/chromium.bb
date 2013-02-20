@@ -86,9 +86,10 @@ class URLFetcherCore
       const URLFetcher::CreateDataCallback& create_data_callback);
   void SetStopOnRedirect(bool stop_on_redirect);
   void SetAutomaticallyRetryOn5xx(bool retry);
-  void SetMaxRetries(int max_retries);
-  int GetMaxRetries() const;
+  void SetMaxRetriesOn5xx(int max_retries);
+  int GetMaxRetriesOn5xx() const;
   base::TimeDelta GetBackoffDelay() const;
+  void SetAutomaticallyRetryOnNetworkChanges(int max_retries);
   void SaveResponseToFileAtPath(
       const FilePath& file_path,
       scoped_refptr<base::TaskRunner> file_task_runner);
@@ -121,11 +122,15 @@ class URLFetcherCore
   virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
   virtual void OnReadCompleted(URLRequest* request,
                                int bytes_read) OVERRIDE;
+  virtual void OnCertificateRequested(
+      URLRequest* request,
+      SSLCertRequestInfo* cert_request_info) OVERRIDE;
 
   URLFetcherDelegate* delegate() const { return delegate_; }
   static void CancelAll();
   static int GetNumFetcherCores();
   static void SetEnableInterceptionForTests(bool enabled);
+  static void SetIgnoreCertificateRequests(bool ignored);
 
  private:
   friend class base::RefCountedThreadSafe<URLFetcherCore>;
@@ -352,11 +357,6 @@ class URLFetcherCore
       original_url_throttler_entry_;
   scoped_refptr<URLRequestThrottlerEntryInterface> url_throttler_entry_;
 
-  // |num_retries_| indicates how many times we've failed to successfully
-  // fetch this URL.  Once this value exceeds the maximum number of retries
-  // specified by the owner URLFetcher instance, we'll give up.
-  int num_retries_;
-
   // True if the URLFetcher has been cancelled.
   bool was_cancelled_;
 
@@ -384,10 +384,21 @@ class URLFetcherCore
   // re-execute the request, after the back-off delay has expired.
   // true by default.
   bool automatically_retry_on_5xx_;
-  // Maximum retries allowed.
-  int max_retries_;
+  // |num_retries_on_5xx_| indicates how many times we've failed to successfully
+  // fetch this URL due to 5xx responses.  Once this value exceeds the maximum
+  // number of retries specified by the owner URLFetcher instance,
+  // we'll give up.
+  int num_retries_on_5xx_;
+  // Maximum retries allowed when 5xx responses are received.
+  int max_retries_on_5xx_;
   // Back-off time delay. 0 by default.
   base::TimeDelta backoff_delay_;
+
+  // The number of retries that have been attempted due to ERR_NETWORK_CHANGED.
+  int num_retries_on_network_changes_;
+  // Maximum retries allowed when the request fails with ERR_NETWORK_CHANGED.
+  // 0 by default.
+  int max_retries_on_network_changes_;
 
   // Timer to poll the progress of uploading for POST and PUT requests.
   // When crbug.com/119629 is fixed, scoped_ptr is not necessary here.

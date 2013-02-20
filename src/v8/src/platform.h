@@ -119,12 +119,16 @@ class Mutex;
 double ceiling(double x);
 double modulo(double x, double y);
 
-// Custom implementation of sin, cos, tan and log.
+// Custom implementation of math functions.
 double fast_sin(double input);
 double fast_cos(double input);
 double fast_tan(double input);
 double fast_log(double input);
+double fast_exp(double input);
 double fast_sqrt(double input);
+// The custom exp implementation needs 16KB of lookup data; initialize it
+// on demand.
+void lazily_initialize_fast_exp();
 
 // Forward declarations.
 class Socket;
@@ -431,6 +435,11 @@ class VirtualMemory {
   // Must be called with a base pointer that has been returned by ReserveRegion
   // and the same size it was reserved with.
   static bool ReleaseRegion(void* base, size_t size);
+
+  // Returns true if OS performs lazy commits, i.e. the memory allocation call
+  // defers actual physical memory allocation till the first memory access.
+  // Otherwise returns false.
+  static bool HasLazyCommits();
 
  private:
   void* address_;  // Start address of the virtual memory.

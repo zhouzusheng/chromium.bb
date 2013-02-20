@@ -39,6 +39,8 @@
 #include "md/_win95.cfg"
 #elif defined(__APPLE__)
 #include "md/_darwin.cfg"
+#elif defined(__linux__)
+#include "md/_linux.cfg"
 #else
 #error Add a case for your platform
 #endif

@@ -10,14 +10,17 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "ui/gfx/size.h"
+#include "ui/gl/gl_context.h"
 
 namespace gfx {
 class GLContext;
 class GLSurface;
+class AsyncPixelTransferDelegate;
 }
 
 namespace gpu {
@@ -45,7 +48,8 @@ struct DisallowedFeatures {
 
 // This class implements the AsyncAPIInterface interface, decoding GLES2
 // commands and calling GL.
-class GPU_EXPORT GLES2Decoder : public CommonDecoder {
+class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
+                                public CommonDecoder {
  public:
   typedef error::Error Error;
   typedef base::Callback<void(int32 id, const std::string& msg)> MsgCallback;
@@ -135,6 +139,9 @@ class GPU_EXPORT GLES2Decoder : public CommonDecoder {
   // Gets the associated ContextGroup
   virtual ContextGroup* GetContextGroup() = 0;
 
+  // Gets the service id for any simulated backbuffer fbo.
+  virtual void RestoreState() const = 0;
+
   // Gets the QueryManager for this context.
   virtual QueryManager* GetQueryManager() = 0;
 
@@ -150,6 +157,11 @@ class GPU_EXPORT GLES2Decoder : public CommonDecoder {
       const base::Callback<void(gfx::Size)>& callback) = 0;
 
   virtual void SetStreamTextureManager(StreamTextureManager* manager) = 0;
+
+  // Interface to performing async pixel transfers.
+  virtual gfx::AsyncPixelTransferDelegate* GetAsyncPixelTransferDelegate() = 0;
+  virtual void SetAsyncPixelTransferDelegate(
+      gfx::AsyncPixelTransferDelegate* delegate) = 0;
 
   // Get the service texture ID corresponding to a client texture ID.
   // If no such record is found then return false.
@@ -183,7 +195,11 @@ class GPU_EXPORT GLES2Decoder : public CommonDecoder {
   virtual base::TimeDelta GetTotalProcessingCommandsTime() = 0;
   virtual void AddProcessingCommandsTime(base::TimeDelta) = 0;
 
+  // Returns true if the context was just lost due to e.g. GL_ARB_robustness.
   virtual bool WasContextLost() = 0;
+
+  // Lose this context.
+  virtual void LoseContext(uint32 reset_status) = 0;
 
   static bool IsAngle();
 

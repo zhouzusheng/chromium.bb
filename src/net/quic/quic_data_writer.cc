@@ -6,10 +6,10 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "net/quic/quic_protocol.h"
 
 using base::StringPiece;
 using std::numeric_limits;
@@ -57,7 +57,7 @@ bool QuicDataWriter::WriteUInt64(uint64 value) {
 }
 
 bool QuicDataWriter::WriteUInt128(uint128 value) {
-  return WriteUInt64(value.lo) && WriteUInt64(value.hi);
+  return WriteUInt64(Uint128Low64(value)) && WriteUInt64(Uint128High64(value));
 }
 
 bool QuicDataWriter::WriteStringPiece16(StringPiece val) {
@@ -82,7 +82,7 @@ char* QuicDataWriter::BeginWrite(size_t length) {
   return buffer_ + length_;
 }
 
-bool QuicDataWriter::WriteBytes(const void* data, uint32 data_len) {
+bool QuicDataWriter::WriteBytes(const void* data, size_t data_len) {
   char* dest = BeginWrite(data_len);
   if (!dest) {
     return false;
@@ -94,13 +94,50 @@ bool QuicDataWriter::WriteBytes(const void* data, uint32 data_len) {
   return true;
 }
 
+void QuicDataWriter::WriteUint8ToBuffer(uint8 value, char* buffer) {
+  memcpy(buffer, &value, sizeof(value));
+}
+
+void QuicDataWriter::WriteUint16ToBuffer(uint16 value, char* buffer) {
+  memcpy(buffer, &value, sizeof(value));
+}
+
+void QuicDataWriter::WriteUint32ToBuffer(uint32 value, char* buffer) {
+  memcpy(buffer, &value, sizeof(value));
+}
+
+void QuicDataWriter::WriteUint48ToBuffer(uint64 value, char* buffer) {
+  uint16 hi = value >> 32;
+  uint32 lo = value & 0x00000000FFFFFFFF;
+  WriteUint32ToBuffer(lo, buffer);
+  WriteUint16ToBuffer(hi, buffer + sizeof(lo));
+}
+
 void QuicDataWriter::WriteUint64ToBuffer(uint64 value, char* buffer) {
   memcpy(buffer, &value, sizeof(value));
 }
 
 void QuicDataWriter::WriteUint128ToBuffer(uint128 value, char* buffer) {
-  WriteUint64ToBuffer(value.lo, buffer);
-  WriteUint64ToBuffer(value.hi, buffer + sizeof(value.lo));
+  uint64 high = Uint128High64(value);
+  uint64 low = Uint128Low64(value);
+  WriteUint64ToBuffer(low, buffer);
+  WriteUint64ToBuffer(high, buffer + sizeof(low));
+}
+
+bool QuicDataWriter::WriteUInt8ToOffset(uint8 value, size_t offset) {
+  int latched_length = length_;
+  length_ = offset;
+  bool success = WriteUInt8(value);
+  length_ = latched_length;
+  return success;
+}
+
+bool QuicDataWriter::WriteUInt48ToOffset(uint64 value, size_t offset) {
+  int latched_length = length_;
+  length_ = offset;
+  bool success = WriteUInt48(value);
+  length_ = latched_length;
+  return success;
 }
 
 }  // namespace net

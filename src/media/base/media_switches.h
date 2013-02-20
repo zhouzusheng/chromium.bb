@@ -35,7 +35,7 @@ MEDIA_EXPORT extern const char kDisableAudioFallback[];
 
 MEDIA_EXPORT extern const char kDisableAudioOutputResampler[];
 
-#if defined(OS_WIN) || defined(OS_MAC)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kDisableRendererSideMixing[];
 #else
 MEDIA_EXPORT extern const char kEnableRendererSideMixing[];
@@ -46,6 +46,14 @@ MEDIA_EXPORT extern const char kEnableAudioMixer[];
 MEDIA_EXPORT extern const char kEnableWebAudioInput[];
 
 MEDIA_EXPORT extern const char kVideoThreads[];
+
+MEDIA_EXPORT extern const char kEnableEncryptedMedia[];
+
+MEDIA_EXPORT extern const char kEnableOpusPlayback[];
+
+#if defined(OS_WIN)
+MEDIA_EXPORT extern const char kWaveOutBuffers[];
+#endif
 
 }  // namespace switches
 

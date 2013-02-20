@@ -5,8 +5,18 @@
 #ifndef WEBKIT_COMPOSITOR_BINDINGS_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 #define WEBKIT_COMPOSITOR_BINDINGS_WEB_COMPOSITOR_SUPPORT_IMPL_H_
 
+#include "base/memory/ref_counted.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayer.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebCompositorSupport.h"
+
+namespace base {
+class MessageLoopProxy;
+}
+
+namespace WebKit {
+class WebCompositorOutputSurface;
+class WebGraphicsContext3D;
+}
 
 namespace webkit {
 
@@ -15,16 +25,15 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   WebCompositorSupportImpl();
   virtual ~WebCompositorSupportImpl();
 
-  virtual void initialize(WebKit::WebThread* thread);
+  virtual void initialize(WebKit::WebThread* implThread);
   virtual bool isThreadingEnabled();
   virtual void shutdown();
-  virtual void setPerTilePaintingEnabled(bool enabled);
-  virtual void setPartialSwapEnabled(bool enabled);
-  virtual void setAcceleratedAnimationEnabled(bool enabled);
-  virtual void setPageScalePinchZoomEnabled(bool enabled);
   virtual WebKit::WebLayerTreeView* createLayerTreeView(
       WebKit::WebLayerTreeViewClient* client, const WebKit::WebLayer& root,
       const WebKit::WebLayerTreeView::Settings& settings);
+  virtual WebKit::WebCompositorOutputSurface* createOutputSurfaceFor3D(
+      WebKit::WebGraphicsContext3D* context);
+  virtual WebKit::WebCompositorOutputSurface* createOutputSurfaceForSoftware();
   virtual WebKit::WebLayer* createLayer();
   virtual WebKit::WebContentLayer* createContentLayer(
       WebKit::WebContentLayerClient* client);
@@ -50,6 +59,10 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
     createFloatAnimationCurve();
   virtual WebKit::WebTransformAnimationCurve*
     createTransformAnimationCurve();
+
+ private:
+  scoped_refptr<base::MessageLoopProxy> impl_thread_message_loop_proxy_;
+  bool initialized_;
 };
 
 }  // namespace webkit

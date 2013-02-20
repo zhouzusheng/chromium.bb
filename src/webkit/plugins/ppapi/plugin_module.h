@@ -21,6 +21,7 @@
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/ppb.h"
 #include "ppapi/c/ppb_core.h"
+#include "ppapi/c/private/ppb_nacl_private.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/webkit_plugins_export.h"
@@ -32,6 +33,10 @@ namespace ppapi {
 class CallbackTracker;
 class WebKitForwarding;
 }  // namespace ppapi
+
+namespace WebKit {
+class WebPluginContainer;
+}  // namespace WebKit
 
 namespace webkit {
 namespace ppapi {
@@ -111,8 +116,11 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
   scoped_refptr<PluginModule> CreateModuleForNaClInstance();
 
   // Initializes the NaCl module for the out of process proxy. InitAsProxied
-  // must be called before calling InitAsProxiedNaCl.
-  void InitAsProxiedNaCl(PluginInstance* instance);
+  // must be called before calling InitAsProxiedNaCl. Returns a NaCl result code
+  // indicating whether the proxy started successfully or there was an error.
+  PP_NaClResult InitAsProxiedNaCl(PluginInstance* instance);
+
+  bool IsProxied() const;
 
   static const PPB_Core* GetCore();
 
@@ -133,9 +141,11 @@ class WEBKIT_PLUGINS_EXPORT PluginModule :
 
   const std::string& name() const { return name_; }
   const FilePath& path() const { return path_; }
-  const ::ppapi::PpapiPermissions permissions() const { return permissions_; }
+  const ::ppapi::PpapiPermissions& permissions() const { return permissions_; }
 
-  PluginInstance* CreateInstance(PluginDelegate* delegate);
+  PluginInstance* CreateInstance(PluginDelegate* delegate,
+                                 WebKit::WebPluginContainer* container,
+                                 const GURL& plugin_url);
 
   // Returns "some" plugin instance associated with this module. This is not
   // guaranteed to be any one in particular. This is normally used to execute

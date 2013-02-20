@@ -70,7 +70,7 @@ void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
   ::CloseHandle(handle);
 }
 
-bool SharedMemory::CreateAndMapAnonymous(uint32 size) {
+bool SharedMemory::CreateAndMapAnonymous(size_t size) {
   return CreateAnonymous(size) && Map(size);
 }
 
@@ -78,6 +78,10 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
   DCHECK(!options.executable);
   DCHECK(!mapped_file_);
   if (options.size == 0)
+    return false;
+
+  // SHEZ: Changed upstream code here to compile with Win7.1 SDK.
+  if (options.size > static_cast<size_t>(INT_MAX))
     return false;
 
   // NaCl's memory allocator requires 0mod64K alignment and size for
@@ -131,8 +135,12 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   return false;
 }
 
-bool SharedMemory::Map(uint32 bytes) {
+bool SharedMemory::Map(size_t bytes) {
   if (mapped_file_ == NULL)
+    return false;
+
+  // SHEZ: Changed upstream code here to compile with Win7.1 SDK.
+  if (bytes > static_cast<size_t>(INT_MAX))
     return false;
 
   memory_ = MapViewOfFile(mapped_file_,

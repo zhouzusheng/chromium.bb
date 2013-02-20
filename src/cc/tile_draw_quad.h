@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCTileDrawQuad_h
-#define CCTileDrawQuad_h
+#ifndef CC_TILE_DRAW_QUAD_H_
+#define CC_TILE_DRAW_QUAD_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
 #include "cc/draw_quad.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/point.h"
@@ -13,42 +14,57 @@
 
 namespace cc {
 
-#pragma pack(push, 4)
+class CC_EXPORT TileDrawQuad : public DrawQuad {
+ public:
+  static scoped_ptr<TileDrawQuad> Create();
 
-class TileDrawQuad : public DrawQuad {
-public:
-    static scoped_ptr<TileDrawQuad> create(const SharedQuadState*, const gfx::Rect& quadRect, const gfx::Rect& opaqueRect, unsigned resourceId, const gfx::Point& textureOffset, const gfx::Size& textureSize, GLint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
+  void SetNew(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              unsigned resource_id,
+              const gfx::RectF& tex_coord_rect,
+              gfx::Size texture_size,
+              bool swizzle_contents,
+              bool left_edge_aa,
+              bool top_edge_aa,
+              bool right_edge_aa,
+              bool bottom_edge_aa);
 
-    unsigned resourceId() const { return m_resourceId; }
-    gfx::Point textureOffset() const { return m_textureOffset; }
-    gfx::Size textureSize() const { return m_textureSize; }
-    GLint textureFilter() const { return m_textureFilter; }
-    bool swizzleContents() const { return m_swizzleContents; }
+  void SetAll(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::Rect visible_rect,
+              bool needs_blending,
+              unsigned resource_id,
+              const gfx::RectF& tex_coord_rect,
+              gfx::Size texture_size,
+              bool swizzle_contents,
+              bool left_edge_aa,
+              bool top_edge_aa,
+              bool right_edge_aa,
+              bool bottom_edge_aa);
 
-    bool leftEdgeAA() const { return m_leftEdgeAA; }
-    bool topEdgeAA() const { return m_topEdgeAA; }
-    bool rightEdgeAA() const { return m_rightEdgeAA; }
-    bool bottomEdgeAA() const { return m_bottomEdgeAA; }
+  unsigned resource_id;
+  gfx::RectF tex_coord_rect;
+  gfx::Size texture_size;
+  bool swizzle_contents;
 
-    bool isAntialiased() const { return leftEdgeAA() || topEdgeAA() || rightEdgeAA() || bottomEdgeAA(); }
+  // TODO(danakj): Stick the data used to compute these things in the quad
+  // instead so the parent compositor can decide to use AA on its own.
+  bool left_edge_aa;
+  bool top_edge_aa;
+  bool right_edge_aa;
+  bool bottom_edge_aa;
 
-    static const TileDrawQuad* materialCast(const DrawQuad*);
-private:
-    TileDrawQuad(const SharedQuadState*, const gfx::Rect& quadRect, const gfx::Rect& opaqueRect, unsigned resourceId, const gfx::Point& textureOffset, const gfx::Size& textureSize, GLint textureFilter, bool swizzleContents, bool leftEdgeAA, bool topEdgeAA, bool rightEdgeAA, bool bottomEdgeAA);
+  bool IsAntialiased() const {
+    return left_edge_aa || top_edge_aa || right_edge_aa || bottom_edge_aa;
+  }
 
-    unsigned m_resourceId;
-    gfx::Point m_textureOffset;
-    gfx::Size m_textureSize;
-    GLint m_textureFilter;
-    bool m_swizzleContents;
-    bool m_leftEdgeAA;
-    bool m_topEdgeAA;
-    bool m_rightEdgeAA;
-    bool m_bottomEdgeAA;
+  static const TileDrawQuad* MaterialCast(const DrawQuad*);
+ private:
+  TileDrawQuad();
 };
-
-#pragma pack(pop)
 
 }
 
-#endif
+#endif  // CC_TILE_DRAW_QUAD_H_

@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <algorithm>
 
+#include "accelerated_surface_win_hlsl_compiled.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
@@ -16,6 +17,7 @@
 #include "base/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_proxy.h"
 #include "base/scoped_native_library.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
@@ -28,6 +30,11 @@
 #include "ui/base/win/hwnd_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gl/gl_switches.h"
+
+
+using ui_surface::AcceleratedSurfaceWinHLSL::kVsOneTexture;
+using ui_surface::AcceleratedSurfaceWinHLSL::kPsOneTexture;
+
 
 namespace {
 
@@ -42,70 +49,6 @@ const char kUseOcclusionQuery[] = "use-occlusion-query";
 struct Vertex {
   float x, y, z, w;
   float u, v;
-};
-
-// See accelerated_surface_win.hlsl for source and compilation instructions.
-const BYTE g_vertexMain[] = {
-    0,   2, 254, 255, 254, 255,
-   22,   0,  67,  84,  65,  66,
-   28,   0,   0,   0,  35,   0,
-    0,   0,   0,   2, 254, 255,
-    0,   0,   0,   0,   0,   0,
-    0,   0,   0,   1,   0,   0,
-   28,   0,   0,   0, 118, 115,
-   95,  50,  95,  48,   0,  77,
-  105,  99, 114, 111, 115, 111,
-  102, 116,  32,  40,  82,  41,
-   32,  72,  76,  83,  76,  32,
-   83, 104,  97, 100, 101, 114,
-   32,  67, 111, 109, 112, 105,
-  108, 101, 114,  32,  57,  46,
-   50,  57,  46,  57,  53,  50,
-   46,  51,  49,  49,  49,   0,
-   31,   0,   0,   2,   0,   0,
-    0, 128,   0,   0,  15, 144,
-   31,   0,   0,   2,   5,   0,
-    0, 128,   1,   0,  15, 144,
-    1,   0,   0,   2,   0,   0,
-   15, 192,   0,   0, 228, 144,
-    1,   0,   0,   2,   0,   0,
-    3, 224,   1,   0, 228, 144,
-  255, 255,   0,   0
-};
-
-const BYTE g_pixelMain[] = {
-    0,   2, 255, 255, 254, 255,
-   32,   0,  67,  84,  65,  66,
-   28,   0,   0,   0,  75,   0,
-    0,   0,   0,   2, 255, 255,
-    1,   0,   0,   0,  28,   0,
-    0,   0,   0,   1,   0,   0,
-   68,   0,   0,   0,  48,   0,
-    0,   0,   3,   0,   0,   0,
-    1,   0,   0,   0,  52,   0,
-    0,   0,   0,   0,   0,   0,
-  115,   0, 171, 171,   4,   0,
-   12,   0,   1,   0,   1,   0,
-    1,   0,   0,   0,   0,   0,
-    0,   0, 112, 115,  95,  50,
-   95,  48,   0,  77, 105,  99,
-  114, 111, 115, 111, 102, 116,
-   32,  40,  82,  41,  32,  72,
-   76,  83,  76,  32,  83, 104,
-   97, 100, 101, 114,  32,  67,
-  111, 109, 112, 105, 108, 101,
-  114,  32,  57,  46,  50,  57,
-   46,  57,  53,  50,  46,  51,
-   49,  49,  49,   0,  31,   0,
-    0,   2,   0,   0,   0, 128,
-    0,   0,   3, 176,  31,   0,
-    0,   2,   0,   0,   0, 144,
-    0,   8,  15, 160,  66,   0,
-    0,   3,   0,   0,  15, 128,
-    0,   0, 228, 176,   0,   8,
-  228, 160,   1,   0,   0,   2,
-    0,   8,  15, 128,   0,   0,
-  228, 128, 255, 255,   0,   0
 };
 
 const static D3DVERTEXELEMENT9 g_vertexElements[] = {
@@ -131,12 +74,9 @@ bool UsingOcclusionQuery() {
 int GetResampleCount(const gfx::Rect& src_subrect,
                      const gfx::Size& dst_size,
                      const gfx::Size& back_buffer_size) {
-  if (src_subrect.size() == dst_size) {
-    // Even when the size of |src_subrect| is equal to |dst_size|, it is
-    // necessary to resample pixels at least once unless |src_subrect| exactly
-    // covers the back buffer.
-    return (src_subrect == gfx::Rect(back_buffer_size)) ? 0 : 1;
-  }
+  // At least one copy is required, since the back buffer itself is not
+  // lockable.
+  int min_resample_count = 1;
   int width_count = 0;
   int width = src_subrect.width();
   while (width > dst_size.width()) {
@@ -149,7 +89,8 @@ int GetResampleCount(const gfx::Rect& src_subrect,
     ++height_count;
     height >>= 1;
   }
-  return std::max(width_count, height_count);
+  return std::max(std::max(width_count, height_count),
+                  min_resample_count);
 }
 
 // Returns half the size of |size| no smaller than |min_size|.
@@ -190,6 +131,7 @@ class PresentThread : public base::Thread,
   void ResetDevice();
 
  protected:
+  virtual void Init();
   virtual void CleanUp();
 
  private:
@@ -320,8 +262,9 @@ void PresentThread::ResetDevice() {
   }
 
   base::win::ScopedComPtr<IDirect3DVertexShader9> vertex_shader;
-  hr = device_->CreateVertexShader(reinterpret_cast<const DWORD*>(g_vertexMain),
-                                   vertex_shader.Receive());
+  hr = device_->CreateVertexShader(
+      reinterpret_cast<const DWORD*>(kVsOneTexture),
+      vertex_shader.Receive());
   if (FAILED(hr)) {
     device_ = NULL;
     query_ = NULL;
@@ -331,8 +274,9 @@ void PresentThread::ResetDevice() {
   device_->SetVertexShader(vertex_shader);
 
   base::win::ScopedComPtr<IDirect3DPixelShader9> pixel_shader;
-  hr = device_->CreatePixelShader(reinterpret_cast<const DWORD*>(g_pixelMain),
-                                  pixel_shader.Receive());
+  hr = device_->CreatePixelShader(
+      reinterpret_cast<const DWORD*>(kPsOneTexture),
+      pixel_shader.Receive());
 
   if (FAILED(hr)) {
     device_ = NULL;
@@ -354,6 +298,10 @@ void PresentThread::ResetDevice() {
   device_->SetVertexDeclaration(vertex_declaration);
 }
 
+void PresentThread::Init() {
+  TRACE_EVENT0("gpu", "Initialize thread");
+}
+
 void PresentThread::CleanUp() {
   // The D3D device and query are leaked because destroying the associated D3D
   // query crashes some Intel drivers.
@@ -366,18 +314,19 @@ PresentThread::~PresentThread() {
 }
 
 PresentThreadPool::PresentThreadPool() : next_thread_(0) {
-  // Do this in the constructor so present_threads_ is initialized before any
-  // other thread sees it. See LazyInstance documentation.
-  for (int i = 0; i < kNumPresentThreads; ++i) {
-    present_threads_[i] = new PresentThread(
-        base::StringPrintf("PresentThread #%d", i).c_str());
-    present_threads_[i]->Start();
-  }
 }
 
 PresentThread* PresentThreadPool::NextThread() {
   next_thread_ = (next_thread_ + 1) % kNumPresentThreads;
-  return present_threads_[next_thread_].get();
+  PresentThread* thread = present_threads_[next_thread_].get();
+  if (!thread) {
+    thread = new PresentThread(
+        base::StringPrintf("PresentThread #%d", next_thread_).c_str());
+    thread->Start();
+    present_threads_[next_thread_] = thread;
+  }
+
+  return thread;
 }
 
 AcceleratedPresenterMap::AcceleratedPresenterMap() {
@@ -474,10 +423,46 @@ void AcceleratedPresenter::Present(HDC dc) {
   PresentWithGDI(dc);
 }
 
-bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
-                                  const gfx::Size& dst_size,
-                                  void* buf) {
+void AcceleratedPresenter::AsyncCopyTo(
+    const gfx::Rect& requested_src_subrect,
+    const gfx::Size& dst_size,
+    void* buf,
+    const base::Callback<void(bool)>& callback) {
+  present_thread_->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&AcceleratedPresenter::DoCopyToAndAcknowledge,
+                 this,
+                 requested_src_subrect,
+                 dst_size,
+                 buf,
+                 base::MessageLoopProxy::current(),
+                 callback));
+}
+
+void AcceleratedPresenter::DoCopyToAndAcknowledge(
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    void* buf,
+    scoped_refptr<base::SingleThreadTaskRunner> callback_runner,
+    const base::Callback<void(bool)>& callback) {
+
+  bool result = DoCopyTo(src_subrect, dst_size, buf);
+  callback_runner->PostTask(
+      FROM_HERE,
+      base::Bind(callback, result));
+}
+
+bool AcceleratedPresenter::DoCopyTo(const gfx::Rect& requested_src_subrect,
+                                    const gfx::Size& dst_size,
+                                    void* buf) {
+  TRACE_EVENT2(
+      "gpu", "CopyTo",
+      "width", dst_size.width(),
+      "height", dst_size.height());
+
   base::AutoLock locked(lock_);
+
+  TRACE_EVENT0("gpu", "CopyTo_locked");
 
   if (!swap_chain_)
     return false;
@@ -498,6 +483,11 @@ bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
   if (back_buffer_size.IsEmpty())
     return false;
 
+  // With window resizing, it's possible that the back buffer is smaller than
+  // the requested src subset. Clip to the actual back buffer.
+  gfx::Rect src_subrect = requested_src_subrect;
+  src_subrect.Intersect(gfx::Rect(back_buffer_size));
+
   // Set up intermediate buffers needed for downsampling.
   const int resample_count =
       GetResampleCount(src_subrect, dst_size, back_buffer_size);
@@ -506,6 +496,7 @@ bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
   if (resample_count == 0)
     final_surface = back_buffer;
   if (resample_count > 0) {
+    TRACE_EVENT0("gpu", "CreateTemporarySurface");
     if (!CreateTemporarySurface(present_thread_->device(),
                                 dst_size,
                                 final_surface.Receive()))
@@ -514,19 +505,20 @@ bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
   const gfx::Size half_size =
       GetHalfSizeNoLessThan(src_subrect.size(), dst_size);
   if (resample_count > 1) {
+    TRACE_EVENT0("gpu", "CreateTemporarySurface");
     if (!CreateTemporarySurface(present_thread_->device(),
                                 half_size,
                                 temp_buffer[0].Receive()))
       return false;
   }
   if (resample_count > 2) {
+    TRACE_EVENT0("gpu", "CreateTemporarySurface");
     const gfx::Size quarter_size = GetHalfSizeNoLessThan(half_size, dst_size);
     if (!CreateTemporarySurface(present_thread_->device(),
                                 quarter_size,
                                 temp_buffer[1].Receive()))
       return false;
   }
-
 
   // Repeat downsampling the surface until its size becomes identical to
   // |dst_size|. We keep the factor of each downsampling no more than two
@@ -536,6 +528,7 @@ bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
   int read_buffer_index = 1;
   int write_buffer_index = 0;
   for (int i = 0; i < resample_count; ++i) {
+    TRACE_EVENT0("gpu", "StretchRect");
     base::win::ScopedComPtr<IDirect3DSurface9> read_buffer =
         (i == 0) ? back_buffer : temp_buffer[read_buffer_index];
     base::win::ScopedComPtr<IDirect3DSurface9> write_buffer =
@@ -553,24 +546,35 @@ bool AcceleratedPresenter::CopyTo(const gfx::Rect& src_subrect,
     write_size = GetHalfSizeNoLessThan(write_size, dst_size);
     std::swap(read_buffer_index, write_buffer_index);
   }
+  D3DLOCKED_RECT locked_rect;
 
-  base::win::ScopedComPtr<IDirect3DSurface9> temp_surface;
-  HANDLE handle = reinterpret_cast<HANDLE>(buf);
-  hr =  present_thread_->device()->CreateOffscreenPlainSurface(
-    dst_size.width(),
-    dst_size.height(),
-    D3DFMT_A8R8G8B8,
-    D3DPOOL_SYSTEMMEM,
-    temp_surface.Receive(),
-    &handle);
-  if (FAILED(hr))
-    return false;
+  // Empirical evidence seems to suggest that LockRect and memcpy are faster
+  // than would be GetRenderTargetData to an offscreen surface wrapping *buf.
+  {
+    TRACE_EVENT0("gpu", "LockRect");
+    hr = final_surface->LockRect(&locked_rect, NULL,
+                                 D3DLOCK_READONLY | D3DLOCK_NOSYSLOCK);
+    if (FAILED(hr))
+      return false;
+  }
 
-  // Copy the data in the temporary buffer to the surface backed by |buf|.
-  hr = present_thread_->device()->GetRenderTargetData(final_surface,
-                                                      temp_surface);
-  if (FAILED(hr))
-    return false;
+  {
+    TRACE_EVENT0("gpu", "memcpy");
+    size_t bytesPerDstRow = 4 * dst_size.width();
+    size_t bytesPerSrcRow = locked_rect.Pitch;
+    if (bytesPerDstRow == bytesPerSrcRow) {
+      memcpy(reinterpret_cast<int8*>(buf),
+             reinterpret_cast<int8*>(locked_rect.pBits),
+             bytesPerDstRow * dst_size.height());
+    } else {
+      for (int i = 0; i < dst_size.height(); ++i) {
+        memcpy(reinterpret_cast<int8*>(buf) + bytesPerDstRow * i,
+               reinterpret_cast<int8*>(locked_rect.pBits) + bytesPerSrcRow * i,
+               bytesPerDstRow);
+      }
+    }
+  }
+  final_surface->UnlockRect();
 
   return true;
 }
@@ -872,11 +876,18 @@ void AcceleratedPresenter::DoSuspend() {
 
 void AcceleratedPresenter::DoReleaseSurface() {
   base::AutoLock locked(lock_);
+  present_thread_->InitDevice();
   source_texture_.Release();
 }
 
 void AcceleratedPresenter::PresentWithGDI(HDC dc) {
   TRACE_EVENT0("gpu", "PresentWithGDI");
+
+  if (!present_thread_->device())
+    return;
+
+  if (!swap_chain_)
+    return;
 
   base::win::ScopedComPtr<IDirect3DTexture9> system_texture;
   {
@@ -958,7 +969,7 @@ gfx::Size AcceleratedPresenter::GetWindowSize() {
 
 bool AcceleratedPresenter::CheckDirect3DWillWork() {
   gfx::Size window_size = GetWindowSize();
-  if (window_size != last_window_size_) {
+  if (window_size != last_window_size_ && last_window_size_.GetArea() != 0) {
     last_window_size_ = window_size;
     last_window_resize_time_ = base::Time::Now();
     return false;
@@ -982,10 +993,12 @@ void AcceleratedSurface::Present(HDC dc) {
   presenter_->Present(dc);
 }
 
-bool AcceleratedSurface::CopyTo(const gfx::Rect& src_subrect,
-                                const gfx::Size& dst_size,
-                                void* buf) {
-  return presenter_->CopyTo(src_subrect, dst_size, buf);
+void AcceleratedSurface::AsyncCopyTo(
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    void* buf,
+    const base::Callback<void(bool)>& callback) {
+  presenter_->AsyncCopyTo(src_subrect, dst_size, buf, callback);
 }
 
 void AcceleratedSurface::Suspend() {

@@ -2,19 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/solid_color_layer_impl.h"
 
 #include "cc/quad_sink.h"
 #include "cc/solid_color_draw_quad.h"
 
-using WebKit::WebTransformationMatrix;
-
 namespace cc {
 
-SolidColorLayerImpl::SolidColorLayerImpl(int id)
-    : LayerImpl(id)
+SolidColorLayerImpl::SolidColorLayerImpl(LayerTreeImpl* treeImpl, int id)
+    : LayerImpl(treeImpl, id)
     , m_tileSize(256)
 {
 }
@@ -34,8 +30,10 @@ void SolidColorLayerImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& appen
     int height = contentBounds().height();
     for (int x = 0; x < width; x += m_tileSize) {
         for (int y = 0; y < height; y += m_tileSize) {
-            IntRect solidTileRect(x, y, std::min(width - x, m_tileSize), std::min(height - y, m_tileSize));
-            quadSink.append(SolidColorDrawQuad::create(sharedQuadState, solidTileRect, backgroundColor()).PassAs<DrawQuad>(), appendQuadsData);
+            gfx::Rect solidTileRect(x, y, std::min(width - x, m_tileSize), std::min(height - y, m_tileSize));
+            scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
+            quad->SetNew(sharedQuadState, solidTileRect, backgroundColor());
+            quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
         }
     }
 }

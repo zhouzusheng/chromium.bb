@@ -53,10 +53,15 @@ PP_Resource Resource::GetReference() {
   return pp_resource();
 }
 
-void Resource::LastPluginRefWasDeleted() {
+void Resource::NotifyLastPluginRefWasDeleted() {
+  // Notify subclasses.
+  LastPluginRefWasDeleted();
 }
 
-void Resource::InstanceWasDeleted() {
+void Resource::NotifyInstanceWasDeleted() {
+  // Notify subclasses.
+  InstanceWasDeleted();
+
   host_resource_ = HostResource();
 }
 
@@ -65,7 +70,7 @@ void Resource::OnReplyReceived(const proxy::ResourceMessageReplyParams& params,
   NOTREACHED();
 }
 
-void Resource::Log(PP_LogLevel_Dev level, const std::string& message) {
+void Resource::Log(PP_LogLevel level, const std::string& message) {
   PpapiGlobals::Get()->LogWithSource(pp_instance(), level, std::string(),
                                      message);
 }

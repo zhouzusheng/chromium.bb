@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
@@ -31,7 +32,9 @@
 #include "grit/webkit_chromium_resources.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_strings.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGestureCurve.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginListBuilder.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookie.h"
@@ -42,6 +45,7 @@
 #include "ui/base/layout.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
+#include "webkit/glue/touch_fling_platform_gesture_curve.h"
 #include "webkit/glue/websocketstreamhandle_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/glue/weburlloader_impl.h"
@@ -229,6 +233,10 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_THIS_MONTH_LABEL;
     case WebLocalizedString::ThisWeekButtonLabel:
       return IDS_FORM_THIS_WEEK_LABEL;
+    case WebLocalizedString::ValidationBadInputForDateTime:
+      return IDS_FORM_VALIDATION_BAD_INPUT_DATETIME;
+    case WebLocalizedString::ValidationBadInputForNumber:
+      return IDS_FORM_VALIDATION_BAD_INPUT_NUMBER;
     case WebLocalizedString::ValidationPatternMismatch:
       return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
     case WebLocalizedString::ValidationRangeOverflow:
@@ -261,6 +269,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_VALUE_MISSING_SELECT;
     case WebLocalizedString::WeekFormatTemplate:
       return IDS_FORM_INPUT_WEEK_TEMPLATE;
+    case WebLocalizedString::WeekNumberLabel:
+      return IDS_FORM_WEEK_NUMBER_LABEL;
     // This "default:" line exists to avoid compile warnings about enum
     // coverage when we add a new symbol to WebLocalizedString.h in WebKit.
     // After a planned WebKit patch is landed, we need to add a case statement
@@ -372,11 +382,27 @@ int WebKitPlatformSupportImpl::addTraceEvent(
     int threshold_begin_id,
     long long threshold,
     unsigned char flags) {
-  return TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id,
-                                         num_args, arg_names, arg_types,
-                                         arg_values, threshold_begin_id,
-                                         threshold, flags);
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id,
+                                  num_args, arg_names, arg_types,
+                                  arg_values, flags);
+  return -1;
 }
+
+void WebKitPlatformSupportImpl::addTraceEvent(
+    char phase,
+    const unsigned char* category_enabled,
+    const char* name,
+    unsigned long long id,
+    int num_args,
+    const char** arg_names,
+    const unsigned char* arg_types,
+    const unsigned long long* arg_values,
+    unsigned char flags) {
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_enabled, name, id,
+                                  num_args, arg_names, arg_types,
+                                  arg_values, flags);
+}
+
 
 namespace {
 
@@ -822,6 +848,10 @@ bool WebKitPlatformSupportImpl::processMemorySizesInBytes(
   return CurrentProcessMetrics()->GetMemoryBytes(private_bytes, shared_bytes);
 }
 
+bool WebKitPlatformSupportImpl::memoryAllocatorWasteInBytes(size_t* size) {
+  return base::allocator::GetAllocatorWasteSize(size);
+}
+
 void WebKitPlatformSupportImpl::SuspendSharedTimer() {
   ++shared_timer_suspended_;
 }
@@ -853,10 +883,21 @@ void WebKitPlatformSupportImpl::didStopWorkerRunLoop(
   worker_task_runner->OnWorkerRunLoopStopped(runLoop);
 }
 
+WebKit::WebGestureCurve* WebKitPlatformSupportImpl::createFlingAnimationCurve(
+    int device_source,
+    const WebKit::WebFloatPoint& velocity,
+    const WebKit::WebSize& cumulative_scroll) {
+
 #if defined(OS_ANDROID)
-WebKit::WebFlingAnimator* WebKitPlatformSupportImpl::createFlingAnimator() {
-  return new FlingAnimatorImpl();
-}
+  return FlingAnimatorImpl::CreateAndroidGestureCurve(velocity,
+                                                      cumulative_scroll);
 #endif
+
+  if (device_source == WebKit::WebGestureEvent::Touchscreen)
+    return TouchFlingGestureCurve::CreateForTouchScreen(velocity,
+                                                        cumulative_scroll);
+
+  return TouchFlingGestureCurve::CreateForTouchPad(velocity, cumulative_scroll);
+}
 
 }  // namespace webkit_glue

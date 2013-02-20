@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/occlusion_tracker.h"
 
 #include <algorithm>
@@ -12,17 +10,24 @@
 #include "cc/layer_impl.h"
 #include "cc/math_util.h"
 #include "cc/overdraw_metrics.h"
+#include "ui/gfx/quad_f.h"
+#include "ui/gfx/rect_conversions.h"
 
 using namespace std;
-using WebKit::WebTransformationMatrix;
 
 namespace cc {
 
 template<typename LayerType, typename RenderSurfaceType>
-OcclusionTrackerBase<LayerType, RenderSurfaceType>::OcclusionTrackerBase(IntRect rootTargetRect, bool recordMetricsForFrame)
-    : m_rootTargetRect(rootTargetRect)
+OcclusionTrackerBase<LayerType, RenderSurfaceType>::OcclusionTrackerBase(gfx::Rect screenSpaceClipRect, bool recordMetricsForFrame)
+    : m_screenSpaceClipRect(screenSpaceClipRect)
     , m_overdrawMetrics(OverdrawMetrics::create(recordMetricsForFrame))
     , m_occludingScreenSpaceRects(0)
+    , m_nonOccludingScreenSpaceRects(0)
+{
+}
+
+template<typename LayerType, typename RenderSurfaceType>
+OcclusionTrackerBase<LayerType, RenderSurfaceType>::~OcclusionTrackerBase()
 {
 }
 
@@ -48,39 +53,47 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::leaveLayer(const LayerI
         leaveToRenderTarget(renderTarget);
 }
 
-template<typename LayerType, typename RenderSurfaceType>
-void OcclusionTrackerBase<LayerType, RenderSurfaceType>::enterRenderTarget(const LayerType* newTarget)
+template<typename RenderSurfaceType>
+static gfx::Rect screenSpaceClipRectInTargetSurface(const RenderSurfaceType* targetSurface, gfx::Rect screenSpaceClipRect)
 {
-    if (!m_stack.isEmpty() && m_stack.last().target == newTarget)
-        return;
+    gfx::Transform inverseScreenSpaceTransform(gfx::Transform::kSkipInitialization);
+    if (!targetSurface->screenSpaceTransform().GetInverse(&inverseScreenSpaceTransform))
+        return targetSurface->contentRect();
 
-    const LayerType* oldTarget = m_stack.isEmpty() ? 0 : m_stack.last().target;
-    const RenderSurfaceType* oldAncestorThatMovesPixels = !oldTarget ? 0 : oldTarget->renderSurface()->nearestAncestorThatMovesPixels();
-    const RenderSurfaceType* newAncestorThatMovesPixels = newTarget->renderSurface()->nearestAncestorThatMovesPixels();
+    return gfx::ToEnclosingRect(MathUtil::projectClippedRect(inverseScreenSpaceTransform, screenSpaceClipRect));
+}
 
-    m_stack.append(StackObject(newTarget));
+template<typename RenderSurfaceType>
+static Region transformSurfaceOpaqueRegion(const Region& region, bool haveClipRect, gfx::Rect clipRectInNewTarget, const gfx::Transform& transform)
+{
+    if (region.IsEmpty())
+        return Region();
 
-    // We copy the screen occlusion into the new RenderSurfaceImpl subtree, but we never copy in the
-    // target occlusion, since we are looking at a new RenderSurfaceImpl target.
+    // Verify that rects within the |surface| will remain rects in its target surface after applying |transform|. If this is true, then
+    // apply |transform| to each rect within |region| in order to transform the entire Region.
 
-    // If we are entering a subtree that is going to move pixels around, then the occlusion we've computed
-    // so far won't apply to the pixels we're drawing here in the same way. We discard the occlusion thus
-    // far to be safe, and ensure we don't cull any pixels that are moved such that they become visible.
-    bool enteringSubtreeThatMovesPixels = newAncestorThatMovesPixels && newAncestorThatMovesPixels != oldAncestorThatMovesPixels;
+    bool clipped;
+    gfx::QuadF transformedBoundsQuad = MathUtil::mapQuad(transform, gfx::QuadF(region.bounds()), clipped);
+    // FIXME: Find a rect interior to each transformed quad.
+    if (clipped || !transformedBoundsQuad.IsRectilinear())
+        return Region();
 
-    bool copyScreenOcclusionForward = m_stack.size() > 1 && !enteringSubtreeThatMovesPixels;
-    if (copyScreenOcclusionForward) {
-        int lastIndex = m_stack.size() - 1;
-        m_stack[lastIndex].occlusionInScreen = m_stack[lastIndex - 1].occlusionInScreen;
+    // TODO(danakj): If the Region is too complex, degrade gracefully here by skipping rects in it.
+    Region transformedRegion;
+    for (Region::Iterator rects(region); rects.has_rect(); rects.next()) {
+        gfx::Rect transformedRect = gfx::ToEnclosedRect(MathUtil::mapQuad(transform, gfx::QuadF(rects.rect()), clipped).BoundingBox());
+        DCHECK(!clipped); // We only map if the transform preserves axis alignment.
+        if (haveClipRect)
+            transformedRect.Intersect(clipRectInNewTarget);
+        transformedRegion.Union(transformedRect);
     }
+    return transformedRegion;
 }
 
 static inline bool layerOpacityKnown(const Layer* layer) { return !layer->drawOpacityIsAnimating(); }
 static inline bool layerOpacityKnown(const LayerImpl*) { return true; }
 static inline bool layerTransformsToTargetKnown(const Layer* layer) { return !layer->drawTransformIsAnimating(); }
 static inline bool layerTransformsToTargetKnown(const LayerImpl*) { return true; }
-static inline bool layerTransformsToScreenKnown(const Layer* layer) { return !layer->screenSpaceTransformIsAnimating(); }
-static inline bool layerTransformsToScreenKnown(const LayerImpl*) { return true; }
 
 static inline bool surfaceOpacityKnown(const RenderSurface* surface) { return !surface->drawOpacityIsAnimating(); }
 static inline bool surfaceOpacityKnown(const RenderSurfaceImpl*) { return true; }
@@ -91,6 +104,51 @@ static inline bool surfaceTransformsToScreenKnown(const RenderSurfaceImpl*) { re
 
 static inline bool layerIsInUnsorted3dRenderingContext(const Layer* layer) { return layer->parent() && layer->parent()->preserves3D(); }
 static inline bool layerIsInUnsorted3dRenderingContext(const LayerImpl*) { return false; }
+
+template<typename LayerType, typename RenderSurfaceType>
+void OcclusionTrackerBase<LayerType, RenderSurfaceType>::enterRenderTarget(const LayerType* newTarget)
+{
+    if (!m_stack.empty() && m_stack.back().target == newTarget)
+        return;
+
+    const LayerType* oldTarget = m_stack.empty() ? 0 : m_stack.back().target;
+    const RenderSurfaceType* oldAncestorThatMovesPixels = !oldTarget ? 0 : oldTarget->renderSurface()->nearestAncestorThatMovesPixels();
+    const RenderSurfaceType* newAncestorThatMovesPixels = newTarget->renderSurface()->nearestAncestorThatMovesPixels();
+
+    m_stack.push_back(StackObject(newTarget));
+
+    // We copy the screen occlusion into the new RenderSurface subtree, but we never copy in the
+    // occlusion from inside the target, since we are looking at a new RenderSurface target.
+
+    // If we are entering a subtree that is going to move pixels around, then the occlusion we've computed
+    // so far won't apply to the pixels we're drawing here in the same way. We discard the occlusion thus
+    // far to be safe, and ensure we don't cull any pixels that are moved such that they become visible.
+    bool enteringSubtreeThatMovesPixels = newAncestorThatMovesPixels && newAncestorThatMovesPixels != oldAncestorThatMovesPixels;
+
+    bool haveTransformFromScreenToNewTarget = false;
+    gfx::Transform inverseNewTargetScreenSpaceTransform(gfx::Transform::kSkipInitialization); // Note carefully, not used if screen space transform is uninvertible.
+    if (surfaceTransformsToScreenKnown(newTarget->renderSurface()))
+        haveTransformFromScreenToNewTarget = newTarget->renderSurface()->screenSpaceTransform().GetInverse(&inverseNewTargetScreenSpaceTransform);
+
+    bool enteringRootTarget = newTarget->parent() == NULL;
+
+    bool copyOutsideOcclusionForward = m_stack.size() > 1 && !enteringSubtreeThatMovesPixels && haveTransformFromScreenToNewTarget && !enteringRootTarget;
+    if (!copyOutsideOcclusionForward)
+        return;
+
+    int lastIndex = m_stack.size() - 1;
+    gfx::Transform oldTargetToNewTargetTransform(inverseNewTargetScreenSpaceTransform, oldTarget->renderSurface()->screenSpaceTransform());
+    m_stack[lastIndex].occlusionFromOutsideTarget = transformSurfaceOpaqueRegion<RenderSurfaceType>(
+            m_stack[lastIndex - 1].occlusionFromOutsideTarget,
+            false,
+            gfx::Rect(),
+            oldTargetToNewTargetTransform);
+    m_stack[lastIndex].occlusionFromOutsideTarget.Union(transformSurfaceOpaqueRegion<RenderSurfaceType>(
+            m_stack[lastIndex - 1].occlusionFromInsideTarget,
+            false,
+            gfx::Rect(),
+            oldTargetToNewTargetTransform));
+}
 
 template<typename LayerType, typename RenderSurfaceType>
 void OcclusionTrackerBase<LayerType, RenderSurfaceType>::finishedRenderTarget(const LayerType* finishedTarget)
@@ -104,103 +162,54 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::finishedRenderTarget(co
     // TODO(senorblanco):  Make this smarter for SkImageFilter case:  once
     // SkImageFilters can report affectsOpacity(), call that.
     if (finishedTarget->maskLayer() || !surfaceOpacityKnown(surface) || surface->drawOpacity() < 1 || finishedTarget->filters().hasFilterThatAffectsOpacity() || finishedTarget->filter()) {
-        m_stack.last().occlusionInScreen = Region();
-        m_stack.last().occlusionInTarget = Region();
-    } else {
-        if (!surfaceTransformsToTargetKnown(surface))
-            m_stack.last().occlusionInTarget = Region();
-        if (!surfaceTransformsToScreenKnown(surface))
-            m_stack.last().occlusionInScreen = Region();
-    }
-}
-
-template<typename RenderSurfaceType>
-static inline Region transformSurfaceOpaqueRegion(const RenderSurfaceType* surface, const Region& region, const WebTransformationMatrix& transform)
-{
-    // Verify that rects within the |surface| will remain rects in its target surface after applying |transform|. If this is true, then
-    // apply |transform| to each rect within |region| in order to transform the entire Region.
-
-    bool clipped;
-    FloatQuad transformedBoundsQuad = MathUtil::mapQuad(transform, FloatQuad(region.bounds()), clipped);
-    // FIXME: Find a rect interior to each transformed quad.
-    if (clipped || !transformedBoundsQuad.isRectilinear())
-        return Region();
-
-    Region transformedRegion;
-
-    Vector<WebCore::IntRect> rects = region.rects();
-    for (size_t i = 0; i < rects.size(); ++i) {
-        // We've already checked for clipping in the mapQuad call above, these calls should not clip anything further.
-        IntRect transformedRect = enclosedIntRect(MathUtil::mapClippedRect(transform, FloatRect(rects[i])));
-        if (!surface->clipRect().isEmpty())
-            transformedRect.intersect(surface->clipRect());
-        transformedRegion.unite(transformedRect);
-    }
-    return transformedRegion;
-}
-
-static inline void reduceOcclusion(const IntRect& affectedArea, const IntRect& expandedPixel, Region& occlusion)
-{
-    if (affectedArea.isEmpty())
-        return;
-
-    Region affectedOcclusion = intersect(occlusion, affectedArea);
-    Vector<WebCore::IntRect> affectedOcclusionRects = affectedOcclusion.rects();
-
-    occlusion.subtract(affectedArea);
-    for (size_t j = 0; j < affectedOcclusionRects.size(); ++j) {
-        WebCore::IntRect& occlusionRect = affectedOcclusionRects[j];
-
-        // Shrink the rect by expanding the non-opaque pixels outside the rect.
-
-        // The expandedPixel is the IntRect for a single pixel after being
-        // expanded by filters on the layer. The original pixel would be
-        // IntRect(0, 0, 1, 1), and the expanded pixel is the rect, relative
-        // to this original rect, that the original pixel can influence after
-        // being filtered.
-        // To convert the expandedPixel IntRect back to filter outsets:
-        // x = -leftOutset
-        // width = leftOutset + rightOutset
-        // maxX = x + width = -leftOutset + leftOutset + rightOutset = rightOutset
-
-        // The leftOutset of the filters moves pixels on the right side of
-        // the occlusionRect into it, shrinking its right edge.
-        int shrinkLeft = occlusionRect.x() == affectedArea.x() ? 0 : expandedPixel.maxX();
-        int shrinkTop = occlusionRect.y() == affectedArea.y() ? 0 : expandedPixel.maxY();
-        int shrinkRight = occlusionRect.maxX() == affectedArea.maxX() ? 0 : -expandedPixel.x();
-        int shrinkBottom = occlusionRect.maxY() == affectedArea.maxY() ? 0 : -expandedPixel.y();
-
-        occlusionRect.move(shrinkLeft, shrinkTop);
-        occlusionRect.contract(shrinkLeft + shrinkRight, shrinkTop + shrinkBottom);
-
-        occlusion.unite(occlusionRect);
+        m_stack.back().occlusionFromOutsideTarget.Clear();
+        m_stack.back().occlusionFromInsideTarget.Clear();
+    } else if (!surfaceTransformsToTargetKnown(surface)) {
+        m_stack.back().occlusionFromInsideTarget.Clear();
+        m_stack.back().occlusionFromOutsideTarget.Clear();
     }
 }
 
 template<typename LayerType>
-static void reduceOcclusionBelowSurface(LayerType* contributingLayer, const IntRect& surfaceRect, const WebTransformationMatrix& surfaceTransform, LayerType* renderTarget, Region& occlusionInTarget, Region& occlusionInScreen)
+static void reduceOcclusionBelowSurface(LayerType* contributingLayer, const gfx::Rect& surfaceRect, const gfx::Transform& surfaceTransform, LayerType* renderTarget, Region& occlusionFromInsideTarget)
 {
-    if (surfaceRect.isEmpty())
+    if (surfaceRect.IsEmpty())
         return;
 
-    IntRect boundsInTarget = enclosingIntRect(MathUtil::mapClippedRect(surfaceTransform, FloatRect(surfaceRect)));
-    if (!contributingLayer->renderSurface()->clipRect().isEmpty())
-        boundsInTarget.intersect(contributingLayer->renderSurface()->clipRect());
+    gfx::Rect affectedAreaInTarget = gfx::ToEnclosingRect(MathUtil::mapClippedRect(surfaceTransform, gfx::RectF(surfaceRect)));
+    if (contributingLayer->renderSurface()->isClipped())
+        affectedAreaInTarget.Intersect(contributingLayer->renderSurface()->clipRect());
+    if (affectedAreaInTarget.IsEmpty())
+        return;
 
     int outsetTop, outsetRight, outsetBottom, outsetLeft;
     contributingLayer->backgroundFilters().getOutsets(outsetTop, outsetRight, outsetBottom, outsetLeft);
 
     // The filter can move pixels from outside of the clip, so allow affectedArea to expand outside the clip.
-    boundsInTarget.move(-outsetLeft, -outsetTop);
-    boundsInTarget.expand(outsetLeft + outsetRight, outsetTop + outsetBottom);
+    affectedAreaInTarget.Inset(-outsetLeft, -outsetTop, -outsetRight, -outsetBottom);
 
-    IntRect boundsInScreen = enclosingIntRect(MathUtil::mapClippedRect(renderTarget->renderSurface()->screenSpaceTransform(), FloatRect(boundsInTarget)));
+    gfx::Rect filterOutsetsInTarget(-outsetLeft, -outsetTop, outsetLeft + outsetRight, outsetTop + outsetBottom);
 
-    IntRect filterOutsetsInTarget(-outsetLeft, -outsetTop, outsetLeft + outsetRight, outsetTop + outsetBottom);
-    IntRect filterOutsetsInScreen = enclosingIntRect(MathUtil::mapClippedRect(renderTarget->renderSurface()->screenSpaceTransform(), FloatRect(filterOutsetsInTarget)));
+    Region affectedOcclusion = IntersectRegions(occlusionFromInsideTarget, affectedAreaInTarget);
+    Region::Iterator affectedOcclusionRects(affectedOcclusion);
 
-    reduceOcclusion(boundsInTarget, filterOutsetsInTarget, occlusionInTarget);
-    reduceOcclusion(boundsInScreen, filterOutsetsInScreen, occlusionInScreen);
+    occlusionFromInsideTarget.Subtract(affectedAreaInTarget);
+    for (; affectedOcclusionRects.has_rect(); affectedOcclusionRects.next()) {
+        gfx::Rect occlusionRect = affectedOcclusionRects.rect();
+
+        // Shrink the rect by expanding the non-opaque pixels outside the rect.
+
+        // The left outset of the filters moves pixels on the right side of
+        // the occlusionRect into it, shrinking its right edge.
+        int shrinkLeft = occlusionRect.x() == affectedAreaInTarget.x() ? 0 : outsetRight;
+        int shrinkTop = occlusionRect.y() == affectedAreaInTarget.y() ? 0 : outsetBottom;
+        int shrinkRight = occlusionRect.right() == affectedAreaInTarget.right() ? 0 : outsetLeft;
+        int shrinkBottom = occlusionRect.bottom() == affectedAreaInTarget.bottom() ? 0 : outsetTop;
+
+        occlusionRect.Inset(shrinkLeft, shrinkTop, shrinkRight, shrinkBottom);
+
+        occlusionFromInsideTarget.Union(occlusionRect);
+    }
 }
 
 template<typename LayerType, typename RenderSurfaceType>
@@ -214,12 +223,15 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::leaveToRenderTarget(con
 
     const LayerType* oldTarget = m_stack[lastIndex].target;
     const RenderSurfaceType* oldSurface = oldTarget->renderSurface();
-    Region oldTargetOcclusionInNewTarget = transformSurfaceOpaqueRegion<RenderSurfaceType>(oldSurface, m_stack[lastIndex].occlusionInTarget, oldSurface->drawTransform());
-    if (oldTarget->hasReplica() && !oldTarget->replicaHasMask())
-        oldTargetOcclusionInNewTarget.unite(transformSurfaceOpaqueRegion<RenderSurfaceType>(oldSurface, m_stack[lastIndex].occlusionInTarget, oldSurface->replicaDrawTransform()));
 
-    IntRect unoccludedSurfaceRect;
-    IntRect unoccludedReplicaRect;
+    Region oldOcclusionFromInsideTargetInNewTarget = transformSurfaceOpaqueRegion<RenderSurfaceType>(m_stack[lastIndex].occlusionFromInsideTarget, oldSurface->isClipped(), oldSurface->clipRect(), oldSurface->drawTransform());
+    if (oldTarget->hasReplica() && !oldTarget->replicaHasMask())
+        oldOcclusionFromInsideTargetInNewTarget.Union(transformSurfaceOpaqueRegion<RenderSurfaceType>(m_stack[lastIndex].occlusionFromInsideTarget, oldSurface->isClipped(), oldSurface->clipRect(), oldSurface->replicaDrawTransform()));
+
+    Region oldOcclusionFromOutsideTargetInNewTarget = transformSurfaceOpaqueRegion<RenderSurfaceType>(m_stack[lastIndex].occlusionFromOutsideTarget, false, gfx::Rect(), oldSurface->drawTransform());
+
+    gfx::Rect unoccludedSurfaceRect;
+    gfx::Rect unoccludedReplicaRect;
     if (oldTarget->backgroundFilters().hasFilterThatMovesPixels()) {
         unoccludedSurfaceRect = unoccludedContributingSurfaceContentRect(oldTarget, false, oldSurface->contentRect());
         if (oldTarget->hasReplica())
@@ -228,53 +240,39 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::leaveToRenderTarget(con
 
     if (surfaceWillBeAtTopAfterPop) {
         // Merge the top of the stack down.
-        m_stack[lastIndex - 1].occlusionInScreen.unite(m_stack[lastIndex].occlusionInScreen);
-        m_stack[lastIndex - 1].occlusionInTarget.unite(oldTargetOcclusionInNewTarget);
-        m_stack.removeLast();
+        m_stack[lastIndex - 1].occlusionFromInsideTarget.Union(oldOcclusionFromInsideTargetInNewTarget);
+        // TODO(danakj): Strictly this should subtract the inside target occlusion before union.
+        if (newTarget->parent())
+            m_stack[lastIndex - 1].occlusionFromOutsideTarget.Union(oldOcclusionFromOutsideTargetInNewTarget);
+        m_stack.pop_back();
     } else {
-        // Replace the top of the stack with the new pushed surface. Copy the occluded screen region to the top.
-        m_stack.last().target = newTarget;
-        m_stack.last().occlusionInTarget = oldTargetOcclusionInNewTarget;
+        // Replace the top of the stack with the new pushed surface.
+        m_stack.back().target = newTarget;
+        m_stack.back().occlusionFromInsideTarget = oldOcclusionFromInsideTargetInNewTarget;
+        if (newTarget->parent())
+            m_stack.back().occlusionFromOutsideTarget = oldOcclusionFromOutsideTargetInNewTarget;
+        else
+            m_stack.back().occlusionFromOutsideTarget.Clear();
     }
 
-    if (oldTarget->backgroundFilters().hasFilterThatMovesPixels()) {
-        reduceOcclusionBelowSurface(oldTarget, unoccludedSurfaceRect, oldSurface->drawTransform(), newTarget, m_stack.last().occlusionInTarget, m_stack.last().occlusionInScreen);
-        if (oldTarget->hasReplica())
-            reduceOcclusionBelowSurface(oldTarget, unoccludedReplicaRect, oldSurface->replicaDrawTransform(), newTarget, m_stack.last().occlusionInTarget, m_stack.last().occlusionInScreen);
-    }
-}
-
-// FIXME: Remove usePaintTracking when paint tracking is on for paint culling.
-template<typename LayerType>
-static inline void addOcclusionBehindLayer(Region& region, const LayerType* layer, const WebTransformationMatrix& transform, const Region& opaqueContents, const IntRect& clipRectInTarget, const IntSize& minimumTrackingSize, std::vector<IntRect>* occludingScreenSpaceRects)
-{
-    DCHECK(layer->visibleContentRect().contains(opaqueContents.bounds()));
-
-    bool clipped;
-    FloatQuad visibleTransformedQuad = MathUtil::mapQuad(transform, FloatQuad(layer->visibleContentRect()), clipped);
-    // FIXME: Find a rect interior to each transformed quad.
-    if (clipped || !visibleTransformedQuad.isRectilinear())
+    if (!oldTarget->backgroundFilters().hasFilterThatMovesPixels())
         return;
 
-    Vector<WebCore::IntRect> contentRects = opaqueContents.rects();
-    for (size_t i = 0; i < contentRects.size(); ++i) {
-        // We've already checked for clipping in the mapQuad call above, these calls should not clip anything further.
-        IntRect transformedRect = enclosedIntRect(MathUtil::mapClippedRect(transform, FloatRect(contentRects[i])));
-        transformedRect.intersect(clipRectInTarget);
-        if (transformedRect.width() >= minimumTrackingSize.width() || transformedRect.height() >= minimumTrackingSize.height()) {
-            if (occludingScreenSpaceRects)
-                occludingScreenSpaceRects->push_back(transformedRect);
-            region.unite(transformedRect);
-        }
-    }
+    reduceOcclusionBelowSurface(oldTarget, unoccludedSurfaceRect, oldSurface->drawTransform(), newTarget, m_stack.back().occlusionFromInsideTarget);
+    reduceOcclusionBelowSurface(oldTarget, unoccludedSurfaceRect, oldSurface->drawTransform(), newTarget, m_stack.back().occlusionFromOutsideTarget);
+
+    if (!oldTarget->hasReplica())
+        return;
+    reduceOcclusionBelowSurface(oldTarget, unoccludedReplicaRect, oldSurface->replicaDrawTransform(), newTarget, m_stack.back().occlusionFromInsideTarget);
+    reduceOcclusionBelowSurface(oldTarget, unoccludedReplicaRect, oldSurface->replicaDrawTransform(), newTarget, m_stack.back().occlusionFromOutsideTarget);
 }
 
 template<typename LayerType, typename RenderSurfaceType>
 void OcclusionTrackerBase<LayerType, RenderSurfaceType>::markOccludedBehindLayer(const LayerType* layer)
 {
-    DCHECK(!m_stack.isEmpty());
-    DCHECK(layer->renderTarget() == m_stack.last().target);
-    if (m_stack.isEmpty())
+    DCHECK(!m_stack.empty());
+    DCHECK(layer->renderTarget() == m_stack.back().target);
+    if (m_stack.empty())
         return;
 
     if (!layerOpacityKnown(layer) || layer->drawOpacity() < 1)
@@ -284,116 +282,164 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::markOccludedBehindLayer
         return;
 
     Region opaqueContents = layer->visibleContentOpaqueRegion();
-    if (opaqueContents.isEmpty())
+    if (opaqueContents.IsEmpty())
         return;
 
-    IntRect clipRectInTarget = layerClipRectInTarget(layer);
-    if (layerTransformsToTargetKnown(layer))
-        addOcclusionBehindLayer<LayerType>(m_stack.last().occlusionInTarget, layer, layer->drawTransform(), opaqueContents, clipRectInTarget, m_minimumTrackingSize, 0);
+    DCHECK(layer->visibleContentRect().Contains(opaqueContents.bounds()));
 
-    // We must clip the occlusion within the layer's clipRectInTarget within screen space as well. If the clip rect can't be moved to screen space and
-    // remain rectilinear, then we don't add any occlusion in screen space.
+    if (!layerTransformsToTargetKnown(layer))
+        return;
 
-    if (layerTransformsToScreenKnown(layer)) {
-        WebTransformationMatrix targetToScreenTransform = m_stack.last().target->renderSurface()->screenSpaceTransform();
-        bool clipped;
-        FloatQuad clipQuadInScreen = MathUtil::mapQuad(targetToScreenTransform, FloatQuad(FloatRect(clipRectInTarget)), clipped);
-        // FIXME: Find a rect interior to the transformed clip quad.
-        if (clipped || !clipQuadInScreen.isRectilinear())
-            return;
-        IntRect clipRectInScreen = intersection(m_rootTargetRect, enclosedIntRect(clipQuadInScreen.boundingBox()));
-        addOcclusionBehindLayer<LayerType>(m_stack.last().occlusionInScreen, layer, layer->screenSpaceTransform(), opaqueContents, clipRectInScreen, m_minimumTrackingSize, m_occludingScreenSpaceRects);
+    bool clipped;
+    gfx::QuadF visibleTransformedQuad = MathUtil::mapQuad(layer->drawTransform(), gfx::QuadF(opaqueContents.bounds()), clipped);
+    // FIXME: Find a rect interior to each transformed quad.
+    if (clipped || !visibleTransformedQuad.IsRectilinear())
+        return;
+
+    gfx::Rect clipRectInTarget = gfx::IntersectRects(
+        layerClipRectInTarget(layer),
+        screenSpaceClipRectInTargetSurface(layer->renderTarget()->renderSurface(), m_screenSpaceClipRect));
+
+    for (Region::Iterator opaqueContentRects(opaqueContents); opaqueContentRects.has_rect(); opaqueContentRects.next()) {
+        gfx::Rect transformedRect = gfx::ToEnclosedRect(MathUtil::mapQuad(layer->drawTransform(), gfx::QuadF(opaqueContentRects.rect()), clipped).BoundingBox());
+        DCHECK(!clipped); // We only map if the transform preserves axis alignment.
+        transformedRect.Intersect(clipRectInTarget);
+        if (transformedRect.width() < m_minimumTrackingSize.width() && transformedRect.height() < m_minimumTrackingSize.height())
+            continue;
+        m_stack.back().occlusionFromInsideTarget.Union(transformedRect);
+
+        if (!m_occludingScreenSpaceRects)
+            continue;
+
+        // Save the occluding area in screen space for debug visualization.
+        gfx::QuadF screenSpaceQuad = MathUtil::mapQuad(layer->renderTarget()->renderSurface()->screenSpaceTransform(), gfx::QuadF(transformedRect), clipped);
+        // TODO(danakj): Store the quad in the debug info instead of the bounding box.
+        gfx::Rect screenSpaceRect = gfx::ToEnclosedRect(screenSpaceQuad.BoundingBox());
+        m_occludingScreenSpaceRects->push_back(screenSpaceRect);
+    }
+
+    if (!m_nonOccludingScreenSpaceRects)
+        return;
+
+    Region nonOpaqueContents = SubtractRegions(gfx::Rect(layer->contentBounds()), opaqueContents);
+    for (Region::Iterator nonOpaqueContentRects(nonOpaqueContents); nonOpaqueContentRects.has_rect(); nonOpaqueContentRects.next()) {
+        // We've already checked for clipping in the mapQuad call above, these calls should not clip anything further.
+        gfx::Rect transformedRect = gfx::ToEnclosedRect(MathUtil::mapClippedRect(layer->drawTransform(), gfx::RectF(nonOpaqueContentRects.rect())));
+        transformedRect.Intersect(clipRectInTarget);
+        if (transformedRect.IsEmpty())
+            continue;
+
+        gfx::QuadF screenSpaceQuad = MathUtil::mapQuad(layer->renderTarget()->renderSurface()->screenSpaceTransform(), gfx::QuadF(transformedRect), clipped);
+        // TODO(danakj): Store the quad in the debug info instead of the bounding box.
+        gfx::Rect screenSpaceRect = gfx::ToEnclosedRect(screenSpaceQuad.BoundingBox());
+        m_nonOccludingScreenSpaceRects->push_back(screenSpaceRect);
     }
 }
 
-static inline bool testContentRectOccluded(const IntRect& contentRect, const WebTransformationMatrix& contentSpaceTransform, const IntRect& clipRectInTarget, const Region& occlusion)
-{
-    FloatRect transformedRect = MathUtil::mapClippedRect(contentSpaceTransform, FloatRect(contentRect));
-    // Take the enclosingIntRect, as we want to include partial pixels in the test.
-    IntRect targetRect = intersection(enclosingIntRect(transformedRect), clipRectInTarget);
-    return targetRect.isEmpty() || occlusion.contains(targetRect);
-}
-
 template<typename LayerType, typename RenderSurfaceType>
-bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::occluded(const LayerType* layer, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const
+bool OcclusionTrackerBase<LayerType, RenderSurfaceType>::occluded(const LayerType* renderTarget, const gfx::Rect& contentRect, const gfx::Transform& drawTransform, bool implDrawTransformIsUnknown, const gfx::Rect& clippedRectInTarget, bool* hasOcclusionFromOutsideTargetSurface) const
 {
     if (hasOcclusionFromOutsideTargetSurface)
         *hasOcclusionFromOutsideTargetSurface = false;
 
-    DCHECK(!m_stack.isEmpty());
-    if (m_stack.isEmpty())
+    DCHECK(!m_stack.empty());
+    if (m_stack.empty())
         return false;
-    if (contentRect.isEmpty())
+    if (contentRect.IsEmpty())
         return true;
+    if (implDrawTransformIsUnknown)
+        return false;
 
-    DCHECK(layer->renderTarget() == m_stack.last().target);
+    // For tests with no render target.
+    if (!renderTarget)
+        return false;
 
-    if (layerTransformsToTargetKnown(layer) && testContentRectOccluded(contentRect, layer->drawTransform(), layerClipRectInTarget(layer), m_stack.last().occlusionInTarget))
-        return true;
+    DCHECK(renderTarget->renderTarget() == renderTarget);
+    DCHECK(renderTarget->renderSurface());
+    DCHECK(renderTarget == m_stack.back().target);
 
-    if (layerTransformsToScreenKnown(layer) && testContentRectOccluded(contentRect, layer->screenSpaceTransform(), m_rootTargetRect, m_stack.last().occlusionInScreen)) {
-        if (hasOcclusionFromOutsideTargetSurface)
-            *hasOcclusionFromOutsideTargetSurface = true;
-        return true;
+    gfx::Transform inverseDrawTransform(gfx::Transform::kSkipInitialization);
+    if (!drawTransform.GetInverse(&inverseDrawTransform))
+        return false;
+
+    // Take the ToEnclosingRect at each step, as we want to contain any unoccluded partial pixels in the resulting Rect.
+    Region unoccludedRegionInTargetSurface = gfx::ToEnclosingRect(MathUtil::mapClippedRect(drawTransform, gfx::RectF(contentRect)));
+    // Layers can't clip across surfaces, so count this as internal occlusion.
+    // TODO(danakj): This would change if we clipped to the visibleContentRect().
+    unoccludedRegionInTargetSurface.Intersect(clippedRectInTarget);
+    unoccludedRegionInTargetSurface.Subtract(m_stack.back().occlusionFromInsideTarget);
+    gfx::RectF unoccludedRectInTargetSurfaceWithoutOutsideOcclusion = unoccludedRegionInTargetSurface.bounds();
+    unoccludedRegionInTargetSurface.Subtract(m_stack.back().occlusionFromOutsideTarget);
+
+    // Treat other clipping as occlusion from outside the surface.
+    // TODO(danakj): We can clip to the target surface's contentRect() here, but tests will need some love.
+    unoccludedRegionInTargetSurface.Intersect(screenSpaceClipRectInTargetSurface(renderTarget->renderSurface(), m_screenSpaceClipRect));
+
+    gfx::RectF unoccludedRectInTargetSurface = unoccludedRegionInTargetSurface.bounds();
+
+    if (hasOcclusionFromOutsideTargetSurface) {
+        // Check if the unoccluded rect shrank when applying outside occlusion.
+        *hasOcclusionFromOutsideTargetSurface = !gfx::SubtractRects(unoccludedRectInTargetSurfaceWithoutOutsideOcclusion, unoccludedRectInTargetSurface).IsEmpty();
     }
 
-    return false;
-}
-
-// Determines what portion of rect, if any, is unoccluded (not occluded by region). If
-// the resulting unoccluded region is not rectangular, we return a rect containing it.
-static inline IntRect rectSubtractRegion(const IntRect& rect, const Region& region)
-{
-    Region rectRegion(rect);
-    rectRegion.subtract(region);
-    return rectRegion.bounds();
-}
-
-static inline IntRect computeUnoccludedContentRect(const IntRect& contentRect, const WebTransformationMatrix& contentSpaceTransform, const IntRect& clipRectInTarget, const Region& occlusion)
-{
-    if (!contentSpaceTransform.isInvertible())
-        return contentRect;
-
-    // Take the enclosingIntRect at each step, as we want to contain any unoccluded partial pixels in the resulting IntRect.
-    FloatRect transformedRect = MathUtil::mapClippedRect(contentSpaceTransform, FloatRect(contentRect));
-    IntRect shrunkRect = rectSubtractRegion(intersection(enclosingIntRect(transformedRect), clipRectInTarget), occlusion);
-    IntRect unoccludedRect = enclosingIntRect(MathUtil::projectClippedRect(contentSpaceTransform.inverse(), FloatRect(shrunkRect)));
-    // The rect back in content space is a bounding box and may extend outside of the original contentRect, so clamp it to the contentRectBounds.
-    return intersection(unoccludedRect, contentRect);
+    return unoccludedRectInTargetSurface.IsEmpty();
 }
 
 template<typename LayerType, typename RenderSurfaceType>
-IntRect OcclusionTrackerBase<LayerType, RenderSurfaceType>::unoccludedContentRect(const LayerType* layer, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const
+gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::unoccludedContentRect(const LayerType* renderTarget, const gfx::Rect& contentRect, const gfx::Transform& drawTransform, bool implDrawTransformIsUnknown, const gfx::Rect& clippedRectInTarget, bool* hasOcclusionFromOutsideTargetSurface) const
 {
-    DCHECK(!m_stack.isEmpty());
-    if (m_stack.isEmpty())
-        return contentRect;
-    if (contentRect.isEmpty())
-        return contentRect;
-
-    DCHECK(layer->renderTarget() == m_stack.last().target);
-
-    // We want to return a rect that contains all the visible parts of |contentRect| in both screen space and in the target surface.
-    // So we find the visible parts of |contentRect| in each space, and take the intersection.
-
-    IntRect unoccludedInScreen = contentRect;
-    if (layerTransformsToScreenKnown(layer))
-        unoccludedInScreen = computeUnoccludedContentRect(contentRect, layer->screenSpaceTransform(), m_rootTargetRect, m_stack.last().occlusionInScreen);
-
-    IntRect unoccludedInTarget = contentRect;
-    if (layerTransformsToTargetKnown(layer))
-        unoccludedInTarget = computeUnoccludedContentRect(contentRect, layer->drawTransform(), layerClipRectInTarget(layer), m_stack.last().occlusionInTarget);
-
     if (hasOcclusionFromOutsideTargetSurface)
-        *hasOcclusionFromOutsideTargetSurface = (intersection(unoccludedInScreen, unoccludedInTarget) != unoccludedInTarget);
+        *hasOcclusionFromOutsideTargetSurface = false;
 
-    return intersection(unoccludedInScreen, unoccludedInTarget);
+    DCHECK(!m_stack.empty());
+    if (m_stack.empty())
+        return contentRect;
+    if (contentRect.IsEmpty())
+        return contentRect;
+    if (implDrawTransformIsUnknown)
+        return contentRect;
+
+    // For tests with no render target.
+    if (!renderTarget)
+        return contentRect;
+
+    DCHECK(renderTarget->renderTarget() == renderTarget);
+    DCHECK(renderTarget->renderSurface());
+    DCHECK(renderTarget == m_stack.back().target);
+
+    gfx::Transform inverseDrawTransform(gfx::Transform::kSkipInitialization);
+    if (!drawTransform.GetInverse(&inverseDrawTransform))
+        return contentRect;
+
+    // Take the ToEnclosingRect at each step, as we want to contain any unoccluded partial pixels in the resulting Rect.
+    Region unoccludedRegionInTargetSurface = gfx::ToEnclosingRect(MathUtil::mapClippedRect(drawTransform, gfx::RectF(contentRect)));
+    // Layers can't clip across surfaces, so count this as internal occlusion.
+    // TODO(danakj): This would change if we clipped to the visibleContentRect().
+    unoccludedRegionInTargetSurface.Intersect(clippedRectInTarget);
+    unoccludedRegionInTargetSurface.Subtract(m_stack.back().occlusionFromInsideTarget);
+    gfx::RectF unoccludedRectInTargetSurfaceWithoutOutsideOcclusion = unoccludedRegionInTargetSurface.bounds();
+    unoccludedRegionInTargetSurface.Subtract(m_stack.back().occlusionFromOutsideTarget);
+
+    // Treat other clipping as occlusion from outside the surface.
+    // TODO(danakj): We can clip to the target surface's contentRect() here, but tests will need some love.
+    unoccludedRegionInTargetSurface.Intersect(screenSpaceClipRectInTargetSurface(renderTarget->renderSurface(), m_screenSpaceClipRect));
+
+    gfx::RectF unoccludedRectInTargetSurface = unoccludedRegionInTargetSurface.bounds();
+    gfx::Rect unoccludedRect = gfx::ToEnclosingRect(MathUtil::projectClippedRect(inverseDrawTransform, unoccludedRectInTargetSurface));
+    unoccludedRect.Intersect(contentRect);
+
+    if (hasOcclusionFromOutsideTargetSurface) {
+        // Check if the unoccluded rect shrank when applying outside occlusion.
+        *hasOcclusionFromOutsideTargetSurface = !gfx::SubtractRects(unoccludedRectInTargetSurfaceWithoutOutsideOcclusion, unoccludedRectInTargetSurface).IsEmpty();
+    }
+
+    return unoccludedRect;
 }
 
 template<typename LayerType, typename RenderSurfaceType>
-IntRect OcclusionTrackerBase<LayerType, RenderSurfaceType>::unoccludedContributingSurfaceContentRect(const LayerType* layer, bool forReplica, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const
+gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::unoccludedContributingSurfaceContentRect(const LayerType* layer, bool forReplica, const gfx::Rect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const
 {
-    DCHECK(!m_stack.isEmpty());
+    DCHECK(!m_stack.empty());
     // The layer is a contributing renderTarget so it should have a surface.
     DCHECK(layer->renderSurface());
     // The layer is a contributing renderTarget so its target should be itself.
@@ -401,82 +447,71 @@ IntRect OcclusionTrackerBase<LayerType, RenderSurfaceType>::unoccludedContributi
     // The layer should not be the root, else what is is contributing to?
     DCHECK(layer->parent());
     // This should be called while the layer is still considered the current target in the occlusion tracker.
-    DCHECK(layer == m_stack.last().target);
+    DCHECK(layer == m_stack.back().target);
 
-    if (contentRect.isEmpty())
+    if (hasOcclusionFromOutsideTargetSurface)
+        *hasOcclusionFromOutsideTargetSurface = false;
+
+    if (contentRect.IsEmpty())
         return contentRect;
 
-    RenderSurfaceType* surface = layer->renderSurface();
+    const RenderSurfaceType* surface = layer->renderSurface();
+    const LayerType* contributingSurfaceRenderTarget = layer->parent()->renderTarget();
 
-    IntRect surfaceClipRect = surface->clipRect();
-    if (surfaceClipRect.isEmpty()) {
-        LayerType* contributingSurfaceRenderTarget = layer->parent()->renderTarget();
-        surfaceClipRect = intersection(contributingSurfaceRenderTarget->renderSurface()->contentRect(), enclosingIntRect(surface->drawableContentRect()));
-    }
+    if (!surfaceTransformsToTargetKnown(surface))
+        return contentRect;
+
+    gfx::Transform drawTransform = forReplica ? surface->replicaDrawTransform() : surface->drawTransform();
+    gfx::Transform inverseDrawTransform(gfx::Transform::kSkipInitialization);
+    if (!drawTransform.GetInverse(&inverseDrawTransform))
+        return contentRect;
 
     // A contributing surface doesn't get occluded by things inside its own surface, so only things outside the surface can occlude it. That occlusion is
     // found just below the top of the stack (if it exists).
     bool hasOcclusion = m_stack.size() > 1;
 
-    const WebTransformationMatrix& transformToScreen = forReplica ? surface->replicaScreenSpaceTransform() : surface->screenSpaceTransform();
-    const WebTransformationMatrix& transformToTarget = forReplica ? surface->replicaDrawTransform() : surface->drawTransform();
-
-    IntRect unoccludedInScreen = contentRect;
-    if (surfaceTransformsToScreenKnown(surface)) {
-        if (hasOcclusion) {
-            const StackObject& secondLast = m_stack[m_stack.size() - 2];
-            unoccludedInScreen = computeUnoccludedContentRect(contentRect, transformToScreen, m_rootTargetRect, secondLast.occlusionInScreen);
-        } else
-            unoccludedInScreen = computeUnoccludedContentRect(contentRect, transformToScreen, m_rootTargetRect, Region());
+    // Take the ToEnclosingRect at each step, as we want to contain any unoccluded partial pixels in the resulting Rect.
+    Region unoccludedRegionInTargetSurface = gfx::ToEnclosingRect(MathUtil::mapClippedRect(drawTransform, gfx::RectF(contentRect)));
+    // Layers can't clip across surfaces, so count this as internal occlusion.
+    // TODO(danakj): This would change if we clipped to the visibleContentRect().
+    if (surface->isClipped())
+        unoccludedRegionInTargetSurface.Intersect(surface->clipRect());
+    if (hasOcclusion) {
+        const StackObject& secondLast = m_stack[m_stack.size() - 2];
+        unoccludedRegionInTargetSurface.Subtract(secondLast.occlusionFromInsideTarget);
+    }
+    gfx::RectF unoccludedRectInTargetSurfaceWithoutOutsideOcclusion = unoccludedRegionInTargetSurface.bounds();
+    if (hasOcclusion) {
+        const StackObject& secondLast = m_stack[m_stack.size() - 2];
+        unoccludedRegionInTargetSurface.Subtract(secondLast.occlusionFromOutsideTarget);
     }
 
-    IntRect unoccludedInTarget = contentRect;
-    if (surfaceTransformsToTargetKnown(surface)) {
-        if (hasOcclusion) {
-            const StackObject& secondLast = m_stack[m_stack.size() - 2];
-            unoccludedInTarget = computeUnoccludedContentRect(contentRect, transformToTarget, surfaceClipRect, secondLast.occlusionInTarget);
-        } else
-            unoccludedInTarget = computeUnoccludedContentRect(contentRect, transformToTarget, surfaceClipRect, Region());
+    // Treat other clipping as occlusion from outside the target surface.
+    unoccludedRegionInTargetSurface.Intersect(contributingSurfaceRenderTarget->renderSurface()->contentRect());
+    unoccludedRegionInTargetSurface.Intersect(screenSpaceClipRectInTargetSurface(contributingSurfaceRenderTarget->renderSurface(), m_screenSpaceClipRect));
+
+    gfx::RectF unoccludedRectInTargetSurface = unoccludedRegionInTargetSurface.bounds();
+    gfx::Rect unoccludedRect = gfx::ToEnclosingRect(MathUtil::projectClippedRect(inverseDrawTransform, unoccludedRectInTargetSurface));
+    unoccludedRect.Intersect(contentRect);
+
+    if (hasOcclusionFromOutsideTargetSurface) {
+        // Check if the unoccluded rect shrank when applying outside occlusion.
+        *hasOcclusionFromOutsideTargetSurface = !gfx::SubtractRects(unoccludedRectInTargetSurfaceWithoutOutsideOcclusion, unoccludedRectInTargetSurface).IsEmpty();
     }
 
-    if (hasOcclusionFromOutsideTargetSurface)
-        *hasOcclusionFromOutsideTargetSurface = (intersection(unoccludedInScreen, unoccludedInTarget) != unoccludedInTarget);
-
-    return intersection(unoccludedInScreen, unoccludedInTarget);
+    return unoccludedRect;
 }
 
 template<typename LayerType, typename RenderSurfaceType>
-IntRect OcclusionTrackerBase<LayerType, RenderSurfaceType>::layerClipRectInTarget(const LayerType* layer) const
+gfx::Rect OcclusionTrackerBase<LayerType, RenderSurfaceType>::layerClipRectInTarget(const LayerType* layer) const
 {
-    // FIXME: we could remove this helper function, but unit tests currently override this
-    //        function, and they need to be verified/adjusted before this can be removed.
+    // TODO(danakj): Can we remove this use of drawableContentRect and just use the clipRect() and target surface contentRect?
+    // TODO(danakj): Or can we use visibleContentRect() which is much tighter?
     return layer->drawableContentRect();
 }
 
-// Declare the possible functions here for the linker.
-template OcclusionTrackerBase<Layer, RenderSurface>::OcclusionTrackerBase(IntRect rootTargetRect, bool recordMetricsForFrame);
-template void OcclusionTrackerBase<Layer, RenderSurface>::enterLayer(const LayerIteratorPosition<Layer>&);
-template void OcclusionTrackerBase<Layer, RenderSurface>::leaveLayer(const LayerIteratorPosition<Layer>&);
-template void OcclusionTrackerBase<Layer, RenderSurface>::enterRenderTarget(const Layer* newTarget);
-template void OcclusionTrackerBase<Layer, RenderSurface>::finishedRenderTarget(const Layer* finishedTarget);
-template void OcclusionTrackerBase<Layer, RenderSurface>::leaveToRenderTarget(const Layer* newTarget);
-template void OcclusionTrackerBase<Layer, RenderSurface>::markOccludedBehindLayer(const Layer*);
-template bool OcclusionTrackerBase<Layer, RenderSurface>::occluded(const Layer*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<Layer, RenderSurface>::unoccludedContentRect(const Layer*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<Layer, RenderSurface>::unoccludedContributingSurfaceContentRect(const Layer*, bool forReplica, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<Layer, RenderSurface>::layerClipRectInTarget(const Layer*) const;
-
-template OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::OcclusionTrackerBase(IntRect rootTargetRect, bool recordMetricsForFrame);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::enterLayer(const LayerIteratorPosition<LayerImpl>&);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::leaveLayer(const LayerIteratorPosition<LayerImpl>&);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::enterRenderTarget(const LayerImpl* newTarget);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::finishedRenderTarget(const LayerImpl* finishedTarget);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::leaveToRenderTarget(const LayerImpl* newTarget);
-template void OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::markOccludedBehindLayer(const LayerImpl*);
-template bool OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::occluded(const LayerImpl*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::unoccludedContentRect(const LayerImpl*, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::unoccludedContributingSurfaceContentRect(const LayerImpl*, bool forReplica, const IntRect& contentRect, bool* hasOcclusionFromOutsideTargetSurface) const;
-template IntRect OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>::layerClipRectInTarget(const LayerImpl*) const;
-
+// Instantiate (and export) templates here for the linker.
+template class OcclusionTrackerBase<Layer, RenderSurface>;
+template class OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>;
 
 }  // namespace cc

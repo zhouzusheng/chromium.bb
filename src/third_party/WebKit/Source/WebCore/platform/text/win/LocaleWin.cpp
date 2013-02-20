@@ -32,9 +32,7 @@
 #include "LocaleWin.h"
 
 #include "DateComponents.h"
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFormat.h"
-#endif
 #include "Language.h"
 #include "LocalizedStrings.h"
 #include <limits>
@@ -91,20 +89,10 @@ PassOwnPtr<Locale> Locale::create(const AtomicString& locale)
     return LocaleWin::create(LCIDFromLocale(locale));
 }
 
-// Windows doesn't have an API to parse locale-specific date string,
-// and GetDateFormat() and GetDateFormatEx() don't support years older
-// than 1600, which we should support according to the HTML
-// standard. So, we obtain the date format from the system, but we
-// format/parse a date by our own code.
-
 inline LocaleWin::LocaleWin(LCID lcid)
     : m_lcid(lcid)
     , m_didInitializeNumberData(false)
 {
-    SYSTEMTIME systemTime;
-    GetLocalTime(&systemTime);
-    m_baseYear = systemTime.wYear;
-
 #if ENABLE(CALENDAR_PICKER)
     DWORD value = 0;
     getLocaleInfo(LOCALE_IFIRSTDAYOFWEEK, value);
@@ -172,42 +160,6 @@ void LocaleWin::ensureShortMonthLabels()
 
 // -------------------------------- Tokenized date format
 
-struct DateFormatToken {
-    enum Type {
-        Literal,
-        Day1,
-        Day2,
-        Month1,
-        Month2,
-        Month3,
-        Month4,
-        Year1,
-        Year2,
-        Year4,
-    };
-    Type type;
-    String data; // This is valid only if type==Literal.
-
-    DateFormatToken(Type type)
-        : type(type)
-    { }
-
-    DateFormatToken(const String& data)
-        : type(Literal)
-        , data(data)
-    { }
-
-    DateFormatToken(const DateFormatToken& token)
-        : type(token.type)
-        , data(token.data)
-    { }
-};
-
-static inline bool isEraSymbol(UChar letter) { return letter == 'g'; }
-static inline bool isYearSymbol(UChar letter) { return letter == 'y'; }
-static inline bool isMonthSymbol(UChar letter) { return letter == 'M'; }
-static inline bool isDaySymbol(UChar letter) { return letter == 'd'; }
-
 static unsigned countContinuousLetters(const String& format, unsigned index)
 {
     unsigned count = 1;
@@ -220,18 +172,34 @@ static unsigned countContinuousLetters(const String& format, unsigned index)
     return count;
 }
 
-static void commitLiteralToken(StringBuilder& literalBuffer, Vector<DateFormatToken>& tokens)
+static void commitLiteralToken(StringBuilder& literalBuffer, StringBuilder& converted)
 {
     if (literalBuffer.length() <= 0)
         return;
-    tokens.append(DateFormatToken(literalBuffer.toString()));
+    DateTimeFormat::quoteAndAppendLiteral(literalBuffer.toString(), converted);
     literalBuffer.clear();
 }
 
-// See http://msdn.microsoft.com/en-us/library/dd317787(v=vs.85).aspx
-static Vector<DateFormatToken> parseDateFormat(const String format)
+// This function converts Windows date/time pattern format [1][2] into LDML date
+// format pattern [3].
+//
+// i.e.
+//   We set h, H, m, s, d, dd, M, or y as is. They have same meaning in both of
+//   Windows and LDML.
+//   We need to convert the following patterns:
+//     t -> a
+//     tt -> a
+//     ddd -> EEE
+//     dddd -> EEEE
+//     g -> G
+//     gg -> ignore
+//
+// [1] http://msdn.microsoft.com/en-us/library/dd317787(v=vs.85).aspx
+// [2] http://msdn.microsoft.com/en-us/library/dd318148(v=vs.85).aspx
+// [3] LDML http://unicode.org/reports/tr35/tr35-6.html#Date_Format_Patterns
+static String convertWindowsDateTimeFormat(const String& format)
 {
-    Vector<DateFormatToken> tokens;
+    StringBuilder converted;
     StringBuilder literalBuffer;
     bool inQuote = false;
     bool lastQuoteCanBeLiteral = false;
@@ -258,238 +226,36 @@ static Vector<DateFormatToken> parseDateFormat(const String format)
                 lastQuoteCanBeLiteral = false;
             } else
                 lastQuoteCanBeLiteral = true;
-        } else if (isYearSymbol(ch)) {
-            commitLiteralToken(literalBuffer, tokens);
+        } else if (isASCIIAlpha(ch)) {
+            commitLiteralToken(literalBuffer, converted);
+            unsigned symbolStart = i;
             unsigned count = countContinuousLetters(format, i);
             i += count - 1;
-            if (count == 1)
-                tokens.append(DateFormatToken(DateFormatToken::Year1));
-            else if (count == 2)
-                tokens.append(DateFormatToken(DateFormatToken::Year2));
+            if (ch == 'h' || ch == 'H' || ch == 'm' || ch == 's' || ch == 'M' || ch == 'y')
+                converted.append(format, symbolStart, count);
+            else if (ch == 'd') {
+                if (count <= 2)
+                    converted.append(format, symbolStart, count);
+                else if (count == 3)
+                    converted.append("EEE");
+                else
+                    converted.append("EEEE");
+            } else if (ch == 'g') {
+                if (count == 1)
+                    converted.append('G');
+                else {
+                    // gg means imperial era in Windows.
+                    // Just ignore it.
+                }
+            } else if (ch == 't')
+                converted.append('a');
             else
-                tokens.append(DateFormatToken(DateFormatToken::Year4));
-        } else if (isMonthSymbol(ch)) {
-            commitLiteralToken(literalBuffer, tokens);
-            unsigned count = countContinuousLetters(format, i);
-            i += count - 1;
-            if (count == 1)
-                tokens.append(DateFormatToken(DateFormatToken::Month1));
-            else if (count == 2)
-                tokens.append(DateFormatToken(DateFormatToken::Month2));
-            else if (count == 3)
-                tokens.append(DateFormatToken(DateFormatToken::Month3));
-            else
-                tokens.append(DateFormatToken(DateFormatToken::Month4));
-        } else if (isDaySymbol(ch)) {
-            commitLiteralToken(literalBuffer, tokens);
-            unsigned count = countContinuousLetters(format, i);
-            i += count - 1;
-            if (count == 1)
-                tokens.append(DateFormatToken(DateFormatToken::Day1));
-            else
-                tokens.append(DateFormatToken(DateFormatToken::Day2));
-        } else if (isEraSymbol(ch)) {
-            // Just ignore era.
-            // HTML5 date supports only A.D.
+                literalBuffer.append(format, symbolStart, count);
         } else
             literalBuffer.append(ch);
     }
-    commitLiteralToken(literalBuffer, tokens);
-    return tokens;
-}
-
-// -------------------------------- Parsing
-
-bool LocaleWin::isLocalizedDigit(UChar ch)
-{
-    String normalizedDigit = convertFromLocalizedNumber(String(&ch, 1));
-    if (normalizedDigit.length() != 1)
-        return false;
-    return isASCIIDigit(normalizedDigit[0]);
-}
-
-// Returns -1 if parsing fails.
-int LocaleWin::parseNumber(const String& input, unsigned& index)
-{
-    unsigned digitsStart = index;
-    while (index < input.length() && isASCIIDigit(input[index]))
-        index++;
-    if (digitsStart != index) {
-        bool ok = false;
-        int number = input.substring(digitsStart, index - digitsStart).toInt(&ok);
-        return ok ? number : -1;
-    }
-
-    while (index < input.length() && isLocalizedDigit(input[index]))
-        index++;
-    if (digitsStart == index)
-        return -1;
-    bool ok = false;
-    int number = convertFromLocalizedNumber(input.substring(digitsStart, index - digitsStart)).toInt(&ok);
-    return ok ? number : -1;
-}
-
-// Returns 0-based month number. Returns -1 if parsing fails.
-int LocaleWin::parseNumberOrMonth(const String& input, unsigned& index)
-{
-    int result = parseNumber(input, index);
-    if (result >= 0) {
-        if (result < 1 || result > 12)
-            return -1;
-        return result - 1;
-    }
-    for (unsigned m = 0; m < m_monthLabels.size(); ++m) {
-        unsigned labelLength = m_monthLabels[m].length();
-        if (equalIgnoringCase(input.substring(index, labelLength), m_monthLabels[m])) {
-            index += labelLength;
-            return m;
-        }
-    }
-    for (unsigned m = 0; m < m_shortMonthLabels.size(); ++m) {
-        unsigned labelLength = m_shortMonthLabels[m].length();
-        if (equalIgnoringCase(input.substring(index, labelLength), m_shortMonthLabels[m])) {
-            index += labelLength;
-            return m;
-        }
-    }
-    return -1;
-}
-
-double LocaleWin::parseDateTime(const String& input, DateComponents::Type type)
-{
-    if (type != DateComponents::Date)
-        return std::numeric_limits<double>::quiet_NaN();
-    ensureShortDateTokens();
-    return parseDate(m_shortDateTokens, m_baseYear, input);
-}
-
-double LocaleWin::parseDate(const String& format, int baseYear, const String& input)
-{
-    return parseDate(parseDateFormat(format), baseYear, input);
-}
-
-double LocaleWin::parseDate(const Vector<DateFormatToken>& tokens, int baseYear, const String& input)
-{
-    ensureShortMonthLabels();
-    ensureMonthLabels();
-    const double NaN = numeric_limits<double>::quiet_NaN();
-    unsigned inputIndex = 0;
-    int day = -1, month = -1, year = -1;
-    for (unsigned i = 0; i < tokens.size(); ++i) {
-        switch (tokens[i].type) {
-        case DateFormatToken::Literal: {
-            String data = tokens[i].data;
-            unsigned literalLength = data.length();
-            if (input.substring(inputIndex, literalLength) == data)
-                inputIndex += literalLength;
-            // Go ahead even if the input doesn't have this string.
-            break;
-        }
-        case DateFormatToken::Day1:
-        case DateFormatToken::Day2:
-            day = parseNumber(input, inputIndex);
-            if (day < 1 || day > 31)
-                return NaN;
-            break;
-        case DateFormatToken::Month1:
-        case DateFormatToken::Month2:
-        case DateFormatToken::Month3:
-        case DateFormatToken::Month4:
-            month = parseNumberOrMonth(input, inputIndex);
-            if (month < 0 || month > 11)
-                return NaN;
-            break;
-        case DateFormatToken::Year1: {
-            unsigned oldIndex = inputIndex;
-            year = parseNumber(input, inputIndex);
-            if (year <= 0)
-                return NaN;
-            if (inputIndex - oldIndex == 1) {
-                int shortYear = baseYear % 10;
-                int decade = baseYear - shortYear;
-                if (shortYear >= 5)
-                    year += shortYear - 4 <= year ? decade : decade + 10;
-                else
-                    year += shortYear + 5 >= year ? decade : decade - 10;
-            }
-            break;
-        }
-        case DateFormatToken::Year2: {
-            unsigned oldIndex = inputIndex;
-            year = parseNumber(input, inputIndex);
-            if (year <= 0)
-                return NaN;
-            if (inputIndex - oldIndex == 2) {
-                int shortYear = baseYear % 100;
-                int century = baseYear - shortYear;
-                if (shortYear >= 50)
-                    year += shortYear - 49 <= year ? century : century + 100;
-                else
-                    year += shortYear + 50 >= year ? century : century - 100;
-            }
-            break;
-        }
-        case DateFormatToken::Year4:
-            year = parseNumber(input, inputIndex);
-            if (year <= 0)
-                return NaN;
-            break;
-        }
-    }
-    if (year <= 0 || month < 0 || day <= 0)
-        return NaN;
-    return dateToDaysFrom1970(year, month, day) * msPerDay;
-}
-
-// -------------------------------- Formatting
-
-void LocaleWin::ensureShortDateTokens()
-{
-    if (!m_shortDateTokens.isEmpty())
-        return;
-    m_shortDateTokens = parseDateFormat(getLocaleInfoString(LOCALE_SSHORTDATE));
-}
-
-static String substituteLabelsIntoFormat(const Vector<DateFormatToken>& tokens, const String& yearText, const String& monthText, const String& dayText)
-{
-    String nonEmptyDayText = dayText.isEmpty() ? "Day" : dayText;
-    String nonEmptyMonthText = monthText.isEmpty() ? "Month" : monthText;
-    String nonEmptyYearText = yearText.isEmpty() ? "Year" : yearText;
-    StringBuilder buffer;
-    for (unsigned i = 0; i < tokens.size(); ++i) {
-        switch (tokens[i].type) {
-        case DateFormatToken::Literal:
-            buffer.append(tokens[i].data);
-            break;
-        case DateFormatToken::Day1:
-        case DateFormatToken::Day2:
-            buffer.append(nonEmptyDayText);
-            break;
-        case DateFormatToken::Month1:
-        case DateFormatToken::Month2:
-        case DateFormatToken::Month3:
-        case DateFormatToken::Month4:
-            buffer.append(nonEmptyMonthText);
-            break;
-        case DateFormatToken::Year1:
-        case DateFormatToken::Year2:
-        case DateFormatToken::Year4:
-            buffer.append(nonEmptyYearText);
-            break;
-        }
-    }
-    return buffer.toString();
-}
-
-String LocaleWin::dateFormatText()
-{
-    ensureShortDateTokens();
-    return substituteLabelsIntoFormat(m_shortDateTokens, dateFormatYearText(), dateFormatMonthText(), dateFormatDayInMonthText());
-}
-
-String LocaleWin::dateFormatText(const String& format, const String& yearText, const String& monthText, const String& dayText)
-{
-    return substituteLabelsIntoFormat(parseDateFormat(format), yearText, monthText, dayText);
+    commitLiteralToken(literalBuffer, converted);
+    return converted.toString();
 }
 
 void LocaleWin::ensureMonthLabels()
@@ -551,7 +317,7 @@ void LocaleWin::ensureWeekDayShortLabels()
     }
 }
 
-#if ENABLE(CALENDAR_PICKER) || ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
 const Vector<String>& LocaleWin::monthLabels()
 {
     ensureMonthLabels();
@@ -578,129 +344,30 @@ bool LocaleWin::isRTL()
 }
 #endif
 
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-static String convertWindowsDateFormatToLDML(const Vector<DateFormatToken>& tokens)
-{
-    StringBuilder buffer;
-    for (unsigned i = 0; i < tokens.size(); ++i) {
-        switch (tokens[i].type) {
-        case DateFormatToken::Literal:
-            DateTimeFormat::quoteAndAppendLiteral(tokens[i].data, buffer);
-            break;
-
-        case DateFormatToken::Day2:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeDayOfMonth));
-            // Fallthrough.
-        case DateFormatToken::Day1:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeDayOfMonth));
-            break;
-
-        case DateFormatToken::Month4:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeMonth));
-            // Fallthrough.
-        case DateFormatToken::Month3:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeMonth));
-            // Fallthrough.
-        case DateFormatToken::Month2:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeMonth));
-            // Fallthrough.
-        case DateFormatToken::Month1:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeMonth));
-            break;
-
-        case DateFormatToken::Year4:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeYear));
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeYear));
-            // Fallthrough.
-        case DateFormatToken::Year2:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeYear));
-            // Fallthrough.
-        case DateFormatToken::Year1:
-            buffer.append(static_cast<char>(DateTimeFormat::FieldTypeYear));
-            break;
-        }
-    }
-    return buffer.toString();
-}
-
-static DateTimeFormat::FieldType mapCharacterToDateTimeFieldType(UChar ch)
-{
-    switch (ch) {
-    case 'h':
-        return DateTimeFormat::FieldTypeHour12;
-
-    case 'H':
-        return DateTimeFormat::FieldTypeHour23;
-
-    case 'm':
-        return DateTimeFormat::FieldTypeMinute;
-
-    case 's':
-        return DateTimeFormat::FieldTypeSecond;
-
-    case 't':
-        return DateTimeFormat::FieldTypePeriod;
-
-    default:
-        return DateTimeFormat::FieldTypeLiteral;
-    }
-}
-
-// This class used for converting Windows time pattern format[1] into LDML[2]
-// time format string.
-// [1] http://msdn.microsoft.com/en-us/library/windows/desktop/dd318148(v=vs.85).aspx
-// [2] LDML http://unicode.org/reports/tr35/tr35-6.html#Date_Format_Patterns
-static String convertWindowsTimeFormatToLDML(const String& windowsTimeFormat)
-{
-    StringBuilder builder;
-    int counter = 0;
-    DateTimeFormat::FieldType lastFieldType = DateTimeFormat::FieldTypeLiteral;
-    for (unsigned index = 0; index < windowsTimeFormat.length(); ++index) {
-        UChar const ch = windowsTimeFormat[index];
-        DateTimeFormat::FieldType fieldType = mapCharacterToDateTimeFieldType(ch);
-        if (fieldType == DateTimeFormat::FieldTypeLiteral)
-            builder.append(ch);
-        else if (fieldType == lastFieldType) {
-            ++counter;
-            if (counter == 2 && lastFieldType != DateTimeFormat::FieldTypePeriod)
-                builder.append(static_cast<UChar>(lastFieldType));
-        } else {
-            if (lastFieldType != DateTimeFormat::FieldTypeLiteral)
-                builder.append(static_cast<UChar>(lastFieldType));
-            builder.append(static_cast<UChar>(fieldType));
-            counter = 1;
-        }
-        lastFieldType = fieldType;
-    }
-    return builder.toString();
-}
-
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
 String LocaleWin::dateFormat()
 {
-    if (!m_dateFormat.isNull())
-        return m_dateFormat;
-    ensureShortDateTokens();
-    m_dateFormat = convertWindowsDateFormatToLDML(m_shortDateTokens);
+    if (m_dateFormat.isNull())
+        m_dateFormat = convertWindowsDateTimeFormat(getLocaleInfoString(LOCALE_SSHORTDATE));
     return m_dateFormat;
 }
 
 String LocaleWin::dateFormat(const String& windowsFormat)
 {
-    return convertWindowsDateFormatToLDML(parseDateFormat(windowsFormat));
+    return convertWindowsDateTimeFormat(windowsFormat);
 }
 
 String LocaleWin::monthFormat()
 {
-    if (!m_monthFormat.isNull())
-        return m_monthFormat;
-    m_monthFormat = convertWindowsDateFormatToLDML(parseDateFormat(getLocaleInfoString(LOCALE_SYEARMONTH)));
+    if (m_monthFormat.isNull())
+        m_monthFormat = convertWindowsDateTimeFormat(getLocaleInfoString(LOCALE_SYEARMONTH));
     return m_monthFormat;
 }
 
 String LocaleWin::timeFormat()
 {
     if (m_timeFormatWithSeconds.isNull())
-        m_timeFormatWithSeconds = convertWindowsTimeFormatToLDML(getLocaleInfoString(LOCALE_STIMEFORMAT));
+        m_timeFormatWithSeconds = convertWindowsDateTimeFormat(getLocaleInfoString(LOCALE_STIMEFORMAT));
     return m_timeFormatWithSeconds;
 }
 
@@ -711,7 +378,7 @@ String LocaleWin::shortTimeFormat()
     String format = getLocaleInfoString(LOCALE_SSHORTTIME);
     // Vista or older Windows doesn't support LOCALE_SSHORTTIME.
     if (format.isEmpty()) {
-        format = timeFormat();
+        format = getLocaleInfoString(LOCALE_STIMEFORMAT);
         StringBuilder builder;
         builder.append(getLocaleInfoString(LOCALE_STIME));
         builder.append("ss");
@@ -719,8 +386,32 @@ String LocaleWin::shortTimeFormat()
         if (pos != notFound)
             format.remove(pos, builder.length());
     }
-    m_timeFormatWithoutSeconds = convertWindowsTimeFormatToLDML(format);
+    m_timeFormatWithoutSeconds = convertWindowsDateTimeFormat(format);
     return m_timeFormatWithoutSeconds;
+}
+
+String LocaleWin::dateTimeFormatWithSeconds()
+{
+    if (!m_dateTimeFormatWithSeconds.isNull())
+        return m_dateTimeFormatWithSeconds;
+    StringBuilder builder;
+    builder.append(dateFormat());
+    builder.append(' ');
+    builder.append(timeFormat());
+    m_dateTimeFormatWithSeconds = builder.toString();
+    return m_dateTimeFormatWithSeconds;
+}
+
+String LocaleWin::dateTimeFormatWithoutSeconds()
+{
+    if (!m_dateTimeFormatWithoutSeconds.isNull())
+        return m_dateTimeFormatWithoutSeconds;
+    StringBuilder builder;
+    builder.append(dateFormat());
+    builder.append(' ');
+    builder.append(shortTimeFormat());
+    m_dateTimeFormatWithoutSeconds = builder.toString();
+    return m_dateTimeFormatWithoutSeconds;
 }
 
 const Vector<String>& LocaleWin::shortMonthLabels()

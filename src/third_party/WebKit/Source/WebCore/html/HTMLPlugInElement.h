@@ -51,11 +51,13 @@ public:
     enum DisplayState {
         WaitingForSnapshot,
         DisplayingSnapshot,
+        PlayingWithPendingMouseClick,
         Playing
     };
     DisplayState displayState() const { return m_displayState; }
     void setDisplayState(DisplayState state) { m_displayState = state; }
     virtual void updateSnapshot(PassRefPtr<Image>) { }
+    virtual void dispatchPendingMouseClick() { }
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* getNPObject();
@@ -75,7 +77,7 @@ protected:
 
     virtual void detach();
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     bool m_inBeforeLoadEventHandler;

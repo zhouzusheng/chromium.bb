@@ -114,6 +114,7 @@ public:
         int worldID, const WebScriptSource* sources, unsigned numSources,
         int extensionGroup);
     virtual void setIsolatedWorldSecurityOrigin(int worldID, const WebSecurityOrigin&);
+    virtual void setIsolatedWorldContentSecurityPolicy(int worldID, const WebString&);
     virtual void addMessageToConsole(const WebConsoleMessage&);
     virtual void collectGarbage();
     virtual bool checkIfRunInsecureContent(const WebURL&) const;
@@ -189,6 +190,7 @@ public:
     virtual bool selectWordAroundCaret();
     virtual void selectRange(const WebPoint& base, const WebPoint& extent);
     virtual void selectRange(const WebRange&);
+    virtual void moveCaretSelectionTowardsWindowPoint(const WebPoint&);
     virtual int printBegin(const WebPrintParams&,
                            const WebNode& constrainToNode,
                            bool* useBrowserOverlays);

@@ -35,7 +35,6 @@ class BaseTestServer {
   enum Type {
     TYPE_BASIC_AUTH_PROXY,
     TYPE_FTP,
-    TYPE_GDATA,
     TYPE_HTTP,
     TYPE_HTTPS,
     TYPE_WS,
@@ -150,9 +149,6 @@ class BaseTestServer {
   // Pass as the 'host' parameter during construction to server on 127.0.0.1
   static const char kLocalhost[];
 
-  // The auth token to be used for TYPE_GDATA server.
-  static const char kGDataAuthToken[];
-
   // Initialize a TestServer listening on a specific host (IP or hostname).
   BaseTestServer(Type type,  const std::string& host);
 
@@ -214,7 +210,13 @@ class BaseTestServer {
 
   // Generates a DictionaryValue with the arguments for launching the external
   // Python test server.
-  bool GenerateArguments(base::DictionaryValue* arguments) const;
+  bool GenerateArguments(base::DictionaryValue* arguments) const
+    WARN_UNUSED_RESULT;
+
+  // Subclasses can override this to add arguments that are specific to their
+  // own test servers.
+  virtual bool GenerateAdditionalArguments(
+      base::DictionaryValue* arguments) const WARN_UNUSED_RESULT;
 
  private:
   void Init(const std::string& host);

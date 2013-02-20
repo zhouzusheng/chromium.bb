@@ -1,18 +1,15 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* $Id: rijndael.h,v 1.12 2012/04/25 14:49:43 gerv%gerv.net Exp $ */
+/* $Id: rijndael.h,v 1.13 2012/09/28 22:46:32 rrelyea%redhat.com Exp $ */
 
 #ifndef _RIJNDAEL_H_
 #define _RIJNDAEL_H_ 1
 
+#include "blapii.h"
+
 #define RIJNDAEL_MIN_BLOCKSIZE 16 /* bytes */
 #define RIJNDAEL_MAX_BLOCKSIZE 32 /* bytes */
-
-typedef SECStatus AESFunc(AESContext *cx, unsigned char *output,
-                          unsigned int *outputLen, unsigned int maxOutputLen,
-                          const unsigned char *input, unsigned int inputLen, 
-                          unsigned int blocksize);
 
 typedef SECStatus AESBlockFunc(AESContext *cx, 
                                unsigned char *output,
@@ -49,15 +46,23 @@ typedef SECStatus AESBlockFunc(AESContext *cx,
  * Nb          - the number of bytes in a block, specified by user
  * Nr          - the number of rounds, specified by a table
  * expandedKey - the round keys in 4-byte words, the length is Nr * Nb
- * worker      - the encryption/decryption function to use with this context
+ * worker      - the encryption/decryption function to use with worker_cx
+ * destroy     - if not NULL, the destroy function to use with worker_cx
+ * worker_cx   - the context for worker and destroy
+ * isBlock     - is the mode of operation a block cipher or a stream cipher?
  */
 struct AESContextStr
 {
     unsigned int   Nb;
     unsigned int   Nr;
-    AESFunc       *worker;
+    freeblCipherFunc worker;
+    /* NOTE: The offsets of iv and expandedKey are hardcoded in intel-aes.s.
+     * Don't add new members before them without updating intel-aes.s. */
     unsigned char iv[RIJNDAEL_MAX_BLOCKSIZE];
     PRUint32      expandedKey[RIJNDAEL_MAX_EXP_KEY_SIZE];
+    freeblDestroyFunc destroy;
+    void	      *worker_cx;
+    PRBool	      isBlock;
 };
 
 #endif /* _RIJNDAEL_H_ */

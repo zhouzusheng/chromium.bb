@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/scheduler_state_machine.h"
 
 #include "base/logging.h"
 #include "base/stringprintf.h"
-#include "cc/settings.h"
 
 namespace cc {
 
@@ -31,7 +28,7 @@ SchedulerStateMachine::SchedulerStateMachine()
     , m_canDraw(false)
     , m_drawIfPossibleFailed(false)
     , m_textureState(LAYER_TEXTURE_STATE_UNLOCKED)
-    , m_contextState(CONTEXT_ACTIVE)
+    , m_outputSurfaceState(OUTPUT_SURFACE_ACTIVE)
 {
 }
 
@@ -56,7 +53,7 @@ std::string SchedulerStateMachine::toString()
     base::StringAppendF(&str, "m_canDraw = %d; ", m_canDraw);
     base::StringAppendF(&str, "m_drawIfPossibleFailed = %d; ", m_drawIfPossibleFailed);
     base::StringAppendF(&str, "m_textureState = %d; ", m_textureState);
-    base::StringAppendF(&str, "m_contextState = %d; ", m_contextState);
+    base::StringAppendF(&str, "m_outputSurfaceState = %d; ", m_outputSurfaceState);
     return str;
 }
 
@@ -96,7 +93,7 @@ bool SchedulerStateMachine::shouldDraw() const
         return false;
     if (hasDrawnThisFrame())
         return false;
-    if (m_contextState != CONTEXT_ACTIVE)
+    if (m_outputSurfaceState != OUTPUT_SURFACE_ACTIVE)
         return false;
     return true;
 }
@@ -123,13 +120,13 @@ SchedulerStateMachine::Action SchedulerStateMachine::nextAction() const
         return ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD;
     switch (m_commitState) {
     case COMMIT_STATE_IDLE:
-        if (m_contextState != CONTEXT_ACTIVE && m_needsForcedRedraw)
+        if (m_outputSurfaceState != OUTPUT_SURFACE_ACTIVE && m_needsForcedRedraw)
             return ACTION_DRAW_FORCED;
-        if (m_contextState != CONTEXT_ACTIVE && m_needsForcedCommit)
+        if (m_outputSurfaceState != OUTPUT_SURFACE_ACTIVE && m_needsForcedCommit)
             return ACTION_BEGIN_FRAME;
-        if (m_contextState == CONTEXT_LOST)
-            return ACTION_BEGIN_CONTEXT_RECREATION;
-        if (m_contextState == CONTEXT_RECREATING)
+        if (m_outputSurfaceState == OUTPUT_SURFACE_LOST)
+            return ACTION_BEGIN_OUTPUT_SURFACE_RECREATION;
+        if (m_outputSurfaceState == OUTPUT_SURFACE_RECREATING)
             return ACTION_NONE;
         if (shouldDraw())
             return m_needsForcedRedraw ? ACTION_DRAW_FORCED : ACTION_DRAW_IF_POSSIBLE;
@@ -145,14 +142,20 @@ SchedulerStateMachine::Action SchedulerStateMachine::nextAction() const
     case COMMIT_STATE_READY_TO_COMMIT:
         return ACTION_COMMIT;
 
-    case COMMIT_STATE_WAITING_FOR_FIRST_DRAW:
-        if (shouldDraw() || m_contextState == CONTEXT_LOST)
+    case COMMIT_STATE_WAITING_FOR_FIRST_DRAW: {
+        if (shouldDraw() || m_outputSurfaceState == OUTPUT_SURFACE_LOST)
             return m_needsForcedRedraw ? ACTION_DRAW_FORCED : ACTION_DRAW_IF_POSSIBLE;
         // COMMIT_STATE_WAITING_FOR_FIRST_DRAW wants to enforce a draw. If m_canDraw is false
         // or textures are not available, proceed to the next step (similar as in COMMIT_STATE_IDLE).
         bool canCommit = m_visible || m_needsForcedCommit;
         if (m_needsCommit && canCommit && drawSuspendedUntilCommit())
             return ACTION_BEGIN_FRAME;
+        return ACTION_NONE;
+    }
+
+    case COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW:
+        if (m_needsForcedRedraw)
+            return ACTION_DRAW_FORCED;
         return ACTION_NONE;
     }
     NOTREACHED();
@@ -173,7 +176,10 @@ void SchedulerStateMachine::updateState(Action action)
         return;
 
     case ACTION_COMMIT:
-        m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
+        if (m_expectImmediateBeginFrame)
+            m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW;
+        else
+            m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
         m_needsRedraw = true;
         if (m_drawIfPossibleFailed)
             m_lastFrameNumberWhereDrawWasCalled = -1;
@@ -193,21 +199,20 @@ void SchedulerStateMachine::updateState(Action action)
         m_drawIfPossibleFailed = false;
         if (m_insideVSync)
             m_lastFrameNumberWhereDrawWasCalled = m_currentFrameNumber;
-        if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_DRAW) {
-            if (m_expectImmediateBeginFrame) {
-                m_commitState = COMMIT_STATE_FRAME_IN_PROGRESS;
-                m_expectImmediateBeginFrame = false;
-            } else
-                m_commitState = COMMIT_STATE_IDLE;
-        }
+        if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW) {
+            DCHECK(m_expectImmediateBeginFrame);
+            m_commitState = COMMIT_STATE_FRAME_IN_PROGRESS;
+            m_expectImmediateBeginFrame = false;
+        } else if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_DRAW)
+            m_commitState = COMMIT_STATE_IDLE;
         if (m_textureState == LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD)
             m_textureState = LAYER_TEXTURE_STATE_UNLOCKED;
         return;
 
-    case ACTION_BEGIN_CONTEXT_RECREATION:
+    case ACTION_BEGIN_OUTPUT_SURFACE_RECREATION:
         DCHECK(m_commitState == COMMIT_STATE_IDLE);
-        DCHECK(m_contextState == CONTEXT_LOST);
-        m_contextState = CONTEXT_RECREATING;
+        DCHECK(m_outputSurfaceState == OUTPUT_SURFACE_LOST);
+        m_outputSurfaceState = OUTPUT_SURFACE_RECREATING;
         return;
 
     case ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD:
@@ -235,7 +240,7 @@ bool SchedulerStateMachine::vsyncCallbackNeeded() const
     if (m_needsForcedRedraw)
         return true;
 
-    return m_needsRedraw && m_visible && m_contextState == CONTEXT_ACTIVE;
+    return m_needsRedraw && m_visible && m_outputSurfaceState == OUTPUT_SURFACE_ACTIVE;
 }
 
 void SchedulerStateMachine::didEnterVSync()
@@ -271,7 +276,7 @@ void SchedulerStateMachine::didDrawIfPossibleCompleted(bool success)
         m_needsRedraw = true;
         m_needsCommit = true;
         m_consecutiveFailedDraws++;
-        if (!Settings::jankInsteadOfCheckerboard() && m_consecutiveFailedDraws >= m_maximumNumberOfFailedDrawsBeforeDrawIsForced) {
+        if (m_consecutiveFailedDraws >= m_maximumNumberOfFailedDrawsBeforeDrawIsForced) {
             m_consecutiveFailedDraws = 0;
             // We need to force a draw, but it doesn't make sense to do this until
             // we've committed and have new textures.
@@ -310,17 +315,17 @@ void SchedulerStateMachine::beginFrameAborted()
     }
 }
 
-void SchedulerStateMachine::didLoseContext()
+void SchedulerStateMachine::didLoseOutputSurface()
 {
-    if (m_contextState == CONTEXT_LOST || m_contextState == CONTEXT_RECREATING)
+    if (m_outputSurfaceState == OUTPUT_SURFACE_LOST || m_outputSurfaceState == OUTPUT_SURFACE_RECREATING)
         return;
-    m_contextState = CONTEXT_LOST;
+    m_outputSurfaceState = OUTPUT_SURFACE_LOST;
 }
 
-void SchedulerStateMachine::didRecreateContext()
+void SchedulerStateMachine::didRecreateOutputSurface()
 {
-    DCHECK(m_contextState == CONTEXT_RECREATING);
-    m_contextState = CONTEXT_ACTIVE;
+    DCHECK(m_outputSurfaceState == OUTPUT_SURFACE_RECREATING);
+    m_outputSurfaceState = OUTPUT_SURFACE_ACTIVE;
     setNeedsCommit();
 }
 
@@ -329,4 +334,4 @@ void SchedulerStateMachine::setMaximumNumberOfFailedDrawsBeforeDrawIsForced(int 
     m_maximumNumberOfFailedDrawsBeforeDrawIsForced = numDraws;
 }
 
-}
+}  // namespace cc

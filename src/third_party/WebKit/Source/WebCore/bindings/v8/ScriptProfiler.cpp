@@ -37,7 +37,8 @@
 #include "ScriptObject.h"
 #include "V8ArrayBufferView.h"
 #include "V8Binding.h"
-#include "V8DOMMap.h"
+#include "V8DOMWindow.h"
+#include "V8DOMWrapper.h"
 #include "V8Node.h"
 #include "WebCoreMemoryInstrumentation.h"
 #include "WrapperTypeInfo.h"
@@ -49,7 +50,7 @@ namespace WebCore {
 void ScriptProfiler::start(ScriptState* state, const String& title)
 {
     v8::HandleScope hs;
-    v8::CpuProfiler::StartProfiling(v8String(title));
+    v8::CpuProfiler::StartProfiling(deprecatedV8String(title));
 }
 
 void ScriptProfiler::startForPage(Page*, const String& title)
@@ -68,8 +69,8 @@ PassRefPtr<ScriptProfile> ScriptProfiler::stop(ScriptState* state, const String&
 {
     v8::HandleScope hs;
     const v8::CpuProfile* profile = state ?
-        v8::CpuProfiler::StopProfiling(v8String(title), state->context()->GetSecurityToken()) :
-        v8::CpuProfiler::StopProfiling(v8String(title));
+        v8::CpuProfiler::StopProfiling(deprecatedV8String(title), state->context()->GetSecurityToken()) :
+        v8::CpuProfiler::StopProfiling(deprecatedV8String(title));
     return profile ? ScriptProfile::create(profile) : 0;
 }
 
@@ -112,13 +113,7 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
         return ScriptObject();
 
     v8::Handle<v8::Object> object = value.As<v8::Object>();
-    if (object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount) {
-        v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
-        // Skip wrapper boilerplates which are like regular wrappers but don't have
-        // native object.
-        if (!wrapper.IsEmpty() && wrapper->IsUndefined())
-            return ScriptObject();
-    }
+
     ScriptState* scriptState = ScriptState::forContext(object->CreationContext());
     return ScriptObject(scriptState, object);
 }
@@ -152,6 +147,25 @@ private:
     bool m_firstReport;
 };
 
+class GlobalObjectNameResolver : public v8::HeapProfiler::ObjectNameResolver {
+public:
+    virtual const char* GetName(v8::Handle<v8::Object> object)
+    {
+        if (V8DOMWrapper::isWrapperOfType(object, &V8DOMWindow::info)) {
+            DOMWindow* window = V8DOMWindow::toNative(object);
+            if (window) {
+                CString url = window->document()->url().string().utf8();
+                m_strings.append(url);
+                return url.data();
+            }
+        }
+        return 0;
+    }
+
+private:
+    Vector<CString> m_strings;
+};
+
 } // namespace
 
 PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& title, HeapSnapshotProgress* control)
@@ -159,13 +173,14 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     v8::HandleScope hs;
     ASSERT(control);
     ActivityControlAdapter adapter(control);
-    const v8::HeapSnapshot* snapshot = v8::HeapProfiler::TakeSnapshot(v8String(title), v8::HeapSnapshot::kFull, &adapter);
+    GlobalObjectNameResolver resolver;
+    const v8::HeapSnapshot* snapshot = v8::HeapProfiler::TakeSnapshot(deprecatedV8String(title), v8::HeapSnapshot::kFull, &adapter, &resolver);
     return snapshot ? ScriptHeapSnapshot::create(snapshot) : 0;
 }
 
 static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::Value> wrapper)
 {
-    ASSERT(classId == v8DOMSubtreeClassId);
+    ASSERT(classId == v8DOMNodeClassId);
     if (!wrapper->IsObject())
         return 0;
     Node* node = V8Node::toNative(wrapper.As<v8::Object>());
@@ -174,28 +189,35 @@ static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::
 
 void ScriptProfiler::initialize()
 {
-    v8::HeapProfiler::DefineWrapperClass(v8DOMSubtreeClassId, &retainedDOMInfo);
+    v8::HeapProfiler::DefineWrapperClass(v8DOMNodeClassId, &retainedDOMInfo);
 }
 
 void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
 {
-    class VisitorAdapter : public NodeWrapperVisitor {
+    v8::HandleScope scope;
+
+    class DOMNodeWrapperVisitor : public v8::PersistentHandleVisitor {
     public:
-        VisitorAdapter(WrappedNodeVisitor* visitor)
+        explicit DOMNodeWrapperVisitor(WrappedNodeVisitor* visitor)
             : m_visitor(visitor)
         {
         }
 
-        virtual void visitNodeWrapper(Node* node, v8::Persistent<v8::Object>)
+        virtual void VisitPersistentHandle(v8::Persistent<v8::Value> value, uint16_t classId) OVERRIDE
         {
-            m_visitor->visitNode(node);
+            if (classId != v8DOMNodeClassId)
+                return;
+            ASSERT(V8Node::HasInstance(value));
+            ASSERT(value->IsObject());
+            v8::Persistent<v8::Object> wrapper = v8::Persistent<v8::Object>::Cast(value);
+            m_visitor->visitNode(V8Node::toNative(wrapper));
         }
 
     private:
         WrappedNodeVisitor* m_visitor;
-    } adapter(visitor);
+    } wrapperVisitor(visitor);
 
-    visitAllDOMNodes(&adapter);
+    v8::V8::VisitHandlesWithClassIds(&wrapperVisitor);
 }
 
 void ScriptProfiler::visitExternalStrings(ExternalStringVisitor* visitor)
@@ -205,24 +227,29 @@ void ScriptProfiler::visitExternalStrings(ExternalStringVisitor* visitor)
 
 void ScriptProfiler::visitExternalArrays(ExternalArrayVisitor* visitor)
 {
-    class VisitorAdapter : public DOMWrapperVisitor<void> {
+    class DOMObjectWrapperVisitor : public v8::PersistentHandleVisitor {
     public:
-        VisitorAdapter(ExternalArrayVisitor* visitor) : m_visitor(visitor) { }
-
-        virtual void visitDOMWrapper(DOMDataStore*, void* impl, v8::Persistent<v8::Object> v8Object)
+        explicit DOMObjectWrapperVisitor(ExternalArrayVisitor* visitor)
+            : m_visitor(visitor)
         {
-            WrapperTypeInfo* type = V8DOMWrapper::domWrapperType(v8Object);
-            if (!type->isSubclass(&V8ArrayBufferView::info))
-                return;
-            ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8Object);
-            m_visitor->visitJSExternalArray(arrayBufferView);
         }
+
+        virtual void VisitPersistentHandle(v8::Persistent<v8::Value> value, uint16_t classId) OVERRIDE
+        {
+            if (classId != v8DOMObjectClassId)
+                return;
+            ASSERT(value->IsObject());
+            v8::Persistent<v8::Object> wrapper = v8::Persistent<v8::Object>::Cast(value);
+            if (!toWrapperTypeInfo(wrapper)->isSubclass(&V8ArrayBufferView::info))
+                return;
+            m_visitor->visitJSExternalArray(V8ArrayBufferView::toNative(wrapper));
+        }
+
     private:
         ExternalArrayVisitor* m_visitor;
-    } adapter(visitor);
+    } wrapperVisitor(visitor);
 
-    getDOMObjectMap().visit(0, &adapter);
-
+    v8::V8::VisitHandlesWithClassIds(&wrapperVisitor);
 }
 
 void ScriptProfiler::collectBindingMemoryInfo(MemoryInstrumentation* instrumentation)

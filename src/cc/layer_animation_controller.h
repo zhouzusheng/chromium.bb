@@ -2,38 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCLayerAnimationController_h
-#define CCLayerAnimationController_h
-
-#include "cc/animation_events.h"
+#ifndef CC_LAYER_ANIMATION_CONTROLLER_H_
+#define CC_LAYER_ANIMATION_CONTROLLER_H_
 
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/animation_events.h"
+#include "cc/cc_export.h"
+#include "cc/layer_animation_observer.h"
 #include "cc/scoped_ptr_vector.h"
 
-namespace WebKit {
-class WebTransformationMatrix;
+namespace gfx {
+class Transform;
 }
 
 namespace cc {
 
 class Animation;
-class IntSize;
 class KeyframeValueList;
 
-class LayerAnimationControllerClient {
+class CC_EXPORT LayerAnimationControllerClient {
 public:
     virtual ~LayerAnimationControllerClient() { }
 
     virtual int id() const = 0;
     virtual void setOpacityFromAnimation(float) = 0;
     virtual float opacity() const = 0;
-    virtual void setTransformFromAnimation(const WebKit::WebTransformationMatrix&) = 0;
-    virtual const WebKit::WebTransformationMatrix& transform() const = 0;
+    virtual void setTransformFromAnimation(const gfx::Transform&) = 0;
+    virtual const gfx::Transform& transform() const = 0;
 };
 
-class LayerAnimationController {
+class CC_EXPORT LayerAnimationController : public LayerAnimationObserver {
 public:
     static scoped_ptr<LayerAnimationController> create(LayerAnimationControllerClient*);
 
@@ -70,7 +70,7 @@ public:
 
     // This is called in response to an animation being started on the impl thread. This
     // function updates the corresponding main thread animation's start time.
-    void notifyAnimationStarted(const AnimationEvent&);
+    virtual void OnAnimationStarted(const AnimationEvent&) OVERRIDE;
 
     // If a sync is forced, then the next time animation updates are pushed to the impl
     // thread, all animations will be transferred.
@@ -109,4 +109,4 @@ private:
 
 } // namespace cc
 
-#endif // CCLayerAnimationController_h
+#endif  // CC_LAYER_ANIMATION_CONTROLLER_H_

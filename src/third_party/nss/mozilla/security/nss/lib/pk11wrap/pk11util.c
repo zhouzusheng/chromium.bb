@@ -13,7 +13,7 @@
 #include "pki3hack.h"
 #include "secerr.h"
 #include "dev.h"
-#include "pkcs11ni.h"
+#include "utilpars.h"
 
 /* these are for displaying error messages */
 
@@ -1082,7 +1082,7 @@ secmod_HandleWaitForSlotEvent(SECMODModule *mod,  unsigned long flags,
 	}
 	SECMOD_ReleaseReadLock(moduleLock);
 	/* if everything was perm modules, don't lock up forever */
-	if (!removableSlotsFound) {
+	if ((mod->slotCount !=0) && !removableSlotsFound) {
 	    error =SEC_ERROR_NO_SLOT_SELECTED;
 	    PZ_Lock(mod->refLock);
 	    break;
@@ -1251,6 +1251,9 @@ SECMOD_HasRemovableSlots(SECMODModule *mod)
 	ret = PR_TRUE;
 	break;
     }
+    if (mod->slotCount == 0 ) {
+	ret = PR_TRUE;
+    }
     SECMOD_ReleaseReadLock(moduleLock);
     return ret;
 }
@@ -1368,7 +1371,7 @@ SECMOD_OpenNewSlot(SECMODModule *mod, const char *moduleSpec)
     }
 
     /* we've found the slot, now build the moduleSpec */
-    escSpec = secmod_DoubleEscape(moduleSpec, '>', ']');
+    escSpec = NSSUTIL_DoubleEscape(moduleSpec, '>', ']');
     if (escSpec == NULL) {
 	PK11_FreeSlot(slot);
 	return NULL;
@@ -1389,7 +1392,17 @@ SECMOD_OpenNewSlot(SECMODModule *mod, const char *moduleSpec)
 	return NULL;
     }
 
-    return SECMOD_FindSlotByID(mod, slotID);
+    slot = SECMOD_FindSlotByID(mod, slotID);
+    if (slot) {
+	/* if we are in the delay period for the "isPresent" call, reset
+	 * the delay since we know things have probably changed... */
+	if (slot->nssToken && slot->nssToken->slot) {
+	    nssSlot_ResetDelay(slot->nssToken->slot);
+	}
+	/* force the slot info structures to properly reset */
+	(void)PK11_IsPresent(slot);
+    }
+    return slot;
 }
 
 /*

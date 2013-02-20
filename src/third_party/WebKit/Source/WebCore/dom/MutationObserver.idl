@@ -31,7 +31,9 @@
 [
     Conditional=MUTATION_OBSERVERS,
     CustomConstructor,
-    ConstructorParameters=1
+    ConstructorParameters=1,
+    JSCustomIsReachable,
+    ImplementationLacksVTable
 ] interface MutationObserver {
     void observe(in Node target, in Dictionary options)
         raises(DOMException);

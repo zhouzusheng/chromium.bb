@@ -2,27 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LayerChromium_h
-#define LayerChromium_h
+#ifndef CC_LAYER_H_
+#define CC_LAYER_H_
 
-#include "FloatPoint.h"
-#include "Region.h"
-#include "base/memory/ref_counted.h"
-#include "cc/layer_animation_controller.h"
-#include "cc/occlusion_tracker.h"
-#include "cc/render_surface.h"
-#include "third_party/skia/include/core/SkColor.h"
 #include <public/WebFilterOperations.h>
-#include <public/WebTransformationMatrix.h>
 #include <string>
 #include <vector>
+
+#include "base/memory/ref_counted.h"
+#include "base/observer_list.h"
+#include "cc/cc_export.h"
+#include "cc/draw_properties.h"
+#include "cc/layer_animation_controller.h"
+#include "cc/layer_animation_observer.h"
+#include "cc/occlusion_tracker.h"
+#include "cc/region.h"
+#include "cc/render_surface.h"
+#include "skia/ext/refptr.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkImageFilter.h"
+#include "ui/gfx/rect.h"
+#include "ui/gfx/rect_f.h"
+#include "ui/gfx/transform.h"
 
 namespace WebKit {
 class WebAnimationDelegate;
 class WebLayerScrollClient;
 }
-
-class SkImageFilter;
 
 namespace cc {
 
@@ -31,6 +37,7 @@ struct AnimationEvent;
 class LayerAnimationDelegate;
 class LayerImpl;
 class LayerTreeHost;
+class LayerTreeImpl;
 class PriorityCalculator;
 class ResourceUpdateQueue;
 class ScrollbarLayer;
@@ -39,7 +46,7 @@ struct RenderingStats;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
-class Layer : public base::RefCounted<Layer>, public LayerAnimationControllerClient {
+class CC_EXPORT Layer : public base::RefCounted<Layer>, public LayerAnimationControllerClient {
 public:
     typedef std::vector<scoped_refptr<Layer> > LayerList;
 
@@ -49,14 +56,15 @@ public:
     virtual int id() const OVERRIDE;
     virtual void setOpacityFromAnimation(float) OVERRIDE;
     virtual float opacity() const OVERRIDE;
-    virtual void setTransformFromAnimation(const WebKit::WebTransformationMatrix&) OVERRIDE;
+    virtual void setTransformFromAnimation(const gfx::Transform&) OVERRIDE;
     // A layer's transform operates layer space. That is, entirely in logical,
     // non-page-scaled pixels (that is, they have page zoom baked in, but not page scale).
     // The root layer is a special case -- it operates in physical pixels.
-    virtual const WebKit::WebTransformationMatrix& transform() const OVERRIDE;
+    virtual const gfx::Transform& transform() const OVERRIDE;
 
     Layer* rootLayer();
-    Layer* parent() const;
+    Layer* parent() { return m_parent; }
+    const Layer* parent() const { return m_parent; }
     void addChild(scoped_refptr<Layer>);
     void insertChild(scoped_refptr<Layer>, size_t index);
     void replaceChild(Layer* reference, scoped_refptr<Layer> newLayer);
@@ -66,29 +74,31 @@ public:
 
     const LayerList& children() const { return m_children; }
 
-    void setAnchorPoint(const FloatPoint&);
-    FloatPoint anchorPoint() const { return m_anchorPoint; }
+    void setAnchorPoint(const gfx::PointF&);
+    gfx::PointF anchorPoint() const { return m_anchorPoint; }
 
     void setAnchorPointZ(float);
     float anchorPointZ() const { return m_anchorPointZ; }
 
-    void setBackgroundColor(SkColor);
+    virtual void setBackgroundColor(SkColor);
     SkColor backgroundColor() const { return m_backgroundColor; }
 
     // A layer's bounds are in logical, non-page-scaled pixels (however, the
     // root layer's bounds are in physical pixels).
-    void setBounds(const IntSize&);
-    const IntSize& bounds() const { return m_bounds; }
-    virtual IntSize contentBounds() const;
+    void setBounds(const gfx::Size&);
+    // TODO(enne): remove this function: http://crbug.com/166023
+    virtual void didUpdateBounds();
+    const gfx::Size& bounds() const { return m_bounds; }
 
     void setMasksToBounds(bool);
     bool masksToBounds() const { return m_masksToBounds; }
 
     void setMaskLayer(Layer*);
-    Layer* maskLayer() const { return m_maskLayer.get(); }
+    Layer* maskLayer() { return m_maskLayer.get(); }
+    const Layer* maskLayer() const { return m_maskLayer.get(); }
 
-    virtual void setNeedsDisplayRect(const FloatRect& dirtyRect);
-    void setNeedsDisplay() { setNeedsDisplayRect(FloatRect(FloatPoint(), bounds())); }
+    virtual void setNeedsDisplayRect(const gfx::RectF& dirtyRect);
+    void setNeedsDisplay() { setNeedsDisplayRect(gfx::RectF(gfx::PointF(), bounds())); }
     virtual bool needsDisplay() const;
 
     void setOpacity(float);
@@ -97,8 +107,8 @@ public:
     void setFilters(const WebKit::WebFilterOperations&);
     const WebKit::WebFilterOperations& filters() const { return m_filters; }
 
-    void setFilter(SkImageFilter* filter);
-    SkImageFilter* filter() const { return m_filter; }
+    void setFilter(const skia::RefPtr<SkImageFilter>& filter);
+    skia::RefPtr<SkImageFilter> filter() const { return m_filter; }
 
     // Background filters are filters applied to what is behind this layer, when they are viewed through non-opaque
     // regions in this layer. They are used through the WebLayer interface, and are not exposed to HTML.
@@ -108,8 +118,8 @@ public:
     virtual void setContentsOpaque(bool);
     bool contentsOpaque() const { return m_contentsOpaque; }
 
-    void setPosition(const FloatPoint&);
-    FloatPoint position() const { return m_position; }
+    void setPosition(const gfx::PointF&);
+    gfx::PointF position() const { return m_position; }
 
     void setIsContainerForFixedPositionLayers(bool);
     bool isContainerForFixedPositionLayers() const { return m_isContainerForFixedPositionLayers; }
@@ -117,20 +127,37 @@ public:
     void setFixedToContainerLayer(bool);
     bool fixedToContainerLayer() const { return m_fixedToContainerLayer; }
 
-    void setSublayerTransform(const WebKit::WebTransformationMatrix&);
-    const WebKit::WebTransformationMatrix& sublayerTransform() const { return m_sublayerTransform; }
+    void setSublayerTransform(const gfx::Transform&);
+    const gfx::Transform& sublayerTransform() const { return m_sublayerTransform; }
 
-    void setTransform(const WebKit::WebTransformationMatrix&);
+    void setTransform(const gfx::Transform&);
     bool transformIsAnimating() const;
 
-    const IntRect& visibleContentRect() const { return m_visibleContentRect; }
-    void setVisibleContentRect(const IntRect& visibleContentRect) { m_visibleContentRect = visibleContentRect; }
+    DrawProperties<Layer, RenderSurface>& drawProperties() { return m_drawProperties; }
+    const DrawProperties<Layer, RenderSurface>& drawProperties() const { return m_drawProperties; }
 
-    void setScrollPosition(const IntPoint&);
-    const IntPoint& scrollPosition() const { return m_scrollPosition; }
+    // The following are shortcut accessors to get various information from m_drawProperties
+    const gfx::Transform& drawTransform() const { return m_drawProperties.target_space_transform; }
+    const gfx::Transform& screenSpaceTransform() const { return m_drawProperties.screen_space_transform; }
+    float drawOpacity() const { return m_drawProperties.opacity; }
+    bool drawOpacityIsAnimating() const { return m_drawProperties.opacity_is_animating; }
+    bool drawTransformIsAnimating() const { return m_drawProperties.target_space_transform_is_animating; }
+    bool screenSpaceTransformIsAnimating() const { return m_drawProperties.screen_space_transform_is_animating; }
+    bool screenSpaceOpacityIsAnimating() const { return m_drawProperties.screen_space_opacity_is_animating; }
+    bool canUseLCDText() const { return m_drawProperties.can_use_lcd_text; }
+    bool isClipped() const { return m_drawProperties.is_clipped; }
+    const gfx::Rect& clipRect() const { return m_drawProperties.clip_rect; }
+    const gfx::Rect& drawableContentRect() const { return m_drawProperties.drawable_content_rect; }
+    const gfx::Rect& visibleContentRect() const { return m_drawProperties.visible_content_rect; }
+    Layer* renderTarget() { DCHECK(!m_drawProperties.render_target || m_drawProperties.render_target->renderSurface()); return m_drawProperties.render_target; }
+    const Layer* renderTarget() const { DCHECK(!m_drawProperties.render_target || m_drawProperties.render_target->renderSurface()); return m_drawProperties.render_target; }
+    RenderSurface* renderSurface() const { return m_drawProperties.render_surface.get(); }
 
-    void setMaxScrollPosition(const IntSize&);
-    const IntSize& maxScrollPosition() const { return m_maxScrollPosition; }
+    void setScrollOffset(gfx::Vector2d);
+    gfx::Vector2d scrollOffset() const { return m_scrollOffset; }
+
+    void setMaxScrollOffset(gfx::Vector2d);
+    gfx::Vector2d maxScrollOffset() const { return m_maxScrollOffset; }
 
     void setScrollable(bool);
     bool scrollable() const { return m_scrollable; }
@@ -145,6 +172,10 @@ public:
     void setNonFastScrollableRegionChanged() { m_nonFastScrollableRegionChanged = true; }
     const Region& nonFastScrollableRegion() const { return m_nonFastScrollableRegion; }
 
+    void setTouchEventHandlerRegion(const Region&);
+    void setTouchEventHandlerRegionChanged() { m_touchEventHandlerRegionChanged = true; }
+    const Region& touchEventHandlerRegion() const { return m_touchEventHandlerRegion; }
+
     void setLayerScrollClient(WebKit::WebLayerScrollClient* layerScrollClient) { m_layerScrollClient = layerScrollClient; }
 
     void setDrawCheckerboardForMissingTiles(bool);
@@ -153,10 +184,10 @@ public:
     bool forceRenderSurface() const { return m_forceRenderSurface; }
     void setForceRenderSurface(bool);
 
-    IntSize scrollDelta() const { return IntSize(); }
+    gfx::Vector2d scrollDelta() const { return gfx::Vector2d(); }
 
-    void setImplTransform(const WebKit::WebTransformationMatrix&);
-    const WebKit::WebTransformationMatrix& implTransform() const { return m_implTransform; }
+    void setImplTransform(const gfx::Transform&);
+    const gfx::Transform& implTransform() const { return m_implTransform; }
 
     void setDoubleSided(bool);
     bool doubleSided() const { return m_doubleSided; }
@@ -167,20 +198,19 @@ public:
     void setUseParentBackfaceVisibility(bool useParentBackfaceVisibility) { m_useParentBackfaceVisibility = useParentBackfaceVisibility; }
     bool useParentBackfaceVisibility() const { return m_useParentBackfaceVisibility; }
 
-    virtual void setUseLCDText(bool);
-    bool useLCDText() const { return m_useLCDText; }
-
     virtual void setLayerTreeHost(LayerTreeHost*);
 
+    bool hasDelegatedContent() const { return false; }
     bool hasContributingDelegatedRenderPasses() const { return false; }
 
     void setIsDrawable(bool);
 
     void setReplicaLayer(Layer*);
-    Layer* replicaLayer() const { return m_replicaLayer.get(); }
+    Layer* replicaLayer() { return m_replicaLayer.get(); }
+    const Layer* replicaLayer() const { return m_replicaLayer.get(); }
 
-    bool hasMask() const { return m_maskLayer; }
-    bool hasReplica() const { return m_replicaLayer; }
+    bool hasMask() const { return !!m_maskLayer; }
+    bool hasReplica() const { return !!m_replicaLayer; }
     bool replicaHasMask() const { return m_replicaLayer && (m_maskLayer || m_replicaLayer->m_maskLayer); }
 
     // These methods typically need to be overwritten by derived classes.
@@ -188,49 +218,25 @@ public:
     virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) { }
     virtual bool needMoreUpdates();
     virtual void setIsMask(bool) { }
-    virtual void bindContentsTexture() { }
-    virtual bool needsContentsScale() const;
 
-    void setDebugBorderColor(SkColor);
-    void setDebugBorderWidth(float);
     void setDebugName(const std::string&);
 
     virtual void pushPropertiesTo(LayerImpl*);
 
-    void clearRenderSurface() { m_renderSurface.reset(); }
-    RenderSurface* renderSurface() const { return m_renderSurface.get(); }
+    void clearRenderSurface() { m_drawProperties.render_surface.reset(); }
     void createRenderSurface();
-
-    float drawOpacity() const { return m_drawOpacity; }
-    void setDrawOpacity(float opacity) { m_drawOpacity = opacity; }
-
-    bool drawOpacityIsAnimating() const { return m_drawOpacityIsAnimating; }
-    void setDrawOpacityIsAnimating(bool drawOpacityIsAnimating) { m_drawOpacityIsAnimating = drawOpacityIsAnimating; }
-
-    Layer* renderTarget() const { DCHECK(!m_renderTarget || m_renderTarget->renderSurface()); return m_renderTarget; }
-    void setRenderTarget(Layer* target) { m_renderTarget = target; }
-
-    bool drawTransformIsAnimating() const { return m_drawTransformIsAnimating; }
-    void setDrawTransformIsAnimating(bool animating) { m_drawTransformIsAnimating = animating; }
-    bool screenSpaceTransformIsAnimating() const { return m_screenSpaceTransformIsAnimating; }
-    void setScreenSpaceTransformIsAnimating(bool animating) { m_screenSpaceTransformIsAnimating = animating; }
-
-    // This moves from layer space, with origin in the center to target space with origin in the top left.
-    // That is, it converts from logical, non-page-scaled, to target pixels (and if the target is the
-    // root render surface, then this converts to physical pixels).
-    const WebKit::WebTransformationMatrix& drawTransform() const { return m_drawTransform; }
-    void setDrawTransform(const WebKit::WebTransformationMatrix& matrix) { m_drawTransform = matrix; }
-    // This moves from content space, with origin the top left to screen space with origin in the top left.
-    // It converts logical, non-page-scaled pixels to physical pixels.
-    const WebKit::WebTransformationMatrix& screenSpaceTransform() const { return m_screenSpaceTransform; }
-    void setScreenSpaceTransform(const WebKit::WebTransformationMatrix& matrix) { m_screenSpaceTransform = matrix; }
-    const IntRect& drawableContentRect() const { return m_drawableContentRect; }
-    void setDrawableContentRect(const IntRect& rect) { m_drawableContentRect = rect; }
 
     // The contentsScale converts from logical, non-page-scaled pixels to target pixels.
     // The contentsScale is 1 for the root layer as it is already in physical pixels.
-    float contentsScale() const { return m_contentsScale; }
-    void setContentsScale(float);
+    // By default contentsScale is forced to be 1 except for subclasses of ContentsScalingLayer.
+    float contentsScaleX() const { return m_drawProperties.contents_scale_x; }
+    float contentsScaleY() const { return m_drawProperties.contents_scale_y; }
+    gfx::Size contentBounds() const { return m_drawProperties.content_bounds; }
+    virtual void calculateContentsScale(
+        float idealContentsScale,
+        float* contentsScaleX,
+        float* contentsScaleY,
+        gfx::Size* contentBounds);
 
     // The scale at which contents should be rastered, to match the scale at
     // which they will drawn to the screen. This scale is a component of the
@@ -249,9 +255,6 @@ public:
     // setBoundsContainPageScale recursively sets the value on all child layers.
     void setBoundsContainPageScale(bool);
     bool boundsContainPageScale() const { return m_boundsContainPageScale; }
-
-    // Returns true if any of the layer's descendants has content to draw.
-    bool descendantDrawsContent();
 
     LayerTreeHost* layerTreeHost() const { return m_layerTreeHost; }
 
@@ -276,9 +279,19 @@ public:
     virtual void notifyAnimationStarted(const AnimationEvent&, double wallClockTime);
     virtual void notifyAnimationFinished(double wallClockTime);
 
+    void addLayerAnimationObserver(LayerAnimationObserver* animationObserver);
+    void removeLayerAnimationObserver(LayerAnimationObserver* animationObserver);
+
     virtual Region visibleContentOpaqueRegion() const;
 
     virtual ScrollbarLayer* toScrollbarLayer();
+
+    gfx::Rect layerRectToContentRect(const gfx::RectF& layerRect) const;
+
+    // In impl-side painting, this returns true if this layer type is not
+    // compatible with the main thread running freely, such as a double-buffered
+    // canvas that doesn't want to be triple-buffered across all three trees.
+    virtual bool blocksPendingCommit() const;
 
 protected:
     friend class LayerImpl;
@@ -288,8 +301,7 @@ protected:
     Layer();
 
     void setNeedsCommit();
-
-    IntRect layerRectToContentRect(const WebKit::WebRect& layerRect);
+    void setNeedsFullTreeSync();
 
     // This flag is set when layer need repainting/updating.
     bool m_needsDisplay;
@@ -301,13 +313,17 @@ protected:
     // For layers that may do updating outside the compositor's control (i.e. plugin layers), this information
     // is not available and the update rect will remain empty.
     // Note this rect is in layer space (not content space).
-    FloatRect m_updateRect;
+    gfx::RectF m_updateRect;
 
     scoped_refptr<Layer> m_maskLayer;
 
     // Constructs a LayerImpl of the correct runtime type for this Layer type.
-    virtual scoped_ptr<LayerImpl> createLayerImpl();
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl);
     int m_layerId;
+
+    // When true, the layer is about to perform an update. Any commit requests
+    // will be handled implcitly after the update completes.
+    bool m_ignoreSetNeedsCommit;
 
 private:
     friend class base::RefCounted<Layer>;
@@ -333,28 +349,26 @@ private:
     LayerTreeHost* m_layerTreeHost;
 
     scoped_ptr<LayerAnimationController> m_layerAnimationController;
+    ObserverList<LayerAnimationObserver> m_layerAnimationObservers;
 
     // Layer properties.
-    IntSize m_bounds;
+    gfx::Size m_bounds;
 
-    // Uses layer's content space.
-    IntRect m_visibleContentRect;
-
-    IntPoint m_scrollPosition;
-    IntSize m_maxScrollPosition;
+    gfx::Vector2d m_scrollOffset;
+    gfx::Vector2d m_maxScrollOffset;
     bool m_scrollable;
     bool m_shouldScrollOnMainThread;
     bool m_haveWheelEventHandlers;
     Region m_nonFastScrollableRegion;
     bool m_nonFastScrollableRegionChanged;
-    FloatPoint m_position;
-    FloatPoint m_anchorPoint;
+    Region m_touchEventHandlerRegion;
+    bool m_touchEventHandlerRegionChanged;
+    gfx::PointF m_position;
+    gfx::PointF m_anchorPoint;
     SkColor m_backgroundColor;
-    SkColor m_debugBorderColor;
-    float m_debugBorderWidth;
     std::string m_debugName;
     float m_opacity;
-    SkImageFilter* m_filter;
+    skia::RefPtr<SkImageFilter> m_filter;
     WebKit::WebFilterOperations m_filters;
     WebKit::WebFilterOperations m_backgroundFilters;
     float m_anchorPointZ;
@@ -364,45 +378,32 @@ private:
     bool m_masksToBounds;
     bool m_contentsOpaque;
     bool m_doubleSided;
-    bool m_useLCDText;
     bool m_preserves3D;
     bool m_useParentBackfaceVisibility;
     bool m_drawCheckerboardForMissingTiles;
     bool m_forceRenderSurface;
 
-    WebKit::WebTransformationMatrix m_transform;
-    WebKit::WebTransformationMatrix m_sublayerTransform;
+    gfx::Transform m_transform;
+    gfx::Transform m_sublayerTransform;
 
     // Replica layer used for reflections.
     scoped_refptr<Layer> m_replicaLayer;
 
     // Transient properties.
-    scoped_ptr<RenderSurface> m_renderSurface;
-    float m_drawOpacity;
-    bool m_drawOpacityIsAnimating;
-
-    Layer* m_renderTarget;
-
-    WebKit::WebTransformationMatrix m_drawTransform;
-    WebKit::WebTransformationMatrix m_screenSpaceTransform;
-    bool m_drawTransformIsAnimating;
-    bool m_screenSpaceTransformIsAnimating;
-
-    // Uses target surface space.
-    IntRect m_drawableContentRect;
-    float m_contentsScale;
     float m_rasterScale;
     bool m_automaticallyComputeRasterScale;
     bool m_boundsContainPageScale;
 
-    WebKit::WebTransformationMatrix m_implTransform;
+    gfx::Transform m_implTransform;
 
     WebKit::WebAnimationDelegate* m_layerAnimationDelegate;
     WebKit::WebLayerScrollClient* m_layerScrollClient;
+
+    DrawProperties<Layer, RenderSurface> m_drawProperties;
 };
 
 void sortLayers(std::vector<scoped_refptr<Layer> >::iterator, std::vector<scoped_refptr<Layer> >::iterator, void*);
 
 }  // namespace cc
 
-#endif
+#endif  // CC_LAYER_H_

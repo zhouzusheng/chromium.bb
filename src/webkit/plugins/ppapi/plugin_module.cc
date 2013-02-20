@@ -16,7 +16,6 @@
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
-#include "ppapi/c/dev/ppb_console_dev.h"
 #include "ppapi/c/dev/ppb_crypto_dev.h"
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
@@ -45,6 +44,7 @@
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
 #include "ppapi/c/ppb_file_ref.h"
@@ -74,7 +74,6 @@
 #include "ppapi/c/private/ppb_flash_font_file.h"
 #include "ppapi/c/private/ppb_flash_fullscreen.h"
 #include "ppapi/c/private/ppb_flash_message_loop.h"
-#include "ppapi/c/private/ppb_flash_tcp_socket.h"
 #include "ppapi/c/private/ppb_gpu_blacklist_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppb_network_list_private.h"
@@ -86,7 +85,6 @@
 #include "ppapi/c/private/ppb_udp_socket_private.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 #include "ppapi/c/private/ppb_x509_certificate_private.h"
-#include "ppapi/c/trusted/ppb_audio_input_trusted_dev.h"
 #include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/c/trusted/ppb_broker_trusted.h"
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
@@ -112,7 +110,6 @@
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_directory_reader_impl.h"
 #include "webkit/plugins/ppapi/ppb_flash_impl.h"
-#include "webkit/plugins/ppapi/ppb_flash_menu_impl.h"
 #include "webkit/plugins/ppapi/ppb_gpu_blacklist_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_graphics_2d_impl.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
@@ -120,7 +117,6 @@
 #include "webkit/plugins/ppapi/ppb_scrollbar_impl.h"
 #include "webkit/plugins/ppapi/ppb_uma_private_impl.h"
 #include "webkit/plugins/ppapi/ppb_var_deprecated_impl.h"
-#include "webkit/plugins/ppapi/ppb_video_capture_impl.h"
 #include "webkit/plugins/ppapi/ppb_video_decoder_impl.h"
 
 using ppapi::InputEventData;
@@ -204,8 +200,7 @@ PP_Bool ReadImageData(PP_Resource device_context_2d,
   EnterResource<PPB_Graphics2D_API> enter(device_context_2d, true);
   if (enter.failed())
     return PP_FALSE;
-  return BoolToPPBool(static_cast<PPB_Graphics2D_Impl*>(enter.object())->
-      ReadImageData(image, top_left));
+  return BoolToPPBool(enter.object()->ReadImageData(image, top_left));
 }
 
 void RunMessageLoop(PP_Instance instance) {
@@ -286,6 +281,7 @@ const void* InternalGetInterface(const char* name) {
   #include "ppapi/thunk/interfaces_ppb_public_stable.h"
   #include "ppapi/thunk/interfaces_ppb_public_dev.h"
   #include "ppapi/thunk/interfaces_ppb_private.h"
+  #include "ppapi/thunk/interfaces_ppb_private_no_permissions.h"
   #include "ppapi/thunk/interfaces_ppb_private_flash.h"
 
   #undef UNPROXIED_API
@@ -293,8 +289,6 @@ const void* InternalGetInterface(const char* name) {
 
   // Please keep alphabetized by interface macro name with "special" stuff at
   // the bottom.
-  if (strcmp(name, PPB_AUDIO_INPUT_TRUSTED_DEV_INTERFACE_0_1) == 0)
-    return ::ppapi::thunk::GetPPB_AudioInputTrusted_0_1_Thunk();
   if (strcmp(name, PPB_AUDIO_TRUSTED_INTERFACE_0_6) == 0)
     return ::ppapi::thunk::GetPPB_AudioTrusted_0_6_Thunk();
   if (strcmp(name, PPB_BUFFER_TRUSTED_INTERFACE_0_1) == 0)
@@ -437,6 +431,10 @@ PluginModule::~PluginModule() {
   // holding a reference to us.
   DCHECK(instances_.empty());
 
+  // Some resources and other stuff are hung off of the embedder state, which
+  // should be torn down before the routing stuff below.
+  embedder_state_.reset();
+
   GetLivePluginSet()->erase(this);
 
   callback_tracker_->AbortAll();
@@ -511,17 +509,21 @@ scoped_refptr<PluginModule> PluginModule::CreateModuleForNaClInstance() {
   return nacl_module;
 }
 
-void PluginModule::InitAsProxiedNaCl(PluginInstance* plugin_instance) {
+PP_NaClResult PluginModule::InitAsProxiedNaCl(PluginInstance* instance) {
   DCHECK(out_of_process_proxy_.get());
   // InitAsProxied (for the trusted/out-of-process case) initializes only the
   // module, and one or more instances are added later. In this case, the
   // PluginInstance was already created as in-process, so we missed the proxy
   // AddInstance step and must do it now.
-  out_of_process_proxy_->AddInstance(plugin_instance->pp_instance());
+  out_of_process_proxy_->AddInstance(instance->pp_instance());
   // In NaCl, we need to tell the instance to reset itself as proxied. This will
   // clear cached interface pointers and send DidCreate (etc) to the plugin
   // side of the proxy.
-  plugin_instance->ResetAsProxied(this);
+  return instance->ResetAsProxied(this);
+}
+
+bool PluginModule::IsProxied() const {
+  return !!out_of_process_proxy_;
 }
 
 // static
@@ -539,8 +541,12 @@ bool PluginModule::SupportsInterface(const char* name) {
   return !!InternalGetInterface(name);
 }
 
-PluginInstance* PluginModule::CreateInstance(PluginDelegate* delegate) {
-  PluginInstance* instance = PluginInstance::Create(delegate, this);
+PluginInstance* PluginModule::CreateInstance(
+    PluginDelegate* delegate,
+    WebKit::WebPluginContainer* container,
+    const GURL& plugin_url) {
+  PluginInstance* instance = PluginInstance::Create(delegate, this, container,
+                                                    plugin_url);
   if (!instance) {
     LOG(WARNING) << "Plugin doesn't support instance interface, failing.";
     return NULL;

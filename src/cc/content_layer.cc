@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/content_layer.h"
 
+#include "base/auto_reset.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "cc/bitmap_content_layer_updater.h"
@@ -13,7 +12,6 @@
 #include "cc/content_layer_client.h"
 #include "cc/layer_painter.h"
 #include "cc/layer_tree_host.h"
-#include "cc/settings.h"
 
 namespace cc {
 
@@ -27,7 +25,7 @@ scoped_ptr<ContentLayerPainter> ContentLayerPainter::create(ContentLayerClient* 
     return make_scoped_ptr(new ContentLayerPainter(client));
 }
 
-void ContentLayerPainter::paint(SkCanvas* canvas, const IntRect& contentRect, FloatRect& opaque)
+void ContentLayerPainter::paint(SkCanvas* canvas, const gfx::Rect& contentRect, gfx::RectF& opaque)
 {
     base::TimeTicks paintStart = base::TimeTicks::HighResNow();
     m_client->paintContents(canvas, contentRect, opaque);
@@ -67,7 +65,12 @@ void ContentLayer::setTexturePriorities(const PriorityCalculator& priorityCalc)
 
 void ContentLayer::update(ResourceUpdateQueue& queue, const OcclusionTracker* occlusion, RenderingStats& stats)
 {
-    createUpdaterIfNeeded();
+    {
+        base::AutoReset<bool> ignoreSetNeedsCommit(&m_ignoreSetNeedsCommit, true);
+
+        createUpdaterIfNeeded();
+    }
+
     TiledLayer::update(queue, occlusion, stats);
     m_needsDisplay = false;
 }
@@ -89,7 +92,7 @@ void ContentLayer::createUpdaterIfNeeded()
     scoped_ptr<LayerPainter> painter = ContentLayerPainter::create(m_client).PassAs<LayerPainter>();
     if (layerTreeHost()->settings().acceleratePainting)
         m_updater = SkPictureContentLayerUpdater::create(painter.Pass());
-    else if (Settings::perTilePaintingEnabled())
+    else if (layerTreeHost()->settings().perTilePaintingEnabled)
         m_updater = BitmapSkPictureContentLayerUpdater::create(painter.Pass());
     else
         m_updater = BitmapContentLayerUpdater::create(painter.Pass());
@@ -106,4 +109,4 @@ void ContentLayer::setContentsOpaque(bool opaque)
         m_updater->setOpaque(opaque);
 }
 
-}
+}  // namespace cc

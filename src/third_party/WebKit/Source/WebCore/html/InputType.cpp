@@ -258,6 +258,11 @@ bool InputType::valueMissing(const String&) const
     return false;
 }
 
+bool InputType::hasBadInput() const
+{
+    return false;
+}
+
 bool InputType::patternMismatch(const String&) const
 {
     return false;
@@ -346,6 +351,12 @@ bool InputType::stepMismatch(const String& value) const
     return createStepRange(RejectAny).stepMismatch(numericValue);
 }
 
+String InputType::badInputText() const
+{
+    ASSERT_NOT_REACHED();
+    return validationMessageTypeMismatchText();
+}
+
 String InputType::typeMismatchText() const
 {
     return validationMessageTypeMismatchText();
@@ -367,6 +378,9 @@ String InputType::validationMessage() const
 
     if (typeMismatch())
         return typeMismatchText();
+
+    if (hasBadInput())
+        return badInputText();
 
     if (patternMismatch(value))
         return validationMessagePatternMismatchText();
@@ -656,8 +670,19 @@ void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFi
 {
     element()->setValueInternal(sanitizedValue, eventBehavior);
     element()->setNeedsStyleRecalc();
-    if (valueChanged && eventBehavior != DispatchNoEvent)
+    if (!valueChanged)
+        return;
+    switch (eventBehavior) {
+    case DispatchChangeEvent:
         element()->dispatchFormControlChangeEvent();
+        break;
+    case DispatchInputAndChangeEvent:
+        element()->dispatchFormControlInputEvent();
+        element()->dispatchFormControlChangeEvent();
+        break;
+    case DispatchNoEvent:
+        break;
+    }
 }
 
 bool InputType::canSetValue(const String&)
@@ -684,24 +709,9 @@ String InputType::visibleValue() const
     return element()->value();
 }
 
-String InputType::convertFromVisibleValue(const String& visibleValue) const
-{
-    return visibleValue;
-}
-
-bool InputType::isAcceptableValue(const String&)
-{
-    return true;
-}
-
 String InputType::sanitizeValue(const String& proposedValue) const
 {
     return proposedValue;
-}
-
-bool InputType::hasUnacceptableValue()
-{
-    return false;
 }
 
 bool InputType::receiveDroppedFiles(const DragData*)
@@ -722,6 +732,11 @@ Icon* InputType::icon() const
 {
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+bool InputType::shouldApplyLocaleDirection() const
+{
+    return false;
 }
 
 bool InputType::shouldResetOnDocumentActivation()
@@ -871,16 +886,6 @@ bool InputType::supportsPlaceholder() const
     return false;
 }
 
-bool InputType::usesFixedPlaceholder() const
-{
-    return false;
-}
-
-String InputType::fixedPlaceholder()
-{
-    return String();
-}
-
 bool InputType::supportsReadOnly() const
 {
     return false;
@@ -908,6 +913,7 @@ void InputType::readonlyAttributeChanged()
 
 void InputType::subtreeHasChanged()
 {
+    ASSERT_NOT_REACHED();
 }
 
 #if ENABLE(TOUCH_EVENTS)

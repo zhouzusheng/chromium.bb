@@ -28,17 +28,20 @@
 
 #include "ChromeClient.h"
 #include "Frame.h"
+#include "GraphicsLayerClient.h"
 #include "GraphicsLayerUpdater.h"
 #include "RenderLayer.h"
-#include "RenderLayerBacking.h"
+#include <wtf/HashMap.h>
 
 namespace WebCore {
 
+class FixedPositionViewportConstraints;
 class GraphicsLayer;
 class GraphicsLayerUpdater;
 class RenderEmbeddedObject;
 class RenderPart;
 class ScrollingCoordinator;
+class StickyPositionViewportConstraints;
 #if ENABLE(VIDEO)
 class RenderVideo;
 #endif
@@ -114,7 +117,7 @@ public:
     bool updateLayerCompositingState(RenderLayer*, CompositingChangeRepaint = CompositingChangeRepaintNow);
 
     // Update the geometry for compositing children of compositingAncestor.
-    void updateCompositingDescendantGeometry(RenderLayer* compositingAncestor, RenderLayer* layer, RenderLayerBacking::UpdateDepth);
+    void updateCompositingDescendantGeometry(RenderLayer* compositingAncestor, RenderLayer*, bool compositedChildrenOnly);
     
     // Whether layer's backing needs a graphics layer to do clipping by an ancestor (non-stacking-context parent with overflow).
     bool clippedByAncestor(RenderLayer*) const;
@@ -128,7 +131,7 @@ public:
     bool needsContentsCompositingLayer(const RenderLayer*) const;
     // Return the bounding box required for compositing layer and its childern, relative to ancestorLayer.
     // If layerBoundingBox is not 0, on return it contains the bounding box of this layer only.
-    IntRect calculateCompositedBounds(const RenderLayer*, const RenderLayer* ancestorLayer);
+    IntRect calculateCompositedBounds(const RenderLayer*, const RenderLayer* ancestorLayer) const;
 
     // Repaint the appropriate layers when the given RenderLayer starts or stops being composited.
     void repaintOnCompositingChange(RenderLayer*);
@@ -142,8 +145,8 @@ public:
     // Get the nearest ancestor layer that has overflow or clip, but is not a stacking context
     RenderLayer* enclosingNonStackingClippingLayer(const RenderLayer* layer) const;
 
-    // Repaint parts of all composited layers that intersect the given absolute rectangle.
-    void repaintCompositedLayersAbsoluteRect(const IntRect&);
+    // Repaint parts of all composited layers that intersect the given absolute rectangle (or the entire layer if the pointer is null).
+    void repaintCompositedLayers(const IntRect* = 0);
 
     // Returns true if the given layer needs it own backing store.
     bool requiresOwnBackingStore(const RenderLayer*, const RenderLayer* compositingAncestorLayer) const;
@@ -168,11 +171,7 @@ public:
     void clearBackingForAllLayers();
     
     void layerBecameComposited(const RenderLayer*) { ++m_compositedLayerCount; }
-    void layerBecameNonComposited(const RenderLayer*)
-    {
-        ASSERT(m_compositedLayerCount > 0);
-        --m_compositedLayerCount;
-    }
+    void layerBecameNonComposited(const RenderLayer*);
     
 #if ENABLE(VIDEO)
     // Use by RenderVideo to ask if it should try to use accelerated compositing.
@@ -202,11 +201,6 @@ public:
 
     String layerTreeAsText(LayerTreeFlags);
 
-    // These are named to avoid conflicts with the functions in GraphicsLayerClient
-    // These return the actual internal variables.
-    bool compositorShowDebugBorders() const { return m_showDebugBorders; }
-    bool compositorShowRepaintCounter() const { return m_showRepaintCounter; }
-
     virtual float deviceScaleFactor() const OVERRIDE;
     virtual float pageScaleFactor() const OVERRIDE;
     virtual void didCommitChangesForLayer(const GraphicsLayer*) const OVERRIDE;
@@ -226,7 +220,14 @@ public:
     GraphicsLayer* layerForOverhangAreas() const { return m_layerForOverhangAreas.get(); }
 #endif
 
-    void documentBackgroundColorDidChange();
+    void updateViewportConstraintStatus(RenderLayer*);
+    void removeViewportConstrainedLayer(RenderLayer*);
+
+    void resetTrackedRepaintRects();
+    void setTracksRepaints(bool);
+
+    void reportMemoryUsage(MemoryObjectInfo*) const;
+    void setShouldReevaluateCompositingAfterLayout() { m_reevaluateCompositingAfterLayout = true; }
 
 private:
     class OverlapMap;
@@ -236,16 +237,15 @@ private:
     virtual void notifyFlushRequired(const GraphicsLayer*) OVERRIDE { scheduleLayerFlush(); }
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) OVERRIDE;
 
-    virtual bool showDebugBorders(const GraphicsLayer*) const OVERRIDE;
-    virtual bool showRepaintCounter(const GraphicsLayer*) const OVERRIDE;
+    virtual bool isTrackingRepaints() const OVERRIDE;
     
     // GraphicsLayerUpdaterClient implementation
     virtual void flushLayers(GraphicsLayerUpdater*) OVERRIDE;
     
     // Whether the given RL needs a compositing layer.
-    bool needsToBeComposited(const RenderLayer*) const;
+    bool needsToBeComposited(const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
     // Whether the layer has an intrinsic need for compositing layer.
-    bool requiresCompositingLayer(const RenderLayer*) const;
+    bool requiresCompositingLayer(const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
     // Whether the layer could ever be composited.
     bool canBeComposited(const RenderLayer*) const;
 
@@ -255,7 +255,7 @@ private:
     void clearBackingForLayerIncludingDescendants(RenderLayer*);
 
     // Repaint the given rect (which is layer's coords), and regions of child layers that intersect that rect.
-    void recursiveRepaintLayerRect(RenderLayer*, const IntRect&);
+    void recursiveRepaintLayer(RenderLayer*, const IntRect* = 0);
 
     void addToOverlapMap(OverlapMap&, RenderLayer*, IntRect& layerBounds, bool& boundsComputed);
     void addToOverlapMapRecursive(OverlapMap&, RenderLayer*, RenderLayer* ancestorLayer = 0);
@@ -310,9 +310,16 @@ private:
     bool requiresCompositingForFilters(RenderObject*) const;
     bool requiresCompositingForBlending(RenderObject* renderer) const;
     bool requiresCompositingForScrollableFrame() const;
-    bool requiresCompositingForPosition(RenderObject*, const RenderLayer*) const;
+    bool requiresCompositingForPosition(RenderObject*, const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
     bool requiresCompositingForOverflowScrolling(const RenderLayer*) const;
     bool requiresCompositingForIndirectReason(RenderObject*, bool hasCompositedDescendants, bool has3DTransformedDescendants, RenderLayer::IndirectCompositingReason&) const;
+
+    void addViewportConstrainedLayer(RenderLayer*);
+    void registerOrUpdateViewportConstrainedLayer(RenderLayer*);
+    void unregisterViewportConstrainedLayer(RenderLayer*);
+
+    const FixedPositionViewportConstraints computeFixedViewportConstraints(RenderLayer*);
+    const StickyPositionViewportConstraints computeStickyViewportConstraints(RenderLayer*);
 
     bool requiresScrollLayer(RootLayerAttachment) const;
     bool requiresHorizontalScrollbarLayer() const;
@@ -352,11 +359,16 @@ private:
     bool m_shouldFlushOnReattach;
     bool m_forceCompositingMode;
 
+    bool m_isTrackingRepaints; // Used for testing.
+
     RootLayerAttachment m_rootLayerAttachment;
 
     // Enclosing clipping layer for iframe content
     OwnPtr<GraphicsLayer> m_clipLayer;
     OwnPtr<GraphicsLayer> m_scrollLayer;
+
+    HashSet<RenderLayer*> m_viewportConstrainedLayers;
+    HashSet<RenderLayer*> m_viewportConstrainedLayersNeedingUpdate;
 
     // Enclosing layer for overflow controls and the clipping layer
     OwnPtr<GraphicsLayer> m_overflowControlsHostLayer;

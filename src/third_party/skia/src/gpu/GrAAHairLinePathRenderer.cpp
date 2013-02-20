@@ -14,6 +14,7 @@
 #include "GrIndexBuffer.h"
 #include "GrPathUtils.h"
 #include "SkGeometry.h"
+#include "SkStroke.h"
 #include "SkTemplates.h"
 
 namespace {
@@ -147,7 +148,7 @@ int num_quad_subdivs(const SkPoint p[3]) {
         return -1;
     }
 
-    GrScalar dsqd = p[1].distanceToLineBetweenSqd(p[0], p[2]);
+    SkScalar dsqd = p[1].distanceToLineBetweenSqd(p[0], p[2]);
     if (dsqd < gDegenerateToLineTolSqd) {
         return -1;
     }
@@ -322,13 +323,13 @@ struct Vertex {
     GrPoint fPos;
     union {
         struct {
-            GrScalar fA;
-            GrScalar fB;
-            GrScalar fC;
+            SkScalar fA;
+            SkScalar fB;
+            SkScalar fC;
         } fLine;
         GrVec   fQuadCoord;
         struct {
-            GrScalar fBogus[4];
+            SkScalar fBogus[4];
         };
     };
 };
@@ -352,8 +353,8 @@ void intersect_lines(const SkPoint& ptA, const SkVector& normA,
     result->fY = SkScalarMul(result->fY, wInv);
 }
 
-void bloat_quad(const SkPoint qpts[3], const GrMatrix* toDevice,
-                const GrMatrix* toSrc, Vertex verts[kVertsPerQuad]) {
+void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,
+                const SkMatrix* toSrc, Vertex verts[kVertsPerQuad]) {
     GrAssert(!toDevice == !toSrc);
     // original quad is specified by tri a,b,c
     SkPoint a = qpts[0];
@@ -430,8 +431,8 @@ void bloat_quad(const SkPoint qpts[3], const GrMatrix* toDevice,
 
 void add_quads(const SkPoint p[3],
                int subdiv,
-               const GrMatrix* toDevice,
-               const GrMatrix* toSrc,
+               const SkMatrix* toDevice,
+               const SkMatrix* toSrc,
                Vertex** vert) {
     GrAssert(subdiv >= 0);
     if (subdiv) {
@@ -502,7 +503,7 @@ bool GrAAHairLinePathRenderer::createGeom(
                                              &devClipBounds);
 
     GrVertexLayout layout = GrDrawTarget::kEdge_VertexLayoutBit;
-    GrMatrix viewM = drawState.getViewMatrix();
+    SkMatrix viewM = drawState.getViewMatrix();
 
     PREALLOC_PTARRAY(128) lines;
     PREALLOC_PTARRAY(128) quads;
@@ -521,9 +522,9 @@ bool GrAAHairLinePathRenderer::createGeom(
 
     Vertex* verts = reinterpret_cast<Vertex*>(arg->vertices());
 
-    const GrMatrix* toDevice = NULL;
-    const GrMatrix* toSrc = NULL;
-    GrMatrix ivm;
+    const SkMatrix* toDevice = NULL;
+    const SkMatrix* toSrc = NULL;
+    SkMatrix ivm;
 
     if (viewM.hasPerspective()) {
         if (viewM.invert(&ivm)) {
@@ -546,10 +547,10 @@ bool GrAAHairLinePathRenderer::createGeom(
 }
 
 bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
-                                           GrPathFill fill,
+                                           const SkStroke& stroke,
                                            const GrDrawTarget* target,
                                            bool antiAlias) const {
-    if (fill != kHairLine_GrPathFill || !antiAlias) {
+    if ((0 != stroke.getWidthIfStroked()) || !antiAlias) {
         return false;
     }
 
@@ -563,7 +564,7 @@ bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
 }
 
 bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
-                                          GrPathFill fill,
+                                          const SkStroke&,
                                           GrDrawTarget* target,
                                           bool antiAlias) {
 

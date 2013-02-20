@@ -59,6 +59,7 @@ WebInspector.NetworkLogView = function()
     this._mainRequestDOMContentTime = -1;
     this._hiddenCategories = {};
     this._matchedRequests = [];
+    this._highlightedSubstringChanges = [];
     this._filteredOutRequests = new Map();
     
     this._matchedRequestsMap = {};
@@ -303,6 +304,12 @@ WebInspector.NetworkLogView.prototype = {
         this._updateOffscreenRows();
 
         this.searchCanceled();
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.NetworkSort,
+            column: columnIdentifier,
+            sortOrder: this._dataGrid.sortOrder
+        });
     },
 
     _sortByTimeline: function()
@@ -686,12 +693,15 @@ WebInspector.NetworkLogView.prototype = {
         for (var requestId in this._staleRequests) {
             var request = this._staleRequests[requestId];
             var node = this._requestGridNode(request);
-            if (!node) {
+            if (node)
+                node.refreshRequest();
+            else {
                 // Create the timeline tree element and graph.
                 node = this._createRequestGridNode(request);
                 this._dataGrid.rootNode().appendChild(node);
+                node.refreshRequest();
+                this._applyFilter(node);
             }
-            node.refreshRequest();
 
             if (this.calculator.updateBoundaries(request))
                 boundariesChanged = true;
@@ -795,7 +805,7 @@ WebInspector.NetworkLogView.prototype = {
      */
     _onRequestUpdated: function(event)
     {
-        var request = /** @type {WebInspector.NetworkRequest} */ event.data;
+        var request = /** @type {WebInspector.NetworkRequest} */ (event.data);
         this._refreshRequest(request);
     },
 
@@ -820,7 +830,7 @@ WebInspector.NetworkLogView.prototype = {
         if (this._preserveLogToggle.toggled)
             return;
 
-        var frame = /** @type {WebInspector.ResourceTreeFrame} */ event.data;
+        var frame = /** @type {WebInspector.ResourceTreeFrame} */ (event.data);
         var loaderId = frame.loaderId;
 
         // Preserve provisional load requests.
@@ -1070,7 +1080,7 @@ WebInspector.NetworkLogView.prototype = {
         if (!this._searchRegExp)
             return -1;
 
-        if ((!request.displayName || !request.displayName.match(this._searchRegExp)) && !request.folder.match(this._searchRegExp))
+        if (!request.name().match(this._searchRegExp) && !request.path().match(this._searchRegExp))
             return -1;
 
         if (request.requestId in this._matchedRequestsMap)
@@ -1117,35 +1127,30 @@ WebInspector.NetworkLogView.prototype = {
 
     _removeAllHighlights: function()
     {
-        if (this._highlightedSubstringChanges) {
-            for (var i = 0; i < this._highlightedSubstringChanges.length; ++i)
-                WebInspector.revertDomChanges(this._highlightedSubstringChanges[i]);
-            this._highlightedSubstringChanges = null;
-        }
+        for (var i = 0; i < this._highlightedSubstringChanges.length; ++i)
+            WebInspector.revertDomChanges(this._highlightedSubstringChanges[i]);
+        this._highlightedSubstringChanges = [];
     },
-    
+
     /**
-     * @param {Array.<WebInspector.NetworkRequest>} requests
+     * @param {WebInspector.NetworkRequest} request
      * @param {boolean} reveal
      * @param {RegExp=} regExp
      */
-    _highlightMatchedRequests: function(requests, reveal, regExp)
+    _highlightMatchedRequest: function(request, reveal, regExp)
     {
-        this._highlightedSubstringChanges = [];
-        for (var i = 0; i < requests.length; ++i) {
-            var request = requests[i];
-            var node = this._requestGridNode(request);
-            if (node) {
-                var nameMatched = request.displayName && request.displayName.match(regExp);
-                var pathMatched = request.parsedURL.path && request.folder.match(regExp);
-                if (!nameMatched && pathMatched && !this._largerRequestsButton.toggled)
-                    this._toggleLargerRequests();
-                var highlightedSubstringChanges = node._highlightMatchedSubstring(regExp);
-                this._highlightedSubstringChanges.push(highlightedSubstringChanges);
-                if (reveal)
-                    node.reveal();
-            }
-        }
+        var node = this._requestGridNode(request);
+        if (!node)
+            return;
+
+        var nameMatched = request.name().match(regExp);
+        var pathMatched = request.path().match(regExp);
+        if (!nameMatched && pathMatched && !this._largerRequestsButton.toggled)
+            this._toggleLargerRequests();
+        var highlightedSubstringChanges = node._highlightMatchedSubstring(regExp);
+        this._highlightedSubstringChanges.push(highlightedSubstringChanges);
+        if (reveal)
+            node.reveal();
     },
 
     /**
@@ -1158,7 +1163,7 @@ WebInspector.NetworkLogView.prototype = {
         if (!request)
             return;
         this._removeAllHighlights();
-        this._highlightMatchedRequests([request], reveal, this._searchRegExp);
+        this._highlightMatchedRequest(request, reveal, this._searchRegExp);
         var node = this._requestGridNode(request);
         if (node)
             this._currentMatchedRequestIndex = matchedRequestIndex;
@@ -1192,27 +1197,37 @@ WebInspector.NetworkLogView.prototype = {
     },
 
     /**
+     * @param {!WebInspector.NetworkDataGridNode} node
+     */
+    _applyFilter: function(node) {
+        var filter = this._filterRegExp;
+        var request = node._request;
+        if (!filter)
+            return;
+        if (filter.test(request.name()) || filter.test(request.path()))
+            this._highlightMatchedRequest(request, false, filter);
+        else {
+            node.element.addStyleClass("filtered-out");
+            this._filteredOutRequests.put(request, true);
+        }
+    },
+
+    /**
      * @param {string} query
      */
     performFilter: function(query)
     {
-        this._filteredOutRequests.clear();
-        var filterRegExp = createPlainTextSearchRegex(query, "i");
-        var shownRequests = [];
-        for (var i = 0; i < this._dataGrid.rootNode().children.length; ++i) {
-            var node = this._dataGrid.rootNode().children[i];
-            node.element.removeStyleClass("filtered-out");
-            var nameMatched = node._request.displayName && node._request.displayName.match(filterRegExp);
-            var pathMatched = node._request.parsedURL.path && node._request.folder.match(filterRegExp);
-            if (!nameMatched && !pathMatched) {
-                node.element.addStyleClass("filtered-out");
-                this._filteredOutRequests.put(this._requests[i], true);
-            } else 
-                shownRequests.push(node._request);
-        }
         this._removeAllHighlights();
+        this._filteredOutRequests.clear();
+        delete this._filterRegExp;
         if (query)
-            this._highlightMatchedRequests(shownRequests, false, filterRegExp);
+            this._filterRegExp = createPlainTextSearchRegex(query, "i");
+
+        var nodes = this._dataGrid.rootNode().children;
+        for (var i = 0; i < nodes.length; ++i) {
+            nodes[i].element.removeStyleClass("filtered-out");
+            this._applyFilter(nodes[i]);
+        }
         this._updateSummaryBar();
         this._updateOffscreenRows();
     },
@@ -1285,7 +1300,7 @@ WebInspector.NetworkPanel = function()
     WebInspector.Panel.call(this, "network");
     this.registerRequiredCSS("networkPanel.css");
 
-    this.createSplitView();
+    this.createSidebarView();
     this.splitView.hideMainElement();
 
     this._networkLogView = new WebInspector.NetworkLogView();
@@ -1518,7 +1533,7 @@ WebInspector.NetworkPanel.prototype = {
         function reveal()
         {
             WebInspector.inspectorView.setCurrentPanel(this);
-            this.revealAndHighlightRequest(/** @type {WebInspector.NetworkRequest} */ target);
+            this.revealAndHighlightRequest(/** @type {WebInspector.NetworkRequest} */ (target));
         }
         contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Reveal in network panel" : "Reveal in Network Panel"), reveal.bind(this));
     },
@@ -1823,6 +1838,11 @@ WebInspector.NetworkDataGridNode.prototype = {
     {
         this._parentView.dispatchEventToListeners(WebInspector.NetworkLogView.EventTypes.RequestSelected, this._request);
         WebInspector.DataGridNode.prototype.select.apply(this, arguments);
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.NetworkRequestSelected,
+            url: this._request.url
+        });
     },
 
     _highlightMatchedSubstring: function(regexp)
@@ -1929,23 +1949,9 @@ WebInspector.NetworkDataGridNode.prototype = {
             iconElement.className = "icon";
         }
         this._nameCell.appendChild(iconElement);
-        this._nameCell.appendChild(document.createTextNode(this._fileName()));
-
-        var subtitle = this._request.parsedURL.host === WebInspector.inspectedPageDomain ? "" : this._request.parsedURL.host;
-
-        if (this._request.parsedURL.path)
-            subtitle += this._request.folder;
-
-        this._appendSubtitle(this._nameCell, subtitle);
+        this._nameCell.appendChild(document.createTextNode(this._request.name()));
+        this._appendSubtitle(this._nameCell, this._request.path());
         this._nameCell.title = this._request.url;
-    },
-
-    _fileName: function()
-    {
-        var fileName = this._request.displayName;
-        if (this._request.queryString())
-            fileName += "?" + this._request.queryString();
-        return fileName;
     },
 
     _refreshStatusCell: function()
@@ -2173,8 +2179,8 @@ WebInspector.NetworkDataGridNode.prototype = {
 
 WebInspector.NetworkDataGridNode.NameComparator = function(a, b)
 {
-    var aFileName = a._request.displayName + (a._request.queryString() ? a._request.queryString() : "");
-    var bFileName = b._request.displayName + (b._request.queryString() ? b._request.queryString() : "");
+    var aFileName = a._request.name();
+    var bFileName = b._request.name();
     if (aFileName > bFileName)
         return 1;
     if (bFileName > aFileName)

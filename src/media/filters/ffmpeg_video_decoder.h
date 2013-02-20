@@ -7,7 +7,6 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
 
@@ -24,10 +23,8 @@ class DecoderBuffer;
 
 class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
  public:
-  typedef base::Callback<
-      scoped_refptr<base::MessageLoopProxy>()> MessageLoopFactoryCB;
-  FFmpegVideoDecoder(const MessageLoopFactoryCB& message_loop_factory_cb,
-                     Decryptor* decryptor);
+  explicit FFmpegVideoDecoder(
+      const scoped_refptr<base::MessageLoopProxy>& message_loop);
 
   // VideoDecoder implementation.
   virtual void Initialize(const scoped_refptr<DemuxerStream>& stream,
@@ -53,29 +50,12 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
     kDecodeFinished
   };
 
-  // Carries out the reading operation scheduled by Read().
-  void DoRead(const ReadCB& read_cb);
-
-  // Reads from the demuxer stream with corresponding callback method.
+  // Reads from the demuxer stream and corresponding read callback.
   void ReadFromDemuxerStream();
-  void DecryptOrDecodeBuffer(DemuxerStream::Status status,
-                             const scoped_refptr<DecoderBuffer>& buffer);
+  void BufferReady(DemuxerStream::Status status,
+                   const scoped_refptr<DecoderBuffer>& buffer);
 
-  // Carries out the buffer processing operation scheduled by
-  // DecryptOrDecodeBuffer().
-  void DoDecryptOrDecodeBuffer(DemuxerStream::Status status,
-                               const scoped_refptr<DecoderBuffer>& buffer);
-
-  // Callback called by the decryptor to deliver decrypted data buffer and
-  // reporting decrypt status. This callback could be called synchronously or
-  // asynchronously.
-  void BufferDecrypted(Decryptor::Status decrypt_status,
-                       const scoped_refptr<DecoderBuffer>& buffer);
-
-  // Carries out the operation scheduled by BufferDecrypted().
-  void DoBufferDecrypted(Decryptor::Status decrypt_status,
-                         const scoped_refptr<DecoderBuffer>& buffer);
-
+  // Handles decoding an unencrypted encoded buffer.
   void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
   bool Decode(const scoped_refptr<DecoderBuffer>& buffer,
               scoped_refptr<VideoFrame>* video_frame);
@@ -90,9 +70,6 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   // Reset decoder and call |reset_cb_|.
   void DoReset();
-
-  // This is !is_null() iff Initialize() hasn't been called.
-  MessageLoopFactoryCB message_loop_factory_cb_;
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
 
@@ -109,8 +86,6 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   // Pointer to the demuxer stream that will feed us compressed buffers.
   scoped_refptr<DemuxerStream> demuxer_stream_;
-
-  Decryptor* decryptor_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegVideoDecoder);
 };

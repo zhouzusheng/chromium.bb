@@ -448,9 +448,8 @@ void RenderTextWin::EnsureLayout() {
 void RenderTextWin::DrawVisualText(Canvas* canvas) {
   DCHECK(!needs_layout_);
 
-  Point offset(GetOriginForDrawing());
   // Skia will draw glyphs with respect to the baseline.
-  offset.Offset(0, common_baseline_);
+  Vector2d offset(GetOffsetForDrawing() + Vector2d(0, common_baseline_));
 
   SkScalar x = SkIntToScalar(offset.x());
   SkScalar y = SkIntToScalar(offset.y());
@@ -698,7 +697,7 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   }
 
   // If a font was able to partially display the run, use that now.
-  if (best_partial_font_missing_char_count != INT_MAX) {
+  if (best_partial_font_missing_char_count < static_cast<int>(run_length)) {
     // Re-shape the run only if |best_partial_font| differs from the last font.
     if (best_partial_font.GetNativeFont() != run->font.GetNativeFont())
       ShapeTextRunWithFont(run, best_partial_font);
@@ -706,13 +705,30 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   }
 
   // If no font was able to partially display the run, replace all glyphs
-  // with |wgDefault| to ensure they don't hold garbage values.
+  // with |wgDefault| from the original font to ensure to they don't hold
+  // garbage values.
+  // First, clear the cache and select the original font on the HDC.
+  ScriptFreeCache(&run->script_cache);
+  run->font = original_font;
+  SelectObject(cached_hdc_, run->font.GetNativeFont());
+
+  // Now, get the font's properties.
   SCRIPT_FONTPROPERTIES properties;
   memset(&properties, 0, sizeof(properties));
   properties.cBytes = sizeof(properties);
-  ScriptGetFontProperties(cached_hdc_, &run->script_cache, &properties);
-  for (int i = 0; i < run->glyph_count; ++i)
-    run->glyphs[i] = properties.wgDefault;
+  HRESULT hr = ScriptGetFontProperties(cached_hdc_, &run->script_cache,
+                                       &properties);
+  if (hr == S_OK) {
+    // Finally, initialize |glyph_count|, |glyphs| and |visible_attributes| on
+    // the run (since they may not have been set yet).
+    run->glyph_count = run_length;
+    memset(run->visible_attributes.get(), 0,
+           run->glyph_count * sizeof(SCRIPT_VISATTR));
+    for (int i = 0; i < run->glyph_count; ++i) {
+      run->glyphs[i] = IsWhitespace(run_text[i]) ? properties.wgBlank :
+                                                   properties.wgDefault;
+    }
+  }
 
   // TODO(msw): Don't use SCRIPT_UNDEFINED. Apparently Uniscribe can
   //            crash on certain surrogate pairs with SCRIPT_UNDEFINED.

@@ -50,7 +50,6 @@ SVGDocumentExtensions::SVGDocumentExtensions(Document* document)
 
 SVGDocumentExtensions::~SVGDocumentExtensions()
 {
-    deleteAllValues(m_animatedElements);
     deleteAllValues(m_pendingResources);
     deleteAllValues(m_pendingResourcesForRemoval);
 }
@@ -133,71 +132,10 @@ void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
     }
 }
 
-void SVGDocumentExtensions::addAnimationElementToTarget(SVGSMILElement* animationElement, SVGElement* targetElement)
-{
-    ASSERT(targetElement);
-    ASSERT(animationElement);
-
-    if (HashSet<SVGSMILElement*>* animationElementsForTarget = m_animatedElements.get(targetElement)) {
-        animationElementsForTarget->add(animationElement);
-        return;
-    }
-
-    HashSet<SVGSMILElement*>* animationElementsForTarget = new HashSet<SVGSMILElement*>;
-    animationElementsForTarget->add(animationElement);
-    m_animatedElements.set(targetElement, animationElementsForTarget);
-}
-
-void SVGDocumentExtensions::removeAnimationElementFromTarget(SVGSMILElement* animationElement, SVGElement* targetElement)
-{
-    ASSERT(targetElement);
-    ASSERT(animationElement);
-
-    HashMap<SVGElement*, HashSet<SVGSMILElement*>* >::iterator it = m_animatedElements.find(targetElement);
-    ASSERT(it != m_animatedElements.end());
-    
-    HashSet<SVGSMILElement*>* animationElementsForTarget = it->value;
-    ASSERT(!animationElementsForTarget->isEmpty());
-
-    animationElementsForTarget->remove(animationElement);
-    if (animationElementsForTarget->isEmpty()) {
-        m_animatedElements.remove(it);
-        delete animationElementsForTarget;
-    }
-}
-
-void SVGDocumentExtensions::removeAllAnimationElementsFromTarget(SVGElement* targetElement)
-{
-    ASSERT(targetElement);
-    HashMap<SVGElement*, HashSet<SVGSMILElement*>* >::iterator it = m_animatedElements.find(targetElement);
-    if (it == m_animatedElements.end())
-        return;
-
-    HashSet<SVGSMILElement*>* animationElementsForTarget = it->value;
-    Vector<SVGSMILElement*> toBeReset;
-
-    HashSet<SVGSMILElement*>::iterator end = animationElementsForTarget->end();
-    for (HashSet<SVGSMILElement*>::iterator it = animationElementsForTarget->begin(); it != end; ++it)
-        toBeReset.append(*it);
-
-    Vector<SVGSMILElement*>::iterator vectorEnd = toBeReset.end();
-    for (Vector<SVGSMILElement*>::iterator vectorIt = toBeReset.begin(); vectorIt != vectorEnd; ++vectorIt)
-        (*vectorIt)->resetTargetElement();
-}
-
-// FIXME: Callers should probably use ScriptController::eventHandlerLineNumber()
-static int parserLineNumber(Document* document)
-{
-    ScriptableDocumentParser* parser = document->scriptableDocumentParser();
-    if (!parser)
-        return 1;
-    return parser->lineNumber().oneBasedInt();
-}
-
 static void reportMessage(Document* document, MessageLevel level, const String& message)
 {
     if (document->frame())
-        document->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, level, message, document->documentURI(), parserLineNumber(document));
+        document->addConsoleMessage(JSMessageSource, level, message);
 }
 
 void SVGDocumentExtensions::reportWarning(const String& message)
@@ -210,7 +148,7 @@ void SVGDocumentExtensions::reportError(const String& message)
     reportMessage(m_document, ErrorMessageLevel, "Error: " + message);
 }
 
-void SVGDocumentExtensions::addPendingResource(const AtomicString& id, SVGStyledElement* element)
+void SVGDocumentExtensions::addPendingResource(const AtomicString& id, SVGElement* element)
 {
     ASSERT(element);
 
@@ -237,7 +175,7 @@ bool SVGDocumentExtensions::hasPendingResource(const AtomicString& id) const
     return m_pendingResources.contains(id);
 }
 
-bool SVGDocumentExtensions::isElementPendingResources(SVGStyledElement* element) const
+bool SVGDocumentExtensions::isElementPendingResources(SVGElement* element) const
 {
     // This algorithm takes time proportional to the number of pending resources and need not.
     // If performance becomes an issue we can keep a counted set of elements and answer the question efficiently.
@@ -255,7 +193,7 @@ bool SVGDocumentExtensions::isElementPendingResources(SVGStyledElement* element)
     return false;
 }
 
-bool SVGDocumentExtensions::isElementPendingResource(SVGStyledElement* element, const AtomicString& id) const
+bool SVGDocumentExtensions::isElementPendingResource(SVGElement* element, const AtomicString& id) const
 {
     ASSERT(element);
 
@@ -265,7 +203,7 @@ bool SVGDocumentExtensions::isElementPendingResource(SVGStyledElement* element, 
     return m_pendingResources.get(id)->contains(element);
 }
 
-void SVGDocumentExtensions::removeElementFromPendingResources(SVGStyledElement* element)
+void SVGDocumentExtensions::removeElementFromPendingResources(SVGElement* element)
 {
     ASSERT(element);
 
@@ -336,7 +274,7 @@ void SVGDocumentExtensions::markPendingResourcesForRemoval(const AtomicString& i
         m_pendingResourcesForRemoval.add(id, existing);
 }
 
-SVGStyledElement* SVGDocumentExtensions::removeElementFromPendingResourcesForRemoval(const AtomicString& id)
+SVGElement* SVGDocumentExtensions::removeElementFromPendingResourcesForRemoval(const AtomicString& id)
 {
     if (id.isEmpty())
         return 0;
@@ -346,7 +284,7 @@ SVGStyledElement* SVGDocumentExtensions::removeElementFromPendingResourcesForRem
         return 0;
 
     SVGPendingElements::iterator firstElement = resourceSet->begin();
-    SVGStyledElement* element = *firstElement;
+    SVGElement* element = *firstElement;
 
     resourceSet->remove(firstElement);
 
@@ -402,7 +340,7 @@ void SVGDocumentExtensions::removeAllTargetReferencesForElement(SVGElement* refe
         m_elementDependencies.remove(*it);
 }
 
-void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* referencedElement)
+void SVGDocumentExtensions::rebuildAllElementReferencesForTarget(SVGElement* referencedElement)
 {
     ASSERT(referencedElement);
     HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator it = m_elementDependencies.find(referencedElement);
@@ -425,8 +363,17 @@ void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* refe
                 (*vectorIt)->svgAttributeChanged(XLinkNames::hrefAttr);
         }
     }
+}
 
-    m_elementDependencies.remove(referencedElement);
+void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* referencedElement)
+{
+    ASSERT(referencedElement);
+    HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator it = m_elementDependencies.find(referencedElement);
+    if (it == m_elementDependencies.end())
+        return;
+    ASSERT(it->key == referencedElement);
+
+    m_elementDependencies.remove(it);
 }
 
 #if ENABLE(SVG_FONTS)

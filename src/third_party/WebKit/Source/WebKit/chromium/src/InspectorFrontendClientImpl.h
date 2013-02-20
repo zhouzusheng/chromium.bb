@@ -75,6 +75,9 @@ public:
     virtual void inspectedURLChanged(const WTF::String&);
 
     virtual void sendMessageToBackend(const WTF::String&);
+
+    virtual bool isUnderTest();
+
 private:
     WebCore::Page* m_frontendPage;
     WebDevToolsFrontendClient* m_client;

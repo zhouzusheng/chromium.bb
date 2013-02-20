@@ -5,10 +5,6 @@
 #ifndef UI_GFX_SIZE_BASE_H_
 #define UI_GFX_SIZE_BASE_H_
 
-#include <string>
-
-#include "base/compiler_specific.h"
-#include "build/build_config.h"
 #include "ui/base/ui_export.h"
 
 namespace gfx {
@@ -34,6 +30,16 @@ class UI_EXPORT SizeBase {
 
   void set_width(Type width) { width_ = width; }
   void set_height(Type height) { height_ = height; }
+
+  void ClampToMax(const Class& max) {
+    width_ = width_ <= max.width_ ? width_ : max.width_;
+    height_ = height_ <= max.height_ ? height_ : max.height_;
+  }
+
+  void ClampToMin(const Class& min) {
+    width_ = width_ >= min.width_ ? width_ : min.width_;
+    height_ = height_ >= min.height_ ? height_ : min.height_;
+  }
 
   bool IsEmpty() const {
     return (width_ <= 0) || (height_ <= 0);

@@ -56,6 +56,14 @@
 #include <wtf/text/CString.h>
 #include <wtf/Vector.h>
 
+namespace WTF {
+
+template<> struct SequenceMemoryInstrumentationTraits<WebCore::CachedResourceClient*> {
+    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
+};
+
+}
+
 using namespace WTF;
 
 namespace WebCore {
@@ -180,6 +188,14 @@ CachedResource::CachedResource(const ResourceRequest& request, Type type)
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
+
+    if (!m_resourceRequest.url().hasFragmentIdentifier())
+        return;
+    KURL urlForCache = MemoryCache::removeFragmentIdentifierIfNeeded(m_resourceRequest.url());
+    if (urlForCache.hasFragmentIdentifier())
+        return;
+    m_fragmentIdentifierForRequest = m_resourceRequest.url().fragmentIdentifier();
+    m_resourceRequest.setURL(urlForCache);
 }
 
 CachedResource::~CachedResource()
@@ -285,10 +301,20 @@ void CachedResource::load(CachedResourceLoader* cachedResourceLoader, const Reso
     if (type() != MainResource)
         addAdditionalRequestHeaders(cachedResourceLoader);
 
+    // FIXME: It's unfortunate that the cache layer and below get to know anything about fragment identifiers.
+    // We should look into removing the expectation of that knowledge from the platform network stacks.
+    ResourceRequest request(m_resourceRequest);
+    if (!m_fragmentIdentifierForRequest.isNull()) {
+        KURL url = request.url();
+        url.setFragmentIdentifier(m_fragmentIdentifierForRequest);
+        request.setURL(url);
+        m_fragmentIdentifierForRequest = String();
+    }
+
 #if USE(PLATFORM_STRATEGIES)
-    m_loader = platformStrategies()->loaderStrategy()->resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->frame(), this, m_resourceRequest, m_resourceRequest.priority(), options);
+    m_loader = platformStrategies()->loaderStrategy()->resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->frame(), this, request, request.priority(), options);
 #else
-    m_loader = resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->frame(), this, m_resourceRequest, m_resourceRequest.priority(), options);
+    m_loader = resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->frame(), this, request, request.priority(), options);
 #endif
 
     if (!m_loader) {
@@ -431,7 +457,7 @@ void CachedResource::stopLoading()
     // client in that case, so we don't seem to continue loading forever.
     if (isLoading()) {
         setLoading(false);
-        setStatus(Canceled);
+        setStatus(LoadError);
         checkNotify();
     }
 }
@@ -701,7 +727,7 @@ void CachedResource::updateResponseAfterRevalidation(const ResourceResponse& val
 {
     m_responseTimestamp = currentTime();
 
-    DEFINE_STATIC_LOCAL(const AtomicString, contentHeaderPrefix, ("content-"));
+    DEFINE_STATIC_LOCAL(const AtomicString, contentHeaderPrefix, ("content-", AtomicString::ConstructFromLiteral));
     // RFC2616 10.3.5
     // Update cached headers from the 304 response
     const HTTPHeaderMap& newHeaders = validatingResponse.httpHeaderFields();
@@ -792,16 +818,13 @@ bool CachedResource::makePurgeable(bool purgeable)
         // Should not make buffer purgeable if it has refs other than this since we don't want two copies.
         if (!m_data->hasOneRef())
             return false;
-        
-        if (m_data->hasPurgeableBuffer()) {
-            m_purgeableData = m_data->releasePurgeableBuffer();
-        } else {
-            m_purgeableData = PurgeableBuffer::create(m_data->data(), m_data->size());
-            if (!m_purgeableData)
-                return false;
-            m_purgeableData->setPurgePriority(purgePriority());
-        }
-        
+
+        m_data->createPurgeableBuffer();
+        if (!m_data->hasPurgeableBuffer())
+            return false;
+
+        m_purgeableData = m_data->releasePurgeableBuffer();
+        m_purgeableData->setPurgePriority(purgePriority());
         m_purgeableData->makePurgeable(true);
         m_data.clear();
         return true;

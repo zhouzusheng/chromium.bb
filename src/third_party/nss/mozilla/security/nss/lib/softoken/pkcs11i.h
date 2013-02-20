@@ -10,10 +10,10 @@
 #include "nssilock.h"
 #include "seccomon.h"
 #include "secoidt.h"
-#include "lowkeyti.h"
+#include "lowkeyti.h" 
 #include "pkcs11t.h"
 
-#include "sftkdbt.h"
+#include "sftkdbt.h" 
 #include "hasht.h"
 
 /* 
@@ -66,8 +66,6 @@
 				  /* how many objects to keep on the free list
 				   * before we start freeing them */
 #define MAX_KEY_LEN 256 	  /* maximum symmetric key length in bytes */
-
-#define MULTIACCESS "multiaccess:"
 
 /*
  * LOG2_BUCKETS_PER_SESSION_LOCK must be a prime number.
@@ -251,6 +249,7 @@ typedef enum {
 struct SFTKSessionContextStr {
     SFTKContextType	type;
     PRBool		multi; 		/* is multipart */
+    PRBool		rsa; 		/* is rsa */
     PRBool		doPad; 		/* use PKCS padding for block ciphers */
     unsigned int	blockSize; 	/* blocksize for padding */
     unsigned int	padDataLength; 	/* length of the valid data in padbuf */
@@ -546,8 +545,6 @@ typedef struct sftk_parametersStr {
 
 
 /* path stuff (was machine dependent) used by dbinit.c and pk11db.c */
-#define PATH_SEPARATOR "/"
-#define SECMOD_DB "secmod.db"
 #define CERT_DB_FMT "%scert%s.db"
 #define KEY_DB_FMT "%skey%s.db"
 
@@ -577,8 +574,7 @@ extern SFTKAttribute *sftk_FindAttribute(SFTKObject *object,
 					 CK_ATTRIBUTE_TYPE type);
 extern void sftk_FreeAttribute(SFTKAttribute *attribute);
 extern CK_RV sftk_AddAttributeType(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
-				   void *valPtr,
-				  CK_ULONG length);
+				   const void *valPtr, CK_ULONG length);
 extern CK_RV sftk_Attribute2SecItem(PLArenaPool *arena, SECItem *item,
 				    SFTKObject *object, CK_ATTRIBUTE_TYPE type);
 extern CK_RV sftk_MultipleAttribute2SecItem(PLArenaPool *arena, 
@@ -604,9 +600,9 @@ extern void sftk_nullAttribute(SFTKObject *object,CK_ATTRIBUTE_TYPE type);
 extern CK_RV sftk_GetULongAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
                                                          CK_ULONG *longData);
 extern CK_RV sftk_forceAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
-				 void *value, unsigned int len);
+				 const void *value, unsigned int len);
 extern CK_RV sftk_defaultAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
-				   void *value, unsigned int len);
+				   const void *value, unsigned int len);
 extern unsigned int sftk_MapTrust(CK_TRUST trust, PRBool clientAuth);
 
 extern SFTKObject *sftk_NewObject(SFTKSlot *slot);
@@ -658,6 +654,13 @@ extern CK_RV sftk_MechAllowsOperation(CK_MECHANISM_TYPE type, CK_ATTRIBUTE_TYPE 
 /* helper function which calls nsslowkey_FindKeyByPublicKey after safely
  * acquiring a reference to the keydb from the slot */
 NSSLOWKEYPrivateKey *sftk_FindKeyByPublicKey(SFTKSlot *slot, SECItem *dbKey);
+
+/*
+ * parameter parsing functions
+ */
+CK_RV sftk_parseParameters(char *param, sftk_parameters *parsed, PRBool isFIPS);
+void sftk_freeParams(sftk_parameters *params);
+
 
 /*
  * narrow objects

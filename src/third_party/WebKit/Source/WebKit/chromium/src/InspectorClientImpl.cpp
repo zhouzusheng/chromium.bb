@@ -39,7 +39,6 @@
 #include "WebDevToolsAgentImpl.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
-#include <public/Platform.h>
 #include <public/WebRect.h>
 #include <public/WebURL.h>
 #include <public/WebURLRequest.h>
@@ -136,16 +135,6 @@ bool InspectorClientImpl::canMonitorMainThread()
     return true;
 }
 
-void InspectorClientImpl::startMainThreadMonitoring()
-{
-    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
-}
-
-void InspectorClientImpl::stopMainThreadMonitoring()
-{
-    WebKit::Platform::current()->currentThread()->removeTaskObserver(this);
-}
-
 bool InspectorClientImpl::canOverrideDeviceMetrics()
 {
     return true;
@@ -163,6 +152,26 @@ void InspectorClientImpl::autoZoomPageToFitWidth()
         agent->autoZoomPageToFitWidth();
 }
 
+bool InspectorClientImpl::overridesShowPaintRects()
+{
+    return m_inspectedWebView->isAcceleratedCompositingActive();
+}
+
+void InspectorClientImpl::setShowPaintRects(bool show)
+{
+    m_inspectedWebView->setShowPaintRects(show);
+}
+
+bool InspectorClientImpl::canShowFPSCounter()
+{
+    return true;
+}
+
+void InspectorClientImpl::setShowFPSCounter(bool show)
+{
+    m_inspectedWebView->setShowFPSCounter(show);
+}
+
 bool InspectorClientImpl::supportsFrameInstrumentation()
 {
     return true;
@@ -178,16 +187,6 @@ void InspectorClientImpl::dumpUncountedAllocatedObjects(const HashMap<const void
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
         agent->dumpUncountedAllocatedObjects(map);
-}
-
-void InspectorClientImpl::willProcessTask()
-{
-    InspectorInstrumentation::willProcessTask(m_inspectedWebView->page());
-}
-
-void InspectorClientImpl::didProcessTask()
-{
-    InspectorInstrumentation::didProcessTask(m_inspectedWebView->page());
 }
 
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()

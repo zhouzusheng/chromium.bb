@@ -382,6 +382,8 @@ void SkSweepGradient::shadeSpan16(int x, int y, uint16_t* SK_RESTRICT dstC,
 
 #if SK_SUPPORT_GPU
 
+#include "GrTBackendEffectFactory.h"
+
 class GrGLSweepGradient : public GrGLGradientEffect {
 public:
 
@@ -389,14 +391,17 @@ public:
                       const GrEffect&) : INHERITED (factory) { }
     virtual ~GrGLSweepGradient() { }
 
-    virtual void emitVS(GrGLShaderBuilder* builder,
-                        const char* vertexCoords) SK_OVERRIDE { }
-    virtual void emitFS(GrGLShaderBuilder* builder,
-                        const char* outputColor,
-                        const char* inputColor,
-                        const TextureSamplerArray&) SK_OVERRIDE;
+    virtual void emitCode(GrGLShaderBuilder*,
+                          const GrEffectStage&,
+                          EffectKey,
+                          const char* vertexCoords,
+                          const char* outputColor,
+                          const char* inputColor,
+                          const TextureSamplerArray&) SK_OVERRIDE;
 
-    static EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps) { return 0; }
+    static EffectKey GenKey(const GrEffectStage& stage, const GrGLCaps&) {
+        return GenMatrixKey(stage);
+    }
 
 private:
 
@@ -410,8 +415,9 @@ class GrSweepGradient : public GrGradientEffect {
 public:
 
     GrSweepGradient(GrContext* ctx,
-                    const SkSweepGradient& shader)
-    : INHERITED(ctx, shader, SkShader::kClamp_TileMode) { }
+                    const SkSweepGradient& shader,
+                    const SkMatrix& matrix)
+    : INHERITED(ctx, shader, matrix, SkShader::kClamp_TileMode) { }
     virtual ~GrSweepGradient() { }
 
     static const char* Name() { return "Sweep Gradient"; }
@@ -453,32 +459,30 @@ GrEffect* GrSweepGradient::TestCreate(SkRandom* random,
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLSweepGradient::emitFS(GrGLShaderBuilder* builder,
-                              const char* outputColor,
-                              const char* inputColor,
-                              const TextureSamplerArray& samplers) {
+void GrGLSweepGradient::emitCode(GrGLShaderBuilder* builder,
+                                 const GrEffectStage& stage,
+                                 EffectKey key,
+                                 const char* vertexCoords,
+                                 const char* outputColor,
+                                 const char* inputColor,
+                                 const TextureSamplerArray& samplers) {
+    this->emitYCoordUniform(builder);
+    const char* coords;
+    this->setupMatrix(builder, key, vertexCoords, &coords);
     SkString t;
-    t.printf("atan(- %s.y, - %s.x) * 0.1591549430918 + 0.5",
-        builder->defaultTexCoordsName(), builder->defaultTexCoordsName());
+    t.printf("atan(- %s.y, - %s.x) * 0.1591549430918 + 0.5", coords, coords);
     this->emitColorLookup(builder, t.c_str(), outputColor, inputColor, samplers[0]);
 }
 
 /////////////////////////////////////////////////////////////////////
 
 bool SkSweepGradient::asNewEffect(GrContext* context, GrEffectStage* stage) const {
-    SkAutoTUnref<GrEffect> effect(SkNEW_ARGS(GrSweepGradient, (context, *this)));
-
     SkMatrix matrix;
-    if (this->getLocalMatrix(&matrix)) {
-        if (!matrix.invert(&matrix)) {
-            return false;
-        }
-        matrix.postConcat(fPtsToUnit);
-        stage->setEffect(effect, matrix);
-    } else {
-        stage->setEffect(effect, fPtsToUnit);
+    if (!this->getLocalMatrix().invert(&matrix)) {
+        return false;
     }
-
+    matrix.postConcat(fPtsToUnit);
+    stage->setEffect(SkNEW_ARGS(GrSweepGradient, (context, *this, matrix)))->unref();
     return true;
 }
 

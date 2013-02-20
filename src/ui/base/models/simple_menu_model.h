@@ -80,6 +80,9 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   void AddRadioItem(int command_id, const string16& label, int group_id);
   void AddRadioItemWithStringId(int command_id, int string_id, int group_id);
 
+  // Adds a separator if the menu is empty, or the last item is not a separator.
+  void AddSeparatorIfNecessary(MenuSeparatorType separator_type);
+
   // These three methods take pointers to various sub-models. These models
   // should be owned by the same owner of this SimpleMenuModel.
   void AddButtonItem(int command_id, ButtonMenuItemModel* model);
@@ -136,6 +139,7 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
   virtual void MenuClosed() OVERRIDE;
   virtual void SetMenuModelDelegate(
       ui::MenuModelDelegate* menu_model_delegate) OVERRIDE;
+  virtual MenuModelDelegate* GetMenuModelDelegate() const OVERRIDE;
 
  protected:
   // Some variants of this model (SystemMenuModel) relies on items to be
@@ -147,8 +151,6 @@ class UI_EXPORT SimpleMenuModel : public MenuModel {
 
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
   Delegate* delegate() { return delegate_; }
-
-  MenuModelDelegate* menu_model_delegate() { return menu_model_delegate_; }
 
  private:
   struct Item;

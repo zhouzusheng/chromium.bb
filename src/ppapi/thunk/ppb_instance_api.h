@@ -7,7 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ppapi/c/dev/ppb_console_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_bool.h"
@@ -15,12 +14,15 @@
 #include "ppapi/c/pp_size.h"
 #include "ppapi/c/pp_time.h"
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/resource.h"
+#include "ppapi/shared_impl/singleton_resource_id.h"
 
 // Windows headers interfere with this file.
 #ifdef PostMessage
@@ -32,14 +34,13 @@ struct PP_DecryptedFrameInfo;
 
 namespace ppapi {
 
+class Resource;
 class TrackedCallback;
 struct ViewData;
 
 namespace thunk {
 
 class PPB_Flash_API;
-class PPB_Flash_Functions_API;
-class PPB_Gamepad_API;
 
 class PPB_Instance_API {
  public:
@@ -48,8 +49,11 @@ class PPB_Instance_API {
   virtual PP_Bool BindGraphics(PP_Instance instance, PP_Resource device) = 0;
   virtual PP_Bool IsFullFrame(PP_Instance instance) = 0;
 
-  // Not an exposed PPAPI function, this returns the internal view data struct.
+  // Unexposed PPAPI functions for proxying.
+  // Returns the internal view data struct.
   virtual const ViewData* GetViewData(PP_Instance instance) = 0;
+  // Returns the flash fullscreen status.
+  virtual PP_Bool FlashIsFullscreen(PP_Instance instance) = 0;
 
   // InstancePrivate.
   virtual PP_Var GetWindowObject(PP_Instance instance) = 0;
@@ -67,10 +71,10 @@ class PPB_Instance_API {
 
   // Console.
   virtual void Log(PP_Instance instance,
-                   PP_LogLevel_Dev log_level,
+                   PP_LogLevel log_level,
                    PP_Var value) = 0;
   virtual void LogWithSource(PP_Instance instance,
-                             PP_LogLevel_Dev log_level,
+                             PP_LogLevel log_level,
                              PP_Var source,
                              PP_Var value) = 0;
 
@@ -91,12 +95,13 @@ class PPB_Instance_API {
 
   // Flash (Deprecated for Flash_Functions).
   virtual PPB_Flash_API* GetFlashAPI() = 0;
-  // Flash_Functions
-  virtual PPB_Flash_Functions_API* GetFlashFunctionsAPI(
-      PP_Instance instance) = 0;
 
-  // Gamepad.
-  virtual PPB_Gamepad_API* GetGamepadAPI(PP_Instance instance) = 0;
+  // This is an implementation-only function which grabs an instance of a
+  // "singleton resource". These are used to implement instance interfaces
+  // (functions which are associated with the instance itself as opposed to a
+  // resource).
+  virtual Resource* GetSingletonResource(
+      PP_Instance instance, SingletonResourceID id) = 0;
 
   // InputEvent.
   virtual int32_t RequestInputEvents(PP_Instance instance,
@@ -155,7 +160,7 @@ class PPB_Instance_API {
   virtual void KeyMessage(PP_Instance instance,
                           PP_Var key_system,
                           PP_Var session_id,
-                          PP_Resource message,
+                          PP_Var message,
                           PP_Var default_url) = 0;
   virtual void KeyError(PP_Instance instance,
                         PP_Var key_system,

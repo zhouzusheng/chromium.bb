@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/io_surface_layer.h"
 
 #include "cc/io_surface_layer_impl.h"
@@ -25,16 +23,16 @@ IOSurfaceLayer::~IOSurfaceLayer()
 {
 }
 
-void IOSurfaceLayer::setIOSurfaceProperties(uint32_t ioSurfaceId, const IntSize& size)
+void IOSurfaceLayer::setIOSurfaceProperties(uint32_t ioSurfaceId, const gfx::Size& size)
 {
     m_ioSurfaceId = ioSurfaceId;
     m_ioSurfaceSize = size;
     setNeedsCommit();
 }
 
-scoped_ptr<LayerImpl> IOSurfaceLayer::createLayerImpl()
+scoped_ptr<LayerImpl> IOSurfaceLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return IOSurfaceLayerImpl::create(m_layerId).PassAs<LayerImpl>();
+    return IOSurfaceLayerImpl::create(treeImpl, m_layerId).PassAs<LayerImpl>();
 }
 
 bool IOSurfaceLayer::drawsContent() const
@@ -46,8 +44,8 @@ void IOSurfaceLayer::pushPropertiesTo(LayerImpl* layer)
 {
     Layer::pushPropertiesTo(layer);
 
-    IOSurfaceLayerImpl* textureLayer = static_cast<IOSurfaceLayerImpl*>(layer);
-    textureLayer->setIOSurfaceProperties(m_ioSurfaceId, m_ioSurfaceSize);
+    IOSurfaceLayerImpl* ioSurfaceLayer = static_cast<IOSurfaceLayerImpl*>(layer);
+    ioSurfaceLayer->setIOSurfaceProperties(m_ioSurfaceId, m_ioSurfaceSize);
 }
 
-}
+}  // namespace cc

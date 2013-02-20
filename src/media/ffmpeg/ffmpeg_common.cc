@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -17,18 +18,31 @@ namespace media {
 COMPILE_ASSERT(DecoderBuffer::kPaddingSize >= FF_INPUT_BUFFER_PADDING_SIZE,
                decoder_buffer_padding_size_does_not_fit_ffmpeg_requirement);
 
-// Alignment requirement by FFmpeg for input buffers. This need to be updated
-// to match FFmpeg when it changes.
+// Alignment requirement by FFmpeg for input and output buffers. This need to
+// be updated to match FFmpeg when it changes.
 #if defined(ARCH_CPU_ARM_FAMILY)
-static const int kFFmpegInputBufferAlignmentSize = 16;
+static const int kFFmpegBufferAddressAlignment = 16;
 #else
-static const int kFFmpegInputBufferAlignmentSize = 32;
+static const int kFFmpegBufferAddressAlignment = 32;
 #endif
+
 // Check here to ensure FFmpeg only receives data aligned to its specifications.
 COMPILE_ASSERT(
-    DecoderBuffer::kAlignmentSize >= kFFmpegInputBufferAlignmentSize &&
-    DecoderBuffer::kAlignmentSize % kFFmpegInputBufferAlignmentSize == 0,
+    DecoderBuffer::kAlignmentSize >= kFFmpegBufferAddressAlignment &&
+    DecoderBuffer::kAlignmentSize % kFFmpegBufferAddressAlignment == 0,
     decoder_buffer_alignment_size_does_not_fit_ffmpeg_requirement);
+
+// Allows faster SIMD YUV convert. Also, FFmpeg overreads/-writes occasionally.
+// See video_get_buffer() in libavcodec/utils.c.
+static const int kFFmpegOutputBufferPaddingSize = 16;
+
+COMPILE_ASSERT(VideoFrame::kFrameSizePadding >= kFFmpegOutputBufferPaddingSize,
+               video_frame_padding_size_does_not_fit_ffmpeg_requirement);
+
+COMPILE_ASSERT(
+    VideoFrame::kFrameAddressAlignment >= kFFmpegBufferAddressAlignment &&
+    VideoFrame::kFrameAddressAlignment % kFFmpegBufferAddressAlignment == 0,
+    video_frame_address_alignment_does_not_fit_ffmpeg_requirement);
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
@@ -69,6 +83,8 @@ AudioCodec CodecIDToAudioCodec(CodecID codec_id) {
       return kCodecGSM_MS;
     case CODEC_ID_PCM_MULAW:
       return kCodecPCM_MULAW;
+    case CODEC_ID_OPUS:
+      return kCodecOpus;
     default:
       DVLOG(1) << "Unknown audio CodecID: " << codec_id;
   }
@@ -110,6 +126,8 @@ static CodecID AudioCodecToCodecID(AudioCodec audio_codec,
       return CODEC_ID_GSM_MS;
     case kCodecPCM_MULAW:
       return CODEC_ID_PCM_MULAW;
+    case kCodecOpus:
+      return CODEC_ID_OPUS;
     default:
       DVLOG(1) << "Unknown AudioCodec: " << audio_codec;
   }
@@ -210,7 +228,17 @@ void AVCodecContextToAudioDecoderConfig(
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
 
   AudioCodec codec = CodecIDToAudioCodec(codec_context->codec_id);
-  int bytes_per_channel = av_get_bytes_per_sample(codec_context->sample_fmt);
+
+  AVSampleFormat sample_format = codec_context->sample_fmt;
+  if (codec == kCodecOpus) {
+    // TODO(tomfinegan): |sample_fmt| in |codec_context| is -1... because
+    // libopusdec.c isn't built into ffmpegsumo...? Maybe it's not *that* big
+    // a deal since libopus will produce either float or S16 samples, and
+    // OpusAudioDecoder is the only provider of Opus support.
+    sample_format = AV_SAMPLE_FMT_S16;
+  }
+
+  int bytes_per_channel = av_get_bytes_per_sample(sample_format);
   ChannelLayout channel_layout =
       ChannelLayoutToChromeChannelLayout(codec_context->channel_layout,
                                          codec_context->channels);
@@ -411,32 +439,6 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
       DVLOG(1) << "Unsupported VideoFrame::Format: " << video_format;
   }
   return PIX_FMT_NONE;
-}
-
-void DestroyAVFormatContext(AVFormatContext* format_context) {
-  DCHECK(format_context);
-
-  // Iterate each stream and destroy each one of them.
-  if (format_context->streams) {
-    int streams = format_context->nb_streams;
-    for (int i = 0; i < streams; ++i) {
-      AVStream* stream = format_context->streams[i];
-
-      // The conditions for calling avcodec_close():
-      // 1. AVStream is alive.
-      // 2. AVCodecContext in AVStream is alive.
-      // 3. AVCodec in AVCodecContext is alive.
-      // Notice that closing a codec context without prior avcodec_open2() will
-      // result in a crash in FFmpeg.
-      if (stream && stream->codec && stream->codec->codec) {
-        stream->discard = AVDISCARD_ALL;
-        avcodec_close(stream->codec);
-      }
-    }
-  }
-
-  // Then finally cleanup the format context.
-  avformat_close_input(&format_context);
 }
 
 }  // namespace media

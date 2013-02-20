@@ -10,7 +10,6 @@
 #include "GrAllocator.h"
 #include "GrEffect.h"
 #include "GrGLEffect.h"
-#include "gl/GrGLShaderBuilder.h"
 #include "GrGLShaderVar.h"
 #include "GrBackendEffectFactory.h"
 #include "SkTrace.h"
@@ -23,9 +22,6 @@ SK_DEFINE_INST_COUNT(GrGLProgram)
 
 #define PRINT_SHADERS 0
 
-typedef GrGLProgram::Desc::StageDesc StageDesc;
-
-#define POS_ATTR_NAME "aPosition"
 #define COL_ATTR_NAME "aColor"
 #define COV_ATTR_NAME "aCoverage"
 #define EDGE_ATTR_NAME "aEdge"
@@ -53,8 +49,8 @@ inline const char* dual_source_output_name() { return "dualSourceOut"; }
 
 GrGLProgram* GrGLProgram::Create(const GrGLContextInfo& gl,
                                  const Desc& desc,
-                                 const GrEffect** effects) {
-    GrGLProgram* program = SkNEW_ARGS(GrGLProgram, (gl, desc, effects));
+                                 const GrEffectStage* stages[]) {
+    GrGLProgram* program = SkNEW_ARGS(GrGLProgram, (gl, desc, stages));
     if (!program->succeeded()) {
         delete program;
         program = NULL;
@@ -64,7 +60,7 @@ GrGLProgram* GrGLProgram::Create(const GrGLContextInfo& gl,
 
 GrGLProgram::GrGLProgram(const GrGLContextInfo& gl,
                          const Desc& desc,
-                         const GrEffect** effects)
+                         const GrEffectStage* stages[])
 : fContextInfo(gl)
 , fUniformManager(gl) {
     fDesc = desc;
@@ -73,7 +69,7 @@ GrGLProgram::GrGLProgram(const GrGLContextInfo& gl,
     fFShaderID = 0;
     fProgramID = 0;
 
-    fViewMatrix = GrMatrix::InvalidMatrix();
+    fViewMatrix = SkMatrix::InvalidMatrix();
     fViewportSize.set(-1, -1);
     fColor = GrColor_ILLEGAL;
     fColorFilterColor = GrColor_ILLEGAL;
@@ -81,12 +77,9 @@ GrGLProgram::GrGLProgram(const GrGLContextInfo& gl,
 
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
         fEffects[s] = NULL;
-        fTextureMatrices[s] = GrMatrix::InvalidMatrix();
-        // this is arbitrary, just initialize to something
-        fTextureOrientation[s] = GrGLTexture::kBottomUp_Orientation;
     }
 
-    this->genProgram(effects);
+    this->genProgram(stages);
 }
 
 GrGLProgram::~GrGLProgram() {
@@ -290,6 +283,9 @@ bool GrGLProgram::genEdgeCoverage(SkString* coverageVar,
         default:
             GrCrash("Unknown Edge Type!");
             break;
+        }
+        if (fDesc.fDiscardIfOutsideEdge) {
+            builder->fFSCode.appendf("\tif (edgeAlpha <= 0.0) {\n\t\tdiscard;\n\t}\n");
         }
         *coverageVar = "edgeAlpha";
         return true;
@@ -500,7 +496,7 @@ bool GrGLProgram::compileShaders(const GrGLShaderBuilder& builder) {
     return true;
 }
 
-bool GrGLProgram::genProgram(const GrEffect** effects) {
+bool GrGLProgram::genProgram(const GrEffectStage* stages[]) {
     GrAssert(0 == fProgramID);
 
     GrGLShaderBuilder builder(fContextInfo, fUniformManager);
@@ -567,13 +563,10 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
     fUniforms.fViewMatrixUni = builder.addUniform(GrGLShaderBuilder::kVertex_ShaderType,
                                                   kMat33f_GrSLType, "ViewM", &viewMName);
 
-    builder.fVSAttrs.push_back().set(kVec2f_GrSLType,
-                                     GrGLShaderVar::kAttribute_TypeModifier,
-                                     POS_ATTR_NAME);
 
-    builder.fVSCode.appendf("\tvec3 pos3 = %s * vec3("POS_ATTR_NAME", 1);\n"
+    builder.fVSCode.appendf("\tvec3 pos3 = %s * vec3(%s, 1);\n"
                             "\tgl_Position = vec4(pos3.xy, 0, pos3.z);\n",
-                            viewMName);
+                            viewMName, builder.positionAttribute().getName().c_str());
 
     // incoming color to current stage being processed.
     SkString inColor;
@@ -606,7 +599,7 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
     if (needComputedColor) {
         SkString outColor;
         for (int s = 0; s < fDesc.fFirstCoverageStage; ++s) {
-            if (fDesc.fStages[s].isEnabled()) {
+            if (GrGLEffect::kNoEffectKey != fDesc.fEffectKeys[s]) {
                 // create var to hold stage result
                 outColor = "color";
                 outColor.appendS32(s);
@@ -616,7 +609,7 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
                 // figure out what our input coords are
                 int tcIdx = GrDrawTarget::VertexTexCoordsForStage(s, layout);
                 if (tcIdx < 0) {
-                    inCoords = POS_ATTR_NAME;
+                    inCoords = builder.positionAttribute().c_str();
                 } else {
                     // must have input tex coordinates if stage is enabled.
                     GrAssert(texCoordAttrs[tcIdx].size());
@@ -624,8 +617,8 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
                 }
 
                 builder.setCurrentStage(s);
-                fEffects[s] = GenStageCode(effects[s],
-                                           fDesc.fStages[s],
+                fEffects[s] = GenStageCode(*stages[s],
+                                           fDesc.fEffectKeys[s],
                                            &fUniforms.fStages[s],
                                            inColor.size() ? inColor.c_str() : NULL,
                                            outColor.c_str(),
@@ -702,7 +695,7 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
             SkString outCoverage;
             const int& startStage = fDesc.fFirstCoverageStage;
             for (int s = startStage; s < GrDrawState::kNumStages; ++s) {
-                if (fDesc.fStages[s].isEnabled()) {
+                if (fDesc.fEffectKeys[s]) {
                     // create var to hold stage output
                     outCoverage = "coverage";
                     outCoverage.appendS32(s);
@@ -713,7 +706,7 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
                     int tcIdx =
                         GrDrawTarget::VertexTexCoordsForStage(s, layout);
                     if (tcIdx < 0) {
-                        inCoords = POS_ATTR_NAME;
+                        inCoords = builder.positionAttribute().c_str();
                     } else {
                         // must have input tex coordinates if stage is
                         // enabled.
@@ -729,8 +722,8 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
                         inCoverage.append("4");
                     }
                     builder.setCurrentStage(s);
-                    fEffects[s] = GenStageCode(effects[s],
-                                               fDesc.fStages[s],
+                    fEffects[s] = GenStageCode(*stages[s],
+                                               fDesc.fEffectKeys[s],
                                                &fUniforms.fStages[s],
                                                inCoverage.size() ? inCoverage.c_str() : NULL,
                                                outCoverage.c_str(),
@@ -801,7 +794,8 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
         return false;
     }
 
-    if (!this->bindOutputsAttribsAndLinkProgram(texCoordAttrs,
+    if (!this->bindOutputsAttribsAndLinkProgram(builder,
+                                                texCoordAttrs,
                                                 isColorDeclared,
                                                 dualSourceOutputWritten)) {
         return false;
@@ -814,7 +808,8 @@ bool GrGLProgram::genProgram(const GrEffect** effects) {
     return true;
 }
 
-bool GrGLProgram::bindOutputsAttribsAndLinkProgram(SkString texCoordAttrNames[],
+bool GrGLProgram::bindOutputsAttribsAndLinkProgram(const GrGLShaderBuilder& builder,
+                                                   SkString texCoordAttrNames[],
                                                    bool bindColorOut,
                                                    bool bindDualSrcOut) {
     GL_CALL_RET(fProgramID, CreateProgram());
@@ -836,7 +831,9 @@ bool GrGLProgram::bindOutputsAttribsAndLinkProgram(SkString texCoordAttrNames[],
     }
 
     // Bind the attrib locations to same values for all shaders
-    GL_CALL(BindAttribLocation(fProgramID, PositionAttributeIdx(), POS_ATTR_NAME));
+    GL_CALL(BindAttribLocation(fProgramID,
+                               PositionAttributeIdx(),
+                               builder.positionAttribute().c_str()));
     for (int t = 0; t < GrDrawState::kMaxTexCoords; ++t) {
         if (texCoordAttrNames[t].size()) {
             GL_CALL(BindAttribLocation(fProgramID,
@@ -896,69 +893,33 @@ void GrGLProgram::initSamplerUniforms() {
 // Stage code generation
 
 // TODO: Move this function to GrGLShaderBuilder
-GrGLEffect* GrGLProgram::GenStageCode(const GrEffect* effect,
-                                            const StageDesc& desc,
-                                            StageUniforms* uniforms,
-                                            const char* fsInColor, // NULL means no incoming color
-                                            const char* fsOutColor,
-                                            const char* vsInCoord,
-                                            GrGLShaderBuilder* builder) {
+GrGLEffect* GrGLProgram::GenStageCode(const GrEffectStage& stage,
+                                      GrGLEffect::EffectKey key,
+                                      StageUniforms* uniforms,
+                                      const char* fsInColor, // NULL means no incoming color
+                                      const char* fsOutColor,
+                                      const char* vsInCoord,
+                                      GrGLShaderBuilder* builder) {
 
+    const GrEffect* effect = stage.getEffect();
     GrGLEffect* glEffect = effect->getFactory().createGLInstance(*effect);
 
-    /// Vertex Shader Stuff
-
-    // decide whether we need a matrix to transform texture coords and whether the varying needs a
-    // perspective coord.
-    const char* matName = NULL;
-    GrSLType texCoordVaryingType;
-    if (desc.fOptFlags & StageDesc::kIdentityMatrix_OptFlagBit) {
-        texCoordVaryingType = kVec2f_GrSLType;
-    } else {
-        uniforms->fTextureMatrixUni = builder->addUniform(GrGLShaderBuilder::kVertex_ShaderType,
-                                                         kMat33f_GrSLType, "TexM", &matName);
-        builder->getUniformVariable(uniforms->fTextureMatrixUni);
-
-        if (desc.fOptFlags & StageDesc::kNoPerspective_OptFlagBit) {
-            texCoordVaryingType = kVec2f_GrSLType;
-        } else {
-            texCoordVaryingType = kVec3f_GrSLType;
-        }
-    }
-    const char *varyingVSName, *varyingFSName;
-    builder->addVarying(texCoordVaryingType,
-                        "Stage",
-                        &varyingVSName,
-                        &varyingFSName);
-    builder->setupTextureAccess(varyingFSName, texCoordVaryingType);
-
+    // setup texture samplers for GL effect
     int numTextures = effect->numTextures();
     SkSTArray<8, GrGLShaderBuilder::TextureSampler> textureSamplers;
-
     textureSamplers.push_back_n(numTextures);
-
     for (int i = 0; i < numTextures; ++i) {
         textureSamplers[i].init(builder, &effect->textureAccess(i));
         uniforms->fSamplerUniforms.push_back(textureSamplers[i].fSamplerUniform);
-    }
-
-    if (!matName) {
-        GrAssert(kVec2f_GrSLType == texCoordVaryingType);
-        builder->fVSCode.appendf("\t%s = %s;\n", varyingVSName, vsInCoord);
-    } else {
-        // varying = texMatrix * texCoord
-        builder->fVSCode.appendf("\t%s = (%s * vec3(%s, 1))%s;\n",
-                                  varyingVSName, matName, vsInCoord,
-                                  vector_all_coords(GrSLTypeToVecLength(texCoordVaryingType)));
     }
 
     // Enclose custom code in a block to avoid namespace conflicts
     builder->fVSCode.appendf("\t{ // %s\n", glEffect->name());
     builder->fFSCode.appendf("\t{ // %s \n", glEffect->name());
     glEffect->emitCode(builder,
-                       *effect,
-                       desc.fEffectKey,
-                       varyingVSName,
+                       stage,
+                       key,
+                       vsInCoord,
                        fsOutColor,
                        fsInColor,
                        textureSamplers);
@@ -971,14 +932,14 @@ GrGLEffect* GrGLProgram::GenStageCode(const GrEffect* effect,
 void GrGLProgram::setData(const GrDrawState& drawState) {
     int rtHeight = drawState.getRenderTarget()->height();
     if (GrGLUniformManager::kInvalidUniformHandle != fUniforms.fRTHeight && fRTHeight != rtHeight) {
-        fUniformManager.set1f(fUniforms.fRTHeight, GrIntToScalar(rtHeight));
+        fUniformManager.set1f(fUniforms.fRTHeight, SkIntToScalar(rtHeight));
         fRTHeight = rtHeight;
     }
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
         if (NULL != fEffects[s]) {
             const GrEffectStage& stage = drawState.getStage(s);
             GrAssert(NULL != stage.getEffect());
-            fEffects[s]->setData(fUniformManager, *stage.getEffect());
+            fEffects[s]->setData(fUniformManager, stage);
         }
     }
 }

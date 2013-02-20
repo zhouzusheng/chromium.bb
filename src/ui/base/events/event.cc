@@ -11,10 +11,12 @@
 #include <cmath>
 #include <cstring>
 
+#include "ui/base/events/event_utils.h"
 #include "ui/base/keycodes/keyboard_code_conversion.h"
-#include "ui/gfx/interpolated_transform.h"
-#include "ui/gfx/point3.h"
+#include "ui/gfx/point3_f.h"
+#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/transform.h"
+#include "ui/gfx/transform_util.h"
 
 #if defined(USE_X11)
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
@@ -49,6 +51,54 @@ gfx::Point CalibratePoint(const gfx::Point& point,
                     static_cast<int>(floorf(calibrated_y + 0.5f)));
 }
 
+std::string EventTypeName(ui::EventType type) {
+#define RETURN_IF_TYPE(t) if (type == ui::t)  return #t
+  RETURN_IF_TYPE(ET_UNKNOWN);
+  RETURN_IF_TYPE(ET_MOUSE_PRESSED);
+  RETURN_IF_TYPE(ET_MOUSE_DRAGGED);
+  RETURN_IF_TYPE(ET_MOUSE_RELEASED);
+  RETURN_IF_TYPE(ET_MOUSE_MOVED);
+  RETURN_IF_TYPE(ET_MOUSE_ENTERED);
+  RETURN_IF_TYPE(ET_MOUSE_EXITED);
+  RETURN_IF_TYPE(ET_KEY_PRESSED);
+  RETURN_IF_TYPE(ET_KEY_RELEASED);
+  RETURN_IF_TYPE(ET_MOUSEWHEEL);
+  RETURN_IF_TYPE(ET_MOUSE_CAPTURE_CHANGED);
+  RETURN_IF_TYPE(ET_TOUCH_RELEASED);
+  RETURN_IF_TYPE(ET_TOUCH_PRESSED);
+  RETURN_IF_TYPE(ET_TOUCH_MOVED);
+  RETURN_IF_TYPE(ET_TOUCH_STATIONARY);
+  RETURN_IF_TYPE(ET_TOUCH_CANCELLED);
+  RETURN_IF_TYPE(ET_DROP_TARGET_EVENT);
+  RETURN_IF_TYPE(ET_TRANSLATED_KEY_PRESS);
+  RETURN_IF_TYPE(ET_TRANSLATED_KEY_RELEASE);
+
+  RETURN_IF_TYPE(ET_GESTURE_SCROLL_BEGIN);
+  RETURN_IF_TYPE(ET_GESTURE_SCROLL_END);
+  RETURN_IF_TYPE(ET_GESTURE_SCROLL_UPDATE);
+  RETURN_IF_TYPE(ET_GESTURE_TAP);
+  RETURN_IF_TYPE(ET_GESTURE_TAP_DOWN);
+  RETURN_IF_TYPE(ET_GESTURE_TAP_CANCEL);
+  RETURN_IF_TYPE(ET_GESTURE_BEGIN);
+  RETURN_IF_TYPE(ET_GESTURE_END);
+  RETURN_IF_TYPE(ET_GESTURE_DOUBLE_TAP);
+  RETURN_IF_TYPE(ET_GESTURE_TWO_FINGER_TAP);
+  RETURN_IF_TYPE(ET_GESTURE_PINCH_BEGIN);
+  RETURN_IF_TYPE(ET_GESTURE_PINCH_END);
+  RETURN_IF_TYPE(ET_GESTURE_PINCH_UPDATE);
+  RETURN_IF_TYPE(ET_GESTURE_LONG_PRESS);
+  RETURN_IF_TYPE(ET_GESTURE_LONG_TAP);
+  RETURN_IF_TYPE(ET_GESTURE_MULTIFINGER_SWIPE);
+
+  RETURN_IF_TYPE(ET_SCROLL);
+  RETURN_IF_TYPE(ET_SCROLL_FLING_START);
+  RETURN_IF_TYPE(ET_SCROLL_FLING_CANCEL);
+#undef RETURN_IF_TYPE
+
+  NOTREACHED();
+  return std::string();
+}
+
 }  // namespace
 
 namespace ui {
@@ -69,14 +119,34 @@ bool Event::HasNativeEvent() const {
   return !!std::memcmp(&native_event_, &null_event, sizeof(null_event));
 }
 
+void Event::StopPropagation() {
+  // TODO(sad): Re-enable these checks once View uses dispatcher to dispatch
+  // events.
+  // CHECK(phase_ != EP_PREDISPATCH && phase_ != EP_POSTDISPATCH);
+  CHECK(cancelable_);
+  result_ = static_cast<ui::EventResult>(result_ | ER_CONSUMED);
+}
+
+void Event::SetHandled() {
+  // TODO(sad): Re-enable these checks once View uses dispatcher to dispatch
+  // events.
+  // CHECK(phase_ != EP_PREDISPATCH && phase_ != EP_POSTDISPATCH);
+  CHECK(cancelable_);
+  result_ = static_cast<ui::EventResult>(result_ | ER_HANDLED);
+}
+
 Event::Event(EventType type, base::TimeDelta time_stamp, int flags)
     : type_(type),
       time_stamp_(time_stamp),
       flags_(flags),
+      dispatch_to_hidden_targets_(false),
       delete_native_event_(false),
+      cancelable_(true),
       target_(NULL),
       phase_(EP_PREDISPATCH),
       result_(ER_UNHANDLED) {
+  if (type_ < ET_LAST)
+    name_ = EventTypeName(type_);
   Init();
 }
 
@@ -86,10 +156,14 @@ Event::Event(const base::NativeEvent& native_event,
     : type_(type),
       time_stamp_(EventTimeFromNative(native_event)),
       flags_(flags),
+      dispatch_to_hidden_targets_(false),
       delete_native_event_(false),
+      cancelable_(true),
       target_(NULL),
       phase_(EP_PREDISPATCH),
       result_(ER_UNHANDLED) {
+  if (type_ < ET_LAST)
+    name_ = EventTypeName(type_);
   InitWithNativeEvent(native_event);
 }
 
@@ -98,14 +172,26 @@ Event::Event(const Event& copy)
       type_(copy.type_),
       time_stamp_(copy.time_stamp_),
       flags_(copy.flags_),
+      dispatch_to_hidden_targets_(false),
       delete_native_event_(false),
+      cancelable_(true),
       target_(NULL),
       phase_(EP_PREDISPATCH),
       result_(ER_UNHANDLED) {
+  if (type_ < ET_LAST)
+    name_ = EventTypeName(type_);
 #if defined(USE_X11)
   if (native_event_)
     delete_native_event_ = true;
 #endif
+}
+
+void Event::SetType(EventType type) {
+  if (type_ < ET_LAST)
+    name_ = std::string();
+  type_ = type;
+  if (type_ < ET_LAST)
+    name_ = EventTypeName(type_);
 }
 
 void Event::Init() {
@@ -147,9 +233,9 @@ LocatedEvent::LocatedEvent(EventType type,
 void LocatedEvent::UpdateForRootTransform(
     const gfx::Transform& root_transform) {
   // Transform has to be done at root level.
-  gfx::Point3f p(location_);
+  gfx::Point3F p(location_);
   root_transform.TransformPointReverse(p);
-  root_location_ = location_ = p.AsPoint();
+  root_location_ = location_ = gfx::ToFlooredPoint(p.AsPointF());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -170,6 +256,8 @@ MouseEvent::MouseEvent(EventType type,
     : LocatedEvent(type, location, root_location,
                    base::Time::NowFromSystemTime() - base::Time(), flags),
       changed_button_flags_(0) {
+  if (this->type() == ET_MOUSE_MOVED && IsAnyButton())
+    SetType(ET_MOUSE_DRAGGED);
 }
 
 // static
@@ -270,7 +358,12 @@ MouseWheelEvent::MouseWheelEvent(const base::NativeEvent& native_event)
 MouseWheelEvent::MouseWheelEvent(const ScrollEvent& scroll_event)
     : MouseEvent(scroll_event),
       offset_(scroll_event.y_offset()) {
-  set_type(ET_MOUSEWHEEL);
+  SetType(ET_MOUSEWHEEL);
+}
+
+MouseWheelEvent::MouseWheelEvent(const MouseEvent& mouse_event, int offset)
+    : MouseEvent(mouse_event), offset_(offset) {
+  DCHECK(type() == ET_MOUSEWHEEL);
 }
 
 #if defined(OS_WIN)
@@ -326,19 +419,20 @@ TouchEvent::TouchEvent(EventType type,
 TouchEvent::~TouchEvent() {
 }
 
-void TouchEvent::CalibrateLocation(const gfx::Size& from, const gfx::Size& to) {
-  location_ = CalibratePoint(location_, from, to);
-  root_location_ = CalibratePoint(root_location_, from, to);
+void TouchEvent::Relocate(const gfx::Point& origin) {
+  location_ -= origin.OffsetFromOrigin();
+  root_location_ -= origin.OffsetFromOrigin();
 }
 
 void TouchEvent::UpdateForRootTransform(const gfx::Transform& root_transform) {
   LocatedEvent::UpdateForRootTransform(root_transform);
-  gfx::Point3f scale;
-  InterpolatedTransform::FactorTRS(root_transform, NULL, NULL, &scale);
-  if (scale.x())
-    radius_x_ /= scale.x();
-  if (scale.y())
-    radius_y_ /= scale.y();
+  gfx::DecomposedTransform decomp;
+  bool success = gfx::DecomposeTransform(&decomp, root_transform);
+  DCHECK(success);
+  if (decomp.scale[0])
+    radius_x_ /= decomp.scale[0];
+  if (decomp.scale[1])
+    radius_y_ /= decomp.scale[1];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -359,10 +453,11 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
 
 KeyEvent::KeyEvent(EventType type,
                    KeyboardCode key_code,
-                   int flags)
+                   int flags,
+                   bool is_char)
     : Event(type, base::Time::NowFromSystemTime() - base::Time(), flags),
       key_code_(key_code),
-      is_char_(false),
+      is_char_(is_char),
       character_(GetCharacterFromKeyCode(key_code, flags)),
       unmodified_character_(0) {
 }
@@ -421,7 +516,7 @@ uint16 KeyEvent::GetUnmodifiedCharacter() const {
 #endif
 }
 
-KeyEvent* KeyEvent::Copy() {
+KeyEvent* KeyEvent::Copy() const {
   KeyEvent* copy = new KeyEvent(::CopyNativeEvent(native_event()), is_char());
 #if defined(USE_X11)
   copy->set_delete_native_event(true);
@@ -459,8 +554,8 @@ void KeyEvent::NormalizeFlags() {
 TranslatedKeyEvent::TranslatedKeyEvent(const base::NativeEvent& native_event,
                                        bool is_char)
     : KeyEvent(native_event, is_char) {
-  set_type(type() == ET_KEY_PRESSED ?
-           ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE);
+  SetType(type() == ET_KEY_PRESSED ?
+          ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE);
 }
 
 TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
@@ -468,12 +563,13 @@ TranslatedKeyEvent::TranslatedKeyEvent(bool is_press,
                                        int flags)
     : KeyEvent((is_press ? ET_TRANSLATED_KEY_PRESS : ET_TRANSLATED_KEY_RELEASE),
                key_code,
-               flags) {
+               flags,
+               false) {
 }
 
 void TranslatedKeyEvent::ConvertToKeyEvent() {
-  set_type(type() == ET_TRANSLATED_KEY_PRESS ?
-           ET_KEY_PRESSED : ET_KEY_RELEASED);
+  SetType(type() == ET_TRANSLATED_KEY_PRESS ?
+          ET_KEY_PRESSED : ET_KEY_RELEASED);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -495,13 +591,28 @@ DropTargetEvent::DropTargetEvent(const OSExchangeData& data,
 ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
     : MouseEvent(native_event) {
   if (type() == ET_SCROLL) {
-    GetScrollOffsets(native_event, &x_offset_, &y_offset_);
+    GetScrollOffsets(native_event, &x_offset_, &y_offset_, &finger_count_);
     double start, end;
     GetGestureTimes(native_event, &start, &end);
-  } else if (type() == ET_SCROLL_FLING_START) {
+  } else if (type() == ET_SCROLL_FLING_START ||
+             type() == ET_SCROLL_FLING_CANCEL) {
     bool is_cancel;
     GetFlingData(native_event, &x_offset_, &y_offset_, &is_cancel);
+  } else {
+    NOTREACHED() << "Unexpected event type " << type()
+        << " when constructing a ScrollEvent.";
   }
+}
+
+ScrollEvent::ScrollEvent(EventType type,
+                         const gfx::Point& location,
+                         int flags,
+                         float x_offset,
+                         float y_offset)
+    : MouseEvent(type, location, location, flags),
+      x_offset_(x_offset),
+      y_offset_(y_offset) {
+  CHECK(IsScrollEvent());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

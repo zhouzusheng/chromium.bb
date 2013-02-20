@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/single_thread_proxy.h"
 
 #include "base/debug/trace_event.h"
 #include "cc/draw_quad.h"
-#include "cc/graphics_context.h"
 #include "cc/layer_tree_host.h"
+#include "cc/output_surface.h"
 #include "cc/resource_update_controller.h"
-#include "cc/timer.h"
+#include "cc/thread.h"
 
 namespace cc {
 
@@ -21,8 +19,9 @@ scoped_ptr<Proxy> SingleThreadProxy::create(LayerTreeHost* layerTreeHost)
 }
 
 SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layerTreeHost)
-    : m_layerTreeHost(layerTreeHost)
-    , m_contextLost(false)
+    : Proxy(scoped_ptr<Thread>(NULL))
+    , m_layerTreeHost(layerTreeHost)
+    , m_outputSurfaceLost(false)
     , m_rendererInitialized(false)
     , m_nextFrameIsNewlyCommittedFrame(false)
     , m_totalCommitCount(0)
@@ -33,7 +32,7 @@ SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layerTreeHost)
 
 void SingleThreadProxy::start()
 {
-    DebugScopedSetImplThread impl;
+    DebugScopedSetImplThread impl(this);
     m_layerTreeHostImpl = m_layerTreeHost->createLayerTreeHostImpl(this);
 }
 
@@ -44,7 +43,7 @@ SingleThreadProxy::~SingleThreadProxy()
     DCHECK(!m_layerTreeHostImpl.get() && !m_layerTreeHost); // make sure stop() got called.
 }
 
-bool SingleThreadProxy::compositeAndReadback(void *pixels, const IntRect& rect)
+bool SingleThreadProxy::compositeAndReadback(void *pixels, const gfx::Rect& rect)
 {
     TRACE_EVENT0("cc", "SingleThreadProxy::compositeAndReadback");
     DCHECK(Proxy::isMainThread());
@@ -63,16 +62,16 @@ bool SingleThreadProxy::compositeAndReadback(void *pixels, const IntRect& rect)
     return true;
 }
 
-void SingleThreadProxy::startPageScaleAnimation(const IntSize& targetPosition, bool useAnchor, float scale, base::TimeDelta duration)
+void SingleThreadProxy::startPageScaleAnimation(gfx::Vector2d targetOffset, bool useAnchor, float scale, base::TimeDelta duration)
 {
-    m_layerTreeHostImpl->startPageScaleAnimation(targetPosition, useAnchor, scale, base::TimeTicks::Now(), duration);
+    m_layerTreeHostImpl->startPageScaleAnimation(targetOffset, useAnchor, scale, base::TimeTicks::Now(), duration);
 }
 
 void SingleThreadProxy::finishAllRendering()
 {
     DCHECK(Proxy::isMainThread());
     {
-        DebugScopedSetImplThread impl;
+        DebugScopedSetImplThread impl(this);
         m_layerTreeHostImpl->finishAllRendering();
     }
 }
@@ -83,13 +82,13 @@ bool SingleThreadProxy::isStarted() const
     return m_layerTreeHostImpl.get();
 }
 
-bool SingleThreadProxy::initializeContext()
+bool SingleThreadProxy::initializeOutputSurface()
 {
     DCHECK(Proxy::isMainThread());
-    scoped_ptr<GraphicsContext> context = m_layerTreeHost->createContext();
-    if (!context.get())
+    scoped_ptr<OutputSurface> outputSurface = m_layerTreeHost->createOutputSurface();
+    if (!outputSurface.get())
         return false;
-    m_contextBeforeInitialization = context.Pass();
+    m_outputSurfaceBeforeInitialization = outputSurface.Pass();
     return true;
 }
 
@@ -100,17 +99,17 @@ void SingleThreadProxy::setSurfaceReady()
 
 void SingleThreadProxy::setVisible(bool visible)
 {
-    DebugScopedSetImplThread impl;
+    DebugScopedSetImplThread impl(this);
     m_layerTreeHostImpl->setVisible(visible);
 }
 
 bool SingleThreadProxy::initializeRenderer()
 {
     DCHECK(Proxy::isMainThread());
-    DCHECK(m_contextBeforeInitialization.get());
+    DCHECK(m_outputSurfaceBeforeInitialization.get());
     {
-        DebugScopedSetImplThread impl;
-        bool ok = m_layerTreeHostImpl->initializeRenderer(m_contextBeforeInitialization.Pass());
+        DebugScopedSetImplThread impl(this);
+        bool ok = m_layerTreeHostImpl->initializeRenderer(m_outputSurfaceBeforeInitialization.Pass());
         if (ok) {
             m_rendererInitialized = true;
             m_RendererCapabilitiesForMainThread = m_layerTreeHostImpl->rendererCapabilities();
@@ -120,30 +119,30 @@ bool SingleThreadProxy::initializeRenderer()
     }
 }
 
-bool SingleThreadProxy::recreateContext()
+bool SingleThreadProxy::recreateOutputSurface()
 {
     TRACE_EVENT0("cc", "SingleThreadProxy::recreateContext");
     DCHECK(Proxy::isMainThread());
-    DCHECK(m_contextLost);
+    DCHECK(m_outputSurfaceLost);
 
-    scoped_ptr<GraphicsContext> context = m_layerTreeHost->createContext();
-    if (!context.get())
+    scoped_ptr<OutputSurface> outputSurface = m_layerTreeHost->createOutputSurface();
+    if (!outputSurface.get())
         return false;
 
     bool initialized;
     {
-        DebugScopedSetMainThreadBlocked mainThreadBlocked;
-        DebugScopedSetImplThread impl;
+        DebugScopedSetMainThreadBlocked mainThreadBlocked(this);
+        DebugScopedSetImplThread impl(this);
         if (!m_layerTreeHostImpl->contentsTexturesPurged())
             m_layerTreeHost->deleteContentsTexturesOnImplThread(m_layerTreeHostImpl->resourceProvider());
-        initialized = m_layerTreeHostImpl->initializeRenderer(context.Pass());
+        initialized = m_layerTreeHostImpl->initializeRenderer(outputSurface.Pass());
         if (initialized) {
             m_RendererCapabilitiesForMainThread = m_layerTreeHostImpl->rendererCapabilities();
         }
     }
 
     if (initialized)
-        m_contextLost = false;
+        m_outputSurfaceLost = false;
 
     return initialized;
 }
@@ -162,11 +161,11 @@ const RendererCapabilities& SingleThreadProxy::rendererCapabilities() const
     return m_RendererCapabilitiesForMainThread;
 }
 
-void SingleThreadProxy::loseContext()
+void SingleThreadProxy::loseOutputSurface()
 {
     DCHECK(Proxy::isMainThread());
-    m_layerTreeHost->didLoseContext();
-    m_contextLost = true;
+    m_layerTreeHost->didLoseOutputSurface();
+    m_outputSurfaceLost = true;
 }
 
 void SingleThreadProxy::setNeedsAnimate()
@@ -180,8 +179,8 @@ void SingleThreadProxy::doCommit(scoped_ptr<ResourceUpdateQueue> queue)
     DCHECK(Proxy::isMainThread());
     // Commit immediately
     {
-        DebugScopedSetMainThreadBlocked mainThreadBlocked;
-        DebugScopedSetImplThread impl;
+        DebugScopedSetMainThreadBlocked mainThreadBlocked(this);
+        DebugScopedSetImplThread impl(this);
 
         base::TimeTicks startTime = base::TimeTicks::HighResNow();
         m_layerTreeHostImpl->beginCommit();
@@ -194,7 +193,8 @@ void SingleThreadProxy::doCommit(scoped_ptr<ResourceUpdateQueue> queue)
                 NULL,
                 Proxy::mainThread(),
                 queue.Pass(),
-                m_layerTreeHostImpl->resourceProvider());
+                m_layerTreeHostImpl->resourceProvider(),
+                hasImplThread());
         updateController->finalize();
 
         m_layerTreeHost->finishCommitOnImplThread(m_layerTreeHostImpl.get());
@@ -255,8 +255,8 @@ void SingleThreadProxy::stop()
     TRACE_EVENT0("cc", "SingleThreadProxy::stop");
     DCHECK(Proxy::isMainThread());
     {
-        DebugScopedSetMainThreadBlocked mainThreadBlocked;
-        DebugScopedSetImplThread impl;
+        DebugScopedSetMainThreadBlocked mainThreadBlocked(this);
+        DebugScopedSetImplThread impl(this);
 
         if (!m_layerTreeHostImpl->contentsTexturesPurged())
             m_layerTreeHost->deleteContentsTexturesOnImplThread(m_layerTreeHostImpl->resourceProvider());
@@ -275,10 +275,15 @@ void SingleThreadProxy::setNeedsCommitOnImplThread()
     m_layerTreeHost->scheduleComposite();
 }
 
+void SingleThreadProxy::setNeedsManageTilesOnImplThread()
+{
+    m_layerTreeHost->scheduleComposite();
+}
+
 void SingleThreadProxy::postAnimationEventsToMainThreadOnImplThread(scoped_ptr<AnimationEventsVector> events, base::Time wallClockTime)
 {
     DCHECK(Proxy::isImplThread());
-    DebugScopedSetMainThread main;
+    DebugScopedSetMainThread main(this);
     m_layerTreeHost->setAnimationEvents(events.Pass(), wallClockTime);
 }
 
@@ -296,12 +301,10 @@ void SingleThreadProxy::sendManagedMemoryStats()
     DCHECK(Proxy::isImplThread());
     if (!m_layerTreeHostImpl.get())
         return;
-    if (!m_layerTreeHostImpl->renderer())
-        return;
     if (!m_layerTreeHost->contentsTextureManager())
         return;
 
-    m_layerTreeHostImpl->renderer()->sendManagedMemoryStats(
+    m_layerTreeHostImpl->sendManagedMemoryStats(
         m_layerTreeHost->contentsTextureManager()->memoryVisibleBytes(),
         m_layerTreeHost->contentsTextureManager()->memoryVisibleAndNearbyBytes(),
         m_layerTreeHost->contentsTextureManager()->memoryUseBytes());
@@ -319,7 +322,7 @@ void SingleThreadProxy::compositeImmediately()
 void SingleThreadProxy::forceSerializeOnSwapBuffers()
 {
     {
-        DebugScopedSetImplThread impl;
+        DebugScopedSetImplThread impl(this);
         if (m_rendererInitialized)
             m_layerTreeHostImpl->renderer()->doNoOp();
     }
@@ -337,7 +340,6 @@ bool SingleThreadProxy::commitAndComposite()
     if (!m_layerTreeHost->initializeRendererIfNeeded())
         return false;
 
-    // Unlink any texture backings that were deleted
     m_layerTreeHost->contentsTextureManager()->unlinkAndClearEvictedBackings();
 
     scoped_ptr<ResourceUpdateQueue> queue = make_scoped_ptr(new ResourceUpdateQueue);
@@ -355,14 +357,17 @@ bool SingleThreadProxy::commitAndComposite()
 
 bool SingleThreadProxy::doComposite()
 {
-    DCHECK(!m_contextLost);
+    DCHECK(!m_outputSurfaceLost);
     {
-        DebugScopedSetImplThread impl;
+        DebugScopedSetImplThread impl(this);
 
         if (!m_layerTreeHostImpl->visible())
             return false;
 
         m_layerTreeHostImpl->animate(base::TimeTicks::Now(), base::Time::Now());
+
+        if (m_layerTreeHostImpl->settings().implSidePainting)
+          m_layerTreeHostImpl->manageTiles();
 
         // We guard prepareToDraw() with canDraw() because it always returns a valid frame, so can only
         // be used when such a frame is possible. Since drawLayers() depends on the result of
@@ -377,8 +382,8 @@ bool SingleThreadProxy::doComposite()
     }
 
     if (m_layerTreeHostImpl->isContextLost()) {
-        m_contextLost = true;
-        m_layerTreeHost->didLoseContext();
+        m_outputSurfaceLost = true;
+        m_layerTreeHost->didLoseOutputSurface();
         return false;
     }
 
@@ -393,4 +398,9 @@ void SingleThreadProxy::didSwapFrame()
     }
 }
 
+bool SingleThreadProxy::commitPendingForTesting()
+{
+    return false;
 }
+
+}  // namespace cc

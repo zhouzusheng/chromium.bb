@@ -91,7 +91,7 @@ class HostPortPair;
 class IOBuffer;
 class SSLCertRequestInfo;
 class SSLInfo;
-class UploadData;
+class UploadDataStream;
 class URLRequestContext;
 class URLRequestJob;
 class X509Certificate;
@@ -398,16 +398,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // and it is permissible for it to be null.
   void set_delegate(Delegate* delegate);
 
-  // The data comprising the request message body is specified as a sequence of
-  // data segments and/or files containing data to upload.  These methods may
-  // be called to construct the data sequence to upload, and they may only be
-  // called before Start() is called.  For POST requests, the user must call
-  // SetRequestHeaderBy{Id,Name} to set the Content-Type of the request to the
-  // appropriate value before calling Start().
-  //
-  // When uploading data, bytes_len must be non-zero.
-  void AppendBytesToUpload(const char* bytes, int bytes_len);  // takes a copy
-
   // Indicates that the request body should be sent using chunked transfer
   // encoding. This method may only be called before Start() is called.
   void EnableChunkedUpload();
@@ -421,22 +411,23 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                            int bytes_len,
                            bool is_last_chunk);
 
-  // Set the upload data directly.
-  void set_upload(UploadData* upload);
+  // Sets the upload data.
+  void set_upload(scoped_ptr<UploadDataStream> upload);
 
-  // Get the upload data directly.
-  const UploadData* get_upload() const;
-  UploadData* get_upload_mutable();
+  // Gets the upload data.
+  const UploadDataStream* get_upload() const;
 
   // Returns true if the request has a non-empty message body to upload.
   bool has_upload() const;
 
-  // Set an extra request header by ID or name.  These methods may only be
-  // called before Start() is called.  It is an error to call it later.
+  // Set an extra request header by ID or name, or remove one by name.  These
+  // methods may only be called before Start() is called, or before a new
+  // redirect in the request chain.
   void SetExtraRequestHeaderById(int header_id, const std::string& value,
                                  bool overwrite);
   void SetExtraRequestHeaderByName(const std::string& name,
                                    const std::string& value, bool overwrite);
+  void RemoveRequestHeaderByName(const std::string& name);
 
   // Sets all extra request headers.  Any extra request headers set by other
   // methods are overwritten by this method.  This method may only be called
@@ -537,6 +528,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns true if the request is "pending" (i.e., if Start() has been called,
   // and the response has not yet been called).
   bool is_pending() const { return is_pending_; }
+
+  // Returns true if the request is in the process of redirecting to a new
+  // URL but has not yet initiated the new request.
+  bool is_redirecting() const { return is_redirecting_; }
 
   // Returns the error status of the request.
   const URLRequestStatus& status() const { return status_; }
@@ -735,10 +730,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void NotifyAuthRequiredComplete(NetworkDelegate::AuthRequiredResponse result);
   void NotifyCertificateRequested(SSLCertRequestInfo* cert_request_info);
   void NotifySSLCertificateError(const SSLInfo& ssl_info, bool fatal);
+  void NotifyReadCompleted(int bytes_read);
+
+  // These functions delegate to |network_delegate_| if it is not NULL.
+  // If |network_delegate_| is NULL, cookies can be used unless
+  // SetDefaultCookiePolicyToBlock() has been called.
   bool CanGetCookies(const CookieList& cookie_list) const;
   bool CanSetCookie(const std::string& cookie_line,
                     CookieOptions* options) const;
-  void NotifyReadCompleted(int bytes_read);
 
   // Called when the delegate blocks or unblocks this request when intercepting
   // certain requests.
@@ -756,7 +755,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   BoundNetLog net_log_;
 
   scoped_refptr<URLRequestJob> job_;
-  scoped_refptr<UploadData> upload_;
+  scoped_ptr<UploadDataStream> upload_data_stream_;
   std::vector<GURL> url_chain_;
   GURL first_party_for_cookies_;
   GURL delegate_redirect_url_;
@@ -783,6 +782,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Start() is called to the time we dispatch RequestComplete and indicates
   // whether the job is active.
   bool is_pending_;
+
+  // Indicates if the request is in the process of redirecting to a new
+  // location.  It is true from the time the headers complete until a
+  // new request begins.
+  bool is_redirecting_;
 
   // Number of times we're willing to redirect.  Used to guard against
   // infinite redirects.

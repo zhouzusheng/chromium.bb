@@ -4,6 +4,8 @@
 
 #include "ui/gfx/rect.h"
 
+#include <algorithm>
+
 #if defined(OS_WIN)
 #include <windows.h>
 #elif defined(TOOLKIT_GTK)
@@ -17,30 +19,9 @@
 
 namespace gfx {
 
-template class RectBase<Rect, Point, Size, Insets, int>;
+template class RectBase<Rect, Point, Size, Insets, Vector2d, int>;
 
-typedef class RectBase<Rect, Point, Size, Insets, int> RectBaseT;
-
-Rect::Rect() : RectBaseT(gfx::Point()) {
-}
-
-Rect::Rect(int width, int height)
-    : RectBaseT(gfx::Size(width, height)) {
-}
-
-Rect::Rect(int x, int y, int width, int height)
-    : RectBaseT(gfx::Point(x, y), gfx::Size(width, height)) {
-}
-
-Rect::Rect(const gfx::Size& size)
-    : RectBaseT(size) {
-}
-
-Rect::Rect(const gfx::Point& origin, const gfx::Size& size)
-    : RectBaseT(origin, size) {
-}
-
-Rect::~Rect() {}
+typedef class RectBase<Rect, Point, Size, Insets, Vector2d, int> RectBaseT;
 
 #if defined(OS_WIN)
 Rect::Rect(const RECT& r)
@@ -88,6 +69,18 @@ std::string Rect::ToString() const {
                             size().ToString().c_str());
 }
 
+Rect operator+(const Rect& lhs, const Vector2d& rhs) {
+  Rect result(lhs);
+  result += rhs;
+  return result;
+}
+
+Rect operator-(const Rect& lhs, const Vector2d& rhs) {
+  Rect result(lhs);
+  result -= rhs;
+  return result;
+}
+
 Rect IntersectRects(const Rect& a, const Rect& b) {
   Rect result = a;
   result.Intersect(b);
@@ -104,6 +97,14 @@ Rect SubtractRects(const Rect& a, const Rect& b) {
   Rect result = a;
   result.Subtract(b);
   return result;
+}
+
+Rect BoundingRect(const Point& p1, const Point& p2) {
+  int rx = std::min(p1.x(), p2.x());
+  int ry = std::min(p1.y(), p2.y());
+  int rr = std::max(p1.x(), p2.x());
+  int rb = std::max(p1.y(), p2.y());
+  return Rect(rx, ry, rr - rx, rb - ry);
 }
 
 }  // namespace gfx

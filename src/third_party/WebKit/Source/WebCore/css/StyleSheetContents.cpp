@@ -26,6 +26,7 @@
 #include "CSSStyleSheet.h"
 #include "CachedCSSStyleSheet.h"
 #include "Document.h"
+#include "MediaList.h"
 #include "Node.h"
 #include "SecurityOrigin.h"
 #include "StylePropertySet.h"
@@ -135,6 +136,13 @@ void StyleSheetContents::parserAppendRule(PassRefPtr<StyleRuleBase> rule)
         m_importRules.last()->requestStyleSheet();
         return;
     }
+
+#if ENABLE(RESOLUTION_MEDIA_QUERY)
+    // Add warning message to inspector if dpi/dpcm values are used for screen media.
+    if (rule->isMediaRule())
+        reportMediaQueryWarningIfNeeded(singleOwnerDocument(), static_cast<StyleRuleMedia*>(rule.get())->mediaQueries());
+#endif
+
     m_childRules.append(rule);
 }
 
@@ -435,10 +443,12 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
             if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleRegion*>(rule)->childRules()))
                 return true;
             break;
+#if ENABLE(SHADOW_DOM)
         case StyleRuleBase::Host:
             if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleHost*>(rule)->childRules()))
                 return true;
             break;
+#endif
         case StyleRuleBase::Import:
             ASSERT_NOT_REACHED();
         case StyleRuleBase::Page:
@@ -446,6 +456,9 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
         case StyleRuleBase::Unknown:
         case StyleRuleBase::Charset:
         case StyleRuleBase::Keyframe:
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+        case StyleRuleBase::Viewport:
+#endif
             break;
         }
     }

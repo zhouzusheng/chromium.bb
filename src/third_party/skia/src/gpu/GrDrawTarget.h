@@ -11,19 +11,24 @@
 #ifndef GrDrawTarget_DEFINED
 #define GrDrawTarget_DEFINED
 
+#include "GrClipData.h"
 #include "GrDrawState.h"
 #include "GrIndexBuffer.h"
-#include "GrMatrix.h"
+#include "SkMatrix.h"
 #include "GrRefCnt.h"
 #include "GrTemplates.h"
 
-#include "SkXfermode.h"
+#include "SkClipStack.h"
+#include "SkPath.h"
 #include "SkTLazy.h"
 #include "SkTArray.h"
+#include "SkXfermode.h"
 
 class GrClipData;
 class GrPath;
 class GrVertexBuffer;
+
+class SkStroke;
 
 class GrDrawTarget : public GrRefCnt {
 protected:
@@ -452,7 +457,7 @@ public:
      * winding (not inverse or hairline). It will respect the HW antialias flag
      * on the draw state (if possible in the 3D API).
      */
-    void stencilPath(const GrPath*, GrPathFill);
+    void stencilPath(const GrPath*, const SkStroke& stroke, SkPath::FillType fill);
 
     /**
      * Helper function for drawing rects. This does not use the current index
@@ -476,9 +481,21 @@ public:
      *                      srcMatrices are desired.
      */
     virtual void drawRect(const GrRect& rect,
-                          const GrMatrix* matrix,
+                          const SkMatrix* matrix,
                           const GrRect* srcRects[],
-                          const GrMatrix* srcMatrices[]);
+                          const SkMatrix* srcMatrices[]);
+    /**
+     * Helper for drawRect when the caller doesn't need separate src rects or
+     * matrices.
+     */
+    void drawSimpleRect(const GrRect& rect, const SkMatrix* matrix = NULL) {
+        drawRect(rect, matrix, NULL, NULL);
+    }
+    void drawSimpleRect(const GrIRect& irect, const SkMatrix* matrix = NULL) {
+        SkRect rect = SkRect::MakeFromIRect(irect);
+        this->drawRect(rect, matrix, NULL, NULL);
+    }
+
 
     /**
      * This call is used to draw multiple instances of some geometry with a
@@ -512,15 +529,6 @@ public:
                                       int instanceCount,
                                       int verticesPerInstance,
                                       int indicesPerInstance);
-
-    /**
-     * Helper for drawRect when the caller doesn't need separate src rects or
-     * matrices.
-     */
-    void drawSimpleRect(const GrRect& rect,
-                        const GrMatrix* matrix) {
-         drawRect(rect, matrix, NULL, NULL);
-    }
 
     /**
      * Clear the current render target if one isn't passed in. Ignores the
@@ -635,12 +643,16 @@ public:
             fClip = fTarget->getClip();
         }
 
+        AutoClipRestore(GrDrawTarget* target, const SkIRect& newClip);
+
         ~AutoClipRestore() {
             fTarget->setClip(fClip);
         }
     private:
-        GrDrawTarget*      fTarget;
-        const GrClipData*  fClip;
+        GrDrawTarget*           fTarget;
+        const GrClipData*       fClip;
+        SkTLazy<SkClipStack>    fStack;
+        GrClipData              fReplacementClip;
     };
 
     ////////////////////////////////////////////////////////////////////////////
@@ -883,14 +895,13 @@ protected:
     };
     GR_DECL_BITFIELD_OPS_FRIENDS(BlendOptFlags);
 
-    // Determines what optimizations can be applied based on the blend.
-    // The coeffecients may have to be tweaked in order for the optimization
-    // to work. srcCoeff and dstCoeff are optional params that receive the
-    // tweaked coeffecients.
-    // Normally the function looks at the current state to see if coverage
-    // is enabled. By setting forceCoverage the caller can speculatively
-    // determine the blend optimizations that would be used if there was
-    // partial pixel coverage
+    /**
+     * Determines what optimizations can be applied based on the blend. The coefficients may have
+     * to be tweaked in order for the optimization to work. srcCoeff and dstCoeff are optional
+     * params that receive the tweaked coefficients. Normally the function looks at the current
+     * state to see if coverage is enabled. By setting forceCoverage the caller can speculatively
+     * determine the blend optimizations that would be used if there was partial pixel coverage.
+     */
     BlendOptFlags getBlendOpts(bool forceCoverage = false,
                                GrBlendCoeff* srcCoeff = NULL,
                                GrBlendCoeff* dstCoeff = NULL) const;
@@ -981,7 +992,7 @@ protected:
     virtual void onDrawNonIndexed(GrPrimitiveType type,
                                   int startVertex,
                                   int vertexCount) = 0;
-    virtual void onStencilPath(const GrPath*, GrPathFill) = 0;
+    virtual void onStencilPath(const GrPath*, const SkStroke& stroke, SkPath::FillType fill) = 0;
 
     // subclass overrides to be notified when clip is set. Must call
     // INHERITED::clipwillBeSet
@@ -992,9 +1003,9 @@ protected:
     static GrVertexLayout GetRectVertexLayout(const GrRect* srcRects[]);
 
     static void SetRectVertices(const GrRect& rect,
-                                const GrMatrix* matrix,
+                                const SkMatrix* matrix,
                                 const GrRect* srcRects[],
-                                const GrMatrix* srcMatrices[],
+                                const SkMatrix* srcMatrices[],
                                 GrColor color,
                                 GrVertexLayout layout,
                                 void* vertices);

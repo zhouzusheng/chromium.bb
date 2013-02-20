@@ -26,6 +26,7 @@
 
 #include "Attribute.h"
 #include "DNS.h"
+#include "ElementShadow.h"
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
@@ -213,33 +214,34 @@ void HTMLAnchorElement::setActive(bool down, bool pause)
     ContainerNode::setActive(down, pause);
 }
 
-void HTMLAnchorElement::parseAttribute(const Attribute& attribute)
+void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (attribute.name() == hrefAttr) {
+    if (name == hrefAttr) {
         bool wasLink = isLink();
-        setIsLink(!attribute.isNull());
-        if (wasLink != isLink())
+        setIsLink(!value.isNull());
+        if (wasLink != isLink()) {
             setNeedsStyleRecalc();
+            invalidateParentDistributionIfNecessary(this, SelectRuleFeatureSet::RuleFeatureLink | SelectRuleFeatureSet::RuleFeatureVisited | SelectRuleFeatureSet::RuleFeatureEnabled);
+        }
         if (isLink()) {
-            String parsedURL = stripLeadingAndTrailingHTMLSpaces(attribute.value());
+            String parsedURL = stripLeadingAndTrailingHTMLSpaces(value);
             if (document()->isDNSPrefetchEnabled()) {
                 if (protocolIs(parsedURL, "http") || protocolIs(parsedURL, "https") || parsedURL.startsWith("//"))
                     prefetchDNS(document()->completeURL(parsedURL).host());
             }
         }
         invalidateCachedVisitedLinkHash();
-    } else if (attribute.name() == nameAttr || attribute.name() == titleAttr) {
+    } else if (name == nameAttr || name == titleAttr) {
         // Do nothing.
-    } else if (attribute.name() == relAttr)
-        setRel(attribute.value());
+    } else if (name == relAttr)
+        setRel(value);
     else
-        HTMLElement::parseAttribute(attribute);
+        HTMLElement::parseAttribute(name, value);
 }
 
 void HTMLAnchorElement::accessKeyAction(bool sendMouseEvents)
 {
-    // send the mouse button events if the caller specified sendMouseEvents
-    dispatchSimulatedClick(0, sendMouseEvents);
+    dispatchSimulatedClick(0, sendMouseEvents ? SendMouseUpDownEvents : SendNoEvents);
 }
 
 bool HTMLAnchorElement::isURLAttribute(const Attribute& attribute) const
@@ -463,7 +465,7 @@ void HTMLAnchorElement::setSearch(const String& value)
     KURL url = href();
     String newSearch = (value[0] == '?') ? value.substring(1) : value;
     // Make sure that '#' in the query does not leak to the hash.
-    url.setQuery(newSearch.replace('#', "%23"));
+    url.setQuery(newSearch.replaceWithLiteral('#', "%23"));
 
     setHref(url.string());
 }

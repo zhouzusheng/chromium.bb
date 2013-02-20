@@ -33,14 +33,13 @@
 
 #include <wtf/ArrayBufferView.h>
 #include "DocumentLoader.h"
-#include "EventTargetHeaders.h"
-#include "EventTargetInterfaces.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
 #include "StylePropertySet.h"
 #include "V8AbstractEventListener.h"
 #include "V8Binding.h"
 #include "V8Collection.h"
+#include "V8DOMWindow.h"
 #include "V8EventListener.h"
 #include "V8EventListenerList.h"
 #include "V8HTMLCollection.h"
@@ -56,7 +55,6 @@
 #include "V8WorkerContextEventListener.h"
 #include "WebGLContextAttributes.h"
 #include "WebGLUniformLocation.h"
-#include "WorkerContextExecutionProxy.h"
 #include "WrapperTypeInfo.h"
 #include <algorithm>
 #include <utility>
@@ -68,14 +66,37 @@
 
 namespace WebCore {
 
-v8::Persistent<v8::Object> V8DOMWrapper::setJSWrapperForDOMNode(PassRefPtr<Node> node, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
-{
-    v8::Persistent<v8::Object> wrapperHandle = v8::Persistent<v8::Object>::New(wrapper);
-    ASSERT(maybeDOMWrapper(wrapperHandle));
-    wrapperHandle.SetWrapperClassId(v8DOMSubtreeClassId);
-    getDOMNodeMap(isolate).set(node.leakRef(), wrapperHandle);
-    return wrapperHandle;
-}
+class V8WrapperInstantiationScope {
+public:
+    explicit V8WrapperInstantiationScope(v8::Handle<v8::Object> creationContext)
+        : m_didEnterContext(false)
+        , m_context(v8::Context::GetCurrent())
+    {
+        if (creationContext.IsEmpty())
+            return;
+        v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
+        // For performance, we enter the context only if the currently running context
+        // is different from the context that we are about to enter.
+        if (contextForWrapper == m_context)
+            return;
+        m_context = v8::Local<v8::Context>::New(contextForWrapper);
+        m_didEnterContext = true;
+        m_context->Enter();
+    }
+
+    ~V8WrapperInstantiationScope()
+    {
+        if (!m_didEnterContext)
+            return;
+        m_context->Exit();
+    }
+
+    v8::Handle<v8::Context> context() const { return m_context; }
+
+private:
+    bool m_didEnterContext;
+    v8::Handle<v8::Context> m_context;
+};
 
 void V8DOMWrapper::setNamedHiddenReference(v8::Handle<v8::Object> parent, const char* name, v8::Handle<v8::Value> child)
 {
@@ -83,108 +104,53 @@ void V8DOMWrapper::setNamedHiddenReference(v8::Handle<v8::Object> parent, const 
     parent->SetHiddenValue(V8HiddenPropertyName::hiddenReferenceName(name, strlen(name)), child);
 }
 
-WrapperTypeInfo* V8DOMWrapper::domWrapperType(v8::Handle<v8::Object> object)
+v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl)
 {
-    ASSERT(V8DOMWrapper::maybeDOMWrapper(object));
-    return toWrapperTypeInfo(object);
+    V8WrapperInstantiationScope scope(creationContext);
+
+    V8PerContextData* perContextData = V8PerContextData::from(scope.context());
+    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate()->GetFunction());
+
+    if (type == &V8HTMLDocument::info && !wrapper.IsEmpty())
+        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl));
+
+    return wrapper;
 }
 
-PassRefPtr<NodeFilter> V8DOMWrapper::wrapNativeNodeFilter(v8::Handle<v8::Value> filter)
-{
-    // A NodeFilter is used when walking through a DOM tree or iterating tree
-    // nodes.
-    // FIXME: we may want to cache NodeFilterCondition and NodeFilter
-    // object, but it is minor.
-    // NodeFilter is passed to NodeIterator that has a ref counted pointer
-    // to NodeFilter. NodeFilter has a ref counted pointer to NodeFilterCondition.
-    // In NodeFilterCondition, filter object is persisted in its constructor,
-    // and disposed in its destructor.
-    return NodeFilter::create(V8NodeFilterCondition::create(filter));
-}
-
-v8::Local<v8::Object> V8DOMWrapper::instantiateV8Object(Document* deprecatedDocument, WrapperTypeInfo* type, void* impl)
-{
-    V8PerContextData* perContextData = 0;
-
-    // Please don't add any more uses of deprecatedDocument. We want to remove it.
-
-    // If we have a pointer to the frame, we cna get the V8PerContextData
-    // directly, which is faster than going through V8.
-    if (deprecatedDocument && deprecatedDocument->frame())
-        perContextData = perContextDataForCurrentWorld(deprecatedDocument->frame());
-    else
-        perContextData = V8PerContextData::from(v8::Context::GetCurrent());
-
-    v8::Local<v8::Object> instance = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate()->GetFunction());
-
-    // Avoid setting the DOM wrapper for failed allocations.
-    if (instance.IsEmpty())
-        return instance;
-
-    setDOMWrapper(instance, type, impl);
-    if (type == &V8HTMLDocument::info)
-        instance = V8HTMLDocument::wrapInShadowObject(instance, static_cast<Node*>(impl));
-
-    return instance;
-}
-
-#ifndef NDEBUG
-bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
-{
-    if (value.IsEmpty() || !value->IsObject())
-        return false;
-
-    v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
-    if (!object->InternalFieldCount())
-        return false;
-
-    ASSERT(object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount);
-
-    v8::HandleScope scope;
-    v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
-    ASSERT(wrapper->IsNumber() || wrapper->IsExternal());
-
-    return true;
-}
-#endif
-
-bool V8DOMWrapper::isValidDOMObject(v8::Handle<v8::Value> value)
+static bool hasInternalField(v8::Handle<v8::Value> value)
 {
     if (value.IsEmpty() || !value->IsObject())
         return false;
     return v8::Handle<v8::Object>::Cast(value)->InternalFieldCount();
 }
 
-bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo* type)
+#ifndef NDEBUG
+bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
 {
-    if (!isValidDOMObject(value))
+    if (!hasInternalField(value))
         return false;
 
     v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
     ASSERT(object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount);
 
-    v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
-    ASSERT_UNUSED(wrapper, wrapper->IsNumber() || wrapper->IsExternal());
+    v8::HandleScope scope;
+    ASSERT(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
-    WrapperTypeInfo* typeInfo = static_cast<WrapperTypeInfo*>(object->GetPointerFromInternalField(v8DOMWrapperTypeIndex));
-    return typeInfo == type;
+    return true;
 }
+#endif
 
-#define TRY_TO_WRAP_WITH_INTERFACE(interfaceName) \
-    if (eventNames().interfaceFor##interfaceName == desiredInterface) \
-        return toV8(static_cast<interfaceName*>(target), creationContext, isolate);
-
-// A JS object of type EventTarget is limited to a small number of possible classes.
-v8::Handle<v8::Value> V8DOMWrapper::convertEventTargetToV8Object(EventTarget* target, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo* type)
 {
-    if (!target)
-        return v8NullWithCheck(isolate);
+    if (!hasInternalField(value))
+        return false;
 
-    AtomicString desiredInterface = target->interfaceName();
-    DOM_EVENT_TARGET_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
+    v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(value);
+    ASSERT(wrapper->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount);
+    ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 
-    ASSERT_NOT_REACHED();
-    return v8Undefined();
+    WrapperTypeInfo* typeInfo = static_cast<WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+    return typeInfo == type;
 }
 
 PassRefPtr<EventListener> V8DOMWrapper::getEventListener(v8::Local<v8::Value> value, bool isAttribute, ListenerLookupType lookup)

@@ -83,7 +83,7 @@ WebPopupMenuImpl::~WebPopupMenuImpl()
         m_widget->setClient(0);
 }
 
-void WebPopupMenuImpl::init(FramelessScrollView* widget, const WebRect& bounds)
+void WebPopupMenuImpl::initialize(FramelessScrollView* widget, const WebRect& bounds)
 {
     m_widget = widget;
     m_widget->setClient(this);
@@ -281,6 +281,7 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GestureDoubleTap:
     case WebInputEvent::GestureTwoFingerTap:
     case WebInputEvent::GestureLongPress:
+    case WebInputEvent::GestureLongTap:
     case WebInputEvent::GesturePinchBegin:
     case WebInputEvent::GesturePinchEnd:
     case WebInputEvent::GesturePinchUpdate:

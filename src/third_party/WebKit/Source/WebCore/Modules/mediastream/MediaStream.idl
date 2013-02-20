@@ -27,7 +27,8 @@
     EventTarget,
     Constructor(in MediaStreamTrackList audioTracks, in MediaStreamTrackList videoTracks),
     CallWith=ScriptExecutionContext,
-    ConstructorRaisesException
+    ConstructorRaisesException,
+    V8SkipVTableValidation
    ] interface MediaStream {
     readonly attribute DOMString label;
     readonly attribute MediaStreamTrackList audioTracks;

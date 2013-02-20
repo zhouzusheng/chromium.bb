@@ -164,6 +164,7 @@ bool SkDashPathEffect::filterPath(SkPath* dst, const SkPath& src,
 
     SkPathMeasure   meas(src, false);
     const SkScalar* intervals = fIntervals;
+    SkScalar        dashCount = 0;
 
     SpecialLineRec lineRec;
     const bool specialLine = lineRec.init(src, dst, rec, meas.getLength(),
@@ -176,6 +177,21 @@ bool SkDashPathEffect::filterPath(SkPath* dst, const SkPath& src,
         int         index = fInitialDashIndex;
         SkScalar    scale = SK_Scalar1;
 
+        // Since the path length / dash length ratio may be arbitrarily large, we can exert
+        // significant memory pressure while attempting to build the filtered path. To avoid this,
+        // we simply give up dashing beyond a certain threshold.
+        //
+        // The original bug report (http://crbug.com/165432) is based on a path yielding more than
+        // 90 million dash segments and crashing the memory allocator. A limit of 1 million
+        // segments seems reasonable: at 2 verbs per segment * 9 bytes per verb, this caps the
+        // maximum dash memory overhead at roughly 17MB per path.
+        static const SkScalar kMaxDashCount = 1000000;
+        dashCount += length * (fCount >> 1) / fIntervalLength;
+        if (dashCount > kMaxDashCount) {
+            dst->reset();
+            return false;
+        }
+
         if (fScaleToFit) {
             if (fIntervalLength >= length) {
                 scale = SkScalarDiv(length, fIntervalLength);
@@ -186,8 +202,10 @@ bool SkDashPathEffect::filterPath(SkPath* dst, const SkPath& src,
             }
         }
 
-        SkScalar    distance = 0;
-        SkScalar    dlen = SkScalarMul(fInitialDashLength, scale);
+        // Using double precision to avoid looping indefinitely due to single precision rounding
+        // (for extreme path_length/dash_length ratios). See test_infinite_dash() unittest.
+        double  distance = 0;
+        double  dlen = SkScalarMul(fInitialDashLength, scale);
 
         while (distance < length) {
             SkASSERT(dlen >= 0);
@@ -196,9 +214,13 @@ bool SkDashPathEffect::filterPath(SkPath* dst, const SkPath& src,
                 addedSegment = true;
 
                 if (specialLine) {
-                    lineRec.addSegment(distance, distance + dlen, dst);
+                    lineRec.addSegment(SkDoubleToScalar(distance),
+                                       SkDoubleToScalar(distance + dlen),
+                                       dst);
                 } else {
-                    meas.getSegment(distance, distance + dlen, dst, true);
+                    meas.getSegment(SkDoubleToScalar(distance),
+                                    SkDoubleToScalar(distance + dlen),
+                                    dst, true);
                 }
             }
             distance += dlen;
@@ -223,6 +245,88 @@ bool SkDashPathEffect::filterPath(SkPath* dst, const SkPath& src,
             meas.getSegment(0, SkScalarMul(fInitialDashLength, scale), dst, !addedSegment);
         }
     } while (meas.nextContour());
+
+    return true;
+}
+
+// Currently asPoints is more restrictive then it needs to be. In the future
+// we need to:
+//      allow kRound_Cap capping (could allow rotations in the matrix with this)
+//      loosen restriction on initial dash length
+//      allow cases where (stroke width == interval[0]) and return size
+//      allow partial first and last pixels
+bool SkDashPathEffect::asPoints(PointData* results,
+                                const SkPath& src,
+                                const SkStrokeRec& rec,
+                                const SkMatrix& matrix) const {
+    if (rec.isFillStyle() || fInitialDashLength < 0 || SK_Scalar1 != rec.getWidth()) {
+        return false;
+    }
+
+    if (fIntervalLength != 2 || SK_Scalar1 != fIntervals[0] || SK_Scalar1 != fIntervals[1]) {
+        return false;
+    }
+
+    if (fScaleToFit || 0 != fInitialDashLength) {
+        return false;
+    }
+
+    SkPoint pts[2];
+
+    if (rec.isHairlineStyle() || !src.isLine(pts)) {
+        return false;
+    }
+
+    if (SkPaint::kButt_Cap != rec.getCap()) {
+        return false;
+    }
+
+    if (!matrix.rectStaysRect()) {
+        return false;
+    }
+
+    SkPathMeasure   meas(src, false);
+    SkScalar        length = meas.getLength();
+
+    if (!SkScalarIsInt(length)) {
+        return false;
+    }
+
+    if (NULL != results) {
+        results->fFlags = 0;    // don't use clip rect & draw rects
+        results->fSize.set(SK_Scalar1, SK_Scalar1);
+
+        SkVector tangent = pts[1] - pts[0];
+        if (tangent.isZero()) {
+            return false;
+        }
+
+        tangent.scale(SkScalarInvert(length));
+
+        SkScalar ptCount = SkScalarDiv(length-1, SkIntToScalar(2));
+        results->fNumPoints = SkScalarCeilToInt(ptCount);
+        results->fPoints = new SkPoint[results->fNumPoints];
+
+        // +1 b.c. fInitialDashLength is zero so the initial segment will be skipped
+        int index = fInitialDashIndex+1;
+        int iCurPt = 0;
+
+        for (SkScalar distance = SK_ScalarHalf; distance < length; distance += SK_Scalar1) {
+            SkASSERT(index <= fCount);
+
+            if (0 == index) {
+                SkScalar x0 = pts[0].fX + SkScalarMul(tangent.fX, distance);
+                SkScalar y0 = pts[0].fY + SkScalarMul(tangent.fY, distance);
+                SkASSERT(iCurPt < results->fNumPoints);
+                results->fPoints[iCurPt].set(x0, y0);
+                ++iCurPt;
+            }
+
+            index ^= 1; // 0 -> 1 -> 0 ...
+        }
+
+        SkASSERT(iCurPt == results->fNumPoints);
+    }
 
     return true;
 }

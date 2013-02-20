@@ -70,9 +70,6 @@
 
     'v8_enable_disassembler%': 0,
 
-    # Enable extra checks in API functions and other strategic places.
-    'v8_enable_extra_checks%': 1,
-
     'v8_enable_gdbjit%': 0,
 
     'v8_object_print%': 0,
@@ -114,9 +111,6 @@
       ['v8_enable_disassembler==1', {
         'defines': ['ENABLE_DISASSEMBLER',],
       }],
-      ['v8_enable_extra_checks==1', {
-        'defines': ['ENABLE_EXTRA_CHECKS',],
-      }],
       ['v8_enable_gdbjit==1', {
         'defines': ['ENABLE_GDB_JIT_INTERFACE',],
       }],
@@ -134,6 +128,11 @@
           'V8_TARGET_ARCH_ARM',
         ],
         'conditions': [
+          ['armv7==1', {
+            'defines': [
+              'CAN_USE_ARMV7_INSTRUCTIONS=1',
+            ],
+          }],
           [ 'v8_can_use_unaligned_accesses=="true"', {
             'defines': [
               'CAN_USE_UNALIGNED_ACCESSES=1',
@@ -144,12 +143,16 @@
               'CAN_USE_UNALIGNED_ACCESSES=0',
             ],
           }],
-          [ 'v8_can_use_vfp2_instructions=="true"', {
+          # NEON implies VFP3 and VFP3 implies VFP2.
+          [ 'v8_can_use_vfp2_instructions=="true" or arm_neon==1 or \
+             arm_fpu=="vfpv3" or arm_fpu=="vfpv3-d16"', {
             'defines': [
               'CAN_USE_VFP2_INSTRUCTIONS',
             ],
           }],
-          [ 'v8_can_use_vfp3_instructions=="true"', {
+          # NEON implies VFP3.
+          [ 'v8_can_use_vfp3_instructions=="true" or arm_neon==1 or \
+             arm_fpu=="vfpv3" or arm_fpu=="vfpv3-d16"', {
             'defines': [
               'CAN_USE_VFP3_INSTRUCTIONS',
             ],
@@ -200,10 +203,11 @@
                   ['mips_arch_variant=="mips32r2"', {
                     'cflags': ['-mips32r2', '-Wa,-mips32r2'],
                   }],
+                  ['mips_arch_variant=="mips32r1"', {
+                    'cflags': ['-mips32', '-Wa,-mips32'],
+                 }],
                   ['mips_arch_variant=="loongson"', {
                     'cflags': ['-mips3', '-Wa,-mips3'],
-                  }, {
-                    'cflags': ['-mips32', '-Wa,-mips32'],
                   }],
                 ],
               }],
@@ -330,6 +334,9 @@
     ],  # conditions
     'configurations': {
       'Debug': {
+        'variables': {
+          'v8_enable_extra_checks%': 1,
+        },
         'defines': [
           'DEBUG',
           'ENABLE_DISASSEMBLER',
@@ -354,6 +361,9 @@
           },
         },
         'conditions': [
+          ['v8_enable_extra_checks==1', {
+            'defines': ['ENABLE_EXTRA_CHECKS',],
+          }],
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd"', {
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                         '-Wnon-virtual-dtor', '-Woverloaded-virtual' ],
@@ -372,10 +382,21 @@
               }],
             ],
           }],
+          ['OS=="mac"', {
+            'xcode_settings': {
+              'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
+            },
+          }],
         ],
       },  # Debug
       'Release': {
+        'variables': {
+          'v8_enable_extra_checks%': 0,
+        },
         'conditions': [
+          ['v8_enable_extra_checks==1', {
+            'defines': ['ENABLE_EXTRA_CHECKS',],
+          }],
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
             or OS=="android"', {
             'cflags!': [

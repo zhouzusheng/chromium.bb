@@ -42,6 +42,12 @@ class QTextLayout;
 QT_END_NAMESPACE
 #endif
 
+// "X11/X.h" defines Complex to 0 and conflicts
+// with Complex value in CodePath enum.
+#ifdef Complex
+#undef Complex
+#endif
+
 namespace WebCore {
 
 class FloatPoint;
@@ -97,7 +103,8 @@ public:
 
     void update(PassRefPtr<FontSelector>) const;
 
-    void drawText(GraphicsContext*, const TextRun&, const FloatPoint&, int from = 0, int to = -1) const;
+    enum CustomFontNotReadyAction { DoNotPaintIfFontNotReady, UseFallbackIfFontNotReady };
+    void drawText(GraphicsContext*, const TextRun&, const FloatPoint&, int from = 0, int to = -1, CustomFontNotReadyAction = DoNotPaintIfFontNotReady) const;
     void drawEmphasisMarks(GraphicsContext*, const TextRun&, const AtomicString& mark, const FloatPoint&, int from = 0, int to = -1) const;
 
     float width(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
@@ -121,47 +128,7 @@ public:
     
     FontRenderingMode renderingMode() const { return m_fontDescription.renderingMode(); }
 
-    TypesettingFeatures typesettingFeatures() const
-    {
-        TextRenderingMode textRenderingMode = m_fontDescription.textRenderingMode();
-        TypesettingFeatures features = s_defaultTypesettingFeatures;
-
-        switch(textRenderingMode) {
-        case AutoTextRendering:
-            break;
-        case OptimizeSpeed:
-            features &= ~(Kerning | Ligatures);
-            break;
-        case GeometricPrecision:
-        case OptimizeLegibility:
-            features |= Kerning | Ligatures;
-            break;
-        }
-
-        switch (m_fontDescription.kerning()) {
-        case FontDescription::NoneKerning:
-            features &= ~Kerning;
-            break;
-        case FontDescription::NormalKerning:
-            features |= Kerning;
-            break;
-        case FontDescription::AutoKerning:
-            break;
-        }
-
-        switch (m_fontDescription.commonLigaturesState()) {
-        case FontDescription::DisabledLigaturesState:
-            features &= ~Ligatures;
-            break;
-        case FontDescription::EnabledLigaturesState:
-            features |= Ligatures;
-            break;
-        case FontDescription::NormalLigaturesState:
-            break;
-        }
-
-        return features;
-    }
+    TypesettingFeatures typesettingFeatures() const { return m_typesettingFeatures; }
 
     FontFamily& firstFamily() { return m_fontDescription.firstFamily(); }
     const FontFamily& family() const { return m_fontDescription.family(); }
@@ -287,6 +254,48 @@ private:
         return m_fontFallbackList && m_fontFallbackList->loadingCustomFonts();
     }
 
+    TypesettingFeatures computeTypesettingFeatures() const
+    {
+        TextRenderingMode textRenderingMode = m_fontDescription.textRenderingMode();
+        TypesettingFeatures features = s_defaultTypesettingFeatures;
+
+        switch (textRenderingMode) {
+        case AutoTextRendering:
+            break;
+        case OptimizeSpeed:
+            features &= ~(Kerning | Ligatures);
+            break;
+        case GeometricPrecision:
+        case OptimizeLegibility:
+            features |= Kerning | Ligatures;
+            break;
+        }
+
+        switch (m_fontDescription.kerning()) {
+        case FontDescription::NoneKerning:
+            features &= ~Kerning;
+            break;
+        case FontDescription::NormalKerning:
+            features |= Kerning;
+            break;
+        case FontDescription::AutoKerning:
+            break;
+        }
+
+        switch (m_fontDescription.commonLigaturesState()) {
+        case FontDescription::DisabledLigaturesState:
+            features &= ~Ligatures;
+            break;
+        case FontDescription::EnabledLigaturesState:
+            features |= Ligatures;
+            break;
+        case FontDescription::NormalLigaturesState:
+            break;
+        }
+
+        return features;
+    }
+
 #if PLATFORM(QT)
     void initFormatForTextLayout(QTextLayout*) const;
 #endif
@@ -299,6 +308,7 @@ private:
     short m_wordSpacing;
     bool m_isPlatformFont;
     bool m_needsTranscoding;
+    mutable TypesettingFeatures m_typesettingFeatures; // Caches values computed from m_fontDescription.
 };
 
 inline Font::~Font()

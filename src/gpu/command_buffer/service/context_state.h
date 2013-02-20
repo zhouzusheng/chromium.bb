@@ -7,6 +7,7 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_CONTEXT_STATE_H_
 #define GPU_COMMAND_BUFFER_SERVICE_CONTEXT_STATE_H_
 
+#include <vector>
 #include "base/logging.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
@@ -21,6 +22,8 @@
 
 namespace gpu {
 namespace gles2 {
+
+class FeatureInfo;
 
 // State associated with each texture unit.
 struct GPU_EXPORT TextureUnit {
@@ -76,15 +79,32 @@ struct GPU_EXPORT TextureUnit {
   }
 };
 
+struct Vec4 {
+  Vec4() {
+    v[0] = 0.0f;
+    v[1] = 0.0f;
+    v[2] = 0.0f;
+    v[3] = 1.0f;
+  }
+  float v[4];
+};
 
 struct GPU_EXPORT ContextState {
-  ContextState();
+  explicit ContextState(FeatureInfo* feature_info);
   ~ContextState();
 
   void Initialize();
 
-  void InitCapabilities();
-  void InitState();
+  void RestoreState() const;
+  void InitCapabilities() const;
+  void InitState() const;
+
+  // Helper for getting cached state.
+  bool GetStateAsGLint(
+      GLenum pname, GLint* params, GLsizei* num_written) const;
+  bool GetStateAsGLfloat(
+      GLenum pname, GLfloat* params, GLsizei* num_written) const;
+  bool GetEnabled(GLenum cap) const;
 
   #include "gpu/command_buffer/service/context_state_autogen.h"
 
@@ -101,16 +121,15 @@ struct GPU_EXPORT ContextState {
   // be 2.
   GLuint active_texture_unit;
 
-  // Cached values of the currently assigned viewport dimensions.
-  GLsizei viewport_max_width;
-  GLsizei viewport_max_height;
-
   // The currently bound array buffer. If this is 0 it is illegal to call
   // glVertexAttribPointer.
   BufferManager::BufferInfo::Ref bound_array_buffer;
 
   // Which textures are bound to texture units through glActiveTexture.
-  scoped_array<TextureUnit> texture_units;
+  std::vector<TextureUnit> texture_units;
+
+  // The values for each attrib.
+  std::vector<Vec4> attrib_values;
 
   // Class that manages vertex attribs.
   VertexAttribManager::Ref vertex_attrib_manager;
@@ -131,6 +150,8 @@ struct GPU_EXPORT ContextState {
   GLenum hint_fragment_shader_derivative;
 
   bool pack_reverse_row_order;
+
+  FeatureInfo* feature_info_;
 };
 
 }  // namespace gles2

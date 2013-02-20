@@ -11,6 +11,7 @@
 
 #include "base/file_path.h"
 #include "base/file_util_proxy.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/timer.h"
 #include "webkit/blob/shareable_file_reference.h"
@@ -82,7 +83,7 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
       const FileSystemURL& url,
       base::PlatformFileInfo* file_info,
       FilePath* platform_file) OVERRIDE;
-  virtual AbstractFileEnumerator* CreateFileEnumerator(
+  virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
       const FileSystemURL& root_url,
       bool recursive) OVERRIDE;
@@ -141,19 +142,6 @@ class WEBKIT_STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   // Deletes the topmost directory specific to this origin and type.  This will
   // delete its directory database.
   bool DeleteDirectoryForOriginAndType(const GURL& origin, FileSystemType type);
-
-  // This will migrate a filesystem from the old passthrough sandbox into the
-  // new obfuscated one.  It won't obfuscate the old filenames [it will maintain
-  // the old structure, but move it to a new root], but any new files created
-  // will go into the new standard locations.  This will be completely
-  // transparent to the user.  This migration is atomic in that it won't alter
-  // the source data until it's done, and that will be with a single directory
-  // move [the directory with the unguessable name will move into the new
-  // filesystem storage directory].  However, if this fails partway through, it
-  // might leave a seemingly-valid database for this origin.  When it starts up,
-  // it will clear any such database, just in case.
-  bool MigrateFromOldSandbox(
-      const GURL& origin, FileSystemType type, const FilePath& root);
 
   // TODO(ericu): This doesn't really feel like it belongs in this class.
   // The previous version lives in FileSystemPathManager, but perhaps

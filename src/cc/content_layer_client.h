@@ -2,18 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ContentLayerChromiumClient_h
-#define ContentLayerChromiumClient_h
+#ifndef CC_CONTENT_LAYER_CLIENT_H_
+#define CC_CONTENT_LAYER_CLIENT_H_
+
+#include "cc/cc_export.h"
 
 class SkCanvas;
 
-namespace cc {
-class FloatRect;
-class IntRect;
+namespace gfx {
+class Rect;
+class RectF;
+}
 
-class ContentLayerClient {
+namespace cc {
+
+class CC_EXPORT ContentLayerClient {
 public:
-    virtual void paintContents(SkCanvas*, const IntRect& clip, FloatRect& opaque) = 0;
+    virtual void paintContents(SkCanvas*, const gfx::Rect& clip, gfx::RectF& opaque) = 0;
 
 protected:
     virtual ~ContentLayerClient() { }
@@ -21,4 +26,4 @@ protected:
 
 }
 
-#endif // ContentLayerChromiumClient_h
+#endif  // CC_CONTENT_LAYER_CLIENT_H_

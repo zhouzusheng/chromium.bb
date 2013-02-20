@@ -67,6 +67,10 @@ class ScopedPtrVector {
     data_.erase(data_.begin() + index);
   }
 
+  void reserve(size_t size) {
+    data_.reserve(size);
+  }
+
   void clear() {
     STLDeleteElements(&data_);
   }
@@ -78,6 +82,10 @@ class ScopedPtrVector {
   void insert(size_t index, scoped_ptr<T> item) {
     DCHECK(index < size());
     data_.insert(data_.begin() + index, item.release());
+  }
+
+  void swap(ScopedPtrVector<T>& other) {
+    data_.swap(other.data_);
   }
 
   iterator begin() { return data_.begin(); }

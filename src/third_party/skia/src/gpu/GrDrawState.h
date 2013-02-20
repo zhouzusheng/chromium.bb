@@ -8,8 +8,9 @@
 #ifndef GrDrawState_DEFINED
 #define GrDrawState_DEFINED
 
+#include "GrBackendEffectFactory.h"
 #include "GrColor.h"
-#include "GrMatrix.h"
+#include "SkMatrix.h"
 #include "GrRefCnt.h"
 #include "GrEffectStage.h"
 #include "GrStencil.h"
@@ -42,6 +43,9 @@ public:
      * either a constant coverage (usually full-coverage), interpolated per-vertex coverage, or
      * edge-AA computed coverage. (This latter is going away as soon as it can be rewritten as a
      * GrEffect).
+     *
+     * See the documentation of kCoverageDrawing_StateBit for information about disabling the
+     * the color / coverage distinction.
      *
      * Stages 0 through GrPaint::kTotalStages-1 are reserved for stages copied from the client's
      * GrPaint. Stages GrPaint::kTotalStages through kNumStages-2 are earmarked for use by
@@ -195,18 +199,18 @@ public:
         GrAssert(!this->getStage(stageIdx).getEffect());
         this->stage(stageIdx)->setEffect(SkNEW_ARGS(GrSingleTextureEffect, (texture)))->unref();
     }
-    void createTextureEffect(int stageIdx, GrTexture* texture, const GrMatrix& matrix) {
+    void createTextureEffect(int stageIdx, GrTexture* texture, const SkMatrix& matrix) {
         GrAssert(!this->getStage(stageIdx).getEffect());
-        GrEffect* effect = SkNEW_ARGS(GrSingleTextureEffect, (texture));
-        this->stage(stageIdx)->setEffect(effect, matrix)->unref();
+        GrEffect* effect = SkNEW_ARGS(GrSingleTextureEffect, (texture, matrix));
+        this->stage(stageIdx)->setEffect(effect)->unref();
     }
     void createTextureEffect(int stageIdx,
                              GrTexture* texture,
-                             const GrMatrix& matrix,
+                             const SkMatrix& matrix,
                              const GrTextureParams& params) {
         GrAssert(!this->getStage(stageIdx).getEffect());
-        GrEffect* effect = SkNEW_ARGS(GrSingleTextureEffect, (texture, params));
-        this->stage(stageIdx)->setEffect(effect, matrix)->unref();
+        GrEffect* effect = SkNEW_ARGS(GrSingleTextureEffect, (texture, matrix, params));
+        this->stage(stageIdx)->setEffect(effect)->unref();
     }
 
 
@@ -270,7 +274,7 @@ public:
      * Called when the source coord system is changing. preConcat gives the transformation from the
      * old coord system to the new coord system.
      */
-    void preConcatStageMatrices(const GrMatrix& preConcat) {
+    void preConcatStageMatrices(const SkMatrix& preConcat) {
         for (int i = 0; i < kNumStages; ++i) {
             if (this->isStageEnabled(i)) {
                 fStages[i].preConcatCoordChange(preConcat);
@@ -283,8 +287,8 @@ public:
      * transformation from the old coord system to the new coord system. Returns false if the matrix
      * cannot be inverted.
      */
-    bool preConcatStageMatricesWithInverse(const GrMatrix& preConcatInverse) {
-        GrMatrix inv;
+    bool preConcatStageMatricesWithInverse(const SkMatrix& preConcatInverse) {
+        SkMatrix inv;
         bool computed = false;
         for (int i = 0; i < kNumStages; ++i) {
             if (this->isStageEnabled(i)) {
@@ -414,12 +418,12 @@ public:
      * fully covers the render target. (w and h are the width and height of the
      * the rendertarget.)
      */
-    void setViewMatrix(const GrMatrix& m) { fViewMatrix = m; }
+    void setViewMatrix(const SkMatrix& m) { fViewMatrix = m; }
 
     /**
      * Gets a writable pointer to the view matrix.
      */
-    GrMatrix* viewMatrix() { return &fViewMatrix; }
+    SkMatrix* viewMatrix() { return &fViewMatrix; }
 
     /**
      *  Multiplies the current view matrix by a matrix
@@ -431,7 +435,7 @@ public:
      *
      *  @param m the matrix used to modify the view matrix.
      */
-    void preConcatViewMatrix(const GrMatrix& m) { fViewMatrix.preConcat(m); }
+    void preConcatViewMatrix(const SkMatrix& m) { fViewMatrix.preConcat(m); }
 
     /**
      *  Multiplies the current view matrix by a matrix
@@ -443,13 +447,13 @@ public:
      *
      *  @param m the matrix used to modify the view matrix.
      */
-    void postConcatViewMatrix(const GrMatrix& m) { fViewMatrix.postConcat(m); }
+    void postConcatViewMatrix(const SkMatrix& m) { fViewMatrix.postConcat(m); }
 
     /**
      * Retrieves the current view matrix
      * @return the current view matrix.
      */
-    const GrMatrix& getViewMatrix() const { return fViewMatrix; }
+    const SkMatrix& getViewMatrix() const { return fViewMatrix; }
 
     /**
      *  Retrieves the inverse of the current view matrix.
@@ -460,10 +464,10 @@ public:
      *
      * @param matrix if not null, will receive a copy of the current inverse.
      */
-    bool getViewInverse(GrMatrix* matrix) const {
+    bool getViewInverse(SkMatrix* matrix) const {
         // TODO: determine whether we really need to leave matrix unmodified
         // at call sites when inversion fails.
-        GrMatrix inverse;
+        SkMatrix inverse;
         if (fViewMatrix.invert(&inverse)) {
             if (matrix) {
                 *matrix = inverse;
@@ -484,7 +488,7 @@ public:
         AutoViewMatrixRestore() : fDrawState(NULL) {}
 
         AutoViewMatrixRestore(GrDrawState* ds,
-                              const GrMatrix& preconcatMatrix,
+                              const SkMatrix& preconcatMatrix,
                               uint32_t explicitCoordStageMask = 0) {
             fDrawState = NULL;
             this->set(ds, preconcatMatrix, explicitCoordStageMask);
@@ -498,14 +502,14 @@ public:
         void restore();
 
         void set(GrDrawState* drawState,
-                 const GrMatrix& preconcatMatrix,
+                 const SkMatrix& preconcatMatrix,
                  uint32_t explicitCoordStageMask = 0);
 
         bool isSet() const { return NULL != fDrawState; }
 
     private:
         GrDrawState*                        fDrawState;
-        GrMatrix                            fViewMatrix;
+        SkMatrix                            fViewMatrix;
         GrEffectStage::SavedCoordChange     fSavedCoordChanges[GrDrawState::kNumStages];
         uint32_t                            fRestoreMask;
     };
@@ -547,7 +551,7 @@ public:
          * Returns the matrix that was set previously set on the drawState. This is only valid
          * if succeeded returns true.
          */
-        const GrMatrix& getOriginalMatrix() const {
+        const SkMatrix& getOriginalMatrix() const {
             GrAssert(this->succeeded());
             return fViewMatrix;
         }
@@ -559,7 +563,7 @@ public:
 
     private:
         GrDrawState*                        fDrawState;
-        GrMatrix                            fViewMatrix;
+        SkMatrix                            fViewMatrix;
         GrEffectStage::SavedCoordChange     fSavedCoordChanges[GrDrawState::kNumStages];
         uint32_t                            fRestoreMask;
     };
@@ -661,7 +665,7 @@ public:
 
     /**
      * When specifying edges as vertex data this enum specifies what type of
-     * edges are in use. The edges are always 4 GrScalars in memory, even when
+     * edges are in use. The edges are always 4 SkScalars in memory, even when
      * the edge type requires fewer than 4.
      *
      * TODO: Fix the fact that HairLine and Circle edge types use y-down coords.
@@ -714,9 +718,9 @@ public:
          */
         kDither_StateBit        = 0x01,
         /**
-         * Perform HW anti-aliasing. This means either HW FSAA, if supported
-         * by the render target, or smooth-line rendering if a line primitive
-         * is drawn and line smoothing is supported by the 3D API.
+         * Perform HW anti-aliasing. This means either HW FSAA, if supported by the render target,
+         * or smooth-line rendering if a line primitive is drawn and line smoothing is supported by
+         * the 3D API.
          */
         kHWAntialias_StateBit   = 0x02,
         /**
@@ -728,6 +732,16 @@ public:
          * operations.
          */
         kNoColorWrites_StateBit = 0x08,
+
+        /**
+         * Usually coverage is applied after color blending. The color is blended using the coeffs
+         * specified by setBlendFunc(). The blended color is then combined with dst using coeffs
+         * of src_coverage, 1-src_coverage. Sometimes we are explicitly drawing a coverage mask. In
+         * this case there is no distinction between coverage and color and the caller needs direct
+         * control over the blend coeffs. When set, there will be a single blend step controlled by
+         * setBlendFunc() which will use coverage*color as the src color.
+         */
+         kCoverageDrawing_StateBit = 0x10,
 
         // Users of the class may add additional bits to the vector
         kDummyStateBit,
@@ -784,6 +798,10 @@ public:
 
     bool isColorWriteDisabled() const {
         return 0 != (fFlagBits & kNoColorWrites_StateBit);
+    }
+
+    bool isCoverageDrawing() const {
+        return 0 != (fFlagBits & kCoverageDrawing_StateBit);
     }
 
     bool isStateFlagEnabled(uint32_t stateBit) const {
@@ -893,7 +911,7 @@ private:
 
     // These fields are roughly sorted by decreasing likelihood of being different in op==
     GrColor             fColor;
-    GrMatrix            fViewMatrix;
+    SkMatrix            fViewMatrix;
     GrRenderTarget*     fRenderTarget;
     GrBlendCoeff        fSrcBlend;
     GrBlendCoeff        fDstBlend;

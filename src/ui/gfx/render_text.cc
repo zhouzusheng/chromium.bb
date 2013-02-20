@@ -143,10 +143,10 @@ void AddFadeEffect(const gfx::Rect& text_rect,
 
 // Creates a SkShader to fade the text, with |left_part| specifying the left
 // fade effect, if any, and |right_part| specifying the right fade effect.
-SkShader* CreateFadeShader(const gfx::Rect& text_rect,
-                           const gfx::Rect& left_part,
-                           const gfx::Rect& right_part,
-                           SkColor color) {
+skia::RefPtr<SkShader> CreateFadeShader(const gfx::Rect& text_rect,
+                                        const gfx::Rect& left_part,
+                                        const gfx::Rect& right_part,
+                                        SkColor color) {
   // Fade alpha of 51/255 corresponds to a fade of 0.2 of the original color.
   const SkColor fade_color = SkColorSetA(color, 51);
   std::vector<SkScalar> positions;
@@ -170,8 +170,9 @@ SkShader* CreateFadeShader(const gfx::Rect& text_rect,
   points[0].iset(text_rect.x(), text_rect.y());
   points[1].iset(text_rect.right(), text_rect.y());
 
-  return SkGradientShader::CreateLinear(&points[0], &colors[0], &positions[0],
-      colors.size(), SkShader::kClamp_TileMode);
+  return skia::AdoptRef(
+      SkGradientShader::CreateLinear(&points[0], &colors[0], &positions[0],
+                                     colors.size(), SkShader::kClamp_TileMode));
 }
 
 }  // namespace
@@ -237,11 +238,11 @@ void SkiaTextRenderer::SetFontFamilyWithStyle(const std::string& family,
   DCHECK(!family.empty());
 
   SkTypeface::Style skia_style = ConvertFontStyleToSkiaTypefaceStyle(style);
-  SkTypeface* typeface = SkTypeface::CreateFromName(family.c_str(), skia_style);
-  SkAutoUnref auto_unref(typeface);
+  skia::RefPtr<SkTypeface> typeface =
+      skia::AdoptRef(SkTypeface::CreateFromName(family.c_str(), skia_style));
   if (typeface) {
     // |paint_| adds its own ref. So don't |release()| it from the ref ptr here.
-    SetTypeface(typeface);
+    SetTypeface(typeface.get());
 
     // Enable fake bold text if bold style is needed but new typeface does not
     // have it.
@@ -338,10 +339,10 @@ void SkiaTextRenderer::DrawDecorations(int x, int y, int width,
     SkPaint paint(paint_);
     paint.setAntiAlias(true);
     paint.setStyle(SkPaint::kFill_Style);
-    paint.setStrokeWidth(height);
+    paint.setStrokeWidth(height * 2);
     canvas_skia_->drawLine(
-        SkIntToScalar(x), SkIntToScalar(y) - text_size + offset,
-        SkIntToScalar(x + width), SkIntToScalar(y),
+        SkIntToScalar(x), SkIntToScalar(y),
+        SkIntToScalar(x + width), SkIntToScalar(y) - text_size + offset,
         paint);
   }
 }
@@ -406,7 +407,7 @@ void RenderText::SetText(const string16& text) {
 void RenderText::SetHorizontalAlignment(HorizontalAlignment alignment) {
   if (horizontal_alignment_ != alignment) {
     horizontal_alignment_ = alignment;
-    display_offset_ = Point();
+    display_offset_ = Vector2d();
     cached_bounds_and_offset_valid_ = false;
   }
 }
@@ -678,9 +679,9 @@ Rect RenderText::GetCursorBounds(const SelectionModel& caret,
   // overtype the next character.
   LogicalCursorDirection caret_affinity =
       insert_mode ? caret.caret_affinity() : CURSOR_FORWARD;
-  int x = 0, width = 0, height = 0;
+  int x = 0, width = 1, height = 0;
   if (caret_pos == (caret_affinity == CURSOR_BACKWARD ? 0 : text().length())) {
-    // The caret is attached to the boundary. Always return a zero-width caret,
+    // The caret is attached to the boundary. Always return a 1-dip width caret,
     // since there is nothing to overtype.
     Size size = GetStringSize();
     if ((GetTextDirection() == base::i18n::RIGHT_TO_LEFT) == (caret_pos == 0))
@@ -765,7 +766,7 @@ RenderText::RenderText()
       cached_bounds_and_offset_valid_(false) {
 }
 
-const Point& RenderText::GetUpdatedDisplayOffset() {
+const Vector2d& RenderText::GetUpdatedDisplayOffset() {
   UpdateCachedBoundsAndOffset();
   return display_offset_;
 }
@@ -839,41 +840,39 @@ void RenderText::ApplyCompositionAndSelectionStyles(
   }
 }
 
-Point RenderText::GetTextOrigin() {
-  Point origin = display_rect().origin();
-  origin = origin.Add(GetUpdatedDisplayOffset());
-  origin = origin.Add(GetAlignmentOffset());
-  return origin;
+Vector2d RenderText::GetTextOffset() {
+  Vector2d offset = display_rect().OffsetFromOrigin();
+  offset.Add(GetUpdatedDisplayOffset());
+  offset.Add(GetAlignmentOffset());
+  return offset;
 }
 
 Point RenderText::ToTextPoint(const Point& point) {
-  return point.Subtract(GetTextOrigin());
+  return point - GetTextOffset();
 }
 
 Point RenderText::ToViewPoint(const Point& point) {
-  return point.Add(GetTextOrigin());
+  return point + GetTextOffset();
 }
 
 int RenderText::GetContentWidth() {
   return GetStringSize().width() + (cursor_enabled_ ? 1 : 0);
 }
 
-Point RenderText::GetAlignmentOffset() {
-  if (horizontal_alignment() != ALIGN_LEFT) {
-    int x_offset = display_rect().width() - GetContentWidth();
-    if (horizontal_alignment() == ALIGN_CENTER)
-      x_offset /= 2;
-    return Point(x_offset, 0);
-  }
-  return Point();
+Vector2d RenderText::GetAlignmentOffset() {
+  if (horizontal_alignment() == ALIGN_LEFT)
+    return Vector2d();
+
+  int x_offset = display_rect().width() - GetContentWidth();
+  if (horizontal_alignment() == ALIGN_CENTER)
+    x_offset /= 2;
+  return Vector2d(x_offset, 0);
 }
 
-Point RenderText::GetOriginForDrawing() {
-  Point origin(GetTextOrigin());
-  const int height = GetStringSize().height();
+Vector2d RenderText::GetOffsetForDrawing() {
   // Center the text vertically in the display area.
-  origin.Offset(0, (display_rect().height() - height) / 2);
-  return origin;
+  return GetTextOffset() +
+      Vector2d(0, (display_rect().height() - GetStringSize().height()) / 2);
 }
 
 void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
@@ -918,18 +917,16 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   text_rect.Inset(GetAlignmentOffset().x(), 0, 0, 0);
 
   const SkColor color = default_style().foreground;
-  SkShader* shader = CreateFadeShader(text_rect, left_part, right_part, color);
-  SkAutoUnref auto_unref(shader);
-  if (shader) {
-    // |renderer| adds its own ref. So don't |release()| it from the ref ptr.
-    renderer->SetShader(shader, display_rect());
-  }
+  skia::RefPtr<SkShader> shader =
+      CreateFadeShader(text_rect, left_part, right_part, color);
+  if (shader)
+    renderer->SetShader(shader.get(), display_rect());
 }
 
 void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {
-  SkDrawLooper* looper = gfx::CreateShadowDrawLooper(text_shadows_);
-  SkAutoUnref auto_unref(looper);
-  renderer->SetDrawLooper(looper);
+  skia::RefPtr<SkDrawLooper> looper =
+      gfx::CreateShadowDrawLooper(text_shadows_);
+  renderer->SetDrawLooper(looper.get());
 }
 
 // static
@@ -974,35 +971,37 @@ void RenderText::UpdateCachedBoundsAndOffset() {
   const int display_width = display_rect_.width();
   const int content_width = GetContentWidth();
 
-  int delta_offset = 0;
+  int delta_x = 0;
   if (content_width <= display_width || !cursor_enabled()) {
     // Don't pan if the text fits in the display width or when the cursor is
     // disabled.
-    delta_offset = -display_offset_.x();
+    delta_x = -display_offset_.x();
   } else if (cursor_bounds_.right() >= display_rect_.right()) {
     // TODO(xji): when the character overflow is a RTL character, currently, if
     // we pan cursor at the rightmost position, the entered RTL character is not
     // displayed. Should pan cursor to show the last logical characters.
     //
     // Pan to show the cursor when it overflows to the right,
-    delta_offset = display_rect_.right() - cursor_bounds_.right() - 1;
+    delta_x = display_rect_.right() - cursor_bounds_.right() - 1;
   } else if (cursor_bounds_.x() < display_rect_.x()) {
     // TODO(xji): have similar problem as above when overflow character is a
     // LTR character.
     //
     // Pan to show the cursor when it overflows to the left.
-    delta_offset = display_rect_.x() - cursor_bounds_.x();
+    delta_x = display_rect_.x() - cursor_bounds_.x();
   } else if (display_offset_.x() != 0) {
     // Reduce the pan offset to show additional overflow text when the display
     // width increases.
     const int negate_rtl = horizontal_alignment_ == ALIGN_RIGHT ? -1 : 1;
     const int offset = negate_rtl * display_offset_.x();
-    if (display_width > (content_width + offset))
-      delta_offset = negate_rtl * (display_width - (content_width + offset));
+    if (display_width > (content_width + offset)) {
+      delta_x = negate_rtl * (display_width - (content_width + offset));
+    }
   }
 
-  display_offset_.Offset(delta_offset, 0);
-  cursor_bounds_.Offset(delta_offset, 0);
+  gfx::Vector2d delta_offset(delta_x, 0);
+  display_offset_ += delta_offset;
+  cursor_bounds_ += delta_offset;
 }
 
 void RenderText::DrawSelection(Canvas* canvas) {
@@ -1018,10 +1017,8 @@ void RenderText::DrawCursor(Canvas* canvas) {
   // TODO(msw): Draw a better cursor with a better indication of association.
   if (cursor_enabled() && cursor_visible() && focused()) {
     const Rect& bounds = GetUpdatedCursorBounds();
-    if (bounds.width() != 0)
-      canvas->FillRect(bounds, cursor_color_);
-    else
-      canvas->DrawRect(bounds, cursor_color_);
+    DCHECK(bounds.width());
+    canvas->FillRect(bounds, cursor_color_);
   }
 }
 

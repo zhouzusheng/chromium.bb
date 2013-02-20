@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/scheduler.h"
 
 #include "base/auto_reset.h"
@@ -106,18 +104,18 @@ void Scheduler::didSwapBuffersComplete()
     m_frameRateController->didFinishFrame();
 }
 
-void Scheduler::didLoseContext()
+void Scheduler::didLoseOutputSurface()
 {
-    TRACE_EVENT0("cc", "Scheduler::didLoseContext");
+    TRACE_EVENT0("cc", "Scheduler::didLoseOutputSurface");
     m_frameRateController->didAbortAllPendingFrames();
-    m_stateMachine.didLoseContext();
+    m_stateMachine.didLoseOutputSurface();
     processScheduledActions();
 }
 
-void Scheduler::didRecreateContext()
+void Scheduler::didRecreateOutputSurface()
 {
-    TRACE_EVENT0("cc", "Scheduler::didRecreateContext");
-    m_stateMachine.didRecreateContext();
+    TRACE_EVENT0("cc", "Scheduler::didRecreateOutputSurface");
+    m_stateMachine.didRecreateOutputSurface();
     processScheduledActions();
 }
 
@@ -148,7 +146,7 @@ void Scheduler::processScheduledActions()
     if (m_insideProcessScheduledActions)
         return;
 
-    AutoReset<bool> markInside(&m_insideProcessScheduledActions, true);
+    base::AutoReset<bool> markInside(&m_insideProcessScheduledActions, true);
 
     SchedulerStateMachine::Action action = m_stateMachine.nextAction();
     while (action != SchedulerStateMachine::ACTION_NONE) {
@@ -176,7 +174,7 @@ void Scheduler::processScheduledActions()
             if (result.didSwap)
                 m_frameRateController->didBeginFrame();
             break;
-        } case SchedulerStateMachine::ACTION_BEGIN_CONTEXT_RECREATION:
+        } case SchedulerStateMachine::ACTION_BEGIN_OUTPUT_SURFACE_RECREATION:
             m_client->scheduledActionBeginContextRecreation();
             break;
         case SchedulerStateMachine::ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD:

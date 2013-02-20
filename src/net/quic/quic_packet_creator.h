@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/string_piece.h"
 #include "net/quic/quic_fec_group.h"
 #include "net/quic/quic_framer.h"
@@ -27,11 +28,15 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
     void Clear() {
       memset(this, 0, sizeof(Options));
       max_packet_length = kMaxPacketSize;
+      max_num_packets = std::numeric_limits<size_t>::max();
     }
 
     // TODO(alyssar, rch) max frames/packet
     size_t max_packet_length;
-    bool separate_fin_packet;
+    // The maximum number of packets we'd like to serialize.
+    // If the data can't be fully serialized, DataToStream will only consume as
+    // much data as fits into this many packets.
+    size_t max_num_packets;
     bool random_reorder;   // Inefficient: rewrite if used at scale.
     // TODO(rch) should probably be max packets per group.
     bool use_fec;
@@ -47,12 +52,15 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   typedef std::pair<QuicPacketSequenceNumber, QuicPacket*> PacketPair;
 
-  // Converts a raw payload to a series of QuicPackets.
-  void DataToStream(QuicStreamId id,
-                    base::StringPiece data,
-                    QuicStreamOffset offset,
-                    bool fin,
-                    std::vector<PacketPair>* packets);
+  // Converts a raw payload to a series of QuicPackets.  Returns the number of
+  // bytes consumed from data.
+  // If data is empty and fin is true, the expected behavior is to consume the
+  // fin but return 0.
+  size_t DataToStream(QuicStreamId id,
+                      base::StringPiece data,
+                      QuicStreamOffset offset,
+                      bool fin,
+                      std::vector<PacketPair>* packets);
 
   PacketPair ResetStream(QuicStreamId id,
                          QuicStreamOffset offset,
@@ -61,6 +69,13 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   PacketPair CloseConnection(QuicConnectionCloseFrame* close_frame);
 
   PacketPair AckPacket(QuicAckFrame* ack_frame);
+
+  PacketPair CongestionFeedbackPacket(
+      QuicCongestionFeedbackFrame* feedback_frame);
+
+  // Increments the current sequence number in QuicPacketCreator and sets it
+  // into the packet and returns the new sequence number.
+  QuicPacketSequenceNumber SetNewSequenceNumber(QuicPacket* packet);
 
   QuicPacketSequenceNumber sequence_number() const {
     return sequence_number_;

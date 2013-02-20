@@ -1,19 +1,9 @@
 /*
-    Copyright 2011 Google Inc.
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-         http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+ * Copyright 2011 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
  */
-
 
 #ifndef GrRenderTarget_DEFINED
 #define GrRenderTarget_DEFINED
@@ -40,7 +30,7 @@ public:
 
     // GrSurface overrides
     /**
-     * @return the texture associated with the rendertarget, may be NULL.
+     * @return the texture associated with the render target, may be NULL.
      */
     virtual GrTexture* asTexture() SK_OVERRIDE { return fTexture; }
     virtual const GrTexture* asTexture() const SK_OVERRIDE { return fTexture; }
@@ -75,7 +65,7 @@ public:
     /**
      * If this RT is multisampled, this is the buffer it is resolved to.
      * Otherwise, same as getRenderTargetHandle().
-     * (In GL a separate FBO ID is used for the msaa and resolved buffers)
+     * (In GL a separate FBO ID is used for the MSAA and resolved buffers)
      * @return the 3D API's handle to this object (e.g. FBO ID in OpenGL)
      */
     virtual GrBackendObject getRenderTargetResolvedHandle() const = 0;
@@ -150,15 +140,16 @@ public:
 protected:
     GrRenderTarget(GrGpu* gpu,
                    GrTexture* texture,
-                   const GrTextureDesc& desc)
-        : INHERITED(gpu, desc)
+                   const GrTextureDesc& desc,
+                   Origin origin)
+        : INHERITED(gpu, desc, origin)
         , fStencilBuffer(NULL)
         , fTexture(texture) {
         fResolveRect.setLargestInverted();
     }
 
     friend class GrTexture;
-    // When a texture unrefs an owned rendertarget this func
+    // When a texture unrefs an owned render target this func
     // removes the back pointer. This could be called from
     // texture's destructor but would have to be done in derived
     // classes. By the time of texture base destructor it has already

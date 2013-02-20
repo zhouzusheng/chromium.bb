@@ -40,7 +40,6 @@
 #include "DOMWindow.h"
 #include "CachedResourceLoader.h"
 #include "DocumentType.h"
-#include "EditingText.h"
 #include "EditorClient.h"
 #include "EventNames.h"
 #include "FloatQuad.h"
@@ -64,6 +63,7 @@
 #include "MediaFeatureNames.h"
 #include "Navigator.h"
 #include "NodeList.h"
+#include "NodeTraversal.h"
 #include "Page.h"
 #include "PageCache.h"
 #include "PageGroup.h"
@@ -184,11 +184,7 @@ inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoader
 #endif
     } else {
         page->incrementSubframeCount();
-
-        // Make sure we will not end up with two frames referencing the same owner element.
-        Frame*& contentFrameSlot = ownerElement->m_contentFrame;
-        ASSERT(!contentFrameSlot || contentFrameSlot->ownerElement() != ownerElement);
-        contentFrameSlot = this;
+        ownerElement->setContentFrame(this);
     }
 
 #ifndef NDEBUG
@@ -260,7 +256,7 @@ void Frame::setView(PassRefPtr<FrameView> view)
     // from messing with the view such that its scroll bars won't be torn down.
     // FIXME: We should revisit this.
     if (m_view)
-        m_view->detachCustomScrollbars();
+        m_view->prepareForDetach();
 
     // Prepare for destruction now, so any unload event handlers get run and the DOMWindow is
     // notified. If we wait until the view is destroyed, then things won't be hooked up enough for
@@ -313,7 +309,7 @@ void Frame::setDocument(PassRefPtr<Document> newDoc)
     if (m_page && m_page->mainFrame() == this) {
         notifyChromeClientWheelEventHandlerCountChanged();
 #if ENABLE(TOUCH_EVENTS)
-        if (m_doc && m_doc->touchEventHandlerCount())
+        if (m_doc && m_doc->hasTouchEventHandlers())
             m_page->chrome()->client()->needTouchEvents(true);
 #endif
     }
@@ -380,7 +376,7 @@ String Frame::searchForLabelsAboveCell(RegularExpression* regExp, HTMLTableCellE
     if (aboveCell) {
         // search within the above cell we found for a match
         size_t lengthSearched = 0;    
-        for (Node* n = aboveCell->firstChild(); n; n = n->traverseNextNode(aboveCell)) {
+        for (Node* n = aboveCell->firstChild(); n; n = NodeTraversal::next(n, aboveCell)) {
             if (n->isTextNode() && n->renderer() && n->renderer()->style()->visibility() == VISIBLE) {
                 // For each text chunk, run the regexp
                 String nodeString = n->nodeValue();
@@ -421,10 +417,7 @@ String Frame::searchForLabelsBeforeElement(const Vector<String>& labels, Element
     // walk backwards in the node tree, until another element, or form, or end of tree
     int unsigned lengthSearched = 0;
     Node* n;
-    for (n = element->traversePreviousNode();
-         n && lengthSearched < charsSearchedThreshold;
-         n = n->traversePreviousNode())
-    {
+    for (n = NodeTraversal::previous(element); n && lengthSearched < charsSearchedThreshold; n = NodeTraversal::previous(n)) {
         if (n->hasTagName(formTag)
             || (n->isHTMLElement() && static_cast<Element*>(n)->isFormControlElement()))
         {
@@ -607,14 +600,7 @@ void Frame::injectUserScriptsForWorld(DOMWrapperWorld* world, const UserScriptVe
 
 RenderView* Frame::contentRenderer() const
 {
-    Document* doc = document();
-    if (!doc)
-        return 0;
-    RenderObject* object = doc->renderer();
-    if (!object)
-        return 0;
-    ASSERT(object->isRenderView());
-    return toRenderView(object);
+    return document() ? document()->renderView() : 0;
 }
 
 RenderPart* Frame::ownerRenderer() const
@@ -709,7 +695,7 @@ void Frame::disconnectOwnerElement()
     if (m_ownerElement) {
         if (Document* doc = document())
             doc->clearAXObjectCache();
-        m_ownerElement->m_contentFrame = 0;
+        m_ownerElement->clearContentFrame();
         if (m_page)
             m_page->decrementSubframeCount();
     }
@@ -898,6 +884,13 @@ String Frame::layerTreeAsText(LayerTreeFlags flags) const
 #endif
 }
 
+String Frame::trackedRepaintRectsAsText() const
+{
+    if (!m_view)
+        return String();
+    return m_view->trackedRepaintRectsAsText();
+}
+
 void Frame::setPageZoomFactor(float factor)
 {
     setPageAndTextZoomFactors(factor, m_textZoomFactor);
@@ -1024,6 +1017,23 @@ void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
     }
 
     m_page->chrome()->client()->numWheelEventHandlersChanged(count);
+}
+
+bool Frame::isURLAllowed(const KURL& url) const
+{
+    // We allow one level of self-reference because some sites depend on that,
+    // but we don't allow more than one.
+    if (m_page->subframeCount() >= Page::maxNumberOfFrames)
+        return false;
+    bool foundSelfReference = false;
+    for (const Frame* frame = this; frame; frame = frame->tree()->parent()) {
+        if (equalIgnoringFragmentIdentifier(frame->document()->url(), url)) {
+            if (foundSelfReference)
+                return false;
+            foundSelfReference = true;
+        }
+    }
+    return true;
 }
 
 #if !PLATFORM(MAC) && !PLATFORM(WIN)

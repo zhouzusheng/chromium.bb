@@ -26,9 +26,9 @@
 #ifndef WebLayerTreeView_h
 #define WebLayerTreeView_h
 
-#include "SkBitmap.h"
 #include "WebColor.h"
 #include "WebCommon.h"
+#include "WebFloatPoint.h"
 #include "WebNonCopyable.h"
 #include "WebPrivateOwnPtr.h"
 #include "WebSize.h"
@@ -46,10 +46,16 @@ public:
     struct Settings {
         Settings()
             : acceleratePainting(false)
+            , showDebugBorders(false)
             , showFPSCounter(false)
             , showPlatformLayerTree(false)
             , showPaintRects(false)
             , renderVSyncEnabled(true)
+            , lowLatencyRenderingEnabled(false)
+            , perTilePaintingEnabled(false)
+            , partialSwapEnabled(false)
+            , acceleratedAnimationEnabled(true)
+            , pageScalePinchZoomEnabled(false)
             , refreshRate(0)
             , defaultTileSize(WebSize(256, 256))
             , maxUntiledLayerSize(WebSize(512, 512))
@@ -57,10 +63,16 @@ public:
         }
 
         bool acceleratePainting;
+        bool showDebugBorders;
         bool showFPSCounter;
         bool showPlatformLayerTree;
         bool showPaintRects;
         bool renderVSyncEnabled;
+        bool lowLatencyRenderingEnabled;
+        bool perTilePaintingEnabled;
+        bool partialSwapEnabled;
+        bool acceleratedAnimationEnabled;
+        bool pageScalePinchZoomEnabled;
         double refreshRate;
         WebSize defaultTileSize;
         WebSize maxUntiledLayerSize;
@@ -94,6 +106,10 @@ public:
     // from the above if there exists page scale, device scale or fixed layout
     // mode).
     virtual WebSize deviceViewportSize() const = 0;
+
+    // Gives the corrected location for an event, accounting for the pinch-zoom transformation
+    // in the compositor.
+    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint&) const = 0;
 
     virtual void setDeviceScaleFactor(float) = 0;
     virtual float deviceScaleFactor() const = 0;
@@ -142,6 +158,9 @@ public:
     // mode.
     virtual void updateAnimations(double frameBeginTime) = 0;
 
+    // Relays the end of a fling animation.
+    virtual void didStopFlinging() { }
+
     // Composites and attempts to read back the result into the provided
     // buffer. If it wasn't possible, e.g. due to context lost, will return
     // false. Pixel format is 32bit (RGBA), and the provided buffer must be
@@ -163,9 +182,11 @@ public:
     // This call is relatively expensive in threaded mode as it blocks on the compositor thread.
     virtual void renderingStats(WebRenderingStats&) const = 0;
 
-    // Provides a font atlas to use for debug visualizations. The atlas must be a bitmap containing glyph data, a table of
-    // ASCII character values to a subrectangle of the atlas representing the corresponding glyph, and the glyph height.
-    virtual void setFontAtlas(SkBitmap, WebRect asciiToRectTable[128], int fontHeight) = 0;
+    // Toggles the FPS counter in the HUD layer
+    virtual void setShowFPSCounter(bool) { }
+
+    // Toggles the paint rects in the HUD layer
+    virtual void setShowPaintRects(bool) { }
 
     // Simulates a lost context. For testing only.
     virtual void loseCompositorContext(int numTimes) = 0;

@@ -5,6 +5,8 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 
+#include <list>
+#include <string>
 #include <vector>
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
@@ -12,7 +14,9 @@
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/gpu_export.h"
+#include "ui/gl/async_pixel_transfer_delegate.h"
 #include "ui/gl/gl_image.h"
 
 namespace gpu {
@@ -21,8 +25,6 @@ namespace gles2 {
 class GLES2Decoder;
 class Display;
 class TextureDefinition;
-class MemoryTracker;
-class MemoryTypeTracker;
 
 // This class keeps track of the textures and their sizes so we can do NPOT and
 // texture complete checking.
@@ -64,6 +66,10 @@ class GPU_EXPORT TextureManager {
 
     GLenum usage() const {
       return usage_;
+    }
+
+    GLenum pool() const {
+      return pool_;
     }
 
     int num_uncleared_mips() const {
@@ -119,15 +125,15 @@ class GPU_EXPORT TextureManager {
     // Get the width and height for a particular level. Returns false if level
     // does not exist.
     bool GetLevelSize(
-        GLint face, GLint level, GLsizei* width, GLsizei* height) const;
+        GLint target, GLint level, GLsizei* width, GLsizei* height) const;
 
     // Get the type of a level. Returns false if level does not exist.
     bool GetLevelType(
-        GLint face, GLint level, GLenum* type, GLenum* internal_format) const;
+        GLint target, GLint level, GLenum* type, GLenum* internal_format) const;
 
     // Get the image bound to a particular level. Returns NULL if level
     // does not exist.
-    gfx::GLImage* GetLevelImage(GLint face, GLint level) const;
+    gfx::GLImage* GetLevelImage(GLint target, GLint level) const;
 
     bool IsDeleted() const {
       return deleted_;
@@ -136,7 +142,7 @@ class GPU_EXPORT TextureManager {
     // Returns true of the given dimensions are inside the dimensions of the
     // level and if the format and type match the level.
     bool ValidForTexture(
-        GLint face,
+        GLint target,
         GLint level,
         GLint xoffset,
         GLint yoffset,
@@ -174,6 +180,17 @@ class GPU_EXPORT TextureManager {
       return stream_texture_;
     }
 
+    gfx::AsyncPixelTransferState* GetAsyncTransferState() const {
+      return async_transfer_state_.get();
+    }
+    void SetAsyncTransferState(scoped_ptr<gfx::AsyncPixelTransferState> state) {
+      async_transfer_state_ = state.Pass();
+    }
+    bool AsyncTransferIsInProgress() {
+      return async_transfer_state_ &&
+          async_transfer_state_->TransferIsInProgress();
+    }
+
     void SetImmutable(bool immutable) {
       immutable_ = immutable;
     }
@@ -184,6 +201,11 @@ class GPU_EXPORT TextureManager {
 
     // Whether a particular level/face is cleared.
     bool IsLevelCleared(GLenum target, GLint level);
+
+    // Whether the texture has been defined
+    bool IsDefined() {
+      return estimated_size() > 0;
+    }
 
    private:
     friend class TextureManager;
@@ -225,7 +247,7 @@ class GPU_EXPORT TextureManager {
         bool cleared);
 
     // Marks a particular level as cleared or uncleared.
-    void SetLevelCleared(GLenum target, GLint level);
+    void SetLevelCleared(GLenum target, GLint level, bool cleared);
 
     // Updates the cleared flag for this texture by inspecting all the mips.
     void UpdateCleared();
@@ -240,8 +262,8 @@ class GPU_EXPORT TextureManager {
 
     // Sets a texture parameter.
     // TODO(gman): Expand to SetParameteri,f,iv,fv
-    // Returns false if param was INVALID_ENUN
-    bool SetParameter(
+    // Returns GL_NO_ERROR on success. Otherwise the error to generate.
+    GLenum SetParameter(
         const FeatureInfo* feature_info, GLenum pname, GLint param);
 
     // Makes each of the mip levels as though they were generated.
@@ -279,6 +301,11 @@ class GPU_EXPORT TextureManager {
         GLint level,
         gfx::GLImage* image);
 
+    // Appends a signature for the given level.
+    void AddToSignature(
+        const FeatureInfo* feature_info,
+        GLenum target, GLint level, std::string* signature) const;
+
     // Info about each face and level of texture.
     std::vector<std::vector<LevelInfo> > level_infos_;
 
@@ -305,6 +332,7 @@ class GPU_EXPORT TextureManager {
     GLenum wrap_s_;
     GLenum wrap_t_;
     GLenum usage_;
+    GLenum pool_;
 
     // The maximum level that has been set.
     GLint max_level_set_;
@@ -330,6 +358,9 @@ class GPU_EXPORT TextureManager {
 
     // Whether this is a special streaming texture.
     bool stream_texture_;
+
+    // State to facilitate async transfers on this texture.
+    scoped_ptr<gfx::AsyncPixelTransferState> async_transfer_state_;
 
     // Whether the texture is immutable and no further changes to the format
     // or dimensions of the texture object can be made.
@@ -426,11 +457,13 @@ class GPU_EXPORT TextureManager {
                TextureDefinition* definition);
 
   // Sets a mip as cleared.
-  void SetLevelCleared(TextureInfo* info, GLenum target, GLint level);
+  void SetLevelCleared(TextureInfo* info, GLenum target,
+                       GLint level, bool cleared);
 
   // Sets a texture parameter of a TextureInfo
+  // Returns GL_NO_ERROR on success. Otherwise the error to generate.
   // TODO(gman): Expand to SetParameteri,f,iv,fv
-  bool SetParameter(
+  GLenum SetParameter(
       TextureInfo* info, GLenum pname, GLint param);
 
   // Makes each of the mip levels as though they were generated.
@@ -500,8 +533,10 @@ class GPU_EXPORT TextureManager {
     }
   }
 
-  uint32 mem_represented() const {
-    return mem_represented_;
+  size_t mem_represented() const {
+    return
+        memory_tracker_managed_->GetMemRepresented() +
+        memory_tracker_unmanaged_->GetMemRepresented();
   }
 
   void SetLevelImage(
@@ -510,18 +545,31 @@ class GPU_EXPORT TextureManager {
       GLint level,
       gfx::GLImage* image);
 
+  void AddToSignature(
+      TextureInfo* info,
+      GLenum target,
+      GLint level,
+      std::string* signature) const;
+
+  // Transfers added will get their TextureInfo updated at the same time
+  // the async transfer is bound to the real texture.
+  void AddPendingAsyncPixelTransfer(
+      base::WeakPtr<gfx::AsyncPixelTransferState> state, TextureInfo* info);
+  void BindFinishedAsyncPixelTransfers(bool* texture_dirty,
+                                       bool* framebuffer_dirty);
+
  private:
   // Helper for Initialize().
   TextureInfo::Ref CreateDefaultAndBlackTextures(
       GLenum target,
       GLuint* black_texture);
 
-  void UpdateMemRepresented();
-
   void StartTracking(TextureInfo* info);
   void StopTracking(TextureInfo* info);
 
-  scoped_ptr<MemoryTypeTracker> texture_memory_tracker_;
+  MemoryTypeTracker* GetMemTracker(GLenum texture_pool);
+  scoped_ptr<MemoryTypeTracker> memory_tracker_managed_;
+  scoped_ptr<MemoryTypeTracker> memory_tracker_unmanaged_;
 
   FeatureInfo::Ref feature_info_;
 
@@ -542,8 +590,6 @@ class GPU_EXPORT TextureManager {
   // Allows to check no TextureInfo will outlive this.
   unsigned int texture_info_count_;
 
-  uint32 mem_represented_;
-
   bool have_context_;
 
   // Black (0,0,0,1) textures for when non-renderable textures are used.
@@ -553,6 +599,14 @@ class GPU_EXPORT TextureManager {
 
   // The default textures for each target (texture name = 0)
   TextureInfo::Ref default_textures_[kNumDefaultTextures];
+
+  // Async texture allocations which haven't been bound to their textures
+  // yet. This facilitates updating the TextureInfo at the same time the
+  // real texture data is bound.
+  typedef std::pair<base::WeakPtr<gfx::AsyncPixelTransferState>,
+                    TextureInfo*> PendingAsyncTransfer;
+  typedef std::list<PendingAsyncTransfer> PendingAsyncTransferList;
+  PendingAsyncTransferList pending_async_transfers_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureManager);
 };

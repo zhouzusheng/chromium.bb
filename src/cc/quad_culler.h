@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCQuadCuller_h
-#define CCQuadCuller_h
+#ifndef CC_QUAD_CULLER_H_
+#define CC_QUAD_CULLER_H_
 
+#include "cc/cc_export.h"
 #include "cc/quad_sink.h"
 #include "cc/render_pass.h"
 
@@ -14,9 +15,9 @@ class RenderSurfaceImpl;
 template<typename LayerType, typename SurfaceType>
 class OcclusionTrackerBase;
 
-class QuadCuller : public QuadSink {
+class CC_EXPORT QuadCuller : public QuadSink {
 public:
-    QuadCuller(QuadList&, SharedQuadStateList&, LayerImpl*, const OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>*, bool showCullingWithDebugBorderQuads, bool forSurface);
+    QuadCuller(QuadList&, SharedQuadStateList&, const LayerImpl*, const OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>&, bool showCullingWithDebugBorderQuads, bool forSurface);
     virtual ~QuadCuller() { }
 
     // QuadSink implementation.
@@ -26,12 +27,13 @@ public:
 private:
     QuadList& m_quadList;
     SharedQuadStateList& m_sharedQuadStateList;
+    const LayerImpl* m_layer;
+    const OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>& m_occlusionTracker;
+
     SharedQuadState* m_currentSharedQuadState;
-    LayerImpl* m_layer;
-    const OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>* m_occlusionTracker;
     bool m_showCullingWithDebugBorderQuads;
     bool m_forSurface;
 };
 
 }
-#endif // CCQuadCuller_h
+#endif  // CC_QUAD_CULLER_H_

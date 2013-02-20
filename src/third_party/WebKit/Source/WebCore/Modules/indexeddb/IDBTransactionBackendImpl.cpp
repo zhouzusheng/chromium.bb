@@ -35,28 +35,32 @@
 #include "IDBObjectStoreBackendImpl.h"
 #include "IDBTracing.h"
 #include "IDBTransactionCoordinator.h"
-#include "ScriptExecutionContext.h"
 
 namespace WebCore {
 
-PassRefPtr<IDBTransactionBackendImpl> IDBTransactionBackendImpl::create(DOMStringList* objectStores, unsigned short mode, IDBDatabaseBackendImpl* database)
+PassRefPtr<IDBTransactionBackendImpl> IDBTransactionBackendImpl::create(int64_t id, const Vector<int64_t>& objectStoreIds, IDBTransaction::Mode mode, IDBDatabaseBackendImpl* database)
 {
-    return adoptRef(new IDBTransactionBackendImpl(objectStores, mode, database));
+    HashSet<int64_t> objectStoreHashSet;
+    for (size_t i = 0; i < objectStoreIds.size(); ++i)
+        objectStoreHashSet.add(objectStoreIds[i]);
+
+    return adoptRef(new IDBTransactionBackendImpl(id, objectStoreHashSet, mode, database));
 }
 
-IDBTransactionBackendImpl::IDBTransactionBackendImpl(DOMStringList* objectStores, unsigned short mode, IDBDatabaseBackendImpl* database)
-    : m_objectStoreNames(objectStores)
+IDBTransactionBackendImpl::IDBTransactionBackendImpl(int64_t id, const HashSet<int64_t>& objectStoreIds, IDBTransaction::Mode mode, IDBDatabaseBackendImpl* database)
+    : m_id(id)
+    , m_objectStoreIds(objectStoreIds)
     , m_mode(mode)
     , m_state(Unused)
+    , m_commitPending(false)
     , m_database(database)
-    , m_transaction(database->backingStore()->createTransaction())
+    , m_transaction(database->backingStore().get())
     , m_taskTimer(this, &IDBTransactionBackendImpl::taskTimerFired)
-    , m_taskEventTimer(this, &IDBTransactionBackendImpl::taskEventTimerFired)
     , m_pendingPreemptiveEvents(0)
-    , m_pendingEvents(0)
 {
-    ASSERT(m_objectStoreNames);
-    ASSERT(m_mode == IDBTransaction::VERSION_CHANGE || !m_objectStoreNames->isEmpty());
+    // We pass a reference of this object before it can be adopted.
+    relaxAdoptionRequirement();
+
     m_database->transactionCoordinator()->didCreateTransaction(this);
 }
 
@@ -66,32 +70,19 @@ IDBTransactionBackendImpl::~IDBTransactionBackendImpl()
     ASSERT(m_state == Finished);
 }
 
-PassRefPtr<IDBObjectStoreBackendInterface> IDBTransactionBackendImpl::objectStore(const String& name, ExceptionCode& ec)
+PassRefPtr<IDBObjectStoreBackendInterface> IDBTransactionBackendImpl::objectStore(int64_t id, ExceptionCode& ec)
 {
     if (m_state == Finished) {
-        ec = IDBDatabaseException::IDB_INVALID_STATE_ERR;
+        ec = IDBDatabaseException::InvalidStateError;
         return 0;
     }
 
-    // Does a linear search, but it really shouldn't be that slow in practice.
-    if (m_mode != IDBTransaction::VERSION_CHANGE && !m_objectStoreNames->contains(name)) {
-        ec = IDBDatabaseException::IDB_NOT_FOUND_ERR;
-        return 0;
-    }
-
-    RefPtr<IDBObjectStoreBackendImpl> objectStore = m_database->objectStore(name);
-    // FIXME: This is only necessary right now beacuse a setVersion transaction could modify things
-    //        between its creation (where another check occurs) and the .objectStore call.
-    //        There's a bug to make this impossible in the spec. When we make it impossible here, we
-    //        can remove this check.
-    if (!objectStore) {
-        ec = IDBDatabaseException::IDB_NOT_FOUND_ERR;
-        return 0;
-    }
+    RefPtr<IDBObjectStoreBackendImpl> objectStore = m_database->objectStore(id);
+    ASSERT(objectStore);
     return objectStore.release();
 }
 
-bool IDBTransactionBackendImpl::scheduleTask(TaskType type, PassOwnPtr<ScriptExecutionContext::Task> task, PassOwnPtr<ScriptExecutionContext::Task> abortTask)
+bool IDBTransactionBackendImpl::scheduleTask(TaskType type, PassOwnPtr<Operation> task, PassOwnPtr<Operation> abortTask)
 {
     if (m_state == Finished)
         return false;
@@ -100,19 +91,21 @@ bool IDBTransactionBackendImpl::scheduleTask(TaskType type, PassOwnPtr<ScriptExe
         m_taskQueue.append(task);
     else
         m_preemptiveTaskQueue.append(task);
-    
+
     if (abortTask)
         m_abortTaskQueue.prepend(abortTask);
 
     if (m_state == Unused)
         start();
+    else if (m_state == Running && !m_taskTimer.isActive())
+        m_taskTimer.startOneShot(0);
 
     return true;
 }
 
 void IDBTransactionBackendImpl::abort()
 {
-    abort(IDBDatabaseError::create(IDBDatabaseException::UNKNOWN_ERR, "Internal error."));
+    abort(IDBDatabaseError::create(IDBDatabaseException::UnknownError, "Internal error (unknown cause)"));
 }
 
 void IDBTransactionBackendImpl::abort(PassRefPtr<IDBDatabaseError> error)
@@ -126,27 +119,25 @@ void IDBTransactionBackendImpl::abort(PassRefPtr<IDBDatabaseError> error)
     // The last reference to this object may be released while performing the
     // abort steps below. We therefore take a self reference to keep ourselves
     // alive while executing this method.
-    RefPtr<IDBTransactionBackendImpl> self(this);
+    RefPtr<IDBTransactionBackendImpl> protect(this);
 
     m_state = Finished;
     m_taskTimer.stop();
-    m_taskEventTimer.stop();
 
     if (wasRunning)
-        m_transaction->rollback();
+        m_transaction.rollback();
 
     // Run the abort tasks, if any.
     while (!m_abortTaskQueue.isEmpty()) {
-        OwnPtr<ScriptExecutionContext::Task> task(m_abortTaskQueue.first().release());
-        m_abortTaskQueue.removeFirst();
-        task->performTask(0);
+        OwnPtr<Operation> task(m_abortTaskQueue.takeFirst());
+        task->perform(0);
     }
 
     // Backing store resources (held via cursors) must be released before script callbacks
     // are fired, as the script callbacks may release references and allow the backing store
     // itself to be released, and order is critical.
     closeOpenCursors();
-    m_transaction = 0;
+    m_transaction.reset();
 
     // Transactions must also be marked as completed before the front-end is notified, as
     // the transaction completion unblocks operations like closing connections.
@@ -167,6 +158,11 @@ bool IDBTransactionBackendImpl::isTaskQueueEmpty() const
     return m_preemptiveTaskQueue.isEmpty() && m_taskQueue.isEmpty();
 }
 
+bool IDBTransactionBackendImpl::hasPendingTasks() const
+{
+    return m_pendingPreemptiveEvents || !isTaskQueueEmpty();
+}
+
 void IDBTransactionBackendImpl::registerOpenCursor(IDBCursorBackendImpl* cursor)
 {
     m_openCursors.add(cursor);
@@ -177,27 +173,10 @@ void IDBTransactionBackendImpl::unregisterOpenCursor(IDBCursorBackendImpl* curso
     m_openCursors.remove(cursor);
 }
 
-void IDBTransactionBackendImpl::addPendingEvents(int n)
-{
-    m_pendingEvents += n;
-    ASSERT(m_pendingEvents >= 0);
-}
-
-void IDBTransactionBackendImpl::didCompleteTaskEvents()
-{
-    if (m_state == Finished)
-        return;
-
-    ASSERT(m_state == Running);
-    ASSERT(m_pendingEvents);
-    m_pendingEvents--;
-
-    if (!m_taskEventTimer.isActive())
-        m_taskEventTimer.startOneShot(0);
-}
-
 void IDBTransactionBackendImpl::run()
 {
+    // TransactionCoordinator has started this transaction. Schedule a timer
+    // to process the first task.
     ASSERT(m_state == StartPending || m_state == Running);
     ASSERT(!m_taskTimer.isActive());
 
@@ -216,23 +195,35 @@ void IDBTransactionBackendImpl::start()
 void IDBTransactionBackendImpl::commit()
 {
     IDB_TRACE("IDBTransactionBackendImpl::commit");
+
+    // In multiprocess ports, front-end may have requested a commit but an abort has already
+    // been initiated asynchronously by the back-end.
+    if (m_state == Finished)
+        return;
+
+    ASSERT(m_state == Unused || m_state == Running);
+    m_commitPending = true;
+
+    // Front-end has requested a commit, but there may be tasks like createIndex which
+    // are considered synchronous by the front-end but are processed asynchronously.
+    if (hasPendingTasks())
+        return;
+
     // The last reference to this object may be released while performing the
     // commit steps below. We therefore take a self reference to keep ourselves
     // alive while executing this method.
-    RefPtr<IDBTransactionBackendImpl> self(this);
-    ASSERT(m_state == Unused || m_state == Running);
-    ASSERT(isTaskQueueEmpty());
+    RefPtr<IDBTransactionBackendImpl> protect(this);
 
     bool unused = m_state == Unused;
     m_state = Finished;
 
-    bool committed = unused || m_transaction->commit();
+    bool committed = unused || m_transaction.commit();
 
     // Backing store resources (held via cursors) must be released before script callbacks
     // are fired, as the script callbacks may release references and allow the backing store
     // itself to be released, and order is critical.
     closeOpenCursors();
-    m_transaction = 0;
+    m_transaction.reset();
 
     // Transactions must also be marked as completed before the front-end is notified, as
     // the transaction completion unblocks operations like closing connections.
@@ -244,7 +235,7 @@ void IDBTransactionBackendImpl::commit()
         m_callbacks->onComplete();
         m_database->transactionFinishedAndCompleteFired(this);
     } else {
-        m_callbacks->onAbort(IDBDatabaseError::create(IDBDatabaseException::UNKNOWN_ERR, "Internal error."));
+        m_callbacks->onAbort(IDBDatabaseError::create(IDBDatabaseException::UnknownError, "Internal error committing transaction."));
         m_database->transactionFinishedAndAbortFired(this);
     }
 
@@ -257,39 +248,29 @@ void IDBTransactionBackendImpl::taskTimerFired(Timer<IDBTransactionBackendImpl>*
     ASSERT(!isTaskQueueEmpty());
 
     if (m_state == StartPending) {
-        m_transaction->begin();
+        m_transaction.begin();
         m_state = Running;
     }
 
-    // Just process a single event here, in case the event itself
-    // changes which queue should be processed next.
-    TaskQueue& taskQueue = m_pendingPreemptiveEvents ? m_preemptiveTaskQueue : m_taskQueue;
-    if (!taskQueue.isEmpty() && m_state != Finished) {
+    // The last reference to this object may be released while performing the
+    // tasks. Take take a self reference to keep this object alive so that
+    // the loop termination conditions can be checked.
+    RefPtr<IDBTransactionBackendImpl> protect(this);
+
+    TaskQueue* taskQueue = m_pendingPreemptiveEvents ? &m_preemptiveTaskQueue : &m_taskQueue;
+    while (!taskQueue->isEmpty() && m_state != Finished) {
         ASSERT(m_state == Running);
-        OwnPtr<ScriptExecutionContext::Task> task(taskQueue.first().release());
-        taskQueue.removeFirst();
-        m_pendingEvents++;
-        task->performTask(0);
+        OwnPtr<Operation> task(taskQueue->takeFirst());
+        task->perform(this);
+
+        // Event itself may change which queue should be processed next.
+        taskQueue = m_pendingPreemptiveEvents ? &m_preemptiveTaskQueue : &m_taskQueue;
     }
-}
 
-void IDBTransactionBackendImpl::taskEventTimerFired(Timer<IDBTransactionBackendImpl>*)
-{
-    IDB_TRACE("IDBTransactionBackendImpl::taskEventTimerFired");
-    ASSERT(m_state == Running);
-
-    if (!m_pendingEvents && isTaskQueueEmpty()) {
-        // The last task event has completed and the task
-        // queue is empty. Commit the transaction.
+    // If there are no pending tasks, we haven't already committed/aborted,
+    // and the front-end requested a commit, it is now safe to do so.
+    if (!hasPendingTasks() && m_state != Finished && m_commitPending)
         commit();
-        return;
-    }
-
-    // We are still waiting for other events to complete. However,
-    // the task queue is non-empty and the timer is inactive.
-    // We can therfore schedule the timer again.
-    if (!isTaskQueueEmpty() && !m_taskTimer.isActive())
-        m_taskTimer.startOneShot(0);
 }
 
 void IDBTransactionBackendImpl::closeOpenCursors()

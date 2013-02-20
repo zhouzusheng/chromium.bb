@@ -14,6 +14,12 @@
           }, {
             'skia_support_gpu': 1,
           }],
+
+          ['inside_chromium_build==0', {
+            'webkit_src_dir': '<(DEPTH)/../../..',
+          },{
+            'webkit_src_dir': '<(DEPTH)/third_party/WebKit',
+          }],
         ],
 
         'optimize': 'max',
@@ -35,7 +41,6 @@
         '../third_party/skia/src/images/bmpdecoderhelper.cpp',
         '../third_party/skia/src/images/bmpdecoderhelper.h',
         #'../third_party/skia/src/images/SkFDStream.cpp',
-        #'../third_party/skia/src/images/SkFlipPixelRef.cpp',
         '../third_party/skia/src/images/SkImageDecoder.cpp',
         '../third_party/skia/src/images/SkImageDecoder_Factory.cpp',
         #'../third_party/skia/src/images/SkImageDecoder_fpdfemb.cpp',
@@ -130,13 +135,12 @@
         '../third_party/skia/src/utils/SkNullCanvas.cpp',
         '../third_party/skia/include/utils/SkNWayCanvas.h',
         '../third_party/skia/src/utils/SkNWayCanvas.cpp',
-
+        '../third_party/skia/src/utils/SkPictureUtils.cpp',
         '../third_party/skia/include/pdf/SkPDFDevice.h',
         '../third_party/skia/include/pdf/SkPDFDocument.h',
 
         '../third_party/skia/include/ports/SkTypeface_win.h',
 
-        '../third_party/skia/include/images/SkFlipPixelRef.h',
         '../third_party/skia/include/images/SkImageDecoder.h',
         '../third_party/skia/include/images/SkImageEncoder.h',
         '../third_party/skia/include/images/SkImageRef.h',
@@ -145,7 +149,7 @@
         '../third_party/skia/include/images/SkPageFlipper.h',
 
         '../third_party/skia/include/utils/SkNullCanvas.h',
-
+        '../third_party/skia/include/utils/SkPictureUtils.h',
         'ext/bitmap_platform_device.h',
         'ext/bitmap_platform_device_android.cc',
         'ext/bitmap_platform_device_android.h',
@@ -156,28 +160,22 @@
         'ext/bitmap_platform_device_mac.h',
         'ext/bitmap_platform_device_win.cc',
         'ext/bitmap_platform_device_win.h',
-        'ext/canvas_paint.h',
-        'ext/canvas_paint_common.h',
-        'ext/canvas_paint_gtk.h',
-        'ext/canvas_paint_mac.h',
-        'ext/canvas_paint_win.h',
         'ext/convolver.cc',
         'ext/convolver.h',
         'ext/google_logging.cc',
         'ext/image_operations.cc',
         'ext/image_operations.h',
+        'ext/lazy_pixel_ref.cc',
+        'ext/lazy_pixel_ref.h',
         'ext/SkThread_chrome.cc',
         'ext/platform_canvas.cc',
         'ext/platform_canvas.h',
-        'ext/platform_canvas_linux.cc',
-        'ext/platform_canvas_mac.cc',
-        'ext/platform_canvas_skia.cc',
-        'ext/platform_canvas_win.cc',
         'ext/platform_device.cc',
         'ext/platform_device.h',
         'ext/platform_device_linux.cc',
         'ext/platform_device_mac.cc',
         'ext/platform_device_win.cc',
+        'ext/refptr.h',
         'ext/SkMemory_new_handler.cpp',
         'ext/skia_sandbox_support_win.h',
         'ext/skia_sandbox_support_win.cc',
@@ -219,28 +217,16 @@
         'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
         'GR_STATIC_RECT_VB=1',
         'GR_AGGRESSIVE_SHADER_OPTS=1',
-        'SK_DISABLE_FAST_AA_STROKE_RECT',
         'SK_DEFERRED_CANVAS_USES_GPIPE=1',
-        
+
         # this flag can be removed entirely once this has baked for a while
         'SK_ALLOW_OVER_32K_BITMAPS',
-
-        # temporary for landing Skia rev 3077 with minimal layout test breakage
-        'SK_SIMPLE_TWOCOLOR_VERTICAL_GRADIENTS',
 
         # skia uses static initializers to initialize the serialization logic
         # of its "pictures" library. This is currently not used in chrome; if
         # it ever gets used the processes that use it need to call
         # SkGraphics::Init().
         'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0',
-
-        # Temporarily disable the Skia fix in
-        # http://code.google.com/p/skia/source/detail?r=3037 ; enabling that
-        # fix will require substantial rebaselining.
-        'SK_DRAW_POS_TEXT_IGNORE_SUBPIXEL_LEFT_ALIGN_FIX',
-
-        # Temporarily ignore fix to antialias coverage, until we can rebaseline
-        'SK_USE_LEGACY_AA_COVERAGE',
 
         # Temporarily keep old int-srcrect behavior, until we determine if
         # the few failures are a bug or not.
@@ -297,7 +283,7 @@
             'SK_GAMMA_CONTRAST=0.0',
           ],
         }],
-        
+
         # For POSIX platforms, prefer the Mutex implementation provided by Skia
         # since it does not generate static initializers.
         [ 'OS == "android" or OS == "linux" or OS == "mac" or OS == "ios"', {
@@ -324,6 +310,9 @@
         [ 'OS != "ios"', {
           'sources/': [
             ['exclude', '_ios\\.(cc|cpp|mm?)$'],
+          ],
+          'dependencies': [
+            '<(webkit_src_dir)/Source/WebKit/chromium/skia_webkit.gyp:skia_webkit',
           ],
         }],
         [ 'OS != "mac"', {
@@ -353,7 +342,7 @@
             '__ARM_HAVE_NEON',
           ],
         }],
-        [ 'target_arch == "arm"', {
+        [ 'target_arch == "arm" or target_arch == "mipsel"', {
           'sources!': [
             '../third_party/skia/src/opts/opts_check_SSE2.cpp'
           ],
@@ -363,7 +352,6 @@
             '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:freetype2',
             '../build/linux/system.gyp:pangocairo',
-            '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
             '../third_party/icu/icu.gyp:icuuc',
           ],
           'cflags': [
@@ -384,15 +372,6 @@
             '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
             '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
           ],
-        }],
-        [ 'use_aura == 1 and use_canvas_skia == 1', {
-          'sources/': [
-            ['exclude', 'ext/platform_canvas_mac\\.cc$'],
-            ['exclude', 'ext/platform_canvas_linux\\.cc$'],
-            ['exclude', 'ext/platform_canvas_win\\.cc$'],
-          ],
-        }, { # use_aura == 0 and use_canvas_skia == 1
-          'sources/': [ ['exclude', 'ext/platform_canvas_skia\\.cc$'] ],
         }],
         [ 'toolkit_uses_gtk == 1', {
           'dependencies': [
@@ -419,7 +398,6 @@
               'dependencies': [
                 '../third_party/expat/expat.gyp:expat',
                 '../third_party/freetype/freetype.gyp:ft2',
-                '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
                 'skia_opts'
               ],
               'dependencies!': [
@@ -435,14 +413,10 @@
               ],
               'sources/': [
                 ['include', 'ext/platform_device_linux\\.cc$'],
-                ['include', 'ext/platform_canvas_linux\\.cc$'],
                 ['exclude', '../third_party/skia/src/pdf/'],
               ],
               'sources!': [
                 'ext/vector_platform_device_skia.cc',
-              ],
-              'export_dependent_settings': [
-                '../third_party/harfbuzz/harfbuzz.gyp:harfbuzz',
               ],
             }],
             [ '_toolset == "target" and android_build_type == 0', {
@@ -453,7 +427,6 @@
             [ '_toolset=="host" and host_os=="linux"', {
               'sources': [
                 'ext/platform_device_linux.cc',
-                'ext/platform_canvas_linux.cc',
               ],
             }],
           ],
@@ -467,6 +440,11 @@
             '../third_party/skia/include/utils/ios',
             '../third_party/skia/include/utils/mac',
           ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/ImageIO.framework',
+            ],
+          },
           'dependencies': [
             'skia_opts_ios',
           ],
@@ -665,7 +643,8 @@
         '../third_party/skia/src/core',
       ],
       'conditions': [
-        [ 'os_posix == 1 and OS != "mac" and OS != "android" and target_arch != "arm"', {
+        [ 'os_posix == 1 and OS != "mac" and OS != "android" and \
+           target_arch != "arm" and target_arch != "mipsel"', {
           'cflags': [
             '-msse2',
           ],
@@ -675,7 +654,7 @@
             'SK_BUILD_FOR_ANDROID_NDK',
           ],
         }],
-        [ 'target_arch != "arm"', {
+        [ 'target_arch != "arm" and target_arch != "mipsel"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
@@ -690,8 +669,8 @@
               ],
             }],
           ],
-        },
-        {  # arm
+        }],
+        [ 'target_arch == "arm"', {
           'conditions': [
             [ 'armv7 == 1', {
               'defines': [
@@ -717,15 +696,14 @@
           # targets via common.gypi.
           'cflags!': [
             '-fno-omit-frame-pointer',
+            '-marm',
+            '-mapcs-frame',
           ],
           'cflags': [
             '-fomit-frame-pointer',
           ],
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp',
-            '../third_party/skia/src/opts/SkBlitRow_opts_arm.cpp',
-            '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
-            '../third_party/skia/src/opts/opts_check_arm.cpp',
           ],
         }],
         [ 'armv7 == 1 and arm_neon == 0', {
@@ -742,14 +720,29 @@
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h',
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
-        ],
+          ],
         }],
-        [ 'target_arch == "arm" and armv7 != 1', {
+        [ 'target_arch == "arm" and armv7 == 0', {
           'sources': [
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+            '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
           ],
-          'sources!': [
+        }],
+        [ 'target_arch == "arm" and armv7 == 1', {
+          'sources': [
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.cpp',
+            '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
+            '../third_party/skia/src/opts/opts_check_arm.cpp',
+          ],
+        }],
+        [ 'target_arch == "mipsel"',{
+          'cflags': [
+            '-fomit-frame-pointer',
+          ],
+          'sources': [
+            '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+            '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
           ],
         }],
       ],

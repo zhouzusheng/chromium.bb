@@ -10,7 +10,9 @@
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayerTreeView.h"
 
 namespace cc {
+class FontAtlas;
 class LayerTreeHost;
+class Thread;
 }
 
 namespace WebKit {
@@ -23,7 +25,7 @@ public:
     explicit WebLayerTreeViewImpl(WebLayerTreeViewClient*);
     virtual ~WebLayerTreeViewImpl();
 
-    bool initialize(const Settings&);
+    bool initialize(const Settings&, scoped_ptr<cc::Thread> implThread);
 
     // WebLayerTreeView implementation.
     virtual void setSurfaceReady() OVERRIDE;
@@ -32,6 +34,7 @@ public:
     virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize = WebSize()) OVERRIDE;
     virtual WebSize layoutViewportSize() const OVERRIDE;
     virtual WebSize deviceViewportSize() const OVERRIDE;
+    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& point) const OVERRIDE;
     virtual void setDeviceScaleFactor(float) OVERRIDE;
     virtual float deviceScaleFactor() const OVERRIDE;
     virtual void setBackgroundColor(WebColor) OVERRIDE;
@@ -44,11 +47,13 @@ public:
     virtual bool commitRequested() const OVERRIDE;
     virtual void composite() OVERRIDE;
     virtual void updateAnimations(double frameBeginTime) OVERRIDE;
+    virtual void didStopFlinging() OVERRIDE;
     virtual bool compositeAndReadback(void *pixels, const WebRect&) OVERRIDE;
     virtual void finishAllRendering() OVERRIDE;
     virtual void setDeferCommits(bool deferCommits) OVERRIDE;
     virtual void renderingStats(WebRenderingStats&) const OVERRIDE;
-    virtual void setFontAtlas(SkBitmap, WebRect asciiToRectTable[128], int fontHeight) OVERRIDE;
+    virtual void setShowFPSCounter(bool show);
+    virtual void setShowPaintRects(bool show);
     virtual void loseCompositorContext(int numTimes) OVERRIDE;
 
     // cc::LayerTreeHostClient implementation.
@@ -56,8 +61,8 @@ public:
     virtual void didBeginFrame() OVERRIDE;
     virtual void animate(double monotonicFrameBeginTime) OVERRIDE;
     virtual void layout() OVERRIDE;
-    virtual void applyScrollAndScale(const cc::IntSize& scrollDelta, float pageScale) OVERRIDE;
-    virtual scoped_ptr<WebCompositorOutputSurface> createOutputSurface() OVERRIDE;
+    virtual void applyScrollAndScale(gfx::Vector2d scrollDelta, float pageScale) OVERRIDE;
+    virtual scoped_ptr<cc::OutputSurface> createOutputSurface() OVERRIDE;
     virtual void didRecreateOutputSurface(bool success) OVERRIDE;
     virtual scoped_ptr<cc::InputHandler> createInputHandler() OVERRIDE;
     virtual void willCommit() OVERRIDE;
@@ -65,6 +70,7 @@ public:
     virtual void didCommitAndDrawFrame() OVERRIDE;
     virtual void didCompleteSwapBuffers() OVERRIDE;
     virtual void scheduleComposite() OVERRIDE;
+    virtual scoped_ptr<cc::FontAtlas> createFontAtlas();
 
 private:
     WebLayerTreeViewClient* m_client;

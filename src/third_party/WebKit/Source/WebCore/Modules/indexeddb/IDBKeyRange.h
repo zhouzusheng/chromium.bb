@@ -30,14 +30,15 @@
 
 #include "Dictionary.h"
 #include "IDBKey.h"
+#include "ScriptWrappable.h"
 #include <wtf/PassRefPtr.h>
-#include <wtf/Threading.h>
+#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
 typedef int ExceptionCode;
 
-class IDBKeyRange : public ThreadSafeRefCounted<IDBKeyRange> {
+class IDBKeyRange : public ScriptWrappable, public RefCounted<IDBKeyRange> {
 public:
     enum LowerBoundType {
         LowerBoundOpen,

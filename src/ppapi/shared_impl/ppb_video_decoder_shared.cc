@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/shared_impl/ppb_graphics_3d_shared.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/thunk/enter.h"
 
@@ -50,7 +51,7 @@ void PPB_VideoDecoder_Shared::Destroy() {
 
 bool PPB_VideoDecoder_Shared::SetFlushCallback(
     scoped_refptr<TrackedCallback> callback) {
-  if (flush_callback_.get())
+  if (TrackedCallback::IsPending(flush_callback_))
     return false;
   flush_callback_ = callback;
   return true;
@@ -72,11 +73,11 @@ bool PPB_VideoDecoder_Shared::SetBitstreamBufferCallback(
 }
 
 void PPB_VideoDecoder_Shared::RunFlushCallback(int32 result) {
-  TrackedCallback::ClearAndRun(&flush_callback_, result);
+  flush_callback_->Run(result);
 }
 
 void PPB_VideoDecoder_Shared::RunResetCallback(int32 result) {
-  TrackedCallback::ClearAndRun(&reset_callback_, result);
+  reset_callback_->Run(result);
 }
 
 void PPB_VideoDecoder_Shared::RunBitstreamBufferCallback(
@@ -90,8 +91,16 @@ void PPB_VideoDecoder_Shared::RunBitstreamBufferCallback(
 }
 
 void PPB_VideoDecoder_Shared::FlushCommandBuffer() {
-  if (gles2_impl_)
+  if (gles2_impl_) {
+    // To call Flush() we have to tell Graphics3D that we hold the proxy lock.
+    thunk::EnterResource<thunk::PPB_Graphics3D_API, false> enter_g3d(
+        graphics_context_, false);
+    DCHECK(enter_g3d.succeeded());
+    PPB_Graphics3D_Shared* graphics3d =
+        static_cast<PPB_Graphics3D_Shared*>(enter_g3d.object());
+    PPB_Graphics3D_Shared::ScopedNoLocking dont_lock(graphics3d);
     gles2_impl_->Flush();
+  }
 }
 
 }  // namespace ppapi

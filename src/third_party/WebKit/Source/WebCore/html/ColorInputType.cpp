@@ -118,9 +118,9 @@ void ColorInputType::createShadowSubtree()
 
     Document* document = element()->document();
     RefPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
-    wrapperElement->setShadowPseudoId("-webkit-color-swatch-wrapper");
+    wrapperElement->setPseudo(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
     RefPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
-    colorSwatch->setShadowPseudoId("-webkit-color-swatch");
+    colorSwatch->setPseudo(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
     ExceptionCode ec = 0;
     wrapperElement->appendChild(colorSwatch.release(), ec);
     ASSERT(!ec);
@@ -144,7 +144,7 @@ void ColorInputType::setValue(const String& value, bool valueChanged, TextFieldE
 
 void ColorInputType::handleDOMActivateEvent(Event* event)
 {
-    if (element()->disabled() || element()->readOnly() || !element()->renderer())
+    if (element()->isDisabledOrReadOnly() || !element()->renderer())
         return;
 
     if (!ScriptController::processingUserGesture())
@@ -174,7 +174,7 @@ bool ColorInputType::typeMismatchFor(const String& value) const
 
 void ColorInputType::didChooseColor(const Color& color)
 {
-    if (element()->disabled() || element()->readOnly() || color == valueAsColor())
+    if (element()->isDisabledOrReadOnly() || color == valueAsColor())
         return;
     element()->setValueFromRenderer(color.serialized());
     updateColorSwatch();
@@ -221,6 +221,8 @@ bool ColorInputType::shouldShowSuggestions() const
 {
 #if ENABLE(DATALIST_ELEMENT)
     return element()->fastHasAttribute(listAttr);
+#else
+    return false;
 #endif
 }
 

@@ -72,6 +72,7 @@ public:
 
     void setNeedsShapeUpdate() { m_needsShapeUpdate = true; }
     virtual void setNeedsBoundariesUpdate() { m_needsBoundariesUpdate = true; }
+    virtual bool needsBoundariesUpdate() OVERRIDE { return m_needsBoundariesUpdate; }
     virtual void setNeedsTransformUpdate() { m_needsTransformUpdate = true; }
     virtual void fillShape(GraphicsContext*) const;
     virtual void strokeShape(GraphicsContext*) const;
@@ -104,6 +105,7 @@ private:
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
     virtual FloatRect repaintRectInLocalCoordinates() const { return m_repaintBoundingBox; }
+    virtual FloatRect repaintRectInLocalCoordinatesExcludingSVGShadow() const OVERRIDE { return m_repaintBoundingBoxExcludingShadow; }
     virtual const AffineTransform& localToParentTransform() const { return m_localTransform; }
     virtual AffineTransform localTransform() const { return m_localTransform; }
 
@@ -135,6 +137,7 @@ private:
 
 private:
     FloatRect m_repaintBoundingBox;
+    FloatRect m_repaintBoundingBoxExcludingShadow;
     AffineTransform m_localTransform;
     OwnPtr<Path> m_path;
     Vector<MarkerPosition> m_markerPositions;

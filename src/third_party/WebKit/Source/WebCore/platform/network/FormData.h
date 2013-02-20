@@ -117,8 +117,8 @@ public:
     PassRefPtr<FormData> deepCopy() const;
     ~FormData();
 
-    void encodeForBackForward(Encoder&) const;
-    static PassRefPtr<FormData> decodeForBackForward(Decoder&);
+    void encode(Encoder&) const;
+    static PassRefPtr<FormData> decode(Decoder&);
 
     void appendData(const void* data, size_t);
     void appendFile(const String& filePath, bool shouldGenerateFile = false);
@@ -133,6 +133,12 @@ public:
 
     void flatten(Vector<char>&) const; // omits files
     String flattenToString() const; // omits files
+
+#if ENABLE(BLOB)
+    // Resolve all blob references so we only have file and data.
+    // If the FormData has no blob references to resolve, this is returned.
+    PassRefPtr<FormData> resolveBlobReferences();
+#endif
 
     bool isEmpty() const { return m_elements.isEmpty(); }
     const Vector<FormDataElement>& elements() const { return m_elements; }

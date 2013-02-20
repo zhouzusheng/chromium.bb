@@ -2,24 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/io_surface_layer_impl.h"
 
 #include "base/stringprintf.h"
 #include "cc/gl_renderer.h" // For the GLC() macro.
-#include "cc/graphics_context.h"
 #include "cc/io_surface_draw_quad.h"
-#include "cc/layer_tree_host_impl.h"
+#include "cc/layer_tree_impl.h"
+#include "cc/output_surface.h"
 #include "cc/quad_sink.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
-#include <public/WebGraphicsContext3D.h>
 
 namespace cc {
 
-IOSurfaceLayerImpl::IOSurfaceLayerImpl(int id)
-    : LayerImpl(id)
+IOSurfaceLayerImpl::IOSurfaceLayerImpl(LayerTreeImpl* treeImpl, int id)
+    : LayerImpl(treeImpl, id)
     , m_ioSurfaceId(0)
     , m_ioSurfaceChanged(false)
     , m_ioSurfaceTextureId(0)
@@ -31,9 +29,9 @@ IOSurfaceLayerImpl::~IOSurfaceLayerImpl()
     if (!m_ioSurfaceTextureId)
         return;
 
-    GraphicsContext* context = layerTreeHostImpl()->context();
+    OutputSurface* outputSurface = layerTreeImpl()->output_surface();
     // FIXME: Implement this path for software compositing.
-    WebKit::WebGraphicsContext3D* context3d = context->context3D();
+    WebKit::WebGraphicsContext3D* context3d = outputSurface->Context3D();
     if (context3d)
         context3d->deleteTexture(m_ioSurfaceTextureId);
 }
@@ -79,8 +77,11 @@ void IOSurfaceLayerImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& append
     SharedQuadState* sharedQuadState = quadSink.useSharedQuadState(createSharedQuadState());
     appendDebugBorderQuad(quadSink, sharedQuadState, appendQuadsData);
 
-    IntRect quadRect(IntPoint(), contentBounds());
-    quadSink.append(IOSurfaceDrawQuad::create(sharedQuadState, quadRect, m_ioSurfaceSize, m_ioSurfaceTextureId, IOSurfaceDrawQuad::Flipped).PassAs<DrawQuad>(), appendQuadsData);
+    gfx::Rect quadRect(gfx::Point(), contentBounds());
+    gfx::Rect opaqueRect(contentsOpaque() ? quadRect : gfx::Rect());
+    scoped_ptr<IOSurfaceDrawQuad> quad = IOSurfaceDrawQuad::Create();
+    quad->SetNew(sharedQuadState, quadRect, opaqueRect, m_ioSurfaceSize, m_ioSurfaceTextureId, IOSurfaceDrawQuad::FLIPPED);
+    quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
 }
 
 void IOSurfaceLayerImpl::dumpLayerProperties(std::string* str, int indent) const
@@ -90,7 +91,7 @@ void IOSurfaceLayerImpl::dumpLayerProperties(std::string* str, int indent) const
     LayerImpl::dumpLayerProperties(str, indent);
 }
 
-void IOSurfaceLayerImpl::didLoseContext()
+void IOSurfaceLayerImpl::didLoseOutputSurface()
 {
     // We don't have a valid texture ID in the new context; however,
     // the IOSurface is still valid.
@@ -98,7 +99,7 @@ void IOSurfaceLayerImpl::didLoseContext()
     m_ioSurfaceChanged = true;
 }
 
-void IOSurfaceLayerImpl::setIOSurfaceProperties(unsigned ioSurfaceId, const IntSize& size)
+void IOSurfaceLayerImpl::setIOSurfaceProperties(unsigned ioSurfaceId, const gfx::Size& size)
 {
     if (m_ioSurfaceId != ioSurfaceId)
         m_ioSurfaceChanged = true;
@@ -112,4 +113,4 @@ const char* IOSurfaceLayerImpl::layerTypeAsString() const
     return "IOSurfaceLayer";
 }
 
-}
+}  // namespace cc

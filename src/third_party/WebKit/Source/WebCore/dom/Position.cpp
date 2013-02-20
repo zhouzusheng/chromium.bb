@@ -27,13 +27,13 @@
 #include "Position.h"
 
 #include "CSSComputedStyleDeclaration.h"
-#include "ContextFeatures.h"
 #include "HTMLNames.h"
 #include "InlineTextBox.h"
 #include "Logging.h"
 #include "PositionIterator.h"
 #include "RenderBlock.h"
 #include "RenderText.h"
+#include "RuntimeEnabledFeatures.h"
 #include "Text.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
@@ -82,11 +82,12 @@ Position::Position(PassRefPtr<Node> anchorNode, LegacyEditingOffset offset)
     , m_isLegacyEditingPosition(true)
 {
 #if ENABLE(SHADOW_DOM)
-    ASSERT((m_anchorNode && ContextFeatures::shadowDOMEnabled(m_anchorNode->document()))
+    ASSERT((m_anchorNode && RuntimeEnabledFeatures::shadowDOMEnabled())
            || !m_anchorNode || !m_anchorNode->isShadowRoot());
 #else
     ASSERT(!m_anchorNode || !m_anchorNode->isShadowRoot());
 #endif
+    ASSERT(!m_anchorNode || !m_anchorNode->isPseudoElement());
 }
 
 Position::Position(PassRefPtr<Node> anchorNode, AnchorType anchorType)
@@ -96,11 +97,13 @@ Position::Position(PassRefPtr<Node> anchorNode, AnchorType anchorType)
     , m_isLegacyEditingPosition(false)
 {
 #if ENABLE(SHADOW_DOM)
-    ASSERT((m_anchorNode && ContextFeatures::shadowDOMEnabled(m_anchorNode->document()))
+    ASSERT((m_anchorNode && RuntimeEnabledFeatures::shadowDOMEnabled())
            || !m_anchorNode || !m_anchorNode->isShadowRoot());
 #else
     ASSERT(!m_anchorNode || !m_anchorNode->isShadowRoot());
 #endif
+
+    ASSERT(!m_anchorNode || !m_anchorNode->isPseudoElement());
 
     ASSERT(anchorType != PositionIsOffsetInAnchor);
     ASSERT(!((anchorType == PositionIsBeforeChildren || anchorType == PositionIsAfterChildren)
@@ -114,11 +117,13 @@ Position::Position(PassRefPtr<Node> anchorNode, int offset, AnchorType anchorTyp
     , m_isLegacyEditingPosition(false)
 {
 #if ENABLE(SHADOW_DOM)
-    ASSERT((m_anchorNode && ContextFeatures::shadowDOMEnabled(m_anchorNode->document()))
+    ASSERT((m_anchorNode && RuntimeEnabledFeatures::shadowDOMEnabled())
            || !m_anchorNode || !editingIgnoresContent(m_anchorNode.get()) || !m_anchorNode->isShadowRoot());
 #else
     ASSERT(!m_anchorNode || !editingIgnoresContent(m_anchorNode.get()) || !m_anchorNode->isShadowRoot());
 #endif
+
+    ASSERT(!m_anchorNode || !m_anchorNode->isPseudoElement());
 
     ASSERT(anchorType == PositionIsOffsetInAnchor);
 }
@@ -840,7 +845,7 @@ bool Position::hasRenderedNonAnonymousDescendantsWithHeight(RenderObject* render
 {
     RenderObject* stop = renderer->nextInPreOrderAfterChildren();
     for (RenderObject *o = renderer->firstChild(); o && o != stop; o = o->nextInPreOrder())
-        if (o->node()) {
+        if (o->nonPseudoNode()) {
             if ((o->isText() && toRenderText(o)->linesBoundingBox().height()) ||
                 (o->isBox() && toRenderBox(o)->borderBoundingBox().height()))
                 return true;
@@ -858,12 +863,41 @@ ContainerNode* Position::findParent(const Node* node)
     // FIXME: See http://web.ug/82697
 
 #if ENABLE(SHADOW_DOM)
-    if (ContextFeatures::shadowDOMEnabled(node->document()))
+    if (RuntimeEnabledFeatures::shadowDOMEnabled())
         return node->parentNode();
 #endif
 
     return node->nonShadowBoundaryParentNode();
 }
+
+#if ENABLE(USERSELECT_ALL)
+bool Position::nodeIsUserSelectAll(const Node* node)
+{
+    return node && node->renderer() && node->renderer()->style()->userSelect() == SELECT_ALL;
+}
+
+Node* Position::rootUserSelectAllForNode(Node* node)
+{
+    if (!node || !nodeIsUserSelectAll(node))
+        return 0;
+    Node* parent = node->parentNode();
+    if (!parent)
+        return node;
+
+    Node* candidateRoot = node;
+    while (parent) {
+        if (!parent->renderer()) {
+            parent = parent->parentNode();
+            continue;
+        }
+        if (!nodeIsUserSelectAll(parent))
+            break;
+        candidateRoot = parent;
+        parent = candidateRoot->parentNode();
+    }
+    return candidateRoot;
+}
+#endif
 
 bool Position::isCandidate() const
 {

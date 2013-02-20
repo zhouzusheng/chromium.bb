@@ -41,10 +41,9 @@ public:
     static PassRefPtr<IDBTransactionBackendInterface> create(PassOwnPtr<WebIDBTransaction>);
     virtual ~IDBTransactionBackendProxy();
 
-    virtual PassRefPtr<WebCore::IDBObjectStoreBackendInterface> objectStore(const String& name, WebCore::ExceptionCode&);
+    virtual PassRefPtr<WebCore::IDBObjectStoreBackendInterface> objectStore(int64_t, WebCore::ExceptionCode&);
     virtual void commit();
     virtual void abort();
-    virtual void didCompleteTaskEvents();
     virtual void setCallbacks(WebCore::IDBTransactionCallbacks*);
 
     WebIDBTransaction* getWebIDBTransaction() const { return m_webIDBTransaction.get(); }

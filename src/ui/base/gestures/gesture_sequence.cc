@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
-#include "base//string_tokenizer.h"
+#include "base/string_tokenizer.h"
 #include "base/time.h"
 #include "ui/base/events/event.h"
 #include "ui/base/events/event_constants.h"
@@ -283,59 +283,23 @@ unsigned int ComputeTouchBitmask(const GesturePoint* points) {
   return touch_bitmask;
 }
 
-// Number of different accelerations for fling velocity adjustment.
-const unsigned kNumberOfFlingVelocityBands = 8;
-
-// Fling acceleration bands.
-static float fling_scaling_bands[kNumberOfFlingVelocityBands];
-
-// Maximum fling velocity.
-const float kMaxFlingVelocityFromFinger = 15000.0f;
-
-// Setup a default flat fling acceleration profile.
-void SetDefaultFlingVelocityScaling() {
-  for (unsigned i = 0; i < kNumberOfFlingVelocityBands; i++) {
-    fling_scaling_bands[i] =
-        GestureConfiguration::touchscreen_fling_acceleration_adjustment();
-  }
-}
-
-// Read |kNumberOfFlingVelocityBands| comma-separated floating point
-// values from an environment variable and use that to configure the fling
-// velocity profile.
-void ReadFlingVelocityScalingIfNecessary() {
-  static bool did_setup_scaling = false;
-  if (did_setup_scaling)
-    return;
-  did_setup_scaling = true;
-  SetDefaultFlingVelocityScaling();
-  char* pk = getenv("BANDED_FLING_VELOCITY_ADJUSTMENT");
-  if (!pk)
-      return;
-  LOG(INFO) << "Attempting to configure fling from environment.\n";
-
-  unsigned i = 0;
-  CStringTokenizer t(pk, pk + strlen(pk), ",");
-  while (t.GetNext() && i < kNumberOfFlingVelocityBands) {
-    double d;
-    if (base::StringToDouble(t.token(), &d)) {
-      fling_scaling_bands[i++] = d;
-    } else {
-      LOG(WARNING)
-          << "BANDED_FLING_VELOCITY_ADJUSTMENT bad value: "
-          << t.token();
-    }
-  }
-}
+const float kFlingCurveNormalization = 1.0f / 1875.f;
 
 float CalibrateFlingVelocity(float velocity) {
-  ReadFlingVelocityScalingIfNecessary();
-  float bounded_velocity =
-      std::min(fabsf(velocity), kMaxFlingVelocityFromFinger - 1.f);
-  int band =
-      (bounded_velocity / kMaxFlingVelocityFromFinger) *
-      kNumberOfFlingVelocityBands;
-  return fling_scaling_bands[band] * velocity;
+  const unsigned last_coefficient =
+      GestureConfiguration::NumAccelParams - 1;
+  float normalized_velocity = fabs(velocity * kFlingCurveNormalization);
+  float nu = 0.0f, x = 1.f;
+
+  for (int i = last_coefficient ; i >= 0; i--) {
+    float a = GestureConfiguration::fling_acceleration_curve_coefficients(i);
+    nu += x * a;
+    x *= normalized_velocity;
+  }
+  if (velocity < 0.f)
+    return std::max(nu * velocity, -GestureConfiguration::fling_velocity_cap());
+  else
+    return std::min(nu * velocity, GestureConfiguration::fling_velocity_cap());
 }
 
 }  // namespace
@@ -769,26 +733,24 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
 
 void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
                                                 Gestures* gestures) {
-  float dx, dy;
+  gfx::Vector2d d;
   gfx::Point location;
   if (point_count_ == 1) {
-    dx = point.x_delta();
-    dy = point.y_delta();
+    d = point.ScrollDelta();
     location = point.last_touch_position();
   } else {
     location = bounding_box_.CenterPoint();
-    dx = location.x() - latest_multi_scroll_update_location_.x();
-    dy = location.y() - latest_multi_scroll_update_location_.y();
+    d = location - latest_multi_scroll_update_location_;
     latest_multi_scroll_update_location_ = location;
   }
   if (scroll_type_ == ST_HORIZONTAL)
-    dy = 0;
+    d.set_y(0);
   else if (scroll_type_ == ST_VERTICAL)
-    dx = 0;
-  if (dx == 0 && dy == 0)
+    d.set_x(0);
+  if (d.IsZero())
     return;
 
-  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE, dx, dy);
+  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE, d.x(), d.y());
   details.SetScrollVelocity(
       scroll_type_ == ST_VERTICAL ? 0 : point.XVelocity(),
       scroll_type_ == ST_HORIZONTAL ? 0 : point.YVelocity());
@@ -873,6 +835,9 @@ bool GestureSequence::Click(const TouchEvent& event,
     if (double_tap)
       AppendDoubleClickGestureEvent(point, gestures);
     return true;
+  } else if (point.IsInsideManhattanSquare(event) &&
+      !GetLongPressTimer()->IsRunning()) {
+    AppendLongTapGestureEvent(point, gestures);
   }
   return false;
 }
@@ -881,9 +846,8 @@ bool GestureSequence::ScrollStart(const TouchEvent& event,
                                   GesturePoint& point,
                                   Gestures* gestures) {
   DCHECK(state_ == GS_PENDING_SYNTHETIC_CLICK);
-  if (point.IsInClickWindow(event) ||
-      !point.IsInScrollWindow(event) ||
-      !point.HasEnoughDataToEstablishRail())
+  if (!point.IsConsistentScrollingActionUnderway() &&
+      !point.IsInScrollWindow(event))
     return false;
   AppendScrollGestureBegin(point, point.first_touch_position(), gestures);
   if (point.IsInHorizontalRailWindow())
@@ -979,6 +943,18 @@ void GestureSequence::AppendLongPressGestureEvent() {
       base::Time::FromDoubleT(point->last_touch_time()),
       1 << point->touch_id()));
   helper_->DispatchLongPressGestureEvent(gesture.get());
+}
+
+void GestureSequence::AppendLongTapGestureEvent(const GesturePoint& point,
+                                                Gestures* gestures) {
+  gfx::Rect er = point.enclosing_rectangle();
+  gfx::Point center = er.CenterPoint();
+  gestures->push_back(CreateGestureEvent(
+      GestureEventDetails(ui::ET_GESTURE_LONG_TAP, 0, 0),
+      center,
+      flags_,
+      base::Time::FromDoubleT(point.last_touch_time()),
+      1 << point.touch_id()));
 }
 
 bool GestureSequence::ScrollEnd(const TouchEvent& event,
@@ -1090,8 +1066,8 @@ bool GestureSequence::MaybeSwipe(const TouchEvent& event,
 
   velocity_x = points_[i].XVelocity();
   velocity_y = points_[i].YVelocity();
-  sign_x = velocity_x < 0 ? -1 : 1;
-  sign_y = velocity_y < 0 ? -1 : 1;
+  sign_x = velocity_x < 0.f ? -1 : 1;
+  sign_y = velocity_y < 0.f ? -1 : 1;
 
   for (++i; i < kMaxGesturePoints; ++i) {
     if (!points_[i].in_use())

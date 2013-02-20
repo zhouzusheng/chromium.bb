@@ -71,11 +71,11 @@ WebInspector.CPUProfileView = function(profile)
     this.percentButton.addEventListener("click", this._percentClicked, this);
 
     this.focusButton = new WebInspector.StatusBarButton(WebInspector.UIString("Focus selected function."), "focus-profile-node-status-bar-item");
-    this.focusButton.disabled = true;
+    this.focusButton.setEnabled(false);
     this.focusButton.addEventListener("click", this._focusClicked, this);
 
     this.excludeButton = new WebInspector.StatusBarButton(WebInspector.UIString("Exclude selected function."), "exclude-profile-node-status-bar-item");
-    this.excludeButton.disabled = true;
+    this.excludeButton.setEnabled(false);
     this.excludeButton.addEventListener("click", this._excludeClicked, this);
 
     this.resetButton = new WebInspector.StatusBarButton(WebInspector.UIString("Restore all functions."), "reset-profile-status-bar-item");
@@ -186,6 +186,7 @@ WebInspector.CPUProfileView.prototype = {
 
                 delete profileNode._searchMatchedSelfColumn;
                 delete profileNode._searchMatchedTotalColumn;
+                delete profileNode._searchMatchedAverageColumn;
                 delete profileNode._searchMatchedCallsColumn;
                 delete profileNode._searchMatchedFunctionColumn;
 
@@ -230,6 +231,8 @@ WebInspector.CPUProfileView.prototype = {
         // Make equalTo implicitly true if it wasn't specified there is no other operator.
         if (!isNaN(queryNumber) && !(greaterThan || lessThan))
             equalTo = true;
+
+        var matcher = new RegExp(query.escapeForRegExp(), "i");
 
         function matchesQuery(/*ProfileDataGridNode*/ profileDataGridNode)
         {
@@ -298,7 +301,7 @@ WebInspector.CPUProfileView.prototype = {
                     profileDataGridNode._searchMatchedCallsColumn = true;
             }
 
-            if (profileDataGridNode.functionName.hasSubstring(query, true) || profileDataGridNode.url.hasSubstring(query, true))
+            if (profileDataGridNode.functionName.match(matcher) || profileDataGridNode.url.match(matcher))
                 profileDataGridNode._searchMatchedFunctionColumn = true;
 
             if (profileDataGridNode._searchMatchedSelfColumn ||
@@ -465,14 +468,14 @@ WebInspector.CPUProfileView.prototype = {
 
     _dataGridNodeSelected: function(node)
     {
-        this.focusButton.disabled = false;
-        this.excludeButton.disabled = false;
+        this.focusButton.setEnabled(true);
+        this.excludeButton.setEnabled(true);
     },
 
     _dataGridNodeDeselected: function(node)
     {
-        this.focusButton.disabled = true;
-        this.excludeButton.disabled = true;
+        this.focusButton.setEnabled(false);
+        this.excludeButton.setEnabled(false);
     },
 
     _sortProfile: function()
@@ -630,7 +633,7 @@ WebInspector.CPUProfileType.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.ProfileHeader}
- * @param {WebInspector.CPUProfileType} type
+ * @param {!WebInspector.CPUProfileType} type
  * @param {string} title
  * @param {number=} uid
  */

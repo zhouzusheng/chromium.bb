@@ -53,7 +53,7 @@
 #include "net/base/net_util.h"
 #include "net/base/network_delegate.h"
 #include "net/base/static_cookie_policy.h"
-#include "net/base/upload_data.h"
+#include "net/base/upload_data_stream.h"
 #include "net/cookies/cookie_store.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_request_headers.h"
@@ -299,7 +299,6 @@ class RequestProxy
   // Takes ownership of the params.
   RequestProxy()
       : download_to_file_(false),
-        file_stream_(NULL),
         buf_(new net::IOBuffer(kDataSize)),
         last_upload_position_(0) {
   }
@@ -429,10 +428,10 @@ class RequestProxy
     request_->SetExtraRequestHeaders(headers);
     request_->set_load_flags(params->load_flags);
     if (params->request_body) {
-      request_->set_upload(
-          params->request_body->ResolveElementsAndCreateUploadData(
+      request_->set_upload(make_scoped_ptr(
+          params->request_body->ResolveElementsAndCreateUploadDataStream(
               static_cast<TestShellRequestContext*>(g_request_context)->
-                  blob_storage_controller()));
+              blob_storage_controller())));
     }
     SimpleAppCacheSystem::SetExtraRequestInfo(
         request_.get(), params->appcache_host_id, params->request_type);
@@ -444,7 +443,8 @@ class RequestProxy
         downloaded_file_ = ShareableFileReference::GetOrCreate(
             path, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
             base::MessageLoopProxy::current());
-        file_stream_.OpenSync(
+        file_stream_.reset(new net::FileStream(NULL));
+        file_stream_->OpenSync(
             path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE);
       }
     }
@@ -522,7 +522,7 @@ class RequestProxy
 
   virtual void OnReceivedData(int bytes_read) {
     if (download_to_file_) {
-      file_stream_.WriteSync(buf_->data(), bytes_read);
+      file_stream_->WriteSync(buf_->data(), bytes_read);
       owner_loop_->PostTask(
           FROM_HERE,
           base::Bind(&RequestProxy::NotifyDownloadedData, this, bytes_read));
@@ -538,7 +538,7 @@ class RequestProxy
                                   const std::string& security_info,
                                   const base::TimeTicks& complete_time) {
     if (download_to_file_)
-      file_stream_.CloseSync();
+      file_stream_.reset();
     owner_loop_->PostTask(
         FROM_HERE,
         base::Bind(&RequestProxy::NotifyCompletedRequest, this, error_code,
@@ -743,7 +743,7 @@ class RequestProxy
 
   // Support for request.download_to_file behavior.
   bool download_to_file_;
-  net::FileStream file_stream_;
+  scoped_ptr<net::FileStream> file_stream_;
   scoped_refptr<ShareableFileReference> downloaded_file_;
 
   // Size of our async IO data buffers
@@ -819,7 +819,7 @@ class SyncRequestProxy : public RequestProxy {
 
   virtual void OnReceivedData(int bytes_read) OVERRIDE {
     if (download_to_file_)
-      file_stream_.WriteSync(buf_->data(), bytes_read);
+      file_stream_->WriteSync(buf_->data(), bytes_read);
     else
       result_->data.append(buf_->data(), bytes_read);
     AsyncReadData();  // read more (may recurse)
@@ -830,7 +830,7 @@ class SyncRequestProxy : public RequestProxy {
       const std::string& security_info,
       const base::TimeTicks& complete_time) OVERRIDE {
     if (download_to_file_)
-      file_stream_.CloseSync();
+      file_stream_.reset();
     result_->error_code = error_code;
     event_.Signal();
   }

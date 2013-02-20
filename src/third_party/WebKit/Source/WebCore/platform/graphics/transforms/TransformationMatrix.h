@@ -27,6 +27,7 @@
 #define TransformationMatrix_h
 
 #include "FloatPoint.h"
+#include "FloatPoint3D.h"
 #include "IntPoint.h"
 #include <string.h> //for memcpy
 #include <wtf/FastAllocBase.h>
@@ -64,15 +65,18 @@ namespace WebCore {
 
 class AffineTransform;
 class IntRect;
-class FractionalLayoutRect;
-class FloatPoint3D;
+class LayoutRect;
 class FloatRect;
 class FloatQuad;
 
 class TransformationMatrix {
     WTF_MAKE_FAST_ALLOCATED;
 public:
+#if CPU(APPLE_ARMV7S)
+    typedef double Matrix4[4][4] __attribute__((aligned (16)));
+#else
     typedef double Matrix4[4][4];
+#endif
 
     TransformationMatrix() { makeIdentity(); }
     TransformationMatrix(const AffineTransform& t);
@@ -153,7 +157,7 @@ public:
     // Rounds the resulting mapped rectangle out. This is helpful for bounding
     // box computations but may not be what is wanted in other contexts.
     IntRect mapRect(const IntRect&) const;
-    FractionalLayoutRect mapRect(const FractionalLayoutRect&) const;
+    LayoutRect mapRect(const LayoutRect&) const;
 
     // If the matrix has 3D components, the z component of the result is
     // dropped, effectively projecting the quad into the z=0 plane
@@ -166,10 +170,10 @@ public:
     // with the destination plane.
     FloatPoint projectPoint(const FloatPoint&, bool* clamped = 0) const;
     // Projects the four corners of the quad
-    FloatQuad projectQuad(const FloatQuad&) const;
+    FloatQuad projectQuad(const FloatQuad&,  bool* clamped = 0) const;
     // Projects the four corners of the quad and takes a bounding box,
     // while sanitizing values created when the w component is negative.
-    FractionalLayoutRect clampedBoundsOfProjectedQuad(const FloatQuad&) const;
+    LayoutRect clampedBoundsOfProjectedQuad(const FloatQuad&) const;
 
     double m11() const { return m_matrix[0][0]; }
     void setM11(double f) { m_matrix[0][0] = f; }
@@ -375,9 +379,24 @@ public:
 private:
     // multiply passed 2D point by matrix (assume z=0)
     void multVecMatrix(double x, double y, double& dstX, double& dstY) const;
+    FloatPoint internalMapPoint(const FloatPoint& sourcePoint) const
+    {
+        double resultX;
+        double resultY;
+        multVecMatrix(sourcePoint.x(), sourcePoint.y(), resultX, resultY);
+        return FloatPoint(static_cast<float>(resultX), static_cast<float>(resultY));
+    }
 
     // multiply passed 3D point by matrix
     void multVecMatrix(double x, double y, double z, double& dstX, double& dstY, double& dstZ) const;
+    FloatPoint3D internalMapPoint(const FloatPoint3D& sourcePoint) const
+    {
+        double resultX;
+        double resultY;
+        double resultZ;
+        multVecMatrix(sourcePoint.x(), sourcePoint.y(), sourcePoint.z(), resultX, resultY, resultZ);
+        return FloatPoint3D(static_cast<float>(resultX), static_cast<float>(resultY), static_cast<float>(resultZ));
+    }
 
     void setMatrix(const Matrix4 m)
     {

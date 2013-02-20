@@ -104,9 +104,8 @@ public:
     void loadFrameRequest(const FrameLoadRequest&, bool lockHistory, bool lockBackForwardList,  // Called by submitForm, calls loadPostRequest and loadURL.
         PassRefPtr<Event>, PassRefPtr<FormState>, ShouldSendReferrer);
 
-    void load(const ResourceRequest&, bool lockHistory);                                        // Called by WebFrame, calls load(ResourceRequest, SubstituteData).
-    void load(const ResourceRequest&, const SubstituteData&, bool lockHistory);                 // Called both by WebFrame and internally, calls load(DocumentLoader*).
-    void load(const ResourceRequest&, const String& frameName, bool lockHistory);               // Called by WebPluginController.
+    void load(const FrameLoadRequest&);
+
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
     void loadArchive(PassRefPtr<Archive>);
 #endif
@@ -246,7 +245,7 @@ public:
 
     void applyUserAgent(ResourceRequest&);
 
-    bool shouldInterruptLoadForXFrameOptions(const String&, const KURL&);
+    bool shouldInterruptLoadForXFrameOptions(const String&, const KURL&, unsigned long requestIdentifier);
 
     void completed();
     bool allAncestorsAreComplete() const; // including this
@@ -353,7 +352,7 @@ private:
     void detachChildren();
     void closeAndRemoveChild(Frame*);
 
-    void loadInSameDocument(const KURL&, SerializedScriptValue* stateObject, bool isNewNavigation);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, bool isNewNavigation);
 
     void prepareForLoadStart();
     void provisionalLoadStarted();

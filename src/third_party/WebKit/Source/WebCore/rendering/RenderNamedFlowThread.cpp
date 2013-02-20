@@ -29,6 +29,7 @@
 #include "FlowThreadController.h"
 #include "InlineTextBox.h"
 #include "InspectorInstrumentation.h"
+#include "NodeTraversal.h"
 #include "Position.h"
 #include "RenderInline.h"
 #include "RenderRegion.h"
@@ -113,15 +114,20 @@ RenderObject* RenderNamedFlowThread::previousRendererForNode(Node* node) const
     return 0;
 }
 
-void RenderNamedFlowThread::addFlowChild(RenderObject* newChild, RenderObject* beforeChild)
+void RenderNamedFlowThread::addFlowChild(RenderObject* newChild)
 {
     // The child list is used to sort the flow thread's children render objects 
     // based on their corresponding nodes DOM order. The list is needed to avoid searching the whole DOM.
 
+    Node* childNode = newChild->node();
+
     // Do not add anonymous objects.
-    if (!newChild->node())
+    if (!childNode)
         return;
 
+    ASSERT(childNode->isElementNode());
+
+    RenderObject* beforeChild = nextRendererForNode(childNode);
     if (beforeChild)
         m_flowThreadChildList.insertBefore(beforeChild, newChild);
     else
@@ -434,7 +440,7 @@ static bool isContainedInNodes(Vector<Node*> others, Node* node)
 
 static bool boxIntersectsRegion(LayoutUnit logicalTopForBox, LayoutUnit logicalBottomForBox, LayoutUnit logicalTopForRegion, LayoutUnit logicalBottomForRegion)
 {
-    bool regionIsEmpty = logicalBottomForRegion != MAX_LAYOUT_UNIT && logicalTopForRegion != MIN_LAYOUT_UNIT
+    bool regionIsEmpty = logicalBottomForRegion != LayoutUnit::max() && logicalTopForRegion != LayoutUnit::min()
         && (logicalBottomForRegion - logicalTopForRegion) <= 0;
     return  (logicalBottomForBox - logicalTopForBox) > 0
         && !regionIsEmpty
@@ -448,13 +454,13 @@ void RenderNamedFlowThread::getRanges(Vector<RefPtr<Range> >& rangeObjects, cons
 
     // extend the first region top to contain everything up to its logical height
     if (region->isFirstRegion())
-        logicalTopForRegion = MIN_LAYOUT_UNIT;
+        logicalTopForRegion = LayoutUnit::min();
     else
         logicalTopForRegion =  region->logicalTopForFlowThreadContent();
 
     // extend the last region to contain everything above its y()
     if (region->isLastRegion())
-        logicalBottomForRegion = MAX_LAYOUT_UNIT;
+        logicalBottomForRegion = LayoutUnit::max();
     else
         logicalBottomForRegion = region->logicalBottomForFlowThreadContent();
 
@@ -479,7 +485,7 @@ void RenderNamedFlowThread::getRanges(Vector<RefPtr<Range> >& rangeObjects, cons
         bool skipOverOutsideNodes = false;
         Node* lastEndNode = 0;
 
-        for (Node* node = contentNode; node; node = node->traverseNextNode(contentNode)) {
+        for (Node* node = contentNode; node; node = NodeTraversal::next(node, contentNode)) {
             RenderObject* renderer = node->renderer();
             if (!renderer)
                 continue;
@@ -496,8 +502,8 @@ void RenderNamedFlowThread::getRanges(Vector<RefPtr<Range> >& rangeObjects, cons
             }
 
             LayoutUnit offsetTop = renderer->containingBlock()->offsetFromLogicalTopOfFirstPage();
-            const LayoutPoint logicalOffsetFromTop(isHorizontalWritingMode() ? ZERO_LAYOUT_UNIT :  offsetTop,
-                isHorizontalWritingMode() ? offsetTop : ZERO_LAYOUT_UNIT);
+            const LayoutPoint logicalOffsetFromTop(isHorizontalWritingMode() ? LayoutUnit() :  offsetTop,
+                isHorizontalWritingMode() ? offsetTop : LayoutUnit());
 
             boundingBox.moveBy(logicalOffsetFromTop);
 

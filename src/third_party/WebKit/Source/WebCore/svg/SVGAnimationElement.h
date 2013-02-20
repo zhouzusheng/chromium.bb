@@ -27,7 +27,6 @@
 
 #if ENABLE(SVG)
 #include "ElementTimeControl.h"
-#include "Path.h"
 #include "SMILTime.h"
 #include "SVGAnimatedBoolean.h"
 #include "SVGExternalResourcesRequired.h"
@@ -87,7 +86,7 @@ public:
 
     virtual bool isAdditive() const;
     bool isAccumulated() const;
-    AnimationMode animationMode() const;
+    AnimationMode animationMode() const { return m_animationMode; }
     CalcMode calcMode() const { return m_calcMode; }
 
     enum ShouldApplyAnimation {
@@ -175,7 +174,7 @@ protected:
     virtual void determinePropertyValueTypes(const String& from, const String& to);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     enum AttributeType {
@@ -198,14 +197,16 @@ protected:
     AnimatedPropertyValueType m_fromPropertyValueType;
     AnimatedPropertyValueType m_toPropertyValueType;
 
-    virtual void targetElementWillChange(SVGElement* currentTarget, SVGElement* oldTarget) OVERRIDE;
+    virtual void setTargetElement(SVGElement*) OVERRIDE;
+    virtual void setAttributeName(const QualifiedName&) OVERRIDE;
     bool hasInvalidCSSAttributeType() const { return m_hasInvalidCSSAttributeType; }
 
+    virtual void updateAnimationMode();
+    void setAnimationMode(AnimationMode animationMode) { m_animationMode = animationMode; }
     void setCalcMode(CalcMode calcMode) { m_calcMode = calcMode; }
 
 private:
     virtual void animationAttributeChanged() OVERRIDE;
-    virtual void setAttributeName(const QualifiedName&) OVERRIDE;
     void setAttributeType(const AtomicString&);
 
     void checkInvalidCSSAttributeType(SVGElement*);
@@ -215,7 +216,6 @@ private:
     virtual bool calculateFromAndByValues(const String& fromString, const String& byString) = 0;
     virtual void calculateAnimatedValue(float percent, unsigned repeatCount, SVGSMILElement* resultElement) = 0;
     virtual float calculateDistance(const String& /*fromString*/, const String& /*toString*/) { return -1.f; }
-    virtual Path animationPath() const { return Path(); }
 
     void currentValuesForValuesAnimation(float percent, float& effectivePercent, String& from, String& to);
     void calculateKeyTimesForCalcModePaced();
@@ -250,6 +250,7 @@ private:
     String m_lastValuesAnimationTo;
     bool m_hasInvalidCSSAttributeType;
     CalcMode m_calcMode;
+    AnimationMode m_animationMode;
 };
 
 } // namespace WebCore

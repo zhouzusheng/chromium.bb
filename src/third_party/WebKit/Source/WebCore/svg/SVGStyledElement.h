@@ -35,8 +35,6 @@ void mapAttributeToCSSProperty(HashMap<AtomicStringImpl*, CSSPropertyID>* proper
 class SVGStyledElement : public SVGElement,
                          public SVGStylable {
 public:
-    virtual ~SVGStyledElement();
-
     virtual String title() const;
 
     bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
@@ -50,10 +48,6 @@ public:
     bool instanceUpdatesBlocked() const;
     void setInstanceUpdatesBlocked(bool);
 
-    bool hasPendingResources() const;
-    void setHasPendingResources();
-    void clearHasPendingResourcesIfPossible();
-
     virtual void animatedPropertyTypeForAttribute(const QualifiedName&, Vector<AnimatedPropertyType>&);
     static bool isAnimatableCSSProperty(const QualifiedName&);
 
@@ -66,10 +60,10 @@ protected:
     SVGStyledElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -80,7 +74,6 @@ protected:
     void updateRelativeLengthsInformation(bool hasRelativeLengths, SVGStyledElement*);
 
     virtual bool selfHasRelativeLengths() const { return false; }
-    virtual void buildPendingResource() { }
 
 private:
     virtual bool isStyled() const { return true; }

@@ -104,10 +104,10 @@ protected:
                                      uint32_t numVertices) SK_OVERRIDE;
 
     virtual void setStencilPathSettings(const GrPath&,
-                                        GrPathFill,
+                                        SkPath::FillType,
                                         GrStencilSettings* settings)
                                         SK_OVERRIDE;
-    virtual void onGpuStencilPath(const GrPath*, GrPathFill) SK_OVERRIDE;
+    virtual void onGpuStencilPath(const GrPath*, SkPath::FillType) SK_OVERRIDE;
 
     virtual void clearStencil() SK_OVERRIDE;
     virtual void clearStencilClip(const GrIRect& rect,
@@ -145,26 +145,17 @@ private:
 
     const GrGLContextInfo& glContextInfo() const { return fGLContextInfo; }
 
-    // adjusts texture matrix to account for orientation
-    static void AdjustTextureMatrix(const GrGLTexture* texture,
-                                    GrMatrix* matrix);
-
-    // This helper determines if what optimizations can be applied to the matrix after any coord
-    // adjustments are applied. The return is a bitfield of GrGLProgram::StageDesc::OptFlags.
-    static int TextureMatrixOptFlags(const GrGLTexture* texture, const GrEffectStage& sampler);
-
     static bool BlendCoeffReferencesConstant(GrBlendCoeff coeff);
 
     // for readability of function impls
     typedef GrGLProgram::Desc        ProgramDesc;
-    typedef ProgramDesc::StageDesc   StageDesc;
 
     class ProgramCache : public ::GrNoncopyable {
     public:
         ProgramCache(const GrGLContextInfo& gl);
 
         void abandon();
-        GrGLProgram* getProgram(const GrGLProgram::Desc& desc, const GrEffect** stages);
+        GrGLProgram* getProgram(const GrGLProgram::Desc& desc, const GrEffectStage* stages[]);
     private:
         enum {
             kKeySize = sizeof(ProgramDesc),
@@ -215,9 +206,6 @@ private:
                                     const GrTextureParams& params,
                                     GrGLTexture* nextTexture);
 
-    // sets the texture matrix for the currently bound program
-    void flushTextureMatrix(int stageIdx);
-
     // sets the color specified by GrDrawState::setColor()
     void flushColor(GrColor color);
 
@@ -238,7 +226,6 @@ private:
     void buildProgram(bool isPoints,
                       BlendOptFlags blendOpts,
                       GrBlendCoeff dstCoeff,
-                      const GrEffect** effects,
                       ProgramDesc* desc);
 
     // Inits GrDrawTarget::Caps, subclass may enable additional caps.
@@ -355,10 +342,10 @@ private:
     } fHWAAState;
 
     struct {
-        GrMatrix    fViewMatrix;
+        SkMatrix    fViewMatrix;
         SkISize     fRTSize;
         void invalidate() {
-            fViewMatrix = GrMatrix::InvalidMatrix();
+            fViewMatrix = SkMatrix::InvalidMatrix();
             fRTSize.fWidth = -1; // just make the first value compared illegal.
         }
     } fHWPathMatrixState;

@@ -30,7 +30,7 @@
 #include "FloatPoint.h"
 #include "FloatQuad.h"
 #include "IntSize.h"
-#include "LayoutTypesInlineMethods.h"
+#include "LayoutSize.h"
 #include "TransformationMatrix.h"
 #include <wtf/OwnPtr.h>
 
@@ -73,7 +73,14 @@ public:
 
     TransformState& operator=(const TransformState&);
     
-    void setQuad(const FloatQuad& quad) { m_lastPlanarQuad = quad; }
+    void setQuad(const FloatQuad& quad)
+    {
+        // FIXME: this assumes that the quad being added is in the coordinate system of the current state.
+        // This breaks if we're simultaneously mapping a point. https://bugs.webkit.org/show_bug.cgi?id=106680
+        ASSERT(!m_mapPoint);
+        m_accumulatedOffset = LayoutSize();
+        m_lastPlanarQuad = quad;
+    }
 
     void move(LayoutUnit x, LayoutUnit y, TransformAccumulation accumulate = FlattenTransform)
     {
@@ -81,22 +88,22 @@ public:
     }
 
     void move(const LayoutSize&, TransformAccumulation = FlattenTransform);
-    void applyTransform(const AffineTransform& transformFromContainer, TransformAccumulation = FlattenTransform);
-    void applyTransform(const TransformationMatrix& transformFromContainer, TransformAccumulation = FlattenTransform);
-    void flatten();
+    void applyTransform(const AffineTransform& transformFromContainer, TransformAccumulation = FlattenTransform, bool* wasClamped = 0);
+    void applyTransform(const TransformationMatrix& transformFromContainer, TransformAccumulation = FlattenTransform, bool* wasClamped = 0);
+    void flatten(bool* wasClamped = 0);
 
     // Return the coords of the point or quad in the last flattened layer
     FloatPoint lastPlanarPoint() const { return m_lastPlanarPoint; }
     FloatQuad lastPlanarQuad() const { return m_lastPlanarQuad; }
 
     // Return the point or quad mapped through the current transform
-    FloatPoint mappedPoint() const;
-    FloatQuad mappedQuad() const;
+    FloatPoint mappedPoint(bool* wasClamped = 0) const;
+    FloatQuad mappedQuad(bool* wasClamped = 0) const;
 
 private:
     void translateTransform(const IntSize&);
     void translateMappedCoordinates(const IntSize&);
-    void flattenWithTransform(const TransformationMatrix&);
+    void flattenWithTransform(const TransformationMatrix&, bool* wasClamped);
     void applyAccumulatedOffset();
     
     FloatPoint m_lastPlanarPoint;

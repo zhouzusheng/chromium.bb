@@ -13,8 +13,9 @@
 #include "GrColor.h"
 #include "GrAARectRenderer.h"
 #include "GrClipData.h"
-#include "GrMatrix.h"
+#include "SkMatrix.h"
 #include "GrPaint.h"
+#include "GrPathRendererChain.h"
 // not strictly needed but requires WK change in LayerTextureUpdaterCanvas to
 // remove.
 #include "GrRenderTarget.h"
@@ -32,7 +33,6 @@ class GrIndexBuffer;
 class GrIndexBufferAllocPool;
 class GrInOrderDrawBuffer;
 class GrPathRenderer;
-class GrPathRendererChain;
 class GrResourceEntry;
 class GrResourceCache;
 class GrStencilBuffer;
@@ -40,6 +40,7 @@ class GrTextureParams;
 class GrVertexBuffer;
 class GrVertexBufferAllocPool;
 class GrSoftwarePathRenderer;
+class SkStroke;
 
 class GR_API GrContext : public GrRefCnt {
 public:
@@ -322,13 +323,13 @@ public:
      * Gets the current transformation matrix.
      * @return the current matrix.
      */
-    const GrMatrix& getMatrix() const;
+    const SkMatrix& getMatrix() const;
 
     /**
      * Sets the transformation matrix.
      * @param m the matrix to set.
      */
-    void setMatrix(const GrMatrix& m);
+    void setMatrix(const SkMatrix& m);
 
     /**
      * Sets the current transformation matrix to identity.
@@ -340,7 +341,7 @@ public:
      * current matrix.
      * @param m the matrix to concat.
      */
-    void concatMatrix(const GrMatrix& m) const;
+    void concatMatrix(const SkMatrix& m) const;
 
 
     ///////////////////////////////////////////////////////////////////////////
@@ -388,8 +389,8 @@ public:
      */
     void drawRect(const GrPaint& paint,
                   const GrRect&,
-                  GrScalar strokeWidth = -1,
-                  const GrMatrix* matrix = NULL);
+                  SkScalar strokeWidth = -1,
+                  const SkMatrix* matrix = NULL);
 
     /**
      * Maps a rect of paint coordinates onto the a rect of destination
@@ -409,19 +410,17 @@ public:
     void drawRectToRect(const GrPaint& paint,
                         const GrRect& dstRect,
                         const GrRect& srcRect,
-                        const GrMatrix* dstMatrix = NULL,
-                        const GrMatrix* srcMatrix = NULL);
+                        const SkMatrix* dstMatrix = NULL,
+                        const SkMatrix* srcMatrix = NULL);
 
     /**
      * Draws a path.
      *
      * @param paint         describes how to color pixels.
      * @param path          the path to draw
-     * @param fill          the path filling rule to use.
-     * @param translate     optional additional translation applied to the
-     *                      path.
+     * @param doHairLine    whether the stroke can be optimized as a hairline
      */
-    void drawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill);
+    void drawPath(const GrPaint& paint, const SkPath& path, bool doHairLine);
 
     /**
      * Draws vertices with a paint.
@@ -592,11 +591,15 @@ public:
 
 
     /**
-     * Copies all texels from one texture to another.
+     * Copies a rectangle of texels from src to dst. The size of dst is the size of the rectangle
+     * copied and topLeft is the position of the rect in src. The rectangle is clipped to src's
+     * bounds.
      * @param src           the texture to copy from.
      * @param dst           the render target to copy to.
+     * @param topLeft       the point in src that will be copied to the top-left of dst. If NULL,
+     *                      (0, 0) will be used.
      */
-    void copyTexture(GrTexture* src, GrRenderTarget* dst);
+    void copyTexture(GrTexture* src, GrRenderTarget* dst, const SkIPoint* topLeft = NULL);
 
     /**
      * Resolves a render target that has MSAA. The intermediate MSAA buffer is
@@ -693,7 +696,7 @@ public:
         /**
          * Initializes by pre-concat'ing the context's current matrix with the preConcat param.
          */
-        void setPreConcat(GrContext* context, const GrMatrix& preConcat, GrPaint* paint = NULL) {
+        void setPreConcat(GrContext* context, const SkMatrix& preConcat, GrPaint* paint = NULL) {
             GrAssert(NULL != context);
 
             this->restore();
@@ -727,7 +730,7 @@ public:
          * Replaces the context's matrix with a new matrix. Returns false if the inverse matrix is
          * required to update a paint but the matrix cannot be inverted.
          */
-        bool set(GrContext* context, const GrMatrix& newMatrix, GrPaint* paint = NULL) {
+        bool set(GrContext* context, const SkMatrix& newMatrix, GrPaint* paint = NULL) {
             if (NULL != paint) {
                 if (!this->setIdentity(context, paint)) {
                     return false;
@@ -749,7 +752,7 @@ public:
          * made, not the matrix at the time AutoMatrix was first initialized. In other words, this
          * performs an incremental update of the paint.
          */
-        void preConcat(const GrMatrix& preConcat, GrPaint* paint = NULL) {
+        void preConcat(const SkMatrix& preConcat, GrPaint* paint = NULL) {
             if (NULL != paint) {
                 paint->sourceCoordChange(preConcat);
             }
@@ -774,7 +777,7 @@ public:
 
     private:
         GrContext*  fContext;
-        GrMatrix    fMatrix;
+        SkMatrix    fMatrix;
     };
 
     class AutoClip : GrNoncopyable {
@@ -848,11 +851,13 @@ public:
     void addStencilBuffer(GrStencilBuffer* sb);
     GrStencilBuffer* findStencilBuffer(int width, int height, int sampleCnt);
 
-    GrPathRenderer* getPathRenderer(const SkPath& path,
-                                    GrPathFill fill,
-                                    const GrDrawTarget* target,
-                                    bool antiAlias,
-                                    bool allowSW);
+    GrPathRenderer* getPathRenderer(
+                    const SkPath& path,
+                    const SkStroke& stroke,
+                    const GrDrawTarget* target,
+                    bool allowSW,
+                    GrPathRendererChain::DrawType drawType = GrPathRendererChain::kColor_DrawType,
+                    GrPathRendererChain::StencilSupport* stencilSupport = NULL);
 
 #if GR_CACHE_STATS
     void printCacheStats() const;
@@ -912,7 +917,7 @@ private:
     /// draw state is left unmodified.
     GrDrawTarget* prepareToDraw(const GrPaint*, BufferedDraw);
 
-    void internalDrawPath(const GrPaint& paint, const SkPath& path, GrPathFill fill);
+    void internalDrawPath(const GrPaint& paint, const SkPath& path, const SkStroke& stroke);
 
     GrTexture* createResizedTexture(const GrTextureDesc& desc,
                                     const GrCacheData& cacheData,
@@ -928,8 +933,14 @@ private:
     // for use with textures released from an GrAutoScratchTexture.
     void addExistingTextureToCache(GrTexture* texture);
 
-    GrEffect* createPMToUPMEffect(GrTexture* texture, bool swapRAndB);
-    GrEffect* createUPMToPMEffect(GrTexture* texture, bool swapRAndB);
+    bool installPMToUPMEffect(GrTexture* texture,
+                              bool swapRAndB,
+                              const SkMatrix& matrix,
+                              GrEffectStage* stage);
+    bool installUPMToPMEffect(GrTexture* texture,
+                              bool swapRAndB,
+                              const SkMatrix& matrix,
+                              GrEffectStage* stage);
 
     typedef GrRefCnt INHERITED;
 };

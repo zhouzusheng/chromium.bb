@@ -1,0 +1,22 @@
+# Gyp generated files
+*.vcproj
+*.sln
+*.rules
+*_rules.mk
+*.user
+
+# VS generated files
+*.ncb
+*.suo
+
+# Generated python
+*.pyc
+
+# Build output directories
+/build/Debug/
+/build/Release/
+
+# Special cases
+/build/util/LASTCHANGE
+/third_party/WebKit/Source/WebCore/WebCore.gyp/idl_files_list.tmp
+

@@ -56,6 +56,7 @@ class MEDIA_EXPORT Decryptor {
     kError  // Key is available but an error occurred during decryption.
   };
 
+  // TODO(xhwang): Unify this with DemuxerStream::Type.
   enum StreamType {
     kAudio,
     kVideo
@@ -88,6 +89,17 @@ class MEDIA_EXPORT Decryptor {
   // Cancels the key request specified by |session_id|.
   virtual void CancelKeyRequest(const std::string& key_system,
                                 const std::string& session_id) = 0;
+
+  // Indicates that a key has been added to the Decryptor.
+  typedef base::Callback<void()> KeyAddedCB;
+
+  // Registers a KeyAddedCB which should be called when a key is added to the
+  // decryptor. Only one KeyAddedCB can be registered for one |stream_type|.
+  // If this function is called multiple times for the same |stream_type|, the
+  // previously registered callback will be replaced. In other words,
+  // registering a null callback cancels the originally registered callback.
+  virtual void RegisterKeyAddedCB(StreamType stream_type,
+                                  const KeyAddedCB& key_added_cb) = 0;
 
   // Indicates completion of a decryption operation.
   //
@@ -125,18 +137,12 @@ class MEDIA_EXPORT Decryptor {
   // - Set to true if initialization was successful. False if an error occurred.
   typedef base::Callback<void(bool)> DecoderInitCB;
 
-  // Indicates that a key has been added to the Decryptor.
-  typedef base::Callback<void()> KeyAddedCB;
-
   // Initializes a decoder with the given |config|, executing the |init_cb|
   // upon completion.
-  // |key_added_cb| should be called when a key is added to the decryptor.
   virtual void InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
-                                      const DecoderInitCB& init_cb,
-                                      const KeyAddedCB& key_added_cb) = 0;
+                                      const DecoderInitCB& init_cb) = 0;
   virtual void InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
-                                      const DecoderInitCB& init_cb,
-                                      const KeyAddedCB& key_added_cb) = 0;
+                                      const DecoderInitCB& init_cb) = 0;
 
   // Helper structure for managing multiple decoded audio buffers per input.
   // TODO(xhwang): Rename this to AudioFrames.
@@ -197,6 +203,18 @@ class MEDIA_EXPORT Decryptor {
  private:
   DISALLOW_COPY_AND_ASSIGN(Decryptor);
 };
+
+// Callback to notify that a decryptor is ready.
+typedef base::Callback<void(Decryptor*)> DecryptorReadyCB;
+
+// Callback to set/cancel a DecryptorReadyCB.
+// Calling this callback with a non-null callback registers decryptor ready
+// notification. When the decryptor is ready, notification will be sent
+// through the provided callback.
+// Calling this callback with a null callback cancels previously registered
+// decryptor ready notification. Any previously provided callback will be
+// fired immediately with NULL.
+typedef base::Callback<void(const DecryptorReadyCB&)> SetDecryptorReadyCB;
 
 }  // namespace media
 

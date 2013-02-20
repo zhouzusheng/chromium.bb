@@ -9,7 +9,7 @@
 namespace net {
 
 QuicReceiptMetricsCollector::QuicReceiptMetricsCollector(
-    QuicClock* clock,
+    const QuicClock* clock,
     CongestionFeedbackType type)
     : receive_algorithm_(ReceiveAlgorithmInterface::Create(clock, type)) {
 }
@@ -17,17 +17,17 @@ QuicReceiptMetricsCollector::QuicReceiptMetricsCollector(
 QuicReceiptMetricsCollector::~QuicReceiptMetricsCollector() {
 }
 
-bool QuicReceiptMetricsCollector::GenerateCongestionInfo(
-    CongestionInfo* info) {
-  return receive_algorithm_->GenerateCongestionInfo(info);
+bool QuicReceiptMetricsCollector::GenerateCongestionFeedback(
+    QuicCongestionFeedbackFrame* feedback) {
+  return receive_algorithm_->GenerateCongestionFeedback(feedback);
 }
 
 void QuicReceiptMetricsCollector::RecordIncomingPacket(
     size_t bytes,
     QuicPacketSequenceNumber sequence_number,
-    uint64 timestamp_us,
+    QuicTime timestamp,
     bool revived) {
-  receive_algorithm_->RecordIncomingPacket(bytes, sequence_number, timestamp_us,
+  receive_algorithm_->RecordIncomingPacket(bytes, sequence_number, timestamp,
                                            revived);
 }
 

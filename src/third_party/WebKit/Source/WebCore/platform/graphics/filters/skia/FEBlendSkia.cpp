@@ -31,6 +31,7 @@
 #include "NativeImageSkia.h"
 #include "SkBitmapSource.h"
 #include "SkBlendImageFilter.h"
+#include "SkiaImageFilterBuilder.h"
 
 namespace WebCore {
 
@@ -71,17 +72,30 @@ bool FEBlend::platformApplySkia()
     RefPtr<Image> foreground = in->asImageBuffer()->copyImage(DontCopyBackingStore);
     RefPtr<Image> background = in2->asImageBuffer()->copyImage(DontCopyBackingStore);
 
-    SkBitmap foregroundBitmap = foreground->nativeImageForCurrentFrame()->bitmap();
-    SkBitmap backgroundBitmap = background->nativeImageForCurrentFrame()->bitmap();
+    NativeImageSkia* foregroundNativeImage = foreground->nativeImageForCurrentFrame();
+    NativeImageSkia* backgroundNativeImage = background->nativeImageForCurrentFrame();
+
+    if (!foregroundNativeImage || !backgroundNativeImage)
+        return false;
+
+    SkBitmap foregroundBitmap = foregroundNativeImage->bitmap();
+    SkBitmap backgroundBitmap = backgroundNativeImage->bitmap();
 
     SkAutoTUnref<SkImageFilter> backgroundSource(new SkBitmapSource(backgroundBitmap));
     SkBlendImageFilter::Mode mode = toSkiaMode(m_mode);
     SkAutoTUnref<SkImageFilter> blend(new SkBlendImageFilter(mode, backgroundSource));
     SkPaint paint;
     paint.setImageFilter(blend);
-    SkCanvas* canvas = resultImage->context()->platformContext()->canvas();
-    canvas->drawBitmap(foregroundBitmap, 0, 0, &paint);
+    resultImage->context()->platformContext()->drawBitmap(foregroundBitmap, 0, 0, &paint);
     return true;
+}
+
+SkImageFilter* FEBlend::createImageFilter(SkiaImageFilterBuilder* builder)
+{
+    SkImageFilter* foreground = builder->build(inputEffect(0));
+    SkImageFilter* background = builder->build(inputEffect(1));
+    SkBlendImageFilter::Mode mode = toSkiaMode(m_mode);
+    return new SkBlendImageFilter(mode, background, foreground);
 }
 
 } // namespace WebCore

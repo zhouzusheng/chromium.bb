@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCAnimationCurve_h
-#define CCAnimationCurve_h
+#ifndef CC_ANIMATION_CURVE_H_
+#define CC_ANIMATION_CURVE_H_
+
+#include <public/WebTransformationMatrix.h>
 
 #include "base/memory/scoped_ptr.h"
-#include <public/WebTransformationMatrix.h>
+#include "cc/cc_export.h"
 
 namespace cc {
 
 class FloatAnimationCurve;
 class TransformAnimationCurve;
-class IntSize;
 class TransformOperations;
 
 // An animation curve is a function that returns a value given a time.
 // There are currently only two types of curve, float and transform.
-class AnimationCurve {
+class CC_EXPORT AnimationCurve {
 public:
     enum Type { Float, Transform };
 
@@ -31,7 +32,7 @@ public:
     const TransformAnimationCurve* toTransformAnimationCurve() const;
 };
 
-class FloatAnimationCurve : public AnimationCurve {
+class CC_EXPORT FloatAnimationCurve : public AnimationCurve {
 public:
     virtual ~FloatAnimationCurve() { }
 
@@ -41,7 +42,7 @@ public:
     virtual Type type() const OVERRIDE;
 };
 
-class TransformAnimationCurve : public AnimationCurve {
+class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
 public:
     virtual ~TransformAnimationCurve() { }
 
@@ -53,4 +54,4 @@ public:
 
 } // namespace cc
 
-#endif // CCAnimation_h
+#endif  // CC_ANIMATION_CURVE_H_

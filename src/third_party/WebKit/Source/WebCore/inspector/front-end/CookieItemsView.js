@@ -74,6 +74,10 @@ WebInspector.CookieItemsView.prototype = {
         WebInspector.Cookies.getCookiesAsync(this._updateWithCookies.bind(this));
     },
 
+    /**
+     * @param {Array.<WebInspector.Cookie>} allCookies
+     * @param {boolean} isAdvanced
+     */
     _updateWithCookies: function(allCookies, isAdvanced)
     {
         this._cookies = isAdvanced ? this._filterCookiesForDomain(allCookies) : allCookies;
@@ -88,7 +92,7 @@ WebInspector.CookieItemsView.prototype = {
         }
 
         if (!this._cookiesTable)
-            this._cookiesTable = isAdvanced ? new WebInspector.CookiesTable(this._cookieDomain, false, this._deleteCookie.bind(this), this._update.bind(this)) : new WebInspector.SimpleCookiesTable();
+            this._cookiesTable = isAdvanced ? new WebInspector.CookiesTable(false, this._deleteCookie.bind(this), this._update.bind(this)) : new WebInspector.SimpleCookiesTable();
 
         this._cookiesTable.setCookies(this._cookies);
         this._emptyView.detach();
@@ -100,6 +104,9 @@ WebInspector.CookieItemsView.prototype = {
         }
     },
 
+    /**
+     * @param {Array.<WebInspector.Cookie>} allCookies
+     */
     _filterCookiesForDomain: function(allCookies)
     {
         var cookies = [];
@@ -116,7 +123,7 @@ WebInspector.CookieItemsView.prototype = {
 
         for (var i = 0; i < allCookies.length; ++i) {
             var pushed = false;
-            var size = allCookies[i].size;
+            var size = allCookies[i].size();
             for (var j = 0; j < resourceURLsForDocumentURL.length; ++j) {
                 var resourceURL = resourceURLsForDocumentURL[j];
                 if (WebInspector.Cookies.cookieMatchesResourceURL(allCookies[i], resourceURL)) {
@@ -131,9 +138,12 @@ WebInspector.CookieItemsView.prototype = {
         return cookies;
     },
 
+    /**
+     * @param {!WebInspector.Cookie} cookie
+     */
     _deleteCookie: function(cookie)
     {
-        PageAgent.deleteCookie(cookie.name, this._cookieDomain);
+        PageAgent.deleteCookie(cookie.name(), this._cookieDomain);
         this._update();
     },
 
@@ -180,17 +190,20 @@ WebInspector.SimpleCookiesTable = function()
 }
 
 WebInspector.SimpleCookiesTable.prototype = {
+    /**
+     * @param {Array.<WebInspector.Cookie>} cookies
+     */
     setCookies: function(cookies)
     {
         this._dataGrid.rootNode().removeChildren();
         var addedCookies = {};
         for (var i = 0; i < cookies.length; ++i) {
-            if (addedCookies[cookies[i].name])
+            if (addedCookies[cookies[i].name()])
                 continue;
-            addedCookies[cookies[i].name] = true;
+            addedCookies[cookies[i].name()] = true;
             var data = {};
-            data[0] = cookies[i].name;
-            data[1] = cookies[i].value;
+            data[0] = cookies[i].name();
+            data[1] = cookies[i].value();
 
             var node = new WebInspector.DataGridNode(data, false);
             node.selectable = true;

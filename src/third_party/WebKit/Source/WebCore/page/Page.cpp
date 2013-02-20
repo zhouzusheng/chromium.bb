@@ -25,6 +25,7 @@
 #include "BackForwardList.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "ClientRectList.h"
 #include "ContextMenuClient.h"
 #include "ContextMenuController.h"
 #include "DOMWindow.h"
@@ -53,6 +54,7 @@
 #include "NetworkStateNotifier.h"
 #include "PageCache.h"
 #include "PageGroup.h"
+#include "PlugInClient.h"
 #include "PluginData.h"
 #include "PluginView.h"
 #include "PointerLockController.h"
@@ -82,7 +84,6 @@
 namespace WebCore {
 
 static HashSet<Page*>* allPages;
-static const double hiddenPageTimerAlignmentInterval = 1.0; // once a second
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, pageCounter, ("Page"));
 
@@ -134,6 +135,7 @@ Page::Page(PageClients& pageClients)
     , m_backForwardController(BackForwardController::create(this, pageClients.backForwardClient))
     , m_theme(RenderTheme::themeForPage(this))
     , m_editorClient(pageClients.editorClient)
+    , m_plugInClient(pageClients.plugInClient)
     , m_validationMessageClient(pageClients.validationMessageClient)
     , m_subframeCount(0)
     , m_openedByDOM(false)
@@ -199,6 +201,8 @@ Page::~Page()
     }
 
     m_editorClient->pageDestroyed();
+    if (m_plugInClient)
+        m_plugInClient->pageDestroyed();
     if (m_alternativeTextClient)
         m_alternativeTextClient->pageDestroyed();
 
@@ -242,6 +246,43 @@ ScrollingCoordinator* Page::scrollingCoordinator()
         m_scrollingCoordinator = ScrollingCoordinator::create(this);
 
     return m_scrollingCoordinator.get();
+}
+
+String Page::scrollingStateTreeAsText()
+{
+    if (Document* document = m_mainFrame->document())
+        document->updateLayout();
+
+    if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
+        return scrollingCoordinator->scrollingStateTreeAsText();
+
+    return String();
+}
+
+String Page::mainThreadScrollingReasonsAsText()
+{
+    if (Document* document = m_mainFrame->document())
+        document->updateLayout();
+
+    if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
+        return scrollingCoordinator->mainThreadScrollingReasonsAsText();
+
+    return String();
+}
+
+PassRefPtr<ClientRectList> Page::nonFastScrollableRects(const Frame* frame)
+{
+    if (Document* document = m_mainFrame->document())
+        document->updateLayout();
+
+    Vector<IntRect> rects;
+    if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
+        rects = scrollingCoordinator->computeNonFastScrollableRegion(frame, IntPoint()).rects();
+
+    Vector<FloatQuad> quads(rects.size());
+    for (size_t i = 0; i < rects.size(); ++i)
+        quads[i] = FloatRect(rects[i]);
+    return ClientRectList::create(quads);
 }
 
 struct ViewModeInfo {
@@ -665,6 +706,9 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
         document->renderer()->setNeedsLayout(true);
 
     document->recalcStyle(Node::Force);
+
+    // Transform change on RenderView doesn't trigger repaint on non-composited contents.
+    mainFrame()->view()->invalidateRect(IntRect(LayoutRect::infiniteRect()));
 
 #if USE(ACCELERATED_COMPOSITING)
     mainFrame()->deviceOrPageScaleFactorChanged();
@@ -1115,7 +1159,7 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
 
 #if ENABLE(HIDDEN_PAGE_DOM_TIMER_THROTTLING)
     if (visibilityState == WebCore::PageVisibilityStateHidden)
-        setTimerAlignmentInterval(hiddenPageTimerAlignmentInterval);
+        setTimerAlignmentInterval(Settings::hiddenPageDOMTimerAlignmentInterval());
     else
         setTimerAlignmentInterval(Settings::defaultDOMTimerAlignmentInterval());
 #if !ENABLE(PAGE_VISIBILITY_API)
@@ -1168,11 +1212,17 @@ void Page::addRelevantRepaintedObject(RenderObject* object, const LayoutRect& ob
     if (!isCountingRelevantRepaintedObjects())
         return;
 
+    // Objects inside sub-frames are not considered to be relevant.
+    if (object->document()->frame() != mainFrame())
+        return;
+
+    RenderView* view = object->view();
+    if (!view)
+        return;
+
     // The objects are only relevant if they are being painted within the viewRect().
-    if (RenderView* view = object->view()) {
-        if (!objectPaintRect.intersects(pixelSnappedIntRect(view->viewRect())))
-            return;
-    }
+    if (!objectPaintRect.intersects(pixelSnappedIntRect(view->viewRect())))
+        return;
 
     IntRect snappedPaintRect = pixelSnappedIntRect(objectPaintRect);
 
@@ -1185,10 +1235,6 @@ void Page::addRelevantRepaintedObject(RenderObject* object, const LayoutRect& ob
     }
 
     m_relevantPaintedRegion.unite(snappedPaintRect);
-
-    RenderView* view = object->view();
-    if (!view)
-        return;
     
     float viewArea = view->viewRect().width() * view->viewRect().height();
     float ratioOfViewThatIsPainted = m_relevantPaintedRegion.totalArea() / viewArea;
@@ -1295,7 +1341,7 @@ void Page::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_mainFrame);
     info.addMember(m_pluginData);
     info.addMember(m_theme);
-    info.addMember(m_editorClient);
+    info.addWeakPointer(m_editorClient);
     info.addMember(m_featureObserver);
     info.addMember(m_groupName);
     info.addMember(m_pagination);
@@ -1308,7 +1354,7 @@ void Page::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addMember(m_relevantUnpaintedRenderObjects);
     info.addMember(m_relevantPaintedRegion);
     info.addMember(m_relevantUnpaintedRegion);
-    info.addMember(m_alternativeTextClient);
+    info.addWeakPointer(m_alternativeTextClient);
     info.addMember(m_seenPlugins);
 }
 
@@ -1321,6 +1367,7 @@ Page::PageClients::PageClients()
     , editorClient(0)
     , dragClient(0)
     , inspectorClient(0)
+    , plugInClient(0)
     , validationMessageClient(0)
 {
 }

@@ -40,11 +40,25 @@ WGLApi::WGLApi() {
 WGLApi::~WGLApi() {
 }
 
+WGLApiBase::WGLApiBase()
+    : driver_(NULL) {
+}
+
+WGLApiBase::~WGLApiBase() {
+}
+
+void WGLApiBase::InitializeBase(DriverWGL* driver) {
+  driver_ = driver;
+}
+
 RealWGLApi::RealWGLApi() {
 }
 
+RealWGLApi::~RealWGLApi() {
+}
+
 void RealWGLApi::Initialize(DriverWGL* driver) {
-  driver_ = driver;
+  InitializeBase(driver);
 }
 
 }  // namespace gfx

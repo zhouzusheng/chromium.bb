@@ -45,7 +45,11 @@ public:
     static PassRefPtr<PagePopupController> create(PagePopupClient*);
     void setValueAndClosePopup(int numValue, const String& stringValue);
     String localizeNumberString(const String&);
+#if ENABLE(CALENDAR_PICKER)
+    String formatMonth(int year, int zeroBaseMonth);
+#endif
     void clearPagePopupClient();
+    void histogramEnumeration(const String& name, int sample, int boundaryValue);
 
 private:
     explicit PagePopupController(PagePopupClient*);

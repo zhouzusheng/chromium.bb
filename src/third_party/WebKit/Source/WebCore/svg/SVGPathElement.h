@@ -108,7 +108,7 @@ private:
     virtual bool supportsFocus() const { return true; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
     virtual bool supportsMarkers() const { return true; }
 
@@ -127,6 +127,11 @@ private:
     virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 
     RenderObject* createRenderer(RenderArena*, RenderStyle*);
+
+    virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
+
+    void invalidateMPathDependencies();
 
 private:
     OwnPtr<SVGPathByteStream> m_pathByteStream;

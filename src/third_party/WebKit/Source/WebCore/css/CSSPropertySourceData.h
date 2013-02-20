@@ -83,6 +83,7 @@ struct CSSStyleSourceData : public RefCounted<CSSStyleSourceData> {
 
 struct CSSRuleSourceData;
 typedef Vector<RefPtr<CSSRuleSourceData> > RuleSourceDataList;
+typedef Vector<SourceRange> SelectorRangeList;
 
 struct CSSRuleSourceData : public RefCounted<CSSRuleSourceData> {
     enum Type {
@@ -95,7 +96,8 @@ struct CSSRuleSourceData : public RefCounted<CSSRuleSourceData> {
         PAGE_RULE,
         KEYFRAMES_RULE,
         REGION_RULE,
-        HOST_RULE
+        HOST_RULE,
+        VIEWPORT_RULE
     };
 
     static PassRefPtr<CSSRuleSourceData> create(Type type)
@@ -122,6 +124,9 @@ struct CSSRuleSourceData : public RefCounted<CSSRuleSourceData> {
 
     // Range of the rule body (e.g. style text for style rules) in the enclosing source.
     SourceRange ruleBodyRange;
+
+    // Only for CSSStyleRules.
+    SelectorRangeList selectorRanges;
 
     // Only for CSSStyleRules, CSSFontFaceRules, and CSSPageRules.
     RefPtr<CSSStyleSourceData> styleSourceData;

@@ -30,11 +30,13 @@ def _RescaleImage(data, from_scale, to_scale):
 
 _PNG_MAGIC = '\x89PNG\r\n\x1a\n'
 
+'''Mandatory first chunk in order for the png to be valid.'''
+_FIRST_CHUNK = 'IHDR'
 
-'''Special chunks to move to the front of the pak data, before the png data we
-pass to PNGCodec.'''
-_CHUNKS_TO_MOVE = frozenset('csCl npTc'.split())
-
+'''Special chunks to move immediately after the IHDR chunk. (so that the PNG
+remains valid.)
+'''
+_SPECIAL_CHUNKS = frozenset('csCl npTc'.split())
 
 '''Any ancillary chunk not in this list is deleted from the PNG.'''
 _ANCILLARY_CHUNKS_TO_LEAVE = frozenset(
@@ -42,19 +44,22 @@ _ANCILLARY_CHUNKS_TO_LEAVE = frozenset(
 
 
 def _MoveSpecialChunksToFront(data):
-  '''Move special chunks to the front of the data, before even the PNG header.
-  Also delete ancillary chunks that are not on our whitelist.
+  '''Move special chunks immediately after the IHDR chunk (so that the PNG
+  remains valid). Also delete ancillary chunks that are not on our whitelist.
   '''
-  first = []
-  rest = [_PNG_MAGIC]
+  first = [_PNG_MAGIC]
+  special_chunks = []
+  rest = []
   for chunk in _ChunkifyPNG(data):
     type = chunk[4:8]
     critical = type < 'a'
-    if type in _CHUNKS_TO_MOVE:
+    if type == _FIRST_CHUNK:
       first.append(chunk)
+    elif type in _SPECIAL_CHUNKS:
+      special_chunks.append(chunk)
     elif critical or type in _ANCILLARY_CHUNKS_TO_LEAVE:
       rest.append(chunk)
-  return ''.join(first + rest)
+  return ''.join(first + special_chunks + rest)
 
 
 def _ChunkifyPNG(data):

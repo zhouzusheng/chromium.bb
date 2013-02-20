@@ -203,6 +203,7 @@ typedef struct SECKEYPublicKeyStr SECKEYPublicKey;
 #define SECKEY_Attributes_Cached 0x1    /* bit 0 states
                                            whether attributes are cached */
 #define SECKEY_CKA_PRIVATE (1U << 1)    /* bit 1 is the value of CKA_PRIVATE */
+#define SECKEY_CKA_ALWAYS_AUTHENTICATE (1U << 2)    
 
 #define SECKEY_ATTRIBUTES_CACHED(key) \
      (0 != (key->staticflags & SECKEY_Attributes_Cached))
@@ -213,7 +214,12 @@ typedef struct SECKEYPublicKeyStr SECKEYPublicKey;
 #define SECKEY_HAS_ATTRIBUTE_SET(key,attribute) \
     (0 != (key->staticflags & SECKEY_Attributes_Cached)) ? \
     (0 != (key->staticflags & SECKEY_##attribute)) : \
-    PK11_HasAttributeSet(key->pkcs11Slot,key->pkcs11ID,attribute)
+    PK11_HasAttributeSet(key->pkcs11Slot,key->pkcs11ID,attribute, PR_FALSE)
+
+#define SECKEY_HAS_ATTRIBUTE_SET_LOCK(key,attribute, haslock) \
+    (0 != (key->staticflags & SECKEY_Attributes_Cached)) ? \
+    (0 != (key->staticflags & SECKEY_##attribute)) : \
+    PK11_HasAttributeSet(key->pkcs11Slot,key->pkcs11ID,attribute, haslock)
 
 /*
 ** A generic key structure

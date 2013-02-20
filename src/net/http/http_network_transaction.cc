@@ -45,6 +45,7 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_status_code.h"
+#include "net/http/http_stream_base.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_util.h"
 #include "net/http/url_security_manager.h"
@@ -152,7 +153,7 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
         stream_->Close(true /* not reusable */);
       } else {
         // Otherwise, we try to drain the response body.
-        HttpStream* stream = stream_.release();
+        HttpStreamBase* stream = stream_.release();
         stream->Drain(session_);
       }
     }
@@ -287,7 +288,8 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
       // We should call connection_->set_idle_time(), but this doesn't occur
       // often enough to be worth the trouble.
       stream_->SetConnectionReused();
-      new_stream = stream_->RenewStreamForAuth();
+      new_stream =
+          static_cast<HttpStream*>(stream_.get())->RenewStreamForAuth();
     }
 
     if (!new_stream) {
@@ -378,12 +380,13 @@ UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   if (!stream_.get())
     return UploadProgress();
 
-  return stream_->GetUploadProgress();
+  // TODO(bashi): This cast is temporary. Remove later.
+  return static_cast<HttpStream*>(stream_.get())->GetUploadProgress();
 }
 
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
-                                           HttpStream* stream) {
+                                           HttpStreamBase* stream) {
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
   DCHECK(stream_request_.get());
 
@@ -466,7 +469,7 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
     const HttpResponseInfo& response_info,
     const SSLConfig& used_ssl_config,
     const ProxyInfo& used_proxy_info,
-    HttpStream* stream) {
+    HttpStreamBase* stream) {
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
 
   headers_valid_ = true;
@@ -713,14 +716,14 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
   }
 
   // Add a content length header?
-  if (request_body_.get()) {
-    if (request_body_->is_chunked()) {
+  if (request_->upload_data_stream) {
+    if (request_->upload_data_stream->is_chunked()) {
       request_headers_.SetHeader(
           HttpRequestHeaders::kTransferEncoding, "chunked");
     } else {
       request_headers_.SetHeader(
           HttpRequestHeaders::kContentLength,
-          base::Uint64ToString(request_body_->size()));
+          base::Uint64ToString(request_->upload_data_stream->size()));
     }
   } else if (request_->method == "POST" || request_->method == "PUT" ||
              request_->method == "HEAD") {
@@ -751,20 +754,15 @@ void HttpNetworkTransaction::BuildRequestHeaders(bool using_proxy) {
 
 int HttpNetworkTransaction::DoInitRequestBody() {
   next_state_ = STATE_INIT_REQUEST_BODY_COMPLETE;
-  request_body_.reset(NULL);
   int rv = OK;
-  if (request_->upload_data) {
-    request_body_.reset(new UploadDataStream(request_->upload_data));
-    rv = request_body_->Init(io_callback_);
-  }
+  if (request_->upload_data_stream)
+    rv = request_->upload_data_stream->Init(io_callback_);
   return rv;
 }
 
 int HttpNetworkTransaction::DoInitRequestBodyComplete(int result) {
   if (result == OK)
     next_state_ = STATE_BUILD_REQUEST;
-  else
-    request_body_.reset(NULL);
   return result;
 }
 
@@ -792,8 +790,7 @@ int HttpNetworkTransaction::DoBuildRequestComplete(int result) {
 int HttpNetworkTransaction::DoSendRequest() {
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
 
-  return stream_->SendRequest(
-      request_headers_, request_body_.Pass(), &response_, io_callback_);
+  return stream_->SendRequest(request_headers_, &response_, io_callback_);
 }
 
 int HttpNetworkTransaction::DoSendRequestComplete(int result) {
@@ -965,7 +962,8 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
   // Clean up connection if we are done.
   if (done) {
     LogTransactionMetrics();
-    stream_->LogNumRttVsBytesMetrics();
+    // TODO(bashi): This cast is temporary. Remove later.
+    static_cast<HttpStream*>(stream_.get())->LogNumRttVsBytesMetrics();
     stream_->Close(!keep_alive);
     // Note: we don't reset the stream here.  We've closed it, but we still
     // need it around so that callers can call methods such as

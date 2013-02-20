@@ -10,7 +10,6 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
-#include "net/base/upload_data_stream.h"
 #include "net/http/http_pipelined_stream.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_body_drainer.h"
@@ -175,7 +174,6 @@ int HttpPipelinedConnectionImpl::SendRequest(
     int pipeline_id,
     const std::string& request_line,
     const HttpRequestHeaders& headers,
-    scoped_ptr<UploadDataStream> request_body,
     HttpResponseInfo* response,
     const CompletionCallback& callback) {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
@@ -188,7 +186,6 @@ int HttpPipelinedConnectionImpl::SendRequest(
   send_request->pipeline_id = pipeline_id;
   send_request->request_line = request_line;
   send_request->headers = headers;
-  send_request->request_body.reset(request_body.release());
   send_request->response = response;
   send_request->callback = callback;
   pending_send_request_queue_.push(send_request);
@@ -278,7 +275,6 @@ int HttpPipelinedConnectionImpl::DoSendActiveRequest(int result) {
   int rv = stream_info_map_[active_send_request_->pipeline_id].parser->
       SendRequest(active_send_request_->request_line,
                   active_send_request_->headers,
-                  active_send_request_->request_body.Pass(),
                   active_send_request_->response,
                   base::Bind(&HttpPipelinedConnectionImpl::OnSendIOCallback,
                              base::Unretained(this)));
@@ -706,6 +702,7 @@ void HttpPipelinedConnectionImpl::CheckHeadersForPipelineCompatibility(
       // Collect metrics to see if this code is useful.
       case ERR_ABORTED:
       case ERR_INTERNET_DISCONNECTED:
+      case ERR_NETWORK_CHANGED:
         // These errors are no fault of the server.
         break;
 
@@ -827,7 +824,6 @@ NextProto HttpPipelinedConnectionImpl::protocol_negotiated()
 
 HttpPipelinedConnectionImpl::PendingSendRequest::PendingSendRequest()
     : pipeline_id(0),
-      request_body(NULL),
       response(NULL) {
 }
 

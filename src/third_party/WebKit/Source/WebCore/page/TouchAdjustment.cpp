@@ -75,9 +75,14 @@ bool nodeRespondsToTapGesture(Node* node)
         return true;
     if (node->willRespondToMouseClickEvents() || node->willRespondToMouseMoveEvents())
         return true;
-    if (node->renderStyle()) {
-        // Accept nodes that has a CSS effect when touched.
-        if (node->renderStyle()->affectedByActiveRules() || node->renderStyle()->affectedByHoverRules())
+    // Accept nodes that has a CSS effect when touched.
+    if (node->isElementNode()) {
+        Element* element = toElement(node);
+        if (element->childrenAffectedByActive() || element->childrenAffectedByHover())
+            return true;
+    }
+    if (RenderStyle* renderStyle = node->renderStyle()) {
+        if (renderStyle->affectedByActive() || renderStyle->affectedByHover())
             return true;
     }
     return false;
@@ -339,10 +344,12 @@ float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchR
     float radiusSquared = 0.25f * (touchRect.size().diagonalLengthSquared());
     float distanceToAdjustScore = rect.distanceSquaredToPoint(touchHotspot) / radiusSquared;
 
-    float targetArea = max(rect.size().area(), 1);
+    int maxOverlapWidth = std::min(touchRect.width(), rect.width());
+    int maxOverlapHeight = std::min(touchRect.height(), rect.height());
+    float maxOverlapArea = std::max(maxOverlapWidth * maxOverlapHeight, 1);
     rect.intersect(touchRect);
     float intersectArea = rect.size().area();
-    float intersectionScore = 1 - intersectArea / targetArea;
+    float intersectionScore = 1 - intersectArea / maxOverlapArea;
 
     float hybridScore = intersectionScore + distanceToAdjustScore;
 

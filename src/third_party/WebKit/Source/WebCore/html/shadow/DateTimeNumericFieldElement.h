@@ -41,6 +41,13 @@ namespace WebCore {
 class DateTimeNumericFieldElement : public DateTimeFieldElement {
     WTF_MAKE_NONCOPYABLE(DateTimeNumericFieldElement);
 
+public:
+    struct Parameters {
+        Parameters(int step = 1, int stepBase = 0) : step(step), stepBase(stepBase) { }
+        int step;
+        int stepBase;
+    };
+
 protected:
     struct Range {
         Range(int minimum, int maximum);
@@ -51,7 +58,7 @@ protected:
         int minimum;
     };
 
-    DateTimeNumericFieldElement(Document*, FieldOwner&, int minimum, int maximum, const String& placeholder);
+    DateTimeNumericFieldElement(Document*, FieldOwner&, int minimum, int maximum, const String& placeholder, const Parameters& = Parameters());
 
     int clampValue(int value) const { return m_range.clampValue(value); }
     virtual int clampValueForHardLimits(int) const;
@@ -61,10 +68,11 @@ protected:
 
     // DateTimeFieldElement functions.
     virtual bool hasValue() const OVERRIDE FINAL;
-    virtual int maximum() const OVERRIDE FINAL;
+    void initialize(const AtomicString& pseudo, const String& axHelpText);
+    int maximum() const;
     virtual void setEmptyValue(EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual void setValueAsInteger(int, EventBehavior = DispatchNoEvent) OVERRIDE;
-    virtual int valueAsInteger() const OVERRIDE;
+    virtual int valueAsInteger() const OVERRIDE FINAL;
     virtual String visibleValue() const OVERRIDE FINAL;
 
 private:
@@ -72,12 +80,13 @@ private:
     virtual void didBlur() OVERRIDE FINAL;
     virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE FINAL;
     virtual float maximumWidth(const Font&) OVERRIDE;
-    virtual int minimum() const OVERRIDE FINAL;
     virtual void stepDown() OVERRIDE FINAL;
     virtual void stepUp() OVERRIDE FINAL;
     virtual String value() const OVERRIDE FINAL;
 
     String formatValue(int) const;
+    int roundUp(int) const;
+    int roundDown(int) const;
     int typeAheadValue() const;
 
     DOMTimeStamp m_lastDigitCharTime;
@@ -85,6 +94,8 @@ private:
     const Range m_range;
     int m_value;
     bool m_hasValue;
+    int m_step;
+    int m_stepBase;
     mutable StringBuilder m_typeAheadBuffer;
 };
 

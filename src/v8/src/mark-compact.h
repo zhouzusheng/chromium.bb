@@ -420,25 +420,45 @@ class CodeFlusher {
         shared_function_info_candidates_head_(NULL) {}
 
   void AddCandidate(SharedFunctionInfo* shared_info) {
-    SetNextCandidate(shared_info, shared_function_info_candidates_head_);
-    shared_function_info_candidates_head_ = shared_info;
+    if (GetNextCandidate(shared_info) == NULL) {
+      SetNextCandidate(shared_info, shared_function_info_candidates_head_);
+      shared_function_info_candidates_head_ = shared_info;
+    }
   }
 
   void AddCandidate(JSFunction* function) {
     ASSERT(function->code() == function->shared()->code());
-    ASSERT(function->next_function_link()->IsUndefined());
-    SetNextCandidate(function, jsfunction_candidates_head_);
-    jsfunction_candidates_head_ = function;
+    if (GetNextCandidate(function)->IsUndefined()) {
+      SetNextCandidate(function, jsfunction_candidates_head_);
+      jsfunction_candidates_head_ = function;
+    }
   }
+
+  void EvictCandidate(SharedFunctionInfo* shared_info);
+  void EvictCandidate(JSFunction* function);
 
   void ProcessCandidates() {
     ProcessSharedFunctionInfoCandidates();
     ProcessJSFunctionCandidates();
   }
 
+  void EvictAllCandidates() {
+    EvictJSFunctionCandidates();
+    EvictSharedFunctionInfoCandidates();
+  }
+
+  void IteratePointersToFromSpace(ObjectVisitor* v);
+
  private:
   void ProcessJSFunctionCandidates();
   void ProcessSharedFunctionInfoCandidates();
+  void EvictJSFunctionCandidates();
+  void EvictSharedFunctionInfoCandidates();
+
+  static JSFunction** GetNextCandidateSlot(JSFunction* candidate) {
+    return reinterpret_cast<JSFunction**>(
+        HeapObject::RawField(candidate, JSFunction::kNextFunctionLinkOffset));
+  }
 
   static JSFunction* GetNextCandidate(JSFunction* candidate) {
     Object* next_candidate = candidate->next_function_link();
@@ -639,7 +659,11 @@ class MarkCompactCollector {
 
   void ClearMarkbits();
 
+  bool abort_incremental_marking() const { return abort_incremental_marking_; }
+
   bool is_compacting() const { return compacting_; }
+
+  MarkingParity marking_parity() { return marking_parity_; }
 
  private:
   MarkCompactCollector();
@@ -672,6 +696,8 @@ class MarkCompactCollector {
   bool reduce_memory_footprint_;
 
   bool abort_incremental_marking_;
+
+  MarkingParity marking_parity_;
 
   // True if we are collecting slots to perform evacuation from evacuation
   // candidates.
@@ -731,17 +757,13 @@ class MarkCompactCollector {
   // symbol table are weak.
   void MarkSymbolTable();
 
-  // Mark objects in object groups that have at least one object in the
-  // group marked.
-  void MarkObjectGroups();
-
   // Mark objects in implicit references groups if their parent object
   // is marked.
   void MarkImplicitRefGroups();
 
   // Mark all objects which are reachable due to host application
   // logic like object groups or implicit references' groups.
-  void ProcessExternalMarking();
+  void ProcessExternalMarking(RootMarkingVisitor* visitor);
 
   // Mark objects reachable (transitively) from objects in the marking stack
   // or overflowed in the heap.
@@ -765,6 +787,7 @@ class MarkCompactCollector {
   // Callback function for telling whether the object *p is an unmarked
   // heap object.
   static bool IsUnmarkedHeapObject(Object** p);
+  static bool IsUnmarkedHeapObjectWithHeap(Heap* heap, Object** p);
 
   // Map transitions from a live map to a dead map must be killed.
   // We replace them with a null descriptor, with the same key.

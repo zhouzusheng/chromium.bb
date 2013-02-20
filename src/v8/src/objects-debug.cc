@@ -463,13 +463,13 @@ void String::StringVerify() {
     ConsString::cast(this)->ConsStringVerify();
   } else if (IsSlicedString()) {
     SlicedString::cast(this)->SlicedStringVerify();
-  } else if (IsSeqAsciiString()) {
-    SeqAsciiString::cast(this)->SeqAsciiStringVerify();
+  } else if (IsSeqOneByteString()) {
+    SeqOneByteString::cast(this)->SeqOneByteStringVerify();
   }
 }
 
 
-void SeqAsciiString::SeqAsciiStringVerify() {
+void SeqOneByteString::SeqOneByteStringVerify() {
   CHECK(String::IsAscii(GetChars(), length()));
 }
 
@@ -499,7 +499,8 @@ void JSFunction::JSFunctionVerify() {
   VerifyObjectField(kPrototypeOrInitialMapOffset);
   VerifyObjectField(kNextFunctionLinkOffset);
   CHECK(code()->IsCode());
-  CHECK(next_function_link()->IsUndefined() ||
+  CHECK(next_function_link() == NULL ||
+        next_function_link()->IsUndefined() ||
         next_function_link()->IsJSFunction());
 }
 

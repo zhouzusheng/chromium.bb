@@ -64,6 +64,7 @@ class UI_EXPORT Event {
 
   const base::NativeEvent& native_event() const { return native_event_; }
   EventType type() const { return type_; }
+  const std::string& name() const { return name_; }
   // time_stamp represents time since machine was booted.
   const base::TimeDelta& time_stamp() const { return time_stamp_; }
   int flags() const { return flags_; }
@@ -75,6 +76,15 @@ class UI_EXPORT Event {
   EventTarget* target() const { return target_; }
   EventPhase phase() const { return phase_; }
   EventResult result() const { return result_; }
+  bool dispatch_to_hidden_targets() const {
+    return dispatch_to_hidden_targets_;
+  }
+
+  // By default, events are "cancelable", this means any default processing that
+  // the containing abstraction layer may perform can be prevented by calling
+  // SetHandled(). SetHandled() or StopPropagation() must not be called for
+  // events that are not cancelable.
+  bool cancelable() const { return cancelable_; }
 
   // The following methods return true if the respective keys were pressed at
   // the time the event was created.
@@ -97,7 +107,8 @@ class UI_EXPORT Event {
            type_ == ET_MOUSE_MOVED ||
            type_ == ET_MOUSE_ENTERED ||
            type_ == ET_MOUSE_EXITED ||
-           type_ == ET_MOUSEWHEEL;
+           type_ == ET_MOUSEWHEEL ||
+           type_ == ET_MOUSE_CAPTURE_CHANGED;
   }
 
   bool IsTouchEvent() const {
@@ -114,6 +125,7 @@ class UI_EXPORT Event {
       case ET_GESTURE_SCROLL_END:
       case ET_GESTURE_SCROLL_UPDATE:
       case ET_GESTURE_TAP:
+      case ET_GESTURE_TAP_CANCEL:
       case ET_GESTURE_TAP_DOWN:
       case ET_GESTURE_BEGIN:
       case ET_GESTURE_END:
@@ -123,6 +135,7 @@ class UI_EXPORT Event {
       case ET_GESTURE_PINCH_END:
       case ET_GESTURE_PINCH_UPDATE:
       case ET_GESTURE_LONG_PRESS:
+      case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_MULTIFINGER_SWIPE:
         return true;
 
@@ -158,15 +171,36 @@ class UI_EXPORT Event {
   // Returns true if the event has a valid |native_event_|.
   bool HasNativeEvent() const;
 
+  // Immediately stops the propagation of the event. This must be called only
+  // from an EventHandler during an event-dispatch. Any event handler that may
+  // be in the list will not receive the event after this is called.
+  // Note that StopPropagation() can be called only for cancelable events.
+  void StopPropagation();
+  bool stopped_propagation() const { return !!(result_ & ui::ER_CONSUMED); }
+
+  // Marks the event as having been handled. A handled event does not reach the
+  // next event phase. For example, if an event is handled during the pre-target
+  // phase, then the event is dispatched to all pre-target handlers, but not to
+  // the target or post-target handlers.
+  // Note that SetHandled() can be called only for cancelable events.
+  void SetHandled();
+  bool handled() const { return result_ != ui::ER_UNHANDLED; }
+
  protected:
   Event(EventType type, base::TimeDelta time_stamp, int flags);
   Event(const base::NativeEvent& native_event, EventType type, int flags);
   Event(const Event& copy);
-  void set_type(EventType type) { type_ = type; }
+  void SetType(EventType type);
   void set_delete_native_event(bool delete_native_event) {
     delete_native_event_ = delete_native_event;
   }
+  void set_cancelable(bool cancelable) { cancelable_ = cancelable; }
   void set_time_stamp(base::TimeDelta time_stamp) { time_stamp_ = time_stamp; }
+  void set_dispatch_to_hidden_targets(bool dispatch_to_hidden_targets) {
+    dispatch_to_hidden_targets_ = dispatch_to_hidden_targets;
+  }
+
+  void set_name(const std::string& name) { name_ = name; }
 
  private:
   void operator=(const Event&);
@@ -177,9 +211,12 @@ class UI_EXPORT Event {
 
   base::NativeEvent native_event_;
   EventType type_;
+  std::string name_;
   base::TimeDelta time_stamp_;
   int flags_;
+  bool dispatch_to_hidden_targets_;
   bool delete_native_event_;
+  bool cancelable_;
   EventTarget* target_;
   EventPhase phase_;
   EventResult result_;
@@ -289,7 +326,7 @@ class UI_EXPORT MouseEvent : public LocatedEvent {
              int flags)
       : LocatedEvent(model, source, target),
         changed_button_flags_(model.changed_button_flags_) {
-    set_type(type);
+    SetType(type);
     set_flags(flags);
   }
 
@@ -325,6 +362,11 @@ class UI_EXPORT MouseEvent : public LocatedEvent {
 
   bool IsRightMouseButton() const {
     return (flags() & EF_RIGHT_MOUSE_BUTTON) != 0;
+  }
+
+  bool IsAnyButton() const {
+    return (flags() & (EF_LEFT_MOUSE_BUTTON | EF_MIDDLE_MOUSE_BUTTON |
+                       EF_RIGHT_MOUSE_BUTTON)) != 0;
   }
 
   // Compares two mouse down events and returns true if the second one should
@@ -368,6 +410,7 @@ class UI_EXPORT MouseWheelEvent : public MouseEvent {
 
   explicit MouseWheelEvent(const base::NativeEvent& native_event);
   explicit MouseWheelEvent(const ScrollEvent& scroll_event);
+  MouseWheelEvent(const MouseEvent& mouse_event, int offset);
 
   template <class T>
   MouseWheelEvent(const MouseWheelEvent& model,
@@ -429,11 +472,10 @@ class UI_EXPORT TouchEvent : public LocatedEvent {
   float rotation_angle() const { return rotation_angle_; }
   float force() const { return force_; }
 
-  // Calibrate the touch-point. This is useful when the touch-surface that
-  // generates the events need to be remapped to a surface of a different
-  // size. |from| is the size of the native surface, and |to| is the size
-  // of the target surface.
-  void CalibrateLocation(const gfx::Size& from, const gfx::Size& to);
+  // Relocate the touch-point to a new |origin|.
+  // This is useful when touch event is in X Root Window coordinates,
+  // and it needs to be mapped into Aura Root Window coordinates.
+  void Relocate(const gfx::Point& origin);
 
   // Used for unit tests.
   void set_radius_x(const float r) { radius_x_ = r; }
@@ -480,7 +522,7 @@ class UI_EXPORT KeyEvent : public Event {
   KeyEvent(const base::NativeEvent& native_event, bool is_char);
 
   // Used for synthetic events in testing.
-  KeyEvent(EventType type, KeyboardCode key_code, int flags);
+  KeyEvent(EventType type, KeyboardCode key_code, int flags, bool is_char);
 
   // These setters allow an I18N virtual keyboard to fabricate a keyboard event
   // which does not have a corresponding KeyboardCode (example: U+00E1 Latin
@@ -500,7 +542,7 @@ class UI_EXPORT KeyEvent : public Event {
   uint16 GetUnmodifiedCharacter() const;
 
   // Returns the copy of this key event. Used in NativeWebKeyboardEvent.
-  KeyEvent* Copy();
+  KeyEvent* Copy() const;
 
   KeyboardCode key_code() const { return key_code_; }
   bool is_char() const { return is_char_; }
@@ -579,15 +621,25 @@ class UI_EXPORT ScrollEvent : public MouseEvent {
               int flags)
       : MouseEvent(model, source, target, type, flags),
         x_offset_(model.x_offset_),
-        y_offset_(model.y_offset_) {
+        y_offset_(model.y_offset_),
+        finger_count_(model.finger_count_){
   }
+
+  // Used for tests.
+  ScrollEvent(EventType type,
+              const gfx::Point& location,
+              int flags,
+              float x_offset,
+              float y_offset);
 
   float x_offset() const { return x_offset_; }
   float y_offset() const { return y_offset_; }
+  int finger_count() const { return finger_count_; }
 
  private:
   float x_offset_;
   float y_offset_;
+  int finger_count_;
 
   DISALLOW_COPY_AND_ASSIGN(ScrollEvent);
 };

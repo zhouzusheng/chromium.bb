@@ -18,13 +18,13 @@
 
 namespace net {
 
-class QuicEncrypter;
-class QuicDecrypter;
-class QuicFramer;
 class QuicDataReader;
 class QuicDataWriter;
+class QuicDecrypter;
+class QuicEncrypter;
+class QuicFramer;
 
-// Class that receives callbacks from the framer when packets
+// This class receives callbacks from the framer when packets
 // are processed.
 class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
  public:
@@ -56,6 +56,10 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // Called when a AckFrame has been parsed.
   virtual void OnAckFrame(const QuicAckFrame& frame) = 0;
 
+  // Called when a CongestionFeedbackFrame has been parsed.
+  virtual void OnCongestionFeedbackFrame(
+      const QuicCongestionFeedbackFrame& frame) = 0;
+
   // Called when a RstStreamFrame has been parsed.
   virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) = 0;
 
@@ -80,9 +84,9 @@ class NET_EXPORT_PRIVATE QuicFecBuilderInterface {
                                           base::StringPiece payload) = 0;
 };
 
-// Class for parsing and constructing QUIC packets.  Has a
+// Class for parsing and constructing QUIC packets.  It has a
 // QuicFramerVisitorInterface that is called when packets are parsed.
-// Also has a QuicFecBuilder that is called when packets are constructed
+// It also has a QuicFecBuilder that is called when packets are constructed
 // in order to generate FEC data for subsequently building FEC packets.
 class NET_EXPORT_PRIVATE QuicFramer {
  public:
@@ -90,6 +94,13 @@ class NET_EXPORT_PRIVATE QuicFramer {
   QuicFramer(QuicDecrypter* decrypter, QuicEncrypter* encrypter);
 
   virtual ~QuicFramer();
+
+  // Calculates the largest received packet to advertise in the case an Ack
+  // Frame was truncated.  last_written in this case is the iterator for the
+  // last missing packet which fit in the outgoing ack.
+  static QuicPacketSequenceNumber CalculateLargestReceived(
+      const SequenceSet& missing_packets,
+      SequenceSet::const_iterator last_written);
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
   // else the framer will likely crash.  It is acceptable for the visitor
@@ -126,27 +137,20 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessRevivedPacket(const QuicPacketHeader& header,
                             base::StringPiece payload);
 
-  // Creates a new QuicPacket populated with the fields in |header| and
-  // |frames|.  Assigns |*packet| to the address of the new object.
-  // Returns true upon success.
-  bool ConstructFragementDataPacket(const QuicPacketHeader& header,
-                                    const QuicFrames& frames,
-                                    QuicPacket** packet);
+  // Returns a new QuicPacket, owned by the caller, populated with the fields
+  // in |header| and |frames|, or NULL if the packet could not be created.
+  QuicPacket* ConstructFrameDataPacket(const QuicPacketHeader& header,
+                                       const QuicFrames& frames);
 
-  // Creates a new QuicPacket populated with the fields in |header| and
-  // |fec|.  Assigns |*packet| to the address of the new object.
-  // Returns true upon success.
-  bool ConstructFecPacket(const QuicPacketHeader& header,
-                          const QuicFecData& fec,
-                          QuicPacket** packet);
+  // Returns a new QuicPacket, owned by the caller, populated with the fields
+  // in |header| and |fec|, or NULL if the packet could not be created.
+  QuicPacket* ConstructFecPacket(const QuicPacketHeader& header,
+                                 const QuicFecData& fec);
 
-  // Increments the retransmission count by one, and updates the authentication
-  // hash accordingly.
-  void IncrementRetransmitCount(QuicPacket* packet);
+  void WriteSequenceNumber(QuicPacketSequenceNumber sequence_number,
+                           QuicPacket* packet);
 
-  uint8 GetRetransmitCount(QuicPacket* packet);
-
-  void WriteTransmissionTime(QuicTransmissionTime time, QuicPacket* packet);
+  void WriteFecGroup(QuicFecGroupNumber fec_group, QuicPacket* packet);
 
   // Returns a new encrypted packet, owned by the caller.
   QuicEncryptedPacket* EncryptPacket(const QuicPacket& packet);
@@ -168,6 +172,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessStreamFrame();
   bool ProcessPDUFrame();
   bool ProcessAckFrame(QuicAckFrame* frame);
+  bool ProcessReceivedInfo(ReceivedPacketInfo* received_info);
+  bool ProcessSentInfo(SentPacketInfo* sent_info);
+  bool ProcessQuicCongestionFeedbackFrame(
+      QuicCongestionFeedbackFrame* congestion_feedback);
   bool ProcessRstStreamFrame();
   bool ProcessConnectionCloseFrame();
 
@@ -177,11 +185,14 @@ class NET_EXPORT_PRIVATE QuicFramer {
   size_t ComputeFramePayloadLength(const QuicFrame& frame);
 
   bool AppendStreamFramePayload(const QuicStreamFrame& frame,
-      QuicDataWriter* builder);
+                                QuicDataWriter* builder);
   bool AppendAckFramePayload(const QuicAckFrame& frame,
+                             QuicDataWriter* builder);
+  bool AppendQuicCongestionFeedbackFramePayload(
+      const QuicCongestionFeedbackFrame& frame,
       QuicDataWriter* builder);
   bool AppendRstStreamFramePayload(const QuicRstStreamFrame& frame,
-      QuicDataWriter* builder);
+                                   QuicDataWriter* builder);
   bool AppendConnectionCloseFramePayload(
       const QuicConnectionCloseFrame& frame,
       QuicDataWriter* builder);

@@ -28,18 +28,20 @@
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFieldElement.h"
+#include "TypeAhead.h"
 
 namespace WebCore {
 
 // DateTimeSymbolicFieldElement represents non-numeric field of data time
 // format, such as: AM/PM, and month.
-class DateTimeSymbolicFieldElement : public DateTimeFieldElement {
+class DateTimeSymbolicFieldElement : public DateTimeFieldElement, public TypeAheadDataSource {
     WTF_MAKE_NONCOPYABLE(DateTimeSymbolicFieldElement);
 
 protected:
     DateTimeSymbolicFieldElement(Document*, FieldOwner&, const Vector<String>&);
     size_t symbolsSize() const { return m_symbols.size(); }
     virtual bool hasValue() const OVERRIDE FINAL;
+    void initialize(const AtomicString& pseudo, const String& axHelpText);
     virtual void setEmptyValue(EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual void setValueAsInteger(int, EventBehavior = DispatchNoEvent) OVERRIDE FINAL;
     virtual int valueAsInteger() const OVERRIDE FINAL;
@@ -51,13 +53,17 @@ private:
 
     // DateTimeFieldElement functions.
     virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE FINAL;
-    virtual int maximum() const OVERRIDE FINAL;
     virtual float maximumWidth(const Font&) OVERRIDE;
-    virtual int minimum() const OVERRIDE FINAL;
     virtual void stepDown() OVERRIDE FINAL;
     virtual void stepUp() OVERRIDE FINAL;
     virtual String value() const OVERRIDE FINAL;
+    virtual int valueForARIAValueNow() const OVERRIDE FINAL;
     virtual String visibleValue() const OVERRIDE FINAL;
+
+    // TypeAheadDataSource functions.
+    virtual int indexOfSelectedOption() const OVERRIDE;
+    virtual int optionCount() const OVERRIDE;
+    virtual String optionAtIndex(int index) const OVERRIDE;
 
     const Vector<String> m_symbols;
 
@@ -65,6 +71,7 @@ private:
     // DateTimeEditElements in the page.
     const AtomicString m_visibleEmptyValue;
     int m_selectedIndex;
+    TypeAhead m_typeAhead;
 };
 
 } // namespace WebCore

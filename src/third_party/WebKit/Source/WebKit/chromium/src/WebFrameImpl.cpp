@@ -82,6 +82,7 @@
 #include "DOMUtilitiesPrivate.h"
 #include "DOMWindow.h"
 #include "DOMWindowIntents.h"
+#include "DOMWrapperWorld.h"
 #include "DeliveredIntent.h"
 #include "DeliveredIntentClientImpl.h"
 #include "DirectoryEntry.h"
@@ -117,6 +118,7 @@
 #include "KURL.h"
 #include "MessagePort.h"
 #include "Node.h"
+#include "NodeTraversal.h"
 #include "Page.h"
 #include "PageOverlay.h"
 #include "Performance.h"
@@ -129,7 +131,6 @@
 #include "RenderObject.h"
 #include "RenderTreeAsText.h"
 #include "RenderView.h"
-#include "RenderWidget.h"
 #include "ResourceHandle.h"
 #include "ResourceRequest.h"
 #include "SchemeRegistry.h"
@@ -301,23 +302,6 @@ static long long generateFrameIdentifier()
 {
     static long long next = 0;
     return ++next;
-}
-
-static WebPluginContainerImpl* pluginContainerFromNode(const WebNode& node)
-{
-    if (node.isNull())
-        return 0;
-
-    const Node* coreNode = node.constUnwrap<Node>();
-    if (coreNode->hasTagName(HTMLNames::objectTag) || coreNode->hasTagName(HTMLNames::embedTag)) {
-        RenderObject* object = coreNode->renderer();
-        if (object && object->isWidget()) {
-            Widget* widget = toRenderWidget(object)->widget();
-            if (widget && widget->isPluginContainer())
-                return static_cast<WebPluginContainerImpl*>(widget);
-        }
-    }
-    return 0;
 }
 
 WebPluginContainerImpl* WebFrameImpl::pluginContainerFromFrame(Frame* frame)
@@ -826,7 +810,13 @@ void WebFrameImpl::executeScriptInIsolatedWorld(int worldID, const WebScriptSour
 void WebFrameImpl::setIsolatedWorldSecurityOrigin(int worldID, const WebSecurityOrigin& securityOrigin)
 {
     ASSERT(frame());
-    frame()->script()->setIsolatedWorldSecurityOrigin(worldID, securityOrigin.get());
+    DOMWrapperWorld::setIsolatedWorldSecurityOrigin(worldID, securityOrigin.get());
+}
+
+void WebFrameImpl::setIsolatedWorldContentSecurityPolicy(int worldID, const WebString& policy)
+{
+    ASSERT(frame());
+    DOMWrapperWorld::setIsolatedWorldContentSecurityPolicy(worldID, policy);
 }
 
 void WebFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
@@ -852,7 +842,7 @@ void WebFrameImpl::addMessageToConsole(const WebConsoleMessage& message)
         return;
     }
 
-    frame()->document()->domWindow()->console()->addMessage(OtherMessageSource, LogMessageType, webCoreMessageLevel, message.text);
+    frame()->document()->addConsoleMessage(OtherMessageSource, webCoreMessageLevel, message.text);
 }
 
 void WebFrameImpl::collectGarbage()
@@ -968,7 +958,7 @@ void WebFrameImpl::loadRequest(const WebURLRequest& request)
         return;
     }
 
-    frame()->loader()->load(resourceRequest, false);
+    frame()->loader()->load(FrameLoadRequest(frame(), resourceRequest));
 }
 
 void WebFrameImpl::loadHistoryItem(const WebHistoryItem& item)
@@ -987,8 +977,6 @@ void WebFrameImpl::loadHistoryItem(const WebHistoryItem& item)
 void WebFrameImpl::loadData(const WebData& data, const WebString& mimeType, const WebString& textEncoding, const WebURL& baseURL, const WebURL& unreachableURL, bool replace)
 {
     ASSERT(frame());
-    SubstituteData substData(data, mimeType, textEncoding, unreachableURL);
-    ASSERT(substData.isValid());
 
     // If we are loading substitute data to replace an existing load, then
     // inherit all of the properties of that original request.  This way,
@@ -1001,7 +989,9 @@ void WebFrameImpl::loadData(const WebData& data, const WebString& mimeType, cons
         request = frame()->loader()->originalRequest();
     request.setURL(baseURL);
 
-    frame()->loader()->load(request, substData, false);
+    FrameLoadRequest frameRequest(frame(), request, SubstituteData(data, mimeType, textEncoding, unreachableURL));
+    ASSERT(frameRequest.substituteData().isValid());
+    frame()->loader()->load(frameRequest);
     if (replace) {
         // Do this to force WebKit to treat the load as replacing the currently
         // loaded page.
@@ -1195,7 +1185,7 @@ size_t WebFrameImpl::characterIndexForPoint(const WebPoint& webPoint) const
 
     IntPoint point = frame()->view()->windowToContents(webPoint);
     HitTestResult result = frame()->eventHandler()->hitTestResultAtPoint(point, false);
-    RefPtr<Range> range = frame()->rangeForPoint(result.roundedPoint());
+    RefPtr<Range> range = frame()->rangeForPoint(result.roundedPointInInnerNodeFrame());
     if (!range)
         return notFound;
 
@@ -1225,7 +1215,7 @@ bool WebFrameImpl::executeCommand(const WebString& name, const WebNode& node)
     if (command == "Copy") {
         WebPluginContainerImpl* pluginContainer = pluginContainerFromFrame(frame());
         if (!pluginContainer)
-            pluginContainer = pluginContainerFromNode(node);
+            pluginContainer = static_cast<WebPluginContainerImpl*>(node.pluginContainer());
         if (pluginContainer) {
             pluginContainer->copy();
             return true;
@@ -1398,6 +1388,16 @@ void WebFrameImpl::selectRange(const WebRange& webRange)
         frame()->selection()->setSelectedRange(range.get(), WebCore::VP_DEFAULT_AFFINITY, false);
 }
 
+void WebFrameImpl::moveCaretSelectionTowardsWindowPoint(const WebPoint& point)
+{
+    Element* editable = frame()->selection()->rootEditableElement();
+    IntPoint contentsPoint = frame()->view()->windowToContents(IntPoint(point));
+    LayoutPoint localPoint(editable->convertFromPage(contentsPoint));
+    VisiblePosition position = editable->renderer()->positionForPoint(localPoint);
+    if (frame()->selection()->shouldChangeSelection(position))
+        frame()->selection()->moveTo(position, UserTriggered);
+}
+
 VisiblePosition WebFrameImpl::visiblePositionForWindowPoint(const WebPoint& point)
 {
     HitTestRequest request = HitTestRequest::Move | HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping;
@@ -1421,7 +1421,7 @@ int WebFrameImpl::printBegin(const WebPrintParams& printParams, const WebNode& c
         pluginContainer = pluginContainerFromFrame(frame());
     } else {
         // We only support printing plugin nodes for now.
-        pluginContainer = pluginContainerFromNode(constrainToNode);
+        pluginContainer = static_cast<WebPluginContainerImpl*>(constrainToNode.pluginContainer());
     }
 
     if (pluginContainer && pluginContainer->supportsPaginatedPrint())
@@ -1470,7 +1470,7 @@ void WebFrameImpl::printEnd()
 
 bool WebFrameImpl::isPrintScalingDisabledForPlugin(const WebNode& node)
 {
-    WebPluginContainerImpl* pluginContainer =  node.isNull() ? pluginContainerFromFrame(frame()) : pluginContainerFromNode(node);
+    WebPluginContainerImpl* pluginContainer =  node.isNull() ? pluginContainerFromFrame(frame()) : static_cast<WebPluginContainerImpl*>(node.pluginContainer());
 
     if (!pluginContainer || !pluginContainer->supportsPaginatedPrint())
         return false;
@@ -2360,7 +2360,7 @@ void WebFrameImpl::setFindEndstateFocusAndSelection()
                 frame()->document()->setFocusedNode(node);
                 return;
             }
-            node = node->traverseNextNode();
+            node = NodeTraversal::next(node);
         }
 
         // No node related to the active match was focusable, so set the

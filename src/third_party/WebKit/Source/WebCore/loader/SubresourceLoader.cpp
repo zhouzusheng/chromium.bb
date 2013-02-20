@@ -213,6 +213,8 @@ void SubresourceLoader::didReceiveResponse(const ResourceResponse& response)
 
 void SubresourceLoader::didReceiveData(const char* data, int length, long long encodedDataLength, bool allAtOnce)
 {
+    if (m_resource->response().httpStatusCode() >= 400 && !m_resource->shouldIgnoreHTTPStatusCodeErrors())
+        return;
     ASSERT(!m_resource->resourceToRevalidate());
     ASSERT(!m_resource->errorOccurred());
     ASSERT(m_state == Initialized);
@@ -231,8 +233,8 @@ bool SubresourceLoader::checkForHTTPStatusCodeError()
     if (m_resource->response().httpStatusCode() < 400 || m_resource->shouldIgnoreHTTPStatusCodeErrors())
         return false;
 
-    m_resource->error(CachedResource::LoadError);
     m_state = Finishing;
+    m_resource->error(CachedResource::LoadError);
     cancel();
     return true;
 }
@@ -289,16 +291,13 @@ void SubresourceLoader::didFail(const ResourceError& error)
     CachedResourceHandle<CachedResource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->setResourceError(error);
-    if (error.isTimeout())
-        m_resource->error(CachedResource::TimeoutError);
-    else
-        m_resource->error(CachedResource::LoadError);
+    m_resource->error(CachedResource::LoadError);
     if (!m_resource->isPreloaded())
         memoryCache()->remove(m_resource);
     ResourceLoader::didFail(error);
 }
 
-void SubresourceLoader::willCancel(const ResourceError&)
+void SubresourceLoader::willCancel(const ResourceError& error)
 {
     if (m_state != Initialized)
         return;
@@ -309,6 +308,7 @@ void SubresourceLoader::willCancel(const ResourceError&)
     m_state = Finishing;
     if (m_resource->resourceToRevalidate())
         memoryCache()->revalidationFailed(m_resource);
+    m_resource->setResourceError(error);
     memoryCache()->remove(m_resource);
 }
 
@@ -317,7 +317,7 @@ void SubresourceLoader::releaseResources()
     ASSERT(!reachedTerminalState());
     if (m_state != Uninitialized) {
         m_requestCountTracker.clear();
-        m_documentLoader->cachedResourceLoader()->loadDone();
+        m_documentLoader->cachedResourceLoader()->loadDone(m_resource);
         if (reachedTerminalState())
             return;
         m_resource->stopLoading();

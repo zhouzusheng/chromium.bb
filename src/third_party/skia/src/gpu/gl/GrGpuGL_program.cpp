@@ -33,7 +33,7 @@ void GrGpuGL::ProgramCache::abandon() {
 }
 
 GrGLProgram* GrGpuGL::ProgramCache::getProgram(const ProgramDesc& desc,
-                                               const GrEffect** stages) {
+                                               const GrEffectStage* stages[]) {
     Entry newEntry;
     newEntry.fKey.setKeyData(desc.asKey());
 
@@ -89,40 +89,40 @@ void GrGpuGL::flushViewMatrix(DrawType type) {
     const GrGLIRect& viewport = rt->getViewport();
     viewportSize.set(viewport.fWidth, viewport.fHeight);
 
-    const GrMatrix& vm = this->getDrawState().getViewMatrix();
+    const SkMatrix& vm = this->getDrawState().getViewMatrix();
 
     if (kStencilPath_DrawType == type) {
         if (fHWPathMatrixState.fViewMatrix != vm ||
             fHWPathMatrixState.fRTSize != viewportSize) {
             // rescale the coords from skia's "device" coords to GL's normalized coords,
             // and perform a y-flip.
-            GrMatrix m;
-            m.setScale(GrIntToScalar(2) / rt->width(), GrIntToScalar(-2) / rt->height());
-            m.postTranslate(-GR_Scalar1, GR_Scalar1);
+            SkMatrix m;
+            m.setScale(SkIntToScalar(2) / rt->width(), SkIntToScalar(-2) / rt->height());
+            m.postTranslate(-SK_Scalar1, SK_Scalar1);
             m.preConcat(vm);
 
             // GL wants a column-major 4x4.
             GrGLfloat mv[]  = {
                 // col 0
-                GrScalarToFloat(m[GrMatrix::kMScaleX]),
-                GrScalarToFloat(m[GrMatrix::kMSkewY]),
+                SkScalarToFloat(m[SkMatrix::kMScaleX]),
+                SkScalarToFloat(m[SkMatrix::kMSkewY]),
                 0,
-                GrScalarToFloat(m[GrMatrix::kMPersp0]),
+                SkScalarToFloat(m[SkMatrix::kMPersp0]),
 
                 // col 1
-                GrScalarToFloat(m[GrMatrix::kMSkewX]),
-                GrScalarToFloat(m[GrMatrix::kMScaleY]),
+                SkScalarToFloat(m[SkMatrix::kMSkewX]),
+                SkScalarToFloat(m[SkMatrix::kMScaleY]),
                 0,
-                GrScalarToFloat(m[GrMatrix::kMPersp1]),
+                SkScalarToFloat(m[SkMatrix::kMPersp1]),
 
                 // col 2
                 0, 0, 0, 0,
 
                 // col3
-                GrScalarToFloat(m[GrMatrix::kMTransX]),
-                GrScalarToFloat(m[GrMatrix::kMTransY]),
+                SkScalarToFloat(m[SkMatrix::kMTransX]),
+                SkScalarToFloat(m[SkMatrix::kMTransY]),
                 0.0f,
-                GrScalarToFloat(m[GrMatrix::kMPersp2])
+                SkScalarToFloat(m[SkMatrix::kMPersp2])
             };
             GL_CALL(MatrixMode(GR_GL_PROJECTION));
             GL_CALL(LoadMatrixf(mv));
@@ -131,25 +131,25 @@ void GrGpuGL::flushViewMatrix(DrawType type) {
         }
     } else if (!fCurrentProgram->fViewMatrix.cheapEqualTo(vm) ||
                fCurrentProgram->fViewportSize != viewportSize) {
-        GrMatrix m;
+        SkMatrix m;
         m.setAll(
-            GrIntToScalar(2) / viewportSize.fWidth, 0, -GR_Scalar1,
-            0,-GrIntToScalar(2) / viewportSize.fHeight, GR_Scalar1,
-            0, 0, GrMatrix::I()[8]);
+            SkIntToScalar(2) / viewportSize.fWidth, 0, -SK_Scalar1,
+            0,-SkIntToScalar(2) / viewportSize.fHeight, SK_Scalar1,
+            0, 0, SkMatrix::I()[8]);
         m.setConcat(m, vm);
 
         // ES doesn't allow you to pass true to the transpose param,
         // so do our own transpose
         GrGLfloat mt[]  = {
-            GrScalarToFloat(m[GrMatrix::kMScaleX]),
-            GrScalarToFloat(m[GrMatrix::kMSkewY]),
-            GrScalarToFloat(m[GrMatrix::kMPersp0]),
-            GrScalarToFloat(m[GrMatrix::kMSkewX]),
-            GrScalarToFloat(m[GrMatrix::kMScaleY]),
-            GrScalarToFloat(m[GrMatrix::kMPersp1]),
-            GrScalarToFloat(m[GrMatrix::kMTransX]),
-            GrScalarToFloat(m[GrMatrix::kMTransY]),
-            GrScalarToFloat(m[GrMatrix::kMPersp2])
+            SkScalarToFloat(m[SkMatrix::kMScaleX]),
+            SkScalarToFloat(m[SkMatrix::kMSkewY]),
+            SkScalarToFloat(m[SkMatrix::kMPersp0]),
+            SkScalarToFloat(m[SkMatrix::kMSkewX]),
+            SkScalarToFloat(m[SkMatrix::kMScaleY]),
+            SkScalarToFloat(m[SkMatrix::kMPersp1]),
+            SkScalarToFloat(m[SkMatrix::kMTransX]),
+            SkScalarToFloat(m[SkMatrix::kMTransY]),
+            SkScalarToFloat(m[SkMatrix::kMPersp2])
         };
         fCurrentProgram->fUniformManager.setMatrix3f(fCurrentProgram->fUniforms.fViewMatrixUni, mt);
         fCurrentProgram->fViewMatrix = vm;
@@ -158,90 +158,6 @@ void GrGpuGL::flushViewMatrix(DrawType type) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-// helpers for texture matrices
-
-void GrGpuGL::AdjustTextureMatrix(const GrGLTexture* texture,
-                                  GrMatrix* matrix) {
-    GrAssert(NULL != texture);
-    GrAssert(NULL != matrix);
-    GrGLTexture::Orientation orientation = texture->orientation();
-    if (GrGLTexture::kBottomUp_Orientation == orientation) {
-        GrMatrix invY;
-        invY.setAll(GR_Scalar1, 0,           0,
-                    0,          -GR_Scalar1, GR_Scalar1,
-                    0,          0,           GrMatrix::I()[8]);
-        matrix->postConcat(invY);
-    } else {
-        GrAssert(GrGLTexture::kTopDown_Orientation == orientation);
-    }
-}
-
-int GrGpuGL::TextureMatrixOptFlags(const GrGLTexture* texture,
-                                   const GrEffectStage& stage) {
-    GrAssert(NULL != texture);
-    GrMatrix matrix;
-    stage.getTotalMatrix(&matrix);
-
-    bool canBeIndentity = GrGLTexture::kTopDown_Orientation == texture->orientation();
-
-    if (canBeIndentity && matrix.isIdentity()) {
-        return GrGLProgram::StageDesc::kIdentityMatrix_OptFlagBit;
-    } else if (!matrix.hasPerspective()) {
-        return GrGLProgram::StageDesc::kNoPerspective_OptFlagBit;
-    }
-    return 0;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-void GrGpuGL::flushTextureMatrix(int s) {
-    const GrDrawState& drawState = this->getDrawState();
-
-    // FIXME: Still assuming only a single texture per effect
-    const GrEffect* effect = drawState.getStage(s).getEffect();
-    if (0 == effect->numTextures()) {
-        return;
-    }
-    const GrGLTexture* texture = static_cast<const GrGLTexture*>(effect->texture(0));
-    if (NULL != texture) {
-
-        bool orientationChange = fCurrentProgram->fTextureOrientation[s] !=
-                                 texture->orientation();
-
-        UniformHandle matrixUni = fCurrentProgram->fUniforms.fStages[s].fTextureMatrixUni;
-
-        const GrMatrix& hwMatrix = fCurrentProgram->fTextureMatrices[s];
-        GrMatrix samplerMatrix;
-        drawState.getStage(s).getTotalMatrix(&samplerMatrix);
-
-        if (kInvalidUniformHandle != matrixUni &&
-            (orientationChange || !hwMatrix.cheapEqualTo(samplerMatrix))) {
-
-            GrMatrix m = samplerMatrix;
-            AdjustTextureMatrix(texture, &m);
-
-            // ES doesn't allow you to pass true to the transpose param,
-            // so do our own transpose
-            GrGLfloat mt[]  = {
-                GrScalarToFloat(m[GrMatrix::kMScaleX]),
-                GrScalarToFloat(m[GrMatrix::kMSkewY]),
-                GrScalarToFloat(m[GrMatrix::kMPersp0]),
-                GrScalarToFloat(m[GrMatrix::kMSkewX]),
-                GrScalarToFloat(m[GrMatrix::kMScaleY]),
-                GrScalarToFloat(m[GrMatrix::kMPersp1]),
-                GrScalarToFloat(m[GrMatrix::kMTransX]),
-                GrScalarToFloat(m[GrMatrix::kMTransY]),
-                GrScalarToFloat(m[GrMatrix::kMPersp2])
-            };
-
-            fCurrentProgram->fUniformManager.setMatrix3f(matrixUni, mt);
-            fCurrentProgram->fTextureMatrices[s] = samplerMatrix;
-        }
-
-        fCurrentProgram->fTextureOrientation[s] = texture->orientation();
-    }
-}
 
 void GrGpuGL::flushColor(GrColor color) {
     const ProgramDesc& desc = fCurrentProgram->getDesc();
@@ -350,11 +266,14 @@ bool GrGpuGL::flushGraphicsState(DrawType type) {
             return false;
         }
 
-        const GrEffect* effects[GrDrawState::kNumStages];
+        const GrEffectStage* stages[GrDrawState::kNumStages];
+        for (int i = 0; i < GrDrawState::kNumStages; ++i) {
+            stages[i] = drawState.isStageEnabled(i) ? &drawState.getStage(i) : NULL;
+        }
         GrGLProgram::Desc desc;
-        this->buildProgram(kDrawPoints_DrawType == type, blendOpts, dstCoeff, effects, &desc);
+        this->buildProgram(kDrawPoints_DrawType == type, blendOpts, dstCoeff, &desc);
 
-        fCurrentProgram.reset(fProgramCache->getProgram(desc, effects));
+        fCurrentProgram.reset(fProgramCache->getProgram(desc, stages));
         if (NULL == fCurrentProgram.get()) {
             GrAssert(!"Failed to create program!");
             return false;
@@ -388,8 +307,6 @@ bool GrGpuGL::flushGraphicsState(DrawType type) {
         for (int s = 0; s < GrDrawState::kNumStages; ++s) {
             if (this->isStageEnabled(s)) {
                 this->flushBoundTextureAndParams(s);
-
-                this->flushTextureMatrix(s);
             }
         }
     }
@@ -466,7 +383,7 @@ void GrGpuGL::setupGeometry(int* startVertex,
         scalarType = TEXT_COORDS_GL_TYPE;
         texCoordNorm = SkToBool(TEXT_COORDS_ARE_NORMALIZED);
     } else {
-        GR_STATIC_ASSERT(GR_SCALAR_IS_FLOAT);
+//        GR_STATIC_ASSERT(SK_SCALAR_IS_FLOAT);
         scalarType = GR_GL_FLOAT;
         texCoordNorm = false;
     }
@@ -563,30 +480,9 @@ void GrGpuGL::setupGeometry(int* startVertex,
     fHWGeometryState.fArrayPtrsDirty = false;
 }
 
-namespace {
-
-void setup_effect(GrGLProgram::Desc::StageDesc* stageDesc,
-                  const GrEffectStage& stage,
-                  const GrGLCaps& caps,
-                  const GrEffect** effects,
-                  GrGLProgram* program, int index) {
-    const GrEffect* effect = stage.getEffect();
-    if (effect) {
-        const GrBackendEffectFactory& factory = effect->getFactory();
-        stageDesc->fEffectKey = factory.glEffectKey(*effect, caps);
-        effects[index] = effect;
-    } else {
-        stageDesc->fEffectKey = 0;
-        effects[index] = NULL;
-    }
-}
-
-}
-
 void GrGpuGL::buildProgram(bool isPoints,
                            BlendOptFlags blendOpts,
                            GrBlendCoeff dstCoeff,
-                           const GrEffect** effects,
                            ProgramDesc* desc) {
     const GrDrawState& drawState = this->getDrawState();
 
@@ -657,47 +553,23 @@ void GrGpuGL::buildProgram(bool isPoints,
 
     if (!skipCoverage && (desc->fVertexLayout &GrDrawTarget::kEdge_VertexLayoutBit)) {
         desc->fVertexEdgeType = drawState.getVertexEdgeType();
+        desc->fDiscardIfOutsideEdge = drawState.getStencil().doesWrite();
     } else {
-        // use canonical value when not set to avoid cache misses
+        // Use canonical values when edge-aa is not enabled to avoid program cache misses.
         desc->fVertexEdgeType = GrDrawState::kHairLine_EdgeType;
+        desc->fDiscardIfOutsideEdge = false;
     }
 
     for (int s = 0; s < GrDrawState::kNumStages; ++s) {
-        StageDesc& stageDesc = desc->fStages[s];
 
-        stageDesc.fOptFlags = 0;
-        stageDesc.setEnabled(this->isStageEnabled(s));
-
-        bool skip = s < drawState.getFirstCoverageStage() ? skipColor :
-                                                            skipCoverage;
-
-        if (!skip && stageDesc.isEnabled()) {
+        bool skip = s < drawState.getFirstCoverageStage() ? skipColor : skipCoverage;
+        if (!skip && drawState.isStageEnabled(s)) {
             lastEnabledStage = s;
-            const GrEffectStage& stage = drawState.getStage(s);
-            // FIXME: Still assuming one texture per effect
             const GrEffect* effect = drawState.getStage(s).getEffect();
-
-            if (effect->numTextures() > 0) {
-                const GrGLTexture* texture = static_cast<const GrGLTexture*>(effect->texture(0));
-                GrMatrix samplerMatrix;
-                stage.getTotalMatrix(&samplerMatrix);
-                if (NULL != texture) {
-                    // We call this helper function rather then simply checking the client-specified
-                    // texture matrix. This is because we may have to concat a y-inversion to account
-                    // for texture orientation.
-                    stageDesc.fOptFlags |= TextureMatrixOptFlags(texture, stage);
-                }
-            } else {
-                // Set identity to do the minimal amount of extra work for the no texture case.
-                // This will go away when effects manage their own texture matrix.
-                stageDesc.fOptFlags |= StageDesc::kIdentityMatrix_OptFlagBit;
-            }
-            setup_effect(&stageDesc, stage, this->glCaps(), effects, fCurrentProgram.get(), s);
-
+            const GrBackendEffectFactory& factory = effect->getFactory();
+            desc->fEffectKeys[s] = factory.glEffectKey(drawState.getStage(s), this->glCaps());
         } else {
-            stageDesc.fOptFlags  = 0;
-            stageDesc.fEffectKey = 0;
-            effects[s] = NULL;
+            desc->fEffectKeys[s] = 0;
         }
     }
 

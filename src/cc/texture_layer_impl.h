@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCTextureLayerImpl_h
-#define CCTextureLayerImpl_h
+#ifndef CC_TEXTURE_LAYER_IMPL_H_
+#define CC_TEXTURE_LAYER_IMPL_H_
 
+#include "cc/cc_export.h"
 #include "cc/layer_impl.h"
 
 namespace cc {
 
-class TextureLayerImpl : public LayerImpl {
+class CC_EXPORT TextureLayerImpl : public LayerImpl {
 public:
-    static scoped_ptr<TextureLayerImpl> create(int id)
+    static scoped_ptr<TextureLayerImpl> create(LayerTreeImpl* treeImpl, int id)
     {
-        return make_scoped_ptr(new TextureLayerImpl(id));
+        return make_scoped_ptr(new TextureLayerImpl(treeImpl, id));
     }
     virtual ~TextureLayerImpl();
 
@@ -21,7 +22,7 @@ public:
     virtual void appendQuads(QuadSink&, AppendQuadsData&) OVERRIDE;
     virtual void didDraw(ResourceProvider*) OVERRIDE;
 
-    virtual void didLoseContext() OVERRIDE;
+    virtual void didLoseOutputSurface() OVERRIDE;
 
     virtual void dumpLayerProperties(std::string*, int indent) const OVERRIDE;
 
@@ -29,10 +30,15 @@ public:
     void setTextureId(unsigned id) { m_textureId = id; }
     void setPremultipliedAlpha(bool premultipliedAlpha) { m_premultipliedAlpha = premultipliedAlpha; }
     void setFlipped(bool flipped) { m_flipped = flipped; }
-    void setUVRect(const FloatRect& rect) { m_uvRect = rect; }
+    void setUVRect(const gfx::RectF& rect) { m_uvRect = rect; }
+
+    // 1--2
+    // |  |
+    // 0--3
+    void setVertexOpacity(const float vertexOpacity[4]);
 
 private:
-    explicit TextureLayerImpl(int);
+    TextureLayerImpl(LayerTreeImpl* treeImpl, int id);
 
     virtual const char* layerTypeAsString() const OVERRIDE;
 
@@ -40,9 +46,10 @@ private:
     ResourceProvider::ResourceId m_externalTextureResource;
     bool m_premultipliedAlpha;
     bool m_flipped;
-    FloatRect m_uvRect;
+    gfx::RectF m_uvRect;
+    float m_vertexOpacity[4];
 };
 
 }
 
-#endif // CCTextureLayerImpl_h
+#endif  // CC_TEXTURE_LAYER_IMPL_H_

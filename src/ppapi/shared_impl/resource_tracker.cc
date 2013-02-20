@@ -10,6 +10,7 @@
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/id_assignment.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/resource.h"
 
 namespace ppapi {
@@ -24,6 +25,7 @@ ResourceTracker::~ResourceTracker() {
 
 Resource* ResourceTracker::GetResource(PP_Resource res) const {
   CHECK(thread_checker_.CalledOnValidThread());
+  ProxyLock::AssertAcquired();
   ResourceMap::const_iterator i = live_resources_.find(res);
   if (i == live_resources_.end())
     return NULL;
@@ -141,7 +143,7 @@ void ResourceTracker::DidDeleteInstance(PP_Instance instance) {
   while (cur != to_delete.end()) {
     ResourceMap::iterator found_resource = live_resources_.find(*cur);
     if (found_resource != live_resources_.end())
-      found_resource->second.first->InstanceWasDeleted();
+      found_resource->second.first->NotifyInstanceWasDeleted();
     cur++;
   }
 
@@ -216,7 +218,7 @@ void ResourceTracker::LastPluginRefWasDeleted(Resource* object) {
   CHECK(callback_tracker || is_message_loop);
   if (callback_tracker)
     callback_tracker->PostAbortForResource(object->pp_resource());
-  object->LastPluginRefWasDeleted();
+  object->NotifyLastPluginRefWasDeleted();
 }
 
 }  // namespace ppapi

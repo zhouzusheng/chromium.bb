@@ -32,6 +32,7 @@
 #include "PagePopupController.h"
 
 #if ENABLE(PAGE_POPUP)
+#include "HistogramSupport.h"
 #include "PagePopupClient.h"
 #include "PlatformLocale.h"
 
@@ -61,9 +62,25 @@ String PagePopupController::localizeNumberString(const String& numberString)
     return numberString;
 }
 
+#if ENABLE(CALENDAR_PICKER)
+String PagePopupController::formatMonth(int year, int zeroBaseMonth)
+{
+    if (!m_popupClient)
+        return emptyString();
+    DateComponents date;
+    date.setMonthsSinceEpoch((year - 1970) * 12.0 + zeroBaseMonth);
+    return m_popupClient->locale().formatDateTime(date);
+}
+#endif
+
 void PagePopupController::clearPagePopupClient()
 {
     m_popupClient = 0;
+}
+
+void PagePopupController::histogramEnumeration(const String& name, int sample, int boundaryValue)
+{
+    HistogramSupport::histogramEnumeration(name.utf8().data(), sample, boundaryValue);
 }
 
 }

@@ -11,13 +11,21 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
+#include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer.h"
 
+namespace base {
+class MessageLoopProxy;
+}
+
 namespace media {
+
+class DecryptingDemuxerStream;
+class VideoDecoderSelector;
 
 // VideoRendererBase creates its own thread for the sole purpose of timing frame
 // presentation.  It handles reading from the decoder and stores the results in
@@ -46,7 +54,9 @@ class MEDIA_EXPORT VideoRendererBase
   //
   // TODO(scherkus): pass the VideoFrame* to this callback and remove
   // Get/PutCurrentFrame() http://crbug.com/108435
-  VideoRendererBase(const base::Closure& paint_cb,
+  VideoRendererBase(const scoped_refptr<base::MessageLoopProxy>& message_loop,
+                    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                    const base::Closure& paint_cb,
                     const SetOpaqueCB& set_opaque_cb,
                     bool drop_frames);
 
@@ -85,6 +95,16 @@ class MEDIA_EXPORT VideoRendererBase
   virtual ~VideoRendererBase();
 
  private:
+  // Called when |decoder_selector_| selected the |selected_decoder|.
+  // |decrypting_demuxer_stream| was also populated if a DecryptingDemuxerStream
+  // created to help decrypt the encrypted stream.
+  // Note: |decoder_selector| is passed here to keep the VideoDecoderSelector
+  // alive until OnDecoderSelected() finishes.
+  void OnDecoderSelected(
+      scoped_ptr<VideoDecoderSelector> decoder_selector,
+      const scoped_refptr<VideoDecoder>& selected_decoder,
+      const scoped_refptr<DecryptingDemuxerStream>& decrypting_demuxer_stream);
+
   // Callback from the video decoder delivering decoded video frames and
   // reporting video decoder status.
   void FrameReady(VideoDecoder::Status status,
@@ -95,10 +115,11 @@ class MEDIA_EXPORT VideoRendererBase
 
   // Helper method that schedules an asynchronous read from the decoder as long
   // as there isn't a pending read and we have capacity.
+  void AttemptRead();
   void AttemptRead_Locked();
 
-  // Called when the VideoDecoder Flush() completes.
-  void OnDecoderFlushDone();
+  // Called when VideoDecoder::Reset() completes.
+  void OnDecoderResetDone();
 
   // Attempts to complete flushing and transition into the flushed state.
   void AttemptFlush_Locked();
@@ -121,6 +142,9 @@ class MEDIA_EXPORT VideoRendererBase
   // |size_changed_cb_| if the natural size changes.
   void SetCurrentFrameToNextReadyFrame();
 
+  void ResetDecoder();
+  void StopDecoder(const base::Closure& callback);
+
   // Pops the front of |decoders|, assigns it to |decoder_| and then
   // calls initialize on the new decoder.
   void InitializeNextDecoder(const scoped_refptr<DemuxerStream>& demuxer_stream,
@@ -133,10 +157,16 @@ class MEDIA_EXPORT VideoRendererBase
                          scoped_ptr<VideoDecoderList> decoders,
                          PipelineStatus status);
 
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
+
   // Used for accessing data members.
   base::Lock lock_;
 
+  SetDecryptorReadyCB set_decryptor_ready_cb_;
+
+  // These two will be set by VideoDecoderSelector::SelectVideoDecoder().
   scoped_refptr<VideoDecoder> decoder_;
+  scoped_refptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
 
   // Queue of incoming frames as well as the current frame since the last time
   // OnFrameAvailable() was called.
@@ -165,7 +195,7 @@ class MEDIA_EXPORT VideoRendererBase
   //              |
   //              | Initialize()
   //              V        All frames returned
-  //   +------[kFlushed]<-----[kFlushing]<--- OnDecoderFlushDone()
+  //   +------[kFlushed]<-----[kFlushing]<--- OnDecoderResetDone()
   //   |          | Preroll() or upon                  ^
   //   |          V got first frame           [kFlushingDecoder]
   //   |      [kPrerolling]                            ^

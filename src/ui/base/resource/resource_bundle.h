@@ -33,6 +33,7 @@ class RefCountedStaticMemory;
 
 namespace ui {
 
+class DataPack;
 class ResourceHandle;
 
 // ResourceBundle is a central facility to load images and other resources,
@@ -201,19 +202,28 @@ class UI_EXPORT ResourceBundle {
   // Same as GetNativeImageNamed() except that RTL is not enabled.
   gfx::Image& GetNativeImageNamed(int resource_id);
 
+  // Loads the raw bytes of a scale independent data resource.
+  base::RefCountedStaticMemory* LoadDataResourceBytes(int resource_id) const;
+
   // Loads the raw bytes of a data resource nearest the scale factor
-  // |scale_factor| into |bytes|, without doing any processing or interpretation
-  // of the resource. Use ResourceHandle::SCALE_FACTOR_NONE for non-image
-  // resources. Returns NULL if we fail to read the resource.
-  base::RefCountedStaticMemory* LoadDataResourceBytes(
+  // |scale_factor| into |bytes|, without doing any processing or
+  // interpretation of the resource. Use ResourceHandle::SCALE_FACTOR_NONE
+  // for scale independent image resources (such as wallpaper).
+  // Returns NULL if we fail to read the resource.
+  base::RefCountedStaticMemory* LoadDataResourceBytesForScale(
       int resource_id,
       ScaleFactor scale_factor) const;
 
+  // Return the contents of a scale independent resource in a
+  // StringPiece given the resource id
+  base::StringPiece GetRawDataResource(int resource_id) const;
+
   // Return the contents of a resource in a StringPiece given the resource id
   // nearest the scale factor |scale_factor|.
-  // Use ResourceHanlde::SCALE_FACTOR_NONE for non-image resources.
-  base::StringPiece GetRawDataResource(int resource_id,
-                                       ScaleFactor scale_factor) const;
+  // Use ResourceHandle::SCALE_FACTOR_NONE for scale independent image resources
+  // (such as wallpaper).
+  base::StringPiece GetRawDataResourceForScale(int resource_id,
+                                               ScaleFactor scale_factor) const;
 
   // Get a localized string given a message id.  Returns an empty
   // string if the message_id is not found.
@@ -237,19 +247,19 @@ class UI_EXPORT ResourceBundle {
   FilePath GetLocaleFilePath(const std::string& app_locale,
                              bool test_file_exists);
 
+  // Returns the maximum scale factor currently loaded.
+  // Returns SCALE_FACTOR_100P if no resource is loaded.
+  ScaleFactor max_scale_factor() const {
+    return max_scale_factor_;
+  }
+
  private:
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForResourcePack);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetPathForLocalePack);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetImageNamed);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetNativeImageNamed);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateLoadDataResourceBytes);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetRawDataResource);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetLocalizedString);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, DelegateGetFont);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, GetRawDataResource);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LoadDataResourceBytes);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, LocaleDataPakExists);
-  FRIEND_TEST_ALL_PREFIXES(ResourceBundle, GetImageNamed);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetPathForLocalePack);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetImageNamed);
+  FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetNativeImageNamed);
+
+  friend class ResourceBundleImageTest;
+  friend class ResourceBundleTest;
 
   class ResourceBundleImageSource;
   friend class ResourceBundleImageSource;
@@ -269,6 +279,10 @@ class UI_EXPORT ResourceBundle {
   void AddDataPackFromPathInternal(const FilePath& path,
                                    ScaleFactor scale_factor,
                                    bool optional);
+
+  // Inserts |data_pack| to |data_pack_| and updates |max_scale_factor_|
+  // accordingly.
+  void AddDataPack(DataPack* data_pack);
 
   // Try to load the locale specific strings from an external data module.
   // Returns the locale that is loaded.
@@ -296,9 +310,11 @@ class UI_EXPORT ResourceBundle {
                   bool* fell_back_to_1x) const;
 
   // Fills the |bitmap| given the |resource_id| and |scale_factor|.
-  // Returns false if the resource does not exist.
+  // Returns false if the resource does not exist. This may fall back to
+  // the data pack with SCALE_FACTOR_NONE, and when this happens,
+  // |scale_factor| will be set to SCALE_FACTOR_100P.
   bool LoadBitmap(int resource_id,
-                  ScaleFactor scale_factor,
+                  ScaleFactor* scale_factor,
                   SkBitmap* bitmap,
                   bool* fell_back_to_1x) const;
 
@@ -321,6 +337,9 @@ class UI_EXPORT ResourceBundle {
   // Handles for data sources.
   scoped_ptr<ResourceHandle> locale_resources_data_;
   ScopedVector<ResourceHandle> data_packs_;
+
+  // The maximum scale factor currently loaded.
+  ScaleFactor max_scale_factor_;
 
   // Cached images. The ResourceBundle caches all retrieved images and keeps
   // ownership of the pointers.

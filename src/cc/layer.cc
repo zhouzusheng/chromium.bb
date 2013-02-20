@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/layer.h"
 
 #include "cc/active_animation.h"
@@ -11,14 +9,13 @@
 #include "cc/layer_animation_controller.h"
 #include "cc/layer_impl.h"
 #include "cc/layer_tree_host.h"
-#include "cc/settings.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
+#include "ui/gfx/rect_conversions.h"
 #include <public/WebAnimationDelegate.h>
 #include <public/WebLayerScrollClient.h>
 #include <public/WebSize.h>
 
 using namespace std;
-using WebKit::WebTransformationMatrix;
 
 namespace cc {
 
@@ -33,6 +30,7 @@ Layer::Layer()
     : m_needsDisplay(false)
     , m_stackingOrderChanged(false)
     , m_layerId(s_nextLayerId++)
+    , m_ignoreSetNeedsCommit(false)
     , m_parent(0)
     , m_layerTreeHost(0)
     , m_layerAnimationController(LayerAnimationController::create(this))
@@ -40,12 +38,10 @@ Layer::Layer()
     , m_shouldScrollOnMainThread(false)
     , m_haveWheelEventHandlers(false)
     , m_nonFastScrollableRegionChanged(false)
+    , m_touchEventHandlerRegionChanged(false)
     , m_anchorPoint(0.5, 0.5)
     , m_backgroundColor(0)
-    , m_debugBorderColor(0)
-    , m_debugBorderWidth(0)
     , m_opacity(1.0)
-    , m_filter(0)
     , m_anchorPointZ(0)
     , m_isContainerForFixedPositionLayers(false)
     , m_fixedToContainerLayer(false)
@@ -53,18 +49,11 @@ Layer::Layer()
     , m_masksToBounds(false)
     , m_contentsOpaque(false)
     , m_doubleSided(true)
-    , m_useLCDText(false)
     , m_preserves3D(false)
     , m_useParentBackfaceVisibility(false)
     , m_drawCheckerboardForMissingTiles(false)
     , m_forceRenderSurface(false)
     , m_replicaLayer(0)
-    , m_drawOpacity(0)
-    , m_drawOpacityIsAnimating(false)
-    , m_renderTarget(0)
-    , m_drawTransformIsAnimating(false)
-    , m_screenSpaceTransformIsAnimating(false)
-    , m_contentsScale(1.0)
     , m_rasterScale(1.0)
     , m_automaticallyComputeRasterScale(false)
     , m_boundsContainPageScale(false)
@@ -75,6 +64,8 @@ Layer::Layer()
         s_nextLayerId = 1;
         m_layerId = s_nextLayerId++;
     }
+
+    addLayerAnimationObserver(m_layerAnimationController.get());
 }
 
 Layer::~Layer()
@@ -85,13 +76,6 @@ Layer::~Layer()
 
     // Remove the parent reference from all children.
     removeAllChildren();
-
-    SkSafeUnref(m_filter);
-}
-
-void Layer::setUseLCDText(bool useLCDText)
-{
-    m_useLCDText = useLCDText;
 }
 
 void Layer::setLayerTreeHost(LayerTreeHost* host)
@@ -116,17 +100,30 @@ void Layer::setLayerTreeHost(LayerTreeHost* host)
 
 void Layer::setNeedsCommit()
 {
+    if (m_ignoreSetNeedsCommit)
+        return;
     if (m_layerTreeHost)
         m_layerTreeHost->setNeedsCommit();
 }
 
-IntRect Layer::layerRectToContentRect(const WebKit::WebRect& layerRect)
+void Layer::setNeedsFullTreeSync()
 {
-    float widthScale = static_cast<float>(contentBounds().width()) / bounds().width();
-    float heightScale = static_cast<float>(contentBounds().height()) / bounds().height();
-    FloatRect contentRect(layerRect.x, layerRect.y, layerRect.width, layerRect.height);
-    contentRect.scale(widthScale, heightScale);
-    return enclosingIntRect(contentRect);
+    if (m_layerTreeHost)
+        m_layerTreeHost->setNeedsFullTreeSync();
+}
+
+gfx::Rect Layer::layerRectToContentRect(const gfx::RectF& layerRect) const
+{
+    gfx::RectF contentRect = gfx::ScaleRect(layerRect, contentsScaleX(), contentsScaleY());
+    // Intersect with content rect to avoid the extra pixel because for some
+    // values x and y, ceil((x / y) * y) may be x + 1.
+    contentRect.Intersect(gfx::Rect(gfx::Point(), contentBounds()));
+    return gfx::ToEnclosingRect(contentRect);
+}
+
+bool Layer::blocksPendingCommit() const
+{
+    return false;
 }
 
 void Layer::setParent(Layer* layer)
@@ -140,7 +137,7 @@ void Layer::setParent(Layer* layer)
 
 bool Layer::hasAncestor(Layer* ancestor) const
 {
-    for (Layer* layer = parent(); layer; layer = layer->parent()) {
+    for (const Layer* layer = parent(); layer; layer = layer->parent()) {
         if (layer == ancestor)
             return true;
     }
@@ -154,14 +151,14 @@ void Layer::addChild(scoped_refptr<Layer> child)
 
 void Layer::insertChild(scoped_refptr<Layer> child, size_t index)
 {
-    index = min(index, m_children.size());
     child->removeFromParent();
     child->setParent(this);
     child->m_stackingOrderChanged = true;
 
+    index = min(index, m_children.size());
     LayerList::iterator iter = m_children.begin();
     m_children.insert(iter + index, child);
-    setNeedsCommit();
+    setNeedsFullTreeSync();
 }
 
 void Layer::removeFromParent()
@@ -179,15 +176,15 @@ void Layer::removeChild(Layer* child)
 
         child->setParent(0);
         m_children.erase(iter);
-        setNeedsCommit();
+        setNeedsFullTreeSync();
         return;
     }
 }
 
 void Layer::replaceChild(Layer* reference, scoped_refptr<Layer> newLayer)
 {
-    ASSERT_ARG(reference, reference);
-    ASSERT_ARG(reference, reference->parent() == this);
+    DCHECK(reference);
+    DCHECK_EQ(reference->parent(), this);
 
     if (reference == newLayer)
         return;
@@ -215,19 +212,26 @@ int Layer::indexOfChild(const Layer* reference)
     return -1;
 }
 
-void Layer::setBounds(const IntSize& size)
+void Layer::setBounds(const gfx::Size& size)
 {
     if (bounds() == size)
         return;
 
-    bool firstResize = bounds().isEmpty() && !size.isEmpty();
+    bool firstResize = bounds().IsEmpty() && !size.IsEmpty();
 
     m_bounds = size;
+
+    didUpdateBounds();
 
     if (firstResize)
         setNeedsDisplay();
     else
         setNeedsCommit();
+}
+
+void Layer::didUpdateBounds()
+{
+    m_drawProperties.content_bounds = bounds();
 }
 
 Layer* Layer::rootLayer()
@@ -258,7 +262,7 @@ void Layer::setChildren(const LayerList& children)
         addChild(children[i]);
 }
 
-void Layer::setAnchorPoint(const FloatPoint& anchorPoint)
+void Layer::setAnchorPoint(const gfx::PointF& anchorPoint)
 {
     if (m_anchorPoint == anchorPoint)
         return;
@@ -282,9 +286,15 @@ void Layer::setBackgroundColor(SkColor backgroundColor)
     setNeedsCommit();
 }
 
-IntSize Layer::contentBounds() const
+void Layer::calculateContentsScale(
+    float idealContentsScale,
+    float* contentsScaleX,
+    float* contentsScaleY,
+    gfx::Size* contentBounds)
 {
-    return bounds();
+    *contentsScaleX = 1;
+    *contentsScaleY = 1;
+    *contentBounds = bounds();
 }
 
 void Layer::setMasksToBounds(bool masksToBounds)
@@ -306,7 +316,7 @@ void Layer::setMaskLayer(Layer* maskLayer)
         m_maskLayer->setLayerTreeHost(m_layerTreeHost);
         m_maskLayer->setIsMask(true);
     }
-    setNeedsCommit();
+    setNeedsFullTreeSync();
 }
 
 void Layer::setReplicaLayer(Layer* layer)
@@ -318,7 +328,7 @@ void Layer::setReplicaLayer(Layer* layer)
     m_replicaLayer = layer;
     if (m_replicaLayer)
         m_replicaLayer->setLayerTreeHost(m_layerTreeHost);
-    setNeedsCommit();
+    setNeedsFullTreeSync();
 }
 
 void Layer::setFilters(const WebKit::WebFilterOperations& filters)
@@ -332,12 +342,12 @@ void Layer::setFilters(const WebKit::WebFilterOperations& filters)
         LayerTreeHost::setNeedsFilterContext(true);
 }
 
-void Layer::setFilter(SkImageFilter* filter)
+void Layer::setFilter(const skia::RefPtr<SkImageFilter>& filter)
 {
-    if (m_filter == filter)
+    if (m_filter.get() == filter.get())
         return;
     DCHECK(m_filters.isEmpty());
-    SkRefCnt_SafeAssign(m_filter, filter);
+    m_filter = filter;
     setNeedsCommit();
     if (filter)
         LayerTreeHost::setNeedsFilterContext(true);
@@ -379,7 +389,7 @@ void Layer::setContentsOpaque(bool opaque)
     setNeedsDisplay();
 }
 
-void Layer::setPosition(const FloatPoint& position)
+void Layer::setPosition(const gfx::PointF& position)
 {
     if (m_position == position)
         return;
@@ -387,7 +397,7 @@ void Layer::setPosition(const FloatPoint& position)
     setNeedsCommit();
 }
 
-void Layer::setSublayerTransform(const WebTransformationMatrix& sublayerTransform)
+void Layer::setSublayerTransform(const gfx::Transform& sublayerTransform)
 {
     if (m_sublayerTransform == sublayerTransform)
         return;
@@ -395,7 +405,7 @@ void Layer::setSublayerTransform(const WebTransformationMatrix& sublayerTransfor
     setNeedsCommit();
 }
 
-void Layer::setTransform(const WebTransformationMatrix& transform)
+void Layer::setTransform(const gfx::Transform& transform)
 {
     if (m_transform == transform)
         return;
@@ -408,21 +418,21 @@ bool Layer::transformIsAnimating() const
     return m_layerAnimationController->isAnimatingProperty(ActiveAnimation::Transform);
 }
 
-void Layer::setScrollPosition(const IntPoint& scrollPosition)
+void Layer::setScrollOffset(gfx::Vector2d scrollOffset)
 {
-    if (m_scrollPosition == scrollPosition)
+    if (m_scrollOffset == scrollOffset)
         return;
-    m_scrollPosition = scrollPosition;
+    m_scrollOffset = scrollOffset;
     if (m_layerScrollClient)
         m_layerScrollClient->didScroll();
-    setNeedsCommit();
+    setNeedsFullTreeSync();
 }
 
-void Layer::setMaxScrollPosition(const IntSize& maxScrollPosition)
+void Layer::setMaxScrollOffset(gfx::Vector2d maxScrollOffset)
 {
-    if (m_maxScrollPosition == maxScrollPosition)
+    if (m_maxScrollOffset == maxScrollOffset)
         return;
-    m_maxScrollPosition = maxScrollPosition;
+    m_maxScrollOffset = maxScrollOffset;
     setNeedsCommit();
 }
 
@@ -459,6 +469,14 @@ void Layer::setNonFastScrollableRegion(const Region& region)
     setNeedsCommit();
 }
 
+void Layer::setTouchEventHandlerRegion(const Region& region)
+{
+    if (m_touchEventHandlerRegion == region)
+        return;
+    m_touchEventHandlerRegion = region;
+    m_touchEventHandlerRegionChanged = true;
+}
+
 void Layer::setDrawCheckerboardForMissingTiles(bool checkerboard)
 {
     if (m_drawCheckerboardForMissingTiles == checkerboard)
@@ -475,7 +493,7 @@ void Layer::setForceRenderSurface(bool force)
     setNeedsCommit();
 }
 
-void Layer::setImplTransform(const WebTransformationMatrix& transform)
+void Layer::setImplTransform(const gfx::Transform& transform)
 {
     if (m_implTransform == transform)
         return;
@@ -500,19 +518,14 @@ void Layer::setIsDrawable(bool isDrawable)
     setNeedsCommit();
 }
 
-Layer* Layer::parent() const
+void Layer::setNeedsDisplayRect(const gfx::RectF& dirtyRect)
 {
-    return m_parent;
-}
-
-void Layer::setNeedsDisplayRect(const FloatRect& dirtyRect)
-{
-    m_updateRect.unite(dirtyRect);
+    m_updateRect.Union(dirtyRect);
 
     // Simply mark the contents as dirty. For non-root layers, the call to
     // setNeedsCommit will schedule a fresh compositing pass.
     // For the root layer, setNeedsCommit has no effect.
-    if (!dirtyRect.isEmpty())
+    if (!dirtyRect.IsEmpty())
         m_needsDisplay = true;
 
     if (drawsContent())
@@ -557,8 +570,7 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     layer->setBackgroundColor(m_backgroundColor);
     layer->setBounds(m_bounds);
     layer->setContentBounds(contentBounds());
-    layer->setDebugBorderColor(m_debugBorderColor);
-    layer->setDebugBorderWidth(m_debugBorderWidth);
+    layer->setContentsScale(contentsScaleX(), contentsScaleY());
     layer->setDebugName(m_debugName);
     layer->setDoubleSided(m_doubleSided);
     layer->setDrawCheckerboardForMissingTiles(m_drawCheckerboardForMissingTiles);
@@ -567,7 +579,6 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     layer->setFilters(filters());
     layer->setFilter(filter());
     layer->setBackgroundFilters(backgroundFilters());
-    layer->setUseLCDText(m_useLCDText);
     layer->setMasksToBounds(m_masksToBounds);
     layer->setScrollable(m_scrollable);
     layer->setShouldScrollOnMainThread(m_shouldScrollOnMainThread);
@@ -578,6 +589,10 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
         layer->setNonFastScrollableRegion(m_nonFastScrollableRegion);
         m_nonFastScrollableRegionChanged = false;
     }
+    if (m_touchEventHandlerRegionChanged) {
+        layer->setTouchEventHandlerRegion(m_touchEventHandlerRegion);
+        m_touchEventHandlerRegionChanged = false;
+    }
     layer->setContentsOpaque(m_contentsOpaque);
     if (!opacityIsAnimating())
         layer->setOpacity(m_opacity);
@@ -586,8 +601,8 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     layer->setFixedToContainerLayer(m_fixedToContainerLayer);
     layer->setPreserves3D(preserves3D());
     layer->setUseParentBackfaceVisibility(m_useParentBackfaceVisibility);
-    layer->setScrollPosition(m_scrollPosition);
-    layer->setMaxScrollPosition(m_maxScrollPosition);
+    layer->setScrollOffset(m_scrollOffset);
+    layer->setMaxScrollOffset(m_maxScrollOffset);
     layer->setSublayerTransform(m_sublayerTransform);
     if (!transformIsAnimating())
         layer->setTransform(m_transform);
@@ -595,11 +610,11 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     // If the main thread commits multiple times before the impl thread actually draws, then damage tracking
     // will become incorrect if we simply clobber the updateRect here. The LayerImpl's updateRect needs to
     // accumulate (i.e. union) any update changes that have occurred on the main thread.
-    m_updateRect.uniteIfNonZero(layer->updateRect());
+    m_updateRect.Union(layer->updateRect());
     layer->setUpdateRect(m_updateRect);
 
     layer->setScrollDelta(layer->scrollDelta() - layer->sentScrollDelta());
-    layer->setSentScrollDelta(IntSize());
+    layer->setSentScrollDelta(gfx::Vector2d());
 
     layer->setStackingOrderChanged(m_stackingOrderChanged);
 
@@ -612,12 +627,12 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
 
     // Reset any state that should be cleared for the next update.
     m_stackingOrderChanged = false;
-    m_updateRect = FloatRect();
+    m_updateRect = gfx::RectF();
 }
 
-scoped_ptr<LayerImpl> Layer::createLayerImpl()
+scoped_ptr<LayerImpl> Layer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return LayerImpl::create(m_layerId);
+    return LayerImpl::create(treeImpl, m_layerId);
 }
 
 bool Layer::drawsContent() const
@@ -630,36 +645,10 @@ bool Layer::needMoreUpdates()
     return false;
 }
 
-bool Layer::needsContentsScale() const
-{
-    return false;
-}
-
-void Layer::setDebugBorderColor(SkColor color)
-{
-    m_debugBorderColor = color;
-    setNeedsCommit();
-}
-
-void Layer::setDebugBorderWidth(float width)
-{
-    m_debugBorderWidth = width;
-    setNeedsCommit();
-}
-
 void Layer::setDebugName(const std::string& debugName)
 {
     m_debugName = debugName;
     setNeedsCommit();
-}
-
-void Layer::setContentsScale(float contentsScale)
-{
-    if (!needsContentsScale() || m_contentsScale == contentsScale)
-        return;
-    m_contentsScale = contentsScale;
-
-    setNeedsDisplay();
 }
 
 void Layer::setRasterScale(float scale)
@@ -668,7 +657,8 @@ void Layer::setRasterScale(float scale)
         return;
     m_rasterScale = scale;
 
-    if (!m_automaticallyComputeRasterScale)
+    // When automatically computed, this acts like a draw property.
+    if (m_automaticallyComputeRasterScale)
         return;
     setNeedsDisplay();
 }
@@ -707,18 +697,9 @@ void Layer::setBoundsContainPageScale(bool boundsContainPageScale)
 
 void Layer::createRenderSurface()
 {
-    DCHECK(!m_renderSurface);
-    m_renderSurface = make_scoped_ptr(new RenderSurface(this));
-    setRenderTarget(this);
-}
-
-bool Layer::descendantDrawsContent()
-{
-    for (size_t i = 0; i < m_children.size(); ++i) {
-        if (m_children[i]->drawsContent() || m_children[i]->descendantDrawsContent())
-            return true;
-    }
-    return false;
+    DCHECK(!m_drawProperties.render_surface);
+    m_drawProperties.render_surface = make_scoped_ptr(new RenderSurface(this));
+    m_drawProperties.render_target = this;
 }
 
 int Layer::id() const
@@ -739,12 +720,12 @@ void Layer::setOpacityFromAnimation(float opacity)
     m_opacity = opacity;
 }
 
-const WebKit::WebTransformationMatrix& Layer::transform() const
+const gfx::Transform& Layer::transform() const
 {
     return m_transform;
 }
 
-void Layer::setTransformFromAnimation(const WebTransformationMatrix& transform)
+void Layer::setTransformFromAnimation(const gfx::Transform& transform)
 {
     // This is called due to an ongoing accelerated animation. Since this animation is
     // also being run on the impl thread, there is no need to request a commit to push
@@ -757,11 +738,18 @@ bool Layer::addAnimation(scoped_ptr <ActiveAnimation> animation)
     // WebCore currently assumes that accelerated animations will start soon
     // after the animation is added. However we cannot guarantee that if we do
     // not have a layerTreeHost that will setNeedsCommit().
+    // Unfortunately, the fix below to guarantee correctness causes performance
+    // regressions on Android, since Android has shipped for a long time
+    // with all animations accelerated. For this reason, we will live with
+    // this bug only on Android until the bug is fixed.
+    // http://crbug.com/129683
+#if !defined(OS_ANDROID)
     if (!m_layerTreeHost)
         return false;
 
-    if (!Settings::acceleratedAnimationEnabled())
+    if (!m_layerTreeHost->settings().acceleratedAnimationEnabled)
         return false;
+#endif
 
     m_layerAnimationController->addAnimation(animation.Pass());
     if (m_layerTreeHost) {
@@ -797,10 +785,14 @@ void Layer::resumeAnimations(double monotonicTime)
 
 void Layer::setLayerAnimationController(scoped_ptr<LayerAnimationController> layerAnimationController)
 {
+    if (m_layerAnimationController)
+        removeLayerAnimationObserver(m_layerAnimationController.get());
+
     m_layerAnimationController = layerAnimationController.Pass();
     if (m_layerAnimationController) {
         m_layerAnimationController->setClient(this);
         m_layerAnimationController->setForceSync();
+        addLayerAnimationObserver(m_layerAnimationController.get());
     }
     setNeedsCommit();
 }
@@ -819,7 +811,8 @@ bool Layer::hasActiveAnimation() const
 
 void Layer::notifyAnimationStarted(const AnimationEvent& event, double wallClockTime)
 {
-    m_layerAnimationController->notifyAnimationStarted(event);
+    FOR_EACH_OBSERVER(LayerAnimationObserver, m_layerAnimationObservers,
+                      OnAnimationStarted(event));
     if (m_layerAnimationDelegate)
         m_layerAnimationDelegate->notifyAnimationStarted(wallClockTime);
 }
@@ -828,6 +821,17 @@ void Layer::notifyAnimationFinished(double wallClockTime)
 {
     if (m_layerAnimationDelegate)
         m_layerAnimationDelegate->notifyAnimationFinished(wallClockTime);
+}
+
+void Layer::addLayerAnimationObserver(LayerAnimationObserver* animationObserver)
+{
+    if (!m_layerAnimationObservers.HasObserver(animationObserver))
+        m_layerAnimationObservers.AddObserver(animationObserver);
+}
+
+void Layer::removeLayerAnimationObserver(LayerAnimationObserver* animationObserver)
+{
+    m_layerAnimationObservers.RemoveObserver(animationObserver);
 }
 
 Region Layer::visibleContentOpaqueRegion() const
@@ -847,4 +851,4 @@ void sortLayers(std::vector<scoped_refptr<Layer> >::iterator, std::vector<scoped
     // Currently we don't use z-order to decide what to paint, so there's no need to actually sort Layers.
 }
 
-}
+}  // namespace cc

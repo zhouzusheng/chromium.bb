@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef TextureLayerChromium_h
-#define TextureLayerChromium_h
+#ifndef CC_TEXTURE_LAYER_H_
+#define CC_TEXTURE_LAYER_H_
 
+#include "cc/cc_export.h"
 #include "cc/layer.h"
 
 namespace WebKit {
@@ -16,7 +17,7 @@ namespace cc {
 class TextureLayerClient;
 
 // A Layer containing a the rendered output of a plugin instance.
-class TextureLayer : public Layer {
+class CC_EXPORT TextureLayer : public Layer {
 public:
     // If this texture layer requires special preparation logic for each frame driven by
     // the compositor, pass in a non-nil client. Pass in a nil client pointer if texture updates
@@ -25,13 +26,16 @@ public:
 
     void clearClient() { m_client = 0; }
 
-    virtual scoped_ptr<LayerImpl> createLayerImpl() OVERRIDE;
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl) OVERRIDE;
 
     // Sets whether this texture should be Y-flipped at draw time. Defaults to true.
     void setFlipped(bool);
 
     // Sets a UV transform to be used at draw time. Defaults to (0, 0, 1, 1).
-    void setUVRect(const FloatRect&);
+    void setUVRect(const gfx::RectF&);
+
+    // Sets an opacity value per vertex. It will be multiplied by the layer opacity value.
+    void setVertexOpacity(float bottomLeft, float topLeft, float topRight, float bottomRight);
 
     // Sets whether the alpha channel is premultiplied or unpremultiplied. Defaults to true.
     void setPremultipliedAlpha(bool);
@@ -46,12 +50,13 @@ public:
 
     void willModifyTexture();
 
-    virtual void setNeedsDisplayRect(const FloatRect&) OVERRIDE;
+    virtual void setNeedsDisplayRect(const gfx::RectF&) OVERRIDE;
 
     virtual void setLayerTreeHost(LayerTreeHost*) OVERRIDE;
     virtual bool drawsContent() const OVERRIDE;
     virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) OVERRIDE;
     virtual void pushPropertiesTo(LayerImpl*) OVERRIDE;
+    virtual bool blocksPendingCommit() const OVERRIDE;
 
 protected:
     explicit TextureLayer(TextureLayerClient*);
@@ -61,7 +66,9 @@ private:
     TextureLayerClient* m_client;
 
     bool m_flipped;
-    FloatRect m_uvRect;
+    gfx::RectF m_uvRect;
+    // [bottom left, top left, top right, bottom right]
+    float m_vertexOpacity[4];
     bool m_premultipliedAlpha;
     bool m_rateLimitContext;
     bool m_contextLost;
@@ -71,4 +78,4 @@ private:
 };
 
 }
-#endif
+#endif  // CC_TEXTURE_LAYER_H_

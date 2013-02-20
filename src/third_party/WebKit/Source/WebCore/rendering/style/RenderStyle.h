@@ -34,10 +34,11 @@
 #include "ColorSpace.h"
 #include "CounterDirectives.h"
 #include "DataRef.h"
+#include "ExclusionShapeValue.h"
 #include "FontBaseline.h"
 #include "FontDescription.h"
 #include "GraphicsTypes.h"
-#include "LayoutTypesInlineMethods.h"
+#include "LayoutBoxExtent.h"
 #include "Length.h"
 #include "LengthBox.h"
 #include "LengthFunctions.h"
@@ -63,7 +64,6 @@
 #include "StyleTransformData.h"
 #include "StyleVisualData.h"
 #include "TextDirection.h"
-#include "TextOrientation.h"
 #include "ThemeTypes.h"
 #include "TransformOperations.h"
 #include "UnicodeBidi.h"
@@ -132,77 +132,6 @@ class RenderStyle: public RefCounted<RenderStyle> {
     friend class StyleBuilder; // Sets members directly.
     friend class StyleResolver; // Sets members directly.
 protected:
-
-    class RenderStyleBitfields {
-    public:
-        RenderStyleBitfields()
-            : m_affectedByUncommonAttributeSelectors(false)
-            , m_unique(false)
-            , m_affectedByEmpty(false)
-            , m_emptyState(false)
-            , m_childrenAffectedByFirstChildRules(false)
-            , m_childrenAffectedByLastChildRules(false)
-            , m_childrenAffectedByDirectAdjacentRules(false)
-            , m_childrenAffectedByForwardPositionalRules(false)
-            , m_childrenAffectedByBackwardPositionalRules(false)
-            , m_firstChildState(false)
-            , m_lastChildState(false)
-            , m_explicitInheritance(false)
-            , m_childIndex(0)
-        {
-        }
-
-        bool affectedByUncommonAttributeSelectors() const { return m_affectedByUncommonAttributeSelectors; }
-        void setAffectedByUncommonAttributeSelectors(bool value) { m_affectedByUncommonAttributeSelectors = value; }
-        bool unique() const { return m_unique; }
-        void setUnique(bool value) { m_unique = value; }
-        bool affectedByEmpty() const { return m_affectedByEmpty; }
-        void setAffectedByEmpty(bool value) { m_affectedByEmpty = value; }
-        bool emptyState() const { return m_emptyState; }
-        void setEmptyState(bool value) { m_emptyState = value; }
-        bool childrenAffectedByFirstChildRules() const { return m_childrenAffectedByFirstChildRules; }
-        void setChildrenAffectedByFirstChildRules(bool value) { m_childrenAffectedByFirstChildRules = value; }
-        bool childrenAffectedByLastChildRules() const { return m_childrenAffectedByLastChildRules; }
-        void setChildrenAffectedByLastChildRules(bool value) { m_childrenAffectedByLastChildRules = value; }
-        bool childrenAffectedByDirectAdjacentRules() const { return m_childrenAffectedByDirectAdjacentRules; }
-        void setChildrenAffectedByDirectAdjacentRules(bool value) { m_childrenAffectedByDirectAdjacentRules = value; }
-        bool childrenAffectedByForwardPositionalRules() const { return m_childrenAffectedByForwardPositionalRules; }
-        void setChildrenAffectedByForwardPositionalRules(bool value) { m_childrenAffectedByForwardPositionalRules = value; }
-        bool childrenAffectedByBackwardPositionalRules() const { return m_childrenAffectedByBackwardPositionalRules; }
-        void setChildrenAffectedByBackwardPositionalRules(bool value) { m_childrenAffectedByBackwardPositionalRules = value; }
-        bool firstChildState() const { return m_firstChildState; }
-        void setFirstChildState(bool value) { m_firstChildState = value; }
-        bool lastChildState() const { return m_lastChildState; }
-        void setLastChildState(bool value) { m_lastChildState = value; }
-        bool explicitInheritance() const { return m_explicitInheritance; }
-        void setExplicitInheritance(bool value) { m_explicitInheritance = value; }
-
-        unsigned childIndex() const { return m_childIndex; }
-        void setChildIndex(unsigned index) { m_childIndex = index; }
-
-    private:
-        // The following bitfield is 32-bits long, which optimizes padding with the
-        // int refCount in the base class. Beware when adding more bits.
-        unsigned m_affectedByUncommonAttributeSelectors : 1;
-        unsigned m_unique : 1;
-
-        // Bits for dynamic child matching.
-        unsigned m_affectedByEmpty : 1;
-        unsigned m_emptyState : 1;
-
-        // We optimize for :first-child and :last-child. The other positional child selectors like nth-child or
-        // *-child-of-type, we will just give up and re-evaluate whenever children change at all.
-        unsigned m_childrenAffectedByFirstChildRules : 1;
-        unsigned m_childrenAffectedByLastChildRules : 1;
-        unsigned m_childrenAffectedByDirectAdjacentRules : 1;
-        unsigned m_childrenAffectedByForwardPositionalRules : 1;
-        unsigned m_childrenAffectedByBackwardPositionalRules : 1;
-        unsigned m_firstChildState : 1;
-        unsigned m_lastChildState : 1;
-        unsigned m_explicitInheritance : 1;
-        unsigned m_childIndex : 20; // Plenty of bits to cache an index.
-    };
-    RenderStyleBitfields m_bitfields;
 
     // non-inherited attributes
     DataRef<StyleBoxData> m_box;
@@ -299,6 +228,11 @@ protected:
                 && _affectedByDrag == other._affectedByDrag
                 && _pseudoBits == other._pseudoBits
                 && _unicodeBidi == other._unicodeBidi
+                && explicitInheritance == other.explicitInheritance
+                && unique == other.unique
+                && emptyState == other.emptyState
+                && firstChildState == other.firstChildState
+                && lastChildState == other.lastChildState
                 && _isLink == other._isLink;
         }
 
@@ -315,13 +249,18 @@ protected:
         unsigned _table_layout : 1; // ETableLayout
 
         unsigned _unicodeBidi : 3; // EUnicodeBidi
+        // 31 bits
         unsigned _page_break_before : 2; // EPageBreak
-        // 32 bits
         unsigned _page_break_after : 2; // EPageBreak
         unsigned _page_break_inside : 2; // EPageBreak
 
         unsigned _styleType : 6; // PseudoId
         unsigned _pseudoBits : 7;
+        unsigned explicitInheritance : 1; // Explicitly inherits a non-inherited property
+        unsigned unique : 1; // Style can not be shared.
+        unsigned emptyState : 1;
+        unsigned firstChildState : 1;
+        unsigned lastChildState : 1;
 
         bool affectedByHover() const { return _affectedByHover; }
         void setAffectedByHover(bool value) { _affectedByHover = value; }
@@ -337,7 +276,7 @@ protected:
         unsigned _affectedByDrag : 1;
         unsigned _isLink : 1;
         // If you add more style bits here, you will also need to update RenderStyle::copyNonInheritedFrom()
-        // 54 bits
+        // 59 bits
     } noninherited_flags;
 
 // !END SYNC!
@@ -378,6 +317,11 @@ protected:
         noninherited_flags._page_break_inside = initialPageBreak();
         noninherited_flags._styleType = NOPSEUDO;
         noninherited_flags._pseudoBits = 0;
+        noninherited_flags.explicitInheritance = false;
+        noninherited_flags.unique = false;
+        noninherited_flags.emptyState = false;
+        noninherited_flags.firstChildState = false;
+        noninherited_flags.lastChildState = false;
         noninherited_flags.setAffectedByHover(false);
         noninherited_flags.setAffectedByActive(false);
         noninherited_flags.setAffectedByDrag(false);
@@ -418,13 +362,13 @@ public:
     const HashMap<AtomicString, String>* variables() { return &(rareInheritedData->m_variables->m_data); }
 #endif
 
-    bool affectedByHoverRules() const { return noninherited_flags.affectedByHover(); }
-    bool affectedByActiveRules() const { return noninherited_flags.affectedByActive(); }
-    bool affectedByDragRules() const { return noninherited_flags.affectedByDrag(); }
+    bool affectedByHover() const { return noninherited_flags.affectedByHover(); }
+    bool affectedByActive() const { return noninherited_flags.affectedByActive(); }
+    bool affectedByDrag() const { return noninherited_flags.affectedByDrag(); }
 
-    void setAffectedByHoverRules(bool b) { noninherited_flags.setAffectedByHover(b); }
-    void setAffectedByActiveRules(bool b) { noninherited_flags.setAffectedByActive(b); }
-    void setAffectedByDragRules(bool b) { noninherited_flags.setAffectedByDrag(b); }
+    void setAffectedByHover() { noninherited_flags.setAffectedByHover(true); }
+    void setAffectedByActive() { noninherited_flags.setAffectedByActive(true); }
+    void setAffectedByDrag() { noninherited_flags.setAffectedByDrag(true); }
 
     bool operator==(const RenderStyle& other) const;
     bool operator!=(const RenderStyle& other) const { return !(*this == other); }
@@ -619,6 +563,7 @@ public:
     ETextDecoration textDecoration() const { return static_cast<ETextDecoration>(visual->textDecoration); }
 #if ENABLE(CSS3_TEXT)
     TextDecorationStyle textDecorationStyle() const { return static_cast<TextDecorationStyle>(rareNonInheritedData->m_textDecorationStyle); }
+    ETextAlignLast textAlignLast() const { return static_cast<ETextAlignLast>(rareInheritedData->m_textAlignLast); }
 #else
     TextDecorationStyle textDecorationStyle() const { return TextDecorationStyleSolid; }
 #endif // CSS3_TEXT
@@ -683,7 +628,7 @@ public:
 
     bool breakOnlyAfterWhiteSpace() const
     {
-        return whiteSpace() == PRE_WRAP || khtmlLineBreak() == AFTER_WHITE_SPACE;
+        return whiteSpace() == PRE_WRAP || lineBreak() == LineBreakAfterWhiteSpace;
     }
 
     bool breakWords() const
@@ -708,7 +653,6 @@ public:
     EFillRepeat maskRepeatX() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.repeatX()); }
     EFillRepeat maskRepeatY() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.repeatY()); }
     CompositeOperator maskComposite() const { return static_cast<CompositeOperator>(rareNonInheritedData->m_mask.composite()); }
-    EFillAttachment maskAttachment() const { return static_cast<EFillAttachment>(rareNonInheritedData->m_mask.attachment()); }
     EFillBox maskClip() const { return static_cast<EFillBox>(rareNonInheritedData->m_mask.clip()); }
     EFillBox maskOrigin() const { return static_cast<EFillBox>(rareNonInheritedData->m_mask.origin()); }
     Length maskXPosition() const { return rareNonInheritedData->m_mask.xPosition(); }
@@ -762,6 +706,8 @@ public:
 
     short widows() const { return rareInheritedData->widows; }
     short orphans() const { return rareInheritedData->orphans; }
+    bool hasAutoWidows() const { return rareInheritedData->m_hasAutoWidows; }
+    bool hasAutoOrphans() const { return rareInheritedData->m_hasAutoOrphans; }
     EPageBreak pageBreakInside() const { return static_cast<EPageBreak>(noninherited_flags._page_break_inside); }
     EPageBreak pageBreakBefore() const { return static_cast<EPageBreak>(noninherited_flags._page_break_before); }
     EPageBreak pageBreakAfter() const { return static_cast<EPageBreak>(noninherited_flags._page_break_after); }
@@ -813,11 +759,11 @@ public:
     EFlexWrap flexWrap() const { return static_cast<EFlexWrap>(rareNonInheritedData->m_flexibleBox->m_flexWrap); }
     EJustifyContent justifyContent() const { return static_cast<EJustifyContent>(rareNonInheritedData->m_justifyContent); }
 
-    const Vector<Length>& gridColumns() const { return rareNonInheritedData->m_grid->m_gridColumns; }
-    const Vector<Length>& gridRows() const { return rareNonInheritedData->m_grid->m_gridRows; }
+    const Vector<GridTrackSize>& gridColumns() const { return rareNonInheritedData->m_grid->m_gridColumns; }
+    const Vector<GridTrackSize>& gridRows() const { return rareNonInheritedData->m_grid->m_gridRows; }
 
-    Length gridItemColumn() const { return rareNonInheritedData->m_gridItem->m_gridColumn; }
-    Length gridItemRow() const { return rareNonInheritedData->m_gridItem->m_gridRow; }
+    const GridPosition& gridItemColumn() const { return rareNonInheritedData->m_gridItem->m_gridColumn; }
+    const GridPosition& gridItemRow() const { return rareNonInheritedData->m_gridItem->m_gridRow; }
 
     const ShadowData* boxShadow() const { return rareNonInheritedData->m_boxShadow.get(); }
     void getBoxShadowExtent(LayoutUnit& top, LayoutUnit& right, LayoutUnit& bottom, LayoutUnit& left) const { getShadowExtent(boxShadow(), top, right, bottom, left); }
@@ -846,7 +792,7 @@ public:
     EWordBreak wordBreak() const { return static_cast<EWordBreak>(rareInheritedData->wordBreak); }
     EOverflowWrap overflowWrap() const { return static_cast<EOverflowWrap>(rareInheritedData->overflowWrap); }
     ENBSPMode nbspMode() const { return static_cast<ENBSPMode>(rareInheritedData->nbspMode); }
-    EKHTMLLineBreak khtmlLineBreak() const { return static_cast<EKHTMLLineBreak>(rareInheritedData->khtmlLineBreak); }
+    LineBreak lineBreak() const { return static_cast<LineBreak>(rareInheritedData->lineBreak); }
     const AtomicString& highlight() const { return rareInheritedData->highlight; }
     Hyphens hyphens() const { return static_cast<Hyphens>(rareInheritedData->hyphens); }
     short hyphenationLimitBefore() const { return rareInheritedData->hyphenationLimitBefore; }
@@ -890,6 +836,10 @@ public:
     const AtomicString& textEmphasisCustomMark() const { return rareInheritedData->textEmphasisCustomMark; }
     TextEmphasisPosition textEmphasisPosition() const { return static_cast<TextEmphasisPosition>(rareInheritedData->textEmphasisPosition); }
     const AtomicString& textEmphasisMarkString() const;
+
+    RubyPosition rubyPosition() const { return static_cast<RubyPosition>(rareInheritedData->m_rubyPosition); }
+
+    TextOrientation textOrientation() const { return static_cast<TextOrientation>(rareInheritedData->m_textOrientation); }
     
     // Return true if any transform related property (currently transform, transformStyle3D or perspective) 
     // indicates that we are transforming
@@ -981,7 +931,7 @@ public:
     ESpeak speak() const { return static_cast<ESpeak>(rareInheritedData->speak); }
 
 #if ENABLE(CSS_FILTERS)
-    FilterOperations& filter() { return rareNonInheritedData.access()->m_filter.access()->m_operations; }
+    FilterOperations& mutableFilter() { return rareNonInheritedData.access()->m_filter.access()->m_operations; }
     const FilterOperations& filter() const { return rareNonInheritedData->m_filter->m_operations; }
     bool hasFilter() const { return !rareNonInheritedData->m_filter->m_operations.operations().isEmpty(); }
 #else
@@ -1152,6 +1102,7 @@ public:
     void setTextDecoration(ETextDecoration v) { SET_VAR(visual, textDecoration, v); }
 #if ENABLE(CSS3_TEXT)
     void setTextDecorationStyle(TextDecorationStyle v) { SET_VAR(rareNonInheritedData, m_textDecorationStyle, v); }
+    void setTextAlignLast(ETextAlignLast v) { SET_VAR(rareInheritedData, m_textAlignLast, v) }
 #endif // CSS3_TEXT
     void setDirection(TextDirection v) { inherited_flags._direction = v; }
     void setLineHeight(Length specifiedLineHeight);
@@ -1251,8 +1202,12 @@ public:
     int zIndex() const { return m_box->zIndex(); }
     void setZIndex(int v) { SET_VAR(m_box, m_hasAutoZIndex, false); SET_VAR(m_box, m_zIndex, v) }
 
-    void setWidows(short w) { SET_VAR(rareInheritedData, widows, w); }
-    void setOrphans(short o) { SET_VAR(rareInheritedData, orphans, o); }
+    void setHasAutoWidows() { SET_VAR(rareInheritedData, m_hasAutoWidows, true); SET_VAR(rareInheritedData, widows, initialWidows()) }
+    void setWidows(short w) { SET_VAR(rareInheritedData, m_hasAutoWidows, false); SET_VAR(rareInheritedData, widows, w); }
+
+    void setHasAutoOrphans() { SET_VAR(rareInheritedData, m_hasAutoOrphans, true); SET_VAR(rareInheritedData, orphans, initialOrphans()) }
+    void setOrphans(short o) { SET_VAR(rareInheritedData, m_hasAutoOrphans, false); SET_VAR(rareInheritedData, orphans, o); }
+
     // For valid values of page-break-inside see http://www.w3.org/TR/CSS21/page.html#page-break-props
     void setPageBreakInside(EPageBreak b) { ASSERT(b == PBAUTO || b == PBAVOID); noninherited_flags._page_break_inside = b; }
     void setPageBreakBefore(EPageBreak b) { noninherited_flags._page_break_before = b; }
@@ -1292,10 +1247,10 @@ public:
     void setFlexDirection(EFlexDirection direction) { SET_VAR(rareNonInheritedData.access()->m_flexibleBox, m_flexDirection, direction); }
     void setFlexWrap(EFlexWrap w) { SET_VAR(rareNonInheritedData.access()->m_flexibleBox, m_flexWrap, w); }
     void setJustifyContent(EJustifyContent p) { SET_VAR(rareNonInheritedData, m_justifyContent, p); }
-    void setGridColumns(const Vector<Length>& lengths) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridColumns, lengths); }
-    void setGridRows(const Vector<Length>& lengths) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridRows, lengths); }
-    void setGridItemColumn(const Length& columnPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridColumn, columnPosition); }
-    void setGridItemRow(const Length& rowPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridRow, rowPosition); }
+    void setGridColumns(const Vector<GridTrackSize>& lengths) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridColumns, lengths); }
+    void setGridRows(const Vector<GridTrackSize>& lengths) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridRows, lengths); }
+    void setGridItemColumn(const GridPosition& columnPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridColumn, columnPosition); }
+    void setGridItemRow(const GridPosition& rowPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridRow, rowPosition); }
 
     void setMarqueeIncrement(const Length& f) { SET_VAR(rareNonInheritedData.access()->m_marquee, increment, f); }
     void setMarqueeSpeed(int f) { SET_VAR(rareNonInheritedData.access()->m_marquee, speed, f); }
@@ -1311,7 +1266,7 @@ public:
     void setWordBreak(EWordBreak b) { SET_VAR(rareInheritedData, wordBreak, b); }
     void setOverflowWrap(EOverflowWrap b) { SET_VAR(rareInheritedData, overflowWrap, b); }
     void setNBSPMode(ENBSPMode b) { SET_VAR(rareInheritedData, nbspMode, b); }
-    void setKHTMLLineBreak(EKHTMLLineBreak b) { SET_VAR(rareInheritedData, khtmlLineBreak, b); }
+    void setLineBreak(LineBreak b) { SET_VAR(rareInheritedData, lineBreak, b); }
     void setHighlight(const AtomicString& h) { SET_VAR(rareInheritedData, highlight, h); }
     void setHyphens(Hyphens h) { SET_VAR(rareInheritedData, hyphens, h); }
     void setHyphenationLimitBefore(short limit) { SET_VAR(rareInheritedData, hyphenationLimitBefore, limit); }
@@ -1353,6 +1308,9 @@ public:
     void setTextEmphasisMark(TextEmphasisMark mark) { SET_VAR(rareInheritedData, textEmphasisMark, mark); }
     void setTextEmphasisCustomMark(const AtomicString& mark) { SET_VAR(rareInheritedData, textEmphasisCustomMark, mark); }
     void setTextEmphasisPosition(TextEmphasisPosition position) { SET_VAR(rareInheritedData, textEmphasisPosition, position); }
+    bool setTextOrientation(TextOrientation);
+
+    void setRubyPosition(RubyPosition position) { SET_VAR(rareInheritedData, m_rubyPosition, position); }
 
 #if ENABLE(CSS_FILTERS)
     void setFilter(const FilterOperations& ops) { SET_VAR(rareNonInheritedData.access()->m_filter, m_operations, ops); }
@@ -1453,22 +1411,24 @@ public:
     void setKerning(SVGLength k) { accessSVGStyle()->setKerning(k); }
 #endif
 
-    void setShapeInside(PassRefPtr<BasicShape> shape)
+    void setShapeInside(PassRefPtr<ExclusionShapeValue> value)
     {
-        if (rareNonInheritedData->m_shapeInside != shape)
-            rareNonInheritedData.access()->m_shapeInside = shape;
+        if (rareNonInheritedData->m_shapeInside == value)
+            return;
+        rareNonInheritedData.access()->m_shapeInside = value;
     }
-    BasicShape* shapeInside() const { return rareNonInheritedData->m_shapeInside.get(); }
+    ExclusionShapeValue* shapeInside() const { return rareNonInheritedData->m_shapeInside.get(); }
 
-    void setShapeOutside(PassRefPtr<BasicShape> shape)
+    void setShapeOutside(PassRefPtr<ExclusionShapeValue> value)
     {
-        if (rareNonInheritedData->m_shapeOutside != shape)
-            rareNonInheritedData.access()->m_shapeOutside = shape;
+        if (rareNonInheritedData->m_shapeOutside == value)
+            return;
+        rareNonInheritedData.access()->m_shapeOutside = value;
     }
-    BasicShape* shapeOutside() const { return rareNonInheritedData->m_shapeOutside.get(); }
+    ExclusionShapeValue* shapeOutside() const { return rareNonInheritedData->m_shapeOutside.get(); }
 
-    static BasicShape* initialShapeInside() { return 0; }
-    static BasicShape* initialShapeOutside() { return 0; }
+    static ExclusionShapeValue* initialShapeInside() { return 0; }
+    static ExclusionShapeValue* initialShapeOutside() { return 0; }
 
     void setClipPath(PassRefPtr<ClipPathOperation> operation)
     {
@@ -1479,13 +1439,13 @@ public:
 
     static ClipPathOperation* initialClipPath() { return 0; }
 
-    Length wrapPadding() const { return rareNonInheritedData->m_wrapPadding; }
-    void setWrapPadding(Length wrapPadding) { SET_VAR(rareNonInheritedData, m_wrapPadding, wrapPadding); }
-    static Length initialWrapPadding() { return Length(0, Fixed); }
+    Length shapePadding() const { return rareNonInheritedData->m_shapePadding; }
+    void setShapePadding(Length shapePadding) { SET_VAR(rareNonInheritedData, m_shapePadding, shapePadding); }
+    static Length initialShapePadding() { return Length(0, Fixed); }
 
-    Length wrapMargin() const { return rareNonInheritedData->m_wrapMargin; }
-    void setWrapMargin(Length wrapMargin) { SET_VAR(rareNonInheritedData, m_wrapMargin, wrapMargin); }
-    static Length initialWrapMargin() { return Length(0, Fixed); }
+    Length shapeMargin() const { return rareNonInheritedData->m_shapeMargin; }
+    void setShapeMargin(Length shapeMargin) { SET_VAR(rareNonInheritedData, m_shapeMargin, shapeMargin); }
+    static Length initialShapeMargin() { return Length(0, Fixed); }
 
     bool hasContent() const { return contentData(); }
     const ContentData* contentData() const { return rareNonInheritedData->m_content.get(); }
@@ -1520,41 +1480,30 @@ public:
             || display() == LIST_ITEM;
     }
 
-    void setWritingMode(WritingMode v) { inherited_flags.m_writingMode = v; }
+    bool setWritingMode(WritingMode v)
+    {
+        if (v == writingMode())
+            return false;
 
-    // To tell if this style matched attribute selectors. This makes it impossible to share.
-    bool affectedByUncommonAttributeSelectors() const { return m_bitfields.affectedByUncommonAttributeSelectors(); }
-    void setAffectedByUncommonAttributeSelectors() { m_bitfields.setAffectedByUncommonAttributeSelectors(true); }
+        inherited_flags.m_writingMode = v;
+        return true;
+    }
 
-    bool unique() const { return m_bitfields.unique(); }
-    void setUnique() { m_bitfields.setUnique(true); }
+    // A unique style is one that has matches something that makes it impossible to share.
+    bool unique() const { return noninherited_flags.unique; }
+    void setUnique() { noninherited_flags.unique = true; }
 
-    // Methods for indicating the style is affected by dynamic updates (e.g., children changing, our position changing in our sibling list, etc.)
-    bool affectedByEmpty() const { return m_bitfields.affectedByEmpty(); }
-    bool emptyState() const { return m_bitfields.emptyState(); }
-    void setEmptyState(bool b) { m_bitfields.setAffectedByEmpty(true); m_bitfields.setUnique(true); m_bitfields.setEmptyState(b); }
-    bool childrenAffectedByPositionalRules() const { return childrenAffectedByForwardPositionalRules() || childrenAffectedByBackwardPositionalRules(); }
-    bool childrenAffectedByFirstChildRules() const { return m_bitfields.childrenAffectedByFirstChildRules(); }
-    void setChildrenAffectedByFirstChildRules() { m_bitfields.setChildrenAffectedByFirstChildRules(true); }
-    bool childrenAffectedByLastChildRules() const { return m_bitfields.childrenAffectedByLastChildRules(); }
-    void setChildrenAffectedByLastChildRules() { m_bitfields.setChildrenAffectedByLastChildRules(true); }
-    bool childrenAffectedByDirectAdjacentRules() const { return m_bitfields.childrenAffectedByDirectAdjacentRules(); }
-    void setChildrenAffectedByDirectAdjacentRules() { m_bitfields.setChildrenAffectedByDirectAdjacentRules(true); }
-    bool childrenAffectedByForwardPositionalRules() const { return m_bitfields.childrenAffectedByForwardPositionalRules(); }
-    void setChildrenAffectedByForwardPositionalRules() { m_bitfields.setChildrenAffectedByForwardPositionalRules(true); }
-    bool childrenAffectedByBackwardPositionalRules() const { return m_bitfields.childrenAffectedByBackwardPositionalRules(); }
-    void setChildrenAffectedByBackwardPositionalRules() { m_bitfields.setChildrenAffectedByBackwardPositionalRules(true); }
-    bool firstChildState() const { return m_bitfields.firstChildState(); }
-    void setFirstChildState() { m_bitfields.setUnique(true); m_bitfields.setFirstChildState(true); }
-    bool lastChildState() const { return m_bitfields.lastChildState(); }
-    void setLastChildState() { m_bitfields.setUnique(true); m_bitfields.setLastChildState(true); }
-    unsigned childIndex() const { return m_bitfields.childIndex(); }
-    void setChildIndex(unsigned index) { m_bitfields.setUnique(true); m_bitfields.setChildIndex(index); }
+    bool emptyState() const { return noninherited_flags.emptyState; }
+    void setEmptyState(bool b) { setUnique(); noninherited_flags.emptyState = b; }
+    bool firstChildState() const { return noninherited_flags.firstChildState; }
+    void setFirstChildState() { setUnique(); noninherited_flags.firstChildState = true; }
+    bool lastChildState() const { return noninherited_flags.lastChildState; }
+    void setLastChildState() { setUnique(); noninherited_flags.lastChildState = true; }
 
     Color visitedDependentColor(int colorProperty) const;
 
-    void setHasExplicitlyInheritedProperties() { m_bitfields.setExplicitInheritance(true); }
-    bool hasExplicitlyInheritedProperties() const { return m_bitfields.explicitInheritance(); }
+    void setHasExplicitlyInheritedProperties() { noninherited_flags.explicitInheritance = true; }
+    bool hasExplicitlyInheritedProperties() const { return noninherited_flags.explicitInheritance; }
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
     
@@ -1611,6 +1560,7 @@ public:
     static ETextDecoration initialTextDecoration() { return TDNONE; }
 #if ENABLE(CSS3_TEXT)
     static TextDecorationStyle initialTextDecorationStyle() { return TextDecorationStyleSolid; }
+    static ETextAlignLast initialTextAlignLast() { return TextAlignLastAuto; }
 #endif // CSS3_TEXT
     static float initialZoom() { return 1.0f; }
     static int initialOutlineOffset() { return 0; }
@@ -1650,7 +1600,7 @@ public:
     static EWordBreak initialWordBreak() { return NormalWordBreak; }
     static EOverflowWrap initialOverflowWrap() { return NormalOverflowWrap; }
     static ENBSPMode initialNBSPMode() { return NBNORMAL; }
-    static EKHTMLLineBreak initialKHTMLLineBreak() { return LBNORMAL; }
+    static LineBreak initialLineBreak() { return LineBreakAuto; }
     static const AtomicString& initialHighlight() { return nullAtom; }
     static ESpeak initialSpeak() { return SpeakNormal; }
     static Hyphens initialHyphens() { return HyphensManual; }
@@ -1668,7 +1618,7 @@ public:
     static Order initialRTLOrdering() { return LogicalOrder; }
     static float initialTextStrokeWidth() { return 0; }
     static unsigned short initialColumnCount() { return 1; }
-    static ColumnSpan initialColumnSpan() { return ColumnSpanOne; }
+    static ColumnSpan initialColumnSpan() { return ColumnSpanNone; }
     static const TransformOperations& initialTransform() { DEFINE_STATIC_LOCAL(TransformOperations, ops, ()); return ops; }
     static Length initialTransformOriginX() { return Length(50.0, Percent); }
     static Length initialTransformOriginY() { return Length(50.0, Percent); }
@@ -1685,6 +1635,7 @@ public:
     static TextEmphasisMark initialTextEmphasisMark() { return TextEmphasisMarkNone; }
     static const AtomicString& initialTextEmphasisCustomMark() { return nullAtom; }
     static TextEmphasisPosition initialTextEmphasisPosition() { return TextEmphasisPositionOver; }
+    static RubyPosition initialRubyPosition() { return RubyPositionBefore; }
     static LineBoxContain initialLineBoxContain() { return LineBoxContainBlock | LineBoxContainInline | LineBoxContainReplaced; }
     static ImageOrientationEnum initialImageOrientation() { return OriginTopLeft; }
     static EImageRendering initialImageRendering() { return ImageRenderingAuto; }
@@ -1696,20 +1647,12 @@ public:
     static PrintColorAdjust initialPrintColorAdjust() { return PrintColorAdjustEconomy; }
 
     // The initial value is 'none' for grid tracks.
-    static Vector<Length> initialGridTrackValue()
-    {
-        DEFINE_STATIC_LOCAL(Vector<Length>, defaultLength, ());
-        // We need to manually add the Length here as the Length(0) is 'auto'.
-        if (!defaultLength.size())
-            defaultLength.append(Length(Undefined));
-        return defaultLength;
-    }
-    static Vector<Length> initialGridColumns() { return initialGridTrackValue(); }
-    static Vector<Length> initialGridRows() { return initialGridTrackValue(); }
+    static Vector<GridTrackSize> initialGridColumns() { return Vector<GridTrackSize>(); }
+    static Vector<GridTrackSize> initialGridRows() { return Vector<GridTrackSize>(); }
 
     // 'auto' is the default.
-    static Length initialGridItemColumn() { return Length(); }
-    static Length initialGridItemRow() { return Length(); }
+    static GridPosition initialGridItemColumn() { return GridPosition(); }
+    static GridPosition initialGridItemRow() { return GridPosition(); }
 
     static unsigned initialTabSize() { return 8; }
 
@@ -1839,6 +1782,13 @@ inline float adjustFloatForAbsoluteZoom(float value, const RenderStyle* style)
     return value / style->effectiveZoom();
 }
 
+#if ENABLE(SUBPIXEL_LAYOUT)
+inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, const RenderStyle* style)
+{
+    return value / style->effectiveZoom();
+}
+#endif
+
 inline bool RenderStyle::setZoom(float f)
 {
     if (compareEqual(visual->m_zoom, f))
@@ -1861,6 +1811,15 @@ inline bool RenderStyle::setTextSizeAdjust(bool b)
     if (compareEqual(rareInheritedData->textSizeAdjust, b))
         return false;
     rareInheritedData.access()->textSizeAdjust = b;
+    return true;
+}
+
+inline bool RenderStyle::setTextOrientation(TextOrientation textOrientation)
+{
+    if (compareEqual(rareInheritedData->m_textOrientation, textOrientation))
+        return false;
+
+    rareInheritedData.access()->m_textOrientation = textOrientation;
     return true;
 }
 

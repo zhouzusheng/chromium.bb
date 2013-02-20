@@ -38,7 +38,6 @@ class FormData;
 class HTMLFormControlElement;
 class HTMLImageElement;
 class HTMLInputElement;
-class HTMLFormCollection;
 class TextEncoding;
 
 class HTMLFormElement : public HTMLElement {
@@ -99,6 +98,16 @@ public:
 
     bool checkValidity();
 
+#if ENABLE(REQUEST_AUTOCOMPLETE)
+    enum AutocompleteResult { AutocompleteResultSuccess, AutocompleteResultError };
+
+    void requestAutocomplete();
+    void finishRequestAutocomplete(AutocompleteResult);
+
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(autocomplete);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(autocompleteerror);
+#endif
+
     HTMLFormControlElement* elementForAlias(const AtomicString&);
     void addElementAlias(HTMLFormControlElement*, const AtomicString& alias);
 
@@ -119,7 +128,7 @@ private:
 
     virtual void handleLocalEvents(Event*);
 
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 
     virtual void documentDidResumeFromPageCache();
@@ -162,6 +171,13 @@ private:
     bool m_isInResetFunction;
 
     bool m_wasDemoted;
+
+#if ENABLE(REQUEST_AUTOCOMPLETE)
+    void requestAutocompleteTimerFired(Timer<HTMLFormElement>*);
+
+    Vector<RefPtr<Event> > m_pendingAutocompleteEvents;
+    Timer<HTMLFormElement> m_requestAutocompleteTimer;
+#endif
 };
 
 } // namespace WebCore

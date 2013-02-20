@@ -56,7 +56,9 @@ public:
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // Returns localized decimal separator, e.g. "." for English, "," for French.
     String localizedDecimalSeparator();
+#endif
 
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     // Returns date format in Unicode TR35 LDML[1] containing day of month,
     // month, and year, e.g. "dd/mm/yyyy"
     // [1] LDML http://unicode.org/reports/tr35/#Date_Format_Patterns
@@ -77,11 +79,11 @@ public:
 
     // Returns a date-time format in Unicode TR35 LDML. It should have a seconds
     // field.
-    String dateTimeFormatWithSeconds();
+    virtual String dateTimeFormatWithSeconds() = 0;
 
     // Returns a date-time format in Unicode TR35 LDML. It should have no seconds
     // field.
-    String dateTimeFormatWithoutSeconds();
+    virtual String dateTimeFormatWithoutSeconds() = 0;
 
     // Returns a vector of string of which size is 12. The first item is a
     // localized string of Jan and the last item is a localized string of
@@ -99,9 +101,7 @@ public:
 
     // Returns localized period field(AM/PM) strings.
     virtual const Vector<String>& timeAMPMLabels() = 0;
-#endif
 
-#if ENABLE(CALENDAR_PICKER) || ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // Returns a vector of string of which size is 12. The first item is a
     // localized string of January, and the last item is a localized string of
     // December. These strings should not be abbreviations.
@@ -117,27 +117,19 @@ public:
     // The first day of a week. 0 is Sunday, and 6 is Saturday.
     virtual unsigned firstDayOfWeek() = 0;
 
-    virtual String dateFormatText() = 0;
-
     // Returns true if people use right-to-left writing in the locale for this
     // object.
     virtual bool isRTL() = 0;
 #endif
 
-    // Parses a string representation of a date/time string localized
-    // for this Locale locale. If the input string is not valid or
-    // an implementation doesn't support localized dates, this
-    // function returns NaN. If the input string is valid this
-    // function returns the number of milliseconds since 1970-01-01
-    // 00:00:00.000 UTC.
-    virtual double parseDateTime(const String&, DateComponents::Type) = 0;
-
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     enum FormatType { FormatTypeUnspecified, FormatTypeShort, FormatTypeMedium };
 
     // Serializes the specified date into a formatted date string to
     // display to the user. If an implementation doesn't support
     // localized dates the function should return an empty string.
     String formatDateTime(const DateComponents&, FormatType = FormatTypeUnspecified);
+#endif
 
     virtual ~Locale();
 
@@ -148,11 +140,6 @@ protected:
         GroupSeparatorIndex = 11,
         DecimalSymbolsSize
     };
-
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    String m_dateTimeFormatWithSeconds;
-    String m_dateTimeFormatWithoutSeconds;
-#endif
 
     Locale() : m_hasLocaleData(false) { }
     virtual void initializeLocaleData() = 0;

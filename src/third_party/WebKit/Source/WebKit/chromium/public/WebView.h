@@ -48,16 +48,17 @@ class WebDragData;
 class WebFrame;
 class WebFrameClient;
 class WebGraphicsContext3D;
+class WebHitTestResult;
 class WebNode;
 class WebPageOverlay;
 class WebPermissionClient;
 class WebPrerendererClient;
-class WebViewBenchmarkSupport;
 class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
 class WebTextFieldDecoratorClient;
+class WebViewBenchmarkSupport;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
@@ -261,8 +262,7 @@ public:
     // state, this function deletes any saved scroll and scale state.
     virtual void restoreScrollAndScaleState() = 0;
 
-    // Reset the scroll and scale state and clobber any previously saved values for
-    // these parameters.
+    // Reset any saved values for the scroll and scale state.
     virtual void resetScrollAndScaleState() = 0;
 
     // Prevent the web page from setting a maximum scale via the viewport meta
@@ -312,6 +312,9 @@ public:
 
 
     // Data exchange -------------------------------------------------------
+
+    // Do a hit test at given point and return the HitTestResult.
+    virtual WebHitTestResult hitTestResultAt(const WebPoint&) = 0;
 
     // Copy to the clipboard the image located at a particular point in the
     // WebView (if there is such an image)
@@ -466,6 +469,9 @@ public:
     virtual void extendSelectionAndDelete(int before, int after) = 0;
 
     virtual bool isSelectionEditable() const = 0;
+
+    virtual void setShowPaintRects(bool) = 0;
+    virtual void setShowFPSCounter(bool) = 0;
 
     // Benchmarking support -------------------------------------------------
 

@@ -37,14 +37,19 @@
 #if ENABLE(INPUT_TYPE_COLOR)
 #include "ColorChooser.h"
 #include "ColorChooserClient.h"
+#if ENABLE(PAGE_POPUP)
+#include "ColorChooserPopupUIController.h"
+#else
 #include "ColorChooserUIController.h"
+#endif
 #endif
 #include "Console.h"
 #include "Cursor.h"
-#include "DatabaseTracker.h"
+#include "DateTimeChooser.h"
 #include "DateTimeChooserImpl.h"
 #include "Document.h"
 #include "DocumentLoader.h"
+#include "ExternalDateTimeChooser.h"
 #include "ExternalPopupMenu.h"
 #include "FileChooser.h"
 #include "FileIconLoader.h"
@@ -165,17 +170,19 @@ void ChromeClientImpl::setWindowRect(const FloatRect& r)
 
 FloatRect ChromeClientImpl::windowRect()
 {
-    WebRect rect;
-    if (m_webView->client())
-        rect = m_webView->client()->rootWindowRect();
-    else {
-        // These numbers will be fairly wrong. The window's x/y coordinates will
-        // be the top left corner of the screen and the size will be the content
-        // size instead of the window size.
-        rect.width = m_webView->size().width;
-        rect.height = m_webView->size().height;
+    if (m_webView->client()) {
+        // On Chrome for Android, rootWindowRect is in physical screen pixels
+        // instead of density independent (UI) pixels, and must be scaled down.
+        FloatRect rect = FloatRect(m_webView->client()->rootWindowRect());
+        if (!m_webView->page()->settings()->applyDeviceScaleFactorInCompositor())
+            rect.scale(1 / m_webView->client()->screenInfo().deviceScaleFactor);
+        return rect;
     }
-    return FloatRect(rect);
+
+    // These numbers will be fairly wrong. The window's x/y coordinates will
+    // be the top left corner of the screen and the size will be the content
+    // size instead of the window size.
+    return FloatRect(0, 0, m_webView->size().width, m_webView->size().height);
 }
 
 FloatRect ChromeClientImpl::pageRect()
@@ -386,7 +393,6 @@ void ChromeClientImpl::setResizable(bool value)
 }
 
 void ChromeClientImpl::addMessageToConsole(MessageSource source,
-                                           MessageType type,
                                            MessageLevel level,
                                            const String& message,
                                            unsigned lineNumber,
@@ -500,15 +506,7 @@ void ChromeClientImpl::invalidateContentsAndRootView(const IntRect& updateRect, 
 {
     if (updateRect.isEmpty())
         return;
-#if USE(ACCELERATED_COMPOSITING)
-    if (!m_webView->isAcceleratedCompositingActive()) {
-#endif
-        if (m_webView->client())
-            m_webView->client()->didInvalidateRect(updateRect);
-#if USE(ACCELERATED_COMPOSITING)
-    } else
-        m_webView->invalidateRootLayerRect(updateRect);
-#endif
+    m_webView->invalidateRect(updateRect);
 }
 
 void ChromeClientImpl::invalidateContentsForSlowScroll(const IntRect& updateRect, bool immediate)
@@ -602,7 +600,7 @@ void ChromeClientImpl::mouseDidMoveOverElement(
             Widget* widget = toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer()) {
                 WebPluginContainerImpl* plugin = static_cast<WebPluginContainerImpl*>(widget);
-                url = plugin->plugin()->linkAtPosition(result.roundedPoint());
+                url = plugin->plugin()->linkAtPosition(result.roundedPointInInnerNodeFrame());
             }
         }
     }
@@ -627,29 +625,18 @@ void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportArgumen
     if (!m_webView->settings()->viewportEnabled() || !m_webView->isFixedLayoutModeEnabled() || !m_webView->client() || !m_webView->page())
         return;
 
-    ViewportArguments args;
-    if (arguments == args) {
-        // Default viewport arguments passed in. This is a signal to reset the viewport.
-        args.width = ViewportArguments::ValueDesktopWidth;
-    } else
-        args = arguments;
-
-    FrameView* frameView = m_webView->mainFrameImpl()->frameView();
-    int dpi = screenHorizontalDPI(frameView);
-    ASSERT(dpi > 0);
-
     WebViewClient* client = m_webView->client();
-    WebRect deviceRect = client->windowRect();
+    WebSize deviceSize = m_webView->size();
     // If the window size has not been set yet don't attempt to set the viewport
-    if (!deviceRect.width || !deviceRect.height)
+    if (!deviceSize.width || !deviceSize.height)
         return;
 
     Settings* settings = m_webView->page()->settings();
-    float devicePixelRatio = dpi / ViewportArguments::deprecatedTargetDPI;
+    float devicePixelRatio = client->screenInfo().deviceScaleFactor;
     // Call the common viewport computing logic in ViewportArguments.cpp.
     ViewportAttributes computed = computeViewportAttributes(
-        args, settings->layoutFallbackWidth(), deviceRect.width, deviceRect.height,
-        devicePixelRatio, IntSize(deviceRect.width, deviceRect.height));
+        arguments, settings->layoutFallbackWidth(), deviceSize.width, deviceSize.height,
+        devicePixelRatio, IntSize(deviceSize.width, deviceSize.height));
 
     restrictScaleFactorToInitialScaleIfNotUserScalable(computed);
 
@@ -694,7 +681,14 @@ void ChromeClientImpl::reachedApplicationCacheOriginQuota(SecurityOrigin*, int64
 #if ENABLE(INPUT_TYPE_COLOR)
 PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(ColorChooserClient* chooserClient, const Color&)
 {
-    return adoptPtr(new ColorChooserUIController(this, chooserClient));
+    OwnPtr<ColorChooserUIController> controller;
+#if ENABLE(PAGE_POPUP)
+    controller = adoptPtr(new ColorChooserPopupUIController(this, chooserClient));
+#else
+    controller = adoptPtr(new ColorChooserUIController(this, chooserClient));
+#endif
+    controller->openUI();
+    return controller.release();
 }
 PassOwnPtr<WebColorChooser> ChromeClientImpl::createWebColorChooser(WebColorChooserClient* chooserClient, const WebColor& initialColor)
 {
@@ -705,10 +699,14 @@ PassOwnPtr<WebColorChooser> ChromeClientImpl::createWebColorChooser(WebColorChoo
 }
 #endif
 
-#if ENABLE(CALENDAR_PICKER)
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
 PassRefPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
 {
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     return DateTimeChooserImpl::create(this, pickerClient, parameters);
+#else
+    return ExternalDateTimeChooser::create(this, m_webView->client(), pickerClient, parameters);
+#endif
 }
 #endif
 
@@ -807,7 +805,7 @@ void ChromeClientImpl::popupOpened(PopupContainer* popupContainer,
         // transparent to the WebView.
         m_webView->popupOpened(popupContainer);
     }
-    static_cast<WebPopupMenuImpl*>(webwidget)->init(popupContainer, bounds);
+    static_cast<WebPopupMenuImpl*>(webwidget)->initialize(popupContainer, bounds);
 }
 
 void ChromeClientImpl::popupClosed(WebCore::PopupContainer* popupContainer)
@@ -827,6 +825,12 @@ void ChromeClientImpl::setCursorHiddenUntilMouseMoves(bool)
 
 void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
 {
+#if OS(DARWIN)
+    // On Mac the mousemove event propagates to both the popup and main window.
+    // If a popup is open we don't want the main window to change the cursor.
+    if (m_webView->hasOpenedPopup())
+        return;
+#endif
     if (m_webView->client())
         m_webView->client()->didChangeCursor(cursor);
 }

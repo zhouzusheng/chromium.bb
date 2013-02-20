@@ -5,7 +5,6 @@
 #ifndef PPAPI_THUNK_RESOURCE_CREATION_API_H_
 #define PPAPI_THUNK_RESOURCE_CREATION_API_H_
 
-#include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
@@ -30,6 +29,7 @@ struct PP_Size;
 namespace ppapi {
 
 struct URLRequestInfoData;
+struct URLResponseInfoData;
 
 namespace thunk {
 
@@ -84,6 +84,15 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateURLRequestInfo(
       PP_Instance instance,
       const URLRequestInfoData& data) = 0;
+
+  // Passes a reference to the file_ref_resource, which is a process-local
+  // resource corresponding to the body_as_file_ref host resource in |data|,
+  // if there is one.
+  virtual PP_Resource CreateURLResponseInfo(
+      PP_Instance instance,
+      const URLResponseInfoData& data,
+      PP_Resource file_ref_resource) = 0;
+
   virtual PP_Resource CreateWheelInputEvent(
       PP_Instance instance,
       PP_TimeTicks time_stamp,
@@ -100,14 +109,9 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) = 0;
-  virtual PP_Resource CreateImageData(PP_Instance instance,
-                                      PP_ImageDataFormat format,
-                                      const PP_Size& size,
-                                      PP_Bool init_to_zero) = 0;
-  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
-                                          PP_ImageDataFormat format,
-                                          const PP_Size& size,
-                                          PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateFileChooser(PP_Instance instance,
+                                        PP_FileChooserMode_Dev mode,
+                                        const char* accept_types) = 0;
   virtual PP_Resource CreateGraphics2D(PP_Instance instance,
                                        const PP_Size& size,
                                        PP_Bool is_always_opaque) = 0;
@@ -118,21 +122,25 @@ class ResourceCreationAPI {
                                           PP_Resource share_context,
                                           const int32_t* attrib_list) = 0;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
+  virtual PP_Resource CreateImageData(PP_Instance instance,
+                                      PP_ImageDataFormat format,
+                                      const PP_Size& size,
+                                      PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateImageDataNaCl(PP_Instance instance,
+                                          PP_ImageDataFormat format,
+                                          const PP_Size& size,
+                                          PP_Bool init_to_zero) = 0;
   virtual PP_Resource CreateNetworkMonitor(
       PP_Instance instance,
       PPB_NetworkMonitor_Callback callback,
       void* user_data) = 0;
+  virtual PP_Resource CreatePrinting(PP_Instance instance) = 0;
   virtual PP_Resource CreateTCPServerSocketPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
   virtual PP_Resource CreateX509CertificatePrivate(PP_Instance instance) = 0;
 #if !defined(OS_NACL)
-  virtual PP_Resource CreateAudioInput0_1(
-      PP_Instance instance,
-      PP_Resource config_id,
-      PPB_AudioInput_Callback audio_input_callback,
-      void* user_data) = 0;
   virtual PP_Resource CreateAudioInput(PP_Instance instance) = 0;
   virtual PP_Resource CreateBroker(PP_Instance instance) = 0;
   virtual PP_Resource CreateBrowserFont(
@@ -140,19 +148,14 @@ class ResourceCreationAPI {
       const PP_BrowserFont_Trusted_Description* description) = 0;
   virtual PP_Resource CreateBuffer(PP_Instance instance, uint32_t size) = 0;
   virtual PP_Resource CreateDirectoryReader(PP_Resource directory_ref) = 0;
-  virtual PP_Resource CreateFileChooser(
-      PP_Instance instance,
-      PP_FileChooserMode_Dev mode,
-      const char* accept_types) = 0;
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) = 0;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
-      const PP_FontDescription_Dev* description,
+      const PP_BrowserFont_Trusted_Description* description,
       PP_PrivateFontCharset charset) = 0;
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) = 0;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) = 0;
-  virtual PP_Resource CreatePrinting(PP_Instance instance) = 0;
   virtual PP_Resource CreateScrollbar(PP_Instance instance,
                                       PP_Bool vertical) = 0;
   virtual PP_Resource CreateTalk(PP_Instance instance) = 0;

@@ -40,6 +40,13 @@
           },
           'includes': [ '../../build/grit_action.gypi' ],
         },
+        {
+          'action_name': 'webkit_unscaled_resources',
+          'variables': {
+            'grit_grd_file': 'resources/webkit_unscaled_resources.grd',
+          },
+          'includes': [ '../../build/grit_action.gypi' ],
+        },
       ],
       'includes': [ '../../build/grit_target.gypi' ],
       'direct_dependent_settings': {
@@ -90,6 +97,7 @@
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
+        '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
         '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
         '<(DEPTH)/webkit/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
@@ -104,6 +112,8 @@
       'include_dirs': [
         '<(INTERMEDIATE_DIR)',
         '<(SHARED_INTERMEDIATE_DIR)/webkit',
+        # SHEZ: Changed upstream code here to include path to our stdint.h
+        '../../third_party/ffmpeg/chromium/include/win',
       ],
       'sources': [
         # This list contains all .h, .cc, and .mm files in glue except for
@@ -164,6 +174,8 @@
         '../plugins/ppapi/audio_helper.cc',
         '../plugins/ppapi/audio_helper.h',
         '../plugins/ppapi/common.h',
+        '../plugins/ppapi/content_decryptor_delegate.cc',
+        '../plugins/ppapi/content_decryptor_delegate.h',
         '../plugins/ppapi/event_conversion.cc',
         '../plugins/ppapi/event_conversion.h',
         '../plugins/ppapi/file_callbacks.cc',
@@ -195,8 +207,6 @@
         '../plugins/ppapi/ppapi_webplugin_impl.h',
         '../plugins/ppapi/ppb_audio_impl.cc',
         '../plugins/ppapi/ppb_audio_impl.h',
-        '../plugins/ppapi/ppb_audio_input_impl.cc',
-        '../plugins/ppapi/ppb_audio_input_impl.h',
         '../plugins/ppapi/ppb_broker_impl.cc',
         '../plugins/ppapi/ppb_broker_impl.h',
         '../plugins/ppapi/ppb_buffer_impl.cc',
@@ -211,8 +221,6 @@
         '../plugins/ppapi/ppb_file_system_impl.h',
         '../plugins/ppapi/ppb_flash_impl.cc',
         '../plugins/ppapi/ppb_flash_impl.h',
-        '../plugins/ppapi/ppb_flash_menu_impl.cc',
-        '../plugins/ppapi/ppb_flash_menu_impl.h',
         '../plugins/ppapi/ppb_flash_message_loop_impl.cc',
         '../plugins/ppapi/ppb_flash_message_loop_impl.h',
         '../plugins/ppapi/ppb_gpu_blacklist_private_impl.cc',
@@ -241,12 +249,8 @@
         '../plugins/ppapi/ppb_uma_private_impl.h',
         '../plugins/ppapi/ppb_url_loader_impl.cc',
         '../plugins/ppapi/ppb_url_loader_impl.h',
-        '../plugins/ppapi/ppb_url_response_info_impl.cc',
-        '../plugins/ppapi/ppb_url_response_info_impl.h',
         '../plugins/ppapi/ppb_var_deprecated_impl.cc',
         '../plugins/ppapi/ppb_var_deprecated_impl.h',
-        '../plugins/ppapi/ppb_video_capture_impl.cc',
-        '../plugins/ppapi/ppb_video_capture_impl.h',
         '../plugins/ppapi/ppb_video_decoder_impl.cc',
         '../plugins/ppapi/ppb_video_decoder_impl.h',
         '../plugins/ppapi/ppb_widget_impl.cc',
@@ -261,6 +265,8 @@
         '../plugins/ppapi/resource_helper.h',
         '../plugins/ppapi/string.cc',
         '../plugins/ppapi/string.h',
+        '../plugins/ppapi/url_response_info_util.cc',
+        '../plugins/ppapi/url_response_info_util.h',
         '../plugins/ppapi/url_request_info_util.cc',
         '../plugins/ppapi/url_request_info_util.h',
         '../plugins/ppapi/usb_key_code_conversion.h',
@@ -289,8 +295,6 @@
         'fling_animator_impl_android.h',
         'ftp_directory_listing_response_delegate.cc',
         'ftp_directory_listing_response_delegate.h',
-        'gl_bindings_skia_cmd_buffer.cc',
-        'gl_bindings_skia_cmd_buffer.h',
         'glue_serialize.cc',
         'glue_serialize.h',
         'image_decoder.cc',
@@ -316,6 +320,8 @@
         'scoped_clipboard_writer_glue.h',
         'simple_webmimeregistry_impl.cc',
         'simple_webmimeregistry_impl.h',
+        'touch_fling_platform_gesture_curve.cc',
+        'touch_fling_platform_gesture_curve.h',
         'webclipboard_impl.cc',
         'webclipboard_impl.h',
         'webcookie.cc',
@@ -353,8 +359,8 @@
         'websocketstreamhandle_impl.h',
         'webthemeengine_impl_android.cc',
         'webthemeengine_impl_android.h',
-        'webthemeengine_impl_linux.cc',
-        'webthemeengine_impl_linux.h',
+        'webthemeengine_impl_default.cc',
+        'webthemeengine_impl_default.h',
         'webthemeengine_impl_mac.cc',
         'webthemeengine_impl_mac.h',
         'webthemeengine_impl_win.cc',
@@ -385,6 +391,17 @@
       # own hard dependencies.
       'hard_dependency': 1,
       'conditions': [
+        ['use_default_render_theme==0', {
+          'sources/': [
+            ['exclude', 'webthemeengine_impl_default.cc'],
+            ['exclude', 'webthemeengine_impl_default.h'],
+          ],
+        }, {  # else: use_default_render_theme==1
+          'sources/': [
+            ['exclude', 'webthemeengine_impl_win.cc'],
+            ['exclude', 'webthemeengine_impl_win.h'],
+          ],
+        }],
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',

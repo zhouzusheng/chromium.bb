@@ -84,17 +84,21 @@ bool FileSystemContext::DeleteDataForOriginOnFileThread(
     const GURL& origin_url) {
   DCHECK(task_runners_->file_task_runner()->RunsTasksOnCurrentThread());
   DCHECK(sandbox_provider());
+  DCHECK(origin_url == origin_url.GetOrigin());
 
   // Delete temporary and persistent data.
   return
       (sandbox_provider()->DeleteOriginDataOnFileThread(
-          this, quota_manager_proxy(), origin_url, kFileSystemTypeTemporary) ==
+          this, quota_manager_proxy(), origin_url,
+          kFileSystemTypeTemporary) ==
        base::PLATFORM_FILE_OK) &&
       (sandbox_provider()->DeleteOriginDataOnFileThread(
-          this, quota_manager_proxy(), origin_url, kFileSystemTypePersistent) ==
+          this, quota_manager_proxy(), origin_url,
+          kFileSystemTypePersistent) ==
        base::PLATFORM_FILE_OK) &&
       (sandbox_provider()->DeleteOriginDataOnFileThread(
-          this, quota_manager_proxy(), origin_url, kFileSystemTypeSyncable) ==
+          this, quota_manager_proxy(), origin_url,
+          kFileSystemTypeSyncable) ==
        base::PLATFORM_FILE_OK);
 }
 
@@ -206,7 +210,6 @@ void FileSystemContext::OpenSyncableFileSystem(
   DCHECK(!callback.is_null());
 
   DCHECK(type == kFileSystemTypeSyncable);
-  RegisterSyncableFileSystem(mount_name);
 
   GURL root_url = GetSyncableFileSystemRootURI(origin_url, mount_name);
   std::string name = GetFileSystemName(origin_url, kFileSystemTypeSyncable);
@@ -223,6 +226,7 @@ void FileSystemContext::DeleteFileSystem(
     const GURL& origin_url,
     FileSystemType type,
     const DeleteFileSystemCallback& callback) {
+  DCHECK(origin_url == origin_url.GetOrigin());
   FileSystemMountPointProvider* mount_point_provider =
       GetMountPointProvider(type);
   if (!mount_point_provider) {
@@ -297,7 +301,10 @@ void FileSystemContext::set_sync_context(
   sync_context_ = sync_context;
 }
 
-FileSystemContext::~FileSystemContext() {}
+FileSystemContext::~FileSystemContext() {
+  task_runners_->file_task_runner()->DeleteSoon(
+      FROM_HERE, change_tracker_.release());
+}
 
 void FileSystemContext::DeleteOnCorrectThread() const {
   if (!task_runners_->io_task_runner()->RunsTasksOnCurrentThread() &&

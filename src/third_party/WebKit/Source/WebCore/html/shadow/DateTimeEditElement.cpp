@@ -41,7 +41,6 @@
 #include "RenderStyle.h"
 #include "StyleResolver.h"
 #include "Text.h"
-#include "TextRun.h"
 #include <wtf/DateMath.h>
 #include <wtf/text/StringBuilder.h>
 
@@ -66,6 +65,7 @@ private:
     bool shouldMinuteFieldReadOnly() const;
     bool shouldSecondFieldReadOnly() const;
     inline const StepRange& stepRange() const { return m_parameters.stepRange; }
+    DateTimeNumericFieldElement::Parameters createNumericFieldParameters(const Decimal& msPerFieldUnit, const Decimal& msPerFieldSize) const;
 
     // DateTimeFormat::TokenHandler functions.
     virtual void visitField(DateTimeFormat::FieldType, int) OVERRIDE FINAL;
@@ -109,7 +109,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
         return;
 
     case DateTimeFormat::FieldTypeHour11: {
-        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 0, 11);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerHour), static_cast<int>(msPerHour * 12));
+        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 0, 11, parameters);
         m_editElement.addField(field);
         if (shouldHourFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -119,7 +120,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeHour12: {
-        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 1, 12);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerHour), static_cast<int>(msPerHour * 12));
+        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 1, 12, parameters);
         m_editElement.addField(field);
         if (shouldHourFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -129,7 +131,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeHour23: {
-        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 0, 23);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerHour), static_cast<int>(msPerDay));
+        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 0, 23, parameters);
         m_editElement.addField(field);
         if (shouldHourFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -139,7 +142,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeHour24: {
-        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 1, 24);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerHour), static_cast<int>(msPerDay));
+        RefPtr<DateTimeFieldElement> field = DateTimeHourFieldElement::create(document, m_editElement, 1, 24, parameters);
         m_editElement.addField(field);
         if (shouldHourFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -149,7 +153,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeMinute: {
-        RefPtr<DateTimeNumericFieldElement> field = DateTimeMinuteFieldElement::create(document, m_editElement);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerMinute), static_cast<int>(msPerHour));
+        RefPtr<DateTimeNumericFieldElement> field = DateTimeMinuteFieldElement::create(document, m_editElement, parameters);
         m_editElement.addField(field);
         if (shouldMinuteFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -199,7 +204,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeSecond: {
-        RefPtr<DateTimeNumericFieldElement> field = DateTimeSecondFieldElement::create(document, m_editElement);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(static_cast<int>(msPerSecond), static_cast<int>(msPerMinute));
+        RefPtr<DateTimeNumericFieldElement> field = DateTimeSecondFieldElement::create(document, m_editElement, parameters);
         m_editElement.addField(field);
         if (shouldSecondFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -214,7 +220,8 @@ void DateTimeEditBuilder::visitField(DateTimeFormat::FieldType fieldType, int co
     }
 
     case DateTimeFormat::FieldTypeFractionalSecond: {
-        RefPtr<DateTimeNumericFieldElement> field = DateTimeMillisecondFieldElement::create(document, m_editElement);
+        DateTimeNumericFieldElement::Parameters parameters = createNumericFieldParameters(1, static_cast<int>(msPerSecond));
+        RefPtr<DateTimeNumericFieldElement> field = DateTimeMillisecondFieldElement::create(document, m_editElement, parameters);
         m_editElement.addField(field);
         if (shouldMillisecondFieldReadOnly()) {
             field->setValueAsDate(m_dateValue);
@@ -289,14 +296,33 @@ void DateTimeEditBuilder::visitLiteral(const String& text)
     DEFINE_STATIC_LOCAL(AtomicString, textPseudoId, ("-webkit-datetime-edit-text", AtomicString::ConstructFromLiteral));
     ASSERT(text.length());
     RefPtr<HTMLDivElement> element = HTMLDivElement::create(m_editElement.document());
-    element->setShadowPseudoId(textPseudoId);
+    element->setPseudo(textPseudoId);
     if (m_parameters.locale.isRTL() && text.length()) {
         Direction dir = direction(text[0]);
         if (dir == SegmentSeparator || dir == WhiteSpaceNeutral || dir == OtherNeutral)
             element->appendChild(Text::create(m_editElement.document(), String(&rightToLeftMark, 1)));
     }
     element->appendChild(Text::create(m_editElement.document(), text));
-    m_editElement.appendChild(element);
+    m_editElement.fieldsWrapperElement()->appendChild(element);
+}
+
+DateTimeNumericFieldElement::Parameters DateTimeEditBuilder::createNumericFieldParameters(const Decimal& msPerFieldUnit, const Decimal& msPerFieldSize) const
+{
+    ASSERT(!msPerFieldUnit.isZero());
+    ASSERT(!msPerFieldSize.isZero());
+    Decimal stepMilliseconds = stepRange().step();
+    ASSERT(!stepMilliseconds.isZero());
+
+    DateTimeNumericFieldElement::Parameters parameters(1, 0);
+
+    if (stepMilliseconds.remainder(msPerFieldSize).isZero())
+        stepMilliseconds = msPerFieldSize;
+
+    if (msPerFieldSize.remainder(stepMilliseconds).isZero() && stepMilliseconds.remainder(msPerFieldUnit).isZero()) {
+        parameters.step = static_cast<int>((stepMilliseconds / msPerFieldUnit).toDouble());
+        parameters.stepBase = static_cast<int>((stepRange().stepBase() / msPerFieldUnit).floor().remainder(msPerFieldSize / msPerFieldUnit).toDouble());
+    }
+    return parameters;
 }
 
 // ----------------------------
@@ -309,8 +335,8 @@ DateTimeEditElement::DateTimeEditElement(Document* document, EditControlOwner& e
     : HTMLDivElement(divTag, document)
     , m_editControlOwner(&editControlOwner)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, dateTimeEditPseudoId, ("-webkit-datetime-edit"));
-    setShadowPseudoId(dateTimeEditPseudoId);
+    DEFINE_STATIC_LOCAL(AtomicString, dateTimeEditPseudoId, ("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
+    setPseudo(dateTimeEditPseudoId);
     setHasCustomCallbacks();
 }
 
@@ -320,12 +346,27 @@ DateTimeEditElement::~DateTimeEditElement()
         m_fields[fieldIndex]->removeEventHandler();
 }
 
+inline Element* DateTimeEditElement::fieldsWrapperElement() const
+{
+    ASSERT(firstChild());
+    return toElement(firstChild());
+}
+
 void DateTimeEditElement::addField(PassRefPtr<DateTimeFieldElement> field)
 {
     if (m_fields.size() == m_fields.capacity())
         return;
     m_fields.append(field.get());
-    appendChild(field);
+    fieldsWrapperElement()->appendChild(field);
+}
+
+bool DateTimeEditElement::anyEditableFieldsHaveValues() const
+{
+    for (size_t fieldIndex = 0; fieldIndex < m_fields.size(); ++fieldIndex) {
+        if (!m_fields[fieldIndex]->isReadOnly() && m_fields[fieldIndex]->hasValue())
+            return true;
+    }
+    return false;
 }
 
 void DateTimeEditElement::blurByOwner()
@@ -347,7 +388,7 @@ PassRefPtr<RenderStyle> DateTimeEditElement::customStyleForRenderer()
     RefPtr<RenderStyle> originalStyle = document()->styleResolver()->styleForElement(this);
     RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
     float width = 0;
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
+    for (Node* child = fieldsWrapperElement()->firstChild(); child; child = child->nextSibling()) {
         if (!child->isElementNode())
             continue;
         Element* childElement = toElement(child);
@@ -361,7 +402,7 @@ PassRefPtr<RenderStyle> DateTimeEditElement::customStyleForRenderer()
             width += style->font().width(childElement->textContent());
         }
     }
-    style->setMinWidth(Length(ceilf(width), Fixed));
+    style->setWidth(Length(ceilf(width), Fixed));
     return style.release();
 }
 
@@ -479,14 +520,22 @@ bool DateTimeEditElement::isReadOnly() const
 
 void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const DateComponents& dateValue)
 {
+    DEFINE_STATIC_LOCAL(AtomicString, fieldsWrapperPseudoId, ("-webkit-datetime-edit-fields-wrapper", AtomicString::ConstructFromLiteral));
+    if (!firstChild()) {
+        RefPtr<HTMLDivElement> element = HTMLDivElement::create(document());
+        element->setPseudo(fieldsWrapperPseudoId);
+        appendChild(element.get());
+    }
+    Element* fieldsWrapper = fieldsWrapperElement();
+
     size_t focusedFieldIndex = this->focusedFieldIndex();
     DateTimeFieldElement* const focusedField = fieldAt(focusedFieldIndex);
     const AtomicString focusedFieldId = focusedField ? focusedField->shadowPseudoId() : nullAtom;
 
     DateTimeEditBuilder builder(*this, layoutParameters, dateValue);
-    Node* lastChildToBeRemoved = lastChild();
+    Node* lastChildToBeRemoved = fieldsWrapper->lastChild();
     if (!builder.build(layoutParameters.dateTimeFormat) || m_fields.isEmpty()) {
-        lastChildToBeRemoved = lastChild();
+        lastChildToBeRemoved = fieldsWrapper->lastChild();
         builder.build(layoutParameters.fallbackDateTimeFormat);
     }
 
@@ -502,11 +551,12 @@ void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const
     }
 
     if (lastChildToBeRemoved) {
-        for (Node* childNode = firstChild(); childNode; childNode = firstChild()) {
-            removeChild(childNode);
+        for (Node* childNode = fieldsWrapper->firstChild(); childNode; childNode = fieldsWrapper->firstChild()) {
+            fieldsWrapper->removeChild(childNode);
             if (childNode == lastChildToBeRemoved)
                 break;
         }
+        setNeedsStyleRecalc();
     }
 }
 
@@ -563,6 +613,21 @@ void DateTimeEditElement::setEmptyValue(const LayoutParameters& layoutParameters
 bool DateTimeEditElement::hasFocusedField()
 {
     return focusedFieldIndex() != invalidFieldIndex;
+}
+
+void DateTimeEditElement::setOnlyYearMonthDay(const DateComponents& date)
+{
+    ASSERT(date.type() == DateComponents::Date);
+
+    if (!m_editControlOwner)
+        return;
+
+    DateTimeFieldsState dateTimeFieldsState = valueAsDateTimeFieldsState();
+    dateTimeFieldsState.setYear(date.fullYear());
+    dateTimeFieldsState.setMonth(date.month() + 1);
+    dateTimeFieldsState.setDayOfMonth(date.monthDay());
+    setValueAsDateTimeFieldsState(dateTimeFieldsState);
+    m_editControlOwner->editControlValueChanged();
 }
 
 void DateTimeEditElement::stepDown()

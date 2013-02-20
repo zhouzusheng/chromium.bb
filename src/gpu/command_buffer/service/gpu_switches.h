@@ -17,6 +17,8 @@ GPU_EXPORT extern const char kDisableGLSLTranslator[];
 GPU_EXPORT extern const char kDisableGpuDriverBugWorkarounds[];
 GPU_EXPORT extern const char kEnableGPUCommandLogging[];
 GPU_EXPORT extern const char kEnableGPUDebugging[];
+GPU_EXPORT extern const char kEnableGPUServiceLoggingGPU[];
+GPU_EXPORT extern const char kEnableShaderNameHashing[];
 GPU_EXPORT extern const char kDisableGpuProgramCache[];
 GPU_EXPORT extern const char kEnforceGLMinimums[];
 GPU_EXPORT extern const char kForceGLFinishWorkaround[];

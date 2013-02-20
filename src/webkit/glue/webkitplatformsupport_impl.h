@@ -14,16 +14,15 @@
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webkit_glue_export.h"
 
-#if defined(OS_WIN)
+#if defined(USE_DEFAULT_RENDER_THEME)
+#include "webkit/glue/webthemeengine_impl_default.h"
+#elif defined(OS_WIN)
 #include "webkit/glue/webthemeengine_impl_win.h"
 #elif defined(OS_MACOSX)
 #include "webkit/glue/webthemeengine_impl_mac.h"
 #elif defined(OS_ANDROID)
 #include "webkit/glue/webthemeengine_impl_android.h"
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
-#include "webkit/glue/webthemeengine_impl_linux.h"
 #endif
-
 
 class MessageLoop;
 
@@ -33,7 +32,6 @@ struct WebPluginInfo;
 }
 
 namespace WebKit {
-class WebFlingAnimator;
 class WebSocketStreamHandle;
 }
 
@@ -72,6 +70,7 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
 #endif
   virtual bool processMemorySizesInBytes(size_t* private_bytes,
                                          size_t* shared_bytes);
+  virtual bool memoryAllocatorWasteInBytes(size_t* size);
   virtual WebKit::WebURLLoader* createURLLoader();
   virtual WebKit::WebSocketStreamHandle* createSocketStreamHandle();
   virtual WebKit::WebString userAgent(const WebKit::WebURL& url);
@@ -84,6 +83,8 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
     const char* name, int sample, int boundary_value);
   virtual const unsigned char* getTraceCategoryEnabledFlag(
       const char* category_name);
+  // TODO(caseq): compatibility overload. Remove once WebKitPlatformSupport
+  // is updated.
   virtual int addTraceEvent(
       char phase,
       const unsigned char* category_enabled,
@@ -95,6 +96,16 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
       const unsigned long long* arg_values,
       int threshold_begin_id,
       long long threshold,
+      unsigned char flags);
+  virtual void addTraceEvent(
+      char phase,
+      const unsigned char* category_enabled,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
       unsigned char flags);
   virtual WebKit::WebData loadResource(const char* name);
   virtual bool loadAudioResource(
@@ -155,9 +166,10 @@ class WEBKIT_GLUE_EXPORT WebKitPlatformSupportImpl :
   virtual void didStopWorkerRunLoop(
       const WebKit::WebWorkerRunLoop& runLoop) OVERRIDE;
 
-#if defined(OS_ANDROID)
-  virtual WebKit::WebFlingAnimator* createFlingAnimator();
-#endif
+  virtual WebKit::WebGestureCurve* createFlingAnimationCurve(
+      int device_source,
+      const WebKit::WebFloatPoint& velocity,
+      const WebKit::WebSize& cumulative_scroll) OVERRIDE;
 
  private:
   void DoTimeout() {

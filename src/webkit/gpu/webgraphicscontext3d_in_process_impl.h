@@ -8,12 +8,14 @@
 #include <list>
 #include <set>
 
+#include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/angle/include/GLSLANG/ShaderLang.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "ui/gfx/native_widget_types.h"
+#include "webkit/gpu/webkit_gpu_export.h"
 
 #if !defined(OS_MACOSX)
 #define FLIP_FRAMEBUFFER_VERTICALLY
@@ -51,7 +53,8 @@ namespace gpu {
 // It is provided for support of test_shell and any Chromium ports
 // where an in-renderer WebGL implementation would be helpful.
 
-class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
+class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessImpl :
+    public NON_EXPORTED_BASE(WebGraphicsContext3D) {
  public:
   // Creates a WebGraphicsContext3DInProcessImpl for a given window. If window
   // is gfx::kNullPluginWindow, then it creates an offscreen context.
@@ -114,7 +117,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void ensureFramebufferCHROMIUM();
+  virtual void discardBackbufferCHROMIUM();
+  virtual void ensureBackbufferCHROMIUM();
 
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
@@ -492,6 +496,9 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   virtual void bindTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
   virtual void releaseTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint imageId);
 
+  virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access);
+  virtual WGC3Dboolean unmapBufferCHROMIUM(WGC3Denum target);
+
  protected:
   virtual GrGLInterface* onCreateGrGLInterface();
 
@@ -532,6 +539,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   bool have_ext_framebuffer_object_;
   bool have_ext_framebuffer_multisample_;
   bool have_angle_framebuffer_multisample_;
+  bool have_ext_oes_standard_derivatives_;
+  bool have_ext_oes_egl_image_external_;
 
   WebGLId texture_;
   WebGLId fbo_;

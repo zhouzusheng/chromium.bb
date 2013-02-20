@@ -86,6 +86,8 @@ struct WebLocalizedString {
         SubmitButtonDefaultLabel,
         ThisMonthButtonLabel,
         ThisWeekButtonLabel,
+        ValidationBadInputForNumber,
+        ValidationBadInputForDateTime,
         ValidationPatternMismatch,
         ValidationRangeOverflow,
         ValidationRangeUnderflow,
@@ -102,6 +104,7 @@ struct WebLocalizedString {
         ValidationValueMissingForRadio,
         ValidationValueMissingForSelect,
         WeekFormatTemplate,
+        WeekNumberLabel,
     };
 };
 

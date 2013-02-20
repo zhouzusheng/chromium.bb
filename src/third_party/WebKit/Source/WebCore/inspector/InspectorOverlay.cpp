@@ -211,13 +211,7 @@ void InspectorOverlay::paint(GraphicsContext& context)
     GraphicsContextStateSaver stateSaver(context);
     FrameView* view = overlayPage()->mainFrame()->view();
     ASSERT(!view->needsLayout());
-
-    context.beginTransparencyLayer(1);
-    context.setCompositeOperation(CompositeCopy);
-
     view->paint(&context, IntRect(0, 0, view->width(), view->height()));
-
-    context.endTransparencyLayer();
 }
 
 void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& rect, const Color& color)
@@ -291,6 +285,8 @@ void InspectorOverlay::update()
     IntSize viewportSize = enclosingIntRect(view->visibleContentRect()).size();
     IntSize frameViewFullSize = enclosingIntRect(view->visibleContentRect(true)).size();
     IntSize size = m_size.isEmpty() ? frameViewFullSize : m_size;
+    overlayPage()->setPageScaleFactor(m_page->pageScaleFactor(), IntPoint());
+    size.scale(m_page->pageScaleFactor());
     overlayView->resize(size);
 
     // Clear canvas and paint things.
@@ -505,7 +501,7 @@ void InspectorOverlay::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) con
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorOverlay);
     info.addMember(m_page);
-    info.addMember(m_client);
+    info.addWeakPointer(m_client);
     info.addMember(m_pausedInDebuggerMessage);
     info.addMember(m_highlightNode);
     info.addMember(m_nodeHighlightConfig);
@@ -513,6 +509,11 @@ void InspectorOverlay::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) con
     info.addMember(m_overlayPage);
     info.addMember(m_rectHighlightConfig);
     info.addMember(m_size);
+}
+
+void InspectorOverlay::freePage()
+{
+    m_overlayPage.clear();
 }
 
 } // namespace WebCore

@@ -34,6 +34,8 @@
 #include "InspectorProfilerAgent.h"
 
 #include "Console.h"
+#include "ConsoleAPITypes.h"
+#include "ConsoleTypes.h"
 #include "InjectedScript.h"
 #include "InjectedScriptHost.h"
 #include "InspectorConsoleAgent.h"
@@ -493,8 +495,6 @@ void InspectorProfilerAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInf
     info.addWeakPointer(m_frontend);
     info.addMember(m_profiles);
     info.addMember(m_snapshots);
-
-    info.addPrivateBuffer(ScriptProfiler::profilerSnapshotsSize());
 }
 
 } // namespace WebCore

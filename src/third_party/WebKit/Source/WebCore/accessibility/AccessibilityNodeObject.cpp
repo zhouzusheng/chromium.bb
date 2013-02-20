@@ -63,11 +63,13 @@
 #include "LocalizedStrings.h"
 #include "MathMLNames.h"
 #include "NodeList.h"
+#include "NodeTraversal.h"
 #include "Page.h"
 #include "ProgressTracker.h"
 #include "Text.h"
 #include "TextControlInnerElements.h"
 #include "TextIterator.h"
+#include "UserGestureIndicator.h"
 #include "Widget.h"
 #include "htmlediting.h"
 #include "visible_units.h"
@@ -234,7 +236,7 @@ LayoutRect AccessibilityNodeObject::boundingBoxRect() const
     for (AccessibilityObject* positionProvider = parentObject(); positionProvider; positionProvider = positionProvider->parentObject()) {
         if (positionProvider->isAccessibilityRenderObject()) {
             LayoutRect parentRect = positionProvider->elementRect();
-            boundingBox.setSize(LayoutSize(parentRect.width(), FractionalLayoutUnit(std::min(10.0f, parentRect.height().toFloat()))));
+            boundingBox.setSize(LayoutSize(parentRect.width(), LayoutUnit(std::min(10.0f, parentRect.height().toFloat()))));
             boundingBox.setLocation(parentRect.location());
             break;
         }
@@ -686,7 +688,7 @@ bool AccessibilityNodeObject::isRequired() const
 
     Node* n = this->node();
     if (n && (n->isElementNode() && toElement(n)->isFormControlElement()))
-        return static_cast<HTMLFormControlElement*>(n)->required();
+        return static_cast<HTMLFormControlElement*>(n)->isRequired();
 
     return false;
 }
@@ -974,11 +976,13 @@ void AccessibilityNodeObject::alterSliderValue(bool increase)
     
 void AccessibilityNodeObject::increment()
 {
+    UserGestureIndicator gestureIndicator(DefinitelyProcessingUserGesture);
     alterSliderValue(true);
 }
 
 void AccessibilityNodeObject::decrement()
 {
+    UserGestureIndicator gestureIndicator(DefinitelyProcessingUserGesture);
     alterSliderValue(false);
 }
 
@@ -1030,6 +1034,11 @@ bool AccessibilityNodeObject::isGenericFocusableElement() const
     if (roleValue() == WebAreaRole)
         return false;
     if (node() && node()->hasTagName(bodyTag))
+        return false;
+
+    // An SVG root is focusable by default, but it's probably not interactive, so don't
+    // include it. It can still be made accessible by giving it an ARIA role.
+    if (roleValue() == SVGRootRole)
         return false;
 
     return true;
@@ -1475,6 +1484,9 @@ String AccessibilityNodeObject::title() const
     case RadioButtonRole:
     case TabRole:
         return textUnderElement();
+    // SVGRoots should not use the text under itself as a title. That could include the text of objects like <text>.
+    case SVGRootRole:
+        return String();
     default:
         break;
     }
@@ -1583,7 +1595,7 @@ String AccessibilityNodeObject::accessibilityDescriptionForElements(Vector<Eleme
         Element* idElement = elements[i];
 
         builder.append(accessibleNameForNode(idElement));
-        for (Node* n = idElement->firstChild(); n; n = n->traverseNextNode(idElement))
+        for (Node* n = idElement->firstChild(); n; n = NodeTraversal::next(n, idElement))
             builder.append(accessibleNameForNode(n));
 
         if (i != size - 1)

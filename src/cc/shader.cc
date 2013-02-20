@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/shader.h"
 
 #include "base/basictypes.h"
@@ -69,8 +67,7 @@ std::string VertexShaderPosTex::getShaderString() const
 
 VertexShaderPosTexYUVStretch::VertexShaderPosTexYUVStretch()
     : m_matrixLocation(-1)
-    , m_yWidthScaleFactorLocation(-1)
-    , m_uvWidthScaleFactorLocation(-1)
+    , m_texScaleLocation(-1)
 {
 }
 
@@ -78,17 +75,15 @@ void VertexShaderPosTexYUVStretch::init(WebGraphicsContext3D* context, unsigned 
 {
     static const char* shaderUniforms[] = {
         "matrix",
-        "y_widthScaleFactor",
-        "uv_widthScaleFactor",
+        "texScale",
     };
-    int locations[3];
+    int locations[2];
 
     getProgramUniformLocations(context, program, shaderUniforms, arraysize(shaderUniforms), arraysize(locations), locations, usingBindUniform, baseUniformIndex);
 
     m_matrixLocation = locations[0];
-    m_yWidthScaleFactorLocation = locations[1];
-    m_uvWidthScaleFactorLocation = locations[2];
-    DCHECK(m_matrixLocation != -1 && m_yWidthScaleFactorLocation != -1 && m_uvWidthScaleFactorLocation != -1);
+    m_texScaleLocation = locations[1];
+    DCHECK(m_matrixLocation != -1 && m_texScaleLocation != -1);
 }
 
 std::string VertexShaderPosTexYUVStretch::getShaderString() const
@@ -98,15 +93,12 @@ std::string VertexShaderPosTexYUVStretch::getShaderString() const
         attribute vec4 a_position;
         attribute vec2 a_texCoord;
         uniform mat4 matrix;
-        varying vec2 y_texCoord;
-        varying vec2 uv_texCoord;
-        uniform float y_widthScaleFactor;
-        uniform float uv_widthScaleFactor;
+        varying vec2 v_texCoord;
+        uniform vec2 texScale;
         void main()
         {
             gl_Position = matrix * a_position;
-            y_texCoord = vec2(y_widthScaleFactor * a_texCoord.x, a_texCoord.y);
-            uv_texCoord = vec2(uv_widthScaleFactor * a_texCoord.x, a_texCoord.y);
+            v_texCoord = a_texCoord * texScale;
         }
     );
 }
@@ -144,6 +136,7 @@ std::string VertexShaderPos::getShaderString() const
 VertexShaderPosTexTransform::VertexShaderPosTexTransform()
     : m_matrixLocation(-1)
     , m_texTransformLocation(-1)
+    , m_vertexOpacityLocation(-1)
 {
 }
 
@@ -152,14 +145,16 @@ void VertexShaderPosTexTransform::init(WebGraphicsContext3D* context, unsigned p
     static const char* shaderUniforms[] = {
         "matrix",
         "texTransform",
+        "opacity",
     };
-    int locations[2];
+    int locations[3];
 
     getProgramUniformLocations(context, program, shaderUniforms, arraysize(shaderUniforms), arraysize(locations), locations, usingBindUniform, baseUniformIndex);
 
     m_matrixLocation = locations[0];
     m_texTransformLocation = locations[1];
-    DCHECK(m_matrixLocation != -1 && m_texTransformLocation != -1);
+    m_vertexOpacityLocation = locations[2];
+    DCHECK(m_matrixLocation != -1 && m_texTransformLocation != -1 && m_vertexOpacityLocation != -1);
 }
 
 std::string VertexShaderPosTexTransform::getShaderString() const
@@ -167,21 +162,20 @@ std::string VertexShaderPosTexTransform::getShaderString() const
     return SHADER(
         attribute vec4 a_position;
         attribute vec2 a_texCoord;
-        uniform mat4 matrix;
-        uniform vec4 texTransform;
+        attribute float a_index;
+        uniform mat4 matrix[8];
+        uniform vec4 texTransform[8];
+        uniform float opacity[32];
         varying vec2 v_texCoord;
+        varying float v_alpha;
         void main()
         {
-            gl_Position = matrix * a_position;
-            v_texCoord = a_texCoord * texTransform.zw + texTransform.xy;
+            gl_Position = matrix[int(a_index * 0.25)] * a_position;
+            vec4 texTrans = texTransform[int(a_index * 0.25)];
+            v_texCoord = a_texCoord * texTrans.zw + texTrans.xy;
+            v_alpha = opacity[int(a_index)];
         }
     );
-}
-
-VertexShaderQuad::VertexShaderQuad()
-    : m_matrixLocation(-1)
-    , m_pointLocation(-1)
-{
 }
 
 std::string VertexShaderPosTexIdentity::getShaderString() const
@@ -197,19 +191,30 @@ std::string VertexShaderPosTexIdentity::getShaderString() const
     );
 }
 
+VertexShaderQuad::VertexShaderQuad()
+    : m_matrixLocation(-1)
+    , m_pointLocation(-1)
+    , m_texScaleLocation(-1)
+{
+}
+
 void VertexShaderQuad::init(WebGraphicsContext3D* context, unsigned program, bool usingBindUniform, int* baseUniformIndex)
 {
     static const char* shaderUniforms[] = {
         "matrix",
         "point",
+        "texScale",
     };
-    int locations[2];
+    int locations[3];
 
     getProgramUniformLocations(context, program, shaderUniforms, arraysize(shaderUniforms), arraysize(locations), locations, usingBindUniform, baseUniformIndex);
 
     m_matrixLocation = locations[0];
     m_pointLocation = locations[1];
-    DCHECK(m_matrixLocation != -1 && m_pointLocation != -1);
+    m_texScaleLocation = locations[2];
+    DCHECK_NE(m_matrixLocation, -1);
+    DCHECK_NE(m_pointLocation, -1);
+    DCHECK_NE(m_texScaleLocation, -1);
 }
 
 std::string VertexShaderQuad::getShaderString() const
@@ -219,6 +224,7 @@ std::string VertexShaderQuad::getShaderString() const
         attribute vec2 a_texCoord;
         uniform mat4 matrix;
         uniform vec2 point[4];
+        uniform vec2 texScale;
         varying vec2 v_texCoord;
         void main()
         {
@@ -229,7 +235,7 @@ std::string VertexShaderQuad::getShaderString() const
             pos.xy += (a_texCoord.x * a_texCoord.y) * point[2];
             pos.xy += (complement.x * a_texCoord.y) * point[3];
             gl_Position = matrix * pos;
-            v_texCoord = pos.xy + vec2(0.5);
+            v_texCoord = (pos.xy + vec2(0.5)) * texScale;
         }
     );
 }
@@ -357,17 +363,17 @@ void FragmentTexOpaqueBinding::init(WebGraphicsContext3D* context, unsigned prog
     DCHECK(m_samplerLocation != -1);
 }
 
-std::string FragmentShaderRGBATexFlipAlpha::getShaderString() const
+std::string FragmentShaderRGBATexFlipVaryingAlpha::getShaderString() const
 {
     return SHADER(
         precision mediump float;
         varying vec2 v_texCoord;
+        varying float v_alpha;
         uniform sampler2D s_texture;
-        uniform float alpha;
         void main()
         {
             vec4 texColor = texture2D(s_texture, vec2(v_texCoord.x, 1.0 - v_texCoord.y));
-            gl_FragColor = vec4(texColor.x, texColor.y, texColor.z, texColor.w) * alpha;
+            gl_FragColor = vec4(texColor.x, texColor.y, texColor.z, texColor.w) * v_alpha;
         }
     );
 }
@@ -414,34 +420,49 @@ std::string FragmentShaderRGBATexAlpha::getShaderString() const
     );
 }
 
-std::string FragmentShaderRGBATexRectFlipAlpha::getShaderString() const
+std::string FragmentShaderRGBATexVaryingAlpha::getShaderString() const
+{
+    return SHADER(
+        precision mediump float;
+        varying vec2 v_texCoord;
+        varying float v_alpha;
+        uniform sampler2D s_texture;
+        void main()
+        {
+            vec4 texColor = texture2D(s_texture, v_texCoord);
+            gl_FragColor = texColor * v_alpha;
+        }
+    );
+}
+
+std::string FragmentShaderRGBATexRectFlipVaryingAlpha::getShaderString() const
 {
     // This must be paired with VertexShaderPosTexTransform to pick up the texTransform uniform.
     // The necessary #extension preprocessing directive breaks the SHADER and SHADER0 macros.
     return "#extension GL_ARB_texture_rectangle : require\n"
             "precision mediump float;\n"
             "varying vec2 v_texCoord;\n"
+            "varying float v_alpha;\n"
             "uniform vec4 texTransform;\n"
             "uniform sampler2DRect s_texture;\n"
-            "uniform float alpha;\n"
             "void main()\n"
             "{\n"
             "    vec4 texColor = texture2DRect(s_texture, vec2(v_texCoord.x, texTransform.w - v_texCoord.y));\n"
-            "    gl_FragColor = vec4(texColor.x, texColor.y, texColor.z, texColor.w) * alpha;\n"
+            "    gl_FragColor = vec4(texColor.x, texColor.y, texColor.z, texColor.w) * v_alpha;\n"
             "}\n";
 }
 
-std::string FragmentShaderRGBATexRectAlpha::getShaderString() const
+std::string FragmentShaderRGBATexRectVaryingAlpha::getShaderString() const
 {
     return "#extension GL_ARB_texture_rectangle : require\n"
             "precision mediump float;\n"
             "varying vec2 v_texCoord;\n"
+            "varying float v_alpha;\n"
             "uniform sampler2DRect s_texture;\n"
-            "uniform float alpha;\n"
             "void main()\n"
             "{\n"
             "    vec4 texColor = texture2DRect(s_texture, v_texCoord);\n"
-            "    gl_FragColor = texColor * alpha;\n"
+            "    gl_FragColor = texColor * v_alpha;\n"
             "}\n";
 }
 
@@ -782,8 +803,7 @@ std::string FragmentShaderYUVVideo::getShaderString() const
     return SHADER(
         precision mediump float;
         precision mediump int;
-        varying vec2 y_texCoord;
-        varying vec2 uv_texCoord;
+        varying vec2 v_texCoord;
         uniform sampler2D y_texture;
         uniform sampler2D u_texture;
         uniform sampler2D v_texture;
@@ -792,9 +812,9 @@ std::string FragmentShaderYUVVideo::getShaderString() const
         uniform mat3 yuv_matrix;
         void main()
         {
-            float y_raw = texture2D(y_texture, y_texCoord).x;
-            float u_unsigned = texture2D(u_texture, uv_texCoord).x;
-            float v_unsigned = texture2D(v_texture, uv_texCoord).x;
+            float y_raw = texture2D(y_texture, v_texCoord).x;
+            float u_unsigned = texture2D(u_texture, v_texCoord).x;
+            float v_unsigned = texture2D(v_texture, v_texCoord).x;
             vec3 yuv = vec3(y_raw, u_unsigned, v_unsigned) + yuv_adj;
             vec3 rgb = yuv_matrix * yuv;
             gl_FragColor = vec4(rgb, float(1)) * alpha;
@@ -882,4 +902,4 @@ std::string FragmentShaderCheckerboard::getShaderString() const
     );
 }
 
-} // namespace cc
+}  // namespace cc

@@ -31,6 +31,10 @@
 #include "config.h"
 #include "DOMWrapperWorld.h"
 
+#include "DOMDataStore.h"
+#include "V8Binding.h"
+#include "V8DOMWindow.h"
+#include "V8DOMWrapper.h"
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 
@@ -48,6 +52,14 @@ PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::createMainWorld()
     return adoptRef(new DOMWrapperWorld(mainWorldId, mainWorldExtensionGroup));
 }
 
+DOMWrapperWorld::DOMWrapperWorld(int worldId, int extensionGroup)
+    : m_worldId(worldId)
+    , m_extensionGroup(extensionGroup)
+{
+    if (isIsolatedWorld())
+        m_domDataStore = adoptPtr(new DOMDataStore(DOMDataStore::IsolatedWorld));
+}
+
 DOMWrapperWorld* mainThreadNormalWorld()
 {
     ASSERT(isMainThread());
@@ -55,37 +67,69 @@ DOMWrapperWorld* mainThreadNormalWorld()
     return cachedNormalWorld.get();
 }
 
-// FIXME: This should probably go to PerIsolateData.
+#ifndef NDEBUG
+void DOMWrapperWorld::assertContextHasCorrectPrototype(v8::Handle<v8::Context> context)
+{
+    ASSERT(isMainThread());
+    ASSERT(V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info));
+}
+#endif
+
+static void isolatedWorldWeakCallback(v8::Persistent<v8::Value> object, void* parameter)
+{
+    object.Dispose();
+    object.Clear();
+    static_cast<DOMWrapperWorld*>(parameter)->deref();
+}
+
+void DOMWrapperWorld::makeContextWeak(v8::Handle<v8::Context> context)
+{
+    ASSERT(isIsolatedWorld());
+    ASSERT(isolated(context) == this);
+    v8::Persistent<v8::Context>::New(context).MakeWeak(this, isolatedWorldWeakCallback);
+    // Matching deref is in weak callback.
+    this->ref();
+}
+
+void DOMWrapperWorld::setIsolatedWorldField(v8::Handle<v8::Context> context)
+{
+    context->SetAlignedPointerInEmbedderData(v8ContextIsolatedWorld, isMainWorld() ? 0 : this);
+}
+
 typedef HashMap<int, DOMWrapperWorld*> WorldMap;
 static WorldMap& isolatedWorldMap()
 {
+    ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(WorldMap, map, ());
     return map;
 }
 
-void DOMWrapperWorld::deallocate(DOMWrapperWorld* world)
+void DOMWrapperWorld::getAllWorlds(Vector<RefPtr<DOMWrapperWorld> >& worlds)
 {
-    int worldId = world->worldId();
+    worlds.append(mainThreadNormalWorld());
+    WorldMap& isolatedWorlds = isolatedWorldMap();
+    for (WorldMap::iterator it = isolatedWorlds.begin(); it != isolatedWorlds.end(); ++it)
+        worlds.append(it->value);
+}
 
-    // Ensure we never deallocate mainThreadNormalWorld
-    if (worldId == mainWorldId)
-        return;
+DOMWrapperWorld::~DOMWrapperWorld()
+{
+    ASSERT(!isMainWorld());
 
-    delete world;
-
-    if (worldId == uninitializedWorldId)
+    if (!isIsolatedWorld())
         return;
 
     WorldMap& map = isolatedWorldMap();
-    WorldMap::iterator i = map.find(worldId);
+    WorldMap::iterator i = map.find(m_worldId);
     if (i == map.end()) {
         ASSERT_NOT_REACHED();
         return;
     }
-    ASSERT(i->value == world);
+    ASSERT(i->value == this);
 
     map.remove(i);
     isolatedWorldCount--;
+    ASSERT(map.size() == isolatedWorldCount);
 }
 
 static int temporaryWorldId = DOMWrapperWorld::uninitializedWorldId-1;
@@ -93,6 +137,7 @@ static int temporaryWorldId = DOMWrapperWorld::uninitializedWorldId-1;
 PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::ensureIsolatedWorld(int worldId, int extensionGroup)
 {
     ASSERT(worldId != mainWorldId);
+    ASSERT(worldId >= uninitializedWorldId);
 
     WorldMap& map = isolatedWorldMap();
     if (worldId == uninitializedWorldId)
@@ -109,6 +154,8 @@ PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::ensureIsolatedWorld(int worldId, in
     RefPtr<DOMWrapperWorld> world = adoptRef(new DOMWrapperWorld(worldId, extensionGroup));
     map.add(worldId, world.get());
     isolatedWorldCount++;
+    ASSERT(map.size() == isolatedWorldCount);
+
     return world.release();
 }
 
@@ -141,6 +188,37 @@ void DOMWrapperWorld::clearIsolatedWorldSecurityOrigin(int worldID)
 {
     ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
     isolatedWorldSecurityOrigins().remove(worldID);
+}
+
+typedef HashMap<int, bool> IsolatedWorldContentSecurityPolicyMap;
+static IsolatedWorldContentSecurityPolicyMap& isolatedWorldContentSecurityPolicies()
+{
+    ASSERT(isMainThread());
+    DEFINE_STATIC_LOCAL(IsolatedWorldContentSecurityPolicyMap, map, ());
+    return map;
+}
+
+bool DOMWrapperWorld::isolatedWorldHasContentSecurityPolicy()
+{
+    ASSERT(this->isIsolatedWorld());
+    IsolatedWorldContentSecurityPolicyMap& policies = isolatedWorldContentSecurityPolicies();
+    IsolatedWorldContentSecurityPolicyMap::iterator it = policies.find(worldId());
+    return it == policies.end() ? false : it->value;
+}
+
+void DOMWrapperWorld::setIsolatedWorldContentSecurityPolicy(int worldID, const String& policy)
+{
+    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
+    if (!policy.isEmpty())
+        isolatedWorldContentSecurityPolicies().set(worldID, true);
+    else
+        isolatedWorldContentSecurityPolicies().remove(worldID);
+}
+
+void DOMWrapperWorld::clearIsolatedWorldContentSecurityPolicy(int worldID)
+{
+    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
+    isolatedWorldContentSecurityPolicies().remove(worldID);
 }
 
 } // namespace WebCore

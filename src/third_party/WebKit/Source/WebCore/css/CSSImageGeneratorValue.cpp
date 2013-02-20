@@ -36,6 +36,15 @@
 #include <wtf/MemoryInstrumentationHashMap.h>
 #include <wtf/text/WTFString.h>
 
+
+namespace WTF {
+
+template<> struct SequenceMemoryInstrumentationTraits<const WebCore::RenderObject*> {
+    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
+};
+
+}
+
 namespace WebCore {
 
 CSSImageGeneratorValue::CSSImageGeneratorValue(ClassType classType)
@@ -185,6 +194,23 @@ bool CSSImageGeneratorValue::isPending() const
         ASSERT_NOT_REACHED();
     }
     return false;
+}
+
+bool CSSImageGeneratorValue::hasAlpha(const RenderObject* renderer) const
+{
+    switch (classType()) {
+    case CrossfadeClass:
+        return static_cast<const CSSCrossfadeValue*>(this)->hasAlpha(renderer);
+    case CanvasClass:
+        return true;
+    case LinearGradientClass:
+        return static_cast<const CSSLinearGradientValue*>(this)->hasAlpha(renderer);
+    case RadialGradientClass:
+        return static_cast<const CSSRadialGradientValue*>(this)->hasAlpha(renderer);
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    return true;
 }
 
 void CSSImageGeneratorValue::loadSubimages(CachedResourceLoader* cachedResourceLoader)

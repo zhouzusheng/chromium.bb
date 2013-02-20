@@ -2,41 +2,51 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCProxy_h
-#define CCProxy_h
+#ifndef CC_PROXY_H_
+#define CC_PROXY_H_
 
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/time.h"
-#include <public/WebCompositorOutputSurface.h>
+#include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
+
+namespace gfx {
+class Rect;
+class Vector2d;
+}
 
 namespace cc {
 
 class Thread;
-class IntRect;
-class IntSize;
 struct RenderingStats;
 struct RendererCapabilities;
 
 // Abstract class responsible for proxying commands from the main-thread side of
 // the compositor over to the compositor implementation.
-class Proxy {
+class CC_EXPORT Proxy {
 public:
-    static void setMainThread(Thread*);
-    static Thread* mainThread();
-
-    static bool hasImplThread();
-    static void setImplThread(Thread*);
-    static Thread* implThread();
+    Thread* mainThread() const;
+    bool hasImplThread() const;
+    Thread* implThread() const;
 
     // Returns 0 if the current thread is neither the main thread nor the impl thread.
-    static Thread* currentThread();
+    Thread* currentThread() const;
+
+    // Debug hooks
+    bool isMainThread() const;
+    bool isImplThread() const;
+    bool isMainThreadBlocked() const;
+#ifndef NDEBUG
+    void setMainThreadBlocked(bool);
+    void setCurrentThreadIsImplThread(bool);
+#endif
 
     virtual ~Proxy();
 
-    virtual bool compositeAndReadback(void *pixels, const IntRect&) = 0;
+    virtual bool compositeAndReadback(void *pixels, const gfx::Rect&) = 0;
 
-    virtual void startPageScaleAnimation(const IntSize& targetPosition, bool useAnchor, float scale, base::TimeDelta duration) = 0;
+    virtual void startPageScaleAnimation(gfx::Vector2d targetOffset, bool useAnchor, float scale, base::TimeDelta duration) = 0;
 
     virtual void finishAllRendering() = 0;
 
@@ -44,7 +54,7 @@ public:
 
     // Attempts to initialize a context to use for rendering. Returns false if the context could not be created.
     // The context will not be used and no frames may be produced until initializeRenderer() is called.
-    virtual bool initializeContext() = 0;
+    virtual bool initializeOutputSurface() = 0;
 
     // Indicates that the compositing surface associated with our context is ready to use.
     virtual void setSurfaceReady() = 0;
@@ -56,7 +66,7 @@ public:
 
     // Attempts to recreate the context and layer renderer after a context lost. Returns false if the renderer couldn't be
     // reinitialized.
-    virtual bool recreateContext() = 0;
+    virtual bool recreateOutputSurface() = 0;
 
     virtual void renderingStats(RenderingStats*) = 0;
 
@@ -72,6 +82,8 @@ public:
 
     virtual void didAddAnimation() = 0;
 
+    virtual void mainThreadHasStoppedFlinging() = 0;
+
     virtual bool commitRequested() const = 0;
 
     virtual void start() = 0; // Must be called before using the proxy.
@@ -86,48 +98,52 @@ public:
 
     virtual void acquireLayerTextures() = 0;
 
-    // Debug hooks
-    static bool isMainThread();
-    static bool isImplThread();
-    static bool isMainThreadBlocked();
-#ifndef NDEBUG
-    static void setMainThreadBlocked(bool);
-#endif
-
     // Testing hooks
-    virtual void loseContext() = 0;
-
-#ifndef NDEBUG
-    static void setCurrentThreadIsImplThread(bool);
-#endif
+    virtual void loseOutputSurface() = 0;
+    virtual bool commitPendingForTesting() = 0;
 
 protected:
-    Proxy();
+    explicit Proxy(scoped_ptr<Thread> implThread);
     friend class DebugScopedSetImplThread;
+    friend class DebugScopedSetMainThread;
     friend class DebugScopedSetMainThreadBlocked;
 
 private:
     DISALLOW_COPY_AND_ASSIGN(Proxy);
+
+    scoped_ptr<Thread> m_mainThread;
+    scoped_ptr<Thread> m_implThread;
+#ifndef NDEBUG
+    bool m_implThreadIsOverridden;
+    bool m_isMainThreadBlocked;
+#endif
 };
 
+#ifndef NDEBUG
 class DebugScopedSetMainThreadBlocked {
 public:
-    DebugScopedSetMainThreadBlocked()
+    explicit DebugScopedSetMainThreadBlocked(Proxy* proxy)
+        : m_proxy(proxy)
     {
-#ifndef NDEBUG
-        DCHECK(!Proxy::isMainThreadBlocked());
-        Proxy::setMainThreadBlocked(true);
-#endif
+        DCHECK(!m_proxy->isMainThreadBlocked());
+        m_proxy->setMainThreadBlocked(true);
     }
     ~DebugScopedSetMainThreadBlocked()
     {
-#ifndef NDEBUG
-        DCHECK(Proxy::isMainThreadBlocked());
-        Proxy::setMainThreadBlocked(false);
-#endif
+        DCHECK(m_proxy->isMainThreadBlocked());
+        m_proxy->setMainThreadBlocked(false);
     }
+private:
+    Proxy* m_proxy;
 };
+#else
+class DebugScopedSetMainThreadBlocked {
+public:
+    explicit DebugScopedSetMainThreadBlocked(Proxy*) { }
+    ~DebugScopedSetMainThreadBlocked() { }
+};
+#endif
 
 }
 
-#endif
+#endif  // CC_PROXY_H_

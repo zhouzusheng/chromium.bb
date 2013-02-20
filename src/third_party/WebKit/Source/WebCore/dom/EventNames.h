@@ -229,19 +229,28 @@ namespace WebCore {
     macro(icecandidate) \
     macro(negotiationneeded) \
     macro(datachannel) \
+    macro(gatheringchange) \
     \
     macro(show) \
     \
     macro(webkitpointerlockchange) \
     macro(webkitpointerlockerror) \
     \
-    macro(webkitRegionLayoutUpdate) \
+    macro(webkitregionlayoutupdate) \
     \
     macro(webkitnetworkinfochange) \
     \
     macro(webkitresourcetimingbufferfull) \
     \
     macro(webkitdeviceproximity) \
+    \
+    macro(autocomplete) \
+    macro(autocompleteerror) \
+    \
+    macro(webkitprerenderstart) \
+    macro(webkitprerenderstop) \
+    macro(webkitprerenderload) \
+    macro(webkitprerenderdomcontentloaded) \
     \
 
 // end of DOM_EVENT_NAMES_FOR_EACH

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/draw_quad.h"
 
 #include "base/logging.h"
@@ -17,83 +15,78 @@
 #include "cc/tile_draw_quad.h"
 #include "cc/yuv_video_draw_quad.h"
 
+namespace {
+
+template<typename T> T* TypedCopy(const cc::DrawQuad* other) {
+  return new T(*T::MaterialCast(other));
+}
+
+}
+
 namespace cc {
 
-DrawQuad::DrawQuad(const SharedQuadState* sharedQuadState, Material material, const gfx::Rect& quadRect)
-    : m_sharedQuadState(sharedQuadState)
-    , m_sharedQuadStateId(sharedQuadState->id)
-    , m_material(material)
-    , m_quadRect(quadRect)
-    , m_quadVisibleRect(quadRect)
-    , m_quadOpaque(true)
-    , m_needsBlending(false)
+DrawQuad::DrawQuad()
+    : shared_quad_state(),
+      material(INVALID),
+      needs_blending(false) {
+}
+
+void DrawQuad::SetAll(const SharedQuadState* shared_quad_state,
+                      Material material,
+                      gfx::Rect rect,
+                      gfx::Rect opaque_rect,
+                      gfx::Rect visible_rect,
+                      bool needs_blending) {
+  this->material = material;
+  this->rect = rect;
+  this->opaque_rect = opaque_rect;
+  this->visible_rect = visible_rect;
+  this->needs_blending = needs_blending;
+  this->shared_quad_state = shared_quad_state;
+
+  DCHECK(shared_quad_state);
+  DCHECK(material != INVALID);
+}
+
+DrawQuad::~DrawQuad() {
+}
+
+scoped_ptr<DrawQuad> DrawQuad::Copy(
+    const SharedQuadState* copied_shared_quad_state) const
 {
-    DCHECK(m_sharedQuadState);
-    DCHECK(m_material != Invalid);
+  scoped_ptr<DrawQuad> copy_quad;
+  switch (material) {
+    case CHECKERBOARD:
+      copy_quad.reset(TypedCopy<CheckerboardDrawQuad>(this));
+      break;
+    case DEBUG_BORDER:
+      copy_quad.reset(TypedCopy<DebugBorderDrawQuad>(this));
+      break;
+    case IO_SURFACE_CONTENT:
+      copy_quad.reset(TypedCopy<IOSurfaceDrawQuad>(this));
+      break;
+    case TEXTURE_CONTENT:
+      copy_quad.reset(TypedCopy<TextureDrawQuad>(this));
+      break;
+    case SOLID_COLOR:
+      copy_quad.reset(TypedCopy<SolidColorDrawQuad>(this));
+      break;
+    case TILED_CONTENT:
+      copy_quad.reset(TypedCopy<TileDrawQuad>(this));
+      break;
+    case STREAM_VIDEO_CONTENT:
+      copy_quad.reset(TypedCopy<StreamVideoDrawQuad>(this));
+      break;
+    case YUV_VIDEO_CONTENT:
+      copy_quad.reset(TypedCopy<YUVVideoDrawQuad>(this));
+      break;
+    case RENDER_PASS:  // RenderPass quads have their own copy() method.
+    case INVALID:
+      LOG(FATAL) << "Invalid DrawQuad material " << material;
+      break;
+  }
+  copy_quad->shared_quad_state = copied_shared_quad_state;
+  return copy_quad.Pass();
 }
 
-gfx::Rect DrawQuad::opaqueRect() const
-{
-    if (opacity() != 1)
-        return gfx::Rect();
-    if (m_sharedQuadState->opaque && m_quadOpaque)
-        return m_quadRect;
-    return m_opaqueRect;
-}
-
-void DrawQuad::setQuadVisibleRect(gfx::Rect quadVisibleRect)
-{
-    m_quadVisibleRect = gfx::IntersectRects(quadVisibleRect, m_quadRect);
-}
-
-unsigned DrawQuad::size() const
-{
-    switch (material()) {
-    case Checkerboard:
-        return sizeof(CheckerboardDrawQuad);
-    case DebugBorder:
-        return sizeof(DebugBorderDrawQuad);
-    case IOSurfaceContent:
-        return sizeof(IOSurfaceDrawQuad);
-    case TextureContent:
-        return sizeof(TextureDrawQuad);
-    case SolidColor:
-        return sizeof(SolidColorDrawQuad);
-    case TiledContent:
-        return sizeof(TileDrawQuad);
-    case StreamVideoContent:
-        return sizeof(StreamVideoDrawQuad);
-    case RenderPass:
-        return sizeof(RenderPassDrawQuad);
-    case YUVVideoContent:
-        return sizeof(YUVVideoDrawQuad);
-    case Invalid:
-        break;
-    }
-
-    CRASH();
-    return sizeof(DrawQuad);
-}
-
-scoped_ptr<DrawQuad> DrawQuad::copy(const SharedQuadState* copiedSharedQuadState) const
-{
-    // RenderPass quads have their own copy() method.
-    DCHECK(material() != RenderPass);
-
-    unsigned bytes = size();
-    DCHECK(bytes > 0);
-
-    scoped_ptr<DrawQuad> copyQuad(reinterpret_cast<DrawQuad*>(new char[bytes]));
-    memcpy(copyQuad.get(), this, bytes);
-    copyQuad->setSharedQuadState(copiedSharedQuadState);
-
-    return copyQuad.Pass();
-}
-
-void DrawQuad::setSharedQuadState(const SharedQuadState* sharedQuadState)
-{
-    m_sharedQuadState = sharedQuadState;
-    m_sharedQuadStateId = sharedQuadState->id;
-}
-
-}
+}  // namespace cc

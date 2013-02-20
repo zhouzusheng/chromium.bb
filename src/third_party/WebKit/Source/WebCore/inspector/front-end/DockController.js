@@ -40,7 +40,8 @@ WebInspector.DockController = function()
     if (Preferences.showDockToRight)
         this._dockToggleButton.makeLongClickEnabled(this._createDockOptions.bind(this));
 
-    this.setDockSide(WebInspector.queryParamsObject["dockSide"]);
+    this.setDockSide(WebInspector.queryParamsObject["dockSide"] || "bottom");
+    WebInspector.settings.showToolbarIcons.addChangeListener(this._updateUI.bind(this));
 }
 
 WebInspector.DockController.State = {
@@ -93,27 +94,34 @@ WebInspector.DockController.prototype = {
         case WebInspector.DockController.State.DockedToBottom:
             body.removeStyleClass("undocked");
             body.removeStyleClass("dock-to-right");
-            this.setCompactMode(true);
+            body.addStyleClass("dock-to-bottom");
             break;
         case WebInspector.DockController.State.DockedToRight: 
             body.removeStyleClass("undocked");
             body.addStyleClass("dock-to-right");
-            this.setCompactMode(false);
+            body.removeStyleClass("dock-to-bottom");
             break;
         case WebInspector.DockController.State.Undocked: 
             body.addStyleClass("undocked");
             body.removeStyleClass("dock-to-right");
-            this.setCompactMode(false);
+            body.removeStyleClass("dock-to-bottom");
             break;
         }
 
+        if (WebInspector.toolbar)
+            WebInspector.toolbar.setDockedToBottom(this._dockSide === WebInspector.DockController.State.DockedToBottom);
+        if (WebInspector.settings.showToolbarIcons.get())
+            document.body.addStyleClass("show-toolbar-icons");
+        else
+            document.body.removeStyleClass("show-toolbar-icons");
+
         if (this._isDockingUnavailable) {
             this._dockToggleButton.state = "undock";
-            this._dockToggleButton.disabled = true;
+            this._dockToggleButton.setEnabled(false);
             return;
         }
 
-        this._dockToggleButton.disabled = false;
+        this._dockToggleButton.setEnabled(true);
 
         // Choose different last state based on the current one if missing or if is the same.
         var sides = [WebInspector.DockController.State.DockedToBottom, WebInspector.DockController.State.Undocked, WebInspector.DockController.State.DockedToRight];
@@ -168,28 +176,5 @@ WebInspector.DockController.prototype = {
         case "undock": action = "undocked"; break;
         }
         InspectorFrontendHost.requestSetDockSide(action);
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isCompactMode: function()
-    {
-        return this._isCompactMode;
-    },
-
-    /**
-     * @param {boolean} isCompactMode
-     */
-    setCompactMode: function(isCompactMode)
-    {
-        var body = document.body;
-        this._isCompactMode = isCompactMode;
-        if (WebInspector.toolbar)
-            WebInspector.toolbar.setCompactMode(isCompactMode);
-        if (isCompactMode)
-            body.addStyleClass("compact");
-        else
-            body.removeStyleClass("compact");
     }
 }

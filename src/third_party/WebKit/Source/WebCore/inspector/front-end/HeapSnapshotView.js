@@ -153,7 +153,7 @@ WebInspector.HeapSnapshotView = function(parent, profile)
             this.baseSelectElement.selectedIndex = profileIndex - 1;
         else
             this.baseSelectElement.selectedIndex = profileIndex;
-        this.dataGrid.setDataSource(this, heapSnapshotProxy);
+        this.dataGrid.setDataSource(heapSnapshotProxy);
     }
 }
 
@@ -216,7 +216,7 @@ WebInspector.HeapSnapshotView.prototype = {
     {
         this._currentSearchResultIndex = -1;
         this._popoverHelper.hidePopover();
-        if (this.helpPopover && this.helpPopover.visible)
+        if (this.helpPopover && this.helpPopover.isShowing())
             this.helpPopover.hide();
     },
 
@@ -368,7 +368,7 @@ WebInspector.HeapSnapshotView.prototype = {
             return;
 
         this._baseProfileUid = this._profiles()[this.baseSelectElement.selectedIndex].uid;
-        var dataGrid = /** @type {WebInspector.HeapSnapshotDiffDataGrid} */ this.dataGrid;
+        var dataGrid = /** @type {WebInspector.HeapSnapshotDiffDataGrid} */ (this.dataGrid);
         // Change set base data source only if main data source is already set.
         if (dataGrid.snapshot)
             this.baseProfile.load(dataGrid.setBaseDataSource.bind(dataGrid));
@@ -386,7 +386,12 @@ WebInspector.HeapSnapshotView.prototype = {
     _changeFilter: function()
     {
         var profileIndex = this.filterSelectElement.selectedIndex - 1;
-        this.dataGrid._filterSelectIndexChanged(this._profiles(), profileIndex);
+        this.dataGrid.filterSelectIndexChanged(this._profiles(), profileIndex);
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.HeapSnapshotFilterChanged,
+            label: this.filterSelectElement[this.filterSelectElement.selectedIndex].label
+        });
 
         if (!this.currentQuery || !this._searchFinishedCallback || !this._searchResults)
             return;
@@ -416,6 +421,9 @@ WebInspector.HeapSnapshotView.prototype = {
         this.dataGrid.changeNameFilter(filter);
     },
 
+    /**
+     * @return {!Array.<!WebInspector.ProfileHeader>}
+     */
     _profiles: function()
     {
         return this.parent.getProfiles(WebInspector.HeapSnapshotProfileType.TypeId);
@@ -455,7 +463,7 @@ WebInspector.HeapSnapshotView.prototype = {
     _setRetainmentDataGridSource: function(nodeItem)
     {
         if (nodeItem && nodeItem.snapshotNodeIndex)
-            this.retainmentDataGrid.setDataSource(this, nodeItem.isDeletedNode ? nodeItem.dataGrid.baseSnapshot : nodeItem.dataGrid.snapshot, nodeItem.snapshotNodeIndex);
+            this.retainmentDataGrid.setDataSource(nodeItem.isDeletedNode ? nodeItem.dataGrid.baseSnapshot : nodeItem.dataGrid.snapshot, nodeItem.snapshotNodeIndex);
         else
             this.retainmentDataGrid.reset();
     },
@@ -501,7 +509,7 @@ WebInspector.HeapSnapshotView.prototype = {
     _updateDataSourceAndView: function()
     {
         var dataGrid = this.dataGrid;
-        if (dataGrid.snapshotView)
+        if (dataGrid.snapshot)
             return;
 
         this.profile.load(didLoadSnapshot.bind(this));
@@ -510,7 +518,7 @@ WebInspector.HeapSnapshotView.prototype = {
             if (this.dataGrid !== dataGrid)
                 return;
             if (dataGrid.snapshot !== snapshotProxy)
-                dataGrid.setDataSource(this, snapshotProxy);
+                dataGrid.setDataSource(snapshotProxy);
             if (dataGrid === this.diffDataGrid) {
                 if (!this._baseProfileUid)
                     this._baseProfileUid = this._profiles()[this.baseSelectElement.selectedIndex].uid;
@@ -646,7 +654,7 @@ WebInspector.HeapSnapshotView.prototype = {
             this._helpPopoverContentElement = contentElement;
             this.helpPopover = new WebInspector.Popover();
         }
-        if (this.helpPopover.visible)
+        if (this.helpPopover.isShowing())
             this.helpPopover.hide();
         else
             this.helpPopover.show(this._helpPopoverContentElement, this.helpButton.element);
@@ -803,7 +811,7 @@ WebInspector.HeapSnapshotProfileType.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.ProfileHeader}
- * @param {WebInspector.HeapSnapshotProfileType} type
+ * @param {!WebInspector.HeapSnapshotProfileType} type
  * @param {string} title
  * @param {number=} uid
  * @param {number=} maxJSObjectId
@@ -866,7 +874,7 @@ WebInspector.HeapProfileHeader.prototype = {
             this.sidebarElement.wait = true;
             ProfilerAgent.getProfile(this.profileType().id, this.uid);
         }
-        var loaderProxy = /** @type {WebInspector.HeapSnapshotLoaderProxy} */ this._receiver;
+        var loaderProxy = /** @type {WebInspector.HeapSnapshotLoaderProxy} */ (this._receiver);
         loaderProxy.addConsumer(callback);
     },
 
@@ -937,7 +945,7 @@ WebInspector.HeapProfileHeader.prototype = {
         if (snapshotProxy)
             this._snapshotProxy = snapshotProxy;
         this._updateSnapshotStatus();
-        var worker = /** @type {WebInspector.HeapSnapshotWorker} */ this._snapshotProxy.worker;
+        var worker = /** @type {WebInspector.HeapSnapshotWorker} */ (this._snapshotProxy.worker);
         this.isTemporary = false;
         worker.startCheckingForLongRunningCalls();
     },
@@ -962,16 +970,18 @@ WebInspector.HeapProfileHeader.prototype = {
     saveToFile: function()
     {
         this._numberOfChunks = 0;
+
+        var fileOutputStream = new WebInspector.FileOutputStream();
         function onOpen()
         {
+            this._receiver = fileOutputStream;
             this._savedChunks = 0;
             this._updateTransferProgress(0, this._totalNumberOfChunks);
             ProfilerAgent.getProfile(this.profileType().id, this.uid);
         }
         this._savingToFile = true;
         this._fileName = this._fileName || "Heap-" + new Date().toISO8601Compact() + ".heapsnapshot";
-        this._receiver = new WebInspector.FileOutputStream();
-        this._receiver.open(this._fileName, onOpen.bind(this));
+        fileOutputStream.open(this._fileName, onOpen.bind(this));
     },
 
     /**

@@ -67,15 +67,11 @@ public:
     virtual void dispatchFormControlInputEvent();
 
     virtual bool disabled() const;
-    void setDisabled(bool);
 
     virtual bool isFocusable() const;
     virtual bool isEnumeratable() const { return false; }
 
-    // Determines whether or not a control will be automatically focused.
-    virtual bool autofocus() const;
-
-    bool required() const;
+    bool isRequired() const;
 
     const AtomicString& type() const { return formControlType(); }
 
@@ -101,6 +97,7 @@ public:
     virtual void setCustomValidity(const String&) OVERRIDE;
 
     bool readOnly() const { return m_readOnly; }
+    bool isDisabledOrReadOnly() const { return disabled() || m_readOnly; }
 
     bool hasAutofocused() { return m_hasAutofocused; }
     void setAutofocused() { m_hasAutofocused = true; }
@@ -110,10 +107,12 @@ public:
     using Node::ref;
     using Node::deref;
 
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
 protected:
     HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*);
 
-    virtual void parseAttribute(const Attribute&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void requiredAttributeChanged();
     virtual void disabledAttributeChanged();
     virtual void attach();
@@ -151,7 +150,7 @@ private:
     OwnPtr<ValidationMessage> m_validationMessage;
     bool m_disabled : 1;
     bool m_readOnly : 1;
-    bool m_required : 1;
+    bool m_isRequired : 1;
     bool m_valueMatchesRenderer : 1;
 
     enum AncestorDisabledState { AncestorDisabledStateUnknown, AncestorDisabledStateEnabled, AncestorDisabledStateDisabled };

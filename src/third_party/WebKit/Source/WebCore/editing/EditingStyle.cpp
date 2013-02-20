@@ -40,6 +40,7 @@
 #include "HTMLInterchange.h"
 #include "HTMLNames.h"
 #include "Node.h"
+#include "NodeTraversal.h"
 #include "Position.h"
 #include "QualifiedName.h"
 #include "RenderStyle.h"
@@ -681,7 +682,7 @@ TriState EditingStyle::triStateOfStyle(const VisibleSelection& selection) const
         return triStateOfStyle(EditingStyle::styleAtSelectionStart(selection).get());
 
     TriState state = FalseTriState;
-    for (Node* node = selection.start().deprecatedNode(); node; node = node->traverseNextNode()) {
+    for (Node* node = selection.start().deprecatedNode(); node; node = NodeTraversal::next(node)) {
         RefPtr<CSSComputedStyleDeclaration> nodeStyle = CSSComputedStyleDeclaration::create(node);
         if (nodeStyle) {
             TriState nodeState = triStateOfStyle(nodeStyle.get(), node->isTextNode() ? EditingStyle::DoNotIgnoreTextOnlyProperties : EditingStyle::IgnoreTextOnlyProperties);
@@ -1248,7 +1249,7 @@ WritingDirection EditingStyle::textDirectionForSelection(const VisibleSelection&
         end = selection.end().upstream();
 
         Node* pastLast = Range::create(end.document(), position.parentAnchoredEquivalent(), end.parentAnchoredEquivalent())->pastLastNode();
-        for (Node* n = node; n && n != pastLast; n = n->traverseNextNode()) {
+        for (Node* n = node; n && n != pastLast; n = NodeTraversal::next(n)) {
             if (!n->isStyledElement())
                 continue;
 
@@ -1427,7 +1428,7 @@ void StyleChange::extractTextStyles(Document* document, StylePropertySet* style,
 
     m_applyFontFace = style->getPropertyValue(CSSPropertyFontFamily);
     // Remove single quotes for Outlook 2007 compatibility. See https://bugs.webkit.org/show_bug.cgi?id=79448
-    m_applyFontFace.replace('\'', "");
+    m_applyFontFace.replaceWithLiteral('\'', "");
     style->removeProperty(CSSPropertyFontFamily);
 
     if (RefPtr<CSSValue> fontSize = style->getPropertyCSSValue(CSSPropertyFontSize)) {

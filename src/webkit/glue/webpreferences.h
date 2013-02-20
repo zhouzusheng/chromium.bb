@@ -30,6 +30,12 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   // "Arab" to "My Arabic Font".
   typedef std::map<std::string, string16> ScriptFontFamilyMap;
 
+  enum EditingBehavior {
+    EDITING_BEHAVIOR_MAC,
+    EDITING_BEHAVIOR_WIN,
+    EDITING_BEHAVIOR_UNIX
+  };
+
   // The ISO 15924 script code for undetermined script aka Common. It's the
   // default used on WebKit's side to get/set a font setting when no script is
   // specified.
@@ -48,6 +54,9 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   int minimum_logical_font_size;
   std::string default_encoding;
   bool apply_default_device_scale_factor_in_compositor;
+  bool apply_page_scale_factor_in_compositor;
+  bool per_tile_painting_enabled;
+  bool accelerated_animation_enabled;
   bool javascript_enabled;
   bool web_security_enabled;
   bool javascript_can_open_windows_automatically;
@@ -97,6 +106,8 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool show_composited_layer_tree;
   bool show_fps_counter;
   bool accelerated_compositing_for_overflow_scroll_enabled;
+  bool accelerated_compositing_for_scrollable_frames_enabled;
+  bool composited_scrolling_for_frames_enabled;
   bool show_paint_rects;
   bool render_vsync_enabled;
   bool asynchronous_spell_checking_enabled;
@@ -104,35 +115,32 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool accelerated_compositing_enabled;
   bool force_compositing_mode;
   bool fixed_position_compositing_enabled;
-  bool accelerated_layers_enabled;
-  bool accelerated_animation_enabled;
-  bool accelerated_video_enabled;
+  bool accelerated_compositing_for_3d_transforms_enabled;
+  bool accelerated_compositing_for_animation_enabled;
+  bool accelerated_compositing_for_video_enabled;
   bool accelerated_2d_canvas_enabled;
   bool deferred_2d_canvas_enabled;
+  bool antialiased_2d_canvas_disabled;
   bool accelerated_painting_enabled;
   bool accelerated_filters_enabled;
   bool gesture_tap_highlight_enabled;
-  bool accelerated_plugins_enabled;
+  bool accelerated_compositing_for_plugins_enabled;
   bool memory_info_enabled;
   bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
-#if defined(OS_ANDROID)
-  bool text_autosizing_enabled;
-  float font_scale_factor;
-  bool force_enable_zoom;
-  bool user_gesture_required_for_media_playback;
-#endif
   bool password_echo_enabled;
   bool should_print_backgrounds;
   bool enable_scroll_animator;
   bool visual_word_movement_enabled;
   bool css_sticky_position_enabled;
-  bool css_regions_enabled;
   bool css_shaders_enabled;
   bool css_variables_enabled;
+  bool css_grid_layout_enabled;
+  bool touch_enabled;
   bool device_supports_touch;
   bool device_supports_mouse;
+  bool touch_adjustment_enabled;
   int default_tile_width;
   int default_tile_height;
   int max_untiled_layer_width;
@@ -141,6 +149,7 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
   int number_of_cpu_cores;
+  EditingBehavior editing_behavior;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -149,7 +158,13 @@ struct WEBKIT_GLUE_EXPORT WebPreferences {
   // without raising a DOM security exception.
   bool cookie_enabled;
 
-  bool apply_page_scale_factor_in_compositor;
+#if defined(OS_ANDROID)
+  bool text_autosizing_enabled;
+  float font_scale_factor;
+  bool force_enable_zoom;
+  bool user_gesture_required_for_media_playback;
+  bool supports_multiple_windows;
+#endif
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

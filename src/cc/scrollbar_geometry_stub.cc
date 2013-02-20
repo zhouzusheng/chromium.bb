@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/scrollbar_geometry_stub.h"
+
+#include <cmath>
 
 using WebKit::WebRect;
 using WebKit::WebScrollbar;
@@ -33,7 +33,7 @@ int ScrollbarGeometryStub::thumbPosition(WebScrollbar* scrollbar)
 
 int ScrollbarGeometryStub::thumbLength(WebScrollbar* scrollbar)
 {
-    return m_geometry->thumbLength(scrollbar);
+    return std::max(0, m_geometry->thumbLength(scrollbar));
 }
 
 int ScrollbarGeometryStub::trackPosition(WebScrollbar* scrollbar)
@@ -106,4 +106,4 @@ void ScrollbarGeometryStub::splitTrack(WebScrollbar* scrollbar, const WebRect& u
     m_geometry->splitTrack(scrollbar, unconstrainedTrackRect, beforeThumbRect, thumbRect, afterThumbRect);
 }
 
-}
+}  // namespace cc

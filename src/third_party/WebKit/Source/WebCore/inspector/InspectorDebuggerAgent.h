@@ -31,6 +31,7 @@
 #define InspectorDebuggerAgent_h
 
 #if ENABLE(JAVASCRIPT_DEBUGGER) && ENABLE(INSPECTOR)
+#include "ConsoleAPITypes.h"
 #include "ConsoleTypes.h"
 #include "InjectedScript.h"
 #include "InspectorBaseAgent.h"
@@ -70,18 +71,16 @@ public:
     virtual void canSetScriptSource(ErrorString*, bool*);
     virtual void supportsSeparateScriptCompilationAndExecution(ErrorString*, bool*);
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-
     virtual void setFrontend(InspectorFrontend*);
     virtual void clearFrontend();
     virtual void restore();
 
-    void didClearMainFrameWindowObject();
     bool isPaused();
     void addMessageToConsole(MessageSource, MessageType);
 
     // Part of the protocol.
+    virtual void enable(ErrorString*);
+    virtual void disable(ErrorString*);
     virtual void setBreakpointsActive(ErrorString*, bool active);
 
     virtual void setBreakpointByUrl(ErrorString*, int lineNumber, const String* optionalURL, const String* optionalURLRegex, const int* optionalColumnNumber, const String* optionalCondition, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations);
@@ -107,6 +106,7 @@ public:
                              const bool* includeCommandLineAPI,
                              const bool* doNotPauseOnExceptionsAndMuteConsole,
                              const bool* returnByValue,
+                             const bool* generatePreview,
                              RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
                              TypeBuilder::OptOutput<bool>* wasThrown);
     void compileScript(ErrorString*, const String& expression, const String& sourceURL, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage);
@@ -140,12 +140,13 @@ protected:
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
 
+    virtual void enable();
     virtual void disable();
     virtual void didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception);
     virtual void didContinue();
+    void reset();
 
 private:
-    void enable();
     bool enabled();
 
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();

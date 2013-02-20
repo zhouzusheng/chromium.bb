@@ -82,6 +82,10 @@ class BASE_EXPORT TraceEvent {
                                  std::string* out);
   void AppendAsJSON(std::string* out) const;
 
+  static void AppendValueAsJSON(unsigned char type,
+                                TraceValue value,
+                                std::string* out);
+
   TimeTicks timestamp() const { return timestamp_; }
 
   // Exposed for unittesting:
@@ -204,6 +208,10 @@ class BASE_EXPORT TraceLog {
   void SetEnabled(bool enabled);
   bool IsEnabled() { return enabled_; }
 
+#if defined(OS_ANDROID)
+  static void InitATrace();
+#endif
+
   // Enabled state listeners give a callback when tracing is enabled or
   // disabled. This can be used to tie into other library's tracing systems
   // on-demand.
@@ -246,14 +254,9 @@ class BASE_EXPORT TraceLog {
   static const char* GetCategoryName(const unsigned char* category_enabled);
 
   // Called by TRACE_EVENT* macros, don't call this directly.
-  // Returns the index in the internal vector of the event if it was added, or
-  //         -1 if the event was not added.
-  // On end events, the return value of the begin event can be specified along
-  // with a threshold in microseconds. If the elapsed time between begin and end
-  // is less than the threshold, the begin/end event pair is dropped.
   // If |copy| is set, |name|, |arg_name1| and |arg_name2| will be deep copied
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
-  int AddTraceEvent(char phase,
+  void AddTraceEvent(char phase,
                     const unsigned char* category_enabled,
                     const char* name,
                     unsigned long long id,
@@ -261,8 +264,6 @@ class BASE_EXPORT TraceLog {
                     const char** arg_names,
                     const unsigned char* arg_types,
                     const unsigned long long* arg_values,
-                    int threshold_begin_id,
-                    long long threshold,
                     unsigned char flags);
   static void AddTraceEventEtw(char phase,
                                const char* name,
@@ -302,10 +303,25 @@ class BASE_EXPORT TraceLog {
 
   void SetProcessID(int process_id);
 
+  // Allow setting an offset between the current TimeTicks time and the time
+  // that should be reported.
+  void SetTimeOffset(TimeDelta offset);
+
  private:
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
   friend struct StaticMemorySingletonTraits<TraceLog>;
+
+  // The pointer returned from GetCategoryEnabledInternal() points to a value
+  // with zero or more of the following bits. Used in this class only.
+  // The TRACE_EVENT macros should only use the value as a bool.
+  enum CategoryEnabledFlags {
+    // Normal enabled flag for categories enabled with Enable().
+    CATEGORY_ENABLED = 1 << 0,
+    // On Android if ATrace is enabled, all categories will have this bit.
+    // Not used on other platforms.
+    ATRACE_ENABLED = 1 << 1
+  };
 
   // Helper class for managing notification_thread_count_ and running
   // notification callbacks. This is very similar to a reader-writer lock, but
@@ -334,7 +350,18 @@ class BASE_EXPORT TraceLog {
   ~TraceLog();
   const unsigned char* GetCategoryEnabledInternal(const char* name);
   void AddThreadNameMetadataEvents();
+
+#if defined(OS_ANDROID)
+  void SendToATrace(char phase,
+                    const char* category,
+                    const char* name,
+                    int num_args,
+                    const char** arg_names,
+                    const unsigned char* arg_types,
+                    const unsigned long long* arg_values);
   void AddClockSyncMetadataEvents();
+  static void ApplyATraceEnabledFlag(unsigned char* category_enabled);
+#endif
 
   // TODO(nduca): switch to per-thread trace buffers to reduce thread
   // synchronization.
@@ -354,6 +381,8 @@ class BASE_EXPORT TraceLog {
   unsigned long long process_id_hash_;
 
   int process_id_;
+
+  TimeDelta time_offset_;
 
   // Allow tests to wake up when certain events occur.
   const unsigned char* watch_category_;

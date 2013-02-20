@@ -30,16 +30,8 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) OVERRIDE;
-  virtual PP_Resource CreateAudioInput0_1(
-      PP_Instance instance,
-      PP_Resource config_id,
-      PPB_AudioInput_Callback audio_input_callback,
-      void* user_data) OVERRIDE;
   virtual PP_Resource CreateAudioInput(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateBroker(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateBrowserFont(
-      PP_Instance instance,
-      const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) OVERRIDE;
   virtual PP_Resource CreateDirectoryReader(PP_Resource directory_ref) OVERRIDE;
@@ -51,14 +43,11 @@ class WEBKIT_PLUGINS_EXPORT ResourceCreationImpl
   virtual PP_Resource CreateFlashDeviceID(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,
-      const PP_FontDescription_Dev* description,
+      const PP_BrowserFont_Trusted_Description* description,
       PP_PrivateFontCharset charset) OVERRIDE;
   virtual PP_Resource CreateFlashMenu(PP_Instance instance,
                                       const PP_Flash_Menu* menu_data) OVERRIDE;
   virtual PP_Resource CreateFlashMessageLoop(PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateGraphics2D(PP_Instance pp_instance,
-                                       const PP_Size& size,
-                                       PP_Bool is_always_opaque) OVERRIDE;
   virtual PP_Resource CreateGraphics3D(PP_Instance instance,
                                        PP_Resource share_context,
                                        const int32_t* attrib_list) OVERRIDE;

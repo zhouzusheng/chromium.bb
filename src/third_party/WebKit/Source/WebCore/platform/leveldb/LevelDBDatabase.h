@@ -37,14 +37,28 @@ namespace leveldb {
 class Comparator;
 class DB;
 class Env;
+class Snapshot;
 }
 
 namespace WebCore {
 
 class LevelDBComparator;
+class LevelDBDatabase;
 class LevelDBIterator;
 class LevelDBSlice;
 class LevelDBWriteBatch;
+
+class LevelDBSnapshot {
+private:
+    friend class LevelDBDatabase;
+    friend class LevelDBTransaction;
+
+    explicit LevelDBSnapshot(LevelDBDatabase*);
+    ~LevelDBSnapshot();
+
+    leveldb::DB* m_db;
+    const leveldb::Snapshot* m_snapshot;
+};
 
 class LevelDBDatabase {
 public:
@@ -55,12 +69,13 @@ public:
 
     bool put(const LevelDBSlice& key, const Vector<char>& value);
     bool remove(const LevelDBSlice& key);
-    bool get(const LevelDBSlice& key, Vector<char>& value);
+    bool safeGet(const LevelDBSlice& key, Vector<char>& value, bool& found, const LevelDBSnapshot* = 0);
     bool write(LevelDBWriteBatch&);
-    PassOwnPtr<LevelDBIterator> createIterator();
+    PassOwnPtr<LevelDBIterator> createIterator(const LevelDBSnapshot* = 0);
     const LevelDBComparator* comparator() const;
 
 private:
+    friend class LevelDBSnapshot;
     LevelDBDatabase();
 
     OwnPtr<leveldb::Env> m_env;

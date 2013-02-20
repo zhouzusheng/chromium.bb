@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCSchedulerStateMachine_h
-#define CCSchedulerStateMachine_h
+#ifndef CC_SCHEDULER_STATE_MACHINE_H_
+#define CC_SCHEDULER_STATE_MACHINE_H_
 
 #include <string>
 
 #include "base/basictypes.h"
+#include "cc/cc_export.h"
 
 namespace cc {
 
@@ -21,7 +22,7 @@ namespace cc {
 //
 // The scheduler seperates "what to do next" from the updating of its internal state to
 // make testing cleaner.
-class SchedulerStateMachine {
+class CC_EXPORT SchedulerStateMachine {
 public:
     SchedulerStateMachine();
 
@@ -30,7 +31,8 @@ public:
         COMMIT_STATE_FRAME_IN_PROGRESS,
         COMMIT_STATE_READY_TO_COMMIT,
         COMMIT_STATE_WAITING_FOR_FIRST_DRAW,
-    };
+        COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW,
+   };
 
     enum TextureState {
         LAYER_TEXTURE_STATE_UNLOCKED,
@@ -38,15 +40,16 @@ public:
         LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD,
     };
 
-    enum ContextState {
-        CONTEXT_ACTIVE,
-        CONTEXT_LOST,
-        CONTEXT_RECREATING,
+    enum OutputSurfaceState {
+        OUTPUT_SURFACE_ACTIVE,
+        OUTPUT_SURFACE_LOST,
+        OUTPUT_SURFACE_RECREATING,
     };
 
     bool commitPending() const
     {
-        return m_commitState != COMMIT_STATE_IDLE;
+        return m_commitState == COMMIT_STATE_FRAME_IN_PROGRESS ||
+            m_commitState == COMMIT_STATE_READY_TO_COMMIT;
     }
 
     bool redrawPending() const { return m_needsRedraw; }
@@ -57,7 +60,7 @@ public:
         ACTION_COMMIT,
         ACTION_DRAW_IF_POSSIBLE,
         ACTION_DRAW_FORCED,
-        ACTION_BEGIN_CONTEXT_RECREATION,
+        ACTION_BEGIN_OUTPUT_SURFACE_RECREATION,
         ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD,
     };
     Action nextAction() const;
@@ -119,8 +122,8 @@ public:
     // when such behavior would be undesirable.
     void setCanDraw(bool can) { m_canDraw = can; }
 
-    void didLoseContext();
-    void didRecreateContext();
+    void didLoseOutputSurface();
+    void didRecreateOutputSurface();
 
     // Exposed for testing purposes.
     void setMaximumNumberOfFailedDrawsBeforeDrawIsForced(int);
@@ -154,11 +157,11 @@ protected:
     bool m_canDraw;
     bool m_drawIfPossibleFailed;
     TextureState m_textureState;
-    ContextState m_contextState;
+    OutputSurfaceState m_outputSurfaceState;
 
     DISALLOW_COPY_AND_ASSIGN(SchedulerStateMachine);
 };
 
 }
 
-#endif // CCSchedulerStateMachine_h
+#endif  // CC_SCHEDULER_STATE_MACHINE_H_

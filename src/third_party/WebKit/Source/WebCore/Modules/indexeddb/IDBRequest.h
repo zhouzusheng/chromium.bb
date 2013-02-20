@@ -33,6 +33,7 @@
 
 #include "ActiveDOMObject.h"
 #include "DOMError.h"
+#include "DOMRequestState.h"
 #include "DOMStringList.h"
 #include "Event.h"
 #include "EventListener.h"
@@ -42,6 +43,7 @@
 #include "IDBCallbacks.h"
 #include "IDBCursor.h"
 #include "IDBCursorBackendInterface.h"
+#include "ScriptWrappable.h"
 #if USE(V8)
 #include "WorldContextHandle.h"
 #endif
@@ -52,7 +54,7 @@ class IDBTransaction;
 
 typedef int ExceptionCode;
 
-class IDBRequest : public IDBCallbacks, public EventTarget, public ActiveDOMObject {
+class IDBRequest : public ScriptWrappable, public IDBCallbacks, public EventTarget, public ActiveDOMObject {
 public:
     static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
     static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransactionBackendInterface::TaskType, IDBTransaction*);
@@ -89,7 +91,6 @@ public:
     virtual void onSuccess(PassRefPtr<DOMStringList>);
     virtual void onSuccess(PassRefPtr<IDBCursorBackendInterface>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SerializedScriptValue>);
     virtual void onSuccess(PassRefPtr<IDBKey>);
-    virtual void onSuccess(PassRefPtr<IDBTransactionBackendInterface>);
     virtual void onSuccess(PassRefPtr<SerializedScriptValue>);
     virtual void onSuccess(PassRefPtr<SerializedScriptValue>, PassRefPtr<IDBKey>, const IDBKeyPath&);
     virtual void onSuccess(int64_t);
@@ -110,10 +111,12 @@ public:
 
     void transactionDidFinishAndDispatch();
 
-    using ThreadSafeRefCounted<IDBCallbacks>::ref;
-    using ThreadSafeRefCounted<IDBCallbacks>::deref;
+    using RefCounted<IDBCallbacks>::ref;
+    using RefCounted<IDBCallbacks>::deref;
 
     IDBTransactionBackendInterface::TaskType taskType() { return m_taskType; }
+
+    DOMRequestState* requestState() { return &m_requestState; }
 
 protected:
     IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransactionBackendInterface::TaskType, IDBTransaction*);
@@ -158,9 +161,7 @@ private:
     bool m_preventPropagation;
 
     EventTargetData m_eventTargetData;
-#if USE(V8)
-    WorldContextHandle m_worldContextHandle;
-#endif
+    DOMRequestState m_requestState;
 };
 
 } // namespace WebCore

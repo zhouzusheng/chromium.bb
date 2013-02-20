@@ -2,35 +2,51 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCYUVVideoDrawQuad_h
-#define CCYUVVideoDrawQuad_h
+#ifndef CC_YUV_VIDEO_DRAW_QUAD_H_
+#define CC_YUV_VIDEO_DRAW_QUAD_H_
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
 #include "cc/draw_quad.h"
 #include "cc/video_layer_impl.h"
 
 namespace cc {
 
-class YUVVideoDrawQuad : public DrawQuad {
-public:
-    static scoped_ptr<YUVVideoDrawQuad> create(const SharedQuadState*, const gfx::Rect&, const VideoLayerImpl::FramePlane& yPlane, const VideoLayerImpl::FramePlane& uPlane, const VideoLayerImpl::FramePlane& vPlane);
+class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
+ public:
+  virtual ~YUVVideoDrawQuad();
 
-    const VideoLayerImpl::FramePlane& yPlane() const { return m_yPlane; }
-    const VideoLayerImpl::FramePlane& uPlane() const { return m_uPlane; }
-    const VideoLayerImpl::FramePlane& vPlane() const { return m_vPlane; }
+  static scoped_ptr<YUVVideoDrawQuad> Create();
 
-    static const YUVVideoDrawQuad* materialCast(const DrawQuad*);
-private:
-    YUVVideoDrawQuad(const SharedQuadState*, const gfx::Rect&, const VideoLayerImpl::FramePlane& yPlane, const VideoLayerImpl::FramePlane& uPlane, const VideoLayerImpl::FramePlane& vPlane);
+  void SetNew(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::SizeF tex_scale,
+              const VideoLayerImpl::FramePlane& y_plane,
+              const VideoLayerImpl::FramePlane& u_plane,
+              const VideoLayerImpl::FramePlane& v_plane);
 
-    VideoLayerImpl::FramePlane m_yPlane;
-    VideoLayerImpl::FramePlane m_uPlane;
-    VideoLayerImpl::FramePlane m_vPlane;
+  void SetAll(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::Rect visible_rect,
+              bool needs_blending,
+              gfx::SizeF tex_scale,
+              const VideoLayerImpl::FramePlane& y_plane,
+              const VideoLayerImpl::FramePlane& u_plane,
+              const VideoLayerImpl::FramePlane& v_plane);
 
-    DISALLOW_COPY_AND_ASSIGN(YUVVideoDrawQuad);
+  gfx::SizeF tex_scale;
+  VideoLayerImpl::FramePlane y_plane;
+  VideoLayerImpl::FramePlane u_plane;
+  VideoLayerImpl::FramePlane v_plane;
+
+  static const YUVVideoDrawQuad* MaterialCast(const DrawQuad*);
+ private:
+  YUVVideoDrawQuad();
 };
 
 }
 
-#endif
+#endif  // CC_YUV_VIDEO_DRAW_QUAD_H_

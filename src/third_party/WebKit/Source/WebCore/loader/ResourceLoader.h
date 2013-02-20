@@ -65,6 +65,7 @@ public:
     ResourceError cannotShowURLError();
     
     virtual void setDefersLoading(bool);
+    bool defersLoading() const { return m_defersLoading; }
 
     unsigned long identifier() const { return m_identifier; }
 
@@ -84,7 +85,7 @@ public:
     void willStopBufferingData(const char*, int);
     virtual void didFinishLoading(double finishTime);
     virtual void didFail(const ResourceError&);
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
     virtual void didReceiveDataArray(CFArrayRef dataArray);
 #endif
 
@@ -110,14 +111,13 @@ public:
     virtual bool shouldUseCredentialStorage(ResourceHandle*) { return shouldUseCredentialStorage(); }
     virtual void didReceiveAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didReceiveAuthenticationChallenge(challenge); } 
     virtual void didCancelAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didCancelAuthenticationChallenge(challenge); } 
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
     virtual void didReceiveDataArray(ResourceHandle*, CFArrayRef dataArray);
 #endif
 #if USE(PROTECTION_SPACE_AUTH_CALLBACK)
     virtual bool canAuthenticateAgainstProtectionSpace(ResourceHandle*, const ProtectionSpace& protectionSpace) { return canAuthenticateAgainstProtectionSpace(protectionSpace); }
 #endif
     virtual void receivedCancellation(ResourceHandle*, const AuthenticationChallenge& challenge) { receivedCancellation(challenge); }
-    virtual void willCacheResponse(ResourceHandle*, CacheStoragePolicy&);
 #if PLATFORM(MAC)
 #if USE(CFNETWORK)
     virtual CFCachedURLResponseRef willCacheResponse(ResourceHandle*, CFCachedURLResponseRef);
@@ -140,6 +140,7 @@ public:
     const KURL& url() const { return m_request.url(); } 
     ResourceHandle* handle() const { return m_handle.get(); }
     bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
+    bool shouldSniffContent() const { return m_options.sniffContent == SniffContent; }
 
     bool reachedTerminalState() const { return m_reachedTerminalState; }
 
@@ -167,7 +168,6 @@ protected:
     void didFinishLoadingOnePart(double finishTime);
 
     bool cancelled() const { return m_cancelled; }
-    bool defersLoading() const { return m_defersLoading; }
 
     RefPtr<ResourceHandle> m_handle;
     RefPtr<Frame> m_frame;

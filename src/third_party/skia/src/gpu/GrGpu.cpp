@@ -126,6 +126,10 @@ void GrGpu::unimpl(const char msg[]) {
 
 GrTexture* GrGpu::createTexture(const GrTextureDesc& desc,
                                 const void* srcData, size_t rowBytes) {
+    if (kUnknown_GrPixelConfig == desc.fConfig) {
+        return NULL;
+    }
+
     this->handleDirtyContext();
     GrTexture* tex = this->onCreateTexture(desc, srcData, rowBytes);
     if (NULL != tex &&
@@ -303,14 +307,14 @@ const GrVertexBuffer* GrGpu::getUnitSquareVertexBuffer() const {
 
         static const GrPoint DATA[] = {
             { 0,            0 },
-            { GR_Scalar1,   0 },
-            { GR_Scalar1,   GR_Scalar1 },
-            { 0,            GR_Scalar1 }
+            { SK_Scalar1,   0 },
+            { SK_Scalar1,   SK_Scalar1 },
+            { 0,            SK_Scalar1 }
 #if 0
             GrPoint(0,         0),
-            GrPoint(GR_Scalar1,0),
-            GrPoint(GR_Scalar1,GR_Scalar1),
-            GrPoint(0,         GR_Scalar1)
+            GrPoint(SK_Scalar1,0),
+            GrPoint(SK_Scalar1,SK_Scalar1),
+            GrPoint(0,         SK_Scalar1)
 #endif
         };
         static const size_t SIZE = sizeof(DATA);
@@ -406,7 +410,7 @@ void GrGpu::onDrawNonIndexed(GrPrimitiveType type,
     this->onGpuDrawNonIndexed(type, sVertex, vertexCount);
 }
 
-void GrGpu::onStencilPath(const GrPath* path, GrPathFill fill) {
+void GrGpu::onStencilPath(const GrPath* path, const SkStroke& stroke, SkPath::FillType fill) {
     this->handleDirtyContext();
 
     // TODO: make this more effecient (don't copy and copy back)

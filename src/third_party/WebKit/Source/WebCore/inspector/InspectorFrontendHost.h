@@ -85,6 +85,8 @@ public:
 
     String loadResourceSynchronously(const String& url);
 
+    bool isUnderTest();
+
 private:
 #if ENABLE(CONTEXT_MENUS)
     friend class FrontendMenuProvider;

@@ -75,9 +75,9 @@ void GrInOrderDrawBuffer::resetDrawTracking() {
 }
 
 void GrInOrderDrawBuffer::drawRect(const GrRect& rect,
-                                   const GrMatrix* matrix,
+                                   const SkMatrix* matrix,
                                    const GrRect* srcRects[],
-                                   const GrMatrix* srcMatrices[]) {
+                                   const SkMatrix* srcMatrices[]) {
 
     GrAssert(!(NULL == fQuadIndexBuffer && fCurrQuad));
     GrAssert(!(fDraws.empty() && fCurrQuad));
@@ -126,7 +126,7 @@ void GrInOrderDrawBuffer::drawRect(const GrRect& rect,
             GrPrintf("Failed to get space for vertices!\n");
             return;
         }
-        GrMatrix combinedMatrix = drawState->getViewMatrix();
+        SkMatrix combinedMatrix = drawState->getViewMatrix();
         // We go to device space so that matrix changes allow us to concat
         // rect draws. When the caller has provided explicit source rects
         // then we don't want to modify the stages' matrices. Otherwise
@@ -182,16 +182,16 @@ void GrInOrderDrawBuffer::drawRect(const GrRect& rect,
                 // conservative test fails.
                 const GrRenderTarget* target = drawState->getRenderTarget();
                 if (0 >= devClipRect.fLeft) {
-                    devClipRect.fLeft = GR_ScalarMin;
+                    devClipRect.fLeft = SK_ScalarMin;
                 }
                 if (target->width() <= devClipRect.fRight) {
-                    devClipRect.fRight = GR_ScalarMax;
+                    devClipRect.fRight = SK_ScalarMax;
                 }
                 if (0 >= devClipRect.top()) {
-                    devClipRect.fTop = GR_ScalarMin;
+                    devClipRect.fTop = SK_ScalarMin;
                 }
                 if (target->height() <= devClipRect.fBottom) {
-                    devClipRect.fBottom = GR_ScalarMax;
+                    devClipRect.fBottom = SK_ScalarMax;
                 }
                 int stride = VertexSize(layout);
                 bool insideClip = true;
@@ -487,7 +487,8 @@ void GrInOrderDrawBuffer::onDrawNonIndexed(GrPrimitiveType primitiveType,
     draw->fIndexBuffer = NULL;
 }
 
-void GrInOrderDrawBuffer::onStencilPath(const GrPath* path, GrPathFill fill) {
+void GrInOrderDrawBuffer::onStencilPath(const GrPath* path, const SkStroke& stroke,
+                                        SkPath::FillType fill) {
     if (this->needsNewClip()) {
         this->recordClip();
     }
@@ -499,6 +500,7 @@ void GrInOrderDrawBuffer::onStencilPath(const GrPath* path, GrPathFill fill) {
     sp->fPath.reset(path);
     path->ref();
     sp->fFill = fill;
+    sp->fStroke = stroke;
 }
 
 void GrInOrderDrawBuffer::clear(const GrIRect* rect,
@@ -610,7 +612,7 @@ bool GrInOrderDrawBuffer::playback(GrDrawTarget* target) {
             }
             case kStencilPath_Cmd: {
                 const StencilPath& sp = fStencilPaths[currStencilPath];
-                target->stencilPath(sp.fPath.get(), sp.fFill);
+                target->stencilPath(sp.fPath.get(), sp.fStroke, sp.fFill);
                 ++currStencilPath;
                 break;
             }

@@ -19,7 +19,7 @@ from xml.sax import saxutils
 
 from grit import lazy_re
 
-_root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
+_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
 # Unique constants for use by ReadFile().
@@ -474,7 +474,7 @@ def ParseDefine(define):
   Returns:
     A (name, value) pair. name is a string, value a string or boolean.
   '''
-  parts = [part.strip() for part in define.split('=')]
+  parts = [part.strip() for part in define.split('=', 1)]
   assert len(parts) >= 1
   name = parts[0]
   val = True

@@ -49,6 +49,9 @@ namespace WebCore {
 
 #if ENABLE(CONTEXT_MENUS)
     String contextMenuItemTagOpenLinkInNewWindow();
+#if PLATFORM(QT)
+    String contextMenuItemTagOpenLinkInThisWindow();
+#endif
     String contextMenuItemTagDownloadLinkToDisk();
     String contextMenuItemTagCopyLinkToClipboard();
     String contextMenuItemTagOpenImageInNewWindow();
@@ -152,6 +155,7 @@ namespace WebCore {
     String AXDefinitionListTermText();
     String AXDefinitionListDefinitionText();
     String AXFooterRoleDescriptionText();
+    String AXFileUploadButtonText();
 #if PLATFORM(MAC)
     String AXARIAContentGroupText(const String& ariaType);
 #endif
@@ -191,10 +195,10 @@ namespace WebCore {
     // "yyyy", for year field used in multiple fields "date", "datetime", and
     // "datetime-local" input UI instead "----".
     String placeholderForYearField();
-
+#endif
+#if ENABLE(INPUT_TYPE_WEEK)
     // weekFormatInLDML() returns week and year format in LDML, Unicode
-    // technical standard 35, Locale Data Markup Language, e.g. "WW-yyyyy"
-    // for "week" input type.
+    // technical standard 35, Locale Data Markup Language, e.g. "'Week' ww, yyyy"
     String weekFormatInLDML();
 #endif
 
@@ -202,6 +206,8 @@ namespace WebCore {
     String crashedPluginText();
     String blockedPluginByContentSecurityPolicyText();
     String insecurePluginVersionText();
+    String inactivePluginText();
+
     String multipleFileUploadText(unsigned numberOfFiles);
     String unknownFileSizeText();
 
@@ -213,6 +219,7 @@ namespace WebCore {
 #if PLATFORM(MAC)
     String builtInPDFPluginName();
     String pdfDocumentTypeDescription();
+    String postScriptDocumentTypeDescription();
     String keygenMenuItem512();
     String keygenMenuItem1024();
     String keygenMenuItem2048();
@@ -246,16 +253,15 @@ namespace WebCore {
     String validationMessageRangeUnderflowText(const String& minimum);
     String validationMessageRangeOverflowText(const String& maximum);
     String validationMessageStepMismatchText(const String& base, const String& step);
-#if ENABLE(CALENDAR_PICKER)
-    String calendarTodayText();
-    String calendarClearText();
-    String dateFormatYearText();
-    String dateFormatMonthText();
-    String dateFormatDayInMonthText();
+    String validationMessageBadInputForNumberText();
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+    String validationMessageBadInputForDateTimeText();
 #endif
 #if USE(SOUP)
     String unacceptableTLSCertificate();
 #endif
+
+    String clickToExitFullScreenText();
 
 #if !PLATFORM(CHROMIUM)
 #define WEB_UI_STRING(string, description) WebCore::localizedString(string)

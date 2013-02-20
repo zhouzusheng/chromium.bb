@@ -5,8 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "GrContext.h"
 #include "GrEffect.h"
+#include "GrBackendEffectFactory.h"
+#include "GrContext.h"
 #include "GrMemoryPool.h"
 #include "SkTLS.h"
 
@@ -18,6 +19,26 @@ SkTArray<GrEffectTestFactory*, true>* GrEffectTestFactory::GetFactories() {
     return &gFactories;
 }
 #endif
+
+namespace GrEffectUnitTest {
+const SkMatrix& TestMatrix(SkRandom* random) {
+    static SkMatrix gMatrices[5];
+    static bool gOnce;
+    if (!gOnce) {
+        gMatrices[0].reset();
+        gMatrices[1].setTranslate(SkIntToScalar(-100), SkIntToScalar(100));
+        gMatrices[2].setRotate(SkIntToScalar(17));
+        gMatrices[3].setRotate(SkIntToScalar(185));
+        gMatrices[3].postTranslate(SkIntToScalar(66), SkIntToScalar(-33));
+        gMatrices[3].postScale(SkIntToScalar(2), SK_ScalarHalf);
+        gMatrices[4].setRotate(SkIntToScalar(215));
+        gMatrices[4].set(SkMatrix::kMPersp0, SkFloatToScalar(0.00013f));
+        gMatrices[4].set(SkMatrix::kMPersp1, SkFloatToScalar(-0.000039f));
+        gOnce = true;
+    }
+    return gMatrices[random->nextULessThan(static_cast<uint32_t>(SK_ARRAY_COUNT(gMatrices)))];
+}
+}
 
 class GrEffect_Globals {
 public:
@@ -48,6 +69,11 @@ GrEffect::~GrEffect() {
 bool GrEffect::isOpaque(bool inputTextureIsOpaque) const {
     return false;
 }
+
+const char* GrEffect::name() const {
+    return this->getFactory().name();
+}
+
 
 bool GrEffect::isEqual(const GrEffect& s) const {
     if (this->numTextures() != s.numTextures()) {

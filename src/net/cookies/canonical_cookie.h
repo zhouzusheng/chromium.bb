@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/time.h"
 #include "net/base/net_export.h"
+#include "net/cookies/cookie_options.h"
 
 class GURL;
 
@@ -47,11 +48,13 @@ class NET_EXPORT CanonicalCookie {
 
   // Supports the default copy constructor.
 
-  // Creates a canonical cookie from parsed cookie.
-  // Canonicalizes and validates inputs.  May return NULL if an attribute
-  // value is invalid.
+  // Creates a new |CanonicalCookie| from the |cookie_line| and the
+  // |creation_time|. Canonicalizes and validates inputs. May return NULL if
+  // an attribut value is invalid.
   static CanonicalCookie* Create(const GURL& url,
-                                 const ParsedCookie& pc);
+                                 const std::string& cookie_line,
+                                 const base::Time& creation_time,
+                                 const CookieOptions& options);
 
   // Creates a canonical cookie from unparsed attribute values.
   // Canonicalizes and validates inputs.  May return NULL if an attribute
@@ -107,17 +110,30 @@ class NET_EXPORT CanonicalCookie {
     last_access_date_ = date;
   }
 
+  // Returns true if the given |url_path| path-matches the cookie-path as
+  // described in section 5.1.4 in RFC 6265.
   bool IsOnPath(const std::string& url_path) const;
-  bool IsDomainMatch(const std::string& scheme, const std::string& host) const;
+
+  // Returns true if the cookie domain matches the given |host| as described in
+  // section 5.1.3 of RFC 6265.
+  bool IsDomainMatch(const std::string& host) const;
+
+  // Returns true if the cookie should be included for the given request |url|.
+  // HTTP only cookies can be filter by using appropriate cookie |options|.
+  // PLEASE NOTE that this method does not check whether a cookie is expired or
+  // not!
+  bool IncludeForRequestURL(const GURL& url,
+                            const CookieOptions& options) const;
 
   std::string DebugString() const;
 
-  // Returns the cookie source when cookies are set for |url|.  This function
+  // Returns the cookie source when cookies are set for |url|. This function
   // is public for unit test purposes only.
   static std::string GetCookieSourceFromURL(const GURL& url);
   static std::string CanonPath(const GURL& url, const ParsedCookie& pc);
   static base::Time CanonExpiration(const ParsedCookie& pc,
-                                    const base::Time& current);
+                                    const base::Time& current,
+                                    const base::Time& server_time);
 
  private:
   // The source member of a canonical cookie is the origin of the URL that tried

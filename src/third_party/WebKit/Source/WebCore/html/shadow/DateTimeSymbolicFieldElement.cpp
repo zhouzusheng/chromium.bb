@@ -30,7 +30,6 @@
 #include "Font.h"
 #include "KeyboardEvent.h"
 #include "TextBreakIterator.h"
-#include "TextRun.h"
 #include <wtf/text/StringBuilder.h>
 #include <wtf/unicode/Unicode.h>
 
@@ -53,6 +52,7 @@ DateTimeSymbolicFieldElement::DateTimeSymbolicFieldElement(Document* document, F
     , m_symbols(symbols)
     , m_visibleEmptyValue(makeVisibleEmptyValue(symbols))
     , m_selectedIndex(-1)
+    , m_typeAhead(this)
 {
     ASSERT(!symbols.isEmpty());
 }
@@ -75,12 +75,11 @@ void DateTimeSymbolicFieldElement::handleKeyboardEvent(KeyboardEvent* keyboardEv
         return;
 
     keyboardEvent->setDefaultHandled();
-    for (unsigned index = 0; index < m_symbols.size(); ++index) {
-        if (!m_symbols[index].isEmpty() && WTF::Unicode::toLower(m_symbols[index][0]) == charCode) {
-            setValueAsInteger(index, DispatchEvent);
-            return;
-        }
-    }
+
+    int index = m_typeAhead.handleEvent(keyboardEvent, TypeAhead::MatchPrefix | TypeAhead::CycleFirstChar | TypeAhead::MatchIndex);
+    if (index < 0)
+        return;
+    setValueAsInteger(index, DispatchEvent);
 }
 
 bool DateTimeSymbolicFieldElement::hasValue() const
@@ -88,14 +87,12 @@ bool DateTimeSymbolicFieldElement::hasValue() const
     return m_selectedIndex >= 0;
 }
 
-int DateTimeSymbolicFieldElement::maximum() const
+void DateTimeSymbolicFieldElement::initialize(const AtomicString& pseudo, const String& axHelpText)
 {
-    return static_cast<int>(m_symbols.size());
-}
-
-int DateTimeSymbolicFieldElement::minimum() const
-{
-    return 1;
+    // The minimum and maximum below are exposed to users, and 1-based numbers
+    // are natural for symbolic fields. For example, the minimum value of a
+    // month field should be 1, not 0.
+    DateTimeFieldElement::initialize(pseudo, axHelpText, 1, static_cast<int>(m_symbols.size()));
 }
 
 void DateTimeSymbolicFieldElement::setEmptyValue(EventBehavior eventBehavior)
@@ -135,6 +132,12 @@ int DateTimeSymbolicFieldElement::valueAsInteger() const
     return m_selectedIndex;
 }
 
+int DateTimeSymbolicFieldElement::valueForARIAValueNow() const
+{
+    // Synchronize with minimum/maximum adjustment in initialize().
+    return m_selectedIndex + 1;
+}
+
 String DateTimeSymbolicFieldElement::visibleEmptyValue() const
 {
     return m_visibleEmptyValue;
@@ -143,6 +146,21 @@ String DateTimeSymbolicFieldElement::visibleEmptyValue() const
 String DateTimeSymbolicFieldElement::visibleValue() const
 {
     return hasValue() ? m_symbols[m_selectedIndex] : visibleEmptyValue();
+}
+
+int DateTimeSymbolicFieldElement::indexOfSelectedOption() const
+{
+    return m_selectedIndex;
+}
+
+int DateTimeSymbolicFieldElement::optionCount() const
+{
+    return m_symbols.size();
+}
+
+String DateTimeSymbolicFieldElement::optionAtIndex(int index) const
+{
+    return m_symbols[index];
 }
 
 } // namespace WebCore

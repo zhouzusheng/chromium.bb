@@ -50,7 +50,7 @@ template<class T> static v8::Handle<v8::Value> getV8Object(T* implementation, v8
 
 template<class Collection> static Collection* toNativeCollection(v8::Local<v8::Object> object)
 {
-    return reinterpret_cast<Collection*>(object->GetPointerFromInternalField(v8DOMWrapperObjectIndex));
+    return reinterpret_cast<Collection*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 }
 
 template<class T> static v8::Handle<v8::Value> getV8Object(PassRefPtr<T> implementation, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
@@ -63,7 +63,7 @@ template<class Collection, class ItemType> static v8::Handle<v8::Value> getNamed
 {
     // FIXME: assert object is a collection type
     ASSERT(V8DOMWrapper::maybeDOMWrapper(object));
-    ASSERT(V8DOMWrapper::domWrapperType(object) != &V8Node::info);
+    ASSERT(toWrapperTypeInfo(object) != &V8Node::info);
     Collection* collection = toNativeCollection<Collection>(object);
     AtomicString propertyName = toWebCoreAtomicStringWithNullCheck(name);
     return getV8Object<ItemType>(collection->namedItem(propertyName), creationContext, isolate);
@@ -85,7 +85,7 @@ template<class Collection, class ItemType> static v8::Handle<v8::Value> getIndex
 {
     // FIXME: Assert that object must be a collection type.
     ASSERT(V8DOMWrapper::maybeDOMWrapper(object));
-    ASSERT(V8DOMWrapper::domWrapperType(object) != &V8Node::info);
+    ASSERT(toWrapperTypeInfo(object) != &V8Node::info);
     Collection* collection = toNativeCollection<Collection>(object);
     return getV8Object<ItemType>(collection->item(index), creationContext, isolate);
 }

@@ -29,6 +29,7 @@
 #if USE(3D_GRAPHICS)
 
 #include "GraphicsContext3D.h"
+#include "GraphicsContext3DNEON.h"
 
 #include "CheckedInt.h"
 #include "DrawingBuffer.h"
@@ -167,30 +168,58 @@ GC3Denum GraphicsContext3D::computeImageSizeInBytes(GC3Denum format, GC3Denum ty
     return GraphicsContext3D::NO_ERROR;
 }
 
-bool GraphicsContext3D::extractImageData(Image* image,
-                                         GC3Denum format,
-                                         GC3Denum type,
-                                         bool flipY,
-                                         bool premultiplyAlpha,
-                                         bool ignoreGammaAndColorProfile,
-                                         Vector<uint8_t>& data)
+GraphicsContext3D::ImageExtractor::ImageExtractor(Image* image, ImageHtmlDomSource imageHtmlDomSource, bool premultiplyAlpha, bool ignoreGammaAndColorProfile)
 {
-    if (!image)
+    m_image = image;
+    m_imageHtmlDomSource = imageHtmlDomSource;
+    m_extractSucceeded = extractImage(premultiplyAlpha, ignoreGammaAndColorProfile);
+}
+
+bool GraphicsContext3D::packImageData(
+    Image* image,
+    const void* pixels,
+    GC3Denum format,
+    GC3Denum type,
+    bool flipY,
+    AlphaOp alphaOp,
+    SourceDataFormat sourceFormat, 
+    unsigned width,
+    unsigned height,
+    unsigned sourceUnpackAlignment,
+    Vector<uint8_t>& data)
+{
+    if (!pixels)
         return false;
-    if (!getImageData(image, format, type, premultiplyAlpha, ignoreGammaAndColorProfile, data))
+
+    unsigned packedSize;
+    // Output data is tightly packed (alignment == 1).
+    if (computeImageSizeInBytes(format, type, width, height, 1, &packedSize, 0) != GraphicsContext3D::NO_ERROR)
+        return false;
+    data.resize(packedSize);
+
+    if (!packPixels(reinterpret_cast<const uint8_t*>(pixels),
+        sourceFormat,
+        width,
+        height,
+        sourceUnpackAlignment,
+        format,
+        type,
+        alphaOp,
+        data.data()))
         return false;
     if (flipY) {
-        unsigned int componentsPerPixel, bytesPerComponent;
+        unsigned componentsPerPixel, bytesPerComponent;
         if (!computeFormatAndTypeParameters(format, type,
-                                            &componentsPerPixel,
-                                            &bytesPerComponent))
+            &componentsPerPixel,
+            &bytesPerComponent))
             return false;
         // The image data is tightly packed, and we upload it as such.
-        unsigned int unpackAlignment = 1;
-        flipVertically(data.data(), image->width(), image->height(),
-                       componentsPerPixel * bytesPerComponent,
-                       unpackAlignment);
+        unsigned unpackAlignment = 1;
+        flipVertically(data.data(), width, height,
+            componentsPerPixel * bytesPerComponent,
+            unpackAlignment);
     }
+
     if (ImageObserver *observer = image->imageObserver())
         observer->didDraw(image);
     return true;
@@ -525,6 +554,9 @@ void unpackOneRowOfBGRA16BigToRGBA8(const uint16_t* source, uint8_t* destination
 
 void unpackOneRowOfRGBA5551ToRGBA8(const uint16_t* source, uint8_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::unpackOneRowOfRGBA5551ToRGBA8(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         uint16_t packedValue = source[0];
         uint8_t r = packedValue >> 11;
@@ -541,6 +573,9 @@ void unpackOneRowOfRGBA5551ToRGBA8(const uint16_t* source, uint8_t* destination,
 
 void unpackOneRowOfRGBA4444ToRGBA8(const uint16_t* source, uint8_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::unpackOneRowOfRGBA4444ToRGBA8(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         uint16_t packedValue = source[0];
         uint8_t r = packedValue >> 12;
@@ -558,6 +593,9 @@ void unpackOneRowOfRGBA4444ToRGBA8(const uint16_t* source, uint8_t* destination,
 
 void unpackOneRowOfRGB565ToRGBA8(const uint16_t* source, uint8_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::unpackOneRowOfRGB565ToRGBA8(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         uint16_t packedValue = source[0];
         uint8_t r = packedValue >> 11;
@@ -947,6 +985,9 @@ void packOneRowOfRGBA8ToRGBA8Unmultiply(const uint8_t* source, uint8_t* destinat
 
 void packOneRowOfRGBA8ToUnsignedShort4444(const uint8_t* source, uint16_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::packOneRowOfRGBA8ToUnsignedShort4444(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         *destination = (((source[0] & 0xF0) << 8)
                         | ((source[1] & 0xF0) << 4)
@@ -992,6 +1033,9 @@ void packOneRowOfRGBA8ToUnsignedShort4444Unmultiply(const uint8_t* source, uint1
 
 void packOneRowOfRGBA8ToUnsignedShort5551(const uint8_t* source, uint16_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::packOneRowOfRGBA8ToUnsignedShort5551(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         *destination = (((source[0] & 0xF8) << 8)
                         | ((source[1] & 0xF8) << 3)
@@ -1037,6 +1081,9 @@ void packOneRowOfRGBA8ToUnsignedShort5551Unmultiply(const uint8_t* source, uint1
 
 void packOneRowOfRGBA8ToUnsignedShort565(const uint8_t* source, uint16_t* destination, unsigned int pixelsPerRow)
 {
+#if HAVE(ARM_NEON_INTRINSICS)
+    SIMD::packOneRowOfRGBA8ToUnsignedShort565(source, destination, pixelsPerRow);
+#endif
     for (unsigned int i = 0; i < pixelsPerRow; ++i) {
         *destination = (((source[0] & 0xF8) << 8)
                         | ((source[1] & 0xFC) << 3)

@@ -95,7 +95,8 @@ bool GLSurface::DeferSwapBuffers() {
 std::string GLSurface::GetExtensions() {
   // Use of GLSurfaceAdapter class means that we can't compare
   // GetCurrent() and this directly.
-  DCHECK_EQ(GetCurrent()->GetHandle(), GetHandle());
+  DCHECK(GetCurrent()->GetHandle() == GetHandle() ||
+         GetBackingFrameBufferObject());
   return std::string("");
 }
 
@@ -145,6 +146,9 @@ void* GLSurface::GetConfig() {
 unsigned GLSurface::GetFormat() {
   NOTIMPLEMENTED();
   return 0;
+}
+
+void GLSurface::GetVSyncParameters(const UpdateVSyncCallback& callback) {
 }
 
 GLSurface* GLSurface::GetCurrent() {
@@ -249,6 +253,10 @@ void* GLSurfaceAdapter::GetConfig() {
 
 unsigned GLSurfaceAdapter::GetFormat() {
   return surface_->GetFormat();
+}
+
+void GLSurfaceAdapter::GetVSyncParameters(const UpdateVSyncCallback& callback) {
+  surface_->GetVSyncParameters(callback);
 }
 
 GLSurfaceAdapter::~GLSurfaceAdapter() {}

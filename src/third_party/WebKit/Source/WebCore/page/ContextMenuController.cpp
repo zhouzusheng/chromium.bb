@@ -368,6 +368,9 @@ void ContextMenuController::contextMenuItemSelected(ContextMenuItem* item)
         else
             openNewWindow(m_hitTestResult.absoluteLinkURL(), frame);
         break;
+    case ContextMenuItemTagOpenLinkInThisWindow:
+        frame->loader()->loadFrameRequest(FrameLoadRequest(frame->document()->securityOrigin(), ResourceRequest(m_hitTestResult.absoluteLinkURL(), frame->loader()->outgoingReferrer())), false, false, 0, 0, MaybeSendReferrer);
+        break;
     case ContextMenuItemTagBold:
         frame->editor()->command("ToggleBold").execute();
         break;
@@ -699,9 +702,8 @@ static bool selectionContainsPossibleWord(Frame* frame)
     // Current algorithm: look for a character that's not just a separator.
     for (TextIterator it(frame->selection()->toNormalizedRange().get()); !it.atEnd(); it.advance()) {
         int length = it.length();
-        const UChar* characters = it.characters();
         for (int i = 0; i < length; ++i)
-            if (!(category(characters[i]) & (Separator_Space | Separator_Line | Separator_Paragraph)))
+            if (!(category(it.characterAt(i)) & (Separator_Space | Separator_Line | Separator_Paragraph)))
                 return true;
     }
     return false;
@@ -873,8 +875,8 @@ void ContextMenuController::populate()
                 if (!(frame->page() && frame->page()->inspectorController()->hasInspectorFrontendClient())) {
 #endif
 
-                // In GTK+ unavailable items are not hidden but insensitive
-#if PLATFORM(GTK)
+                // In GTK+ and EFL, unavailable items are not hidden but insensitive.
+#if PLATFORM(GTK) || PLATFORM(EFL)
                 appendItem(BackItem, m_contextMenu.get());
                 appendItem(ForwardItem, m_contextMenu.get());
                 appendItem(StopItem, m_contextMenu.get());
@@ -1096,9 +1098,9 @@ void ContextMenuController::addInspectElementItem()
 
     ContextMenuItem InspectElementItem(ActionType, ContextMenuItemTagInspectElement, contextMenuItemTagInspectElement());
 #if USE(CROSS_PLATFORM_CONTEXT_MENUS)
-    if (!m_contextMenu->items().isEmpty())
+    if (m_contextMenu && !m_contextMenu->items().isEmpty())
 #else
-    if (m_contextMenu->itemCount())
+    if (m_contextMenu && m_contextMenu->itemCount())
 #endif
         appendItem(*separatorItem(), m_contextMenu.get());
     appendItem(InspectElementItem, m_contextMenu.get());
@@ -1297,6 +1299,7 @@ void ContextMenuController::checkOrEnableIfNeeded(ContextMenuItem& item) const
 #endif
         case ContextMenuItemTagNoAction:
         case ContextMenuItemTagOpenLinkInNewWindow:
+        case ContextMenuItemTagOpenLinkInThisWindow:
         case ContextMenuItemTagDownloadLinkToDisk:
         case ContextMenuItemTagCopyLinkToClipboard:
         case ContextMenuItemTagOpenImageInNewWindow:

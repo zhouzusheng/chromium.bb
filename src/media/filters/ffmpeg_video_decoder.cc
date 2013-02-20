@@ -13,6 +13,7 @@
 #include "base/location.h"
 #include "base/message_loop_proxy.h"
 #include "base/string_number_conversions.h"
+#include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/limits.h"
@@ -55,14 +56,11 @@ static int GetThreadCount(CodecID codec_id) {
 }
 
 FFmpegVideoDecoder::FFmpegVideoDecoder(
-    const MessageLoopFactoryCB& message_loop_factory_cb,
-    Decryptor* decryptor)
-    : message_loop_factory_cb_(message_loop_factory_cb),
-      message_loop_(NULL),
+    const scoped_refptr<base::MessageLoopProxy>& message_loop)
+    : message_loop_(message_loop),
       state_(kUninitialized),
       codec_context_(NULL),
-      av_frame_(NULL),
-      decryptor_(decryptor) {
+      av_frame_(NULL) {
 }
 
 int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
@@ -91,11 +89,12 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
     natural_size = demuxer_stream_->video_decoder_config().natural_size();
   }
 
-  if (!VideoFrame::IsValidConfig(format, size, natural_size))
+  if (!VideoFrame::IsValidConfig(format, size, gfx::Rect(size), natural_size))
     return AVERROR(EINVAL);
 
   scoped_refptr<VideoFrame> video_frame =
-      VideoFrame::CreateFrame(format, size, natural_size, kNoTimestamp());
+      VideoFrame::CreateFrame(format, size, gfx::Rect(size), natural_size,
+                              kNoTimestamp());
 
   for (int i = 0; i < 3; i++) {
     frame->base[i] = video_frame->data(i);
@@ -133,22 +132,14 @@ static void ReleaseVideoBufferImpl(AVCodecContext* s, AVFrame* frame) {
 void FFmpegVideoDecoder::Initialize(const scoped_refptr<DemuxerStream>& stream,
                                     const PipelineStatusCB& status_cb,
                                     const StatisticsCB& statistics_cb) {
-  // Ensure FFmpeg has been initialized
-  FFmpegGlue::GetInstance();
-
-  if (!message_loop_) {
-    message_loop_ = base::ResetAndReturn(&message_loop_factory_cb_).Run();
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FFmpegVideoDecoder::Initialize, this,
-        stream, status_cb, statistics_cb));
-    return;
-  }
-
   DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(!demuxer_stream_);
+  PipelineStatusCB initialize_cb = BindToCurrentLoop(status_cb);
+
+  FFmpegGlue::InitializeFFmpeg();
+  DCHECK(!demuxer_stream_) << "Already initialized.";
 
   if (!stream) {
-    status_cb.Run(PIPELINE_ERROR_DECODE);
+    initialize_cb.Run(PIPELINE_ERROR_DECODE);
     return;
   }
 
@@ -156,34 +147,35 @@ void FFmpegVideoDecoder::Initialize(const scoped_refptr<DemuxerStream>& stream,
   statistics_cb_ = statistics_cb;
 
   if (!ConfigureDecoder()) {
-    status_cb.Run(PIPELINE_ERROR_DECODE);
+    initialize_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
     return;
   }
 
   // Success!
   state_ = kNormal;
-  status_cb.Run(PIPELINE_OK);
+  initialize_cb.Run(PIPELINE_OK);
 }
 
 void FFmpegVideoDecoder::Read(const ReadCB& read_cb) {
-  // Complete operation asynchronously on different stack of execution as per
-  // the API contract of VideoDecoder::Read()
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegVideoDecoder::DoRead, this, read_cb));
-}
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(!read_cb.is_null());
+  CHECK_NE(state_, kUninitialized);
+  CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
+  read_cb_ = BindToCurrentLoop(read_cb);
 
-void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
-  if (!message_loop_->BelongsToCurrentThread()) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FFmpegVideoDecoder::Reset, this, closure));
+  // Return empty frames if decoding has finished.
+  if (state_ == kDecodeFinished) {
+    base::ResetAndReturn(&read_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
     return;
   }
 
-  DCHECK(reset_cb_.is_null());
-  reset_cb_ = closure;
+  ReadFromDemuxerStream();
+}
 
-  if (decryptor_)
-    decryptor_->CancelDecrypt(Decryptor::kVideo);
+void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(reset_cb_.is_null());
+  reset_cb_ = BindToCurrentLoop(closure);
 
   // Defer the reset if a read is pending.
   if (!read_cb_.is_null())
@@ -197,31 +189,21 @@ void FFmpegVideoDecoder::DoReset() {
 
   avcodec_flush_buffers(codec_context_);
   state_ = kNormal;
-  reset_cb_.Run();
-  reset_cb_.Reset();
+  base::ResetAndReturn(&reset_cb_).Run();
 }
 
 void FFmpegVideoDecoder::Stop(const base::Closure& closure) {
-  if (!message_loop_->BelongsToCurrentThread()) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(
-        &FFmpegVideoDecoder::Stop, this, closure));
-    return;
-  }
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  base::ScopedClosureRunner runner(BindToCurrentLoop(closure));
 
-  if (state_ == kUninitialized) {
-    closure.Run();
+  if (state_ == kUninitialized)
     return;
-  }
-
-  if (decryptor_)
-    decryptor_->CancelDecrypt(Decryptor::kVideo);
 
   if (!read_cb_.is_null())
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
 
   ReleaseFFmpegResources();
   state_ = kUninitialized;
-  closure.Run();
 }
 
 FFmpegVideoDecoder::~FFmpegVideoDecoder() {
@@ -230,51 +212,40 @@ FFmpegVideoDecoder::~FFmpegVideoDecoder() {
   DCHECK(!av_frame_);
 }
 
-void FFmpegVideoDecoder::DoRead(const ReadCB& read_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK(!read_cb.is_null());
-  CHECK_NE(state_, kUninitialized);
-  CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
-
-  // Return empty frames if decoding has finished.
-  if (state_ == kDecodeFinished) {
-    read_cb.Run(kOk, VideoFrame::CreateEmptyFrame());
-    return;
-  }
-
-  read_cb_ = read_cb;
-  ReadFromDemuxerStream();
-}
-
 void FFmpegVideoDecoder::ReadFromDemuxerStream() {
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK(!read_cb_.is_null());
 
-  demuxer_stream_->Read(base::Bind(&FFmpegVideoDecoder::DecryptOrDecodeBuffer,
-                                   this));
+  demuxer_stream_->Read(base::Bind(&FFmpegVideoDecoder::BufferReady, this));
 }
 
-void FFmpegVideoDecoder::DecryptOrDecodeBuffer(
-    DemuxerStream::Status status,
-    const scoped_refptr<DecoderBuffer>& buffer) {
-  DCHECK_EQ(status != DemuxerStream::kOk, !buffer) << status;
-  // TODO(scherkus): fix FFmpegDemuxerStream::Read() to not execute our read
-  // callback on the same execution stack so we can get rid of forced task post.
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegVideoDecoder::DoDecryptOrDecodeBuffer, this, status, buffer));
-}
-
-void FFmpegVideoDecoder::DoDecryptOrDecodeBuffer(
+void FFmpegVideoDecoder::BufferReady(
     DemuxerStream::Status status,
     const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK_NE(state_, kDecodeFinished);
+  DCHECK_EQ(status != DemuxerStream::kOk, !buffer) << status;
 
   if (state_ == kUninitialized)
     return;
 
   DCHECK(!read_cb_.is_null());
+
+  if (status == DemuxerStream::kConfigChanged) {
+    if (!ConfigureDecoder()) {
+      base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
+      state_ = kDecodeFinished;
+      if (!reset_cb_.is_null())
+        base::ResetAndReturn(&reset_cb_).Run();
+      return;
+    }
+
+    if (reset_cb_.is_null()) {
+      ReadFromDemuxerStream();
+      return;
+    }
+  }
 
   if (!reset_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
@@ -287,63 +258,7 @@ void FFmpegVideoDecoder::DoDecryptOrDecodeBuffer(
     return;
   }
 
-  if (status == DemuxerStream::kConfigChanged) {
-    if (!ConfigureDecoder()) {
-      base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
-      return;
-    }
-
-    ReadFromDemuxerStream();
-    return;
-  }
-
   DCHECK_EQ(status, DemuxerStream::kOk);
-
-  if (buffer->GetDecryptConfig() && buffer->GetDataSize()) {
-    decryptor_->Decrypt(Decryptor::kVideo,
-                        buffer,
-                        base::Bind(&FFmpegVideoDecoder::BufferDecrypted, this));
-    return;
-  }
-
-  DecodeBuffer(buffer);
-}
-
-void FFmpegVideoDecoder::BufferDecrypted(
-    Decryptor::Status decrypt_status,
-    const scoped_refptr<DecoderBuffer>& buffer) {
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &FFmpegVideoDecoder::DoBufferDecrypted, this, decrypt_status, buffer));
-}
-
-void FFmpegVideoDecoder::DoBufferDecrypted(
-    Decryptor::Status decrypt_status,
-    const scoped_refptr<DecoderBuffer>& buffer) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK_NE(state_, kDecodeFinished);
-
-  if (state_ == kUninitialized)
-    return;
-
-  DCHECK(!read_cb_.is_null());
-
-  if (!reset_cb_.is_null()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
-    DoReset();
-    return;
-  }
-
-  if (decrypt_status == Decryptor::kNoKey ||
-      decrypt_status == Decryptor::kError) {
-    state_ = kDecodeFinished;
-    base::ResetAndReturn(&read_cb_).Run(kDecryptError, NULL);
-    return;
-  }
-
-  DCHECK_EQ(Decryptor::kSuccess, decrypt_status);
-  DCHECK(buffer);
-  DCHECK(buffer->GetDataSize());
-  DCHECK(!buffer->GetDecryptConfig());
   DecodeBuffer(buffer);
 }
 
@@ -506,6 +421,11 @@ bool FFmpegVideoDecoder::ConfigureDecoder() {
     return false;
   }
 
+  if (config.is_encrypted()) {
+    DLOG(ERROR) << "Encrypted video stream not supported.";
+    return false;
+  }
+
   // Release existing decoder resources if necessary.
   ReleaseFFmpegResources();
 
@@ -516,7 +436,6 @@ bool FFmpegVideoDecoder::ConfigureDecoder() {
   // Enable motion vector search (potentially slow), strong deblocking filter
   // for damaged macroblocks, and set our error detection sensitivity.
   codec_context_->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
-  codec_context_->err_recognition = AV_EF_CAREFUL;
   codec_context_->thread_count = GetThreadCount(codec_context_->codec_id);
   codec_context_->opaque = this;
   codec_context_->flags |= CODEC_FLAG_EMU_EDGE;

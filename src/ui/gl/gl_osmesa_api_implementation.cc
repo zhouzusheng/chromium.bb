@@ -40,11 +40,25 @@ OSMESAApi::OSMESAApi() {
 OSMESAApi::~OSMESAApi() {
 }
 
+OSMESAApiBase::OSMESAApiBase()
+    : driver_(NULL) {
+}
+
+OSMESAApiBase::~OSMESAApiBase() {
+}
+
+void OSMESAApiBase::InitializeBase(DriverOSMESA* driver) {
+  driver_ = driver;
+}
+
 RealOSMESAApi::RealOSMESAApi() {
 }
 
+RealOSMESAApi::~RealOSMESAApi() {
+}
+
 void RealOSMESAApi::Initialize(DriverOSMESA* driver) {
-  driver_ = driver;
+  InitializeBase(driver);
 }
 
 }  // namespace gfx

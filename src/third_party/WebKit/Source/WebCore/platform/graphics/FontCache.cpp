@@ -62,7 +62,7 @@ struct FontPlatformDataCacheKey {
 public:
     FontPlatformDataCacheKey(const AtomicString& family = AtomicString(), unsigned size = 0, unsigned weight = 0, bool italic = false,
                              bool isPrinterFont = false, FontRenderingMode renderingMode = NormalRenderingMode, FontOrientation orientation = Horizontal,
-                             TextOrientation textOrientation = TextOrientationVerticalRight, FontWidthVariant widthVariant = RegularWidth)
+                             FontWidthVariant widthVariant = RegularWidth)
         : m_size(size)
         , m_weight(weight)
         , m_family(family)
@@ -70,7 +70,6 @@ public:
         , m_printerFont(isPrinterFont)
         , m_renderingMode(renderingMode)
         , m_orientation(orientation)
-        , m_textOrientation(textOrientation)
         , m_widthVariant(widthVariant)
     {
     }
@@ -82,7 +81,7 @@ public:
     {
         return equalIgnoringCase(m_family, other.m_family) && m_size == other.m_size && 
                m_weight == other.m_weight && m_italic == other.m_italic && m_printerFont == other.m_printerFont &&
-               m_renderingMode == other.m_renderingMode && m_orientation == other.m_orientation && m_textOrientation == other.m_textOrientation && m_widthVariant == other.m_widthVariant;
+               m_renderingMode == other.m_renderingMode && m_orientation == other.m_orientation && m_widthVariant == other.m_widthVariant;
     }
 
     unsigned m_size;
@@ -92,7 +91,6 @@ public:
     bool m_printerFont;
     FontRenderingMode m_renderingMode;
     FontOrientation m_orientation;
-    TextOrientation m_textOrientation;
     FontWidthVariant m_widthVariant;
 
 private:
@@ -106,7 +104,7 @@ inline unsigned computeHash(const FontPlatformDataCacheKey& fontKey)
         fontKey.m_size,
         fontKey.m_weight,
         fontKey.m_widthVariant,
-        static_cast<unsigned>(fontKey.m_textOrientation) << 4 | static_cast<unsigned>(fontKey.m_orientation) << 3 | static_cast<unsigned>(fontKey.m_italic) << 2 | static_cast<unsigned>(fontKey.m_printerFont) << 1 | static_cast<unsigned>(fontKey.m_renderingMode)
+        static_cast<unsigned>(fontKey.m_orientation) << 3 | static_cast<unsigned>(fontKey.m_italic) << 2 | static_cast<unsigned>(fontKey.m_printerFont) << 1 | static_cast<unsigned>(fontKey.m_renderingMode)
     };
     return StringHasher::hashMemory<sizeof(hashCodes)>(hashCodes);
 }
@@ -134,8 +132,8 @@ static FontPlatformDataCache* gFontPlatformDataCache = 0;
 static const AtomicString& alternateFamilyName(const AtomicString& familyName)
 {
     // Alias Courier <-> Courier New
-    DEFINE_STATIC_LOCAL(AtomicString, courier, ("Courier"));
-    DEFINE_STATIC_LOCAL(AtomicString, courierNew, ("Courier New"));
+    DEFINE_STATIC_LOCAL(AtomicString, courier, ("Courier", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, courierNew, ("Courier New", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, courier))
         return courierNew;
 #if !OS(WINDOWS)
@@ -147,16 +145,16 @@ static const AtomicString& alternateFamilyName(const AtomicString& familyName)
 #endif
 
     // Alias Times and Times New Roman.
-    DEFINE_STATIC_LOCAL(AtomicString, times, ("Times"));
-    DEFINE_STATIC_LOCAL(AtomicString, timesNewRoman, ("Times New Roman"));
+    DEFINE_STATIC_LOCAL(AtomicString, times, ("Times", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, timesNewRoman, ("Times New Roman", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, times))
         return timesNewRoman;
     if (equalIgnoringCase(familyName, timesNewRoman))
         return times;
     
     // Alias Arial and Helvetica
-    DEFINE_STATIC_LOCAL(AtomicString, arial, ("Arial"));
-    DEFINE_STATIC_LOCAL(AtomicString, helvetica, ("Helvetica"));
+    DEFINE_STATIC_LOCAL(AtomicString, arial, ("Arial", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, helvetica, ("Helvetica", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, arial))
         return helvetica;
     if (equalIgnoringCase(familyName, helvetica))
@@ -165,14 +163,14 @@ static const AtomicString& alternateFamilyName(const AtomicString& familyName)
 #if OS(WINDOWS)
     // On Windows, bitmap fonts are blocked altogether so that we have to 
     // alias MS Sans Serif (bitmap font) -> Microsoft Sans Serif (truetype font)
-    DEFINE_STATIC_LOCAL(AtomicString, msSans, ("MS Sans Serif"));
-    DEFINE_STATIC_LOCAL(AtomicString, microsoftSans, ("Microsoft Sans Serif"));
+    DEFINE_STATIC_LOCAL(AtomicString, msSans, ("MS Sans Serif", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, microsoftSans, ("Microsoft Sans Serif", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, msSans))
         return microsoftSans;
 
     // Alias MS Serif (bitmap) -> Times New Roman (truetype font). There's no 
-    // 'Microsoft Sans Serif-equivalent' for Serif. 
-    static AtomicString msSerif("MS Serif");
+    // 'Microsoft Sans Serif-equivalent' for Serif.
+    DEFINE_STATIC_LOCAL(AtomicString, msSerif, ("MS Serif", AtomicString::ConstructFromLiteral));
     if (equalIgnoringCase(familyName, msSerif))
         return timesNewRoman;
 #endif
@@ -201,7 +199,7 @@ FontPlatformData* FontCache::getCachedFontPlatformData(const FontDescription& fo
 
     FontPlatformDataCacheKey key(familyName, fontDescription.computedPixelSize(), fontDescription.weight(), fontDescription.italic(),
                                  fontDescription.usePrinterFont(), fontDescription.renderingMode(), fontDescription.orientation(),
-                                 fontDescription.textOrientation(), fontDescription.widthVariant());
+                                 fontDescription.widthVariant());
     FontPlatformData* result = 0;
     bool foundResult;
     FontPlatformDataCache::iterator it = gFontPlatformDataCache->find(key);
@@ -357,6 +355,8 @@ void FontCache::releaseFontData(const SimpleFontData* fontData)
 
     FontDataCache::iterator it = gFontDataCache->find(fontData->platformData());
     ASSERT(it != gFontDataCache->end());
+    if (it == gFontDataCache->end())
+        return;
 
     ASSERT(it->value.second);
     if (!--it->value.second)

@@ -30,8 +30,7 @@
 #include "DocumentStyleSheetCollection.h"
 #include "Element.h"
 #include "FloatQuad.h"
-#include "FractionalLayoutUnit.h"
-#include "LayoutTypes.h"
+#include "LayoutRect.h"
 #include "PaintPhase.h"
 #include "RenderObjectChildList.h"
 #include "RenderStyle.h"
@@ -107,11 +106,6 @@ enum MarkingBehavior {
     MarkContainingBlockChain,
 };
 
-enum PlaceGeneratedRunInFlag {
-    PlaceGeneratedRunIn,
-    DoNotPlaceGeneratedRunIn
-};
-
 enum MapCoordinatesMode {
     IsFixed = 1 << 0,
     UseTransforms = 1 << 1,
@@ -155,12 +149,9 @@ const int showTreeCharacterOffset = 39;
 
 // Base class for all rendering tree objects.
 class RenderObject : public CachedImageClient {
-    friend class LayoutRepainter;
     friend class RenderBlock;
-    friend class RenderBox;
     friend class RenderLayer;
     friend class RenderObjectChildList;
-    friend class RenderSVGContainer;
 public:
     // Anonymous objects should pass the document as their node, and they will then automatically be
     // marked as anonymous in the constructor.
@@ -177,6 +168,11 @@ public:
     RenderObject* previousSibling() const { return m_previous; }
     RenderObject* nextSibling() const { return m_next; }
 
+    // FIXME: These should be renamed slowFirstChild, slowLastChild, etc.
+    // to discourage their use. The virtualChildren() call inside these
+    // can be slow for hot code paths.
+    // Currently, some subclasses like RenderBlock, override these NON-virtual
+    // functions to make these fast when we already have a more specific pointer type.
     RenderObject* firstChild() const
     {
         if (const RenderObjectChildList* children = virtualChildren())
@@ -239,7 +235,7 @@ public:
     // Function to return our enclosing flow thread if we are contained inside one.
     RenderFlowThread* enclosingRenderFlowThread() const;
 
-    RenderNamedFlowThread* enclosingRenderNamedFlowThread() const;
+    RenderNamedFlowThread* renderNamedFlowThreadWrapper() const;
 
     virtual bool isEmpty() const { return firstChild() == 0; }
 
@@ -279,6 +275,8 @@ public:
     virtual void removeChild(RenderObject*);
     virtual bool createsAnonymousWrapper() const { return false; }
     //////////////////////////////////////////
+
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     //////////////////////////////////////////
@@ -327,6 +325,8 @@ private:
 
 public:
     RenderArena* renderArena() const { return document()->renderArena(); }
+
+    bool isPseudoElement() const { return node() && node()->isPseudoElement(); }
 
     virtual bool isBR() const { return false; }
     virtual bool isBlockFlow() const { return false; }
@@ -393,6 +393,8 @@ public:
     virtual bool isRenderFullScreen() const { return false; }
     virtual bool isRenderFullScreenPlaceholder() const { return false; }
 #endif
+
+    virtual bool isRenderGrid() const { return false; }
 
     virtual bool isRenderFlowThread() const { return false; }
     virtual bool isRenderNamedFlowThread() const { return false; }
@@ -482,6 +484,7 @@ public:
     // to inherit from RenderSVGObject -> RenderObject (some need RenderBlock inheritance for instance)
     virtual void setNeedsTransformUpdate() { }
     virtual void setNeedsBoundariesUpdate();
+    virtual bool needsBoundariesUpdate() { return false; }
 
     // Per SVG 1.1 objectBoundingBox ignores clipping, masking, filter effects, opacity and stroke-width.
     // This is used for all computation of objectBoundingBox relative units and by SVGLocatable::getBBox().
@@ -609,19 +612,21 @@ public:
     
     virtual void updateDragState(bool dragOn);
 
-    // Inlined into RenderView.h for performance and to avoid a cyclic dependency.
-    RenderView* view() const;
+    RenderView* view() const { return document()->renderView(); };
 
     // Returns true if this renderer is rooted, and optionally returns the hosting view (the root of the hierarchy).
     bool isRooted(RenderView** = 0) const;
 
     Node* node() const { return isAnonymous() ? 0 : m_node; }
+    Node* nonPseudoNode() const { return isPseudoElement() ? 0 : node(); }
+
+    // FIXME: Why does RenderWidget need this?
+    void clearNode() { m_node = 0; }
 
     // Returns the styled node that caused the generation of this renderer.
     // This is the same as node() except for renderers of :before and :after
     // pseudo elements for which their parent node is returned.
-    Node* generatingNode() const { return m_node == document() ? 0 : m_node; }
-    void setNode(Node* node) { m_node = node; }
+    Node* generatingNode() const { return isPseudoElement() ? node()->parentOrHostNode() : node(); }
 
     Document* document() const { return m_node->document(); }
     Frame* frame() const { return document()->frame(); }
@@ -710,6 +715,9 @@ public:
     // Set the style of the object and update the state of the object accordingly.
     virtual void setStyle(PassRefPtr<RenderStyle>);
 
+    // Set the style of the object if it's generated content.
+    void setPseudoStyle(PassRefPtr<RenderStyle>);
+
     // Updates only the local style ptr of the object.  Does not update the state of the object,
     // and so only should be called when the style is known not to have changed (or from setStyle).
     void setStyleInternal(PassRefPtr<RenderStyle> style) { m_style = style; }
@@ -729,8 +737,8 @@ public:
     }
 
     // Convert a local quad into the coordinate system of container, taking transforms into account.
-    FloatQuad localToContainerQuad(const FloatQuad&, RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
-    FloatPoint localToContainerPoint(const FloatPoint&, RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
+    FloatQuad localToContainerQuad(const FloatQuad&, const RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
+    FloatPoint localToContainerPoint(const FloatPoint&, const RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
 
     // Return the offset from the container() renderer (excluding transforms). In multi-column layout,
     // different offsets apply at different points, so return the offset that applies to the given point.
@@ -779,7 +787,7 @@ public:
     RenderLayerModelObject* containerForRepaint() const;
     // Actually do the repaint of rect r for this object which has been computed in the coordinate space
     // of repaintContainer. If repaintContainer is 0, repaint via the view.
-    void repaintUsingContainer(RenderLayerModelObject* repaintContainer, const IntRect&, bool immediate = false) const;
+    void repaintUsingContainer(const RenderLayerModelObject* repaintContainer, const IntRect&, bool immediate = false) const;
     
     // Repaint the entire object.  Called when, e.g., the color of a border changes, or when a border
     // style changes.
@@ -789,7 +797,7 @@ public:
     void repaintRectangle(const LayoutRect&, bool immediate = false) const;
 
     // Repaint only if our old bounds and new bounds are different. The caller may pass in newBounds and newOutlineBox if they are known.
-    bool repaintAfterLayoutIfNeeded(RenderLayerModelObject* repaintContainer, const LayoutRect& oldBounds, const LayoutRect& oldOutlineBox, const LayoutRect* newBoundsPtr = 0, const LayoutRect* newOutlineBoxPtr = 0);
+    bool repaintAfterLayoutIfNeeded(const RenderLayerModelObject* repaintContainer, const LayoutRect& oldBounds, const LayoutRect& oldOutlineBox, const LayoutRect* newBoundsPtr = 0, const LayoutRect* newOutlineBoxPtr = 0);
 
     // Repaint only if the object moved.
     virtual void repaintDuringLayoutIfMoved(const LayoutRect&);
@@ -806,8 +814,9 @@ public:
         return clippedOverflowRectForRepaint(0);
     }
     IntRect pixelSnappedAbsoluteClippedOverflowRect() const;
-    virtual LayoutRect clippedOverflowRectForRepaint(RenderLayerModelObject* repaintContainer) const;
-    virtual LayoutRect rectWithOutlineForRepaint(RenderLayerModelObject* repaintContainer, LayoutUnit outlineWidth) const;
+    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const;
+    virtual LayoutRect rectWithOutlineForRepaint(const RenderLayerModelObject* repaintContainer, LayoutUnit outlineWidth) const;
+    virtual LayoutRect outlineBoundsForRepaint(const RenderLayerModelObject* /*repaintContainer*/, const RenderGeometryMap* = 0) const { return LayoutRect(); }
 
     // Given a rect in the object's coordinate space, compute a rect suitable for repainting
     // that rect in view coordinates.
@@ -817,8 +826,8 @@ public:
     }
     // Given a rect in the object's coordinate space, compute a rect suitable for repainting
     // that rect in the coordinate space of repaintContainer.
-    virtual void computeRectForRepaint(RenderLayerModelObject* repaintContainer, LayoutRect&, bool fixed = false) const;
-    virtual void computeFloatRectForRepaint(RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed = false) const;
+    virtual void computeRectForRepaint(const RenderLayerModelObject* repaintContainer, LayoutRect&, bool fixed = false) const;
+    virtual void computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed = false) const;
 
     // If multiple-column layout results in applying an offset to the given point, add the same
     // offset to the given size.
@@ -860,7 +869,7 @@ public:
     // A single rectangle that encompasses all of the selected objects within this object.  Used to determine the tightest
     // possible bounding box for the selection.
     LayoutRect selectionRect(bool clipToVisibleContent = true) { return selectionRectForRepaint(0, clipToVisibleContent); }
-    virtual LayoutRect selectionRectForRepaint(RenderLayerModelObject* /*repaintContainer*/, bool /*clipToVisibleContent*/ = true) { return LayoutRect(); }
+    virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* /*repaintContainer*/, bool /*clipToVisibleContent*/ = true) { return LayoutRect(); }
 
     virtual bool canBeSelectionLeaf() const { return false; }
     bool hasSelectedChildren() const { return selectionState() != SelectionNone; }
@@ -928,7 +937,7 @@ public:
 
     // Map points and quads through elements, potentially via 3d transforms. You should never need to call these directly; use
     // localToAbsolute/absoluteToLocal methods instead.
-    virtual void mapLocalToContainer(RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const;
 
     // Pushes state onto RenderGeometryMap about how to map coordinates from this renderer to its container, or ancestorToStopAt (whichever is encountered first).
@@ -977,14 +986,15 @@ protected:
     virtual void willBeDestroyed();
     void arenaDelete(RenderArena*, void* objectBase);
 
-    virtual LayoutRect outlineBoundsForRepaint(RenderLayerModelObject* /*repaintContainer*/, LayoutPoint* /*cachedOffsetToRepaintContainer*/ = 0) const { return LayoutRect(); }
-
     virtual bool canBeReplacedWithInlineRunIn() const;
 
     virtual void insertedIntoTree();
     virtual void willBeRemovedFromTree();
 
 private:
+    void removeFromRenderFlowThread();
+    void removeFromRenderFlowThreadRecursive(RenderFlowThread*);
+
     RenderStyle* cachedFirstLineStyle() const;
     StyleDifference adjustStyleDifference(StyleDifference, unsigned contextSensitiveProperties) const;
 
@@ -1260,6 +1270,13 @@ inline int adjustForAbsoluteZoom(int value, RenderObject* renderer)
 {
     return adjustForAbsoluteZoom(value, renderer->style());
 }
+
+#if ENABLE(SUBPIXEL_LAYOUT)
+inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, RenderObject* renderer)
+{
+    return adjustLayoutUnitForAbsoluteZoom(value, renderer->style());
+}
+#endif
 
 inline void adjustFloatQuadForAbsoluteZoom(FloatQuad& quad, RenderObject* renderer)
 {

@@ -33,7 +33,15 @@
 #include <wtf/Uint8ClampedArray.h>
 #include <wtf/Vector.h>
 
+#if ENABLE(OPENCL)
+#include "FilterContextOpenCL.h"
+#endif
+
 static const float kMaxFilterSize = 5000.0f;
+
+#if USE(SKIA)
+class SkImageFilter;
+#endif
 
 namespace WebCore {
 
@@ -41,6 +49,10 @@ class Filter;
 class FilterEffect;
 class ImageBuffer;
 class TextStream;
+
+#if USE(SKIA)
+class SkiaImageFilterBuilder;
+#endif
 
 typedef Vector<RefPtr<FilterEffect> > FilterEffectVector;
 
@@ -62,6 +74,12 @@ public:
     void copyUnmultipliedImage(Uint8ClampedArray* destination, const IntRect&);
     void copyPremultipliedImage(Uint8ClampedArray* destination, const IntRect&);
 
+#if ENABLE(OPENCL)
+    OpenCLHandle openCLImage() { return m_openCLImageResult; }
+    void setOpenCLImage(OpenCLHandle openCLImage) { m_openCLImageResult = openCLImage; }
+    ImageBuffer* openCLImageToImageBuffer();
+#endif
+
     FilterEffectVector& inputEffects() { return m_inputEffects; }
     FilterEffect* inputEffect(unsigned) const;
     unsigned numberOfEffectInputs() const { return m_inputEffects.size(); }
@@ -69,7 +87,12 @@ public:
     inline bool hasResult() const
     {
         // This function needs platform specific checks, if the memory managment is not done by FilterEffect.
-        return m_imageBufferResult || m_unmultipliedImageResult || m_premultipliedImageResult;
+        return m_imageBufferResult
+#if ENABLE(OPENCL)
+            || m_openCLImageResult
+#endif
+            || m_unmultipliedImageResult
+            || m_premultipliedImageResult;
     }
 
     IntRect drawingRegionOfInputImage(const IntRect&) const;
@@ -93,8 +116,12 @@ public:
     virtual void correctFilterResultIfNeeded() { }
 
     virtual void platformApplySoftware() = 0;
+#if ENABLE(OPENCL)
+    virtual bool platformApplyOpenCL();
+#endif
 #if USE(SKIA)
     virtual bool platformApplySkia() { return false; }
+    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*) { return 0; }
 #endif
     virtual void dump() = 0;
 
@@ -140,6 +167,9 @@ protected:
     ImageBuffer* createImageBufferResult();
     Uint8ClampedArray* createUnmultipliedImageResult();
     Uint8ClampedArray* createPremultipliedImageResult();
+#if ENABLE(OPENCL)
+    OpenCLHandle createOpenCLImageResult(uint8_t* = 0);
+#endif
 
     // Return true if the filter will only operate correctly on valid RGBA values, with
     // alpha in [0,255] and each color component in [0, alpha].
@@ -153,6 +183,9 @@ private:
     RefPtr<Uint8ClampedArray> m_unmultipliedImageResult;
     RefPtr<Uint8ClampedArray> m_premultipliedImageResult;
     FilterEffectVector m_inputEffects;
+#if ENABLE(OPENCL)
+    OpenCLHandle m_openCLImageResult;
+#endif
 
     bool m_alphaImage;
 

@@ -772,7 +772,7 @@ WebInspector.DOMDocument = function(domAgent, payload)
 {
     WebInspector.DOMNode.call(this, domAgent, this, false, payload);
     this.documentURL = payload.documentURL || "";
-    this.baseURL = /** @type {string} */ payload.baseURL;
+    this.baseURL = /** @type {string} */ (payload.baseURL);
     console.assert(this.baseURL);
     this.xmlVersion = payload.xmlVersion;
     this._listeners = {};
@@ -1196,19 +1196,19 @@ WebInspector.DOMAgent.prototype = {
     },
 
     /**
-     * @param {?number} nodeId
+     * @param {DOMAgent.NodeId=} nodeId
      * @param {string=} mode
+     * @param {RuntimeAgent.RemoteObjectId=} objectId
      */
-    highlightDOMNode: function(nodeId, mode)
+    highlightDOMNode: function(nodeId, mode, objectId)
     {
         if (this._hideDOMNodeHighlightTimeout) {
             clearTimeout(this._hideDOMNodeHighlightTimeout);
             delete this._hideDOMNodeHighlightTimeout;
         }
 
-        this._highlightedDOMNodeId = nodeId;
-        if (nodeId)
-            DOMAgent.highlightNode(nodeId, this._buildHighlightConfig(mode));
+        if (objectId || nodeId)
+            DOMAgent.highlightNode(this._buildHighlightConfig(mode), objectId ? undefined : nodeId, objectId);
         else
             DOMAgent.hideHighlight();
     },
@@ -1219,7 +1219,7 @@ WebInspector.DOMAgent.prototype = {
     },
 
     /**
-     * @param {?DOMAgent.NodeId} nodeId
+     * @param {DOMAgent.NodeId} nodeId
      */
     highlightDOMNodeForTwoSeconds: function(nodeId)
     {
@@ -1280,11 +1280,12 @@ WebInspector.DOMAgent.prototype = {
     {
         const injectedFunction = function() {
             const touchEvents = ["ontouchstart", "ontouchend", "ontouchmove", "ontouchcancel"];
+            var recepients = [window.__proto__, document.__proto__];
             for (var i = 0; i < touchEvents.length; ++i) {
-                if (!(touchEvents[i] in window.__proto__))
-                    Object.defineProperty(window.__proto__, touchEvents[i], { value: null, writable: true, configurable: true, enumerable: true });
-                if (!(touchEvents[i] in document.__proto__))
-                    Object.defineProperty(document.__proto__, touchEvents[i], { value: null, writable: true, configurable: true, enumerable: true });
+                for (var j = 0; j < recepients.length; ++j) {
+                    if (!(touchEvents[i] in recepients[j]))
+                        Object.defineProperty(recepients[j], touchEvents[i], { value: null, writable: true, configurable: true, enumerable: true });
+                }
             }
         }
 

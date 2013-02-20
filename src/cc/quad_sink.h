@@ -2,19 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCQuadSink_h
-#define CCQuadSink_h
+#ifndef CC_QUAD_SINK_H_
+#define CC_QUAD_SINK_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
 
 namespace cc {
 
 class DrawQuad;
+class SharedQuadState;
 
 struct AppendQuadsData;
-struct SharedQuadState;
 
-class QuadSink {
+class CC_EXPORT QuadSink {
 public:
     virtual ~QuadSink() { }
 
@@ -27,4 +28,4 @@ public:
 };
 
 }
-#endif // CCQuadCuller_h
+#endif  // CC_QUAD_SINK_H_

@@ -137,9 +137,7 @@ String WebSocketChannel::extensions()
 ThreadableWebSocketChannel::SendResult WebSocketChannel::send(const String& message)
 {
     LOG(Network, "WebSocketChannel %p send %s", this, message.utf8().data());
-    CString utf8 = message.utf8(true);
-    if (utf8.isNull() && message.length())
-        return InvalidMessage;
+    CString utf8 = message.utf8(String::StrictConversionReplacingUnpairedSurrogatesWithFFFD);
     enqueueTextFrame(utf8);
     // According to WebSocket API specification, WebSocket.send() should return void instead
     // of boolean. However, our implementation still returns boolean due to compatibility
@@ -196,7 +194,7 @@ void WebSocketChannel::fail(const String& reason)
     ASSERT(!m_suspended);
     if (m_document) {
         InspectorInstrumentation::didReceiveWebSocketFrameError(m_document, m_identifier, reason);
-        m_document->addConsoleMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, reason, m_handshake->clientOrigin());
+        m_document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, "WebSocket connection to '" + m_handshake->url().string() + "' failed: " + reason);
     }
 
     // Hybi-10 specification explicitly states we must not continue to handle incoming data
@@ -332,11 +330,8 @@ void WebSocketChannel::didFailSocketStream(SocketStreamHandle* handle, const Soc
             message = "WebSocket network error: error code " + String::number(error.errorCode());
         else
             message = "WebSocket network error: " + error.localizedDescription();
-        String failingURL = error.failingURL();
-        ASSERT(failingURL.isNull() || m_handshake->url().string() == failingURL);
-        if (failingURL.isNull())
-            failingURL = m_handshake->url().string();
-        m_document->addConsoleMessage(NetworkMessageSource, LogMessageType, ErrorMessageLevel, message, failingURL);
+        InspectorInstrumentation::didReceiveWebSocketFrameError(m_document, m_identifier, message);
+        m_document->addConsoleMessage(NetworkMessageSource, ErrorMessageLevel, message);
     }
     m_shouldDiscardReceivedData = true;
     handle->disconnect();

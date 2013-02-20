@@ -40,6 +40,10 @@
 #include "TimeRanges.h"
 #include <wtf/text/CString.h>
 
+#if ENABLE(VIDEO_TRACK)
+#include "InbandTextTrackPrivate.h"
+#endif
+
 #if PLATFORM(QT)
 #include <QtGlobal>
 #endif
@@ -239,19 +243,19 @@ static void addMediaEngine(CreateMediaEnginePlayer constructor, MediaEngineSuppo
 
 static const AtomicString& applicationOctetStream()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, applicationOctetStream, ("application/octet-stream"));
+    DEFINE_STATIC_LOCAL(const AtomicString, applicationOctetStream, ("application/octet-stream", AtomicString::ConstructFromLiteral));
     return applicationOctetStream;
 }
 
 static const AtomicString& textPlain()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, textPlain, ("text/plain"));
+    DEFINE_STATIC_LOCAL(const AtomicString, textPlain, ("text/plain", AtomicString::ConstructFromLiteral));
     return textPlain;
 }
 
 static const AtomicString& codecs()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, codecs, ("codecs"));
+    DEFINE_STATIC_LOCAL(const AtomicString, codecs, ("codecs", AtomicString::ConstructFromLiteral));
     return codecs;
 }
 
@@ -407,7 +411,6 @@ void MediaPlayer::loadWithNextMediaEngine(MediaPlayerFactory* current)
         m_private->setPrivateBrowsingMode(m_privateBrowsing);
         m_private->setPreload(m_preload);
         m_private->setPreservesPitch(preservesPitch());
-        m_private->setRate(m_rate);
         if (m_shouldPrepareToRender)
             m_private->prepareForRendering();
     }
@@ -626,9 +629,6 @@ float MediaPlayer::volume() const
 
 void MediaPlayer::setVolume(float volume)
 {
-    if (volume == m_volume)
-        return;
-
     m_volume = volume;
 
     if (m_private->supportsMuting() || !m_muted)
@@ -642,9 +642,6 @@ bool MediaPlayer::muted() const
 
 void MediaPlayer::setMuted(bool muted)
 {
-    if (muted == m_muted)
-        return;
-
     m_muted = muted;
 
     if (m_private->supportsMuting())
@@ -681,9 +678,6 @@ bool MediaPlayer::preservesPitch() const
 
 void MediaPlayer::setPreservesPitch(bool preservesPitch)
 {
-    if (preservesPitch == m_preservesPitch)
-        return;
-
     m_preservesPitch = preservesPitch;
     m_private->setPreservesPitch(preservesPitch);
 }
@@ -709,10 +703,7 @@ bool MediaPlayer::didLoadingProgress()
 }
 
 void MediaPlayer::setSize(const IntSize& size)
-{
-    if (size == m_size)
-        return;
-
+{ 
     m_size = size;
     m_private->setSize(size);
 }
@@ -724,9 +715,6 @@ bool MediaPlayer::visible() const
 
 void MediaPlayer::setVisible(bool b)
 {
-    if (b == m_visible)
-        return;
-
     m_visible = b;
     m_private->setVisible(b);
 }
@@ -738,9 +726,6 @@ MediaPlayer::Preload MediaPlayer::preload() const
 
 void MediaPlayer::setPreload(MediaPlayer::Preload preload)
 {
-    if (preload == m_preload)
-        return;
-
     m_preload = preload;
     m_private->setPreload(preload);
 }
@@ -1072,10 +1057,10 @@ void MediaPlayer::keyError(const String& keySystem, const String& sessionId, Med
         m_mediaPlayerClient->mediaPlayerKeyError(this, keySystem, sessionId, errorCode, systemCode);
 }
 
-void MediaPlayer::keyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength)
+void MediaPlayer::keyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const KURL& defaultURL)
 {
     if (m_mediaPlayerClient)
-        m_mediaPlayerClient->mediaPlayerKeyMessage(this, keySystem, sessionId, message, messageLength);
+        m_mediaPlayerClient->mediaPlayerKeyMessage(this, keySystem, sessionId, message, messageLength, defaultURL);
 }
 
 bool MediaPlayer::keyNeeded(const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength)
@@ -1117,6 +1102,42 @@ GraphicsDeviceAdapter* MediaPlayer::graphicsDeviceAdapter() const
         return 0;
     
     return m_mediaPlayerClient->mediaPlayerGraphicsDeviceAdapter(this);
+}
+#endif
+
+CachedResourceLoader* MediaPlayer::cachedResourceLoader()
+{
+    if (!m_mediaPlayerClient)
+        return 0;
+
+    return m_mediaPlayerClient->mediaPlayerCachedResourceLoader();
+}
+
+#if ENABLE(VIDEO_TRACK)
+void MediaPlayer::addTextTrack(PassRefPtr<InbandTextTrackPrivate> track)
+{
+    if (!m_mediaPlayerClient)
+        return;
+
+    m_mediaPlayerClient->mediaPlayerDidAddTrack(track);
+}
+
+void MediaPlayer::removeTextTrack(PassRefPtr<InbandTextTrackPrivate> track)
+{
+    if (!m_mediaPlayerClient)
+        return;
+
+    m_mediaPlayerClient->mediaPlayerDidRemoveTrack(track);
+}
+
+bool MediaPlayer::requiresTextTrackRepresentation() const
+{
+    return m_private->requiresTextTrackRepresentation();
+}
+
+void MediaPlayer::setTextTrackRepresentation(TextTrackRepresentation* representation)
+{
+    m_private->setTextTrackRepresentation(representation);
 }
 #endif
 

@@ -24,13 +24,6 @@ namespace dom_storage {
 
 static const int kSessionStoraceScavengingSeconds = 60;
 
-DomStorageContext::LocalStorageUsageInfo::LocalStorageUsageInfo()
-    : data_size(0) {}
-DomStorageContext::LocalStorageUsageInfo::~LocalStorageUsageInfo() {}
-
-DomStorageContext::SessionStorageUsageInfo::SessionStorageUsageInfo() {}
-DomStorageContext::SessionStorageUsageInfo::~SessionStorageUsageInfo() {}
-
 DomStorageContext::DomStorageContext(
     const FilePath& localstorage_directory,
     const FilePath& sessionstorage_directory,
@@ -53,14 +46,15 @@ DomStorageContext::~DomStorageContext() {
   if (session_storage_database_.get()) {
     // SessionStorageDatabase shouldn't be deleted right away: deleting it will
     // potentially involve waiting in leveldb::DBImpl::~DBImpl, and waiting
-    // shouldn't happen on this thread. This will unassign the ref counted
-    // pointer without decreasing the ref count, and is balanced by the Release
-    // that happens later.
+    // shouldn't happen on this thread.
+    SessionStorageDatabase* to_release = session_storage_database_.get();
+    to_release->AddRef();
+    session_storage_database_ = NULL;
     task_runner_->PostShutdownBlockingTask(
         FROM_HERE,
         DomStorageTaskRunner::COMMIT_SEQUENCE,
         base::Bind(&SessionStorageDatabase::Release,
-                   base::Unretained(session_storage_database_.release())));
+                   base::Unretained(to_release)));
   }
 }
 
@@ -279,9 +273,13 @@ void DomStorageContext::DeleteSessionNamespace(
               base::IgnoreResult(&SessionStorageDatabase::DeleteNamespace),
               session_storage_database_,
               persistent_namespace_id));
-    } else if (!scavenging_started_) {
-      // Protect the persistent namespace ID from scavenging.
-      protected_persistent_session_ids_.insert(persistent_namespace_id);
+    } else {
+      // Ensure that the data gets committed before we shut down.
+      it->second->Shutdown();
+      if (!scavenging_started_) {
+        // Protect the persistent namespace ID from scavenging.
+        protected_persistent_session_ids_.insert(persistent_namespace_id);
+      }
     }
   }
   persistent_namespace_id_to_namespace_id_.erase(persistent_namespace_id);

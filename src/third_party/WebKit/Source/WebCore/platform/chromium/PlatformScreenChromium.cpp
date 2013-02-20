@@ -32,8 +32,12 @@
 #include "PlatformScreen.h"
 
 #include "FloatRect.h"
+#include "Frame.h"
+#include "FrameView.h"
 #include "HostWindow.h"
+#include "Page.h"
 #include "ScrollView.h"
+#include "Settings.h"
 #include "Widget.h"
 #include <public/Platform.h>
 #include <public/WebScreenInfo.h>
@@ -51,22 +55,6 @@ static PlatformPageClient toPlatformPageClient(Widget* widget)
     if (!hostWindow)
         return 0;
     return hostWindow->platformPageClient();
-}
-
-int screenHorizontalDPI(Widget* widget)
-{
-    PlatformPageClient client = toPlatformPageClient(widget);
-    if (!client)
-        return 0;
-    return client->screenInfo().horizontalDPI;
-}
-
-int screenVerticalDPI(Widget* widget)
-{
-    PlatformPageClient client = toPlatformPageClient(widget);
-    if (!client)
-        return 0;
-    return client->screenInfo().verticalDPI;
 }
 
 int screenDepth(Widget* widget)
@@ -93,12 +81,24 @@ bool screenIsMonochrome(Widget* widget)
     return client->screenInfo().isMonochrome;
 }
 
+// On Chrome for Android, the screenInfo rects are in physical screen pixels
+// instead of density independent (UI) pixels, and must be scaled down.
+static FloatRect toUserSpace(FloatRect rect, Widget* widget)
+{
+    if (widget->isFrameView()) {
+        Page* page = static_cast<FrameView*>(widget)->frame()->page();
+        if (page && !page->settings()->applyDeviceScaleFactorInCompositor())
+            rect.scale(1 / page->deviceScaleFactor());
+    }
+    return rect;
+}
+
 FloatRect screenRect(Widget* widget)
 {
     PlatformPageClient client = toPlatformPageClient(widget);
     if (!client)
         return FloatRect();
-    return IntRect(client->screenInfo().rect);
+    return toUserSpace(IntRect(client->screenInfo().rect), widget);
 }
 
 FloatRect screenAvailableRect(Widget* widget)
@@ -106,7 +106,7 @@ FloatRect screenAvailableRect(Widget* widget)
     PlatformPageClient client = toPlatformPageClient(widget);
     if (!client)
         return FloatRect();
-    return IntRect(client->screenInfo().availableRect);
+    return toUserSpace(IntRect(client->screenInfo().availableRect), widget);
 }
 
 void screenColorProfile(ColorProfile& toProfile)

@@ -43,8 +43,11 @@ float Display::GetForcedDeviceScaleFactor() {
 }
 
 // static
-int64 Display::GetID(uint16 manufacturer_id, uint32 serial_number) {
-  int64 new_id = ((static_cast<int64>(manufacturer_id) << 32) | serial_number);
+int64 Display::GetID(uint16 manufacturer_id,
+                     uint16 product_code,
+                     uint8 output_index) {
+  int64 new_id = ((static_cast<int64>(manufacturer_id) << 24) |
+                  (static_cast<int64>(product_code) << 8) | output_index);
   DCHECK_NE(kInvalidDisplayID, new_id);
   return new_id;
 }
@@ -83,13 +86,20 @@ void Display::SetScaleAndBounds(
     float device_scale_factor,
     const gfx::Rect& bounds_in_pixel) {
   Insets insets = bounds_.InsetsFrom(work_area_);
-  if (!HasForceDeviceScaleFactor())
+  if (!HasForceDeviceScaleFactor()) {
+#if defined(OS_MACOSX)
+    // Unless an explicit scale factor was provided for testing, ensure the
+    // scale is integral.
+    device_scale_factor = static_cast<int>(device_scale_factor);
+#endif
     device_scale_factor_ = device_scale_factor;
+  }
+  device_scale_factor_ = std::max(1.0f, device_scale_factor_);
 #if defined(USE_AURA)
   bounds_in_pixel_ = bounds_in_pixel;
 #endif
   bounds_ = gfx::Rect(gfx::ToFlooredSize(
-      bounds_in_pixel.size().Scale(1.0f / device_scale_factor_)));
+      gfx::ScaleSize(bounds_in_pixel.size(), 1.0f / device_scale_factor_)));
   UpdateWorkAreaFromInsets(insets);
 }
 
@@ -109,7 +119,7 @@ void Display::UpdateWorkAreaFromInsets(const gfx::Insets& insets) {
 }
 
 gfx::Size Display::GetSizeInPixel() const {
-  return gfx::ToFlooredSize(size().Scale(device_scale_factor_));
+  return gfx::ToFlooredSize(gfx::ScaleSize(size(), device_scale_factor_));
 }
 
 std::string Display::ToString() const {

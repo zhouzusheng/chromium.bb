@@ -2,38 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCRendererGL_h
-#define CCRendererGL_h
+#ifndef CC_GL_RENDERER_H_
+#define CC_GL_RENDERER_H_
 
+#include "cc/cc_export.h"
 #include "cc/checkerboard_draw_quad.h"
 #include "cc/debug_border_draw_quad.h"
 #include "cc/direct_renderer.h"
+#include "cc/gl_renderer_draw_cache.h"
 #include "cc/io_surface_draw_quad.h"
+#include "cc/output_surface.h"
 #include "cc/render_pass_draw_quad.h"
 #include "cc/renderer.h"
 #include "cc/solid_color_draw_quad.h"
 #include "cc/tile_draw_quad.h"
 #include "cc/yuv_video_draw_quad.h"
-
-namespace WebKit {
-class WebGraphicsContext3D;
-}
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsMemoryAllocation.h"
+#include "ui/gfx/quad_f.h"
 
 namespace cc {
 
-class ScopedTexture;
+class ScopedResource;
 class StreamVideoDrawQuad;
 class TextureDrawQuad;
 class GeometryBinding;
 class ScopedEnsureFramebufferAllocation;
 
 // Class that handles drawing of composited render layers using GL.
-class GLRenderer : public DirectRenderer,
-                     public WebKit::WebGraphicsContext3D::WebGraphicsSwapBuffersCompleteCallbackCHROMIUM,
-                     public WebKit::WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM ,
-                     public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
+class CC_EXPORT GLRenderer : public DirectRenderer,
+                             public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D::WebGraphicsSwapBuffersCompleteCallbackCHROMIUM),
+                             public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM),
+                             public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback) {
 public:
-    static scoped_ptr<GLRenderer> create(RendererClient*, ResourceProvider*);
+    static scoped_ptr<GLRenderer> create(RendererClient*, OutputSurface*, ResourceProvider*);
 
     virtual ~GLRenderer();
 
@@ -50,7 +52,7 @@ public:
     // puts backbuffer onscreen
     virtual bool swapBuffers() OVERRIDE;
 
-    virtual void getFramebufferPixels(void *pixels, const IntRect&) OVERRIDE;
+    virtual void getFramebufferPixels(void *pixels, const gfx::Rect&) OVERRIDE;
 
     virtual bool isContextLost() OVERRIDE;
 
@@ -59,51 +61,62 @@ public:
     virtual void sendManagedMemoryStats(size_t bytesVisible, size_t bytesVisibleAndNearby, size_t bytesAllocated) OVERRIDE;
 
 protected:
-    GLRenderer(RendererClient*, ResourceProvider*);
+    GLRenderer(RendererClient*, OutputSurface*, ResourceProvider*);
 
     static void debugGLCall(WebKit::WebGraphicsContext3D*, const char* command, const char* file, int line);
 
-    bool isFramebufferDiscarded() const { return m_isFramebufferDiscarded; }
+    bool isBackbufferDiscarded() const { return m_isBackbufferDiscarded; }
     bool initialize();
 
-    const FloatQuad& sharedGeometryQuad() const { return m_sharedGeometryQuad; }
+    const gfx::QuadF& sharedGeometryQuad() const { return m_sharedGeometryQuad; }
     const GeometryBinding* sharedGeometry() const { return m_sharedGeometry.get(); }
 
-    bool getFramebufferTexture(ScopedTexture*, const IntRect& deviceRect);
+    bool getFramebufferTexture(ScopedResource*, const gfx::Rect& deviceRect);
     void releaseRenderPassTextures();
 
     virtual void bindFramebufferToOutputSurface(DrawingFrame&) OVERRIDE;
-    virtual bool bindFramebufferToTexture(DrawingFrame&, const ScopedTexture*, const gfx::Rect& framebufferRect) OVERRIDE;
+    virtual bool bindFramebufferToTexture(DrawingFrame&, const ScopedResource*, const gfx::Rect& framebufferRect) OVERRIDE;
     virtual void setDrawViewportSize(const gfx::Size&) OVERRIDE;
-    virtual void enableScissorTestRect(const gfx::Rect& scissorRect) OVERRIDE;
-    virtual void disableScissorTest() OVERRIDE;
+    virtual void setScissorTestRect(const gfx::Rect& scissorRect) OVERRIDE;
     virtual void clearFramebuffer(DrawingFrame&) OVERRIDE;
     virtual void drawQuad(DrawingFrame&, const DrawQuad*) OVERRIDE;
     virtual void beginDrawingFrame(DrawingFrame&) OVERRIDE;
     virtual void finishDrawingFrame(DrawingFrame&) OVERRIDE;
     virtual bool flippedFramebuffer() const OVERRIDE;
+    virtual void ensureScissorTestEnabled() OVERRIDE;
+    virtual void ensureScissorTestDisabled() OVERRIDE;
+    virtual void finishDrawingQuadList() OVERRIDE;
 
 private:
-    static void toGLMatrix(float*, const WebKit::WebTransformationMatrix&);
+    static void toGLMatrix(float*, const gfx::Transform&);
+    static int priorityCutoffValue(WebKit::WebGraphicsMemoryAllocation::PriorityCutoff);
 
     void drawCheckerboardQuad(const DrawingFrame&, const CheckerboardDrawQuad*);
     void drawDebugBorderQuad(const DrawingFrame&, const DebugBorderDrawQuad*);
-    scoped_ptr<ScopedTexture> drawBackgroundFilters(DrawingFrame&, const RenderPassDrawQuad*, const WebKit::WebFilterOperations&, const WebKit::WebTransformationMatrix& deviceTransform);
+    scoped_ptr<ScopedResource> drawBackgroundFilters(
+        DrawingFrame&, const RenderPassDrawQuad*,
+        const WebKit::WebFilterOperations&,
+        const gfx::Transform& contentsDeviceTransform,
+        const gfx::Transform& contentsDeviceTransformInverse);
     void drawRenderPassQuad(DrawingFrame&, const RenderPassDrawQuad*);
     void drawSolidColorQuad(const DrawingFrame&, const SolidColorDrawQuad*);
     void drawStreamVideoQuad(const DrawingFrame&, const StreamVideoDrawQuad*);
     void drawTextureQuad(const DrawingFrame&, const TextureDrawQuad*);
+    void enqueueTextureQuad(const DrawingFrame&, const TextureDrawQuad*);
+    void flushTextureQuadCache();
     void drawIOSurfaceQuad(const DrawingFrame&, const IOSurfaceDrawQuad*);
     void drawTileQuad(const DrawingFrame&, const TileDrawQuad*);
     void drawYUVVideoQuad(const DrawingFrame&, const YUVVideoDrawQuad*);
 
     void setShaderOpacity(float opacity, int alphaLocation);
-    void setShaderFloatQuad(const FloatQuad&, int quadLocation);
-    void drawQuadGeometry(const DrawingFrame&, const WebKit::WebTransformationMatrix& drawTransform, const gfx::RectF& quadRect, int matrixLocation);
+    void setShaderQuadF(const gfx::QuadF&, int quadLocation);
+    void drawQuadGeometry(const DrawingFrame&, const gfx::Transform& drawTransform, const gfx::RectF& quadRect, int matrixLocation);
+    void setBlendEnabled(bool enabled);
+    void setUseProgram(unsigned program);
 
-    void copyTextureToFramebuffer(const DrawingFrame&, int textureId, const gfx::Rect&, const WebKit::WebTransformationMatrix& drawMatrix);
+    void copyTextureToFramebuffer(const DrawingFrame&, int textureId, const gfx::Rect&, const gfx::Transform& drawMatrix);
 
-    bool useScopedTexture(DrawingFrame&, const ScopedTexture*, const gfx::Rect& viewportRect);
+    bool useScopedTexture(DrawingFrame&, const ScopedResource*, const gfx::Rect& viewportRect);
 
     bool makeContextCurrent();
 
@@ -115,9 +128,8 @@ private:
 
     // WebKit::WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM implementation.
     virtual void onMemoryAllocationChanged(WebKit::WebGraphicsMemoryAllocation) OVERRIDE;
-    void onMemoryAllocationChangedOnImplThread(WebKit::WebGraphicsMemoryAllocation);
-    void discardFramebuffer();
-    void ensureFramebuffer();
+    void discardBackbuffer();
+    void ensureBackbuffer();
     void enforceMemoryPolicy();
 
     // WebGraphicsContext3D::WebGraphicsContextLostCallback implementation.
@@ -128,7 +140,7 @@ private:
     unsigned m_offscreenFramebufferId;
 
     scoped_ptr<GeometryBinding> m_sharedGeometry;
-    FloatQuad m_sharedGeometryQuad;
+    gfx::QuadF m_sharedGeometryQuad;
 
     // This block of bindings defines all of the programs used by the compositor itself.
 
@@ -142,15 +154,15 @@ private:
     typedef ProgramBinding<VertexShaderPosTex, FragmentShaderCheckerboard> TileCheckerboardProgram;
 
     // Render surface shaders.
-    typedef ProgramBinding<VertexShaderPosTex, FragmentShaderRGBATexAlpha> RenderPassProgram;
-    typedef ProgramBinding<VertexShaderPosTex, FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
+    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexAlpha> RenderPassProgram;
+    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
     typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaAA> RenderPassProgramAA;
     typedef ProgramBinding<VertexShaderQuad, FragmentShaderRGBATexAlphaMaskAA> RenderPassMaskProgramAA;
 
     // Texture shaders.
-    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexAlpha> TextureProgram;
-    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexFlipAlpha> TextureProgramFlip;
-    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexRectAlpha> TextureIOSurfaceProgram;
+    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexVaryingAlpha> TextureProgram;
+    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexFlipVaryingAlpha> TextureProgramFlip;
+    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexRectVaryingAlpha> TextureIOSurfaceProgram;
 
     // Video shaders.
     typedef ProgramBinding<VertexShaderVideoTransform, FragmentShaderOESImageExternal> VideoStreamTextureProgram;
@@ -203,14 +215,20 @@ private:
 
     scoped_ptr<SolidColorProgram> m_solidColorProgram;
 
+    OutputSurface* m_outputSurface;
     WebKit::WebGraphicsContext3D* m_context;
 
     gfx::Rect m_swapBufferRect;
+    gfx::Rect m_scissorRect;
     bool m_isViewportChanged;
-    bool m_isFramebufferDiscarded;
-    bool m_discardFramebufferWhenNotVisible;
+    bool m_isBackbufferDiscarded;
+    bool m_discardBackbufferWhenNotVisible;
     bool m_isUsingBindUniform;
     bool m_visible;
+    bool m_isScissorEnabled;
+    bool m_blendShadow;
+    unsigned m_programShadow;
+    TexturedQuadDrawCache m_drawCache;
 
     scoped_ptr<ResourceProvider::ScopedWriteLockGL> m_currentFramebufferLock;
 
@@ -232,4 +250,4 @@ private:
 
 }
 
-#endif
+#endif  // CC_GL_RENDERER_H_

@@ -39,12 +39,11 @@ namespace WebKit {
 class WebIDBTransactionImpl: public WebIDBTransaction {
 public:
     WebIDBTransactionImpl(WTF::PassRefPtr<WebCore::IDBTransactionBackendInterface>);
-    virtual ~WebIDBTransactionImpl();  
+    virtual ~WebIDBTransactionImpl();
 
-    virtual WebIDBObjectStore* objectStore(const WebString& name, WebExceptionCode&);
+    virtual WebIDBObjectStore* objectStore(long long indexId, WebExceptionCode&);
     virtual void commit();
     virtual void abort();
-    virtual void didCompleteTaskEvents();
     virtual void setCallbacks(WebIDBTransactionCallbacks*);
 
     virtual WebCore::IDBTransactionBackendInterface* getIDBTransactionBackendInterface() const;

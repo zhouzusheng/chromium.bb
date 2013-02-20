@@ -34,7 +34,7 @@
 #include "media/audio/audio_manager_base.h"
 #include "media/audio/win/audio_low_latency_input_win.h"
 #include "media/audio/win/audio_low_latency_output_win.h"
-#include "media/audio/win/audio_unified_win.h"
+#include "media/audio/win/core_audio_util_win.h"
 #include "media/base/limits.h"
 #endif
 
@@ -160,21 +160,23 @@ void MixStreams(void* dst,
   DCHECK_LE(volume, 1.0f);
   switch (bytes_per_sample) {
     case 1:
-      MixStreams<uint8, int32, -128, 127, 128>(static_cast<uint8*>(dst),
-                                               static_cast<uint8*>(src),
-                                               buflen,
-                                               volume);
+      MixStreams<uint8, int32, kint8min, kint8max, 128>(
+          static_cast<uint8*>(dst),
+          static_cast<uint8*>(src),
+          buflen,
+          volume);
       break;
     case 2:
       DCHECK_EQ(0u, buflen % 2);
-      MixStreams<int16, int32, -32768, 32767, 0>(static_cast<int16*>(dst),
-                                                 static_cast<int16*>(src),
-                                                 buflen / 2,
-                                                 volume);
+      MixStreams<int16, int32, kint16min, kint16max, 0>(
+          static_cast<int16*>(dst),
+          static_cast<int16*>(src),
+          buflen / 2,
+          volume);
       break;
     case 4:
       DCHECK_EQ(0u, buflen % 4);
-      MixStreams<int32, int64, 0x80000000, 0x7fffffff, 0>(
+      MixStreams<int32, int64, kint32min, kint32max, 0>(
           static_cast<int32*>(dst),
           static_cast<int32*>(src),
           buflen / 4,
@@ -191,7 +193,7 @@ int GetAudioHardwareSampleRate() {
   // Hardware sample-rate on the Mac can be configured, so we must query.
   return AUAudioOutputStream::HardwareSampleRate();
 #elif defined(OS_WIN)
-  if (!IsWASAPISupported()) {
+  if (!CoreAudioUtil::IsSupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower
     // and use 48kHz as default input sample rate.
     return 48000;
@@ -228,7 +230,7 @@ int GetAudioInputHardwareSampleRate(const std::string& device_id) {
 #if defined(OS_MACOSX)
   return AUAudioInputStream::HardwareSampleRate();
 #elif defined(OS_WIN)
-  if (!IsWASAPISupported()) {
+  if (!CoreAudioUtil::IsSupported()) {
     return 48000;
   }
   return WASAPIAudioInputStream::HardwareSampleRate(device_id);
@@ -255,9 +257,9 @@ size_t GetAudioHardwareBufferSize() {
   return 128;
 #elif defined(OS_WIN)
   // Buffer size to use when a proper size can't be determined from the system.
-  static const int kFallbackBufferSize = 4096;
+  static const int kFallbackBufferSize = 2048;
 
-  if (!IsWASAPISupported()) {
+  if (!CoreAudioUtil::IsSupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower
     // and assume 48kHz as default sample rate.
     return kFallbackBufferSize;
@@ -271,13 +273,13 @@ size_t GetAudioHardwareBufferSize() {
     return 256;
   }
 
-  // TODO(henrika): remove when HardwareBufferSize() has been tested well
-  // enough to be moved from WASAPIUnifiedStream to WASAPIAudioOutputStream.
+  // TODO(henrika): remove when the --enable-webaudio-input flag is no longer
+  // utilized.
   if (cmd_line->HasSwitch(switches::kEnableWebAudioInput)) {
-    int buffer_size = WASAPIUnifiedStream::HardwareBufferSize(eRender);
-    // |buffer_size| can be zero if we use e.g. remote desktop or if all
-    // audio devices are disabled.
-    return (buffer_size > 0) ? buffer_size : kFallbackBufferSize;
+    AudioParameters params;
+    HRESULT hr = CoreAudioUtil::GetPreferredAudioParameters(eRender, eConsole,
+                                                            &params);
+    return FAILED(hr) ? kFallbackBufferSize : params.frames_per_buffer();
   }
 
   // This call must be done on a COM thread configured as MTA.
@@ -318,7 +320,7 @@ ChannelLayout GetAudioInputHardwareChannelLayout(const std::string& device_id) {
 #if defined(OS_MACOSX)
   return CHANNEL_LAYOUT_MONO;
 #elif defined(OS_WIN)
-  if (!IsWASAPISupported()) {
+  if (!CoreAudioUtil::IsSupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower and
     // use stereo by default.
     return CHANNEL_LAYOUT_STEREO;
@@ -368,13 +370,15 @@ size_t GetHighLatencyOutputBufferSize(int sample_rate) {
 
 #if defined(OS_WIN)
 
-bool IsWASAPISupported() {
-  // Note: that function correctly returns that Windows Server 2003 does not
-  // support WASAPI.
-  return base::win::GetVersion() >= base::win::VERSION_VISTA;
-}
-
 int NumberOfWaveOutBuffers() {
+  // Use the user provided buffer count if provided.
+  int buffers = 0;
+  std::string buffers_str(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kWaveOutBuffers));
+  if (base::StringToInt(buffers_str, &buffers) && buffers > 0) {
+    return buffers;
+  }
+
   // Use 4 buffers for Vista, 3 for everyone else:
   //  - The entire Windows audio stack was rewritten for Windows Vista and wave
   //    out performance was degraded compared to XP.

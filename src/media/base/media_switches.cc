@@ -42,7 +42,7 @@ const char kDisableAudioFallback[] = "disable-audio-fallback";
 const char kDisableAudioOutputResampler[] = "disable-audio-output-resampler";
 
 // Controls renderer side mixing and low latency audio path for media elements.
-#if defined(OS_WIN) || defined(OS_MAC)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 const char kDisableRendererSideMixing[] = "disable-renderer-side-mixing";
 #else
 const char kEnableRendererSideMixing[] = "enable-renderer-side-mixing";
@@ -56,5 +56,16 @@ const char kEnableWebAudioInput[] = "enable-webaudio-input";
 
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
+
+// Enables support for encrypted media. Current implementation is
+// incomplete and this flag is used for development and testing.
+const char kEnableEncryptedMedia[] = "enable-encrypted-media";
+
+// Enables Opus playback in media elements.
+const char kEnableOpusPlayback[] = "enable-opus-playback";
+
+#if defined(OS_WIN)
+const char kWaveOutBuffers[] = "waveout-buffers";
+#endif
 
 }  // namespace switches

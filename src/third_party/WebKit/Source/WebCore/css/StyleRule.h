@@ -46,7 +46,12 @@ public:
         Page,
         Keyframes,
         Keyframe, // Not used. These are internally non-rule StyleKeyframe objects.
+#if ENABLE(SHADOW_DOM)
         Host,
+#endif
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+        Viewport = 15,
+#endif
         Region = 16
     };
     Type type() const { return static_cast<Type>(m_type); }
@@ -58,8 +63,13 @@ public:
     bool isPageRule() const { return type() == Page; }
     bool isStyleRule() const { return type() == Style; }
     bool isRegionRule() const { return type() == Region; }
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+    bool isViewportRule() const { return type() == Viewport; }
+#endif
     bool isImportRule() const { return type() == Import; }
+#if ENABLE(SHADOW_DOM)
     bool isHostRule() const { return type() == Host; }
+#endif
 
     PassRefPtr<StyleRuleBase> copy() const;
 
@@ -103,7 +113,7 @@ public:
     const StylePropertySet* properties() const { return m_properties.get(); }
     StylePropertySet* mutableProperties();
     
-    void parserAdoptSelectorVector(CSSSelectorVector& selectors) { m_selectorList.adoptSelectorVector(selectors); }
+    void parserAdoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectors) { m_selectorList.adoptSelectorVector(selectors); }
     void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
     void setProperties(PassRefPtr<StylePropertySet>);
 
@@ -152,7 +162,7 @@ public:
     const StylePropertySet* properties() const { return m_properties.get(); }
     StylePropertySet* mutableProperties();
 
-    void parserAdoptSelectorVector(CSSSelectorVector& selectors) { m_selectorList.adoptSelectorVector(selectors); }
+    void parserAdoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectors) { m_selectorList.adoptSelectorVector(selectors); }
     void wrapperAdoptSelectorList(CSSSelectorList& selectors) { m_selectorList.adopt(selectors); }
     void setProperties(PassRefPtr<StylePropertySet>);
 
@@ -207,7 +217,7 @@ private:
 
 class StyleRuleRegion : public StyleRuleBlock {
 public:
-    static PassRefPtr<StyleRuleRegion> create(CSSSelectorVector* selectors, Vector<RefPtr<StyleRuleBase> >& adoptRules)
+    static PassRefPtr<StyleRuleRegion> create(Vector<OwnPtr<CSSParserSelector> >* selectors, Vector<RefPtr<StyleRuleBase> >& adoptRules)
     {
         return adoptRef(new StyleRuleRegion(selectors, adoptRules));
     }
@@ -219,12 +229,13 @@ public:
     void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
-    StyleRuleRegion(CSSSelectorVector*, Vector<RefPtr<StyleRuleBase> >& adoptRules);
+    StyleRuleRegion(Vector<OwnPtr<CSSParserSelector> >*, Vector<RefPtr<StyleRuleBase> >& adoptRules);
     StyleRuleRegion(const StyleRuleRegion&);
     
     CSSSelectorList m_selectorList;
 };
 
+#if ENABLE(SHADOW_DOM)
 class StyleRuleHost : public StyleRuleBlock {
 public:
     static PassRefPtr<StyleRuleHost> create(Vector<RefPtr<StyleRuleBase> >& adoptRules)
@@ -238,6 +249,31 @@ private:
     StyleRuleHost(Vector<RefPtr<StyleRuleBase> >& adoptRules) : StyleRuleBlock(Host, adoptRules) { }
     StyleRuleHost(const StyleRuleHost& o) : StyleRuleBlock(o) { }
 };
+#endif
+
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+class StyleRuleViewport : public StyleRuleBase {
+public:
+    static PassRefPtr<StyleRuleViewport> create() { return adoptRef(new StyleRuleViewport); }
+
+    ~StyleRuleViewport();
+
+    const StylePropertySet* properties() const { return m_properties.get(); }
+    StylePropertySet* mutableProperties();
+
+    void setProperties(PassRefPtr<StylePropertySet>);
+
+    PassRefPtr<StyleRuleViewport> copy() const { return adoptRef(new StyleRuleViewport(*this)); }
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
+
+private:
+    StyleRuleViewport();
+    StyleRuleViewport(const StyleRuleViewport&);
+
+    RefPtr<StylePropertySet> m_properties;
+};
+#endif // ENABLE(CSS_DEVICE_ADAPTATION)
 
 } // namespace WebCore
 

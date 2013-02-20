@@ -31,43 +31,16 @@
 #include "SVGImage.h"
 
 #include "DocumentLoader.h"
-#include "EmptyClients.h"
 #include "FrameView.h"
 #include "ImageBuffer.h"
 #include "ImageObserver.h"
 #include "RenderSVGRoot.h"
 #include "SVGDocument.h"
+#include "SVGImageChromeClient.h"
 #include "SVGSVGElement.h"
 #include "Settings.h"
 
 namespace WebCore {
-
-class SVGImageChromeClient : public EmptyChromeClient {
-    WTF_MAKE_NONCOPYABLE(SVGImageChromeClient); WTF_MAKE_FAST_ALLOCATED;
-public:
-    SVGImageChromeClient(SVGImage* image)
-        : m_image(image)
-    {
-    }
-
-    virtual bool isSVGImageChromeClient() const { return true; }
-    SVGImage* image() const { return m_image; }
-
-private:
-    virtual void chromeDestroyed()
-    {
-        m_image = 0;
-    }
-
-    virtual void invalidateContentsAndRootView(const IntRect& r, bool)
-    {
-        // If m_image->m_page is null, we're being destructed, don't fire changedInRect() in that case.
-        if (m_image && m_image->imageObserver() && m_image->m_page)
-            m_image->imageObserver()->changedInRect(m_image, r);
-    }
-
-    SVGImage* m_image;
-};
 
 SVGImage::SVGImage(ImageObserver* observer)
     : Image(observer)
@@ -173,7 +146,7 @@ void SVGImage::drawSVGToImageBuffer(ImageBuffer* buffer, const IntSize& size, fl
         buffer->context()->clearRect(enclosingIntRect(scaledRect));
 
     // Draw SVG on top of ImageBuffer.
-    draw(buffer->context(), enclosingIntRect(scaledRect), rect, ColorSpaceDeviceRGB, CompositeSourceOver);
+    draw(buffer->context(), enclosingIntRect(scaledRect), rect, ColorSpaceDeviceRGB, CompositeSourceOver, BlendModeNormal);
 
     // Reset container size & zoom to initial state. Otherwhise the size() of this
     // image would return whatever last size was set by drawSVGToImageBuffer().
@@ -194,7 +167,7 @@ void SVGImage::drawSVGToImageBuffer(ImageBuffer* buffer, const IntSize& size, fl
     frame->view()->endDisableRepaints();
 }
 
-void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace, CompositeOperator compositeOp)
+void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace, CompositeOperator compositeOp, BlendMode)
 {
     if (!m_page)
         return;
@@ -304,7 +277,7 @@ NativeImagePtr SVGImage::nativeImageForCurrentFrame()
         OwnPtr<ImageBuffer> buffer = ImageBuffer::create(size(), 1);
         if (!buffer) // failed to allocate image
             return 0;
-        draw(buffer->context(), rect(), rect(), ColorSpaceDeviceRGB, CompositeSourceOver);
+        draw(buffer->context(), rect(), rect(), ColorSpaceDeviceRGB, CompositeSourceOver, BlendModeNormal);
         m_frameCache = buffer->copyImage(CopyBackingStore);
     }
     return m_frameCache->nativeImageForCurrentFrame();

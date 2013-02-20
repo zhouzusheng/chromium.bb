@@ -2,26 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCRendererSoftware_h
-#define CCRendererSoftware_h
+#ifndef CC_SOFTWARE_RENDERER_H_
+#define CC_SOFTWARE_RENDERER_H_
 
 #include "base/basictypes.h"
+#include "cc/cc_export.h"
 #include "cc/direct_renderer.h"
-#include <public/WebCompositorSoftwareOutputDevice.h>
 
 namespace cc {
 
 class DebugBorderDrawQuad;
 class RendererClient;
+class RenderPassDrawQuad;
 class ResourceProvider;
+class SoftwareOutputDevice;
 class SolidColorDrawQuad;
 class TextureDrawQuad;
 class TileDrawQuad;
-class RenderPassDrawQuad;
 
-class SoftwareRenderer : public DirectRenderer {
+class CC_EXPORT SoftwareRenderer : public DirectRenderer {
 public:
-    static scoped_ptr<SoftwareRenderer> create(RendererClient*, ResourceProvider*, WebKit::WebCompositorSoftwareOutputDevice*);
+    static scoped_ptr<SoftwareRenderer> create(RendererClient*, ResourceProvider*, SoftwareOutputDevice*);
     virtual ~SoftwareRenderer();
 
     virtual const RendererCapabilities& capabilities() const OVERRIDE;
@@ -32,7 +33,7 @@ public:
 
     virtual bool swapBuffers() OVERRIDE;
 
-    virtual void getFramebufferPixels(void *pixels, const IntRect&) OVERRIDE;
+    virtual void getFramebufferPixels(void *pixels, const gfx::Rect&) OVERRIDE;
 
     virtual void setVisible(bool) OVERRIDE;
 
@@ -40,18 +41,19 @@ public:
 
 protected:
     virtual void bindFramebufferToOutputSurface(DrawingFrame&) OVERRIDE;
-    virtual bool bindFramebufferToTexture(DrawingFrame&, const ScopedTexture*, const gfx::Rect& framebufferRect) OVERRIDE;
+    virtual bool bindFramebufferToTexture(DrawingFrame&, const ScopedResource*, const gfx::Rect& framebufferRect) OVERRIDE;
     virtual void setDrawViewportSize(const gfx::Size&) OVERRIDE;
-    virtual void enableScissorTestRect(const gfx::Rect& scissorRect) OVERRIDE;
-    virtual void disableScissorTest() OVERRIDE;
+    virtual void setScissorTestRect(const gfx::Rect& scissorRect) OVERRIDE;
     virtual void clearFramebuffer(DrawingFrame&) OVERRIDE;
     virtual void drawQuad(DrawingFrame&, const DrawQuad*) OVERRIDE;
     virtual void beginDrawingFrame(DrawingFrame&) OVERRIDE;
     virtual void finishDrawingFrame(DrawingFrame&) OVERRIDE;
     virtual bool flippedFramebuffer() const OVERRIDE;
+    virtual void ensureScissorTestEnabled() OVERRIDE;
+    virtual void ensureScissorTestDisabled() OVERRIDE;
 
 private:
-    SoftwareRenderer(RendererClient*, ResourceProvider*, WebKit::WebCompositorSoftwareOutputDevice*);
+    SoftwareRenderer(RendererClient*, ResourceProvider*, SoftwareOutputDevice*);
 
     bool isSoftwareResource(ResourceProvider::ResourceId) const;
 
@@ -65,7 +67,7 @@ private:
     RendererCapabilities m_capabilities;
     bool m_visible;
 
-    WebKit::WebCompositorSoftwareOutputDevice* m_outputDevice;
+    SoftwareOutputDevice* m_outputDevice;
     scoped_ptr<SkCanvas> m_skRootCanvas;
     SkCanvas* m_skCurrentCanvas;
     SkPaint m_skCurrentPaint;
@@ -76,4 +78,4 @@ private:
 
 }
 
-#endif
+#endif  // CC_SOFTWARE_RENDERER_H_

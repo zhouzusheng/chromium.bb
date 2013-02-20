@@ -36,14 +36,13 @@
 #include "Font.h"
 #include "FontCache.h"
 #include "FontDescription.h"
+#include "FontPlatformDataChromiumWin.h"
 #include "HWndDC.h"
-#include "PlatformSupport.h"
-#include <wtf/MathExtras.h>
-
+#include <mlang.h>
+#include <objidl.h>
 #include <unicode/uchar.h>
 #include <unicode/unorm.h>
-#include <objidl.h>
-#include <mlang.h>
+#include <wtf/MathExtras.h>
 
 namespace WebCore {
 
@@ -61,7 +60,7 @@ void SimpleFontData::platformInit()
 
     TEXTMETRIC textMetric = {0};
     if (!GetTextMetrics(dc, &textMetric)) {
-        if (PlatformSupport::ensureFontLoaded(m_platformData.hfont())) {
+        if (FontPlatformData::ensureFontLoaded(m_platformData.hfont())) {
             // Retry GetTextMetrics.
             // FIXME: Handle gracefully the error if this call also fails.
             // See http://crbug.com/6401.
@@ -119,26 +118,6 @@ PassRefPtr<SimpleFontData> SimpleFontData::createScaledFontData(const FontDescri
     return SimpleFontData::create(FontPlatformData(hfont, scaledSize, m_platformData.orientation()), isCustomFont(), false);
 }
 
-PassRefPtr<SimpleFontData> SimpleFontData::smallCapsFontData(const FontDescription& fontDescription) const
-{
-    if (!m_derivedFontData)
-        m_derivedFontData = DerivedFontData::create(isCustomFont());
-    if (!m_derivedFontData->smallCaps)
-        m_derivedFontData->smallCaps = createScaledFontData(fontDescription, .7);
-
-    return m_derivedFontData->smallCaps;
-}
-
-PassRefPtr<SimpleFontData> SimpleFontData::emphasisMarkFontData(const FontDescription& fontDescription) const
-{
-    if (!m_derivedFontData)
-        m_derivedFontData = DerivedFontData::create(isCustomFont());
-    if (!m_derivedFontData->emphasisMark)
-        m_derivedFontData->emphasisMark = createScaledFontData(fontDescription, .5);
-
-    return m_derivedFontData->emphasisMark;
-}
-
 bool SimpleFontData::containsCharacters(const UChar* characters, int length) const
 {
   // This used to be implemented with IMLangFontLink2, but since that code has
@@ -156,7 +135,7 @@ void SimpleFontData::determinePitch()
     // is *not* fixed pitch.  Unbelievable but true.
     TEXTMETRIC textMetric = {0};
     if (!GetTextMetrics(dc, &textMetric)) {
-        if (PlatformSupport::ensureFontLoaded(m_platformData.hfont())) {
+        if (FontPlatformData::ensureFontLoaded(m_platformData.hfont())) {
             // Retry GetTextMetrics.
             // FIXME: Handle gracefully the error if this call also fails.
             // See http://crbug.com/6401.
@@ -179,7 +158,7 @@ FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
     GLYPHMETRICS gdiMetrics;
     static const MAT2 identity = { 0, 1,  0, 0,  0, 0,  0, 1 };
     if (GetGlyphOutline(hdc, glyph, GGO_METRICS | GGO_GLYPH_INDEX, &gdiMetrics, 0, 0, &identity) == -1) {
-        if (PlatformSupport::ensureFontLoaded(m_platformData.hfont())) {
+        if (FontPlatformData::ensureFontLoaded(m_platformData.hfont())) {
             // Retry GetTextMetrics.
             // FIXME: Handle gracefully the error if this call also fails.
             // See http://crbug.com/6401.
@@ -205,7 +184,7 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
     int width = 0;
     if (!GetCharWidthI(dc, glyph, 1, 0, &width)) {
         // Ask the browser to preload the font and retry.
-        if (PlatformSupport::ensureFontLoaded(m_platformData.hfont())) {
+        if (FontPlatformData::ensureFontLoaded(m_platformData.hfont())) {
             // FIXME: Handle gracefully the error if this call also fails.
             // See http://crbug.com/6401.
             if (!GetCharWidthI(dc, glyph, 1, 0, &width))

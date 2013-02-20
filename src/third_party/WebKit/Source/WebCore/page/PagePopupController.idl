@@ -29,8 +29,11 @@
  */
 
 [
-    Conditional=PAGE_POPUP
+    Conditional=PAGE_POPUP,
+    ImplementationLacksVTable
 ] interface PagePopupController {
     void setValueAndClosePopup(in long numberValue, in DOMString stringValue);
     DOMString localizeNumberString(in DOMString numberString);
+    [Conditional=CALENDAR_PICKER] DOMString formatMonth(in long year, in long zeroBaseMonth);
+    void histogramEnumeration(DOMString name, long sample, long boundaryValue);
 };

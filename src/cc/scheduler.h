@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCScheduler_h
-#define CCScheduler_h
+#ifndef CC_SCHEDULER_H_
+#define CC_SCHEDULER_H_
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+#include "cc/cc_export.h"
 #include "cc/frame_rate_controller.h"
+#include "cc/layer_tree_host.h"
 #include "cc/scheduler_state_machine.h"
 
 namespace cc {
@@ -44,7 +46,7 @@ protected:
     virtual ~SchedulerClient() { }
 };
 
-class Scheduler : FrameRateControllerClient {
+class CC_EXPORT Scheduler : FrameRateControllerClient {
 public:
     static scoped_ptr<Scheduler> create(SchedulerClient* client, scoped_ptr<FrameRateController> frameRateController)
     {
@@ -77,8 +79,8 @@ public:
     void setSwapBuffersCompleteSupported(bool);
     void didSwapBuffersComplete();
 
-    void didLoseContext();
-    void didRecreateContext();
+    void didLoseOutputSurface();
+    void didRecreateOutputSurface();
 
     bool commitPending() const { return m_stateMachine.commitPending(); }
     bool redrawPending() const { return m_stateMachine.redrawPending(); }
@@ -105,4 +107,4 @@ private:
 
 }  // namespace cc
 
-#endif // CCScheduler_h
+#endif  // CC_SCHEDULER_H_

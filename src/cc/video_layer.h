@@ -2,13 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef VideoLayerChromium_h
-#define VideoLayerChromium_h
+#ifndef CC_VIDEO_LAYER_H_
+#define CC_VIDEO_LAYER_H_
 
+#include "base/callback.h"
+#include "cc/cc_export.h"
 #include "cc/layer.h"
 
 namespace WebKit {
+class WebVideoFrame;
 class WebVideoFrameProvider;
+}
+
+namespace media {
+class VideoFrame;
 }
 
 namespace cc {
@@ -16,19 +23,24 @@ namespace cc {
 class VideoLayerImpl;
 
 // A Layer that contains a Video element.
-class VideoLayer : public Layer {
+class CC_EXPORT VideoLayer : public Layer {
 public:
-    static scoped_refptr<VideoLayer> create(WebKit::WebVideoFrameProvider*);
+    typedef base::Callback<media::VideoFrame* (WebKit::WebVideoFrame*)> FrameUnwrapper;
 
-    virtual scoped_ptr<LayerImpl> createLayerImpl() OVERRIDE;
+    static scoped_refptr<VideoLayer> create(WebKit::WebVideoFrameProvider*,
+                                            const FrameUnwrapper&);
+
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl) OVERRIDE;
 
 private:
-    explicit VideoLayer(WebKit::WebVideoFrameProvider*);
+    VideoLayer(WebKit::WebVideoFrameProvider*, const FrameUnwrapper&);
     virtual ~VideoLayer();
 
     // This pointer is only for passing to VideoLayerImpl's constructor. It should never be dereferenced by this class.
     WebKit::WebVideoFrameProvider* m_provider;
+    FrameUnwrapper m_unwrapper;
 };
 
-}
-#endif
+}  // namespace cc
+
+#endif  // CC_VIDEO_LAYER_H_

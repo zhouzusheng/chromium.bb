@@ -6,29 +6,22 @@
 
 namespace switches {
 
+// Disable touch adjustment.
+const char kDisableTouchAdjustment[] = "disable-touch-adjustment";
+
 // Enable support for bezel touch.
 const char kEnableBezelTouch[] = "enable-bezel-touch";
 
-// Whether or not ImageSkiaOperations methods can scale one of images
-// if they don't have the same scale factor.
-const char kDisableScalingInImageSkiaOperations[] =
-    "disable-scaling-in-image-skia-operations";
+// Enables the new dialog style wherever it is available.
+const char kEnableNewDialogStyle[] = "enable-new-dialog-style";
 
-// Let text glyphs have X-positions that aren't snapped to the pixel grid in
-// the browser UI.
-const char kEnableBrowserTextSubpixelPositioning[] =
-    "enable-browser-text-subpixel-positioning";
+// Enables new menu UI.
+const char kEnableNewMenuStyle[] = "enable-new-menu-style";
 
-// Enable support for touch events.
-const char kEnableTouchEvents[] = "enable-touch-events";
+const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 
 // Enables the Views textfield on Windows.
 const char kEnableViewsTextfield[] = "enable-views-textfield";
-
-// Enable text glyphs to have X-positions that aren't snapped to the pixel grid
-// in webkit renderers.
-const char kEnableWebkitTextSubpixelPositioning[] =
-    "enable-webkit-text-subpixel-positioning";
 
 // Overrides the device scale factor for the browser UI and the
 // contents.
@@ -56,6 +49,17 @@ const char kOldCheckboxStyle[] = "old-checkbox-style";
 // Disable ui::MessageBox. This is useful when running as part of scripts that
 // do not have a user interface.
 const char kNoMessageBox[] = "no-message-box";
+
+// Enable support for touch events.
+const char kTouchEvents[] = "touch-events";
+
+// The values the kTouchEvents switch may have, as in --touch-events=disabled.
+//   auto: enabled at startup when an attached touchscreen is present.
+const char kTouchEventsAuto[] = "auto";
+//   enabled: touch events always enabled.
+const char kTouchEventsEnabled[] = "enabled";
+//   disabled: touch events are disabled.
+const char kTouchEventsDisabled[] = "disabled";
 
 // Enables UI changes that make it easier to use with a touchscreen.
 // WARNING: Do not check this flag directly when deciding what UI to draw,

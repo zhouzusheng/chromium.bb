@@ -1,10 +1,10 @@
-win stable release 24.0.1312.56
-released 01/22/13
-trunk revision 164863
-branch revision 177594
-webkit revision 132834
-webkit version: 537.17
-v8 version 3.14.5.3
+win stable release 25.0.1364.84
+released 02/13/13
+trunk revision 173683
+branch revision 182155
+webkit revision 137939
+webkit version: 537.22
+v8 version 3.15.11.15
 
-created from true branch 1312
-http://src.chromium.org/svn/releases/24.0.1312.56/
+created from true branch 1364
+http://src.chromium.org/svn/releases/25.0.1364.84/

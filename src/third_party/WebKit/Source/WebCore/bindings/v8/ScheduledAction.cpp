@@ -45,7 +45,6 @@
 #include "V8GCController.h"
 #include "V8RecursionScope.h"
 #include "WorkerContext.h"
-#include "WorkerContextExecutionProxy.h"
 #include "WorkerThread.h"
 
 namespace WebCore {
@@ -62,8 +61,10 @@ ScheduledAction::ScheduledAction(v8::Handle<v8::Context> context, v8::Handle<v8:
 
 ScheduledAction::~ScheduledAction()
 {
-    for (size_t i = 0; i < m_args.size(); ++i)
+    for (size_t i = 0; i < m_args.size(); ++i) {
         m_args[i].Dispose();
+        m_args[i].Clear();
+    }
 }
 
 void ScheduledAction::execute(ScriptExecutionContext* context)

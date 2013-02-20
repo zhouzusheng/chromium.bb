@@ -268,7 +268,9 @@ String placeholderForYearField()
 {
     return query(WebLocalizedString::PlaceholderForYearField);
 }
+#endif
 
+#if ENABLE(INPUT_TYPE_WEEK)
 String weekFormatInLDML()
 {
     String templ = query(WebLocalizedString::WeekFormatTemplate);
@@ -310,6 +312,12 @@ String blockedPluginByContentSecurityPolicyText()
 }
 
 String insecurePluginVersionText()
+{
+    notImplemented();
+    return String();
+}
+
+String inactivePluginText()
 {
     notImplemented();
     return String();
@@ -496,30 +504,15 @@ String validationMessageStepMismatchText(const String& base, const String& step)
     return query(WebLocalizedString::ValidationStepMismatch, base, step);
 }
 
-#if ENABLE(CALENDAR_PICKER)
-String calendarTodayText()
+String validationMessageBadInputForNumberText()
 {
-    return query(WebLocalizedString::CalendarToday);
+    return query(WebLocalizedString::ValidationBadInputForNumber);
 }
 
-String calendarClearText()
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+String validationMessageBadInputForDateTimeText()
 {
-    return query(WebLocalizedString::CalendarClear);
-}
-
-String dateFormatYearText()
-{
-    return query(WebLocalizedString::DateFormatYearLabel);
-}
-
-String dateFormatMonthText()
-{
-    return query(WebLocalizedString::DateFormatMonthLabel);
-}
-
-String dateFormatDayInMonthText()
-{
-    return query(WebLocalizedString::DateFormatDayInMonthLabel);
+    return query(WebLocalizedString::ValidationBadInputForDateTime);
 }
 #endif
 

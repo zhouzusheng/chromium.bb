@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCLayerSorter_h
-#define CCLayerSorter_h
+#ifndef CC_LAYER_SORTER_H_
+#define CC_LAYER_SORTER_H_
 
-#include "FloatPoint3D.h"
-#include "FloatQuad.h"
-#include "FloatRect.h"
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
+#include "cc/cc_export.h"
 #include "cc/layer_impl.h"
+#include "ui/gfx/point3_f.h"
+#include "ui/gfx/quad_f.h"
+#include "ui/gfx/rect_f.h"
+#include "ui/gfx/vector3d_f.h"
 
 #if defined(COMPILER_GCC)
 namespace cc
@@ -28,8 +30,8 @@ struct hash<cc::GraphEdge*> {
 } // namespace BASE_HASH_NAMESPACE
 #endif // COMPILER
 
-namespace WebKit {
-class WebTransformationMatrix;
+namespace gfx {
+class Transform;
 }
 
 namespace cc {
@@ -37,16 +39,17 @@ namespace cc {
 struct GraphEdge;
 
 // Holds various useful properties derived from a layer's 3D outline.
-struct LayerShape {
+struct CC_EXPORT LayerShape {
     LayerShape();
-    LayerShape(float width, float height, const WebKit::WebTransformationMatrix& drawTransform);
+    LayerShape(float width, float height, const gfx::Transform& drawTransform);
+    ~LayerShape();
 
-    float layerZFromProjectedPoint(const FloatPoint&) const;
+    float layerZFromProjectedPoint(const gfx::PointF&) const;
 
-    FloatPoint3D layerNormal;
-    FloatPoint3D transformOrigin;
-    FloatQuad projectedQuad;
-    FloatRect projectedBounds;
+    gfx::Vector3dF layerNormal;
+    gfx::Point3F transformOrigin;
+    gfx::QuadF projectedQuad;
+    gfx::RectF projectedBounds;
 };
 
 struct GraphNode {
@@ -75,7 +78,7 @@ struct GraphEdge {
 
 
 
-class LayerSorter {
+class CC_EXPORT LayerSorter {
 public:
     LayerSorter();
     ~LayerSorter();
@@ -110,4 +113,4 @@ private:
 };
 
 }
-#endif
+#endif  // CC_LAYER_SORTER_H_

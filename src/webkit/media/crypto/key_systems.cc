@@ -38,14 +38,16 @@ struct KeySystemPluginTypePair {
   const char* plugin_type;
 };
 
+// TODO(ddorwin): Automatically support parent systems: http://crbug.com/164303.
+static const char kWidevineBaseKeySystem[] = "com.widevine";
+
 // Specifies the container and codec combinations supported by individual
 // key systems. Each line is a container-codecs combination and the key system
 // that supports it. Multiple codecs can be listed. A trailing commas in
 // the |codecs_list| allows the container to be specified without a codec.
 // This list is converted at runtime into individual container-codec-key system
 // entries in KeySystems::key_system_map_.
-static const MediaFormatAndKeySystem
-supported_format_key_system_combinations[] = {
+static const MediaFormatAndKeySystem kSupportedFormatKeySystemCombinations[] = {
   // Clear Key.
   { "video/webm", "vorbis,vp8,vp8.0,", kClearKeyKeySystem },
   { "audio/webm", "vorbis,", kClearKeyKeySystem },
@@ -66,10 +68,20 @@ supported_format_key_system_combinations[] = {
   // Widevine.
   { "video/webm", "vorbis,vp8,vp8.0,", kWidevineKeySystem },
   { "audio/webm", "vorbis,", kWidevineKeySystem },
+  { "video/webm", "vorbis,vp8,vp8.0,", kWidevineBaseKeySystem },
+  { "audio/webm", "vorbis,", kWidevineBaseKeySystem },
+#if defined(WIDEVINE_CDM_CENC_SUPPORT_AVAILABLE)
+#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+  { "video/mp4", "avc1,mp4a,", kWidevineKeySystem },
+  { "audio/mp4", "mp4a,", kWidevineKeySystem },
+  { "video/mp4", "avc1,mp4a,", kWidevineBaseKeySystem },
+  { "audio/mp4", "mp4a,", kWidevineBaseKeySystem },
+#endif
+#endif
 #endif  // WIDEVINE_CDM_AVAILABLE
 };
 
-static const KeySystemPluginTypePair key_system_to_plugin_type_mapping[] = {
+static const KeySystemPluginTypePair kKeySystemToPluginTypeMapping[] = {
   // TODO(xhwang): Update this with the real plugin name.
   { kExternalClearKeyKeySystem, "application/x-ppapi-clearkey-cdm" },
 #if defined(WIDEVINE_CDM_AVAILABLE)
@@ -108,10 +120,10 @@ static base::LazyInstance<KeySystems> g_key_systems = LAZY_INSTANCE_INITIALIZER;
 KeySystems::KeySystems() {
   // Initialize the supported media type/key system combinations.
   for (size_t i = 0;
-       i < arraysize(supported_format_key_system_combinations);
+       i < arraysize(kSupportedFormatKeySystemCombinations);
        ++i) {
     const MediaFormatAndKeySystem& combination =
-        supported_format_key_system_combinations[i];
+        kSupportedFormatKeySystemCombinations[i];
     std::vector<std::string> mime_type_codecs;
     net::ParseCodecString(combination.codecs_list,
                           &mime_type_codecs,
@@ -141,10 +153,6 @@ KeySystems::KeySystems() {
 bool KeySystems::IsSupportedKeySystem(const std::string& key_system) {
   bool is_supported = key_system_map_.find(key_system) != key_system_map_.end();
 
-  DCHECK_EQ(is_supported,
-            (CanUseAesDecryptor(key_system) ||
-             !GetPluginType(key_system).empty()))
-      << "key_system_map_ & key_system_to_plugin_type_mapping are inconsistent";
   return is_supported;
 }
 
@@ -219,9 +227,9 @@ bool CanUseAesDecryptor(const std::string& key_system) {
 }
 
 std::string GetPluginType(const std::string& key_system) {
-  for (size_t i = 0; i < arraysize(key_system_to_plugin_type_mapping); ++i) {
-    if (key_system_to_plugin_type_mapping[i].key_system == key_system)
-      return key_system_to_plugin_type_mapping[i].plugin_type;
+  for (size_t i = 0; i < arraysize(kKeySystemToPluginTypeMapping); ++i) {
+    if (kKeySystemToPluginTypeMapping[i].key_system == key_system)
+      return kKeySystemToPluginTypeMapping[i].plugin_type;
   }
 
   return std::string();

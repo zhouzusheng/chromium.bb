@@ -2,40 +2,53 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CCTextureDrawQuad_h
-#define CCTextureDrawQuad_h
+#ifndef CC_TEXTURE_DRAW_QUAD_H_
+#define CC_TEXTURE_DRAW_QUAD_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "cc/cc_export.h"
 #include "cc/draw_quad.h"
 #include "ui/gfx/rect_f.h"
 
 namespace cc {
 
-#pragma pack(push, 4)
+class CC_EXPORT TextureDrawQuad : public DrawQuad {
+ public:
+  static scoped_ptr<TextureDrawQuad> Create();
 
-class TextureDrawQuad : public DrawQuad {
-public:
-    static scoped_ptr<TextureDrawQuad> create(const SharedQuadState*, const gfx::Rect&, unsigned resourceId, bool premultipliedAlpha, const gfx::RectF& uvRect, bool flipped);
-    gfx::RectF uvRect() const { return m_uvRect; }
+  void SetNew(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              unsigned resource_id,
+              bool premultiplied_alpha,
+              const gfx::RectF& uv_rect,
+              const float vertex_opacity[4],
+              bool flipped);
 
-    unsigned resourceId() const { return m_resourceId; }
-    bool premultipliedAlpha() const { return  m_premultipliedAlpha; }
-    bool flipped() const { return m_flipped; }
+  void SetAll(const SharedQuadState* shared_quad_state,
+              gfx::Rect rect,
+              gfx::Rect opaque_rect,
+              gfx::Rect visible_rect,
+              bool needs_blending,
+              unsigned resource_id,
+              bool premultiplied_alpha,
+              const gfx::RectF& uv_rect,
+              const float vertex_opacity[4],
+              bool flipped);
 
-    void setNeedsBlending();
+  unsigned resource_id;
+  bool premultiplied_alpha;
+  gfx::RectF uv_rect;
+  float vertex_opacity[4];
+  bool flipped;
 
-    static const TextureDrawQuad* materialCast(const DrawQuad*);
-private:
-    TextureDrawQuad(const SharedQuadState*, const gfx::Rect&, unsigned resourceId, bool premultipliedAlpha, const gfx::RectF& uvRect, bool flipped);
+  static const TextureDrawQuad* MaterialCast(const DrawQuad*);
 
-    unsigned m_resourceId;
-    bool m_premultipliedAlpha;
-    gfx::RectF m_uvRect;
-    bool m_flipped;
+  bool PerformClipping();
+ private:
+  TextureDrawQuad();
 };
-
-#pragma pack(pop)
 
 }
 
-#endif
+#endif  // CC_TEXTURE_DRAW_QUAD_H_

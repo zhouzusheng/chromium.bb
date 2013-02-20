@@ -44,20 +44,35 @@
 #include "RuntimeEnabledFeatures.h"
 #include "SVGNames.h"
 #include "StyleResolver.h"
+#include "Text.h"
 #include "markup.h"
 
+// FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
+#define GuardOrphanShadowRoot(rejectStatement) \
+    if (!this->host()) {                       \
+        rejectStatement;                       \
+        return;                                \
+    }
+
 namespace WebCore {
+
+struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
+    void* pointers[3];
+    unsigned countersAndFlags[1];
+};
+
+COMPILE_ASSERT(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), shadowroot_should_stay_small);
 
 ShadowRoot::ShadowRoot(Document* document)
     : DocumentFragment(document, CreateShadowRoot)
     , TreeScope(this)
     , m_prev(0)
     , m_next(0)
+    , m_numberOfStyles(0)
     , m_applyAuthorStyles(false)
     , m_resetStyleInheritance(false)
-    , m_insertionPointAssignedTo(0)
-    , m_numberOfShadowElementChildren(0)
-    , m_numberOfStyles(0)
+    , m_isAuthorShadowRoot(false)
+    , m_registeredWithParentShadowRoot(false)
 {
     ASSERT(document);
     
@@ -128,9 +143,7 @@ PassRefPtr<ShadowRoot> ShadowRoot::create(Element* element, ShadowRootType type,
     }
 
     RefPtr<ShadowRoot> shadowRoot = adoptRef(new ShadowRoot(element->document()));
-#ifndef NDEBUG
-    shadowRoot->m_type = type;
-#endif
+    shadowRoot->setType(type);
 
     ec = 0;
     element->ensureShadow()->addShadowRoot(element, shadowRoot, type, ec);
@@ -152,15 +165,10 @@ PassRefPtr<Node> ShadowRoot::cloneNode(bool)
     return 0;
 }
 
-PassRefPtr<Node> ShadowRoot::cloneNode(bool deep, ExceptionCode& ec)
+PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionCode& ec)
 {
-    RefPtr<Node> clone = cloneNode(deep);
-    if (!clone) {
-        ec = DATA_CLONE_ERR;
-        return 0;
-    }
-
-    return clone;
+    ec = DATA_CLONE_ERR;
+    return 0;
 }
 
 String ShadowRoot::innerHTML() const
@@ -170,6 +178,8 @@ String ShadowRoot::innerHTML() const
 
 void ShadowRoot::setInnerHTML(const String& markup, ExceptionCode& ec)
 {
+    GuardOrphanShadowRoot(ec = INVALID_ACCESS_ERR);
+
     if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, host(), AllowScriptingContent, ec))
         replaceChildrenWithFragment(this, fragment.release(), ec);
 }
@@ -189,6 +199,26 @@ bool ShadowRoot::childTypeAllowed(NodeType type) const
     }
 }
 
+void ShadowRoot::recalcStyle(StyleChange change)
+{
+    // ShadowRoot doesn't support custom callbacks.
+    ASSERT(!hasCustomCallbacks());
+
+    StyleResolver* styleResolver = document()->styleResolver();
+    styleResolver->pushParentShadowRoot(this);
+
+    for (Node* child = firstChild(); child; child = child->nextSibling()) {
+        if (child->isElementNode())
+            static_cast<Element*>(child)->recalcStyle(change);
+        else if (child->isTextNode())
+            toText(child)->recalcTextStyle(change);
+    }
+
+    styleResolver->popParentShadowRoot(this);
+    clearNeedsStyleRecalc();
+    clearChildNeedsStyleRecalc();
+}
+
 ElementShadow* ShadowRoot::owner() const
 {
     if (host())
@@ -198,12 +228,7 @@ ElementShadow* ShadowRoot::owner() const
 
 bool ShadowRoot::hasInsertionPoint() const
 {
-    for (Node* n = firstChild(); n; n = n->traverseNextNode(this)) {
-        if (isInsertionPoint(n))
-            return true;
-    }
-
-    return false;
+    return hasShadowInsertionPoint() || hasContentElement();
 }
 
 bool ShadowRoot::applyAuthorStyles() const
@@ -213,6 +238,8 @@ bool ShadowRoot::applyAuthorStyles() const
 
 void ShadowRoot::setApplyAuthorStyles(bool value)
 {
+    GuardOrphanShadowRoot({ });
+
     if (m_applyAuthorStyles != value) {
         m_applyAuthorStyles = value;
         host()->setNeedsStyleRecalc();
@@ -226,6 +253,8 @@ bool ShadowRoot::resetStyleInheritance() const
 
 void ShadowRoot::setResetStyleInheritance(bool value)
 {
+    GuardOrphanShadowRoot({ });
+
     if (value != m_resetStyleInheritance) {
         m_resetStyleInheritance = value;
         if (attached() && owner())
@@ -241,10 +270,70 @@ void ShadowRoot::attach()
     styleResolver->popParentShadowRoot(this);
 }
 
+Node::InsertionNotificationRequest ShadowRoot::insertedInto(ContainerNode* insertionPoint)
+{
+    DocumentFragment::insertedInto(insertionPoint);
+
+    if (!insertionPoint->inDocument() || !isOldest())
+        return InsertionDone;
+
+    // FIXME: When parsing <video controls>, insertedInto() is called many times without invoking removedFrom.
+    // For now, we check m_registeredWithParentShadowroot. We would like to ASSERT(!m_registeredShadowRoot) here.
+    // https://bugs.webkit.org/show_bug.cig?id=101316
+    if (m_registeredWithParentShadowRoot)
+        return InsertionDone;
+
+    if (ShadowRoot* root = host()->containingShadowRoot()) {
+        root->registerElementShadow();
+        m_registeredWithParentShadowRoot = true;
+    }
+
+    return InsertionDone;
+}
+
+void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
+{
+    if (insertionPoint->inDocument() && m_registeredWithParentShadowRoot) {
+        ShadowRoot* root = host()->containingShadowRoot();
+        if (!root)
+            root = insertionPoint->containingShadowRoot();
+
+        if (root)
+            root->unregisterElementShadow();
+        m_registeredWithParentShadowRoot = false;
+    }
+
+    DocumentFragment::removedFrom(insertionPoint);
+}
+
+InsertionPoint* ShadowRoot::assignedTo() const
+{
+    if (!distributionData())
+        return 0;
+
+    return distributionData()->insertionPointAssignedTo();
+}
+
+void ShadowRoot::setAssignedTo(InsertionPoint* insertionPoint)
+{
+    ASSERT(!assignedTo() || !insertionPoint);
+    ensureDistributionData()->setInsertionPointAssignedTo(insertionPoint);
+}
+
 void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
+    GuardOrphanShadowRoot({ });
+
     ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     owner()->invalidateDistribution();
+}
+
+const Vector<RefPtr<InsertionPoint> >& ShadowRoot::insertionPointList()
+{
+    typedef Vector<RefPtr<InsertionPoint> > InsertionPointVector;
+    DEFINE_STATIC_LOCAL(InsertionPointVector, emptyVector, ());
+
+    return distributionData() ? distributionData()->ensureInsertionPointList(this) : emptyVector;
 }
 
 void ShadowRoot::registerScopedHTMLStyleChild()
@@ -258,6 +347,78 @@ void ShadowRoot::unregisterScopedHTMLStyleChild()
     ASSERT(hasScopedHTMLStyleChild() && m_numberOfStyles > 0);
     --m_numberOfStyles;
     setHasScopedHTMLStyleChild(m_numberOfStyles > 0);
+}
+
+inline ShadowRootContentDistributionData* ShadowRoot::ensureDistributionData()
+{
+    if (m_distributionData)
+        return m_distributionData.get();
+
+    m_distributionData = adoptPtr(new ShadowRootContentDistributionData);
+    return m_distributionData.get();
+}   
+
+void ShadowRoot::registerInsertionPoint(InsertionPoint* point)
+{
+    ensureDistributionData()->regiterInsertionPoint(this, point);
+}
+
+void ShadowRoot::unregisterInsertionPoint(InsertionPoint* point)
+{
+    ensureDistributionData()->unregisterInsertionPoint(this, point);
+}
+
+bool ShadowRoot::hasShadowInsertionPoint() const
+{
+    if (!distributionData())
+        return false;
+
+    return distributionData()->hasShadowElementChildren();
+}
+
+bool ShadowRoot::hasContentElement() const
+{
+    if (!distributionData())
+        return false;
+
+    return distributionData()->hasContentElementChildren();
+}
+
+void ShadowRoot::registerElementShadow()
+{
+    ensureDistributionData()->incrementNumberOfElementShadowChildren();
+}
+
+void ShadowRoot::unregisterElementShadow()
+{
+    ASSERT(hasElementShadow());
+    distributionData()->decrementNumberOfElementShadowChildren();
+}
+
+bool ShadowRoot::hasElementShadow() const
+{
+    if (!distributionData())
+        return false;
+
+    return distributionData()->hasElementShadowChildren();
+}
+
+unsigned ShadowRoot::countElementShadow() const 
+{
+    if (!distributionData())
+        return 0;
+
+    return distributionData()->numberOfElementShadowChildren();
+}
+
+void ShadowRoot::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+{
+    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
+    DocumentFragment::reportMemoryUsage(memoryObjectInfo);
+    TreeScope::reportMemoryUsage(memoryObjectInfo);
+    info.addMember(m_prev);
+    info.addMember(m_next);
+    info.addMember(m_distributionData);
 }
 
 }

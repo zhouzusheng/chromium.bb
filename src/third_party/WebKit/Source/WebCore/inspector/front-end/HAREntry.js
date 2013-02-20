@@ -202,13 +202,13 @@ WebInspector.HAREntry.prototype = {
     _buildCookie: function(cookie)
     {
         return {
-            name: cookie.name,
-            value: cookie.value,
-            path: cookie.path,
-            domain: cookie.domain,
-            expires: cookie.expires(new Date(this._request.startTime * 1000)),
-            httpOnly: cookie.httpOnly,
-            secure: cookie.secure
+            name: cookie.name(),
+            value: cookie.value(),
+            path: cookie.path(),
+            domain: cookie.domain(),
+            expires: cookie.expiresDate(new Date(this._request.startTime * 1000)),
+            httpOnly: cookie.httpOnly(),
+            secure: cookie.secure()
         };
     },
 

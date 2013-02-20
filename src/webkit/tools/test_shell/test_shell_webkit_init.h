@@ -86,7 +86,6 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   }
 #endif
 
-  virtual WebKit::WebSharedWorkerRepository* sharedWorkerRepository() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
@@ -109,7 +108,7 @@ class TestShellWebKitInit : public webkit_glue::WebKitPlatformSupportImpl {
   SimpleClipboardClient clipboard_client_;
   webkit_glue::WebClipboardImpl real_clipboard_;
   webkit_glue::WebFileUtilitiesImpl file_utilities_;
-  ScopedTempDir appcache_dir_;
+  base::ScopedTempDir appcache_dir_;
   SimpleAppCacheSystem appcache_system_;
   SimpleDatabaseSystem database_system_;
   SimpleDomStorageSystem dom_storage_system_;

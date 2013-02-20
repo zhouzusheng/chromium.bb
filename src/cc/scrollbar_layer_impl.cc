@@ -2,26 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/scrollbar_layer_impl.h"
 
 #include "cc/quad_sink.h"
 #include "cc/scrollbar_animation_controller.h"
 #include "cc/texture_draw_quad.h"
+#include "ui/gfx/rect_conversions.h"
 
 using WebKit::WebRect;
 using WebKit::WebScrollbar;
 
 namespace cc {
 
-scoped_ptr<ScrollbarLayerImpl> ScrollbarLayerImpl::create(int id)
+scoped_ptr<ScrollbarLayerImpl> ScrollbarLayerImpl::create(LayerTreeImpl* treeImpl, int id)
 {
-    return make_scoped_ptr(new ScrollbarLayerImpl(id));
+    return make_scoped_ptr(new ScrollbarLayerImpl(treeImpl, id));
 }
 
-ScrollbarLayerImpl::ScrollbarLayerImpl(int id)
-    : LayerImpl(id)
+ScrollbarLayerImpl::ScrollbarLayerImpl(LayerTreeImpl* treeImpl, int id)
+    : ScrollbarLayerImplBase(treeImpl, id)
     , m_scrollbar(this)
     , m_backTrackResourceId(0)
     , m_foreTrackResourceId(0)
@@ -66,19 +65,46 @@ void ScrollbarLayerImpl::setScrollbarData(WebScrollbar* scrollbar)
     m_geometry->update(scrollbar);
 }
 
-static FloatRect toUVRect(const WebRect& r, const IntRect& bounds)
+float ScrollbarLayerImpl::currentPos() const
 {
-    return FloatRect(static_cast<float>(r.x) / bounds.width(), static_cast<float>(r.y) / bounds.height(),
-                     static_cast<float>(r.width) / bounds.width(), static_cast<float>(r.height) / bounds.height());
+    return m_currentPos;
+}
+
+int ScrollbarLayerImpl::totalSize() const
+{
+    return m_totalSize;
+}
+
+int ScrollbarLayerImpl::maximum() const
+{
+    return m_maximum;
+}
+
+WebKit::WebScrollbar::Orientation ScrollbarLayerImpl::orientation() const
+{
+    return m_orientation;
+}
+
+static gfx::RectF toUVRect(const gfx::Rect& r, const gfx::Rect& bounds)
+{
+    return gfx::ScaleRect(r, 1.0 / bounds.width(), 1.0 / bounds.height());
+}
+
+gfx::Rect ScrollbarLayerImpl::scrollbarLayerRectToContentRect(const gfx::Rect& layerRect) const
+{
+    // Don't intersect with the bounds as in layerRectToContentRect() because
+    // layerRect here might be in coordinates of the containing layer.
+    gfx::RectF contentRect = gfx::ScaleRect(layerRect, contentsScaleX(), contentsScaleY());
+    return gfx::ToEnclosingRect(contentRect);
 }
 
 void ScrollbarLayerImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& appendQuadsData)
 {
     bool premultipledAlpha = false;
     bool flipped = false;
-    FloatRect uvRect(0, 0, 1, 1);
-    IntRect boundsRect(IntPoint(), bounds());
-    IntRect contentBoundsRect(IntPoint(), contentBounds());
+    gfx::RectF uvRect(0, 0, 1, 1);
+    gfx::Rect boundsRect(gfx::Point(), bounds());
+    gfx::Rect contentBoundsRect(gfx::Point(), contentBounds());
 
     SharedQuadState* sharedQuadState = quadSink.useSharedQuadState(createSharedQuadState());
     appendDebugBorderQuad(quadSink, sharedQuadState, appendQuadsData);
@@ -89,8 +115,11 @@ void ScrollbarLayerImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& append
         thumbRect = WebRect();
 
     if (m_thumbResourceId && !thumbRect.isEmpty()) {
-        scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::create(sharedQuadState, layerRectToContentRect(thumbRect), m_thumbResourceId, premultipledAlpha, uvRect, flipped);
-        quad->setNeedsBlending();
+        gfx::Rect quadRect(scrollbarLayerRectToContentRect(thumbRect));
+        gfx::Rect opaqueRect;
+        const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
+        scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+        quad->SetNew(sharedQuadState, quadRect, opaqueRect, m_thumbResourceId, premultipledAlpha, uvRect, opacity, flipped);
         quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
     }
 
@@ -98,16 +127,28 @@ void ScrollbarLayerImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& append
         return;
 
     // We only paint the track in two parts if we were given a texture for the forward track part.
-    if (m_foreTrackResourceId && !foreTrackRect.isEmpty())
-        quadSink.append(TextureDrawQuad::create(sharedQuadState, layerRectToContentRect(foreTrackRect), m_foreTrackResourceId, premultipledAlpha, toUVRect(foreTrackRect, boundsRect), flipped).PassAs<DrawQuad>(), appendQuadsData);
+    if (m_foreTrackResourceId && !foreTrackRect.isEmpty()) {
+        gfx::Rect quadRect(scrollbarLayerRectToContentRect(foreTrackRect));
+        gfx::Rect opaqueRect(contentsOpaque() ? quadRect : gfx::Rect());
+        const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
+        scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+        quad->SetNew(sharedQuadState, quadRect, opaqueRect, m_foreTrackResourceId, premultipledAlpha, toUVRect(foreTrackRect, boundsRect), opacity, flipped);
+        quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
+    }
 
     // Order matters here: since the back track texture is being drawn to the entire contents rect, we must append it after the thumb and
     // fore track quads. The back track texture contains (and displays) the buttons.
-    if (!contentBoundsRect.isEmpty())
-        quadSink.append(TextureDrawQuad::create(sharedQuadState, IntRect(contentBoundsRect), m_backTrackResourceId, premultipledAlpha, uvRect, flipped).PassAs<DrawQuad>(), appendQuadsData);
+    if (!contentBoundsRect.IsEmpty()) {
+        gfx::Rect quadRect(contentBoundsRect);
+        gfx::Rect opaqueRect(contentsOpaque() ? quadRect : gfx::Rect());
+        const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
+        scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+        quad->SetNew(sharedQuadState, quadRect, opaqueRect, m_backTrackResourceId, premultipledAlpha, uvRect, opacity, flipped);
+        quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
+    }
 }
 
-void ScrollbarLayerImpl::didLoseContext()
+void ScrollbarLayerImpl::didLoseOutputSurface()
 {
     m_backTrackResourceId = 0;
     m_foreTrackResourceId = 0;
@@ -199,4 +240,4 @@ const char* ScrollbarLayerImpl::layerTypeAsString() const
     return "ScrollbarLayer";
 }
 
-}
+}  // namespace cc

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ShaderChromium_h
-#define ShaderChromium_h
+#ifndef CC_SHADER_H_
+#define CC_SHADER_H_
 
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include <string>
@@ -35,13 +35,11 @@ public:
     std::string getShaderString() const;
 
     int matrixLocation() const { return m_matrixLocation; }
-    int yWidthScaleFactorLocation() const { return m_yWidthScaleFactorLocation; }
-    int uvWidthScaleFactorLocation() const { return m_uvWidthScaleFactorLocation; }
+    int texScaleLocation() const { return m_texScaleLocation; }
 
 private:
     int m_matrixLocation;
-    int m_yWidthScaleFactorLocation;
-    int m_uvWidthScaleFactorLocation;
+    int m_texScaleLocation;
 };
 
 class VertexShaderPos {
@@ -72,10 +70,12 @@ public:
 
     int matrixLocation() const { return m_matrixLocation; }
     int texTransformLocation() const { return m_texTransformLocation; }
+    int vertexOpacityLocation() const { return m_vertexOpacityLocation; }
 
 private:
     int m_matrixLocation;
     int m_texTransformLocation;
+    int m_vertexOpacityLocation;
 };
 
 class VertexShaderQuad {
@@ -87,10 +87,12 @@ public:
 
     int matrixLocation() const { return m_matrixLocation; }
     int pointLocation() const { return m_pointLocation; }
+    int texScaleLocation() const { return m_texScaleLocation; }
 
 private:
     int m_matrixLocation;
     int m_pointLocation;
+    int m_texScaleLocation;
 };
 
 class VertexShaderTile {
@@ -154,7 +156,12 @@ private:
     int m_samplerLocation;
 };
 
-class FragmentShaderRGBATexFlipAlpha : public FragmentTexAlphaBinding {
+class FragmentShaderRGBATexFlipVaryingAlpha : public FragmentTexOpaqueBinding {
+public:
+    std::string getShaderString() const;
+};
+
+class FragmentShaderRGBATexVaryingAlpha : public FragmentTexOpaqueBinding {
 public:
     std::string getShaderString() const;
 };
@@ -164,12 +171,12 @@ public:
     std::string getShaderString() const;
 };
 
-class FragmentShaderRGBATexRectFlipAlpha : public FragmentTexAlphaBinding {
+class FragmentShaderRGBATexRectFlipVaryingAlpha : public FragmentTexAlphaBinding {
 public:
     std::string getShaderString() const;
 };
 
-class FragmentShaderRGBATexRectAlpha : public FragmentTexAlphaBinding {
+class FragmentShaderRGBATexRectVaryingAlpha : public FragmentTexAlphaBinding {
 public:
     std::string getShaderString() const;
 };
@@ -346,4 +353,4 @@ private:
 
 } // namespace cc
 
-#endif
+#endif  // CC_SHADER_H_

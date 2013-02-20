@@ -258,6 +258,11 @@ WebInspector.UISourceCode.prototype = {
         }
 
         this.requestOriginalContent(callback.bind(this));
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.ApplyOriginalContent,
+            url: this.url
+        });
     },
 
     /**
@@ -283,6 +288,11 @@ WebInspector.UISourceCode.prototype = {
         }
 
         this.requestOriginalContent(revert.bind(this));
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.RevertRevision,
+            url: this.url
+        });
     },
 
     /**
@@ -330,6 +340,11 @@ WebInspector.UISourceCode.prototype = {
 
         this._commitContent(this._workingCopy);
         callback(null);
+
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.FileSaved,
+            url: this.url
+        });
     },
 
     /**
@@ -399,16 +414,8 @@ WebInspector.UISourceCode.prototype = {
             callbacks[i](content, contentEncoded, mimeType);
 
         if (this._formatOnLoad) {
-            function formattedCallback()
-            {
-                for (var i = 0; i < this._pendingFormattedCallbacks.length; ++i)
-                    this._pendingFormattedCallbacks[i]();
-                delete this._pendingFormattedCallbacks;
-                
-            }
-
             delete this._formatOnLoad;
-            this.setFormatted(true, formattedCallback.bind(this));
+            this.setFormatted(true);
         }
     },
 
@@ -502,14 +509,6 @@ WebInspector.UISourceCode.prototype = {
     /**
      * @return {boolean}
      */
-    togglingFormatter: function()
-    {
-        return this._togglingFormatter;
-    },
-
-    /**
-     * @return {boolean}
-     */
     formatted: function()
     {
         return !!this._formatted;
@@ -517,23 +516,16 @@ WebInspector.UISourceCode.prototype = {
 
     /**
      * @param {boolean} formatted
-     * @param {function()=} callback
      */
-    setFormatted: function(formatted, callback)
+    setFormatted: function(formatted)
     {
-        callback = callback || function() {};
         if (!this.contentLoaded()) {
-            if (!this._pendingFormattedCallbacks)
-                this._pendingFormattedCallbacks = [];
-            this._pendingFormattedCallbacks.push(callback);
             this._formatOnLoad = formatted;
             return;
         }
 
-        if (this._formatted === formatted) {
-            callback();
+        if (this._formatted === formatted)
             return;
-        }
 
         this._formatted = formatted;
 
@@ -564,14 +556,11 @@ WebInspector.UISourceCode.prototype = {
              */
             function formattedChanged(content, formatterMapping)
             {
-                this._togglingFormatter = true;
                 this._content = content;
                 delete this._workingCopy;
-                this.dispatchEventToListeners(WebInspector.UISourceCode.Events.FormattedChanged, {content: content});
-                delete this._togglingFormatter;
                 this._formatterMapping = formatterMapping;
+                this.dispatchEventToListeners(WebInspector.UISourceCode.Events.FormattedChanged, {content: content});
                 this.updateLiveLocations();
-                callback();
             }
         }
     },

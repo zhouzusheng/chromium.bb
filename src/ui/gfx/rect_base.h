@@ -22,6 +22,7 @@ template<typename Class,
          typename PointClass,
          typename SizeClass,
          typename InsetsClass,
+         typename VectorClass,
          typename Type>
 class UI_EXPORT RectBase {
  public:
@@ -46,6 +47,14 @@ class UI_EXPORT RectBase {
   Type right() const { return x() + width(); }
   Type bottom() const { return y() + height(); }
 
+  PointClass top_right() const { return PointClass(right(), y()); }
+  PointClass bottom_left() const { return PointClass(x(), bottom()); }
+  PointClass bottom_right() const { return PointClass(right(), bottom()); }
+
+  VectorClass OffsetFromOrigin() const {
+    return VectorClass(x(), y());
+  }
+
   void SetRect(Type x, Type y, Type width, Type height);
 
   // Shrink the rectangle by a horizontal and vertical distance on all sides.
@@ -61,9 +70,11 @@ class UI_EXPORT RectBase {
 
   // Move the rectangle by a horizontal and vertical distance.
   void Offset(Type horizontal, Type vertical);
-  void Offset(const PointClass& point) {
-    Offset(point.x(), point.y());
+  void Offset(const VectorClass& distance) {
+    Offset(distance.x(), distance.y());
   }
+  void operator+=(const VectorClass& offset);
+  void operator-=(const VectorClass& offset);
 
   InsetsClass InsetsFrom(const Class& inner) const {
     return InsetsClass(inner.y() - y(),
@@ -134,12 +145,15 @@ class UI_EXPORT RectBase {
   bool SharesEdgeWith(const Class& rect) const;
 
  protected:
-  RectBase(const PointClass& origin, const SizeClass& size);
-  explicit RectBase(const SizeClass& size);
-  explicit RectBase(const PointClass& origin);
+  RectBase(const PointClass& origin, const SizeClass& size)
+      : origin_(origin), size_(size) {}
+  explicit RectBase(const SizeClass& size)
+      : size_(size) {}
+  explicit RectBase(const PointClass& origin)
+      : origin_(origin) {}
   // Destructor is intentionally made non virtual and protected.
   // Do not make this public.
-  ~RectBase();
+  ~RectBase() {}
 
  private:
   PointClass origin_;

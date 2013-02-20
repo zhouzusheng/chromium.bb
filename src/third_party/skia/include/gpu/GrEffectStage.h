@@ -8,11 +8,12 @@
 
 
 
-#ifndef GrSamplerState_DEFINED
-#define GrSamplerState_DEFINED
+#ifndef GrEffectStage_DEFINED
+#define GrEffectStage_DEFINED
 
+#include "GrBackendEffectFactory.h"
 #include "GrEffect.h"
-#include "GrMatrix.h"
+#include "SkMatrix.h"
 #include "GrTypes.h"
 
 #include "SkShader.h"
@@ -46,7 +47,7 @@ public:
             return false;
         }
 
-        return fMatrix == other.fMatrix && fCoordChangeMatrix == other.fCoordChangeMatrix;
+        return fCoordChangeMatrix == other.fCoordChangeMatrix;
     }
 
     bool operator !=(const GrEffectStage& s) const { return !(*this == s); }
@@ -54,7 +55,6 @@ public:
     GrEffectStage& operator =(const GrEffectStage& other) {
         GrSafeAssign(fEffect, other.fEffect);
         if (NULL != fEffect) {
-            fMatrix = other.fMatrix;
             fCoordChangeMatrix = other.fCoordChangeMatrix;
         }
         return *this;
@@ -65,12 +65,12 @@ public:
      *
      * @param matrix    The transformation from the old coord system to the new one.
      */
-    void preConcatCoordChange(const GrMatrix& matrix) { fCoordChangeMatrix.preConcat(matrix); }
+    void preConcatCoordChange(const SkMatrix& matrix) { fCoordChangeMatrix.preConcat(matrix); }
 
     class SavedCoordChange {
     private:
-        GrMatrix fCoordChangeMatrix;
-        GR_DEBUGCODE(mutable SkAutoTUnref<GrEffect> fEffect;)
+        SkMatrix fCoordChangeMatrix;
+        GR_DEBUGCODE(mutable SkAutoTUnref<const GrEffect> fEffect;)
 
         friend class GrEffectStage;
     };
@@ -79,7 +79,7 @@ public:
      * This gets the current coordinate system change. It is the accumulation of
      * preConcatCoordChange calls since the effect was installed. It is used when then caller
      * wants to temporarily change the source geometry coord system, draw something, and then
-     * restore the previous coord system (e.g. temporarily draw in device coords).s
+     * restore the previous coord system (e.g. temporarily draw in device coords).
      */
     void saveCoordChange(SavedCoordChange* savedCoordChange) const {
         savedCoordChange->fCoordChangeMatrix = fCoordChangeMatrix;
@@ -100,35 +100,18 @@ public:
     }
 
     /**
-     * Gets the texture matrix. This is will be removed soon and be managed by GrEffect.
+     * Gets the matrix representing all changes of coordinate system since the GrEffect was
+     * installed in the stage.
      */
-    const GrMatrix& getMatrix() const { return fMatrix; }
-
-    /**
-     * Gets the matrix to apply at draw time. This is the original texture matrix combined with
-     * any coord system changes.
-     */
-    void getTotalMatrix(GrMatrix* matrix) const {
-        *matrix = fMatrix;
-        matrix->preConcat(fCoordChangeMatrix);
-    }
+    const SkMatrix& getCoordChangeMatrix() const { return fCoordChangeMatrix; }
 
     void reset() {
         GrSafeSetNull(fEffect);
     }
 
-    GrEffect* setEffect(GrEffect* effect) {
+    const GrEffect* setEffect(const GrEffect* effect) {
         GrAssert(0 == fSavedCoordChangeCnt);
         GrSafeAssign(fEffect, effect);
-        fMatrix.reset();
-        fCoordChangeMatrix.reset();
-        return effect;
-    }
-
-    GrEffect* setEffect(GrEffect* effect, const GrMatrix& matrix) {
-        GrAssert(0 == fSavedCoordChangeCnt);
-        GrSafeAssign(fEffect, effect);
-        fMatrix = matrix;
         fCoordChangeMatrix.reset();
         return effect;
     }
@@ -136,9 +119,8 @@ public:
     const GrEffect* getEffect() const { return fEffect; }
 
 private:
-    GrMatrix            fCoordChangeMatrix;
-    GrMatrix            fMatrix; // TODO: remove this, store in GrEffect
-    GrEffect*           fEffect;
+    SkMatrix            fCoordChangeMatrix;
+    const GrEffect*     fEffect;
 
     GR_DEBUGCODE(mutable int fSavedCoordChangeCnt;)
 };

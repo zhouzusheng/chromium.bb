@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/delegated_renderer_layer.h"
 
 #include "cc/delegated_renderer_layer_impl.h"
@@ -26,9 +24,9 @@ DelegatedRendererLayer::~DelegatedRendererLayer()
 {
 }
 
-scoped_ptr<LayerImpl> DelegatedRendererLayer::createLayerImpl()
+scoped_ptr<LayerImpl> DelegatedRendererLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return DelegatedRendererLayerImpl::create(m_layerId).PassAs<LayerImpl>();
+    return DelegatedRendererLayerImpl::create(treeImpl, m_layerId).PassAs<LayerImpl>();
 }
 
 }  // namespace cc

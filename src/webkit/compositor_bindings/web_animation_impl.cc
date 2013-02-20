@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "web_animation_impl.h"
 
 #include "cc/active_animation.h"
 #include "cc/animation_curve.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationCurve.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAnimation.h"
+#include "web_animation_id_provider.h"
 #include "web_float_animation_curve_impl.h"
 #include "web_transform_animation_curve_impl.h"
 
 using cc::ActiveAnimation;
+using webkit::WebAnimationIdProvider;
 
 namespace WebKit {
 
@@ -24,12 +24,10 @@ WebAnimation* WebAnimation::create(const WebAnimationCurve& curve, TargetPropert
 
 WebAnimationImpl::WebAnimationImpl(const WebAnimationCurve& webCurve, TargetProperty targetProperty, int animationId, int groupId)
 {
-    static int nextAnimationId = 1;
-    static int nextGroupId = 1;
     if (!animationId)
-        animationId = nextAnimationId++;
+        animationId = WebAnimationIdProvider::NextAnimationId();
     if (!groupId)
-        groupId = nextGroupId++;
+        groupId = WebAnimationIdProvider::NextGroupId();
 
     WebAnimationCurve::AnimationCurveType curveType = webCurve.type();
     scoped_ptr<cc::AnimationCurve> curve;

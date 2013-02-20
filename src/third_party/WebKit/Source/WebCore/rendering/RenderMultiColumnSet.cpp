@@ -39,8 +39,13 @@ namespace WebCore {
 RenderMultiColumnSet::RenderMultiColumnSet(Node* node, RenderFlowThread* flowThread)
     : RenderRegionSet(node, flowThread)
     , m_computedColumnCount(1)
-    , m_computedColumnWidth(ZERO_LAYOUT_UNIT)
-    , m_computedColumnHeight(ZERO_LAYOUT_UNIT)
+    , m_computedColumnWidth(0)
+    , m_computedColumnHeight(0)
+    , m_requiresBalancing(false)
+    , m_minimumColumnHeight(0)
+    , m_forcedBreaksCount(0)
+    , m_maximumDistanceBetweenForcedBreaks(0)
+    , m_forcedBreakOffset(0)
 {
 }
 
@@ -228,9 +233,9 @@ void RenderMultiColumnSet::paintColumnRules(PaintInfo& paintInfo, const LayoutPo
     bool antialias = shouldAntialiasLines(paintInfo.context);
 
     bool leftToRight = style()->isLeftToRightDirection();
-    LayoutUnit currLogicalLeftOffset = leftToRight ? ZERO_LAYOUT_UNIT : contentLogicalWidth();
+    LayoutUnit currLogicalLeftOffset = leftToRight ? LayoutUnit() : contentLogicalWidth();
     LayoutUnit ruleAdd = borderAndPaddingLogicalLeft();
-    LayoutUnit ruleLogicalLeft = leftToRight ? ZERO_LAYOUT_UNIT : contentLogicalWidth();
+    LayoutUnit ruleLogicalLeft = leftToRight ? LayoutUnit() : contentLogicalWidth();
     LayoutUnit inlineDirectionSize = computedColumnWidth();
     BoxSide boxSide = isHorizontalWritingMode()
         ? leftToRight ? BSLeft : BSRight

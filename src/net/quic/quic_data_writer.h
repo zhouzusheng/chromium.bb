@@ -11,9 +11,9 @@
 #include "base/logging.h"
 #include "base/port.h"
 #include "base/string_piece.h"
+#include "net/base/int128.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/uint128.h"
 
 namespace net {
 
@@ -45,8 +45,17 @@ class NET_EXPORT_PRIVATE QuicDataWriter {
   bool WriteUInt64(uint64 value);
   bool WriteUInt128(uint128 value);
   bool WriteStringPiece16(base::StringPiece val);
-  bool WriteBytes(const void* data, uint32 data_len);
+  bool WriteBytes(const void* data, size_t data_len);
 
+  // Methods for editing the payload at a specific offset.
+  // Return true if there is enough space at that offset, false otherwise.
+  bool WriteUInt8ToOffset(uint8 value, size_t offset);
+  bool WriteUInt48ToOffset(uint64 value, size_t offset);
+
+  static void WriteUint8ToBuffer(uint8 value, char* buffer);
+  static void WriteUint16ToBuffer(uint16 value, char* buffer);
+  static void WriteUint32ToBuffer(uint32 value, char* buffer);
+  static void WriteUint48ToBuffer(uint64 value, char* buffer);
   static void WriteUint64ToBuffer(uint64 value, char* buffer);
   static void WriteUint128ToBuffer(uint128 value, char* buffer);
 

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppp.idl modified Fri Apr 13 10:57:17 2012. */
+/* From ppp.idl modified Tue Nov 13 08:48:25 2012. */
 
 #ifndef PPAPI_C_PPP_H_
 #define PPAPI_C_PPP_H_
@@ -31,7 +31,7 @@
 #define PP_EXPORT __declspec(dllexport)
 #endif
 
-// {PENDING: undefine PP_EXPORT?}
+/* {PENDING: undefine PP_EXPORT?} */
 
 /* We don't want name mangling for these external functions.  We only need
  * 'extern "C"' if we're compiling with a C++ compiler.
@@ -59,7 +59,7 @@ extern "C" {
  * for future use.
  *
  * @return <code>PP_OK</code> on success. Any other value on failure.
-*/
+ */
 PP_EXPORT int32_t PPP_InitializeModule(PP_Module module,
                                        PPB_GetInterface get_browser_interface);
 /**
@@ -145,7 +145,7 @@ typedef int32_t (*PP_InitializeModule_Func)(
 /**
  * Defines the type of the <code>PPP_ShutdownModule</code> function.
  */
-typedef void (*PP_ShutdownModule_Func)();
+typedef void (*PP_ShutdownModule_Func)(void);
 
 /**
  * Defines the type of the <code>PPP_ShutdownModule</code> function.

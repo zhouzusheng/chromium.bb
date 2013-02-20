@@ -31,6 +31,9 @@
 #ifndef InspectorController_h
 #define InspectorController_h
 
+#if ENABLE(INSPECTOR)
+
+#include "InspectorBaseAgent.h"
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
@@ -100,6 +103,7 @@ public:
     void hideHighlight();
     Node* highlightedNode() const;
 
+    bool isUnderTest();
     void evaluateForTestInFrontend(long callId, const String& script);
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
@@ -116,13 +120,16 @@ public:
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
 
+    void willProcessTask();
+    void didProcessTask();
+
 private:
     InspectorController(Page*, InspectorClient*);
 
     friend class PostWorkerNotificationToFrontendTask;
     friend InstrumentingAgents* instrumentationForPage(Page*);
 
-    OwnPtr<InstrumentingAgents> m_instrumentingAgents;
+    RefPtr<InstrumentingAgents> m_instrumentingAgents;
     OwnPtr<InjectedScriptManager> m_injectedScriptManager;
     OwnPtr<InspectorState> m_state;
     OwnPtr<InspectorOverlay> m_overlay;
@@ -141,10 +148,12 @@ private:
     OwnPtr<InspectorFrontend> m_inspectorFrontend;
     Page* m_page;
     InspectorClient* m_inspectorClient;
-    typedef Vector<OwnPtr<InspectorBaseAgentInterface> > Agents;
-    Agents m_agents;
+    InspectorAgentRegistry m_agents;
+    bool m_isUnderTest;
 };
 
 }
+
+#endif // ENABLE(INSPECTOR)
 
 #endif // !defined(InspectorController_h)

@@ -43,7 +43,6 @@
 #include "DictationCommand.h"
 #include "DocumentFragment.h"
 #include "DocumentMarkerController.h"
-#include "EditingText.h"
 #include "EditorClient.h"
 #include "EventHandler.h"
 #include "EventNames.h"
@@ -63,6 +62,7 @@
 #include "KillRing.h"
 #include "ModifySelectionListLevel.h"
 #include "NodeList.h"
+#include "NodeTraversal.h"
 #include "Page.h"
 #include "Pasteboard.h"
 #include "RemoveFormatCommand.h"
@@ -85,7 +85,6 @@
 #include "TextEvent.h"
 #include "TextIterator.h"
 #include "TypingCommand.h"
-#include "UndoManager.h"
 #include "UserTypingGestureIndicator.h"
 #include "htmlediting.h"
 #include "markup.h"
@@ -802,12 +801,8 @@ void Editor::appliedEditing(PassRefPtr<CompositeEditCommand> cmd)
         // Only register a new undo command if the command passed in is
         // different from the last command
         m_lastEditCommand = cmd;
-#if !ENABLE(UNDO_MANAGER)
         if (client())
             client()->registerUndoStep(m_lastEditCommand->ensureComposition());
-#else
-        m_frame->document()->undoManager()->registerUndoStep(m_lastEditCommand->ensureComposition());
-#endif
     }
 
     respondToChangedContents(newSelection);
@@ -824,12 +819,8 @@ void Editor::unappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     m_alternativeTextController->respondToUnappliedEditing(cmd.get());
     
     m_lastEditCommand = 0;
-#if !ENABLE(UNDO_MANAGER)
     if (client())
         client()->registerRedoStep(cmd);
-#else
-    m_frame->document()->undoManager()->registerRedoStep(cmd);
-#endif
     respondToChangedContents(newSelection);
 }
 
@@ -843,12 +834,8 @@ void Editor::reappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     changeSelectionAfterCommand(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle);
     
     m_lastEditCommand = 0;
-#if !ENABLE(UNDO_MANAGER)
     if (client())
         client()->registerUndoStep(cmd);
-#else
-    m_frame->document()->undoManager()->registerUndoStep(cmd);
-#endif
     respondToChangedContents(newSelection);
 }
 
@@ -1081,12 +1068,12 @@ void Editor::simplifyMarkup(Node* startNode, Node* endNode)
         // check if start node is before endNode
         Node* node = startNode;
         while (node && node != endNode)
-            node = node->traverseNextNode();
+            node = NodeTraversal::next(node);
         if (!node)
             return;
     }
     
-    applyCommand(SimplifyMarkupCommand::create(m_frame->document(), startNode, (endNode) ? endNode->traverseNextNode() : 0));
+    applyCommand(SimplifyMarkupCommand::create(m_frame->document(), startNode, (endNode) ? NodeTraversal::next(endNode) : 0));
 }
 
 void Editor::copyURL(const KURL& url, const String& title)
@@ -1256,40 +1243,24 @@ void Editor::clearUndoRedoOperations()
 
 bool Editor::canUndo()
 {
-#if !ENABLE(UNDO_MANAGER)
     return client() && client()->canUndo();
-#else
-    return m_frame->document()->undoManager()->canUndo();
-#endif
 }
 
 void Editor::undo()
 {
-#if !ENABLE(UNDO_MANAGER)
     if (client())
         client()->undo();
-#else
-    m_frame->document()->undoManager()->undo();
-#endif
 }
 
 bool Editor::canRedo()
 {
-#if !ENABLE(UNDO_MANAGER)
     return client() && client()->canRedo();
-#else
-    return m_frame->document()->undoManager()->canRedo();
-#endif
 }
 
 void Editor::redo()
 {
-#if !ENABLE(UNDO_MANAGER)
     if (client())
         client()->redo();
-#else
-    m_frame->document()->undoManager()->redo();
-#endif
 }
 
 void Editor::didBeginEditing()
@@ -2149,11 +2120,15 @@ void Editor::markAndReplaceFor(PassRefPtr<SpellCheckRequest> request, const Vect
                 if (canEditRichly())
                     applyCommand(CreateLinkCommand::create(m_frame->document(), result->replacement));
             } else if (canEdit() && shouldInsertText(result->replacement, rangeToReplace.get(), EditorInsertActionTyped)) {
-                int paragraphStartIndex = TextIterator::rangeLength(Range::create(m_frame->document(), m_frame->document(), 0, paragraph.paragraphRange()->startContainer(), paragraph.paragraphRange()->startOffset()).get());
+                Node* root = paragraph.paragraphRange()->startContainer();
+                while (ContainerNode* parent = root->parentNode())
+                    root = parent;
+
+                int paragraphStartIndex = TextIterator::rangeLength(Range::create(m_frame->document(), root, 0, paragraph.paragraphRange()->startContainer(), paragraph.paragraphRange()->startOffset()).get());
                 int paragraphLength = TextIterator::rangeLength(paragraph.paragraphRange().get());
                 applyCommand(SpellingCorrectionCommand::create(rangeToReplace, result->replacement));
                 // Recalculate newParagraphRange, since SpellingCorrectionCommand modifies the DOM, such that the original paragraph range is no longer valid. Radar: 10305315 Bugzilla: 89526
-                RefPtr<Range> newParagraphRange = TextIterator::rangeFromLocationAndLength(m_frame->document(), paragraphStartIndex, paragraphLength+replacementLength-resultLength);
+                RefPtr<Range> newParagraphRange = TextIterator::rangeFromLocationAndLength(toContainerNode(root), paragraphStartIndex, paragraphLength + replacementLength - resultLength);
                 paragraph = TextCheckingParagraph(TextIterator::subrange(newParagraphRange.get(), resultLocation, replacementLength), newParagraphRange);
                 
                 if (AXObjectCache::accessibilityEnabled()) {

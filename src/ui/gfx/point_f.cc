@@ -8,18 +8,17 @@
 
 namespace gfx {
 
-template class PointBase<PointF, float>;
-
-PointF::PointF() : PointBase<PointF, float>(0, 0) {
-}
-
-PointF::PointF(float x, float y) : PointBase<PointF, float>(x, y) {
-}
-
-PointF::~PointF() {}
+template class PointBase<PointF, float, Vector2dF>;
 
 std::string PointF::ToString() const {
   return base::StringPrintf("%f,%f", x(), y());
 }
+
+PointF ScalePoint(const PointF& p, float x_scale, float y_scale) {
+  PointF scaled_p(p);
+  scaled_p.Scale(x_scale, y_scale);
+  return scaled_p;
+}
+
 
 }  // namespace gfx

@@ -477,11 +477,20 @@ void GrGpuGL::onResetContext() {
 }
 
 GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
-    GrGLTexture::Desc glTexDesc;
     if (!this->configToGLFormats(desc.fConfig, false, NULL, NULL, NULL)) {
         return NULL;
     }
 
+    if (0 == desc.fTextureHandle) {
+        return NULL;
+    }
+
+    int maxSize = this->getCaps().maxTextureSize();
+    if (desc.fWidth > maxSize || desc.fHeight > maxSize) {
+        return NULL;
+    }
+
+    GrGLTexture::Desc glTexDesc;
     // next line relies on GrBackendTextureDesc's flags matching GrTexture's
     glTexDesc.fFlags = (GrTextureFlags) desc.fFlags;
     glTexDesc.fWidth = desc.fWidth;
@@ -490,7 +499,7 @@ GrTexture* GrGpuGL::onWrapBackendTexture(const GrBackendTextureDesc& desc) {
     glTexDesc.fSampleCnt = desc.fSampleCnt;
     glTexDesc.fTextureID = static_cast<GrGLuint>(desc.fTextureHandle);
     glTexDesc.fOwnsID = false;
-    glTexDesc.fOrientation = GrGLTexture::kBottomUp_Orientation;
+    glTexDesc.fOrigin = GrSurface::kBottomLeft_Origin;
 
     GrGLTexture* texture = NULL;
     if (desc.fFlags & kRenderTarget_GrBackendTextureFlag) {
@@ -574,7 +583,7 @@ void GrGpuGL::onWriteTexturePixels(GrTexture* texture,
     desc.fConfig = glTex->config();
     desc.fSampleCnt = glTex->desc().fSampleCnt;
     desc.fTextureID = glTex->textureID();
-    desc.fOrientation = glTex->orientation();
+    desc.fOrigin = glTex->origin();
 
     this->uploadTexData(desc, false,
                         left, top, width, height,
@@ -665,7 +674,7 @@ bool GrGpuGL::uploadTexData(const GrGLTexture::Desc& desc,
     bool swFlipY = false;
     bool glFlipY = false;
     if (NULL != data) {
-        if (GrGLTexture::kBottomUp_Orientation == desc.fOrientation) {
+        if (GrSurface::kBottomLeft_Origin == desc.fOrigin) {
             if (this->glCaps().unpackFlipYSupport()) {
                 glFlipY = true;
             } else {
@@ -948,8 +957,7 @@ GrTexture* GrGpuGL::onCreateTexture(const GrTextureDesc& desc,
     // We keep GrRenderTargets in GL's normal orientation so that they
     // can be drawn to by the outside world without the client having
     // to render upside down.
-    glTexDesc.fOrientation = renderTarget ? GrGLTexture::kBottomUp_Orientation :
-                                            GrGLTexture::kTopDown_Orientation;
+    glTexDesc.fOrigin = renderTarget ? GrSurface::kBottomLeft_Origin : GrSurface::kTopLeft_Origin;
 
     glRTDesc.fSampleCnt = desc.fSampleCnt;
     if (GrGLCaps::kNone_MSFBOType == this->glCaps().msFBOType() &&
@@ -1673,13 +1681,13 @@ const GrStencilSettings& even_odd_nv_path_stencil_settings() {
 
 
 void GrGpuGL::setStencilPathSettings(const GrPath&,
-                                     GrPathFill fill,
+                                     SkPath::FillType fill,
                                      GrStencilSettings* settings) {
     switch (fill) {
-        case kEvenOdd_GrPathFill:
+        case SkPath::kEvenOdd_FillType:
             *settings = even_odd_nv_path_stencil_settings();
             return;
-        case kWinding_GrPathFill:
+        case SkPath::kWinding_FillType:
             *settings = winding_nv_path_stencil_settings();
             return;
         default:
@@ -1687,7 +1695,7 @@ void GrGpuGL::setStencilPathSettings(const GrPath&,
     }
 }
 
-void GrGpuGL::onGpuStencilPath(const GrPath* path, GrPathFill fill) {
+void GrGpuGL::onGpuStencilPath(const GrPath* path, SkPath::FillType fill) {
     GrAssert(fCaps.pathStencilingSupport());
 
     GrGLuint id = static_cast<const GrGLPath*>(path)->pathID();
@@ -1703,14 +1711,14 @@ void GrGpuGL::onGpuStencilPath(const GrPath* path, GrPathFill fill) {
     GrAssert(!fStencilSettings.isTwoSided());
     GrGLenum fillMode;
     switch (fill) {
-        case kWinding_GrPathFill:
+        case SkPath::kWinding_FillType:
             fillMode = GR_GL_COUNT_UP;
             GrAssert(kIncClamp_StencilOp ==
                      fStencilSettings.passOp(GrStencilSettings::kFront_Face));
             GrAssert(kIncClamp_StencilOp ==
                      fStencilSettings.failOp(GrStencilSettings::kFront_Face));
             break;
-        case kEvenOdd_GrPathFill:
+        case SkPath::kEvenOdd_FillType:
             fillMode = GR_GL_INVERT;
             GrAssert(kInvert_StencilOp ==
                      fStencilSettings.passOp(GrStencilSettings::kFront_Face));

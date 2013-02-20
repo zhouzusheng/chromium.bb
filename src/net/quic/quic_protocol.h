@@ -5,8 +5,12 @@
 #ifndef NET_QUIC_QUIC_PROTOCOL_H_
 #define NET_QUIC_QUIC_PROTOCOL_H_
 
+#include <stddef.h>
 #include <limits>
+#include <map>
 #include <ostream>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -14,10 +18,13 @@
 #include "base/hash_tables.h"
 #include "base/logging.h"
 #include "base/string_piece.h"
+#include "net/base/int128.h"
 #include "net/base/net_export.h"
-#include "net/quic/uint128.h"
+#include "net/quic/quic_time.h"
 
 namespace net {
+
+using ::operator<<;
 
 class QuicPacket;
 
@@ -25,7 +32,6 @@ typedef uint64 QuicGuid;
 typedef uint32 QuicStreamId;
 typedef uint64 QuicStreamOffset;
 typedef uint64 QuicPacketSequenceNumber;
-typedef uint64 QuicTransmissionTime;
 typedef uint8 QuicFecGroupNumber;
 
 // TODO(rch): Consider Quic specific names for these constants.
@@ -35,18 +41,19 @@ const size_t kMaxPacketSize = 1200;  // Maximum size in bytes of a QUIC packet.
 const size_t kDefaultMaxStreamsPerConnection = 100;
 
 // Size in bytes of the packet header common across all packets.
-const size_t kPacketHeaderSize = 25;
+const size_t kPacketHeaderSize = 16;
 // Index of the first byte in a QUIC packet of FEC protected data.
 const size_t kStartOfFecProtectedData = kPacketHeaderSize;
 // Index of the first byte in a QUIC packet of encrypted data.
 const size_t kStartOfEncryptedData = kPacketHeaderSize - 1;
 // Index of the first byte in a QUIC packet which is hashed.
 const size_t kStartOfHashData = 0;
-// Index into the retransmission offset in the header.
-// (After GUID and sequence number.)
-const int kRetransmissionOffset = 14;
-// Index into the transmission time offset in the header.
-const int kTransmissionTimeOffset = 15;
+// Index into the sequence number offset in the header.
+const int kSequenceNumberOffset = 8;
+// Index into the flags offset in the header.
+const int kFlagsOffset = 14;
+// Index into the fec group offset in the header.
+const int kFecGroupOffset = 15;
 
 // Size in bytes of all stream frame fields.
 const size_t kMinStreamFrameLength = 15;
@@ -60,12 +67,13 @@ const QuicStreamId kCryptoStreamId = 1;
 
 typedef std::pair<QuicPacketSequenceNumber, QuicPacket*> PacketPair;
 
-const int64 kDefaultTimeout = 600000000;  // 10 minutes
+const int64 kDefaultTimeoutUs = 600000000;  // 10 minutes.
 
 enum QuicFrameType {
   STREAM_FRAME = 0,
   PDU_FRAME,
   ACK_FRAME,
+  CONGESTION_FEEDBACK_FRAME,
   RST_STREAM_FRAME,
   CONNECTION_CLOSE_FRAME,
   NUM_FRAME_TYPES
@@ -145,8 +153,6 @@ struct NET_EXPORT_PRIVATE QuicPacketHeader {
   // from the design docs, as well as some elements of DecryptedData.
   QuicGuid guid;
   QuicPacketSequenceNumber packet_sequence_number;
-  uint8 retransmission_count;
-  QuicTransmissionTime transmission_time;
   QuicPacketFlags flags;
   QuicFecGroupNumber fec_group;
 };
@@ -164,34 +170,63 @@ struct NET_EXPORT_PRIVATE QuicStreamFrame {
   base::StringPiece data;
 };
 
+// TODO(ianswett): Re-evaluate the trade-offs of hash_set vs set when framing
+// is finalized.
+typedef std::set<QuicPacketSequenceNumber> SequenceSet;
+typedef std::map<QuicPacketSequenceNumber, QuicTime> TimeMap;
+
 struct NET_EXPORT_PRIVATE ReceivedPacketInfo {
   ReceivedPacketInfo();
   ~ReceivedPacketInfo();
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os, const ReceivedPacketInfo& s);
+
+  // Records a packet receipt.
+  void RecordReceived(QuicPacketSequenceNumber sequence_number);
+
+  // True if the sequence number is greater than largest_received or is listed
+  // as missing.
+  // Always returns false for sequence numbers less than least_unacked.
+  bool IsAwaitingPacket(QuicPacketSequenceNumber sequence_number) const;
+
+  // Clears all missing packets less than |least_unacked|.
+  void ClearMissingBefore(QuicPacketSequenceNumber least_unacked);
+
   // The highest packet sequence number we've received from the peer.
   QuicPacketSequenceNumber largest_received;
-  // The time at which we received the above packet.
-  QuicTransmissionTime time_received;
+
   // The set of packets which we're expecting and have not received.
-  // This includes any packets between the lowest and largest_received
-  // which we have neither seen nor been informed are non-retransmitting.
-  base::hash_set<QuicPacketSequenceNumber> missing_packets;
+  SequenceSet missing_packets;
 };
 
 struct NET_EXPORT_PRIVATE SentPacketInfo {
   SentPacketInfo();
   ~SentPacketInfo();
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os, const SentPacketInfo& s);
+
   // The lowest packet we've sent which is unacked, and we expect an ack for.
   QuicPacketSequenceNumber least_unacked;
-  // The set of packets between least_unacked and the last packet we have sent
-  // which we will not resend.
-  base::hash_set<QuicPacketSequenceNumber> non_retransmiting;
+};
+
+struct NET_EXPORT_PRIVATE QuicAckFrame {
+  QuicAckFrame() {}
+  // Testing convenience method to construct a QuicAckFrame with all packets
+  // from least_unacked to largest_received acked.
+  QuicAckFrame(QuicPacketSequenceNumber largest_received,
+               QuicPacketSequenceNumber least_unacked);
+
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os, const QuicAckFrame& s);
+
+  SentPacketInfo sent_info;
+  ReceivedPacketInfo received_info;
 };
 
 // Defines for all types of congestion feedback that will be negotiated in QUIC,
 // kTCP MUST be supported by all QUIC implementations to guarentee 100%
 // compatibility.
 enum CongestionFeedbackType {
-  kNone = 0,  // No feedback provided
   kTCP,  // Used to mimic TCP.
   kInterArrival,  // Use additional inter arrival information.
   kFixRate,  // Provided for testing.
@@ -203,9 +238,18 @@ struct NET_EXPORT_PRIVATE CongestionFeedbackMessageTCP {
 };
 
 struct NET_EXPORT_PRIVATE CongestionFeedbackMessageInterArrival {
+  CongestionFeedbackMessageInterArrival();
+  ~CongestionFeedbackMessageInterArrival();
   uint16 accumulated_number_of_lost_packets;
+  // TODO(rch): These times should be QuicTime instances.  We can write
+  // them to the wire in the format specified below, but we should avoid
+  // storing them in memory that way.  As such, we should move this comment
+  // to QuicFramer.
   int16 offset_time;
   uint16 delta_time;  // delta time is described below.
+  // The set of received packets since the last feedback was sent, along with
+  // their arrival times.
+  TimeMap received_packet_times;
 };
 
 /*
@@ -229,38 +273,25 @@ struct NET_EXPORT_PRIVATE CongestionFeedbackMessageFixRate {
   uint32 bitrate_in_bytes_per_second;
 };
 
-struct NET_EXPORT_PRIVATE CongestionInfo {
+struct NET_EXPORT_PRIVATE QuicCongestionFeedbackFrame {
+  QuicCongestionFeedbackFrame();
+  ~QuicCongestionFeedbackFrame();
+
+  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
+      std::ostream& os, const QuicCongestionFeedbackFrame& c);
+
   CongestionFeedbackType type;
-  union {
-    CongestionFeedbackMessageTCP tcp;
-    CongestionFeedbackMessageInterArrival inter_arrival;
-    CongestionFeedbackMessageFixRate fix_rate;
-  };
-};
-
-struct NET_EXPORT_PRIVATE QuicAckFrame {
-  QuicAckFrame() {}
-  QuicAckFrame(QuicPacketSequenceNumber largest_received,
-               QuicTransmissionTime time_received,
-               QuicPacketSequenceNumber least_unacked) {
-    received_info.largest_received = largest_received;
-    received_info.time_received = time_received;
-    sent_info.least_unacked = least_unacked;
-    congestion_info.type = kNone;
-  }
-
-  NET_EXPORT_PRIVATE friend std::ostream& operator<<(std::ostream& os,
-                                                     const QuicAckFrame& s);
-
-  SentPacketInfo sent_info;
-  ReceivedPacketInfo received_info;
-  CongestionInfo congestion_info;
+  // This should really be a union, but since the inter arrival struct
+  // is non-trivial, C++ prohibits it.
+  CongestionFeedbackMessageTCP tcp;
+  CongestionFeedbackMessageInterArrival inter_arrival;
+  CongestionFeedbackMessageFixRate fix_rate;
 };
 
 struct NET_EXPORT_PRIVATE QuicRstStreamFrame {
   QuicRstStreamFrame() {}
   QuicRstStreamFrame(QuicStreamId stream_id, uint64 offset,
-                        QuicErrorCode error_code)
+                     QuicErrorCode error_code)
       : stream_id(stream_id), offset(offset), error_code(error_code) {
     DCHECK_LE(error_code, std::numeric_limits<uint8>::max());
   }
@@ -280,10 +311,16 @@ struct NET_EXPORT_PRIVATE QuicConnectionCloseFrame {
 struct NET_EXPORT_PRIVATE QuicFrame {
   QuicFrame() {}
   explicit QuicFrame(QuicStreamFrame* stream_frame)
-      : type(STREAM_FRAME), stream_frame(stream_frame) {
+      : type(STREAM_FRAME),
+        stream_frame(stream_frame) {
   }
   explicit QuicFrame(QuicAckFrame* frame)
-      : type(ACK_FRAME), ack_frame(frame) {
+      : type(ACK_FRAME),
+        ack_frame(frame) {
+  }
+  explicit QuicFrame(QuicCongestionFeedbackFrame* frame)
+      : type(CONGESTION_FEEDBACK_FRAME),
+        congestion_feedback_frame(frame) {
   }
   explicit QuicFrame(QuicRstStreamFrame* frame)
       : type(RST_STREAM_FRAME),
@@ -298,6 +335,7 @@ struct NET_EXPORT_PRIVATE QuicFrame {
   union {
     QuicStreamFrame* stream_frame;
     QuicAckFrame* ack_frame;
+    QuicCongestionFeedbackFrame* congestion_feedback_frame;
     QuicRstStreamFrame* rst_stream_frame;
     QuicConnectionCloseFrame* connection_close_frame;
   };
@@ -352,9 +390,11 @@ class NET_EXPORT_PRIVATE QuicData {
 
 class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
  public:
-  QuicPacket(char* buffer, size_t length, bool owns_buffer)
+  QuicPacket(
+      char* buffer, size_t length, bool owns_buffer, QuicPacketFlags flags)
       : QuicData(buffer, length, owns_buffer),
-        buffer_(buffer) { }
+        buffer_(buffer),
+        flags_(flags) { }
 
   base::StringPiece FecProtectedData() const {
     return base::StringPiece(data() + kStartOfFecProtectedData,
@@ -369,10 +409,16 @@ class NET_EXPORT_PRIVATE QuicPacket : public QuicData {
     return base::StringPiece(data() + kStartOfEncryptedData,
                              length() - kStartOfEncryptedData);
   }
+
+  bool IsFecPacket() const {
+    return flags_ == PACKET_FLAGS_FEC;
+  }
+
   char* mutable_data() { return buffer_; }
 
  private:
   char* buffer_;
+  const QuicPacketFlags flags_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicPacket);
 };

@@ -428,12 +428,6 @@ function insertionIndexForObjectInListSortedByFunction(anObject, aList, aFunctio
     }
 }
 
-Array.convert = function(list)
-{
-    // Cast array-like object to an array.
-    return Array.prototype.slice.call(list);
-}
-
 /**
  * @param {string} format
  * @param {...*} var_arg
@@ -711,9 +705,11 @@ Map.prototype = {
     remove: function(key)
     {
         var result = this._map[key.__identifier];
-        delete this._map[key.__identifier];
+        if (!result)
+            return undefined;
         --this._size;
-        return result ? result[1] : undefined;
+        delete this._map[key.__identifier];
+        return result[1];
     },
 
     /**

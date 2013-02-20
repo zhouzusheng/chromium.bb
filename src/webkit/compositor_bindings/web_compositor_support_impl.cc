@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
 #include "webkit/compositor_bindings/web_compositor_support_impl.h"
 
-#include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
-#include "cc/settings.h"
+#include "base/message_loop_proxy.h"
+#include "cc/thread_impl.h"
 #include "webkit/compositor_bindings/web_animation_impl.h"
-#include "webkit/compositor_bindings/web_compositor_impl.h"
+#include "webkit/compositor_bindings/web_compositor_support_output_surface.h"
+#include "webkit/compositor_bindings/web_compositor_support_software_output_device.h"
 #include "webkit/compositor_bindings/web_content_layer_impl.h"
 #include "webkit/compositor_bindings/web_delegated_renderer_layer_impl.h"
 #include "webkit/compositor_bindings/web_external_texture_layer_impl.h"
@@ -22,6 +22,8 @@
 #include "webkit/compositor_bindings/web_solid_color_layer_impl.h"
 #include "webkit/compositor_bindings/web_transform_animation_curve_impl.h"
 #include "webkit/compositor_bindings/web_video_layer_impl.h"
+#include "webkit/glue/webthread_impl.h"
+#include "webkit/support/webkit_support.h"
 
 using WebKit::WebAnimation;
 using WebKit::WebAnimationCurve;
@@ -46,56 +48,67 @@ using WebKit::WebTransformAnimationCurve;
 using WebKit::WebVideoFrameProvider;
 using WebKit::WebVideoLayer;
 
-using WebKit::WebCompositorImpl;
-
 namespace webkit {
 
-WebCompositorSupportImpl::WebCompositorSupportImpl() {
+WebCompositorSupportImpl::WebCompositorSupportImpl()
+    : initialized_(false) {
 }
 
 WebCompositorSupportImpl::~WebCompositorSupportImpl() {
 }
 
-void WebCompositorSupportImpl::initialize(WebKit::WebThread* thread) {
-  if (thread) {
-    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization");
+void WebCompositorSupportImpl::initialize(WebKit::WebThread* impl_thread) {
+  DCHECK(!initialized_);
+  initialized_ = true;
+  if (impl_thread) {
+    impl_thread_message_loop_proxy_ =
+        static_cast<webkit_glue::WebThreadImpl*>(impl_thread)->
+            message_loop()->message_loop_proxy();
+  } else {
+    impl_thread_message_loop_proxy_ = NULL;
   }
-  WebCompositorImpl::initialize(thread);
 }
 
 bool WebCompositorSupportImpl::isThreadingEnabled() {
-  return WebCompositorImpl::isThreadingEnabled();
+  return impl_thread_message_loop_proxy_;
 }
 
 void WebCompositorSupportImpl::shutdown() {
-  WebCompositorImpl::shutdown();
-}
-
-void WebCompositorSupportImpl::setPerTilePaintingEnabled(bool enabled) {
-  cc::Settings::setPerTilePaintingEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setPartialSwapEnabled(bool enabled) {
-  cc::Settings::setPartialSwapEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setAcceleratedAnimationEnabled(bool enabled) {
-  cc::Settings::setAcceleratedAnimationEnabled(enabled);
-}
-
-void WebCompositorSupportImpl::setPageScalePinchZoomEnabled(bool enabled) {
-  cc::Settings::setPageScalePinchZoomEnabled(enabled);
+  DCHECK(initialized_);
+  initialized_ = false;
+  impl_thread_message_loop_proxy_ = NULL;
 }
 
 WebLayerTreeView* WebCompositorSupportImpl::createLayerTreeView(
     WebLayerTreeViewClient* client, const WebLayer& root,
     const WebLayerTreeView::Settings& settings) {
+  DCHECK(initialized_);
   scoped_ptr<WebKit::WebLayerTreeViewImpl> layerTreeViewImpl(
       new WebKit::WebLayerTreeViewImpl(client));
-  if (!layerTreeViewImpl->initialize(settings))
+  scoped_ptr<cc::Thread> impl_thread;
+  if (impl_thread_message_loop_proxy_)
+    impl_thread = cc::ThreadImpl::createForDifferentThread(
+        impl_thread_message_loop_proxy_);
+  if (!layerTreeViewImpl->initialize(settings, impl_thread.Pass()))
     return NULL;
   layerTreeViewImpl->setRootLayer(root);
   return layerTreeViewImpl.release();
+}
+
+WebKit::WebCompositorOutputSurface*
+    WebCompositorSupportImpl::createOutputSurfaceFor3D(
+        WebKit::WebGraphicsContext3D* context) {
+  scoped_ptr<WebKit::WebGraphicsContext3D> context3d = make_scoped_ptr(context);
+  return WebCompositorSupportOutputSurface::Create3d(
+      context3d.Pass()).release();
+}
+
+WebKit::WebCompositorOutputSurface*
+    WebCompositorSupportImpl::createOutputSurfaceForSoftware() {
+  scoped_ptr<WebCompositorSupportSoftwareOutputDevice> software_device =
+      make_scoped_ptr(new WebCompositorSupportSoftwareOutputDevice);
+  return WebCompositorSupportOutputSurface::CreateSoftware(
+      software_device.PassAs<cc::SoftwareOutputDevice>()).release();
 }
 
 WebLayer* WebCompositorSupportImpl::createLayer() {

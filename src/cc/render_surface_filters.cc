@@ -2,18 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/render_surface_filters.h"
 
-#include "FloatSize.h"
 #include "base/logging.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 #include "third_party/skia/include/effects/SkMagnifierImageFilter.h"
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
 #include "third_party/skia/include/gpu/SkGrPixelRef.h"
+#include "ui/gfx/size_f.h"
 #include <public/WebFilterOperation.h>
 #include <public/WebFilterOperations.h>
 #include <public/WebGraphicsContext3D.h>
@@ -67,8 +66,10 @@ void getSaturateMatrix(float amount, SkScalar matrix[20])
 
 void getHueRotateMatrix(float hue, SkScalar matrix[20])
 {
-    float cosHue = cosf(hue * piFloat / 180); 
-    float sinHue = sinf(hue * piFloat / 180); 
+    const float kPi = 3.1415926535897932384626433832795f;
+
+    float cosHue = cosf(hue * kPi / 180);
+    float sinHue = sinf(hue * kPi / 180);
     matrix[0] = 0.213f + cosHue * 0.787f - sinHue * 0.213f;
     matrix[1] = 0.715f - cosHue * 0.715f - sinHue * 0.715f;
     matrix[2] = 0.072f - cosHue * 0.072f + sinHue * 0.928f;
@@ -236,7 +237,7 @@ bool getColorMatrix(const WebKit::WebFilterOperation& op, SkScalar matrix[20])
 
 class FilterBufferState {
 public:
-    FilterBufferState(GrContext* grContext, const FloatSize& size, unsigned textureId)
+    FilterBufferState(GrContext* grContext, const gfx::SizeF& size, unsigned textureId)
         : m_grContext(grContext)
         , m_currentTexture(0)
     {
@@ -246,10 +247,11 @@ public:
         platformTextureDescription.fHeight = size.height();
         platformTextureDescription.fConfig = kSkia8888_GrPixelConfig;
         platformTextureDescription.fTextureHandle = textureId;
-        SkAutoTUnref<GrTexture> texture(grContext->createPlatformTexture(platformTextureDescription));
+        skia::RefPtr<GrTexture> texture = skia::AdoptRef(grContext->createPlatformTexture(platformTextureDescription));
         // Place the platform texture inside an SkBitmap.
         m_source.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-        m_source.setPixelRef(new SkGrPixelRef(texture.get()))->unref();
+        skia::RefPtr<SkGrPixelRef> pixelRef = skia::AdoptRef(new SkGrPixelRef(texture.get()));
+        m_source.setPixelRef(pixelRef.get());
     }
 
     ~FilterBufferState() { }
@@ -265,8 +267,8 @@ public:
         desc.fConfig = kSkia8888_GrPixelConfig;
         for (int i = 0; i < scratchCount; ++i) {
             GrAutoScratchTexture scratchTexture(m_grContext, desc, GrContext::kExact_ScratchTexMatch);
-            m_scratchTextures[i].reset(scratchTexture.detach());
-            if (!m_scratchTextures[i].get())
+            m_scratchTextures[i] = skia::AdoptRef(scratchTexture.detach());
+            if (!m_scratchTextures[i])
                 return false;
         }
         return true;
@@ -284,10 +286,11 @@ public:
     void swap()
     {
         m_canvas->flush();
-        m_canvas.reset(0);
-        m_device.reset(0);
+        m_canvas.clear();
+        m_device.clear();
 
-        m_source.setPixelRef(new SkGrPixelRef(m_scratchTextures[m_currentTexture].get()))->unref();
+        skia::RefPtr<SkGrPixelRef> pixelRef = skia::AdoptRef(new SkGrPixelRef(m_scratchTextures[m_currentTexture].get()));
+        m_source.setPixelRef(pixelRef.get());
         m_currentTexture = 1 - m_currentTexture;
     }
 
@@ -295,17 +298,17 @@ private:
     void createCanvas()
     {
         DCHECK(m_scratchTextures[m_currentTexture].get());
-        m_device.reset(new SkGpuDevice(m_grContext, m_scratchTextures[m_currentTexture].get()));
-        m_canvas.reset(new SkCanvas(m_device.get()));
+        m_device = skia::AdoptRef(new SkGpuDevice(m_grContext, m_scratchTextures[m_currentTexture].get()));
+        m_canvas = skia::AdoptRef(new SkCanvas(m_device.get()));
         m_canvas->clear(0x0);
     }
 
     GrContext* m_grContext;
     SkBitmap m_source;
-    SkAutoTUnref<GrTexture> m_scratchTextures[2];
+    skia::RefPtr<GrTexture> m_scratchTextures[2];
     int m_currentTexture;
-    SkAutoTUnref<SkGpuDevice> m_device;
-    SkAutoTUnref<SkCanvas> m_canvas;
+    skia::RefPtr<SkGpuDevice> m_device;
+    skia::RefPtr<SkCanvas> m_canvas;
 };
 
 }  // namespace
@@ -365,7 +368,7 @@ WebKit::WebFilterOperations RenderSurfaceFilters::optimize(const WebKit::WebFilt
     return newList;
 }
 
-SkBitmap RenderSurfaceFilters::apply(const WebKit::WebFilterOperations& filters, unsigned textureId, const FloatSize& size, WebKit::WebGraphicsContext3D* context3D, GrContext* grContext)
+SkBitmap RenderSurfaceFilters::apply(const WebKit::WebFilterOperations& filters, unsigned textureId, const gfx::SizeF& size, WebKit::WebGraphicsContext3D* context3D, GrContext* grContext)
 {
     if (!context3D || !grContext)
         return SkBitmap();
@@ -381,21 +384,22 @@ SkBitmap RenderSurfaceFilters::apply(const WebKit::WebFilterOperations& filters,
         switch (op.type()) {
         case WebKit::WebFilterOperation::FilterTypeColorMatrix: {
             SkPaint paint;
-            paint.setColorFilter(new SkColorMatrixFilter(op.matrix()))->unref();
+            skia::RefPtr<SkColorMatrixFilter> filter = skia::AdoptRef(new SkColorMatrixFilter(op.matrix()));
+            paint.setColorFilter(filter.get());
             canvas->drawBitmap(state.source(), 0, 0, &paint);
             break;
         }
         case WebKit::WebFilterOperation::FilterTypeBlur: {
             float stdDeviation = op.amount();
-            SkAutoTUnref<SkImageFilter> filter(new SkBlurImageFilter(stdDeviation, stdDeviation));
+            skia::RefPtr<SkImageFilter> filter = skia::AdoptRef(new SkBlurImageFilter(stdDeviation, stdDeviation));
             SkPaint paint;
             paint.setImageFilter(filter.get());
             canvas->drawSprite(state.source(), 0, 0, &paint);
             break;
         }
         case WebKit::WebFilterOperation::FilterTypeDropShadow: {
-            SkAutoTUnref<SkImageFilter> blurFilter(new SkBlurImageFilter(op.amount(), op.amount()));
-            SkAutoTUnref<SkColorFilter> colorFilter(SkColorFilter::CreateModeFilter(op.dropShadowColor(), SkXfermode::kSrcIn_Mode));
+            skia::RefPtr<SkImageFilter> blurFilter = skia::AdoptRef(new SkBlurImageFilter(op.amount(), op.amount()));
+            skia::RefPtr<SkColorFilter> colorFilter = skia::AdoptRef(SkColorFilter::CreateModeFilter(op.dropShadowColor(), SkXfermode::kSrcIn_Mode));
             SkPaint paint;
             paint.setImageFilter(blurFilter.get());
             paint.setColorFilter(colorFilter.get());
@@ -408,7 +412,7 @@ SkBitmap RenderSurfaceFilters::apply(const WebKit::WebFilterOperations& filters,
         }
         case WebKit::WebFilterOperation::FilterTypeZoom: {
             SkPaint paint;
-            SkAutoTUnref<SkImageFilter> zoomFilter(
+            skia::RefPtr<SkImageFilter> zoomFilter = skia::AdoptRef(
                 new SkMagnifierImageFilter(
                     SkRect::MakeXYWH(op.zoomRect().x,
                                      op.zoomRect().y,

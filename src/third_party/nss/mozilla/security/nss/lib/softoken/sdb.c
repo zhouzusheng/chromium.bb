@@ -1684,9 +1684,7 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
      * a database */
     if (create) {
 	/* NO NSPR call for this? :( */
-#ifndef WINCE
 	chmod (dbname, 0600);
-#endif
     }
 
     if (flags != SDB_RDONLY) {
@@ -1878,7 +1876,6 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
     sdb_p->sqlXactThread = NULL;
     sdb->private = sdb_p;
     sdb->version = 0;
-    sdb->sdb_type = SDB_SQL;
     sdb->sdb_flags = flags | SDB_HAS_META;
     sdb->app_private = NULL;
     sdb->sdb_FindObjectsInit = sdb_FindObjectsInit;

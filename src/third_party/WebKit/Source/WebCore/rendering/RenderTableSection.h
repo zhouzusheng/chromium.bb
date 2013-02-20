@@ -65,6 +65,9 @@ public:
     RenderTableSection(Node*);
     virtual ~RenderTableSection();
 
+    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
+    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
+
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
@@ -99,6 +102,8 @@ public:
         }
 
         bool hasCells() const { return cells.size() > 0; }
+
+        void reportMemoryUsage(MemoryObjectInfo*) const;
     };
 
     typedef Vector<CellStruct> Row;
@@ -109,6 +114,8 @@ public:
             , baseline()
         {
         }
+
+        void reportMemoryUsage(MemoryObjectInfo*) const;
 
         Row row;
         RenderTableRow* rowRenderer;
@@ -192,6 +199,8 @@ public:
     
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
+    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -199,7 +208,7 @@ private:
     virtual RenderObjectChildList* virtualChildren() { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const { return children(); }
 
-    virtual const char* renderName() const { return isAnonymous() ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
+    virtual const char* renderName() const { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
 
     virtual bool isTableSection() const { return true; }
 

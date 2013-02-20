@@ -25,7 +25,7 @@
 #include "FrameLoaderTypes.h"
 #include "FindOptions.h"
 #include "LayoutMilestones.h"
-#include "LayoutTypes.h"
+#include "LayoutRect.h"
 #include "PageVisibilityState.h"
 #include "Pagination.h"
 #include "PlatformScreen.h"
@@ -57,6 +57,7 @@ namespace WebCore {
     class BackForwardList;
     class Chrome;
     class ChromeClient;
+    class ClientRectList;
 #if ENABLE(CONTEXT_MENUS)
     class ContextMenuClient;
     class ContextMenuController;
@@ -76,6 +77,7 @@ namespace WebCore {
     class MediaCanStartListener;
     class Node;
     class PageGroup;
+    class PlugInClient;
     class PluginData;
     class PluginViewBase;
     class PointerLockController;
@@ -127,6 +129,7 @@ namespace WebCore {
             EditorClient* editorClient;
             DragClient* dragClient;
             InspectorClient* inspectorClient;
+            PlugInClient* plugInClient;
             RefPtr<BackForwardList> backForwardClient;
             ValidationMessageClient* validationMessageClient;
         };
@@ -149,6 +152,7 @@ namespace WebCore {
         bool canStartMedia() const { return m_canStartMedia; }
 
         EditorClient* editorClient() const { return m_editorClient; }
+        PlugInClient* plugInClient() const { return m_plugInClient; }
 
         void setMainFrame(PassRefPtr<Frame>);
         Frame* mainFrame() const { return m_mainFrame.get(); }
@@ -194,6 +198,10 @@ namespace WebCore {
         ValidationMessageClient* validationMessageClient() const { return m_validationMessageClient; }
 
         ScrollingCoordinator* scrollingCoordinator();
+
+        String scrollingStateTreeAsText();
+        String mainThreadScrollingReasonsAsText();
+        PassRefPtr<ClientRectList> nonFastScrollableRects(const Frame*);
 
         Settings* settings() const { return m_settings.get(); }
         ProgressTracker* progress() const { return m_progress.get(); }
@@ -404,6 +412,7 @@ namespace WebCore {
         RefPtr<RenderTheme> m_theme;
 
         EditorClient* m_editorClient;
+        PlugInClient* m_plugInClient;
         ValidationMessageClient* m_validationMessageClient;
 
         FeatureObserver m_featureObserver;

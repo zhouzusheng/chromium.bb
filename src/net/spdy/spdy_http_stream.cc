@@ -6,24 +6,19 @@
 
 #include <algorithm>
 #include <list>
-#include <string>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/stringprintf.h"
-#include "base/values.h"
-#include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/load_flags.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_info.h"
-#include "net/http/http_util.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
@@ -35,6 +30,8 @@ SpdyHttpStream::SpdyHttpStream(SpdySession* spdy_session,
     : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       stream_(NULL),
       spdy_session_(spdy_session),
+      request_info_(NULL),
+      has_upload_data_(false),
       response_info_(NULL),
       download_finished_(false),
       response_headers_received_(false),
@@ -82,11 +79,11 @@ const HttpResponseInfo* SpdyHttpStream::GetResponseInfo() const {
 }
 
 UploadProgress SpdyHttpStream::GetUploadProgress() const {
-  if (!request_body_stream_.get())
+  if (!request_info_ || !request_info_->upload_data_stream)
     return UploadProgress();
 
-  return UploadProgress(request_body_stream_->position(),
-                        request_body_stream_->size());
+  return UploadProgress(request_info_->upload_data_stream->position(),
+                        request_info_->upload_data_stream->size());
 }
 
 int SpdyHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
@@ -189,7 +186,6 @@ bool SpdyHttpStream::IsConnectionReusable() const {
 }
 
 int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
-                                scoped_ptr<UploadDataStream> request_body,
                                 HttpResponseInfo* response,
                                 const CompletionCallback& callback) {
   base::Time request_time = base::Time::Now();
@@ -213,16 +209,16 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   if (response_info_)
     response_info_->request_time = request_time;
 
-  CHECK(!request_body_stream_.get());
-  if (request_body != NULL) {
-    if (request_body->size() || request_body->is_chunked()) {
-      request_body_stream_.reset(request_body.release());
-      // Use kMaxSpdyFrameChunkSize as the buffer size, since the request
-      // body data is written with this size at a time.
-      raw_request_body_buf_ = new IOBufferWithSize(kMaxSpdyFrameChunkSize);
-      // The request body buffer is empty at first.
-      request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, 0);
-    }
+  CHECK(!has_upload_data_);
+  has_upload_data_ = request_info_->upload_data_stream &&
+      (request_info_->upload_data_stream->size() ||
+       request_info_->upload_data_stream->is_chunked());
+  if (has_upload_data_) {
+    // Use kMaxSpdyFrameChunkSize as the buffer size, since the request
+    // body data is written with this size at a time.
+    raw_request_body_buf_ = new IOBufferWithSize(kMaxSpdyFrameChunkSize);
+    // The request body buffer is empty at first.
+    request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, 0);
   }
 
   CHECK(!callback.is_null());
@@ -258,8 +254,7 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     return result;
   response_info_->socket_address = HostPortPair::FromIPEndPoint(address);
 
-  bool has_upload_data = request_body_stream_.get() != NULL;
-  result = stream_->SendRequest(has_upload_data);
+  result = stream_->SendRequest(has_upload_data_);
   if (result == ERR_IO_PENDING) {
     CHECK(callback_.is_null());
     callback_ = callback;
@@ -276,11 +271,11 @@ void SpdyHttpStream::Cancel() {
 }
 
 int SpdyHttpStream::SendData() {
-  CHECK(request_body_stream_.get());
+  CHECK(request_info_ && request_info_->upload_data_stream);
   CHECK_EQ(0, request_body_buf_->BytesRemaining());
 
   // Read the data from the request body stream.
-  const int bytes_read = request_body_stream_->Read(
+  const int bytes_read = request_info_->upload_data_stream->Read(
       raw_request_body_buf_, raw_request_body_buf_->size(),
       base::Bind(
           base::IgnoreResult(&SpdyHttpStream::OnRequestBodyReadCompleted),
@@ -296,12 +291,12 @@ int SpdyHttpStream::SendData() {
 bool SpdyHttpStream::OnSendHeadersComplete(int status) {
   if (!callback_.is_null())
     DoCallback(status);
-  return request_body_stream_.get() == NULL;
+  return !has_upload_data_;
 }
 
 int SpdyHttpStream::OnSendBody() {
-  CHECK(request_body_stream_.get());
-  const bool eof = request_body_stream_->IsEOF();
+  CHECK(request_info_ && request_info_->upload_data_stream);
+  const bool eof = request_info_->upload_data_stream->IsEOF();
   if (request_body_buf_->BytesRemaining() > 0) {
     return stream_->WriteStreamData(
         request_body_buf_,
@@ -318,7 +313,7 @@ int SpdyHttpStream::OnSendBody() {
 
 int SpdyHttpStream::OnSendBodyComplete(int status, bool* eof) {
   // |status| is the number of bytes written to the SPDY stream.
-  CHECK(request_body_stream_.get());
+  CHECK(request_info_ && request_info_->upload_data_stream);
   *eof = false;
 
   if (status > 0) {
@@ -330,7 +325,7 @@ int SpdyHttpStream::OnSendBodyComplete(int status, bool* eof) {
   }
 
   // Check if the entire body data has been sent.
-  *eof = (request_body_stream_->IsEOF() &&
+  *eof = (request_info_->upload_data_stream->IsEOF() &&
           !request_body_buf_->BytesRemaining());
   return OK;
 }
@@ -508,7 +503,7 @@ int SpdyHttpStream::OnRequestBodyReadCompleted(int status) {
 
   request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_, status);
 
-  const bool eof = request_body_stream_->IsEOF();
+  const bool eof = request_info_->upload_data_stream->IsEOF();
   return stream_->WriteStreamData(request_body_buf_,
                                   request_body_buf_->BytesRemaining(),
                                   eof ? DATA_FLAG_FIN : DATA_FLAG_NONE);

@@ -5,7 +5,7 @@
 /*
  * cert.h - public data structures and prototypes for the certificate library
  *
- * $Id: cert.h,v 1.90 2012/09/19 15:08:07 kaie%kuix.de Exp $
+ * $Id: cert.h,v 1.91 2012/09/28 16:05:02 wtc%google.com Exp $
  */
 
 #ifndef _CERT_H_
@@ -34,7 +34,7 @@ SEC_BEGIN_PROTOS
 /*
 ** Convert an ascii RFC1485 encoded name into its CERTName equivalent.
 */
-extern CERTName *CERT_AsciiToName(char *string);
+extern CERTName *CERT_AsciiToName(const char *string);
 
 /*
 ** Convert an CERTName into its RFC1485 encoded equivalent.
@@ -97,7 +97,7 @@ extern SECStatus CERT_AddAVA(PLArenaPool *arena, CERTRDN *rdn, CERTAVA *ava);
 /*
 ** Compare two RDN's, returning the difference between them.
 */
-extern SECComparison CERT_CompareRDN(CERTRDN *a, CERTRDN *b);
+extern SECComparison CERT_CompareRDN(const CERTRDN *a, const CERTRDN *b);
 
 /*
 ** Create an X.500 style name using a NULL terminated list of RDN's.
@@ -129,7 +129,7 @@ extern SECStatus CERT_AddRDN(CERTName *name, CERTRDN *rdn);
 /*
 ** Compare two names, returning the difference between them.
 */
-extern SECComparison CERT_CompareName(CERTName *a, CERTName *b);
+extern SECComparison CERT_CompareName(const CERTName *a, const CERTName *b);
 
 /*
 ** Convert a CERTName into something readable

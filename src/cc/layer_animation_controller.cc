@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/layer_animation_controller.h"
 
 #include "cc/active_animation.h"
 #include "cc/keyframed_animation_curve.h"
-#include <public/WebTransformationMatrix.h>
-
-using WebKit::WebTransformationMatrix;
+#include "ui/gfx/transform.h"
 
 namespace cc {
 
@@ -147,7 +143,7 @@ bool LayerAnimationController::isAnimatingProperty(ActiveAnimation::TargetProper
     return false;
 }
 
-void LayerAnimationController::notifyAnimationStarted(const AnimationEvent& event)
+void LayerAnimationController::OnAnimationStarted(const AnimationEvent& event)
 {
     for (size_t i = 0; i < m_activeAnimations.size(); ++i) {
         if (m_activeAnimations[i]->group() == event.groupId && m_activeAnimations[i]->targetProperty() == event.targetProperty && m_activeAnimations[i]->needsSynchronizedStartTime()) {
@@ -375,7 +371,7 @@ void LayerAnimationController::tickAnimations(double monotonicTime)
 
             case ActiveAnimation::Transform: {
                 const TransformAnimationCurve* transformAnimationCurve = m_activeAnimations[i]->curve()->toTransformAnimationCurve();
-                const WebTransformationMatrix matrix = transformAnimationCurve->getValue(trimmed);
+                const gfx::Transform matrix = transformAnimationCurve->getValue(trimmed).toTransform();
                 if (m_activeAnimations[i]->isFinishedAt(monotonicTime))
                     m_activeAnimations[i]->setRunState(ActiveAnimation::Finished, monotonicTime);
 

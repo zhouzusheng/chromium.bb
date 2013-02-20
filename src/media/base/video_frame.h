@@ -8,12 +8,19 @@
 #include "base/callback.h"
 #include "base/md5.h"
 #include "media/base/buffers.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 namespace media {
 
 class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
  public:
+  enum {
+    kFrameSizeAlignment = 16,
+    kFrameSizePadding = 16,
+    kFrameAddressAlignment = 32
+  };
+
   enum {
     kMaxPlanes = 3,
 
@@ -40,19 +47,23 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Creates a new frame in system memory with given parameters. Buffers for
   // the frame are allocated but not initialized.
-  // |data_size| is the width and height of the frame data in pixels.
+  // |coded_size| is the width and height of the frame data in pixels.
+  // |visible_rect| is the visible portion of |coded_size|, after cropping (if
+  // any) is applied.
   // |natural_size| is the width and height of the frame when the frame's aspect
-  // ratio is applied to |data_size|.
+  // ratio is applied to |visible_rect|.
   static scoped_refptr<VideoFrame> CreateFrame(
       Format format,
-      const gfx::Size& data_size,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
       base::TimeDelta timestamp);
 
   // Call prior to CreateFrame to ensure validity of frame configuration. Called
   // automatically by VideoDecoderConfig::IsValidConfig().
   // TODO(scherkus): VideoDecoderConfig shouldn't call this method
-  static bool IsValidConfig(Format format, const gfx::Size& data_size,
+  static bool IsValidConfig(Format format, const gfx::Size& coded_size,
+                            const gfx::Rect& visible_rect,
                             const gfx::Size& natural_size);
 
   // CB to write pixels from the texture backing this frame into the
@@ -60,25 +71,45 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   typedef base::Callback<void(void*)> ReadPixelsCB;
 
   // Wraps a native texture of the given parameters with a VideoFrame.  When the
-  // frame is destroyed |no_longer_needed.Run()| will be called.
-  // |data_size| is the width and height of the frame data in pixels.
+  // frame is destroyed |no_longer_needed_cb.Run()| will be called.
+  // |coded_size| is the width and height of the frame data in pixels.
+  // |visible_rect| is the visible portion of |coded_size|, after cropping (if
+  // any) is applied.
   // |natural_size| is the width and height of the frame when the frame's aspect
-  // ratio is applied to |size|.
+  // ratio is applied to |visible_rect|.
   // |read_pixels_cb| may be used to do (slow!) readbacks from the
   // texture to main memory.
   static scoped_refptr<VideoFrame> WrapNativeTexture(
       uint32 texture_id,
       uint32 texture_target,
-      const gfx::Size& data_size,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
       base::TimeDelta timestamp,
       const ReadPixelsCB& read_pixels_cb,
-      const base::Closure& no_longer_needed);
+      const base::Closure& no_longer_needed_cb);
 
   // Read pixels from the native texture backing |*this| and write
   // them to |*pixels| as BGRA.  |pixels| must point to a buffer at
-  // least as large as 4*data_size().width()*data_size().height().
+  // least as large as 4*visible_rect().width()*visible_rect().height().
   void ReadPixelsFromNativeTexture(void* pixels);
+
+  // Wraps external YUV data of the given parameters with a VideoFrame.
+  // The returned VideoFrame does not own the data passed in. When the frame
+  // is destroyed |no_longer_needed_cb.Run()| will be called.
+  static scoped_refptr<VideoFrame> WrapExternalYuvData(
+      Format format,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      int32 y_stride,
+      int32 u_stride,
+      int32 v_stride,
+      uint8* y_data,
+      uint8* u_data,
+      uint8* v_data,
+      base::TimeDelta timestamp,
+      const base::Closure& no_longer_needed_cb);
 
   // Creates a frame with format equals to VideoFrame::EMPTY, width, height,
   // and timestamp are all 0.
@@ -86,7 +117,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Allocates YV12 frame based on |size|, and sets its data to the YUV(y,u,v).
   static scoped_refptr<VideoFrame> CreateColorFrame(
-      const gfx::Size& data_size,
+      const gfx::Size& size,
       uint8 y, uint8 u, uint8 v,
       base::TimeDelta timestamp);
 
@@ -96,7 +127,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   Format format() const { return format_; }
 
-  const gfx::Size& data_size() const { return data_size_; }
+  const gfx::Size& coded_size() const { return coded_size_; }
+  const gfx::Rect& visible_rect() const { return visible_rect_; }
   const gfx::Size& natural_size() const { return natural_size_; }
 
   int stride(size_t plane) const;
@@ -104,7 +136,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Returns the number of bytes per row and number of rows for a given plane.
   //
   // As opposed to stride(), row_bytes() refers to the bytes representing
-  // visible pixels.
+  // frame data scanlines (coded_size.width() pixels, without stride padding).
   int row_bytes(size_t plane) const;
   int rows(size_t plane) const;
 
@@ -137,7 +169,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   friend class base::RefCountedThreadSafe<VideoFrame>;
   // Clients must use the static CreateFrame() method to create a new frame.
   VideoFrame(Format format,
-             const gfx::Size& size,
+             const gfx::Size& coded_size,
+             const gfx::Rect& visible_rect,
              const gfx::Size& natural_size,
              base::TimeDelta timestamp);
   virtual ~VideoFrame();
@@ -153,10 +186,13 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   Format format_;
 
   // Width and height of the video frame.
-  gfx::Size data_size_;
+  gfx::Size coded_size_;
 
-  // Width and height of the video frame with aspect ratio taken
-  // into account.
+  // Width, height, and offsets of the visible portion of the video frame.
+  gfx::Rect visible_rect_;
+
+  // Width and height of the visible portion of the video frame with aspect
+  // ratio taken into account.
   gfx::Size natural_size_;
 
   // Array of strides for each plane, typically greater or equal to the width
@@ -171,7 +207,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   uint32 texture_id_;
   uint32 texture_target_;
   ReadPixelsCB read_pixels_cb_;
-  base::Closure texture_no_longer_needed_;
+
+  base::Closure no_longer_needed_cb_;
 
   base::TimeDelta timestamp_;
 

@@ -473,6 +473,8 @@ void SkRadialGradient::shadeSpan(int x, int y,
 
 #if SK_SUPPORT_GPU
 
+#include "GrTBackendEffectFactory.h"
+
 class GrGLRadialGradient : public GrGLGradientEffect {
 public:
 
@@ -480,14 +482,17 @@ public:
                        const GrEffect&) : INHERITED (factory) { }
     virtual ~GrGLRadialGradient() { }
 
-    virtual void emitVS(GrGLShaderBuilder* builder,
-                        const char* vertexCoords) SK_OVERRIDE { }
-    virtual void emitFS(GrGLShaderBuilder* builder,
-                        const char* outputColor,
-                        const char* inputColor,
-                        const TextureSamplerArray&) SK_OVERRIDE;
+    virtual void emitCode(GrGLShaderBuilder*,
+                          const GrEffectStage&,
+                          EffectKey,
+                          const char* vertexCoords,
+                          const char* outputColor,
+                          const char* inputColor,
+                          const TextureSamplerArray&) SK_OVERRIDE;
 
-    static EffectKey GenKey(const GrEffect& s, const GrGLCaps& caps) { return 0; }
+    static EffectKey GenKey(const GrEffectStage& stage, const GrGLCaps&) {
+        return GenMatrixKey(stage);
+    }
 
 private:
 
@@ -500,8 +505,11 @@ private:
 class GrRadialGradient : public GrGradientEffect {
 public:
 
-    GrRadialGradient(GrContext* ctx, const SkRadialGradient& shader, SkShader::TileMode tm)
-        : INHERITED(ctx, shader, tm) {
+    GrRadialGradient(GrContext* ctx,
+                     const SkRadialGradient& shader,
+                     const SkMatrix& matrix,
+                     SkShader::TileMode tm)
+        : INHERITED(ctx, shader, matrix, tm) {
     }
 
     virtual ~GrRadialGradient() { }
@@ -547,12 +555,19 @@ GrEffect* GrRadialGradient::TestCreate(SkRandom* random,
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLRadialGradient::emitFS(GrGLShaderBuilder* builder,
-                                const char* outputColor,
-                                const char* inputColor,
-                                const TextureSamplerArray& samplers) {
-    SkString t;
-    t.printf("length(%s.xy)", builder->defaultTexCoordsName());
+void GrGLRadialGradient::emitCode(GrGLShaderBuilder* builder,
+                                  const GrEffectStage& stage,
+                                  EffectKey key,
+                                  const char* vertexCoords,
+                                  const char* outputColor,
+                                  const char* inputColor,
+                                  const TextureSamplerArray& samplers) {
+    this->emitYCoordUniform(builder);
+    const char* coords;
+    this->setupMatrix(builder, key, vertexCoords, &coords);
+    SkString t("length(");
+    t.append(coords);
+    t.append(")");
     this->emitColorLookup(builder, t.c_str(), outputColor, inputColor, samplers[0]);
 }
 
@@ -560,19 +575,13 @@ void GrGLRadialGradient::emitFS(GrGLShaderBuilder* builder,
 
 bool SkRadialGradient::asNewEffect(GrContext* context, GrEffectStage* stage) const {
     SkASSERT(NULL != context && NULL != stage);
-    SkAutoTUnref<GrEffect> effect(SkNEW_ARGS(GrRadialGradient, (context, *this, fTileMode)));
 
     SkMatrix matrix;
-    if (this->getLocalMatrix(&matrix)) {
-        if (!matrix.invert(&matrix)) {
-            return false;
-        }
-        matrix.postConcat(fPtsToUnit);
-        stage->setEffect(effect, matrix);
-    } else {
-        stage->setEffect(effect, fPtsToUnit);
+    if (!this->getLocalMatrix().invert(&matrix)) {
+        return false;
     }
-
+    matrix.postConcat(fPtsToUnit);
+    stage->setEffect(SkNEW_ARGS(GrRadialGradient, (context, *this, matrix, fTileMode)))->unref();
     return true;
 }
 

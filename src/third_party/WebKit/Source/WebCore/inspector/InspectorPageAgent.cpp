@@ -92,10 +92,12 @@ static const char pageAgentScreenWidthOverride[] = "pageAgentScreenWidthOverride
 static const char pageAgentScreenHeightOverride[] = "pageAgentScreenHeightOverride";
 static const char pageAgentFontScaleFactorOverride[] = "pageAgentFontScaleFactorOverride";
 static const char pageAgentFitWindow[] = "pageAgentFitWindow";
-static const char showPaintRects[] = "showPaintRects";
+static const char pageAgentShowFPSCounter[] = "pageAgentShowFPSCounter";
+static const char pageAgentShowPaintRects[] = "pageAgentShowPaintRects";
 #if ENABLE(TOUCH_EVENTS)
 static const char touchEventEmulationEnabled[] = "touchEventEmulationEnabled";
 #endif
+static const char pageAgentEmulatedMedia[] = "pageAgentEmulatedMedia";
 }
 
 static bool decodeBuffer(const char* buffer, unsigned size, const String& textEncodingName, String* result)
@@ -358,6 +360,12 @@ void InspectorPageAgent::restore()
         enable(&error);
         bool scriptExecutionDisabled = m_state->getBoolean(PageAgentState::pageAgentScriptExecutionDisabled);
         setScriptExecutionDisabled(0, scriptExecutionDisabled);
+        bool showPaintRects = m_state->getBoolean(PageAgentState::pageAgentShowPaintRects);
+        setShowPaintRects(0, showPaintRects);
+        bool showFPSCounter = m_state->getBoolean(PageAgentState::pageAgentShowFPSCounter);
+        setShowFPSCounter(0, showFPSCounter);
+        String emulatedMedia = m_state->getString(PageAgentState::pageAgentEmulatedMedia);
+        setEmulatedMedia(0, emulatedMedia);
 
         int currentWidth = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenWidthOverride));
         int currentHeight = static_cast<int>(m_state->getLong(PageAgentState::pageAgentScreenHeightOverride));
@@ -390,6 +398,9 @@ void InspectorPageAgent::disable(ErrorString*)
     m_instrumentingAgents->setInspectorPageAgent(0);
 
     setScriptExecutionDisabled(0, false);
+    setShowPaintRects(0, false);
+    setShowFPSCounter(0, false);
+    setEmulatedMedia(0, "");
 
     // When disabling the agent, reset the override values.
     m_state->setLong(PageAgentState::pageAgentScreenWidthOverride, 0);
@@ -424,9 +435,10 @@ void InspectorPageAgent::removeScriptToEvaluateOnLoad(ErrorString* error, const 
     scripts->remove(identifier);
 }
 
-void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad)
+void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad, const String* optionalScriptPreprocessor)
 {
     m_pendingScriptToEvaluateOnLoadOnce = optionalScriptToEvaluateOnLoad ? *optionalScriptToEvaluateOnLoad : "";
+    m_pendingScriptPreprocessor = optionalScriptPreprocessor ? *optionalScriptPreprocessor : "";
     m_page->mainFrame()->loader()->reload(optionalIgnoreCache ? *optionalIgnoreCache : false);
 }
 
@@ -721,9 +733,25 @@ void InspectorPageAgent::setDeviceMetricsOverride(ErrorString* errorString, int 
 
 void InspectorPageAgent::setShowPaintRects(ErrorString*, bool show)
 {
-    m_state->setBoolean(PageAgentState::showPaintRects, show);
-    if (!show)
-        m_page->mainFrame()->view()->invalidate();
+    m_state->setBoolean(PageAgentState::pageAgentShowPaintRects, show);
+    m_client->setShowPaintRects(show);
+
+    if (!show && mainFrame() && mainFrame()->view())
+        mainFrame()->view()->invalidate();
+}
+
+void InspectorPageAgent::canShowFPSCounter(ErrorString*, bool* outParam)
+{
+    *outParam = m_client->canShowFPSCounter();
+}
+
+void InspectorPageAgent::setShowFPSCounter(ErrorString*, bool show)
+{
+    m_state->setBoolean(PageAgentState::pageAgentShowFPSCounter, show);
+    m_client->setShowFPSCounter(show);
+
+    if (mainFrame() && mainFrame()->view())
+        mainFrame()->view()->invalidate();
 }
 
 void InspectorPageAgent::getScriptExecutionStatus(ErrorString*, PageCommandHandler::Result::Enum* status)
@@ -798,7 +826,9 @@ void InspectorPageAgent::frameNavigated(DocumentLoader* loader)
 {
     if (loader->frame() == m_page->mainFrame()) {
         m_scriptToEvaluateOnLoadOnce = m_pendingScriptToEvaluateOnLoadOnce;
+        m_scriptPreprocessor = m_pendingScriptPreprocessor;
         m_pendingScriptToEvaluateOnLoadOnce = String();
+        m_pendingScriptPreprocessor = String();
     }
     m_frontend->frameNavigated(buildObjectForFrame(loader->frame()));
 }
@@ -891,7 +921,7 @@ void InspectorPageAgent::applyScreenHeightOverride(long* height)
 
 void InspectorPageAgent::didPaint(GraphicsContext* context, const LayoutRect& rect)
 {
-    if (!m_enabled || !m_state->getBoolean(PageAgentState::showPaintRects))
+    if (!m_enabled || m_client->overridesShowPaintRects() || !m_state->getBoolean(PageAgentState::pageAgentShowPaintRects))
         return;
 
     static int colorSelector = 0;
@@ -974,10 +1004,10 @@ PassRefPtr<TypeBuilder::Page::FrameResourceTree> InspectorPageAgent::buildObject
             .setUrl(cachedResource->url())
             .setType(cachedResourceTypeJson(*cachedResource))
             .setMimeType(cachedResource->response().mimeType());
-        if (cachedResource->status() == CachedResource::LoadError)
-            resourceObject->setFailed(true);
-        if (cachedResource->status() == CachedResource::Canceled)
+        if (cachedResource->wasCanceled())
             resourceObject->setCanceled(true);
+        else if (cachedResource->status() == CachedResource::LoadError)
+            resourceObject->setFailed(true);
         subresources->addItem(resourceObject);
     }
 
@@ -1122,6 +1152,29 @@ void InspectorPageAgent::setTouchEmulationEnabled(ErrorString* error, bool enabl
     *error = "Touch events emulation not supported";
     UNUSED_PARAM(enabled);
 #endif
+}
+
+void InspectorPageAgent::setEmulatedMedia(ErrorString*, const String& media)
+{
+    String currentMedia = m_state->getString(PageAgentState::pageAgentEmulatedMedia);
+    if (media == currentMedia)
+        return;
+
+    m_state->setString(PageAgentState::pageAgentEmulatedMedia, media);
+    Document* document = 0;
+    if (m_page->mainFrame())
+        document = m_page->mainFrame()->document();
+    if (document) {
+        document->styleResolverChanged(RecalcStyleImmediately);
+        document->updateLayout();
+    }
+}
+
+void InspectorPageAgent::applyEmulatedMedia(String* media)
+{
+    String emulatedMedia = m_state->getString(PageAgentState::pageAgentEmulatedMedia);
+    if (!emulatedMedia.isEmpty())
+        *media = emulatedMedia;
 }
 
 void InspectorPageAgent::getCompositingBordersVisible(ErrorString* error, bool* outParam)

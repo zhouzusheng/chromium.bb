@@ -106,12 +106,13 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
 #endif
     ) {
         // We're local. Just return a SimpleFontData from the normal cache.
-        return fontCache()->getCachedFontData(fontDescription, m_string);
+        // We don't want to check alternate font family names here, so pass true as the checkingAlternateName parameter.
+        return fontCache()->getCachedFontData(fontDescription, m_string, true);
     }
 
     // See if we have a mapping in our FontData cache.
-    unsigned hashKey = (fontDescription.computedPixelSize() + 1) << 6 | fontDescription.widthVariant() << 4
-                       | (fontDescription.textOrientation() == TextOrientationUpright ? 8 : 0) | (fontDescription.orientation() == Vertical ? 4 : 0) | (syntheticBold ? 2 : 0) | (syntheticItalic ? 1 : 0);
+    unsigned hashKey = (fontDescription.computedPixelSize() + 1) << 5 | fontDescription.widthVariant() << 3
+                       | (fontDescription.orientation() == Vertical ? 4 : 0) | (syntheticBold ? 2 : 0) | (syntheticItalic ? 1 : 0);
 
     RefPtr<SimpleFontData>& fontData = m_fontDataTable.add(hashKey, 0).iterator->value;
     if (fontData)
@@ -164,7 +165,7 @@ PassRefPtr<SimpleFontData> CSSFontFaceSource::getFontData(const FontDescription&
                     return 0;
 
                 fontData = SimpleFontData::create(m_font->platformDataFromCustomData(fontDescription.computedPixelSize(), syntheticBold, syntheticItalic,
-                    fontDescription.orientation(), fontDescription.textOrientation(), fontDescription.widthVariant(), fontDescription.renderingMode()), true, false);
+                    fontDescription.orientation(), fontDescription.widthVariant(), fontDescription.renderingMode()), true, false);
             }
         } else {
 #if ENABLE(SVG_FONTS)

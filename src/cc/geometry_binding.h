@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef GeometryBinding_h
-#define GeometryBinding_h
+#ifndef CC_GEOMETRY_BINDING_H_
+#define CC_GEOMETRY_BINDING_H_
 
-#include "FloatRect.h"
+namespace gfx {
+class RectF;
+}
 
 namespace WebKit {
 class WebGraphicsContext3D;
@@ -15,7 +17,7 @@ namespace cc {
 
 class GeometryBinding {
 public:
-    GeometryBinding(WebKit::WebGraphicsContext3D*, const FloatRect& quadVertexRect);
+    GeometryBinding(WebKit::WebGraphicsContext3D*, const gfx::RectF& quadVertexRect);
     ~GeometryBinding();
 
     bool initialized() const { return m_initialized; }
@@ -23,6 +25,7 @@ public:
     WebKit::WebGraphicsContext3D* context() const { return m_context; }
     unsigned quadVerticesVbo() const { return m_quadVerticesVbo; }
     unsigned quadElementsVbo() const { return m_quadElementsVbo; }
+    unsigned quadListVerticesVbo() const { return m_quadListVerticesVbo; }
 
     void prepareForDraw();
 
@@ -31,14 +34,18 @@ public:
     // rebinding attribute arrays.
     static int positionAttribLocation() { return 0; }
     static int texCoordAttribLocation() { return 1; }
+    static int triangleIndexAttribLocation() { return 2; }
 
 private:
     WebKit::WebGraphicsContext3D* m_context;
+    bool m_initialized;
+
     unsigned m_quadVerticesVbo;
     unsigned m_quadElementsVbo;
-    bool m_initialized;
+    unsigned m_quadListVerticesVbo;
 };
 
 } // namespace cc
 
-#endif
+#endif // CC_GEOMETRY_BINDING_H_
+

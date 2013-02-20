@@ -154,4 +154,9 @@ void InspectorFrontendClientImpl::sendMessageToBackend(const String& message)
     m_client->sendMessageToBackend(message);
 }
 
+bool InspectorFrontendClientImpl::isUnderTest()
+{
+    return m_client->isUnderTest();
+}
+
 } // namespace WebKit

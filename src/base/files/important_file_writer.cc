@@ -13,7 +13,7 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/task_runner.h"
 #include "base/metrics/histogram.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
@@ -42,7 +42,11 @@ void LogFailure(const FilePath& path, TempFileFailure failure_code,
                  << " : " << message;
 }
 
-void WriteToDiskTask(const FilePath& path, const std::string& data) {
+}  // namespace
+
+// static
+bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
+                                              const std::string& data) {
   // Write the data to a temp file then rename to avoid data loss if we crash
   // while writing the file. Ensure that the temp file is on the same volume
   // as target file, so it can be moved in one step, and that the temp file
@@ -50,7 +54,7 @@ void WriteToDiskTask(const FilePath& path, const std::string& data) {
   FilePath tmp_file_path;
   if (!file_util::CreateTemporaryFileInDir(path.DirName(), &tmp_file_path)) {
     LogFailure(path, FAILED_CREATING, "could not create temporary file");
-    return;
+    return false;
   }
 
   int flags = PLATFORM_FILE_OPEN | PLATFORM_FILE_WRITE;
@@ -58,7 +62,7 @@ void WriteToDiskTask(const FilePath& path, const std::string& data) {
       CreatePlatformFile(tmp_file_path, flags, NULL, NULL);
   if (tmp_file == kInvalidPlatformFileValue) {
     LogFailure(path, FAILED_OPENING, "could not open temporary file");
-    return;
+    return false;
   }
 
   // If this happens in the wild something really bad is going on.
@@ -70,34 +74,34 @@ void WriteToDiskTask(const FilePath& path, const std::string& data) {
   if (!ClosePlatformFile(tmp_file)) {
     LogFailure(path, FAILED_CLOSING, "failed to close temporary file");
     file_util::Delete(tmp_file_path, false);
-    return;
+    return false;
   }
 
   if (bytes_written < static_cast<int>(data.length())) {
     LogFailure(path, FAILED_WRITING, "error writing, bytes_written=" +
                IntToString(bytes_written));
     file_util::Delete(tmp_file_path, false);
-    return;
+    return false;
   }
 
   if (!file_util::ReplaceFile(tmp_file_path, path)) {
     LogFailure(path, FAILED_RENAMING, "could not rename temporary file");
     file_util::Delete(tmp_file_path, false);
-    return;
+    return false;
   }
+
+  return true;
 }
 
-}  // namespace
-
 ImportantFileWriter::ImportantFileWriter(
-    const FilePath& path, MessageLoopProxy* file_message_loop_proxy)
+    const FilePath& path, base::SequencedTaskRunner* task_runner)
         : path_(path),
-          file_message_loop_proxy_(file_message_loop_proxy),
+          task_runner_(task_runner),
           serializer_(NULL),
           commit_interval_(TimeDelta::FromMilliseconds(
               kDefaultCommitIntervalMs)) {
   DCHECK(CalledOnValidThread());
-  DCHECK(file_message_loop_proxy_.get());
+  DCHECK(task_runner_.get());
 }
 
 ImportantFileWriter::~ImportantFileWriter() {
@@ -122,14 +126,17 @@ void ImportantFileWriter::WriteNow(const std::string& data) {
   if (HasPendingWrite())
     timer_.Stop();
 
-  if (!file_message_loop_proxy_->PostTask(
-      FROM_HERE, MakeCriticalClosure(Bind(&WriteToDiskTask, path_, data)))) {
+  if (!task_runner_->PostTask(
+          FROM_HERE,
+          MakeCriticalClosure(
+              Bind(IgnoreResult(&ImportantFileWriter::WriteFileAtomically),
+                   path_, data)))) {
     // Posting the task to background message loop is not expected
     // to fail, but if it does, avoid losing data and just hit the disk
     // on the current thread.
     NOTREACHED();
 
-    WriteToDiskTask(path_, data);
+    WriteFileAtomically(path_, data);
   }
 }
 

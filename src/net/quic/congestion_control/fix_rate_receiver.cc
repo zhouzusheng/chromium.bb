@@ -17,18 +17,19 @@ FixRateReceiver::FixRateReceiver()
     : bitrate_in_bytes_per_second_(kInitialBitrate) {
 }
 
-bool FixRateReceiver::GenerateCongestionInfo(CongestionInfo* congestion_info) {
-  congestion_info->type = kFixRate;
-  congestion_info->fix_rate.bitrate_in_bytes_per_second =
+bool FixRateReceiver::GenerateCongestionFeedback(
+    QuicCongestionFeedbackFrame* feedback) {
+  feedback->type = kFixRate;
+  feedback->fix_rate.bitrate_in_bytes_per_second =
       bitrate_in_bytes_per_second_;
   return true;
 }
 
 void FixRateReceiver::RecordIncomingPacket(
-    size_t bytes,
-    QuicPacketSequenceNumber sequence_number,
-    uint64 timestamp_us,
-    bool recovered) {
+    size_t /*bytes*/,
+    QuicPacketSequenceNumber /*sequence_number*/,
+    QuicTime /*timestamp*/,
+    bool /*recovered*/) {
   // Nothing to do for this simple implementation.
 }
 

@@ -40,11 +40,25 @@ EGLApi::EGLApi() {
 EGLApi::~EGLApi() {
 }
 
+EGLApiBase::EGLApiBase()
+    : driver_(NULL) {
+}
+
+EGLApiBase::~EGLApiBase() {
+}
+
+void EGLApiBase::InitializeBase(DriverEGL* driver) {
+  driver_ = driver;
+}
+
 RealEGLApi::RealEGLApi() {
 }
 
+RealEGLApi::~RealEGLApi() {
+}
+
 void RealEGLApi::Initialize(DriverEGL* driver) {
-  driver_ = driver;
+  InitializeBase(driver);
 }
 
 }  // namespace gfx

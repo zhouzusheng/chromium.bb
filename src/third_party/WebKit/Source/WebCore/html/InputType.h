@@ -156,6 +156,7 @@ public:
     virtual bool typeMismatch() const;
     virtual bool supportsRequired() const;
     virtual bool valueMissing(const String&) const;
+    virtual bool hasBadInput() const;
     virtual bool patternMismatch(const String&) const;
     bool rangeUnderflow(const String&) const;
     bool rangeOverflow(const String&) const;
@@ -170,17 +171,15 @@ public:
     virtual StepRange createStepRange(AnyStepHandling) const;
     virtual void stepUp(int, ExceptionCode&);
     virtual void stepUpFromRenderer(int);
+    virtual String badInputText() const;
     virtual String typeMismatchText() const;
     virtual String valueMissingText() const;
     virtual bool canSetStringValue() const;
     virtual String localizeValue(const String&) const;
     virtual String visibleValue() const;
-    virtual String convertFromVisibleValue(const String&) const;
-    virtual bool isAcceptableValue(const String&);
     // Returing the null string means "use the default value."
     // This function must be called only by HTMLInputElement::sanitizeValue().
     virtual String sanitizeValue(const String&) const;
-    virtual bool hasUnacceptableValue();
 
     // Event handlers
 
@@ -261,6 +260,7 @@ public:
     virtual bool canSetValue(const String&);
     virtual bool storesValueSeparateFromAttribute();
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior);
+    virtual bool shouldApplyLocaleDirection() const;
     virtual bool shouldResetOnDocumentActivation();
     virtual bool shouldRespectListAttribute();
     virtual bool shouldRespectSpeechAttribute();
@@ -268,14 +268,7 @@ public:
     virtual bool isCheckable();
     virtual bool isSteppable() const;
     virtual bool shouldRespectHeightAndWidthAttributes();
-    // If supportsPlaceholder() && !usesFixedPlaceholder(), it means a type
-    // supports the 'placeholder' attribute.
-    // If supportsPlaceholder() && usesFixedPlaceholder(), it means a type
-    // doesn't support the 'placeholder' attribute, but shows
-    // fixedPlaceholder() string as a placeholder.
     virtual bool supportsPlaceholder() const;
-    virtual bool usesFixedPlaceholder() const;
-    virtual String fixedPlaceholder();
     virtual bool supportsReadOnly() const;
     virtual void updateInnerTextValue();
     virtual void updatePlaceholderText();
@@ -314,10 +307,11 @@ public:
     virtual unsigned height() const;
     virtual unsigned width() const;
 
+    void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
+
 protected:
     InputType(HTMLInputElement* element) : m_element(element) { }
     HTMLInputElement* element() const { return m_element; }
-    void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
     Chrome* chrome() const;
     Decimal parseToNumberOrNaN(const String&) const;
 

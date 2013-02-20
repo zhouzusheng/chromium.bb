@@ -13,6 +13,7 @@
 
 #include "SkTypes.h"
 #include "GrConfig.h"
+#include "SkMath.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -137,11 +138,6 @@ static inline void Gr_bzero(void* dst, size_t size) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- *  Return the number of leading zeros in n
- */
-extern int Gr_clz(uint32_t n);
-
-/**
  *  Return true if n is a power of 2
  */
 static inline bool GrIsPow2(unsigned n) {
@@ -152,12 +148,12 @@ static inline bool GrIsPow2(unsigned n) {
  *  Return the next power of 2 >= n.
  */
 static inline uint32_t GrNextPow2(uint32_t n) {
-    return n ? (1 << (32 - Gr_clz(n - 1))) : 1;
+    return n ? (1 << (32 - SkCLZ(n - 1))) : 1;
 }
 
 static inline int GrNextPow2(int n) {
     GrAssert(n >= 0); // this impl only works for non-neg.
-    return n ? (1 << (32 - Gr_clz(n - 1))) : 1;
+    return n ? (1 << (32 - SkCLZ(n - 1))) : 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -457,7 +453,7 @@ struct GrTextureDesc {
      * applies if the kRenderTarget_GrTextureFlagBit is set. The actual number
      * of samples may not exactly match the request. The request will be rounded
      * up to the next supported sample count, or down if it is larger than the
-     * max supportex count.
+     * max supported count.
      */
     int                    fSampleCnt;
 };
@@ -542,53 +538,6 @@ static int inline NumPathCmdPoints(GrPathCmd cmd) {
         1, 2, 3, 4, 0, 0
     };
     return gNumPoints[cmd];
-}
-
-/**
- * Path filling rules
- */
-enum GrPathFill {
-    kWinding_GrPathFill,
-    kEvenOdd_GrPathFill,
-    kInverseWinding_GrPathFill,
-    kInverseEvenOdd_GrPathFill,
-    kHairLine_GrPathFill,
-
-    kGrPathFillCount
-};
-
-static inline GrPathFill GrNonInvertedFill(GrPathFill fill) {
-    static const GrPathFill gNonInvertedFills[] = {
-        kWinding_GrPathFill, // kWinding_GrPathFill
-        kEvenOdd_GrPathFill, // kEvenOdd_GrPathFill
-        kWinding_GrPathFill, // kInverseWinding_GrPathFill
-        kEvenOdd_GrPathFill, // kInverseEvenOdd_GrPathFill
-        kHairLine_GrPathFill,// kHairLine_GrPathFill
-    };
-    GR_STATIC_ASSERT(0 == kWinding_GrPathFill);
-    GR_STATIC_ASSERT(1 == kEvenOdd_GrPathFill);
-    GR_STATIC_ASSERT(2 == kInverseWinding_GrPathFill);
-    GR_STATIC_ASSERT(3 == kInverseEvenOdd_GrPathFill);
-    GR_STATIC_ASSERT(4 == kHairLine_GrPathFill);
-    GR_STATIC_ASSERT(5 == kGrPathFillCount);
-    return gNonInvertedFills[fill];
-}
-
-static inline bool GrIsFillInverted(GrPathFill fill) {
-    static const bool gIsFillInverted[] = {
-        false, // kWinding_GrPathFill
-        false, // kEvenOdd_GrPathFill
-        true,  // kInverseWinding_GrPathFill
-        true,  // kInverseEvenOdd_GrPathFill
-        false, // kHairLine_GrPathFill
-    };
-    GR_STATIC_ASSERT(0 == kWinding_GrPathFill);
-    GR_STATIC_ASSERT(1 == kEvenOdd_GrPathFill);
-    GR_STATIC_ASSERT(2 == kInverseWinding_GrPathFill);
-    GR_STATIC_ASSERT(3 == kInverseEvenOdd_GrPathFill);
-    GR_STATIC_ASSERT(4 == kHairLine_GrPathFill);
-    GR_STATIC_ASSERT(5 == kGrPathFillCount);
-    return gIsFillInverted[fill];
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -81,7 +81,8 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       use_arb_occlusion_query2_for_occlusion_query_boolean(false),
       use_arb_occlusion_query_for_occlusion_query_boolean(false),
       native_vertex_array_object(false),
-      disable_workarounds(false) {
+      disable_workarounds(false),
+      enable_shader_name_hashing(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds()
@@ -91,6 +92,7 @@ FeatureInfo::Workarounds::Workarounds()
       reverse_point_sprite_coord_origin(false),
       set_texture_filter_before_generating_mipmap(false),
       use_current_program_after_successful_link(false),
+      restore_scissor_on_fbo_change(false),
       max_texture_size(0),
       max_cube_map_texture_size(0) {
 }
@@ -209,6 +211,7 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   bool is_nvidia = false;
   bool is_amd = false;
   bool is_mesa = false;
+  bool is_qualcomm = false;
   for (size_t ii = 0; ii < arraysize(string_ids); ++ii) {
     const char* str = reinterpret_cast<const char*>(
           glGetString(string_ids[ii]));
@@ -219,6 +222,7 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
       is_nvidia |= string_set.Contains("nvidia");
       is_amd |= string_set.Contains("amd") || string_set.Contains("ati");
       is_mesa |= string_set.Contains("mesa");
+      is_qualcomm |= string_set.Contains("qualcomm");
     }
   }
 
@@ -226,15 +230,23 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuDriverBugWorkarounds);
 
+  feature_flags_.enable_shader_name_hashing =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableShaderNameHashing);
+
+
   bool npot_ok = false;
 
   AddExtensionString("GL_ANGLE_translated_shader_source");
+  AddExtensionString("GL_CHROMIUM_async_pixel_transfers");
   AddExtensionString("GL_CHROMIUM_bind_uniform_location");
   AddExtensionString("GL_CHROMIUM_command_buffer_query");
   AddExtensionString("GL_CHROMIUM_command_buffer_latency_query");
   AddExtensionString("GL_CHROMIUM_copy_texture");
-  AddExtensionString("GL_CHROMIUM_discard_framebuffer");
+  AddExtensionString("GL_CHROMIUM_discard_backbuffer");
   AddExtensionString("GL_CHROMIUM_get_error_query");
+  AddExtensionString("GL_CHROMIUM_lose_context");
+  AddExtensionString("GL_CHROMIUM_pixel_transfer_buffer_object");
   AddExtensionString("GL_CHROMIUM_rate_limit_offscreen_context");
   AddExtensionString("GL_CHROMIUM_resize");
   AddExtensionString("GL_CHROMIUM_resource_safe");
@@ -491,10 +503,15 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
   }
 
   // Check for multisample support
+  bool ext_has_multisample = ext.Have("GL_EXT_framebuffer_multisample");
+  if (!is_qualcomm || feature_flags_.disable_workarounds) {
+    // Some Android Qualcomm drivers falsely report this ANGLE extension string.
+    // See http://crbug.com/165736
+    ext_has_multisample |= ext.Have("GL_ANGLE_framebuffer_multisample");
+  }
   if (!disallowed_features_.multisampling &&
       ext.Desire("GL_CHROMIUM_framebuffer_multisample") &&
-      (ext.Have("GL_EXT_framebuffer_multisample") ||
-       ext.Have("GL_ANGLE_framebuffer_multisample"))) {
+      ext_has_multisample) {
     feature_flags_.chromium_framebuffer_multisample = true;
     validators_.frame_buffer_target.AddValue(GL_READ_FRAMEBUFFER_EXT);
     validators_.frame_buffer_target.AddValue(GL_DRAW_FRAMEBUFFER_EXT);
@@ -653,6 +670,10 @@ void FeatureInfo::AddFeatures(const char* desired_features) {
 
     if (is_nvidia) {
       workarounds_.use_current_program_after_successful_link = true;
+    }
+
+    if (is_qualcomm) {
+      workarounds_.restore_scissor_on_fbo_change = true;
     }
 
 #if defined(OS_MACOSX)

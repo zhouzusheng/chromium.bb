@@ -31,7 +31,8 @@
  */
 
 [
-    Conditional=INSPECTOR
+    Conditional=INSPECTOR,
+    ImplementationLacksVTable
 ] interface InspectorFrontendHost {
     void loaded();
     void closeWindow();
@@ -66,4 +67,6 @@
     [Custom] void recordSettingChanged(in unsigned long settingChanged);
     
     DOMString loadResourceSynchronously(in DOMString url);
+
+    boolean isUnderTest();
 };

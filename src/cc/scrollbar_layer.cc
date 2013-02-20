@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "config.h"
-
 #include "cc/scrollbar_layer.h"
 
 #include "base/basictypes.h"
@@ -12,15 +10,16 @@
 #include "cc/layer_tree_host.h"
 #include "cc/resource_update_queue.h"
 #include "cc/scrollbar_layer_impl.h"
+#include "ui/gfx/rect_conversions.h"
 #include <public/WebRect.h>
 
 using WebKit::WebRect;
 
 namespace cc {
 
-scoped_ptr<LayerImpl> ScrollbarLayer::createLayerImpl()
+scoped_ptr<LayerImpl> ScrollbarLayer::createLayerImpl(LayerTreeImpl* treeImpl)
 {
-    return ScrollbarLayerImpl::create(id()).PassAs<LayerImpl>();
+    return ScrollbarLayerImpl::create(treeImpl, id()).PassAs<LayerImpl>();
 }
 
 scoped_refptr<ScrollbarLayer> ScrollbarLayer::create(scoped_ptr<WebKit::WebScrollbar> scrollbar, WebKit::WebScrollbarThemePainter painter, scoped_ptr<WebKit::WebScrollbarThemeGeometry> geometry, int scrollLayerId)
@@ -41,9 +40,52 @@ ScrollbarLayer::~ScrollbarLayer()
 {
 }
 
+void ScrollbarLayer::setScrollLayerId(int id)
+{
+    if (id == m_scrollLayerId)
+        return;
+
+    m_scrollLayerId = id;
+    setNeedsFullTreeSync();
+}
+
+int ScrollbarLayer::maxTextureSize() {
+    DCHECK(layerTreeHost());
+    return layerTreeHost()->rendererCapabilities().maxTextureSize;
+}
+
+float ScrollbarLayer::clampScaleToMaxTextureSize(float scale) {
+    // If the scaled contentBounds() is bigger than the max texture size of the
+    // device, we need to clamp it by rescaling, since contentBounds() is used
+    // below to set the texture size.
+    gfx::Size scaledBounds = computeContentBoundsForScale(scale, scale);
+    if (scaledBounds.width() > maxTextureSize() || scaledBounds.height() > maxTextureSize()) {
+         if (scaledBounds.width() > scaledBounds.height())
+             return (maxTextureSize() - 1) / static_cast<float>(bounds().width());
+         else
+             return (maxTextureSize() - 1) / static_cast<float>(bounds().height());
+   }
+    return scale;
+}
+
+void ScrollbarLayer::calculateContentsScale(
+  float idealContentsScale,
+  float* contentsScaleX,
+  float* contentsScaleY,
+  gfx::Size* contentBounds)
+{
+    ContentsScalingLayer::calculateContentsScale(
+        clampScaleToMaxTextureSize(idealContentsScale),
+        contentsScaleX,
+        contentsScaleY,
+        contentBounds);
+    DCHECK_LE(contentBounds->width(), maxTextureSize());
+    DCHECK_LE(contentBounds->height(), maxTextureSize());
+}
+
 void ScrollbarLayer::pushPropertiesTo(LayerImpl* layer)
 {
-    Layer::pushPropertiesTo(layer);
+    ContentsScalingLayer::pushPropertiesTo(layer);
 
     ScrollbarLayerImpl* scrollbarLayer = static_cast<ScrollbarLayerImpl*>(layer);
 
@@ -80,12 +122,11 @@ public:
         return make_scoped_ptr(new ScrollbarBackgroundPainter(scrollbar, painter, geometry, trackPart));
     }
 
-    virtual void paint(SkCanvas* skCanvas, const IntRect& contentRect, FloatRect&) OVERRIDE
+    virtual void paint(SkCanvas* skCanvas, const gfx::Rect& contentRect, gfx::RectF&) OVERRIDE
     {
         WebKit::WebCanvas* canvas = skCanvas;
         // The following is a simplification of ScrollbarThemeComposite::paint.
-        WebKit::WebRect contentWebRect(contentRect.x(), contentRect.y(), contentRect.width(), contentRect.height());
-        m_painter.paintScrollbarBackground(canvas, contentWebRect);
+        m_painter.paintScrollbarBackground(canvas, contentRect);
 
         if (m_geometry->hasButtons(m_scrollbar)) {
             WebRect backButtonStartPaintRect = m_geometry->backButtonStartRect(m_scrollbar);
@@ -131,16 +172,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(ScrollbarBackgroundPainter);
 };
 
-bool ScrollbarLayer::needsContentsScale() const
-{
-    return true;
-}
-
-IntSize ScrollbarLayer::contentBounds() const
-{
-    return IntSize(lroundf(bounds().width() * contentsScale()), lroundf(bounds().height() * contentsScale()));
-}
-
 class ScrollbarThumbPainter : public LayerPainter {
 public:
     static scoped_ptr<ScrollbarThumbPainter> create(WebKit::WebScrollbar* scrollbar, WebKit::WebScrollbarThemePainter painter, WebKit::WebScrollbarThemeGeometry* geometry)
@@ -148,7 +179,7 @@ public:
         return make_scoped_ptr(new ScrollbarThumbPainter(scrollbar, painter, geometry));
     }
 
-    virtual void paint(SkCanvas* skCanvas, const IntRect& contentRect, FloatRect& opaque) OVERRIDE
+    virtual void paint(SkCanvas* skCanvas, const gfx::Rect& contentRect, gfx::RectF& opaque) OVERRIDE
     {
         WebKit::WebCanvas* canvas = skCanvas;
 
@@ -183,7 +214,7 @@ void ScrollbarLayer::setLayerTreeHost(LayerTreeHost* host)
         m_thumb.reset();
     }
 
-    Layer::setLayerTreeHost(host);
+    ContentsScalingLayer::setLayerTreeHost(host);
 }
 
 void ScrollbarLayer::createUpdaterIfNeeded()
@@ -209,13 +240,13 @@ void ScrollbarLayer::createUpdaterIfNeeded()
         m_thumb = m_thumbUpdater->createResource(layerTreeHost()->contentsTextureManager());
 }
 
-void ScrollbarLayer::updatePart(CachingBitmapContentLayerUpdater* painter, LayerUpdater::Resource* texture, const IntRect& rect, ResourceUpdateQueue& queue, RenderingStats& stats)
+void ScrollbarLayer::updatePart(CachingBitmapContentLayerUpdater* painter, LayerUpdater::Resource* texture, const gfx::Rect& rect, ResourceUpdateQueue& queue, RenderingStats& stats)
 {
     // Skip painting and uploading if there are no invalidations and
     // we already have valid texture data.
     if (texture->texture()->haveBackingTexture()
             && texture->texture()->size() == rect.size()
-            && m_updateRect.isEmpty())
+            && m_updateRect.IsEmpty())
         return;
 
     // We should always have enough memory for UI.
@@ -224,24 +255,31 @@ void ScrollbarLayer::updatePart(CachingBitmapContentLayerUpdater* painter, Layer
         return;
 
     // Paint and upload the entire part.
-    float widthScale = static_cast<float>(contentBounds().width()) / bounds().width();
-    float heightScale = static_cast<float>(contentBounds().height()) / bounds().height();
-    IntRect paintedOpaqueRect;
-    painter->prepareToUpdate(rect, rect.size(), widthScale, heightScale, paintedOpaqueRect, stats);
+    gfx::Rect paintedOpaqueRect;
+    painter->prepareToUpdate(rect, rect.size(), contentsScaleX(), contentsScaleY(), paintedOpaqueRect, stats);
     if (!painter->pixelsDidChange() && texture->texture()->haveBackingTexture()) {
         TRACE_EVENT_INSTANT0("cc","ScrollbarLayer::updatePart no texture upload needed");
         return;
     }
 
-    IntSize destOffset(0, 0);
+    gfx::Vector2d destOffset(0, 0);
     texture->update(queue, rect, destOffset, false, stats);
 }
 
+gfx::Rect ScrollbarLayer::scrollbarLayerRectToContentRect(const gfx::Rect& layerRect) const
+{
+    // Don't intersect with the bounds as in layerRectToContentRect() because
+    // layerRect here might be in coordinates of the containing layer.
+    gfx::RectF contentRect = gfx::ScaleRect(layerRect, contentsScaleX(), contentsScaleY());
+    return gfx::ToEnclosingRect(contentRect);
+}
 
 void ScrollbarLayer::setTexturePriorities(const PriorityCalculator&)
 {
-    if (contentBounds().isEmpty())
+    if (contentBounds().IsEmpty())
         return;
+    DCHECK_LE(contentBounds().width(), maxTextureSize());
+    DCHECK_LE(contentBounds().height(), maxTextureSize());
 
     createUpdaterIfNeeded();
 
@@ -255,30 +293,31 @@ void ScrollbarLayer::setTexturePriorities(const PriorityCalculator&)
         m_foreTrack->texture()->setRequestPriority(PriorityCalculator::uiPriority(drawsToRoot));
     }
     if (m_thumb) {
-        IntSize thumbSize = layerRectToContentRect(m_geometry->thumbRect(m_scrollbar.get())).size();
+        gfx::Size thumbSize = scrollbarLayerRectToContentRect(m_geometry->thumbRect(m_scrollbar.get())).size();
         m_thumb->texture()->setDimensions(thumbSize, m_textureFormat);
         m_thumb->texture()->setRequestPriority(PriorityCalculator::uiPriority(drawsToRoot));
     }
 }
 
-void ScrollbarLayer::update(ResourceUpdateQueue& queue, const OcclusionTracker*, RenderingStats& stats)
+void ScrollbarLayer::update(ResourceUpdateQueue& queue, const OcclusionTracker* occlusion, RenderingStats& stats)
 {
-    if (contentBounds().isEmpty())
+    ContentsScalingLayer::update(queue, occlusion, stats);
+
+    if (contentBounds().IsEmpty())
         return;
 
     createUpdaterIfNeeded();
 
-    IntPoint scrollbarOrigin(m_scrollbar->location().x, m_scrollbar->location().y);
-    IntRect contentRect = layerRectToContentRect(WebKit::WebRect(scrollbarOrigin.x(), scrollbarOrigin.y(), bounds().width(), bounds().height()));
+    gfx::Rect contentRect = scrollbarLayerRectToContentRect(gfx::Rect(m_scrollbar->location(), bounds()));
     updatePart(m_backTrackUpdater.get(), m_backTrack.get(), contentRect, queue, stats);
     if (m_foreTrack && m_foreTrackUpdater)
         updatePart(m_foreTrackUpdater.get(), m_foreTrack.get(), contentRect, queue, stats);
 
     // Consider the thumb to be at the origin when painting.
     WebKit::WebRect thumbRect = m_geometry->thumbRect(m_scrollbar.get());
-    IntRect originThumbRect = layerRectToContentRect(WebKit::WebRect(0, 0, thumbRect.width, thumbRect.height));
-    if (!originThumbRect.isEmpty())
+    gfx::Rect originThumbRect = scrollbarLayerRectToContentRect(gfx::Rect(0, 0, thumbRect.width, thumbRect.height));
+    if (!originThumbRect.IsEmpty())
         updatePart(m_thumbUpdater.get(), m_thumb.get(), originThumbRect, queue, stats);
 }
 
-}
+}  // namespace cc

@@ -31,7 +31,6 @@
 
 #if ENABLE(INDEXED_DATABASE)
 
-#include "DOMStringList.h"
 #include "Document.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
@@ -111,7 +110,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, c
     // FIXME: This should only need to check for 0 once webkit.org/b/96798 lands.
     const int64_t maxECMAScriptInteger = 0x20000000000000LL - 1;
     if (version < 1 || version > maxECMAScriptInteger) {
-        ec = NATIVE_TYPE_ERR;
+        ec = TypeError;
         return 0;
     }
     return openInternal(context, name, version, ec);
@@ -121,15 +120,16 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* co
 {
     ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
     if (name.isNull()) {
-        ec = NATIVE_TYPE_ERR;
+        ec = TypeError;
         return 0;
     }
     if (!isContextValid(context))
         return 0;
 
     RefPtr<IDBDatabaseCallbacksImpl> databaseCallbacks = IDBDatabaseCallbacksImpl::create();
-    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, IDBAny::createNull(), databaseCallbacks, version);
-    m_backend->open(name, version, request, databaseCallbacks, context->securityOrigin(), context, getIndexedDBDatabasePath(context));
+    int64_t transactionId = IDBDatabase::nextTransactionId();
+    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, IDBAny::createNull(), databaseCallbacks, transactionId, version);
+    m_backend->open(name, version, transactionId, request, databaseCallbacks, context->securityOrigin(), context, getIndexedDBDatabasePath(context));
     return request;
 }
 
@@ -141,7 +141,7 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, c
 PassRefPtr<IDBVersionChangeRequest> IDBFactory::deleteDatabase(ScriptExecutionContext* context, const String& name, ExceptionCode& ec)
 {
     if (name.isNull()) {
-        ec = NATIVE_TYPE_ERR;
+        ec = TypeError;
         return 0;
     }
     if (!isContextValid(context))
@@ -158,7 +158,7 @@ short IDBFactory::cmp(PassRefPtr<IDBKey> first, PassRefPtr<IDBKey> second, Excep
     ASSERT(second);
 
     if (!first->isValid() || !second->isValid()) {
-        ec = IDBDatabaseException::DATA_ERR;
+        ec = IDBDatabaseException::DataError;
         return 0;
     }
 

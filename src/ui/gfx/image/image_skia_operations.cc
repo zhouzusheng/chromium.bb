@@ -7,9 +7,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "skia/ext/image_operations.h"
-#include "skia/ext/platform_canvas.h"
 #include "ui/base/layout.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image_skia.h"
@@ -26,68 +24,100 @@
 namespace gfx {
 namespace {
 
-bool ScalingEnabled() {
-  static bool scale_images = !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableScalingInImageSkiaOperations);
-  return scale_images;
+// Returns an image rep for the ImageSkiaSource to return to visually indicate
+// an error.
+ImageSkiaRep GetErrorImageRep(ui::ScaleFactor scale_factor,
+                              const gfx::Size& pixel_size) {
+  SkBitmap bitmap;
+  bitmap.setConfig(
+      SkBitmap::kARGB_8888_Config, pixel_size.width(), pixel_size.height());
+  bitmap.allocPixels();
+  bitmap.eraseColor(SK_ColorRED);
+  return gfx::ImageSkiaRep(bitmap, scale_factor);
 }
 
-// Creates 2x scaled image of the give |source|.
-ImageSkiaRep Create2XImageSkiaRep(const ImageSkiaRep& source) {
-  gfx::Size size(source.GetWidth() * 2.0f, source.GetHeight() * 2.0f);
-  skia::PlatformCanvas canvas(size.width(), size.height(), false);
-  SkRect resized_bounds = RectToSkRect(gfx::Rect(size));
-  canvas.drawBitmapRect(source.sk_bitmap(), NULL, resized_bounds);
-  SkBitmap resized_bitmap = canvas.getDevice()->accessBitmap(false);
-  return ImageSkiaRep(resized_bitmap, ui::SCALE_FACTOR_200P);
-}
-
-// A utility function to synchronize the scale factor of the two images.
-// When the command line option "--disable-scaling-in-image-skia-operation"
-// is provided, this function will fail if the scale factors of the two images
-// are different. This assumes that the platform only supports
-// 1x and 2x scale factors.
-// TODO(oshima): Remove and replace this with plain CHECK once
-// 2x images for all resources are provided.
-void MatchScale(ImageSkiaRep* first, ImageSkiaRep* second) {
-  if (first->scale_factor() != second->scale_factor()) {
-    CHECK(ScalingEnabled());
-    ImageSkiaRep* target = NULL;
-    if (first->scale_factor() == ui::SCALE_FACTOR_100P) {
-      target = first;
-    } else {
-      target = second;
-    }
-    *target = Create2XImageSkiaRep(*target);
-  }
-}
-
-class BlendingImageSource : public gfx::ImageSkiaSource {
- public:
-  BlendingImageSource(const ImageSkia& first,
-                      const ImageSkia& second,
-                      double alpha)
+// A base image source class that creates an image from two source images.
+// This class guarantees that two ImageSkiaReps have have the same pixel size.
+class BinaryImageSource : public gfx::ImageSkiaSource {
+ protected:
+  BinaryImageSource(const ImageSkia& first,
+                    const ImageSkia& second,
+                    const char* source_name)
       : first_(first),
         second_(second),
-        alpha_(alpha) {
+        source_name_(source_name) {
   }
-
-  virtual ~BlendingImageSource() {
+  virtual ~BinaryImageSource() {
   }
 
   // gfx::ImageSkiaSource overrides:
   virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
     ImageSkiaRep first_rep = first_.GetRepresentation(scale_factor);
     ImageSkiaRep second_rep = second_.GetRepresentation(scale_factor);
-    MatchScale(&first_rep, &second_rep);
+    if (first_rep.pixel_width() != second_rep.pixel_width() ||
+        first_rep.pixel_height() != second_rep.pixel_height()) {
+      DCHECK_NE(first_rep.scale_factor(), second_rep.scale_factor());
+      if (first_rep.scale_factor() == second_rep.scale_factor()) {
+        LOG(ERROR) << "ImageSkiaRep size mismatch in " << source_name_;
+        return GetErrorImageRep(first_rep.scale_factor(),
+                                gfx::Size(first_rep.pixel_width(),
+                                          first_rep.pixel_height()));
+      }
+      first_rep = first_.GetRepresentation(ui::SCALE_FACTOR_100P);
+      second_rep = second_.GetRepresentation(ui::SCALE_FACTOR_100P);
+      DCHECK_EQ(first_rep.pixel_width(), second_rep.pixel_width());
+      DCHECK_EQ(first_rep.pixel_height(), second_rep.pixel_height());
+      if (first_rep.pixel_width() != second_rep.pixel_width() ||
+          first_rep.pixel_height() != second_rep.pixel_height()) {
+        LOG(ERROR) << "ImageSkiaRep size mismatch in " << source_name_;
+        return GetErrorImageRep(first_rep.scale_factor(),
+                                gfx::Size(first_rep.pixel_width(),
+                                          first_rep.pixel_height()));
+      }
+    } else {
+      DCHECK_EQ(first_rep.scale_factor(), second_rep.scale_factor());
+    }
+    return CreateImageSkiaRep(first_rep, second_rep);
+  }
+
+  // Creates a final image from two ImageSkiaReps. The pixel size of
+  // the two images are guaranteed to be the same.
+  virtual ImageSkiaRep CreateImageSkiaRep(
+      const ImageSkiaRep& first_rep,
+      const ImageSkiaRep& second_rep) const = 0;
+
+ private:
+  const ImageSkia first_;
+  const ImageSkia second_;
+  // The name of a class that implements the BinaryImageSource.
+  // The subclass is responsible for managing the memory.
+  const char* source_name_;
+
+  DISALLOW_COPY_AND_ASSIGN(BinaryImageSource);
+};
+
+class BlendingImageSource : public BinaryImageSource {
+ public:
+  BlendingImageSource(const ImageSkia& first,
+                      const ImageSkia& second,
+                      double alpha)
+      : BinaryImageSource(first, second, "BlendingImageSource"),
+        alpha_(alpha) {
+  }
+
+  virtual ~BlendingImageSource() {
+  }
+
+  // BinaryImageSource overrides:
+  virtual ImageSkiaRep CreateImageSkiaRep(
+      const ImageSkiaRep& first_rep,
+      const ImageSkiaRep& second_rep) const OVERRIDE {
     SkBitmap blended = SkBitmapOperations::CreateBlendedBitmap(
         first_rep.sk_bitmap(), second_rep.sk_bitmap(), alpha_);
     return ImageSkiaRep(blended, first_rep.scale_factor());
   }
 
  private:
-  const ImageSkia first_;
-  const ImageSkia second_;
   double alpha_;
 
   DISALLOW_COPY_AND_ASSIGN(BlendingImageSource);
@@ -149,30 +179,25 @@ class TransparentImageSource : public gfx::ImageSkiaSource {
   DISALLOW_COPY_AND_ASSIGN(TransparentImageSource);
 };
 
-class MaskedImageSource : public gfx::ImageSkiaSource {
+class MaskedImageSource : public BinaryImageSource {
  public:
   MaskedImageSource(const ImageSkia& rgb, const ImageSkia& alpha)
-      : rgb_(rgb),
-        alpha_(alpha) {
+      : BinaryImageSource(rgb, alpha, "MaskedImageSource") {
   }
 
   virtual ~MaskedImageSource() {
   }
 
-  // gfx::ImageSkiaSource overrides:
-  virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
-    ImageSkiaRep rgb_rep = rgb_.GetRepresentation(scale_factor);
-    ImageSkiaRep alpha_rep = alpha_.GetRepresentation(scale_factor);
-    MatchScale(&rgb_rep, &alpha_rep);
+  // BinaryImageSource overrides:
+  virtual ImageSkiaRep CreateImageSkiaRep(
+      const ImageSkiaRep& first_rep,
+      const ImageSkiaRep& second_rep) const OVERRIDE {
     return ImageSkiaRep(SkBitmapOperations::CreateMaskedBitmap(
-        rgb_rep.sk_bitmap(), alpha_rep.sk_bitmap()),
-                        rgb_rep.scale_factor());
+        first_rep.sk_bitmap(), second_rep.sk_bitmap()),
+                        first_rep.scale_factor());
   }
 
  private:
-  const ImageSkia rgb_;
-  const ImageSkia alpha_;
-
   DISALLOW_COPY_AND_ASSIGN(MaskedImageSource);
 };
 
@@ -234,7 +259,6 @@ class HSLImageSource : public gfx::ImageSkiaSource {
  private:
   const gfx::ImageSkia image_;
   const color_utils::HSL hsl_shift_;
-
   DISALLOW_COPY_AND_ASSIGN(HSLImageSource);
 };
 
@@ -257,11 +281,14 @@ class ButtonImageSource: public gfx::ImageSkiaSource {
   virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
     ImageSkiaRep image_rep = image_.GetRepresentation(scale_factor);
     ImageSkiaRep mask_rep = mask_.GetRepresentation(scale_factor);
-    MatchScale(&image_rep, &mask_rep);
-    return ImageSkiaRep(
+    if (image_rep.scale_factor() != mask_rep.scale_factor()) {
+      image_rep = image_.GetRepresentation(ui::SCALE_FACTOR_100P);
+      mask_rep = mask_.GetRepresentation(ui::SCALE_FACTOR_100P);
+    }
+    return gfx::ImageSkiaRep(
         SkBitmapOperations::CreateButtonBackground(color_,
-            image_rep.sk_bitmap(), mask_rep.sk_bitmap()),
-        image_rep.scale_factor());
+              image_rep.sk_bitmap(), mask_rep.sk_bitmap()),
+          image_rep.scale_factor());
   }
 
  private:
@@ -327,7 +354,7 @@ class ResizeSource : public ImageSkiaSource {
 
     const float scale = ui::GetScaleFactorScale(scale_factor);
     const Size target_pixel_size = gfx::ToFlooredSize(
-        target_dip_size_.Scale(scale));
+        gfx::ScaleSize(target_dip_size_, scale));
     const SkBitmap resized = skia::ImageOperations::Resize(
         image_rep.sk_bitmap(),
         resize_method_,
@@ -360,14 +387,14 @@ class DropShadowSource : public ImageSkiaSource {
     const ImageSkiaRep& image_rep = source_.GetRepresentation(scale_factor);
 
     const float scale = image_rep.GetScale();
-    ShadowValues shaodws_in_pixel;
+    ShadowValues shadows_in_pixel;
     for (size_t i = 0; i < shaodws_in_dip_.size(); ++i)
-      shaodws_in_pixel.push_back(shaodws_in_dip_[i].Scale(scale));
+      shadows_in_pixel.push_back(shaodws_in_dip_[i].Scale(scale));
 
-    const SkBitmap shaodw_bitmap = SkBitmapOperations::CreateDropShadow(
+    const SkBitmap shadow_bitmap = SkBitmapOperations::CreateDropShadow(
         image_rep.sk_bitmap(),
-        shaodws_in_pixel);
-    return ImageSkiaRep(shaodw_bitmap, image_rep.scale_factor());
+        shadows_in_pixel);
+    return ImageSkiaRep(shadow_bitmap, image_rep.scale_factor());
   }
 
  private:
@@ -376,6 +403,33 @@ class DropShadowSource : public ImageSkiaSource {
 
   DISALLOW_COPY_AND_ASSIGN(DropShadowSource);
 };
+
+// RotatedSource generates image reps that are rotations of those in
+// |source| that represent requested scale factors.
+class RotatedSource : public ImageSkiaSource {
+ public:
+  RotatedSource(const ImageSkia& source,
+                SkBitmapOperations::RotationAmount rotation)
+    : source_(source),
+      rotation_(rotation) {
+  }
+  virtual ~RotatedSource() {}
+
+  // gfx::ImageSkiaSource overrides:
+  virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
+    const ImageSkiaRep& image_rep = source_.GetRepresentation(scale_factor);
+    const SkBitmap rotated_bitmap =
+        SkBitmapOperations::Rotate(image_rep.sk_bitmap(), rotation_);
+    return ImageSkiaRep(rotated_bitmap, image_rep.scale_factor());
+  }
+
+ private:
+  const ImageSkia source_;
+  const SkBitmapOperations::RotationAmount rotation_;
+
+  DISALLOW_COPY_AND_ASSIGN(RotatedSource);
+};
+
 
 }  // namespace
 
@@ -458,6 +512,17 @@ ImageSkia ImageSkiaOperations::CreateImageWithDropShadow(
   shadow_image_size.Enlarge(shadow_padding.width(),
                             shadow_padding.height());
   return ImageSkia(new DropShadowSource(source, shadows), shadow_image_size);
+}
+
+// static
+ImageSkia ImageSkiaOperations::CreateRotatedImage(
+      const ImageSkia& source,
+      SkBitmapOperations::RotationAmount rotation) {
+  return ImageSkia(new RotatedSource(source, rotation),
+      SkBitmapOperations::ROTATION_180_CW == rotation ?
+          source.size() :
+          gfx::Size(source.height(), source.width()));
+
 }
 
 }  // namespace gfx

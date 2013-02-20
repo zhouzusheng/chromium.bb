@@ -330,8 +330,8 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     } else if (name == onwebkitfullscreenerrorAttr) {
         setAttributeEventListener(eventNames().webkitfullscreenerrorEvent, createAttributeEventListener(this, name, value));
 #endif
-    } else if (attribute.name() == contenteditableAttr) {
-        if (attribute.value().isNull() || equalIgnoringCase(attribute.value(), "false")) {
+    } else if (name == contenteditableAttr) {
+        if (value.isNull() || equalIgnoringCase(value, "false")) {
             RefPtr<Range> range = Range::create(document());
             range->selectNode(this);
             document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));

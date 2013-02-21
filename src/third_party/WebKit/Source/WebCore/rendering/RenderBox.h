@@ -272,7 +272,7 @@ public:
     // This is overridden in RenderListItem to indent the list item by the width
     // of the list marker.  It is also overridden in RenderBlock to shift non-li
     // blocks under list nodes by the margin of the previous list item.
-    virtual LayoutUnit additionalMarginStart() const { return ZERO_LAYOUT_UNIT; }
+    virtual LayoutUnit additionalMarginStart() const { return 0; }
 
     // The following five functions are used to implement collapsing margins.
     // All objects know their maximal positive and negative margins.  The

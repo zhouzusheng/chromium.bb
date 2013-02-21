@@ -364,7 +364,7 @@ int RenderTableSection::calcRowLogicalHeight()
 
 
     if (view()->layoutState()->pageLogicalHeight()) {
-        LayoutUnit paginationDelta = ZERO_LAYOUT_UNIT;
+        LayoutUnit paginationDelta = 0;
         for (unsigned r = 0; r < m_grid.size(); r++) {
             paginationDelta += m_grid[r].paginationStrut;
             m_rowPos[r] += floorToInt(paginationDelta);
@@ -560,7 +560,7 @@ redoLayout:
             rowRenderer->updateLayerTransform();
         }
 
-        LayoutUnit maxCellHeight = ZERO_LAYOUT_UNIT;
+        LayoutUnit maxCellHeight = 0;
         for (unsigned c = 0; c < nEffCols; c++) {
             CellStruct& cs = cellAt(r, c);
             RenderTableCell* cell = cs.primaryCell();
@@ -667,9 +667,9 @@ redoLayout:
 
         if (view()->layoutState()->pageLogicalHeight()) {
             LayoutUnit remaining = shezPageRemainingLogicalHeightForOffset(view()->layoutState(), m_rowPos[r] - m_grid[r].paginationStrut);
-            LayoutUnit newStrut = floorToInt((maxCellHeight > remaining) ? remaining : ZERO_LAYOUT_UNIT);
+            LayoutUnit newStrut = floorToInt((maxCellHeight > remaining) ? remaining : LayoutUnit());
             LayoutUnit delta = newStrut - m_grid[r].paginationStrut;
-            if (ZERO_LAYOUT_UNIT != delta) {
+            if (0 != delta) {
                 for (unsigned ri = r; ri <= totalRows; ri++)
                     m_rowPos[ri] += floorToInt(delta);
                 m_grid[r].paginationStrut = newStrut;

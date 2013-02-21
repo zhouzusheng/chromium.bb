@@ -226,6 +226,8 @@ private:
     virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
     virtual void computeRectForRepaint(const RenderLayerModelObject* repaintContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
 
+    virtual bool canBeSelectionLeaf() const { return !firstLineBox(); }
+
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
     int borderHalfTop(bool outer) const;

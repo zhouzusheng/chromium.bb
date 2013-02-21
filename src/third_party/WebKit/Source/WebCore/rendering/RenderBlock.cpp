@@ -3614,7 +3614,7 @@ LayoutRect RenderBlock::lineEndingSelectionGap(RenderBlock* rootBlock, const Lay
     LayoutUnit lineEndingLogicalRight;
     getLineEndingGapLogicalLeftAndRight(rootBlock, offsetFromRootBlock, logicalEnd, logicalTop, logicalHeight, lineEndingLogicalLeft, lineEndingLogicalRight);
     LayoutUnit lineEndingLogicalWidth = lineEndingLogicalRight - lineEndingLogicalLeft;
-    if (lineEndingLogicalWidth <= ZERO_LAYOUT_UNIT)
+    if (lineEndingLogicalWidth <= 0)
         return LayoutRect();
 
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(lineEndingLogicalLeft, rootBlockLogicalTop, lineEndingLogicalWidth, logicalHeight));

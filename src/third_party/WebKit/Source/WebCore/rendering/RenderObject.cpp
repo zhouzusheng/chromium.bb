@@ -1614,6 +1614,10 @@ Color RenderObject::selectionBackgroundColor() const
 {
     Color color;
     if (style()->userSelect() != SELECT_NONE) {
+        // anonymous blocks don't have pseudo styles
+        if (isAnonymous() && parent())
+            return parent()->selectionBackgroundColor();
+
         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION);
         if (pseudoStyle && pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
             color = pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).blendWithWhite();
@@ -1634,6 +1638,10 @@ Color RenderObject::selectionColor(int colorProperty) const
     if (style()->userSelect() == SELECT_NONE
         || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return color;
+
+    // anonymous blocks don't have pseudo styles
+    if (isAnonymous() && parent())
+        return parent()->selectionColor(colorProperty);
 
     if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION)) {
         color = pseudoStyle->visitedDependentColor(colorProperty);

@@ -159,7 +159,6 @@
     'conditions': [
       ['OS=="android"', {
         'feature_defines': [
-          'ENABLE_ACCELERATED_OVERFLOW_SCROLLING=1',
           'ENABLE_CALENDAR_PICKER=0',
           'ENABLE_DATALIST_ELEMENT=0',
           'ENABLE_FAST_MOBILE_SCROLLING=1',
@@ -183,7 +182,6 @@
         'enable_touch_icon_loading': 1,
       }, { # OS!="android"
         'feature_defines': [
-          'ENABLE_ACCELERATED_OVERFLOW_SCROLLING=0',
           'ENABLE_CALENDAR_PICKER=1',
           'ENABLE_DATALIST_ELEMENT=1',
           'ENABLE_INPUT_SPEECH=1',

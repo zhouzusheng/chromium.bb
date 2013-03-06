@@ -1,6 +1,6 @@
 solutions = [
-      { "name"        : "25.0.1364.84",
-        "url"         : "https://src.chromium.org/chrome/releases/25.0.1364.84",
+      { "name"        : "25.0.1364.152",
+        "url"         : "https://src.chromium.org/chrome/releases/25.0.1364.152",
         "deps_file"   : "DEPS",
         "managed"     : True,
         "custom_deps" : {
@@ -81,7 +81,6 @@ solutions = [
             "src/third_party/libphonenumber/src/test": None,
             "src/third_party/WebKit/Tools/Scripts": None,
             "src/third_party/pymox/src": None,
-            "src/third_party/trace-viewer": None,
             "src/third_party/swig/Lib": None,
             "src/third_party/WebKit/Tools/TestWebKitAPI": None,
         },

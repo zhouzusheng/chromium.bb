@@ -163,6 +163,7 @@ RTCPeerConnection::RTCPeerConnection(ScriptExecutionContext* context, PassRefPtr
 
 RTCPeerConnection::~RTCPeerConnection()
 {
+    stop();
 }
 
 void RTCPeerConnection::createOffer(PassRefPtr<RTCSessionDescriptionCallback> successCallback, PassRefPtr<RTCErrorCallback> errorCallback, const Dictionary& mediaConstraints, ExceptionCode& ec)
@@ -565,6 +566,9 @@ ScriptExecutionContext* RTCPeerConnection::scriptExecutionContext() const
 
 void RTCPeerConnection::stop()
 {
+    if (m_stopped)
+        return;
+
     m_stopped = true;
     m_iceState = IceStateClosed;
     m_readyState = ReadyStateClosed;

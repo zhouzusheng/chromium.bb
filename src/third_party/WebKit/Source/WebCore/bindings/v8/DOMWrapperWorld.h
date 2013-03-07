@@ -60,6 +60,7 @@ public:
 
     void makeContextWeak(v8::Handle<v8::Context>);
     void setIsolatedWorldField(v8::Handle<v8::Context>);
+    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
 #ifndef NDEBUG
     static void assertContextHasCorrectPrototype(v8::Handle<v8::Context>);
 #endif

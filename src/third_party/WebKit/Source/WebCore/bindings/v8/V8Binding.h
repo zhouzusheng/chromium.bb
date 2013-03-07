@@ -456,7 +456,10 @@ namespace WebCore {
     {
         if (!v8::Context::InContext())
             return 0;
-        return DOMWrapperWorld::isolated(v8::Context::GetEntered());
+        v8::Handle<v8::Context> context = v8::Context::GetEntered();
+        if (!DOMWrapperWorld::contextHasCorrectPrototype(context))
+            return 0;
+        return DOMWrapperWorld::isolated(context);
     }
 
     // If the current context causes out of memory, JavaScript setting

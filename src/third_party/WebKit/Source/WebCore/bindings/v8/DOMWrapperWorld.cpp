@@ -67,11 +67,16 @@ DOMWrapperWorld* mainThreadNormalWorld()
     return cachedNormalWorld.get();
 }
 
+bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context)
+{
+    ASSERT(isMainThread());
+    return V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info);
+}
+
 #ifndef NDEBUG
 void DOMWrapperWorld::assertContextHasCorrectPrototype(v8::Handle<v8::Context> context)
 {
-    ASSERT(isMainThread());
-    ASSERT(V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info));
+    ASSERT(contextHasCorrectPrototype(context));
 }
 #endif
 

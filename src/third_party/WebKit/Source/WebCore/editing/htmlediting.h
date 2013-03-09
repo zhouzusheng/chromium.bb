@@ -68,6 +68,11 @@ Node* enclosingAnchorElement(const Position&);
 Node* enclosingNodeWithTag(const Position&, const QualifiedName&);
 Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 
+Node* previousRenderedSibling(const Node* node);
+Node* nextRenderedSibling(const Node* node);
+Node* previousRenderedSiblingExcludingWhitespace(const Node* node);
+Node* nextRenderedSiblingExcludingWhitespace(const Node* node);
+
 Node* tabSpanNode(const Node*);
 Node* isLastPositionBeforeTable(const VisiblePosition&);
 Node* isFirstPositionAfterTable(const VisiblePosition&);

@@ -1441,6 +1441,56 @@ Position CompositeEditCommand::positionAvoidingSpecialElementBoundary(const Posi
     return result;
 }
 
+bool CompositeEditCommand::prepareForBlockCommand(VisiblePosition& startOfSelection, VisiblePosition& endOfSelection,
+                                                  RefPtr<ContainerNode>& startScope, RefPtr<ContainerNode>& endScope,
+                                                  int& startIndex, int& endIndex,
+                                                  bool includeEmptyParagraphAtEnd)
+{
+    if (!endingSelection().rootEditableElement())
+        return false;
+
+    VisiblePosition visibleEnd = endingSelection().visibleEnd();
+    VisiblePosition visibleStart = endingSelection().visibleStart();
+    if (visibleStart.isNull() || visibleStart.isOrphan() || visibleEnd.isNull() || visibleEnd.isOrphan())
+        return false;
+
+    // When a selection ends at the start of a paragraph, we rarely paint 
+    // the selection gap before that paragraph, because there often is no gap.  
+    // In a case like this, it's not obvious to the user that the selection 
+    // ends "inside" that paragraph, so it would be confusing if Indent/Outdent 
+    // operated on that paragraph.
+    // FIXME: We paint the gap before some paragraphs that are indented with left 
+    // margin/padding, but not others.  We should make the gap painting more consistent and 
+    // then use a left margin/padding rule here.
+    if (visibleEnd != visibleStart && isStartOfParagraph(visibleEnd) && (!includeEmptyParagraphAtEnd || !isEndOfParagraph(visibleEnd)))
+        setEndingSelection(VisibleSelection(visibleStart, visibleEnd.previous(CannotCrossEditingBoundary), endingSelection().isDirectional()));
+
+    VisibleSelection selection = selectionForParagraphIteration(endingSelection());
+    startOfSelection = selection.visibleStart();
+    endOfSelection = selection.visibleEnd();
+    ASSERT(!startOfSelection.isNull());
+    ASSERT(!endOfSelection.isNull());
+    startIndex = indexForVisiblePosition(startOfSelection, startScope);
+    endIndex = indexForVisiblePosition(endOfSelection, endScope);
+    return true;
+}
+
+void CompositeEditCommand::finishBlockCommand(PassRefPtr<ContainerNode> startScope, PassRefPtr<ContainerNode> endScope,
+                                              int startIndex, int endIndex)
+{
+    document()->updateLayoutIgnorePendingStylesheets();
+
+    ASSERT(startScope == endScope);
+    ASSERT(startIndex >= 0);
+    ASSERT(startIndex <= endIndex);
+    if (startScope == endScope && startIndex >= 0 && startIndex <= endIndex) {
+        VisiblePosition start(visiblePositionForIndex(startIndex, startScope.get()));
+        VisiblePosition end(visiblePositionForIndex(endIndex, endScope.get()));
+        if (start.isNotNull() && end.isNotNull())
+            setEndingSelection(VisibleSelection(start, end, endingSelection().isDirectional()));
+    }
+}
+
 // Splits the tree parent by parent until we reach the specified ancestor. We use VisiblePositions
 // to determine if the split is necessary. Returns the last split node.
 PassRefPtr<Node> CompositeEditCommand::splitTreeToNode(Node* start, Node* end, bool shouldSplitAncestor)

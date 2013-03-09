@@ -164,7 +164,14 @@ protected:
     bool breakOutOfEmptyMailBlockquotedParagraph();
     
     Position positionAvoidingSpecialElementBoundary(const Position&);
-    
+
+    bool prepareForBlockCommand(VisiblePosition& startOfSelection, VisiblePosition& endOfSelection,
+                                RefPtr<ContainerNode>& startScope, RefPtr<ContainerNode>& endScope,
+                                int& startIndex, int& endIndex,
+                                bool includeEmptyParagraphAtEnd);
+    void finishBlockCommand(PassRefPtr<ContainerNode> startScope, PassRefPtr<ContainerNode> endScope,
+                            int startIndex, int endIndex);
+
     PassRefPtr<Node> splitTreeToNode(Node*, Node*, bool splitAncestor = false);
 
     Vector<RefPtr<EditCommand> > m_commands;

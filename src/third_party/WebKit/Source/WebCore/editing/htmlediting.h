@@ -73,6 +73,9 @@ Node* nextRenderedSibling(const Node* node);
 Node* previousRenderedSiblingExcludingWhitespace(const Node* node);
 Node* nextRenderedSiblingExcludingWhitespace(const Node* node);
 
+Node* blockExtentStart(Node* node, const Node* stayWithin = 0);
+Node* blockExtentEnd(Node* node, const Node* stayWithin = 0);
+
 Node* tabSpanNode(const Node*);
 Node* isLastPositionBeforeTable(const VisiblePosition&);
 Node* isFirstPositionAfterTable(const VisiblePosition&);

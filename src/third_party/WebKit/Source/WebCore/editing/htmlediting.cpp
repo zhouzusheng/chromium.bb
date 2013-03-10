@@ -683,6 +683,48 @@ Node* nextRenderedSiblingExcludingWhitespace(const Node* node)
     return result;
 }
 
+Node* blockExtentStart(Node* node, const Node* stayWithin)
+{
+    while (true) {
+        if (isBlock(node)) {
+            while (!previousRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
+                node = node->parentNode();
+            break;
+        }
+        else if (node->previousSibling()) {
+            if (isBlock(node->previousSibling()))
+                break;
+            node = node->previousSibling();
+        }
+        else if (node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
+            node = node->parentNode();
+        else
+            break;
+    }
+    return node;
+}
+
+Node* blockExtentEnd(Node* node, const Node* stayWithin)
+{
+    while (true) {
+        if (isBlock(node)) {
+            while (!nextRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
+                node = node->parentNode();
+            break;
+        }
+        else if (node->nextSibling()) {
+            if (isBlock(node->nextSibling()))
+                break;
+            node = node->nextSibling();
+        }
+        else if (node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
+            node = node->parentNode();
+        else
+            break;
+    }
+    return node;
+}
+
 static bool hasARenderedDescendant(Node* node, Node* excludedNode)
 {
     for (Node* n = node->firstChild(); n;) {

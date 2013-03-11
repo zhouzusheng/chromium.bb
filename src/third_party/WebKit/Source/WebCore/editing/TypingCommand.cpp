@@ -451,12 +451,18 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         if (killRing && selection.isCaret() && granularity != CharacterGranularity)
             selection.modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
-        if (endingSelection().visibleStart().previous(CannotCrossEditingBoundary).isNull()) {
-            // When the caret is at the start of the editable area in an empty list item, break out of the list item.
+        VisiblePosition previousPosition = endingSelection().visibleStart().previous(CannotCrossEditingBoundary);
+        Node* enclosingTableCell = enclosingNodeOfType(endingSelection().visibleStart().deepEquivalent(), &isTableCell);
+        Node* enclosingTableCellForPreviousPosition = enclosingNodeOfType(previousPosition.deepEquivalent(), &isTableCell);
+        if (previousPosition.isNull() || enclosingTableCell != enclosingTableCellForPreviousPosition) {
+            // When the caret is at the start of the editable area, or cell, in an empty list item, break out of the list item.
             if (breakOutOfEmptyListItem()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
+        }
+
+        if (previousPosition.isNull()) {
             // When there are no visible positions in the editing root, delete its entire contents.
             if (endingSelection().visibleStart().next(CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
                 typingAddedToOpenCommand(DeleteKey);

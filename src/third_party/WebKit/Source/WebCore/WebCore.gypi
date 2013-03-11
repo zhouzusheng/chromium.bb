@@ -1603,6 +1603,8 @@
             'editing/ApplyBlockElementCommand.cpp',
             'editing/ApplyStyleCommand.cpp',
             'editing/ApplyStyleCommand.h',
+            'editing/BlockCommand.cpp',
+            'editing/BlockCommand.h',
             'editing/BreakBlockquoteCommand.cpp',
             'editing/BreakBlockquoteCommand.h',
             'editing/CompositeEditCommand.cpp',

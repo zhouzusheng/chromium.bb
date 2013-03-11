@@ -476,7 +476,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             return;
 
         // If the caret is at the beginning of a cell, we have nothing to do.
-        if (isStartOfBlock(visibleStart) && isTableCell(enclosingBlock(visibleStart.deepEquivalent().containerNode())))
+        if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
             return;
 
         // If the caret is just after a table, select the table and don't delete anything.
@@ -561,7 +561,8 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
             return;
 
         // If the caret is at the end of a cell, we have nothing to do.
-        if (isEndOfBlock(visibleEnd) && isTableCell(enclosingBlock(visibleEnd.deepEquivalent().containerNode())))
+        Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
+        if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
             return;
 
         if (visibleEnd == endOfParagraph(visibleEnd))

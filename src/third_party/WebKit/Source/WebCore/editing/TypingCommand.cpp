@@ -485,6 +485,10 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         if (isEmptyTableCell(visibleStart.deepEquivalent().containerNode()))
             return;
 
+        // If the caret is at the beginning of a cell, we have nothing to do.
+        if (isStartOfBlock(visibleStart) && isTableCell(enclosingBlock(visibleStart.deepEquivalent().containerNode())))
+            return;
+
         // If the caret is at the start of a paragraph after a table, move content into the last table cell.
         if (isStartOfParagraph(visibleStart) && isFirstPositionAfterTable(visibleStart.previous(CannotCrossEditingBoundary))) {
             // Unless the caret is just before a table.  We don't want to move a table into the last table cell.
@@ -570,6 +574,11 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
 
         Position downstreamEnd = endingSelection().end().downstream();
         VisiblePosition visibleEnd = endingSelection().visibleEnd();
+
+        // If the caret is at the end of a cell, we have nothing to do.
+        if (isEndOfBlock(visibleEnd) && isTableCell(enclosingBlock(visibleEnd.deepEquivalent().containerNode())))
+            return;
+
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion

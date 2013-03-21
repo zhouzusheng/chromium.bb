@@ -13,6 +13,7 @@
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "webkit/blob/local_file_stream_reader.h"
+#include "webkit/fileapi/async_file_util_adapter.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_file_stream_reader.h"
@@ -34,16 +35,18 @@
 namespace fileapi {
 
 IsolatedMountPointProvider::IsolatedMountPointProvider(
-    const FilePath& profile_path)
+    const base::FilePath& profile_path)
     : profile_path_(profile_path),
       media_path_filter_(new MediaPathFilter()),
-      isolated_file_util_(new IsolatedFileUtil()),
-      dragged_file_util_(new DraggedFileUtil()),
-      native_media_file_util_(new NativeMediaFileUtil()) {
+      isolated_file_util_(new AsyncFileUtilAdapter(new IsolatedFileUtil())),
+      dragged_file_util_(new AsyncFileUtilAdapter(new DraggedFileUtil())),
+      native_media_file_util_(
+          new AsyncFileUtilAdapter(new NativeMediaFileUtil())) {
 #if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
   // TODO(kmadhusu): Initialize |device_media_file_util_| in
   // initialization list.
-  device_media_file_util_.reset(new DeviceMediaFileUtil(profile_path_));
+  device_media_file_util_.reset(
+      new AsyncFileUtilAdapter(new DeviceMediaFileUtil(profile_path_)));
 #endif
 }
 
@@ -61,12 +64,12 @@ void IsolatedMountPointProvider::ValidateFileSystemRoot(
       base::Bind(callback, base::PLATFORM_FILE_ERROR_SECURITY));
 }
 
-FilePath IsolatedMountPointProvider::GetFileSystemRootPathOnFileThread(
+base::FilePath IsolatedMountPointProvider::GetFileSystemRootPathOnFileThread(
     const FileSystemURL& url,
     bool create) {
   // This is not supposed to be used.
   NOTREACHED();
-  return FilePath();
+  return base::FilePath();
 }
 
 bool IsolatedMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
@@ -74,13 +77,32 @@ bool IsolatedMountPointProvider::IsAccessAllowed(const FileSystemURL& url) {
 }
 
 bool IsolatedMountPointProvider::IsRestrictedFileName(
-    const FilePath& filename) const {
+    const base::FilePath& filename) const {
   // TODO(kinuko): We need to check platform-specific restricted file names
   // before we actually start allowing file creation in isolated file systems.
   return false;
 }
 
 FileSystemFileUtil* IsolatedMountPointProvider::GetFileUtil(
+    FileSystemType type) {
+  switch (type) {
+    case kFileSystemTypeNativeLocal:
+      return isolated_file_util_->sync_file_util();
+    case kFileSystemTypeDragged:
+      return dragged_file_util_->sync_file_util();
+    case kFileSystemTypeNativeMedia:
+      return native_media_file_util_->sync_file_util();
+    case kFileSystemTypeDeviceMedia:
+#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
+      return device_media_file_util_->sync_file_util();
+#endif
+    default:
+      NOTREACHED();
+  }
+  return NULL;
+}
+
+AsyncFileUtil* IsolatedMountPointProvider::GetAsyncFileUtil(
     FileSystemType type) {
   switch (type) {
     case kFileSystemTypeNativeLocal:
@@ -93,17 +115,22 @@ FileSystemFileUtil* IsolatedMountPointProvider::GetFileUtil(
 #if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
       return device_media_file_util_.get();
 #endif
-
     default:
       NOTREACHED();
   }
   return NULL;
 }
 
-FilePath IsolatedMountPointProvider::GetPathForPermissionsCheck(
-    const FilePath& virtual_path) const {
-  // For isolated filesystems we only check per-filesystem permissions.
-  return FilePath();
+FilePermissionPolicy IsolatedMountPointProvider::GetPermissionPolicy(
+    const FileSystemURL& url, int permissions) const {
+  if (url.type() == kFileSystemTypeDragged && url.path().empty()) {
+    // The root directory of the dragged filesystem must be always read-only.
+    if (permissions != kReadFilePermissions)
+      return FILE_PERMISSION_ALWAYS_DENY;
+  }
+  // Access to isolated file systems should be checked using per-filesystem
+  // access permission.
+  return FILE_PERMISSION_USE_FILESYSTEM_PERMISSION;
 }
 
 FileSystemOperation* IsolatedMountPointProvider::CreateFileSystemOperation(

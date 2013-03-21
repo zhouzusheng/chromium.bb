@@ -13,12 +13,11 @@ namespace net {
 size_t QuicUtils::StreamFramePacketOverhead(int num_frames) {
   // TODO(jar): Use sizeof(some name).
   return kPacketHeaderSize +
-         1 +   // frame count
-         (1 +  // 8 bit type
-          2 +  // 16 bit length
+         (kFrameTypeSize +
           kMinStreamFrameLength) * num_frames;
 }
 
+// static
 uint128 QuicUtils::FNV1a_128_Hash(const char* data, int len) {
   // The following two constants are defined as part of the hash algorithm.
   // 309485009821345068724781371
@@ -43,6 +42,7 @@ uint128 QuicUtils::FNV1a_128_Hash(const char* data, int len) {
 case x: \
 return #x;
 
+// static
 const char* QuicUtils::ErrorToString(QuicErrorCode error) {
   switch (error) {
     RETURN_STRING_LITERAL(QUIC_NO_ERROR);
@@ -67,8 +67,12 @@ const char* QuicUtils::ErrorToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_CRYPTO_INVALID_VALUE_LENGTH)
     RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
     RETURN_STRING_LITERAL(QUIC_INVALID_CRYPTO_MESSAGE_TYPE);
+    RETURN_STRING_LITERAL(QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND);
+    RETURN_STRING_LITERAL(QUIC_CRYPTO_MESSAGE_PARAMETER_NO_OVERLAP);
     RETURN_STRING_LITERAL(QUIC_INVALID_STREAM_ID);
     RETURN_STRING_LITERAL(QUIC_TOO_MANY_OPEN_STREAMS);
+    RETURN_STRING_LITERAL(QUIC_PUBLIC_RESET);
     RETURN_STRING_LITERAL(QUIC_CONNECTION_TIMED_OUT);
     // Intentionally have no default case, so we'll break the build
     // if we add errors and don't put them here.

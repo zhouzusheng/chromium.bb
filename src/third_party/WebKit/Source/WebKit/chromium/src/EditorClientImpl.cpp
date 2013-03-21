@@ -268,8 +268,11 @@ void EditorClientImpl::didBeginEditing()
 void EditorClientImpl::respondToChangedSelection(Frame* frame)
 {
     if (m_webView->client()) {
-        if (frame)
+        if (frame) {
             m_webView->client()->didChangeSelection(!frame->selection()->isRange());
+            if (frame->editor()->cancelCompositionIfSelectionIsInvalid())
+                m_webView->client()->didCancelCompositionOnSelectionChange();
+        }
     }
 }
 
@@ -286,6 +289,14 @@ void EditorClientImpl::didEndEditing()
 }
 
 void EditorClientImpl::didWriteSelectionToPasteboard()
+{
+}
+
+void EditorClientImpl::willWriteSelectionToPasteboard(WebCore::Range*)
+{
+}
+
+void EditorClientImpl::getClientPasteboardDataForRange(WebCore::Range*, Vector<String>&, Vector<RefPtr<WebCore::SharedBuffer> >&)
 {
 }
 
@@ -726,7 +737,7 @@ void EditorClientImpl::checkSpellingOfString(const UChar* text, int length,
     int spellLength = 0;
 
     // Check to see if the provided text is spelled correctly.
-    if (isContinuousSpellCheckingEnabled() && m_webView->spellCheckClient())
+    if (m_webView->spellCheckClient())
         m_webView->spellCheckClient()->spellCheck(WebString(text, length), spellLocation, spellLength, 0);
     else {
         spellLocation = 0;

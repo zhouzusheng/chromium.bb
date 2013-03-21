@@ -51,7 +51,8 @@ class WEBKIT_STORAGE_EXPORT LocalFileSyncContext
                               const LocalFileSyncInfo& sync_file_info)>
       LocalFileSyncInfoCallback;
 
-  typedef base::Callback<void(bool has_pending_changes)>
+  typedef base::Callback<void(fileapi::SyncStatusCode status,
+                              bool has_pending_changes)>
       HasPendingLocalChangeCallback;
 
   LocalFileSyncContext(base::SingleThreadTaskRunner* ui_task_runner,
@@ -115,7 +116,7 @@ class WEBKIT_STORAGE_EXPORT LocalFileSyncContext
   void ApplyRemoteChange(
       FileSystemContext* file_system_context,
       const FileChange& change,
-      const FilePath& local_path,
+      const base::FilePath& local_path,
       const FileSystemURL& url,
       const SyncStatusCallback& callback);
 
@@ -236,7 +237,7 @@ class WEBKIT_STORAGE_EXPORT LocalFileSyncContext
       const SyncFileMetadataCallback& callback,
       base::PlatformFileError file_error,
       const base::PlatformFileInfo& file_info,
-      const FilePath& platform_path);
+      const base::FilePath& platform_path);
 
   base::TimeDelta NotifyChangesDuration();
 

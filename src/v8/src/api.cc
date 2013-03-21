@@ -128,8 +128,13 @@ namespace v8 {
 
 static void DefaultFatalErrorHandler(const char* location,
                                      const char* message) {
-  i::VMState __state__(i::Isolate::Current(), i::OTHER);
-  API_Fatal(location, message);
+  i::Isolate* isolate = i::Isolate::Current();
+  if (isolate->IsInitialized()) {
+    i::VMState __state__(isolate, i::OTHER);
+    API_Fatal(location, message);
+  } else {
+    API_Fatal(location, message);
+  }
 }
 
 
@@ -202,15 +207,21 @@ void i::V8::FatalProcessOutOfMemory(const char* location, bool take_snapshot) {
   int end_marker;
   heap_stats.end_marker = &end_marker;
   i::Isolate* isolate = i::Isolate::Current();
-  // BUG(1718):
-  // Don't use the take_snapshot since we don't support HeapIterator here
-  // without doing a special GC.
-  isolate->heap()->RecordStats(&heap_stats, false);
+  if (isolate->heap()->HasBeenSetUp()) {
+    // BUG(1718): Don't use the take_snapshot since we don't support
+    // HeapIterator here without doing a special GC.
+    isolate->heap()->RecordStats(&heap_stats, false);
+  }
   i::V8::SetFatalError();
   FatalErrorCallback callback = GetFatalErrorHandler();
+  const char* message = "Allocation failed - process out of memory";
   {
-    LEAVE_V8(isolate);
-    callback(location, "Allocation failed - process out of memory");
+    if (isolate->IsInitialized()) {
+      LEAVE_V8(isolate);
+      callback(location, message);
+    } else {
+      callback(location, message);
+    }
   }
   // If the callback returns, we stop execution.
   UNREACHABLE();
@@ -615,114 +626,31 @@ bool SetResourceConstraints(ResourceConstraints* constraints) {
 }
 
 
-i::Object** V8::GlobalizeReference(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
+i::Object** V8::GlobalizeReference(i::Isolate* isolate, i::Object** obj) {
   if (IsDeadCheck(isolate, "V8::Persistent::New")) return NULL;
   LOG_API(isolate, "Persistent::New");
-  i::Handle<i::Object> result =
-      isolate->global_handles()->Create(*obj);
+  i::Handle<i::Object> result = isolate->global_handles()->Create(*obj);
   return result.location();
 }
 
 
-void V8::MakeWeak(i::Object** object, void* parameters,
-                  WeakReferenceCallback callback) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "MakeWeak");
-  isolate->global_handles()->MakeWeak(object, parameters,
-                                      callback);
-}
-
-
-void V8::MakeWeak(i::Isolate* isolate, i::Object** object,
-                  void* parameters, WeakReferenceCallback callback) {
+void V8::MakeWeak(i::Isolate* isolate,
+                  i::Object** object,
+                  void* parameters,
+                  WeakReferenceCallback weak_reference_callback,
+                  NearDeathCallback near_death_callback) {
   ASSERT(isolate == i::Isolate::Current());
   LOG_API(isolate, "MakeWeak");
-  isolate->global_handles()->MakeWeak(object, parameters,
-                                      callback);
+  isolate->global_handles()->MakeWeak(object,
+                                      parameters,
+                                      weak_reference_callback,
+                                      near_death_callback);
 }
 
 
-void V8::ClearWeak(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
+void V8::ClearWeak(i::Isolate* isolate, i::Object** obj) {
   LOG_API(isolate, "ClearWeak");
   isolate->global_handles()->ClearWeakness(obj);
-}
-
-
-void V8::MarkIndependent(i::Object** object) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "MarkIndependent");
-  isolate->global_handles()->MarkIndependent(object);
-}
-
-
-void V8::MarkIndependent(i::Isolate* isolate, i::Object** object) {
-  ASSERT(isolate == i::Isolate::Current());
-  LOG_API(isolate, "MarkIndependent");
-  isolate->global_handles()->MarkIndependent(object);
-}
-
-
-void V8::MarkPartiallyDependent(i::Object** object) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "MarkPartiallyDependent");
-  isolate->global_handles()->MarkPartiallyDependent(object);
-}
-
-
-void V8::MarkPartiallyDependent(i::Isolate* isolate, i::Object** object) {
-  ASSERT(isolate == i::Isolate::Current());
-  LOG_API(isolate, "MarkPartiallyDependent");
-  isolate->global_handles()->MarkPartiallyDependent(object);
-}
-
-
-bool V8::IsGlobalIndependent(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "IsGlobalIndependent");
-  if (!isolate->IsInitialized()) return false;
-  return i::GlobalHandles::IsIndependent(obj);
-}
-
-
-bool V8::IsGlobalIndependent(i::Isolate* isolate, i::Object** obj) {
-  ASSERT(isolate == i::Isolate::Current());
-  LOG_API(isolate, "IsGlobalIndependent");
-  if (!isolate->IsInitialized()) return false;
-  return i::GlobalHandles::IsIndependent(obj);
-}
-
-
-bool V8::IsGlobalNearDeath(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "IsGlobalNearDeath");
-  if (!isolate->IsInitialized()) return false;
-  return i::GlobalHandles::IsNearDeath(obj);
-}
-
-
-bool V8::IsGlobalWeak(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "IsGlobalWeak");
-  if (!isolate->IsInitialized()) return false;
-  return i::GlobalHandles::IsWeak(obj);
-}
-
-
-bool V8::IsGlobalWeak(i::Isolate* isolate, i::Object** obj) {
-  ASSERT(isolate == i::Isolate::Current());
-  LOG_API(isolate, "IsGlobalWeak");
-  if (!isolate->IsInitialized()) return false;
-  return i::GlobalHandles::IsWeak(obj);
-}
-
-
-void V8::DisposeGlobal(i::Object** obj) {
-  i::Isolate* isolate = i::Isolate::Current();
-  LOG_API(isolate, "DisposeGlobal");
-  if (!isolate->IsInitialized()) return;
-  isolate->global_handles()->Destroy(obj);
 }
 
 
@@ -1053,7 +981,7 @@ void FunctionTemplate::Inherit(v8::Handle<FunctionTemplate> value) {
 
 
 Local<FunctionTemplate> FunctionTemplate::New(InvocationCallback callback,
-    v8::Handle<Value> data, v8::Handle<Signature> signature) {
+    v8::Handle<Value> data, v8::Handle<Signature> signature, int length) {
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::FunctionTemplate::New()");
   LOG_API(isolate, "FunctionTemplate::New");
@@ -1070,6 +998,7 @@ Local<FunctionTemplate> FunctionTemplate::New(InvocationCallback callback,
     if (data.IsEmpty()) data = v8::Undefined();
     Utils::ToLocal(obj)->SetCallHandler(callback, data);
   }
+  obj->set_length(length);
   obj->set_undetectable(false);
   obj->set_needs_access_check(false);
 
@@ -1237,6 +1166,14 @@ Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
   i::Handle<i::ObjectTemplateInfo> result(i::ObjectTemplateInfo::cast(
         Utils::OpenHandle(this)->instance_template()));
   return Utils::ToLocal(result);
+}
+
+
+void FunctionTemplate::SetLength(int length) {
+  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
+  if (IsDeadCheck(isolate, "v8::FunctionTemplate::SetLength()")) return;
+  ENTER_V8(isolate);
+  Utils::OpenHandle(this)->set_length(length);
 }
 
 
@@ -1842,7 +1779,7 @@ v8::Local<Value> v8::TryCatch::StackTrace() const {
     if (!raw_obj->IsJSObject()) return v8::Local<Value>();
     i::HandleScope scope(isolate_);
     i::Handle<i::JSObject> obj(i::JSObject::cast(raw_obj), isolate_);
-    i::Handle<i::String> name = isolate_->factory()->LookupAsciiSymbol("stack");
+    i::Handle<i::String> name = isolate_->factory()->stack_symbol();
     if (!obj->HasProperty(*name)) return v8::Local<Value>();
     i::Handle<i::Object> value = i::GetProperty(obj, name);
     if (value.is_null()) return v8::Local<Value>();
@@ -1953,7 +1890,7 @@ static i::Handle<i::Object> CallV8HeapFunction(const char* name,
                                                i::Handle<i::Object> argv[],
                                                bool* has_pending_exception) {
   i::Isolate* isolate = i::Isolate::Current();
-  i::Handle<i::String> fmt_str = isolate->factory()->LookupAsciiSymbol(name);
+  i::Handle<i::String> fmt_str = isolate->factory()->LookupUtf8Symbol(name);
   i::Object* object_fun =
       isolate->js_builtins_object()->GetPropertyNoExceptionThrown(*fmt_str);
   i::Handle<i::JSFunction> fun =
@@ -2369,7 +2306,7 @@ bool Value::IsNumberObject() const {
 static i::Object* LookupBuiltin(i::Isolate* isolate,
                                 const char* builtin_name) {
   i::Handle<i::String> symbol =
-      isolate->factory()->LookupAsciiSymbol(builtin_name);
+      isolate->factory()->LookupUtf8Symbol(builtin_name);
   i::Handle<i::JSBuiltinsObject> builtins = isolate->js_builtins_object();
   return builtins->GetPropertyNoExceptionThrown(*symbol);
 }
@@ -3114,7 +3051,7 @@ Local<String> v8::Object::ObjectProtoToString() {
 
   } else {
     i::Handle<i::String> class_name = i::Handle<i::String>::cast(name);
-    if (class_name->IsEqualTo(i::CStrVector("Arguments"))) {
+    if (class_name->IsOneByteEqualTo(STATIC_ASCII_VECTOR("Arguments"))) {
       return v8::String::New("[object Object]");
 
     } else {
@@ -3863,102 +3800,6 @@ int String::Length() const {
   return str->length();
 }
 
-
-int String::Utf8Length() const {
-  i::Handle<i::String> str = Utils::OpenHandle(this);
-  if (IsDeadCheck(str->GetIsolate(), "v8::String::Utf8Length()")) return 0;
-  return i::Utf8Length(str);
-}
-
-
-// Will fail with a negative answer if the recursion depth is too high.
-static int RecursivelySerializeToUtf8(i::String* string,
-                                      char* buffer,
-                                      int start,
-                                      int end,
-                                      int recursion_budget,
-                                      int32_t previous_character,
-                                      int32_t* last_character) {
-  int utf8_bytes = 0;
-  while (true) {
-    if (string->IsOneByteRepresentation()) {
-      i::String::WriteToFlat(string, buffer, start, end);
-      *last_character = unibrow::Utf16::kNoPreviousCharacter;
-      return utf8_bytes + end - start;
-    }
-    switch (i::StringShape(string).representation_tag()) {
-      case i::kExternalStringTag: {
-        const uint16_t* data = i::ExternalTwoByteString::cast(string)->
-          ExternalTwoByteStringGetData(0);
-        char* current = buffer;
-        for (int i = start; i < end; i++) {
-          uint16_t character = data[i];
-          current +=
-              unibrow::Utf8::Encode(current, character, previous_character);
-          previous_character = character;
-        }
-        *last_character = previous_character;
-        return static_cast<int>(utf8_bytes + current - buffer);
-      }
-      case i::kSeqStringTag: {
-        const uint16_t* data =
-            i::SeqTwoByteString::cast(string)->SeqTwoByteStringGetData(0);
-        char* current = buffer;
-        for (int i = start; i < end; i++) {
-          uint16_t character = data[i];
-          current +=
-              unibrow::Utf8::Encode(current, character, previous_character);
-          previous_character = character;
-        }
-        *last_character = previous_character;
-        return static_cast<int>(utf8_bytes + current - buffer);
-      }
-      case i::kSlicedStringTag: {
-        i::SlicedString* slice = i::SlicedString::cast(string);
-        unsigned offset = slice->offset();
-        string = slice->parent();
-        start += offset;
-        end += offset;
-        continue;
-      }
-      case i::kConsStringTag: {
-        i::ConsString* cons_string = i::ConsString::cast(string);
-        i::String* first = cons_string->first();
-        int boundary = first->length();
-        if (start >= boundary) {
-          // Only need RHS.
-          string = cons_string->second();
-          start -= boundary;
-          end -= boundary;
-          continue;
-        } else if (end <= boundary) {
-          // Only need LHS.
-          string = first;
-        } else {
-          if (recursion_budget == 0) return -1;
-          int extra_utf8_bytes =
-              RecursivelySerializeToUtf8(first,
-                                         buffer,
-                                         start,
-                                         boundary,
-                                         recursion_budget - 1,
-                                         previous_character,
-                                         &previous_character);
-          if (extra_utf8_bytes < 0) return extra_utf8_bytes;
-          buffer += extra_utf8_bytes;
-          utf8_bytes += extra_utf8_bytes;
-          string = cons_string->second();
-          start = 0;
-          end -= boundary;
-        }
-      }
-    }
-  }
-  UNREACHABLE();
-  return 0;
-}
-
-
 bool String::MayContainNonAscii() const {
   i::Handle<i::String> str = Utils::OpenHandle(this);
   if (IsDeadCheck(str->GetIsolate(), "v8::String::MayContainNonAscii()")) {
@@ -3966,6 +3807,231 @@ bool String::MayContainNonAscii() const {
   }
   return !str->HasOnlyAsciiChars();
 }
+
+
+bool String::IsOneByte() const {
+  i::Handle<i::String> str = Utils::OpenHandle(this);
+  if (IsDeadCheck(str->GetIsolate(), "v8::String::IsOneByte()")) {
+    return false;
+  }
+  return str->IsOneByteConvertible();
+}
+
+
+class Utf8LengthVisitor {
+ public:
+  explicit Utf8LengthVisitor()
+    : utf8_length_(0),
+      last_character_(unibrow::Utf16::kNoPreviousCharacter) {}
+
+  inline int GetLength() {
+    return utf8_length_;
+  }
+
+  template<typename Char>
+  inline void Visit(const Char* chars, unsigned length) {
+    ASSERT(length > 0);
+    // TODO(dcarney) Add back ascii fast path.
+    int utf8_length = 0;
+    int last_character = last_character_;
+    for (unsigned i = 0; i < length; i++) {
+      uint16_t c = chars[i];
+      utf8_length += unibrow::Utf8::Length(c, last_character);
+      last_character = c;
+    }
+    last_character_ = last_character;
+    utf8_length_ += utf8_length;
+  }
+
+  inline void VisitOneByteString(const uint8_t* chars, unsigned length) {
+    Visit(chars, length);
+  }
+
+  inline void VisitTwoByteString(const uint16_t* chars, unsigned length) {
+    Visit(chars, length);
+  }
+
+ private:
+  int utf8_length_;
+  int last_character_;
+  DISALLOW_COPY_AND_ASSIGN(Utf8LengthVisitor);
+};
+
+
+static int Utf8Length(i::String* str, i::Isolate* isolate) {
+  unsigned length = static_cast<unsigned>(str->length());
+  if (length == 0) return 0;
+  int32_t type = str->map()->instance_type();
+  Utf8LengthVisitor visitor;
+  // Non ConsString branch.
+  if ((type & i::kStringRepresentationMask) != i::kConsStringTag) {
+    i::ConsStringNullOp null_op;
+    i::String::Visit(str, 0, visitor, null_op, type, length);
+    return visitor.GetLength();
+  }
+  i::ConsStringIteratorOp* op = isolate->write_iterator();
+  unsigned offset = 0;
+  i::String* leaf = op->Operate(str, &offset, &type, &length);
+  ASSERT(leaf != NULL);
+  while (leaf != NULL) {
+    i::ConsStringNullOp null_op;
+    ASSERT(offset == 0);
+    i::String::Visit(leaf, 0, visitor, null_op, type, length);
+    leaf = op->ContinueOperation(&type, &length);
+  }
+  return visitor.GetLength();
+}
+
+
+int String::Utf8Length() const {
+  i::Handle<i::String> str = Utils::OpenHandle(this);
+  i::Isolate* isolate = str->GetIsolate();
+  if (IsDeadCheck(isolate, "v8::String::Utf8Length()")) return 0;
+  return v8::Utf8Length(*str, isolate);
+}
+
+
+class Utf8WriterVisitor {
+ public:
+  Utf8WriterVisitor(char* buffer, int capacity)
+    : early_termination_(false),
+      last_character_(unibrow::Utf16::kNoPreviousCharacter),
+      buffer_(buffer),
+      start_(buffer),
+      capacity_(capacity),
+      utf16_chars_read_(0) {
+  }
+
+  static int WriteEndCharacter(uint16_t character,
+                               int last_character,
+                               int remaining,
+                               char* const buffer) {
+    using namespace unibrow;
+    ASSERT(remaining > 0);
+    // We can't use a local buffer here because Encode needs to modify
+    // previous characters in the stream.  We know, however, that
+    // exactly one character will be advanced.
+    if (Utf16::IsTrailSurrogate(character) &&
+        Utf16::IsLeadSurrogate(last_character)) {
+      int written = Utf8::Encode(buffer, character, last_character);
+      ASSERT(written == 1);
+      return written;
+    }
+    // Use a scratch buffer to check the required characters.
+    char temp_buffer[Utf8::kMaxEncodedSize];
+    // Can't encode using last_character as gcc has array bounds issues.
+    int written = Utf8::Encode(temp_buffer,
+                               character,
+                               unibrow::Utf16::kNoPreviousCharacter);
+    // Won't fit.
+    if (written > remaining) return 0;
+    // Copy over the character from temp_buffer.
+    for (int j = 0; j < written; j++) {
+      buffer[j] = temp_buffer[j];
+    }
+    return written;
+  }
+
+  template<typename Char>
+  void Visit(const Char* chars, const int length) {
+    using namespace unibrow;
+    // TODO(dcarney): Add back ascii fast path.
+    ASSERT(!early_termination_);
+    ASSERT(length > 0);
+    // Copy state to stack.
+    char* buffer = buffer_;
+    int last_character = last_character_;
+    int i = 0;
+    // Do a fast loop where there is no exit capacity check.
+    while (true) {
+      int fast_length;
+      if (capacity_ == -1) {
+        fast_length = length;
+      } else {
+        int remaining_capacity = capacity_ - static_cast<int>(buffer - start_);
+        // Need enough space to write everything but one character.
+        STATIC_ASSERT(Utf16::kMaxExtraUtf8BytesForOneUtf16CodeUnit == 3);
+        int writable_length = (remaining_capacity - 3)/3;
+        // Need to drop into slow loop.
+        if (writable_length <= 0) break;
+        fast_length = i + writable_length;
+        if (fast_length > length) fast_length = length;
+      }
+      // Write the characters to the stream.
+      for (; i < fast_length; i++) {
+        uint16_t character = *chars++;
+        buffer += Utf8::Encode(buffer, character, last_character);
+        last_character = character;
+        ASSERT(capacity_ == -1 || (buffer - start_) <= capacity_);
+      }
+      // Array is fully written. Exit.
+      if (fast_length == length) {
+        // Write state back out to object.
+        last_character_ = last_character;
+        buffer_ = buffer;
+        utf16_chars_read_ += i;
+        return;
+      }
+    }
+    ASSERT(capacity_ != -1);
+    // Slow loop. Must check capacity on each iteration.
+    int remaining_capacity = capacity_ - static_cast<int>(buffer - start_);
+    ASSERT(remaining_capacity >= 0);
+    for (; i < length && remaining_capacity > 0; i++) {
+      uint16_t character = *chars++;
+      int written = WriteEndCharacter(character,
+                                      last_character,
+                                      remaining_capacity,
+                                      buffer);
+      if (written == 0) {
+        early_termination_ = true;
+        break;
+      }
+      buffer += written;
+      remaining_capacity -= written;
+      last_character = character;
+    }
+    // Write state back out to object.
+    last_character_ = last_character;
+    buffer_ = buffer;
+    utf16_chars_read_ += i;
+  }
+
+  inline bool IsDone() {
+    return early_termination_;
+  }
+
+  inline void VisitOneByteString(const uint8_t* chars, unsigned length) {
+    Visit(chars, static_cast<int>(length));
+  }
+
+  inline void VisitTwoByteString(const uint16_t* chars, unsigned length) {
+    Visit(chars, static_cast<int>(length));
+  }
+
+  inline int CompleteWrite(bool write_null, int* utf16_chars_read_out) {
+    // Write out number of utf16 characters written to the stream.
+    if (utf16_chars_read_out != NULL) {
+      *utf16_chars_read_out = utf16_chars_read_;
+    }
+    // Only null terminate if all of the string was written and there's space.
+    if (write_null &&
+        !early_termination_ &&
+        (capacity_ == -1 || (buffer_ - start_) < capacity_)) {
+      *buffer_++ = '\0';
+    }
+    return static_cast<int>(buffer_ - start_);
+  }
+
+ private:
+  bool early_termination_;
+  int last_character_;
+  char* buffer_;
+  char* const start_;
+  int capacity_;
+  int utf16_chars_read_;
+  DISALLOW_IMPLICIT_CONSTRUCTORS(Utf8WriterVisitor);
+};
 
 
 int String::WriteUtf8(char* buffer,
@@ -3980,123 +4046,23 @@ int String::WriteUtf8(char* buffer,
   if (options & HINT_MANY_WRITES_EXPECTED) {
     FlattenString(str);  // Flatten the string for efficiency.
   }
-  int string_length = str->length();
-  if (str->IsOneByteRepresentation()) {
-    int len;
-    if (capacity == -1) {
-      capacity = str->length() + 1;
-      len = string_length;
-    } else {
-      len = i::Min(capacity, str->length());
-    }
-    i::String::WriteToFlat(*str, buffer, 0, len);
-    if (nchars_ref != NULL) *nchars_ref = len;
-    if (!(options & NO_NULL_TERMINATION) && capacity > len) {
-      buffer[len] = '\0';
-      return len + 1;
-    }
-    return len;
-  }
-
-  if (capacity == -1 || capacity / 3 >= string_length) {
-    int32_t previous = unibrow::Utf16::kNoPreviousCharacter;
-    const int kMaxRecursion = 100;
-    int utf8_bytes =
-        RecursivelySerializeToUtf8(*str,
-                                   buffer,
-                                   0,
-                                   string_length,
-                                   kMaxRecursion,
-                                   previous,
-                                   &previous);
-    if (utf8_bytes >= 0) {
-      // Success serializing with recursion.
-      if ((options & NO_NULL_TERMINATION) == 0 &&
-          (capacity > utf8_bytes || capacity == -1)) {
-        buffer[utf8_bytes++] = '\0';
-      }
-      if (nchars_ref != NULL) *nchars_ref = string_length;
-      return utf8_bytes;
-    }
-    FlattenString(str);
-    // Recurse once.  This time around the string is flat and the serializing
-    // with recursion will certainly succeed.
-    return WriteUtf8(buffer, capacity, nchars_ref, options);
-  } else if (capacity >= string_length) {
-    // First check that the buffer is large enough.  If it is, then recurse
-    // once without a capacity limit, which will get into the other branch of
-    // this 'if'.
-    int utf8_bytes = i::Utf8Length(str);
-    if ((options & NO_NULL_TERMINATION) == 0) utf8_bytes++;
-    if (utf8_bytes <= capacity) {
-      return WriteUtf8(buffer, -1, nchars_ref, options);
+  Utf8WriterVisitor writer(buffer, capacity);
+  i::ConsStringIteratorOp* op = isolate->write_iterator();
+  op->Reset();
+  int32_t type = str->map()->instance_type();
+  unsigned str_length = static_cast<unsigned>(str->length());
+  if (str_length != 0) {
+    i::String::Visit(*str, 0, writer, *op, type, str_length);
+    while (!writer.IsDone()) {
+      unsigned length_out;
+      i::String* next = op->ContinueOperation(&type, &length_out);
+      if (next == NULL) break;
+      // TODO(dcarney): need an asserting null op.
+      i::ConsStringNullOp null_op;
+      i::String::Visit(next, 0, writer, null_op, type, length_out);
     }
   }
-
-  // Slow case.
-  i::StringInputBuffer& write_input_buffer = *isolate->write_input_buffer();
-  isolate->string_tracker()->RecordWrite(str);
-
-  write_input_buffer.Reset(0, *str);
-  int len = str->length();
-  // Encode the first K - 3 bytes directly into the buffer since we
-  // know there's room for them.  If no capacity is given we copy all
-  // of them here.
-  int fast_end = capacity - (unibrow::Utf8::kMaxEncodedSize - 1);
-  int i;
-  int pos = 0;
-  int nchars = 0;
-  int previous = unibrow::Utf16::kNoPreviousCharacter;
-  for (i = 0; i < len && (capacity == -1 || pos < fast_end); i++) {
-    i::uc32 c = write_input_buffer.GetNext();
-    int written = unibrow::Utf8::Encode(buffer + pos, c, previous);
-    pos += written;
-    nchars++;
-    previous = c;
-  }
-  if (i < len) {
-    // For the last characters we need to check the length for each one
-    // because they may be longer than the remaining space in the
-    // buffer.
-    char intermediate[unibrow::Utf8::kMaxEncodedSize];
-    for (; i < len && pos < capacity; i++) {
-      i::uc32 c = write_input_buffer.GetNext();
-      if (unibrow::Utf16::IsTrailSurrogate(c) &&
-          unibrow::Utf16::IsLeadSurrogate(previous)) {
-        // We can't use the intermediate buffer here because the encoding
-        // of surrogate pairs is done under assumption that you can step
-        // back and fix the UTF8 stream.  Luckily we only need space for one
-        // more byte, so there is always space.
-        ASSERT(pos < capacity);
-        int written = unibrow::Utf8::Encode(buffer + pos, c, previous);
-        ASSERT(written == 1);
-        pos += written;
-        nchars++;
-      } else {
-        int written =
-            unibrow::Utf8::Encode(intermediate,
-                                  c,
-                                  unibrow::Utf16::kNoPreviousCharacter);
-        if (pos + written <= capacity) {
-          for (int j = 0; j < written; j++) {
-            buffer[pos + j] = intermediate[j];
-          }
-          pos += written;
-          nchars++;
-        } else {
-          // We've reached the end of the buffer
-          break;
-        }
-      }
-      previous = c;
-    }
-  }
-  if (nchars_ref != NULL) *nchars_ref = nchars;
-  if (!(options & NO_NULL_TERMINATION) &&
-      (i == len && (capacity == -1 || pos < capacity))) {
-    buffer[pos++] = '\0';
-  }
-  return pos;
+  return writer.CompleteWrite(!(options & NO_NULL_TERMINATION), nchars_ref);
 }
 
 
@@ -4115,11 +4081,14 @@ int String::WriteAscii(char* buffer,
     FlattenString(str);  // Flatten the string for efficiency.
   }
 
-  if (str->IsOneByteRepresentation()) {
-    // WriteToFlat is faster than using the StringInputBuffer.
+  if (str->HasOnlyAsciiChars()) {
+    // WriteToFlat is faster than using the StringCharacterStream.
     if (length == -1) length = str->length() + 1;
     int len = i::Min(length, str->length() - start);
-    i::String::WriteToFlat(*str, buffer, start, start + len);
+    i::String::WriteToFlat(*str,
+                           reinterpret_cast<uint8_t*>(buffer),
+                           start,
+                           start + len);
     if (!(options & PRESERVE_ASCII_NULL)) {
       for (int i = 0; i < len; i++) {
         if (buffer[i] == '\0') buffer[i] = ' ';
@@ -4131,16 +4100,15 @@ int String::WriteAscii(char* buffer,
     return len;
   }
 
-  i::StringInputBuffer& write_input_buffer = *isolate->write_input_buffer();
   int end = length;
   if ((length == -1) || (length > str->length() - start)) {
     end = str->length() - start;
   }
   if (end < 0) return 0;
-  write_input_buffer.Reset(start, *str);
+  i::StringCharacterStream write_stream(*str, isolate->write_iterator(), start);
   int i;
   for (i = 0; i < end; i++) {
-    char c = static_cast<char>(write_input_buffer.GetNext());
+    char c = static_cast<char>(write_stream.GetNext());
     if (c == '\0' && !(options & PRESERVE_ASCII_NULL)) c = ' ';
     buffer[i] = c;
   }
@@ -4151,20 +4119,22 @@ int String::WriteAscii(char* buffer,
 }
 
 
-int String::Write(uint16_t* buffer,
-                  int start,
-                  int length,
-                  int options) const {
-  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
+template<typename CharType>
+static inline int WriteHelper(const String* string,
+                              CharType* buffer,
+                              int start,
+                              int length,
+                              int options) {
+  i::Isolate* isolate = Utils::OpenHandle(string)->GetIsolate();
   if (IsDeadCheck(isolate, "v8::String::Write()")) return 0;
   LOG_API(isolate, "String::Write");
   ENTER_V8(isolate);
   ASSERT(start >= 0 && length >= -1);
-  i::Handle<i::String> str = Utils::OpenHandle(this);
+  i::Handle<i::String> str = Utils::OpenHandle(string);
   isolate->string_tracker()->RecordWrite(str);
-  if (options & HINT_MANY_WRITES_EXPECTED) {
+  if (options & String::HINT_MANY_WRITES_EXPECTED) {
     // Flatten the string for efficiency.  This applies whether we are
-    // using StringInputBuffer or Get(i) to access the characters.
+    // using StringCharacterStream or Get(i) to access the characters.
     FlattenString(str);
   }
   int end = start + length;
@@ -4172,11 +4142,27 @@ int String::Write(uint16_t* buffer,
     end = str->length();
   if (end < 0) return 0;
   i::String::WriteToFlat(*str, buffer, start, end);
-  if (!(options & NO_NULL_TERMINATION) &&
+  if (!(options & String::NO_NULL_TERMINATION) &&
       (length == -1 || end - start < length)) {
     buffer[end - start] = '\0';
   }
   return end - start;
+}
+
+
+int String::WriteOneByte(uint8_t* buffer,
+                         int start,
+                         int length,
+                         int options) const {
+  return WriteHelper(this, buffer, start, length, options);
+}
+
+
+int String::Write(uint16_t* buffer,
+                  int start,
+                  int length,
+                  int options) const {
+  return WriteHelper(this, buffer, start, length, options);
 }
 
 
@@ -4364,14 +4350,6 @@ static void* ExternalValue(i::Object* obj) {
 }
 
 
-void* Object::GetPointerFromInternalField(int index) {
-  i::Handle<i::JSObject> obj = Utils::OpenHandle(this);
-  const char* location = "v8::Object::GetPointerFromInternalField()";
-  if (!InternalFieldOK(obj, index, location)) return NULL;
-  return ExternalValue(obj->GetInternalField(index));
-}
-
-
 // --- E n v i r o n m e n t ---
 
 
@@ -4456,27 +4434,44 @@ void v8::V8::VisitExternalResources(ExternalResourceVisitor* visitor) {
 }
 
 
+class VisitorAdapter : public i::ObjectVisitor {
+ public:
+  explicit VisitorAdapter(PersistentHandleVisitor* visitor)
+      : visitor_(visitor) {}
+  virtual void VisitPointers(i::Object** start, i::Object** end) {
+    UNREACHABLE();
+  }
+  virtual void VisitEmbedderReference(i::Object** p, uint16_t class_id) {
+    visitor_->VisitPersistentHandle(ToApi<Value>(i::Handle<i::Object>(p)),
+                                    class_id);
+  }
+ private:
+  PersistentHandleVisitor* visitor_;
+};
+
+
 void v8::V8::VisitHandlesWithClassIds(PersistentHandleVisitor* visitor) {
   i::Isolate* isolate = i::Isolate::Current();
   IsDeadCheck(isolate, "v8::V8::VisitHandlesWithClassId");
 
   i::AssertNoAllocation no_allocation;
 
-  class VisitorAdapter : public i::ObjectVisitor {
-   public:
-    explicit VisitorAdapter(PersistentHandleVisitor* visitor)
-        : visitor_(visitor) {}
-    virtual void VisitPointers(i::Object** start, i::Object** end) {
-      UNREACHABLE();
-    }
-    virtual void VisitEmbedderReference(i::Object** p, uint16_t class_id) {
-      visitor_->VisitPersistentHandle(ToApi<Value>(i::Handle<i::Object>(p)),
-                                      class_id);
-    }
-   private:
-    PersistentHandleVisitor* visitor_;
-  } visitor_adapter(visitor);
+  VisitorAdapter visitor_adapter(visitor);
   isolate->global_handles()->IterateAllRootsWithClassIds(&visitor_adapter);
+}
+
+
+void v8::V8::VisitHandlesForPartialDependence(
+    Isolate* exported_isolate, PersistentHandleVisitor* visitor) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(exported_isolate);
+  ASSERT(isolate == i::Isolate::Current());
+  IsDeadCheck(isolate, "v8::V8::VisitHandlesForPartialDependence");
+
+  i::AssertNoAllocation no_allocation;
+
+  VisitorAdapter visitor_adapter(visitor);
+  isolate->global_handles()->IterateAllRootsInNewSpaceWithClassIds(
+      &visitor_adapter);
 }
 
 
@@ -4641,6 +4636,12 @@ bool Context::InContext() {
 }
 
 
+v8::Isolate* Context::GetIsolate() {
+  i::Handle<i::Context> env = Utils::OpenHandle(this);
+  return reinterpret_cast<Isolate*>(env->GetIsolate());
+}
+
+
 v8::Local<v8::Context> Context::GetEntered() {
   i::Isolate* isolate = i::Isolate::Current();
   if (!EnsureInitializedForIsolate(isolate, "v8::Context::GetEntered()")) {
@@ -4757,16 +4758,6 @@ void Context::SetErrorMessageForCodeGenerationFromStrings(
       i::Handle<i::Context>::cast(i::Handle<i::Object>(ctx));
   i::Handle<i::Object> error_handle = Utils::OpenHandle(*error);
   context->set_error_message_for_code_gen_from_strings(*error_handle);
-}
-
-
-void V8::SetWrapperClassId(i::Object** global_handle, uint16_t class_id) {
-  i::GlobalHandles::SetWrapperClassId(global_handle, class_id);
-}
-
-
-uint16_t V8::GetWrapperClassId(internal::Object** global_handle) {
-  return i::GlobalHandles::GetWrapperClassId(global_handle);
 }
 
 
@@ -5129,8 +5120,8 @@ void v8::Date::DateTimeConfigurationChangeNotification() {
 
   i::HandleScope scope(isolate);
   // Get the function ResetDateCache (defined in date.js).
-  i::Handle<i::String> func_name_str =
-      isolate->factory()->LookupAsciiSymbol("ResetDateCache");
+  i::Handle<i::String> func_name_str = isolate->factory()->LookupOneByteSymbol(
+      STATIC_ASCII_VECTOR("ResetDateCache"));
   i::MaybeObject* result =
       isolate->js_builtins_object()->GetProperty(*func_name_str);
   i::Object* object_func;
@@ -5154,14 +5145,14 @@ void v8::Date::DateTimeConfigurationChangeNotification() {
 
 
 static i::Handle<i::String> RegExpFlagsToString(RegExp::Flags flags) {
-  char flags_buf[3];
+  uint8_t flags_buf[3];
   int num_flags = 0;
   if ((flags & RegExp::kGlobal) != 0) flags_buf[num_flags++] = 'g';
   if ((flags & RegExp::kMultiline) != 0) flags_buf[num_flags++] = 'm';
   if ((flags & RegExp::kIgnoreCase) != 0) flags_buf[num_flags++] = 'i';
   ASSERT(num_flags <= static_cast<int>(ARRAY_SIZE(flags_buf)));
-  return FACTORY->LookupSymbol(
-      i::Vector<const char>(flags_buf, num_flags));
+  return FACTORY->LookupOneByteSymbol(
+      i::Vector<const uint8_t>(flags_buf, num_flags));
 }
 
 
@@ -5265,8 +5256,8 @@ Local<String> v8::String::NewSymbol(const char* data, int length) {
   LOG_API(isolate, "String::NewSymbol(char)");
   ENTER_V8(isolate);
   if (length == -1) length = i::StrLength(data);
-  i::Handle<i::String> result =
-      isolate->factory()->LookupSymbol(i::Vector<const char>(data, length));
+  i::Handle<i::String> result = isolate->factory()->LookupUtf8Symbol(
+      i::Vector<const char>(data, length));
   return Utils::ToLocal(result);
 }
 
@@ -5329,14 +5320,18 @@ void V8::IgnoreOutOfMemoryException() {
 }
 
 
-bool V8::AddMessageListener(MessageCallback that) {
+bool V8::AddMessageListener(MessageCallback that, Handle<Value> data) {
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::V8::AddMessageListener()");
   ON_BAILOUT(isolate, "v8::V8::AddMessageListener()", return false);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   NeanderArray listeners(isolate->factory()->message_listeners());
-  listeners.add(isolate->factory()->NewForeign(FUNCTION_ADDR(that)));
+  NeanderObject obj(2);
+  obj.set(0, *isolate->factory()->NewForeign(FUNCTION_ADDR(that)));
+  obj.set(1, data.IsEmpty() ? isolate->heap()->undefined_value()
+                            : *Utils::OpenHandle(*data));
+  listeners.add(obj.value());
   return true;
 }
 
@@ -5351,7 +5346,8 @@ void V8::RemoveMessageListeners(MessageCallback that) {
   for (int i = 0; i < listeners.length(); i++) {
     if (listeners.get(i)->IsUndefined()) continue;  // skip deleted ones
 
-    i::Handle<i::Foreign> callback_obj(i::Foreign::cast(listeners.get(i)));
+    NeanderObject listener(i::JSObject::cast(listeners.get(i)));
+    i::Handle<i::Foreign> callback_obj(i::Foreign::cast(listener.get(0)));
     if (callback_obj->foreign_address() == FUNCTION_ADDR(that)) {
       listeners.set(i, isolate->heap()->undefined_value());
     }
@@ -5412,11 +5408,11 @@ void V8::AddObjectGroup(Persistent<Value>* objects,
 }
 
 
-void V8::AddObjectGroup(Isolate* exportedIsolate,
+void V8::AddObjectGroup(Isolate* exported_isolate,
                         Persistent<Value>* objects,
                         size_t length,
                         RetainedObjectInfo* info) {
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(exportedIsolate);
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(exported_isolate);
   ASSERT(isolate == i::Isolate::Current());
   if (IsDeadCheck(isolate, "v8::V8::AddObjectGroup()")) return;
   STATIC_ASSERT(sizeof(Persistent<Value>) == sizeof(i::Object**));
@@ -5629,7 +5625,7 @@ String::Utf8Value::Utf8Value(v8::Handle<v8::Value> obj)
   Handle<String> str = obj->ToString();
   if (str.IsEmpty()) return;
   i::Handle<i::String> i_str = Utils::OpenHandle(*str);
-  length_ = i::Utf8Length(i_str);
+  length_ = v8::Utf8Length(*i_str, isolate);
   str_ = i::NewArray<char>(length_ + 1);
   str->WriteUtf8(str_);
 }
@@ -5960,8 +5956,8 @@ Local<Value> Debug::GetMirror(v8::Handle<v8::Value> obj) {
   i::Debug* isolate_debug = isolate->debug();
   isolate_debug->Load();
   i::Handle<i::JSObject> debug(isolate_debug->debug_context()->global_object());
-  i::Handle<i::String> name =
-      isolate->factory()->LookupAsciiSymbol("MakeMirror");
+  i::Handle<i::String> name = isolate->factory()->LookupOneByteSymbol(
+      STATIC_ASCII_VECTOR("MakeMirror"));
   i::Handle<i::Object> fun_obj = i::GetProperty(debug, name);
   i::Handle<i::JSFunction> fun = i::Handle<i::JSFunction>::cast(fun_obj);
   v8::Handle<v8::Function> v8_fun = Utils::ToLocal(fun);
@@ -6023,11 +6019,11 @@ Handle<String> CpuProfileNode::GetFunctionName() const {
   const i::CodeEntry* entry = node->entry();
   if (!entry->has_name_prefix()) {
     return Handle<String>(ToApi<String>(
-        isolate->factory()->LookupAsciiSymbol(entry->name())));
+        isolate->factory()->LookupUtf8Symbol(entry->name())));
   } else {
     return Handle<String>(ToApi<String>(isolate->factory()->NewConsString(
-        isolate->factory()->LookupAsciiSymbol(entry->name_prefix()),
-        isolate->factory()->LookupAsciiSymbol(entry->name()))));
+        isolate->factory()->LookupUtf8Symbol(entry->name_prefix()),
+        isolate->factory()->LookupUtf8Symbol(entry->name()))));
   }
 }
 
@@ -6036,7 +6032,7 @@ Handle<String> CpuProfileNode::GetScriptResourceName() const {
   i::Isolate* isolate = i::Isolate::Current();
   IsDeadCheck(isolate, "v8::CpuProfileNode::GetScriptResourceName");
   const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
-  return Handle<String>(ToApi<String>(isolate->factory()->LookupAsciiSymbol(
+  return Handle<String>(ToApi<String>(isolate->factory()->LookupUtf8Symbol(
       node->entry()->resource_name())));
 }
 
@@ -6122,7 +6118,7 @@ Handle<String> CpuProfile::GetTitle() const {
   i::Isolate* isolate = i::Isolate::Current();
   IsDeadCheck(isolate, "v8::CpuProfile::GetTitle");
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
-  return Handle<String>(ToApi<String>(isolate->factory()->LookupAsciiSymbol(
+  return Handle<String>(ToApi<String>(isolate->factory()->LookupUtf8Symbol(
       profile->title())));
 }
 
@@ -6219,7 +6215,7 @@ Handle<Value> HeapGraphEdge::GetName() const {
     case i::HeapGraphEdge::kInternal:
     case i::HeapGraphEdge::kProperty:
     case i::HeapGraphEdge::kShortcut:
-      return Handle<String>(ToApi<String>(isolate->factory()->LookupAsciiSymbol(
+      return Handle<String>(ToApi<String>(isolate->factory()->LookupUtf8Symbol(
           edge->name())));
     case i::HeapGraphEdge::kElement:
     case i::HeapGraphEdge::kHidden:
@@ -6263,7 +6259,7 @@ HeapGraphNode::Type HeapGraphNode::GetType() const {
 Handle<String> HeapGraphNode::GetName() const {
   i::Isolate* isolate = i::Isolate::Current();
   IsDeadCheck(isolate, "v8::HeapGraphNode::GetName");
-  return Handle<String>(ToApi<String>(isolate->factory()->LookupAsciiSymbol(
+  return Handle<String>(ToApi<String>(isolate->factory()->LookupUtf8Symbol(
       ToInternal(this)->name())));
 }
 
@@ -6342,7 +6338,7 @@ unsigned HeapSnapshot::GetUid() const {
 Handle<String> HeapSnapshot::GetTitle() const {
   i::Isolate* isolate = i::Isolate::Current();
   IsDeadCheck(isolate, "v8::HeapSnapshot::GetTitle");
-  return Handle<String>(ToApi<String>(isolate->factory()->LookupAsciiSymbol(
+  return Handle<String>(ToApi<String>(isolate->factory()->LookupUtf8Symbol(
       ToInternal(this)->title())));
 }
 

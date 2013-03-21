@@ -222,6 +222,11 @@ void WebPluginContainerImpl::widgetPositionsUpdated()
     reportGeometry();
 }
 
+void WebPluginContainerImpl::clipRectChanged()
+{
+    reportGeometry();
+}
+
 void WebPluginContainerImpl::setParentVisible(bool parentVisible)
 {
     // We override this function to make sure that geometry updates are sent
@@ -390,50 +395,6 @@ void WebPluginContainerImpl::reportGeometry()
     }
 }
 
-void WebPluginContainerImpl::setBackingTextureId(unsigned textureId)
-{
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_textureId == textureId)
-        return;
-
-    ASSERT(!m_ioSurfaceLayer);
-
-    if (!m_textureLayer)
-        m_textureLayer = adoptPtr(Platform::current()->compositorSupport()->createExternalTextureLayer());
-    m_textureLayer->setTextureId(textureId);
-    m_textureId = textureId;
-
-    setWebLayer(m_textureId ? m_textureLayer->layer() : 0);
-#endif
-}
-
-void WebPluginContainerImpl::setBackingIOSurfaceId(int width,
-                                                   int height,
-                                                   uint32_t ioSurfaceId)
-{
-#if USE(ACCELERATED_COMPOSITING)
-    if (ioSurfaceId == m_ioSurfaceId)
-        return;
-
-    ASSERT(!m_textureLayer);
-
-    if (!m_ioSurfaceLayer)
-        m_ioSurfaceLayer = adoptPtr(Platform::current()->compositorSupport()->createIOSurfaceLayer());
-    m_ioSurfaceLayer->setIOSurfaceProperties(ioSurfaceId, WebSize(width, height));
-
-    m_ioSurfaceId = ioSurfaceId;
-    setWebLayer(m_ioSurfaceId ? m_ioSurfaceLayer->layer() : 0);
-#endif
-}
-
-void WebPluginContainerImpl::commitBackingTexture()
-{
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_webLayer)
-        m_webLayer->invalidate();
-#endif
-}
-
 void WebPluginContainerImpl::clearScriptObjects()
 {
     Frame* frame = m_element->document()->frame();
@@ -492,14 +453,6 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 {
     WebViewImpl* view = WebViewImpl::fromPage(m_element->document()->frame()->page());
     view->fullFramePluginZoomLevelChanged(zoomLevel);
-}
-
-void WebPluginContainerImpl::setOpaque(bool opaque)
-{
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_webLayer)
-        m_webLayer->setOpaque(opaque);
-#endif
 }
 
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
@@ -660,10 +613,6 @@ WebPluginContainerImpl::WebPluginContainerImpl(WebCore::HTMLPlugInElement* eleme
     : WebCore::PluginViewBase(0)
     , m_element(element)
     , m_webPlugin(webPlugin)
-#if USE(ACCELERATED_COMPOSITING)
-    , m_textureId(0)
-    , m_ioSurfaceId(0)
-#endif
     , m_webLayer(0)
     , m_touchEventRequestType(TouchEventRequestTypeNone)
     , m_wantsWheelEvents(false)
@@ -833,14 +782,33 @@ void WebPluginContainerImpl::handleTouchEvent(TouchEvent* event)
     }
 }
 
+static inline bool gestureScrollHelper(ScrollbarGroup* scrollbarGroup, ScrollDirection positiveDirection, ScrollDirection negativeDirection, float delta)
+{
+    if (!delta)
+        return false;
+    float absDelta = delta > 0 ? delta : -delta;
+    return scrollbarGroup->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByPrecisePixel, absDelta);
+}
+
 void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
 {
     WebGestureEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
     WebCursorInfo cursorInfo;
-    if (m_webPlugin->handleInputEvent(webEvent, cursorInfo))
+    if (m_webPlugin->handleInputEvent(webEvent, cursorInfo)) {
         event->setDefaultHandled();
+        return;
+    }
+
+    if (webEvent.type == WebInputEvent::GestureScrollUpdate || webEvent.type == WebInputEvent::GestureScrollUpdateWithoutPropagation) {
+        if (!m_scrollbarGroup)
+            return;
+        if (gestureScrollHelper(m_scrollbarGroup.get(), ScrollLeft, ScrollRight, webEvent.data.scrollUpdate.deltaX))
+            event->setDefaultHandled();
+        if (gestureScrollHelper(m_scrollbarGroup.get(), ScrollUp, ScrollDown, webEvent.data.scrollUpdate.deltaY))
+            event->setDefaultHandled();
+    }
     // FIXME: Can a plugin change the cursor from a touch-event callback?
 }
 

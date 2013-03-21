@@ -21,7 +21,7 @@ class CC_EXPORT ContentLayerPainter : public LayerPainter {
 public:
     static scoped_ptr<ContentLayerPainter> create(ContentLayerClient*);
 
-    virtual void paint(SkCanvas*, const gfx::Rect& contentRect, gfx::RectF& opaque) OVERRIDE;
+    virtual void paint(SkCanvas*, gfx::Rect contentRect, gfx::RectF& opaque) OVERRIDE;
 
 private:
     explicit ContentLayerPainter(ContentLayerClient*);
@@ -40,7 +40,7 @@ public:
 
     virtual bool drawsContent() const OVERRIDE;
     virtual void setTexturePriorities(const PriorityCalculator&) OVERRIDE;
-    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) OVERRIDE;
+    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats*) OVERRIDE;
     virtual bool needMoreUpdates() OVERRIDE;
 
     virtual void setContentsOpaque(bool) OVERRIDE;

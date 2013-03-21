@@ -103,12 +103,22 @@ v8::Handle<v8::FunctionTemplate> V8PerIsolateData::toStringTemplate()
 void V8PerIsolateData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
-    info.addMember(m_rawTemplates);
-    info.addMember(m_templates);
-    info.addMember(m_stringCache);
-    info.addMember(m_domDataList);
+    info.addMember(m_rawTemplates, "rawTemplates");
+    info.addMember(m_templates, "templates");
+    info.addMember(m_stringCache, "stringCache");
+    info.addMember(m_integerCache, "integerCache");
+    info.addMember(m_domDataList, "domDataList");
+    info.addMember(m_domDataStore, "domDataStore");
+    info.addMember(m_hiddenPropertyName, "hiddenPropertyName");
+    info.addMember(m_gcEventData, "gcEventData");
 
-    info.addPrivateBuffer(ScriptProfiler::profilerSnapshotsSize(), WebCoreMemoryTypes::InspectorProfilerAgent);
+    info.addPrivateBuffer(ScriptProfiler::profilerSnapshotsSize(), WebCoreMemoryTypes::InspectorProfilerAgent, "HeapSnapshots", "snapshots");
+
+    info.ignoreMember(m_toStringTemplate);
+    info.ignoreMember(m_lazyEventListenerToStringTemplate);
+    info.ignoreMember(m_v8Null);
+    info.ignoreMember(m_liveRoot);
+    info.ignoreMember(m_auxiliaryContext);
 }
 
 #if ENABLE(INSPECTOR)

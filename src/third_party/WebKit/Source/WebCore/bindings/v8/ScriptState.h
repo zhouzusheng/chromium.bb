@@ -63,6 +63,11 @@ public:
         return v8::Local<v8::Context>::New(m_context.get());
     }
 
+    v8::Isolate* isolate()
+    {
+        return m_context->GetIsolate();
+    }
+
     DOMWindow* domWindow() const;
     ScriptExecutionContext* scriptExecutionContext() const;
 
@@ -77,7 +82,7 @@ private:
     friend ScriptState* mainWorldScriptState(Frame*);
     explicit ScriptState(v8::Handle<v8::Context>);
 
-    static void weakReferenceCallback(v8::Persistent<v8::Value> object, void* parameter);
+    static void weakReferenceCallback(v8::Isolate*, v8::Persistent<v8::Value>, void* parameter);
 
     v8::Local<v8::Value> m_exception;
     ScopedPersistent<v8::Context> m_context;

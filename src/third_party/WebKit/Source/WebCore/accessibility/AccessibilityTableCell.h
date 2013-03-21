@@ -42,10 +42,7 @@ public:
     virtual ~AccessibilityTableCell();
     
     virtual bool isTableCell() const;
-    virtual AccessibilityRole roleValue() const;
     
-    virtual bool accessibilityIsIgnored() const;
-
     // fills in the start location and row span of cell
     virtual void rowIndexRange(pair<int, int>& rowRange);
     // fills in the start location and column span of cell
@@ -54,11 +51,13 @@ public:
 protected:
     virtual AccessibilityObject* parentTable() const;
     int m_rowIndex;
+    virtual AccessibilityRole determineAccessibilityRole();
 
 private:
     // If a table cell is not exposed as a table cell, a TH element can serve as its title UI element.
     virtual AccessibilityObject* titleUIElement() const;
     virtual bool exposesTitleUIElement() const { return true; }
+    virtual bool computeAccessibilityIsIgnored() const;
 }; 
     
 } // namespace WebCore 

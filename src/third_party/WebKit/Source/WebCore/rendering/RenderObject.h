@@ -155,7 +155,7 @@ class RenderObject : public CachedImageClient {
 public:
     // Anonymous objects should pass the document as their node, and they will then automatically be
     // marked as anonymous in the constructor.
-    RenderObject(Node*);
+    explicit RenderObject(Node*);
     virtual ~RenderObject();
 
     RenderTheme* theme() const;
@@ -183,22 +183,6 @@ public:
     {
         if (const RenderObjectChildList* children = virtualChildren())
             return children->lastChild();
-        return 0;
-    }
-    RenderObject* beforePseudoElementRenderer() const
-    {
-        if (const RenderObjectChildList* children = virtualChildren())
-            return children->beforePseudoElementRenderer(this);
-        return 0;
-    }
-
-    // This function only returns the renderer of the "after" pseudoElement if it is a child of
-    // this renderer. If "continuations" exist, the function returns 0 even if the element that
-    // generated this renderer has an "after" pseudo-element.
-    RenderObject* afterPseudoElementRenderer() const
-    {
-        if (const RenderObjectChildList* children = virtualChildren())
-            return children->afterPseudoElementRenderer(this);
         return 0;
     }
 
@@ -242,13 +226,11 @@ public:
 #ifndef NDEBUG
     void setHasAXObject(bool flag) { m_hasAXObject = flag; }
     bool hasAXObject() const { return m_hasAXObject; }
-    bool isSetNeedsLayoutForbidden() const { return m_setNeedsLayoutForbidden; }
-    void setNeedsLayoutIsForbidden(bool flag) { m_setNeedsLayoutForbidden = flag; }
 
     // Helper class forbidding calls to setNeedsLayout() during its lifetime.
     class SetLayoutNeededForbiddenScope {
     public:
-        explicit SetLayoutNeededForbiddenScope(RenderObject*);
+        explicit SetLayoutNeededForbiddenScope(RenderObject*, bool isForbidden = true);
         ~SetLayoutNeededForbiddenScope();
     private:
         RenderObject* m_renderObject;
@@ -286,13 +268,18 @@ protected:
     void setParent(RenderObject* parent)
     {
         m_parent = parent;
-        if (parent && parent->inRenderFlowThread())
-            setInRenderFlowThread(true);
+        if (parent && parent->inRenderFlowThread() && !inRenderFlowThread())
+            setInRenderFlowThreadIncludingDescendants(true);
         else if (!parent && inRenderFlowThread())
-            setInRenderFlowThread(false);
+            setInRenderFlowThreadIncludingDescendants(false);
     }
     //////////////////////////////////////////
 private:
+#ifndef NDEBUG
+    bool isSetNeedsLayoutForbidden() const { return m_setNeedsLayoutForbidden; }
+    void setNeedsLayoutIsForbidden(bool flag) { m_setNeedsLayoutForbidden = flag; }
+#endif
+
     void addAbsoluteRectForLayer(LayoutRect& result);
     void setLayerNeedsFullRepaint();
     void setLayerNeedsFullRepaintForPositionedMovementLayout();
@@ -310,7 +297,7 @@ public:
     void showRenderTreeAndMark(const RenderObject* markedObject1 = 0, const char* markedLabel1 = 0, const RenderObject* markedObject2 = 0, const char* markedLabel2 = 0, int depth = 0) const;
 #endif
 
-    static RenderObject* createObject(Node*, RenderStyle*);
+    static RenderObject* createObject(Element*, RenderStyle*);
 
     // Overloaded new operator.  Derived classes must override operator new
     // in order to allocate out of the RenderArena.
@@ -337,7 +324,7 @@ public:
 #endif
     virtual bool isQuote() const { return false; }
 
-#if ENABLE(DETAILS_ELEMENT)
+#if ENABLE(DETAILS_ELEMENT) || ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     virtual bool isDetailsMarker() const { return false; }
 #endif
     virtual bool isEmbeddedObject() const { return false; }
@@ -450,6 +437,8 @@ public:
     bool inRenderFlowThread() const { return m_bitfields.inRenderFlowThread(); }
     void setInRenderFlowThread(bool b = true) { m_bitfields.setInRenderFlowThread(b); }
 
+    void setInRenderFlowThreadIncludingDescendants(bool = true);
+
     virtual bool requiresForcedStyleRecalcPropagation() const { return false; }
 
 #if ENABLE(MATHML)
@@ -514,7 +503,6 @@ public:
 #endif
 
     bool isAnonymous() const { return m_bitfields.isAnonymous(); }
-    void setIsAnonymous(bool b) { m_bitfields.setIsAnonymous(b); }
     bool isAnonymousBlock() const
     {
         // This function is kept in sync with anonymous block creation conditions in
@@ -540,11 +528,11 @@ public:
 
     bool isFloating() const { return m_bitfields.floating(); }
 
-    bool isOutOfFlowPositioned() const { return m_bitfields.positioned(); } // absolute or fixed positioning
-    bool isInFlowPositioned() const { return m_bitfields.relPositioned() || m_bitfields.stickyPositioned(); } // relative or sticky positioning
-    bool isRelPositioned() const { return m_bitfields.relPositioned(); } // relative positioning
-    bool isStickyPositioned() const { return m_bitfields.stickyPositioned(); }
-    bool isPositioned() const { return m_bitfields.positioned() || m_bitfields.relPositioned() || m_bitfields.stickyPositioned(); }
+    bool isOutOfFlowPositioned() const { return m_bitfields.isOutOfFlowPositioned(); } // absolute or fixed positioning
+    bool isInFlowPositioned() const { return m_bitfields.isRelPositioned() || m_bitfields.isStickyPositioned(); } // relative or sticky positioning
+    bool isRelPositioned() const { return m_bitfields.isRelPositioned(); } // relative positioning
+    bool isStickyPositioned() const { return m_bitfields.isStickyPositioned(); }
+    bool isPositioned() const { return m_bitfields.isPositioned(); }
 
     bool isText() const  { return m_bitfields.isText(); }
     bool isBox() const { return m_bitfields.isBox(); }
@@ -560,6 +548,8 @@ public:
     bool borderImageIsLoadedAndCanBeRendered() const;
     bool mustRepaintBackgroundOrBorder() const;
     bool hasBackground() const { return style()->hasBackground(); }
+    bool hasEntirelyFixedBackground() const;
+
     bool needsLayout() const
     {
         return m_bitfields.needsLayout() || m_bitfields.normalChildNeedsLayout() || m_bitfields.posChildNeedsLayout()
@@ -626,7 +616,7 @@ public:
     // Returns the styled node that caused the generation of this renderer.
     // This is the same as node() except for renderers of :before and :after
     // pseudo elements for which their parent node is returned.
-    Node* generatingNode() const { return isPseudoElement() ? node()->parentOrHostNode() : node(); }
+    Node* generatingNode() const { return isPseudoElement() ? node()->parentOrShadowHostNode() : node(); }
 
     Document* document() const { return m_node->document(); }
     Frame* frame() const { return document()->frame(); }
@@ -658,9 +648,13 @@ public:
         setPreferredLogicalWidthsDirty(true);
     }
 
-    void setPositioned(bool b = true)  { m_bitfields.setPositioned(b);  }
-    void setRelPositioned(bool b = true) { m_bitfields.setRelPositioned(b); }
-    void setStickyPositioned(bool b = true) { m_bitfields.setStickyPositioned(b); }
+    void setPositionState(EPosition position)
+    {
+        ASSERT((position != AbsolutePosition && position != FixedPosition) || isBox());
+        m_bitfields.setPositionedState(position);
+    }
+    void clearPositionedState() { m_bitfields.clearPositionedState(); }
+
     void setFloating(bool b = true) { m_bitfields.setFloating(b); }
     void setInline(bool b = true) { m_bitfields.setIsInline(b); }
     void setHasBoxDecorations(bool b = true) { m_bitfields.setPaintBackground(b); }
@@ -725,6 +719,15 @@ public:
     // returns the containing block level element for this element.
     RenderBlock* containingBlock() const;
 
+    bool canContainFixedPositionObjects() const
+    {
+        return isRenderView() || (hasTransform() && isRenderBlock())
+#if ENABLE(SVG)
+                || isSVGForeignObject()
+#endif
+                || isRenderFlowThread();
+    }
+
     // Convert the given local point to absolute coordinates
     // FIXME: Temporary. If UseTransforms is true, take transforms into account. Eventually localToAbsolute() will always be transform-aware.
     FloatPoint localToAbsolute(const FloatPoint& localPoint = FloatPoint(), MapCoordinatesFlags = 0) const;
@@ -735,6 +738,8 @@ public:
     {
         return localToContainerQuad(quad, 0, mode, wasFixed);
     }
+    // Convert an absolute quad to local coordinates.
+    FloatQuad absoluteToLocalQuad(const FloatQuad&, MapCoordinatesFlags mode = 0) const;
 
     // Convert a local quad into the coordinate system of container, taking transforms into account.
     FloatQuad localToContainerQuad(const FloatQuad&, const RenderLayerModelObject* repaintContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
@@ -950,7 +955,7 @@ public:
     // return true if this object requires a new stacking context
     bool createsGroup() const { return isTransparent() || hasMask() || hasFilter() || hasBlendMode(); } 
     
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&) { };
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& /* additionalOffset */, const RenderLayerModelObject* /* paintContainer */ = 0) { };
 
     LayoutRect absoluteOutlineBounds() const
     {
@@ -974,8 +979,8 @@ protected:
     void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide,
                             Color, EBorderStyle, int adjbw1, int adjbw2, bool antialias = false);
 
-    void paintFocusRing(GraphicsContext*, const LayoutPoint&, RenderStyle*);
-    void paintOutline(GraphicsContext*, const LayoutRect&);
+    void paintFocusRing(PaintInfo&, const LayoutPoint&, RenderStyle*);
+    void paintOutline(PaintInfo&, const LayoutRect&);
     void addPDFURLRect(GraphicsContext*, const LayoutRect&);
     
     virtual LayoutRect viewRect() const;
@@ -990,6 +995,8 @@ protected:
 
     virtual void insertedIntoTree();
     virtual void willBeRemovedFromTree();
+
+    void setDocumentForAnonymous(Document* document) { ASSERT(isAnonymous()); m_node = document; }
 
 private:
     void removeFromRenderFlowThread();
@@ -1027,6 +1034,12 @@ private:
         void set##Name(bool name) { m_##name = name; }\
 
     class RenderObjectBitfields {
+        enum PositionedState {
+            IsStaticlyPositioned = 0,
+            IsRelativelyPositioned = 1,
+            IsOutOfFlowPositioned = 2,
+            IsStickyPositioned = 3
+        };
     public:
         RenderObjectBitfields(Node* node)
             : m_needsLayout(false)
@@ -1036,11 +1049,8 @@ private:
             , m_needsSimplifiedNormalFlowLayout(false)
             , m_preferredLogicalWidthsDirty(false)
             , m_floating(false)
-            , m_positioned(false)
-            , m_relPositioned(false)
-            , m_stickyPositioned(false)
             , m_paintBackground(false)
-            , m_isAnonymous(node == node->document())
+            , m_isAnonymous(!node)
             , m_isText(false)
             , m_isBox(false)
             , m_isInline(true)
@@ -1058,6 +1068,7 @@ private:
             , m_marginBeforeQuirk(false) 
             , m_marginAfterQuirk(false)
             , m_hasColumns(false)
+            , m_positionedState(IsStaticlyPositioned)
             , m_selectionState(SelectionNone)
         {
         }
@@ -1071,9 +1082,6 @@ private:
         ADD_BOOLEAN_BITFIELD(preferredLogicalWidthsDirty, PreferredLogicalWidthsDirty);
         ADD_BOOLEAN_BITFIELD(floating, Floating);
 
-        ADD_BOOLEAN_BITFIELD(positioned, Positioned);
-        ADD_BOOLEAN_BITFIELD(relPositioned, RelPositioned);
-        ADD_BOOLEAN_BITFIELD(stickyPositioned, StickyPositioned);
         ADD_BOOLEAN_BITFIELD(paintBackground, PaintBackground); // if the box has something to paint in the
         // background painting phase (background, border, etc)
 
@@ -1104,9 +1112,22 @@ private:
         ADD_BOOLEAN_BITFIELD(hasColumns, HasColumns);
 
     private:
+        unsigned m_positionedState : 2; // PositionedState
         unsigned m_selectionState : 3; // SelectionState
 
     public:
+        bool isOutOfFlowPositioned() const { return m_positionedState == IsOutOfFlowPositioned; }
+        bool isRelPositioned() const { return m_positionedState == IsRelativelyPositioned; }
+        bool isStickyPositioned() const { return m_positionedState == IsStickyPositioned; }
+        bool isPositioned() const { return m_positionedState != IsStaticlyPositioned; }
+
+        void setPositionedState(int positionState)
+        {
+            // This mask maps FixedPosition and AbsolutePosition to IsOutOfFlowPositioned, saving one bit.
+            m_positionedState = static_cast<PositionedState>(positionState & 0x3);
+        }
+        void clearPositionedState() { m_positionedState = StaticPosition; }
+
         ALWAYS_INLINE SelectionState selectionState() const { return static_cast<SelectionState>(m_selectionState); }
         ALWAYS_INLINE void setSelectionState(SelectionState selectionState) { m_selectionState = selectionState; }
     };

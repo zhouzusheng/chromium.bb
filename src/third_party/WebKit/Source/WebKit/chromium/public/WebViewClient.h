@@ -31,6 +31,9 @@
 #ifndef WebViewClient_h
 #define WebViewClient_h
 
+#include "../../../Platform/chromium/public/WebColor.h"
+#include "../../../Platform/chromium/public/WebGraphicsContext3D.h"
+#include "../../../Platform/chromium/public/WebString.h"
 #include "WebAccessibilityNotification.h"
 #include "WebContentDetectionResult.h"
 #include "WebDragOperation.h"
@@ -42,9 +45,6 @@
 #include "WebTextAffinity.h"
 #include "WebTextDirection.h"
 #include "WebWidgetClient.h"
-#include "platform/WebColor.h"
-#include "platform/WebGraphicsContext3D.h"
-#include "platform/WebString.h"
 
 namespace WebKit {
 
@@ -144,9 +144,6 @@ public:
     // Called to retrieve the provider of desktop notifications.
     virtual WebNotificationPresenter* notificationPresenter() { return 0; }
 
-    // Called when a gesture event is handled.
-    virtual void didHandleGestureEvent(const WebGestureEvent& event, bool eventSwallowed) { }
-
     // Called to request an icon for the specified filenames.
     // The icon is shown in a file upload control.
     virtual bool queryIconForFiles(const WebVector<WebString>& filenames, WebIconLoadingCompletion*) { return false; }
@@ -193,6 +190,7 @@ public:
     virtual bool isSelectTrailingWhitespaceEnabled() { return true; }
 
     virtual void didBeginEditing() { }
+    virtual void didCancelCompositionOnSelectionChange() { }
     virtual void didChangeSelection(bool isSelectionEmpty) { }
     virtual void didChangeContents() { }
     virtual void didExecuteCommand(const WebString& commandName) { }

@@ -11,22 +11,13 @@
 
 namespace fileapi {
 
-class DraggedFileUtil;
+class AsyncFileUtilAdapter;
 class IsolatedContext;
-class IsolatedFileUtil;
 class MediaPathFilter;
-class NativeMediaFileUtil;
-
-#if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-class DeviceMediaFileUtil;
-#endif
 
 class IsolatedMountPointProvider : public FileSystemMountPointProvider {
  public:
-  using FileSystemMountPointProvider::ValidateFileSystemCallback;
-  using FileSystemMountPointProvider::DeleteFileSystemCallback;
-
-  explicit IsolatedMountPointProvider(const FilePath& profile_path);
+  explicit IsolatedMountPointProvider(const base::FilePath& profile_path);
   virtual ~IsolatedMountPointProvider();
 
   // FileSystemMountPointProvider implementation.
@@ -35,14 +26,16 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
       FileSystemType type,
       bool create,
       const ValidateFileSystemCallback& callback) OVERRIDE;
-  virtual FilePath GetFileSystemRootPathOnFileThread(
+  virtual base::FilePath GetFileSystemRootPathOnFileThread(
       const FileSystemURL& url,
       bool create) OVERRIDE;
   virtual bool IsAccessAllowed(const FileSystemURL& url) OVERRIDE;
-  virtual bool IsRestrictedFileName(const FilePath& filename) const OVERRIDE;
+  virtual bool IsRestrictedFileName(const base::FilePath& filename) const OVERRIDE;
   virtual FileSystemFileUtil* GetFileUtil(FileSystemType type) OVERRIDE;
-  virtual FilePath GetPathForPermissionsCheck(const FilePath& virtual_path)
-      const OVERRIDE;
+  virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual FilePermissionPolicy GetPermissionPolicy(
+      const FileSystemURL& url,
+      int permissions) const OVERRIDE;
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
@@ -65,16 +58,16 @@ class IsolatedMountPointProvider : public FileSystemMountPointProvider {
 
  private:
   // Store the profile path. We need this to create temporary snapshot files.
-  const FilePath profile_path_;
+  const base::FilePath profile_path_;
 
   scoped_ptr<MediaPathFilter> media_path_filter_;
 
-  scoped_ptr<IsolatedFileUtil> isolated_file_util_;
-  scoped_ptr<DraggedFileUtil> dragged_file_util_;
-  scoped_ptr<NativeMediaFileUtil> native_media_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> isolated_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> dragged_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> native_media_file_util_;
 
 #if defined(SUPPORT_MTP_DEVICE_FILESYSTEM)
-  scoped_ptr<DeviceMediaFileUtil> device_media_file_util_;
+  scoped_ptr<AsyncFileUtilAdapter> device_media_file_util_;
 #endif
 };
 

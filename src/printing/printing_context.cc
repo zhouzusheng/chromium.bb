@@ -78,6 +78,17 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
 
   PrintingContext::Result result = UpdatePrinterSettings(job_settings, ranges);
   PrintSettingsInitializer::InitHeaderFooterStrings(job_settings, &settings_);
+
+  if (!job_settings.GetBoolean(kSettingShouldPrintBackgrounds,
+                               &settings_.should_print_backgrounds)) {
+    NOTREACHED();
+  }
+
+  if (!job_settings.GetBoolean(kSettingShouldPrintSelectionOnly,
+                               &settings_.selection_only)) {
+    NOTREACHED();
+  }
+
   return result;
 }
 

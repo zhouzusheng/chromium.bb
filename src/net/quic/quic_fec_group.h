@@ -55,6 +55,14 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
     return base::StringPiece(parity_, parity_len_);
   }
 
+  QuicPacketSequenceNumber min_protected_packet() const {
+    return min_protected_packet_;
+  }
+
+  size_t NumReceivedPackets() const {
+    return received_packets_.size();
+  }
+
  private:
   bool UpdateParity(base::StringPiece payload);
   // Returns the number of missing packets, or size_t max if the number

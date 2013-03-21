@@ -9,6 +9,7 @@
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gpu {
 namespace gles2 {
@@ -24,7 +25,6 @@ RenderbufferManager::RenderbufferManager(
       num_uncleared_renderbuffers_(0),
       renderbuffer_info_count_(0),
       have_context_(true) {
-  memory_tracker_->UpdateMemRepresented();
 }
 
 RenderbufferManager::~RenderbufferManager() {
@@ -37,8 +37,10 @@ RenderbufferManager::~RenderbufferManager() {
 }
 
 size_t RenderbufferManager::RenderbufferInfo::EstimatedSize() {
-  return width_ * height_ * samples_ *
-         GLES2Util::RenderbufferBytesPerPixel(internal_format_);
+  uint32 size = 0;
+  RenderbufferManager::ComputeEstimatedRenderbufferSize(
+      width_, height_, samples_, internal_format_, &size);
+  return size;
 }
 
 void RenderbufferManager::RenderbufferInfo::AddToSignature(
@@ -64,7 +66,6 @@ void RenderbufferManager::Destroy(bool have_context) {
   have_context_ = have_context;
   renderbuffer_infos_.clear();
   DCHECK_EQ(0u, memory_tracker_->GetMemRepresented());
-  memory_tracker_->UpdateMemRepresented();
 }
 
 void RenderbufferManager::StartTracking(RenderbufferInfo* /* renderbuffer */) {
@@ -77,7 +78,6 @@ void RenderbufferManager::StopTracking(RenderbufferInfo* renderbuffer) {
     --num_uncleared_renderbuffers_;
   }
   memory_tracker_->TrackMemFree(renderbuffer->EstimatedSize());
-  memory_tracker_->UpdateMemRepresented();
 }
 
 void RenderbufferManager::SetInfo(
@@ -90,7 +90,6 @@ void RenderbufferManager::SetInfo(
   memory_tracker_->TrackMemFree(renderbuffer->EstimatedSize());
   renderbuffer->SetInfo(samples, internalformat, width, height);
   memory_tracker_->TrackMemAlloc(renderbuffer->EstimatedSize());
-  memory_tracker_->UpdateMemRepresented();
   if (!renderbuffer->cleared()) {
     ++num_uncleared_renderbuffers_;
   }
@@ -145,6 +144,42 @@ bool RenderbufferManager::GetClientId(
     }
   }
   return false;
+}
+
+bool RenderbufferManager::ComputeEstimatedRenderbufferSize(
+    int width, int height, int samples, int internal_format, uint32* size) {
+  DCHECK(size);
+
+  uint32 temp = 0;
+  if (!SafeMultiplyUint32(width, height, &temp)) {
+    return false;
+  }
+  if (!SafeMultiplyUint32(temp, samples, &temp)) {
+    return false;
+  }
+  GLenum impl_format = InternalRenderbufferFormatToImplFormat(internal_format);
+  if (!SafeMultiplyUint32(
+      temp, GLES2Util::RenderbufferBytesPerPixel(impl_format), &temp)) {
+    return false;
+  }
+  *size = temp;
+  return true;
+}
+
+GLenum RenderbufferManager::InternalRenderbufferFormatToImplFormat(
+    GLenum impl_format) {
+  if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2) {
+    switch (impl_format) {
+      case GL_DEPTH_COMPONENT16:
+        return GL_DEPTH_COMPONENT;
+      case GL_RGBA4:
+      case GL_RGB5_A1:
+        return GL_RGBA;
+      case GL_RGB565:
+        return GL_RGB;
+    }
+  }
+  return impl_format;
 }
 
 }  // namespace gles2

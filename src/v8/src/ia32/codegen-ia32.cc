@@ -388,8 +388,10 @@ OS::MemCopyFunction CreateMemCopyFunction() {
 
 #define __ ACCESS_MASM(masm)
 
+
 void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
-    MacroAssembler* masm) {
+    MacroAssembler* masm, AllocationSiteMode mode,
+    Label* allocation_site_info_found) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ebx    : target map
@@ -397,6 +399,12 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
   //  -- edx    : receiver
   //  -- esp[0] : return address
   // -----------------------------------
+  if (mode == TRACK_ALLOCATION_SITE) {
+    ASSERT(allocation_site_info_found != NULL);
+    __ TestJSArrayForAllocationSiteInfo(edx, edi);
+    __ j(equal, allocation_site_info_found);
+  }
+
   // Set transitioned map.
   __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
   __ RecordWriteField(edx,
@@ -410,7 +418,7 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
 
 
 void ElementsTransitionGenerator::GenerateSmiToDouble(
-    MacroAssembler* masm, Label* fail) {
+    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ebx    : target map
@@ -419,6 +427,11 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   //  -- esp[0] : return address
   // -----------------------------------
   Label loop, entry, convert_hole, gc_required, only_change_map;
+
+  if (mode == TRACK_ALLOCATION_SITE) {
+    __ TestJSArrayForAllocationSiteInfo(edx, edi);
+    __ j(equal, fail);
+  }
 
   // Check for empty arrays, which only require a map transition and no changes
   // to the backing store.
@@ -434,24 +447,11 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Allocate new FixedDoubleArray.
   // edx: receiver
   // edi: length of source FixedArray (smi-tagged)
-  __ lea(esi, Operand(edi,
-                      times_4,
-                      FixedDoubleArray::kHeaderSize + kPointerSize));
-  __ AllocateInNewSpace(esi, eax, ebx, no_reg, &gc_required, TAG_OBJECT);
-
-  Label aligned, aligned_done;
-  __ test(eax, Immediate(kDoubleAlignmentMask - kHeapObjectTag));
-  __ j(zero, &aligned, Label::kNear);
-  __ mov(FieldOperand(eax, 0),
-         Immediate(masm->isolate()->factory()->one_pointer_filler_map()));
-  __ add(eax, Immediate(kPointerSize));
-  __ jmp(&aligned_done);
-
-  __ bind(&aligned);
-  __ mov(Operand(eax, esi, times_1, -kPointerSize-1),
-         Immediate(masm->isolate()->factory()->one_pointer_filler_map()));
-
-  __ bind(&aligned_done);
+  AllocationFlags flags =
+      static_cast<AllocationFlags>(TAG_OBJECT | DOUBLE_ALIGNMENT);
+  __ AllocateInNewSpace(FixedDoubleArray::kHeaderSize, times_8,
+                        edi, REGISTER_VALUE_IS_SMI,
+                        eax, ebx, no_reg, &gc_required, flags);
 
   // eax: destination FixedDoubleArray
   // edi: number of elements
@@ -558,7 +558,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
 
 void ElementsTransitionGenerator::GenerateDoubleToObject(
-    MacroAssembler* masm, Label* fail) {
+    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ebx    : target map
@@ -567,6 +567,11 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   //  -- esp[0] : return address
   // -----------------------------------
   Label loop, entry, convert_hole, gc_required, only_change_map, success;
+
+  if (mode == TRACK_ALLOCATION_SITE) {
+    __ TestJSArrayForAllocationSiteInfo(edx, edi);
+    __ j(equal, fail);
+  }
 
   // Check for empty arrays, which only require a map transition and no changes
   // to the backing store.
@@ -951,7 +956,7 @@ void Code::PatchPlatformCodeAge(byte* sequence,
   } else {
     Code* stub = GetCodeAgeStub(age, parity);
     CodePatcher patcher(sequence, young_length);
-    patcher.masm()->call(stub->instruction_start(), RelocInfo::NONE);
+    patcher.masm()->call(stub->instruction_start(), RelocInfo::NONE32);
   }
 }
 

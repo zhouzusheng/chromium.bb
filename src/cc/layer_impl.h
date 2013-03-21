@@ -5,7 +5,6 @@
 #ifndef CC_LAYER_IMPL_H_
 #define CC_LAYER_IMPL_H_
 
-#include <public/WebFilterOperations.h>
 #include <string>
 
 #include "base/logging.h"
@@ -14,6 +13,7 @@
 #include "cc/draw_properties.h"
 #include "cc/input_handler.h"
 #include "cc/layer_animation_controller.h"
+#include "cc/layer_animation_value_observer.h"
 #include "cc/region.h"
 #include "cc/render_pass.h"
 #include "cc/render_surface_impl.h"
@@ -21,8 +21,10 @@
 #include "cc/scoped_ptr_vector.h"
 #include "cc/shared_quad_state.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
@@ -43,7 +45,7 @@ class Layer;
 
 struct AppendQuadsData;
 
-class CC_EXPORT LayerImpl : public LayerAnimationControllerClient {
+class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 public:
     typedef ScopedPtrVector<LayerImpl> LayerList;
 
@@ -54,28 +56,34 @@ public:
 
     virtual ~LayerImpl();
 
-    // LayerAnimationControllerClient implementation.
-    virtual int id() const OVERRIDE;
-    virtual void setOpacityFromAnimation(float) OVERRIDE;
-    virtual float opacity() const OVERRIDE;
-    virtual void setTransformFromAnimation(const gfx::Transform&) OVERRIDE;
-    virtual const gfx::Transform& transform() const OVERRIDE;
+    int id() const;
+
+    // LayerAnimationValueObserver implementation.
+    virtual void OnOpacityAnimated(float) OVERRIDE;
+    virtual void OnTransformAnimated(const gfx::Transform&) OVERRIDE;
+    virtual bool IsActive() const OVERRIDE;
 
     // Tree structure.
     LayerImpl* parent() { return m_parent; }
     const LayerImpl* parent() const { return m_parent; }
     const LayerList& children() const { return m_children; }
+    LayerList& children() { return m_children; }
+    LayerImpl* childAt(size_t index) const;
     void addChild(scoped_ptr<LayerImpl>);
     scoped_ptr<LayerImpl> removeChild(LayerImpl* child);
     void removeAllChildren();
+    void setParent(LayerImpl* parent) { m_parent = parent; }
+    void clearChildList(); // Warning: This does not preserve tree structure invariants.
 
     void setMaskLayer(scoped_ptr<LayerImpl>);
     LayerImpl* maskLayer() { return m_maskLayer.get(); }
     const LayerImpl* maskLayer() const { return m_maskLayer.get(); }
+    scoped_ptr<LayerImpl> takeMaskLayer();
 
     void setReplicaLayer(scoped_ptr<LayerImpl>);
     LayerImpl* replicaLayer() { return m_replicaLayer.get(); }
     const LayerImpl* replicaLayer() const { return m_replicaLayer.get(); }
+    scoped_ptr<LayerImpl> takeReplicaLayer();
 
     bool hasMask() const { return m_maskLayer; }
     bool hasReplica() const { return m_replicaLayer; }
@@ -98,6 +106,10 @@ public:
     virtual bool hasContributingDelegatedRenderPasses() const;
     virtual RenderPass::Id firstContributingRenderPassId() const;
     virtual RenderPass::Id nextContributingRenderPassId(RenderPass::Id) const;
+
+    virtual void updateTilePriorities() { }
+
+    virtual ScrollbarLayerImpl* toScrollbarLayer();
 
     // Returns true if this layer has content to draw.
     void setDrawsContent(bool);
@@ -131,6 +143,7 @@ public:
     bool contentsOpaque() const { return m_contentsOpaque; }
 
     void setOpacity(float);
+    float opacity() const;
     bool opacityIsAnimating() const;
 
     void setPosition(const gfx::PointF&);
@@ -197,6 +210,13 @@ public:
     float contentsScaleY() const { return m_drawProperties.contents_scale_y; }
     void setContentsScale(float contentsScaleX, float contentsScaleY);
 
+    virtual void calculateContentsScale(
+        float idealContentsScale,
+        bool animatingTransformToScreen,
+        float* contentsScaleX,
+        float* contentsScaleY,
+        gfx::Size* contentBounds);
+
     gfx::Vector2d scrollOffset() const { return m_scrollOffset; }
     void setScrollOffset(gfx::Vector2d);
 
@@ -210,7 +230,7 @@ public:
     void setImplTransform(const gfx::Transform& transform);
 
     const gfx::Vector2d& sentScrollDelta() const { return m_sentScrollDelta; }
-    void setSentScrollDelta(const gfx::Vector2d& sentScrollDelta) { m_sentScrollDelta = sentScrollDelta; }
+    void setSentScrollDelta(const gfx::Vector2d& sentScrollDelta);
 
     // Returns the delta of the scroll that was outside of the bounds of the initial scroll
     gfx::Vector2dF scrollBy(const gfx::Vector2dF& scroll);
@@ -239,6 +259,7 @@ public:
     void setDoubleSided(bool);
 
     void setTransform(const gfx::Transform&);
+    const gfx::Transform& transform() const;
     bool transformIsAnimating() const;
 
     const gfx::RectF& updateRect() const { return m_updateRect; }
@@ -260,7 +281,7 @@ public:
 
     virtual Region visibleContentOpaqueRegion() const;
 
-    virtual void didUpdateTransforms() { }
+    virtual void didBecomeActive();
 
     // Indicates that the surface previously used to render this layer
     // was lost and that a new one has been created. Won't be called
@@ -269,15 +290,24 @@ public:
 
     ScrollbarAnimationController* scrollbarAnimationController() const { return m_scrollbarAnimationController.get(); }
 
+    void setScrollbarOpacity(float opacity);
+
     void setHorizontalScrollbarLayer(ScrollbarLayerImpl*);
-    ScrollbarLayerImpl* horizontalScrollbarLayer();
-    const ScrollbarLayerImpl* horizontalScrollbarLayer() const;
+    ScrollbarLayerImpl* horizontalScrollbarLayer() { return m_horizontalScrollbarLayer; }
 
     void setVerticalScrollbarLayer(ScrollbarLayerImpl*);
-    ScrollbarLayerImpl* verticalScrollbarLayer();
-    const ScrollbarLayerImpl* verticalScrollbarLayer() const;
+    ScrollbarLayerImpl* verticalScrollbarLayer() { return m_verticalScrollbarLayer; }
 
     gfx::Rect layerRectToContentRect(const gfx::RectF& layerRect) const;
+
+    virtual skia::RefPtr<SkPicture> getPicture();
+
+    virtual bool canClipSelf() const;
+
+    virtual bool areVisibleResourcesReady() const;
+
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl*);
+    virtual void pushPropertiesTo(LayerImpl*);
 
 protected:
     LayerImpl(LayerTreeImpl* layerImpl, int);
@@ -291,12 +321,7 @@ protected:
     static std::string indentString(int indent);
 
 private:
-    scoped_ptr<LayerImpl> takeMaskLayer();
-    scoped_ptr<LayerImpl> takeReplicaLayer();
-
-    void setParent(LayerImpl* parent) { m_parent = parent; }
-    friend class TreeSynchronizer;
-    void clearChildList(); // Warning: This does not preserve tree structure invariants and so is only exposed to the tree synchronizer.
+    void updateScrollbarPositions();
 
     void noteLayerSurfacePropertyChanged();
     void noteLayerPropertyChanged();
@@ -331,6 +356,7 @@ private:
     Region m_nonFastScrollableRegion;
     Region m_touchEventHandlerRegion;
     SkColor m_backgroundColor;
+    bool m_stackingOrderChanged;
 
     // Whether the "back" of this layer should draw.
     bool m_doubleSided;
@@ -340,7 +366,7 @@ private:
 
     // Indicates that a property has changed on this layer that would not
     // affect the pixels on its target surface, but would require redrawing
-    // but would require redrawing the targetSurface onto its ancestor targetSurface.
+    // the targetSurface onto its ancestor targetSurface.
     // For layers that do not own a surface this flag acts as m_layerPropertyChanged.
     bool m_layerSurfacePropertyChanged;
 
@@ -366,6 +392,7 @@ private:
     gfx::Vector2d m_sentScrollDelta;
     gfx::Vector2d m_maxScrollOffset;
     gfx::Transform m_implTransform;
+    gfx::Vector2dF m_lastScrollOffset;
 
     // The global depth value of the center of the layer. This value is used
     // to sort layers from back to front.
@@ -388,10 +415,15 @@ private:
     gfx::RectF m_updateRect;
 
     // Manages animations for this layer.
-    scoped_ptr<LayerAnimationController> m_layerAnimationController;
+    scoped_refptr<LayerAnimationController> m_layerAnimationController;
 
     // Manages scrollbars for this layer
     scoped_ptr<ScrollbarAnimationController> m_scrollbarAnimationController;
+
+    // Weak pointers to this layer's scrollbars, if it has them. Updated during
+    // tree synchronization.
+    ScrollbarLayerImpl* m_horizontalScrollbarLayer;
+    ScrollbarLayerImpl* m_verticalScrollbarLayer;
 
     // Group of properties that need to be computed based on the layer tree
     // hierarchy before layers can be drawn.

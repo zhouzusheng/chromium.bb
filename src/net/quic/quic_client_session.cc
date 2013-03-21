@@ -6,6 +6,8 @@
 
 #include "base/message_loop.h"
 #include "base/stl_util.h"
+#include "base/string_number_conversions.h"
+#include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/quic/quic_connection_helper.h"
@@ -16,10 +18,11 @@ namespace net {
 
 QuicClientSession::QuicClientSession(QuicConnection* connection,
                                      QuicConnectionHelper* helper,
-                                     QuicStreamFactory* stream_factory)
+                                     QuicStreamFactory* stream_factory,
+                                     const string& server_hostname)
     : QuicSession(connection, false),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(crypto_stream_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(crypto_stream_(this, server_hostname)),
       helper_(helper),
       stream_factory_(stream_factory),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
@@ -27,7 +30,6 @@ QuicClientSession::QuicClientSession(QuicConnection* connection,
 }
 
 QuicClientSession::~QuicClientSession() {
-  STLDeleteValues(&streams_);
 }
 
 QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
@@ -42,8 +44,6 @@ QuicReliableClientStream* QuicClientSession::CreateOutgoingReliableStream() {
   }
   QuicReliableClientStream* stream =
        new QuicReliableClientStream(GetNextStreamId(), this);
-  streams_[stream->id()] = stream;
-
   ActivateStream(stream);
   return stream;
 }
@@ -53,9 +53,11 @@ QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
 };
 
 int QuicClientSession::CryptoConnect(const CompletionCallback& callback) {
-  CryptoHandshakeMessage message;
-  message.tag = kCHLO;
-  crypto_stream_.SendHandshakeMessage(message);
+  if (!crypto_stream_.CryptoConnect()) {
+    // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
+    // QuicErrorCode and map it to a net error code.
+    return ERR_CONNECTION_FAILED;
+  }
 
   if (IsCryptoHandshakeComplete()) {
     return OK;
@@ -73,14 +75,6 @@ ReliableQuicStream* QuicClientSession::CreateIncomingReliableStream(
 
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
   QuicSession::CloseStream(stream_id);
-
-  StreamMap::iterator it = streams_.find(stream_id);
-  DCHECK(it != streams_.end());
-  if (it != streams_.end()) {
-    ReliableQuicStream* stream = it->second;
-    streams_.erase(it);
-    delete stream;
-  }
 
   if (GetNumOpenStreams() == 0) {
     stream_factory_->OnIdleSession(this);
@@ -112,6 +106,25 @@ void QuicClientSession::StartReading() {
       FROM_HERE,
       base::Bind(&QuicClientSession::OnReadComplete,
                  weak_factory_.GetWeakPtr(), rv));
+}
+
+void QuicClientSession::CloseSessionOnError(int error) {
+  while (!streams()->empty()) {
+    ReliableQuicStream* stream = streams()->begin()->second;
+    QuicStreamId id = stream->id();
+    static_cast<QuicReliableClientStream*>(stream)->OnError(error);
+    CloseStream(id);
+  }
+  stream_factory_->OnSessionClose(this);
+}
+
+Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
+  DictionaryValue* dict = new DictionaryValue();
+  dict->SetString("host_port_pair", pair.ToString());
+  dict->SetInteger("open_streams", GetNumOpenStreams());
+  dict->SetString("peer_address", peer_address().ToString());
+  dict->SetString("guid", base::Uint64ToString(guid()));
+  return dict;
 }
 
 void QuicClientSession::OnReadComplete(int result) {

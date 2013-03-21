@@ -260,10 +260,13 @@ enum InlineCacheState {
   // Like MONOMORPHIC but check failed due to prototype.
   MONOMORPHIC_PROTOTYPE_FAILURE,
   // Multiple receiver types have been seen.
+  POLYMORPHIC,
+  // Many receiver types have been seen.
   MEGAMORPHIC,
-  // Special states for debug break or step in prepare stubs.
-  DEBUG_BREAK,
-  DEBUG_PREPARE_STEP_IN
+  // A generic handler is installed and no extra typefeedback is recorded.
+  GENERIC,
+  // Special state for debug break or step in prepare stubs.
+  DEBUG_STUB
 };
 
 
@@ -428,6 +431,7 @@ enum CpuFeature { SSE4_1 = 32 + 19,  // x86
                   SUDIV = 4,   // ARM
                   UNALIGNED_ACCESSES = 5,  // ARM
                   MOVW_MOVT_IMMEDIATE_LOADS = 6,  // ARM
+                  VFP32DREGS = 7,  // ARM
                   SAHF = 0,    // x86
                   FPU = 1};    // MIPS
 

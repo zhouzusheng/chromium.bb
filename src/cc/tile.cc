@@ -14,37 +14,20 @@ Tile::Tile(TileManager* tile_manager,
            gfx::Size tile_size,
            GLenum format,
            gfx::Rect content_rect,
+           gfx::Rect opaque_rect,
            float contents_scale)
   : tile_manager_(tile_manager),
     picture_pile_(picture_pile),
     tile_size_(tile_size),
     format_(format),
     content_rect_(content_rect),
+    opaque_rect_(opaque_rect),
     contents_scale_(contents_scale) {
   tile_manager_->RegisterTile(this);
 }
 
 Tile::~Tile() {
   tile_manager_->UnregisterTile(this);
-}
-
-void Tile::set_priority(WhichTree tree, const TilePriority& priority) {
-  tile_manager_->WillModifyTilePriority(this, tree, priority);
-  priority_[tree] = priority;
-}
-
-ResourceProvider::ResourceId Tile::GetResourceId() const {
-  if (!managed_state_.resource)
-    return 0;
-  if (managed_state_.resource_is_being_initialized)
-    return 0;
-
-  return managed_state_.resource->id();
-}
-
-size_t Tile::bytes_consumed_if_allocated() const {
-  DCHECK(format_ == GL_RGBA);
-  return 4 * tile_size_.width() * tile_size_.height();
 }
 
 }  // namespace cc

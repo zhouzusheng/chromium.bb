@@ -40,7 +40,7 @@ class HTMLSelectElement;
 
 class RenderListBox : public RenderBlock, private ScrollableArea {
 public:
-    RenderListBox(Element*);
+    explicit RenderListBox(Element*);
     virtual ~RenderListBox();
 
     void selectionChanged();
@@ -75,16 +75,17 @@ private:
     virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
     virtual bool logicalScroll(ScrollLogicalDirection, ScrollGranularity, float multiplier = 1, Node** stopNode = 0);
 
-    virtual void computePreferredLogicalWidths();
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
+    virtual void computePreferredLogicalWidths() OVERRIDE;
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
 
     virtual void layout();
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     virtual bool canBeProgramaticallyScrolled() const { return true; }
-    virtual void autoscroll();
+    virtual void autoscroll(const IntPoint&);
     virtual void stopAutoscroll();
 
     virtual bool shouldPanScroll() const { return true; }
@@ -152,7 +153,7 @@ private:
 
 inline RenderListBox* toRenderListBox(RenderObject* object)
 { 
-    ASSERT(!object || object->isListBox());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListBox());
     return static_cast<RenderListBox*>(object);
 }
 

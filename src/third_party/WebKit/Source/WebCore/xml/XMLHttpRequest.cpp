@@ -64,11 +64,16 @@
 #include <wtf/UnusedParam.h>
 #include <wtf/text/CString.h>
 
+#if ENABLE(RESOURCE_TIMING)
+#include "CachedResourceRequestInitiators.h"
+#endif
+
 #if USE(JSC)
 #include "JSDOMBinding.h"
 #include "JSDOMWindow.h"
 #include <heap/Strong.h>
 #include <runtime/JSLock.h>
+#include <runtime/Operations.h>
 #endif
 
 namespace WebCore {
@@ -493,7 +498,13 @@ void XMLHttpRequest::open(const String& method, const KURL& url, bool async, Exc
         return;
     }
 
-    if (!scriptExecutionContext()->contentSecurityPolicy()->allowConnectToSource(url)) {
+    // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
+    bool shouldBypassMainWorldContentSecurityPolicy = false;
+    if (scriptExecutionContext()->isDocument()) {
+        Document* document = static_cast<Document*>(scriptExecutionContext());
+        shouldBypassMainWorldContentSecurityPolicy = document->frame()->script()->shouldBypassMainWorldContentSecurityPolicy();
+    }
+    if (!shouldBypassMainWorldContentSecurityPolicy && !scriptExecutionContext()->contentSecurityPolicy()->allowConnectToSource(url)) {
         // FIXME: Should this be throwing an exception?
         ec = SECURITY_ERR;
         return;
@@ -780,6 +791,9 @@ void XMLHttpRequest::createRequest(ExceptionCode& ec)
     options.allowCredentials = (m_sameOriginRequest || m_includeCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
     options.crossOriginRequestPolicy = UseAccessControl;
     options.securityOrigin = securityOrigin();
+#if ENABLE(RESOURCE_TIMING)
+    options.initiator = cachedResourceRequestInitiators().xmlhttprequest;
+#endif
 
 #if ENABLE(XHR_TIMEOUT)
     if (m_timeoutMilliseconds)
@@ -1314,25 +1328,25 @@ void XMLHttpRequest::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     ScriptWrappable::reportMemoryUsage(memoryObjectInfo);
     ActiveDOMObject::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_upload);
-    info.addMember(m_url);
-    info.addMember(m_method);
-    info.addMember(m_requestHeaders);
-    info.addMember(m_requestEntityBody);
-    info.addMember(m_mimeTypeOverride);
-    info.addMember(m_responseBlob);
-    info.addMember(m_loader);
-    info.addMember(m_response);
-    info.addMember(m_responseEncoding);
-    info.addMember(m_decoder);
-    info.addMember(m_responseBuilder);
-    info.addMember(m_responseDocument);
-    info.addMember(m_binaryResponseBuilder);
-    info.addMember(m_responseArrayBuffer);
-    info.addMember(m_lastSendURL);
-    info.addMember(m_eventTargetData);
-    info.addMember(m_progressEventThrottle);
-    info.addMember(m_securityOrigin);
+    info.addMember(m_upload, "upload");
+    info.addMember(m_url, "url");
+    info.addMember(m_method, "method");
+    info.addMember(m_requestHeaders, "requestHeaders");
+    info.addMember(m_requestEntityBody, "requestEntityBody");
+    info.addMember(m_mimeTypeOverride, "mimeTypeOverride");
+    info.addMember(m_responseBlob, "responseBlob");
+    info.addMember(m_loader, "loader");
+    info.addMember(m_response, "response");
+    info.addMember(m_responseEncoding, "responseEncoding");
+    info.addMember(m_decoder, "decoder");
+    info.addMember(m_responseBuilder, "responseBuilder");
+    info.addMember(m_responseDocument, "responseDocument");
+    info.addMember(m_binaryResponseBuilder, "binaryResponseBuilder");
+    info.addMember(m_responseArrayBuffer, "responseArrayBuffer");
+    info.addMember(m_lastSendURL, "lastSendURL");
+    info.addMember(m_eventTargetData, "eventTargetData");
+    info.addMember(m_progressEventThrottle, "progressEventThrottle");
+    info.addMember(m_securityOrigin, "securityOrigin");
 }
 
 } // namespace WebCore

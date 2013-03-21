@@ -32,7 +32,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_status.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "webkit/glue/resource_type.h"
 #include "webkit/glue/webkit_glue_export.h"
 
@@ -181,7 +181,7 @@ struct ResourceResponseInfo {
   // The path to a file that will contain the response body.  It may only
   // contain a portion of the response body at the time that the ResponseInfo
   // becomes available.
-  FilePath download_file_path;
+  base::FilePath download_file_path;
 
   // True if the response was delivered using SPDY.
   bool was_fetched_via_spdy;
@@ -245,6 +245,9 @@ class ResourceLoaderBridge {
     // Indicates if the current request is the main frame load, a sub-frame
     // load, or a sub objects load.
     ResourceType::Type request_type;
+
+    // Indicates the priority of this request, as determined by WebKit.
+    WebKit::WebURLRequest::Priority priority;
 
     // Used for plugin to browser requests.
     uint32 request_context;

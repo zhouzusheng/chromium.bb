@@ -55,7 +55,7 @@ CompilationInfo::CompilationInfo(Handle<Script> script, Zone* zone)
     : flags_(LanguageModeField::encode(CLASSIC_MODE)),
       script_(script),
       osr_ast_id_(BailoutId::None()) {
-  Initialize(zone);
+  Initialize(script->GetIsolate(), BASE, zone);
 }
 
 
@@ -65,7 +65,7 @@ CompilationInfo::CompilationInfo(Handle<SharedFunctionInfo> shared_info,
       shared_info_(shared_info),
       script_(Handle<Script>(Script::cast(shared_info->script()))),
       osr_ast_id_(BailoutId::None()) {
-  Initialize(zone);
+  Initialize(script_->GetIsolate(), BASE, zone);
 }
 
 
@@ -76,12 +76,22 @@ CompilationInfo::CompilationInfo(Handle<JSFunction> closure, Zone* zone)
       script_(Handle<Script>(Script::cast(shared_info_->script()))),
       context_(closure->context()),
       osr_ast_id_(BailoutId::None()) {
-  Initialize(zone);
+  Initialize(script_->GetIsolate(), BASE, zone);
 }
 
 
-void CompilationInfo::Initialize(Zone* zone) {
-  isolate_ = script_->GetIsolate();
+CompilationInfo::CompilationInfo(HydrogenCodeStub* stub,
+                                 Isolate* isolate, Zone* zone)
+    : flags_(LanguageModeField::encode(CLASSIC_MODE) |
+             IsLazy::encode(true)),
+      osr_ast_id_(BailoutId::None()) {
+  Initialize(isolate, STUB, zone);
+  code_stub_ = stub;
+}
+
+
+void CompilationInfo::Initialize(Isolate* isolate, Mode mode, Zone* zone) {
+  isolate_ = isolate;
   function_ = NULL;
   scope_ = NULL;
   global_scope_ = NULL;
@@ -89,8 +99,14 @@ void CompilationInfo::Initialize(Zone* zone) {
   pre_parse_data_ = NULL;
   zone_ = zone;
   deferred_handles_ = NULL;
+  code_stub_ = NULL;
   prologue_offset_ = kPrologueOffsetNotSet;
-  mode_ = V8::UseCrankshaft() ? BASE : NONOPT;
+  opt_count_ = shared_info().is_null() ? 0 : shared_info()->opt_count();
+  if (mode == STUB) {
+    mode_ = STUB;
+    return;
+  }
+  mode_ = V8::UseCrankshaft() ? mode : NONOPT;
   if (script_->type()->value() == Script::TYPE_NATIVE) {
     MarkAsNative();
   }
@@ -104,6 +120,33 @@ void CompilationInfo::Initialize(Zone* zone) {
 
 CompilationInfo::~CompilationInfo() {
   delete deferred_handles_;
+}
+
+
+int CompilationInfo::num_parameters() const {
+  if (IsStub()) {
+    return 0;
+  } else {
+    return scope()->num_parameters();
+  }
+}
+
+
+int CompilationInfo::num_heap_slots() const {
+  if (IsStub()) {
+    return 0;
+  } else {
+    return scope()->num_heap_slots();
+  }
+}
+
+
+Code::Flags CompilationInfo::flags() const {
+  if (IsStub()) {
+    return Code::ComputeFlags(Code::COMPILED_STUB);
+  } else {
+    return Code::ComputeFlags(Code::OPTIMIZED_FUNCTION);
+  }
 }
 
 
@@ -243,7 +286,7 @@ OptimizingCompiler::Status OptimizingCompiler::CreateGraph() {
   // the optimizing compiler.
   const int kMaxOptCount =
       FLAG_deopt_every_n_times == 0 ? FLAG_max_opt_count : 1000;
-  if (info()->shared_info()->opt_count() > kMaxOptCount) {
+  if (info()->opt_count() > kMaxOptCount) {
     info()->set_bailout_reason("optimized too many times");
     return AbortOptimization();
   }
@@ -274,8 +317,8 @@ OptimizingCompiler::Status OptimizingCompiler::CreateGraph() {
   if (*FLAG_hydrogen_filter != '\0') {
     Vector<const char> filter = CStrVector(FLAG_hydrogen_filter);
     if ((filter[0] == '-'
-         && name->IsEqualTo(filter.SubVector(1, filter.length())))
-        || (filter[0] != '-' && !name->IsEqualTo(filter))) {
+         && name->IsUtf8EqualTo(filter.SubVector(1, filter.length())))
+        || (filter[0] != '-' && !name->IsUtf8EqualTo(filter))) {
       info()->SetCode(code);
       return SetLastStatus(BAILED_OUT);
     }
@@ -317,13 +360,13 @@ OptimizingCompiler::Status OptimizingCompiler::CreateGraph() {
   if (FLAG_trace_hydrogen) {
     PrintF("-----------------------------------------------------------\n");
     PrintF("Compiling method %s using hydrogen\n", *name->ToCString());
-    HTracer::Instance()->TraceCompilation(info()->function());
+    HTracer::Instance()->TraceCompilation(info());
   }
   Handle<Context> native_context(
       info()->closure()->context()->native_context());
   oracle_ = new(info()->zone()) TypeFeedbackOracle(
       code, native_context, info()->isolate(), info()->zone());
-  graph_builder_ = new(info()->zone()) HGraphBuilder(info(), oracle_);
+  graph_builder_ = new(info()->zone()) HOptimizedGraphBuilder(info(), oracle_);
 
   Timer t(this, &time_taken_to_create_graph_);
   graph_ = graph_builder_->CreateGraph();
@@ -352,6 +395,7 @@ OptimizingCompiler::Status OptimizingCompiler::CreateGraph() {
 OptimizingCompiler::Status OptimizingCompiler::OptimizeGraph() {
   AssertNoAllocation no_gc;
   NoHandleAllocation no_handles;
+  NoHandleDereference no_deref;
 
   ASSERT(last_status() == SUCCEEDED);
   Timer t(this, &time_taken_to_optimize_);
@@ -376,7 +420,7 @@ OptimizingCompiler::Status OptimizingCompiler::GenerateAndInstallCode() {
     Timer timer(this, &time_taken_to_codegen_);
     ASSERT(chunk_ != NULL);
     ASSERT(graph_ != NULL);
-    Handle<Code> optimized_code = chunk_->Codegen();
+    Handle<Code> optimized_code = chunk_->Codegen(Code::OPTIMIZED_FUNCTION);
     if (optimized_code.is_null()) {
       info()->set_bailout_reason("code generation failed");
       return AbortOptimization();
@@ -432,6 +476,13 @@ bool Compiler::MakeCodeForLiveEdit(CompilationInfo* info) {
 #endif
 
 
+static bool DebuggerWantsEagerCompilation(CompilationInfo* info,
+                                          bool allow_lazy_without_ctx = false) {
+  return LiveEditFunctionTracker::IsActive(info->isolate()) ||
+         (info->isolate()->DebuggerHasBreakPoints() && !allow_lazy_without_ctx);
+}
+
+
 static Handle<SharedFunctionInfo> MakeFunctionInfo(CompilationInfo* info) {
   Isolate* isolate = info->isolate();
   ZoneScope zone_scope(info->zone(), DELETE_ON_EXIT);
@@ -469,8 +520,9 @@ static Handle<SharedFunctionInfo> MakeFunctionInfo(CompilationInfo* info) {
   // Only allow non-global compiles for eval.
   ASSERT(info->is_eval() || info->is_global());
   ParsingFlags flags = kNoParsingFlags;
-  if (info->pre_parse_data() != NULL ||
-      String::cast(script->source())->length() > FLAG_min_preparse_length) {
+  if ((info->pre_parse_data() != NULL ||
+       String::cast(script->source())->length() > FLAG_min_preparse_length) &&
+      !DebuggerWantsEagerCompilation(info)) {
     flags = kAllowLazy;
   }
   if (!ParserApi::Parse(info, flags)) {
@@ -964,8 +1016,7 @@ Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(FunctionLiteral* literal,
   // Debug::FindSharedFunctionInfoInScript.
   bool allow_lazy_without_ctx = literal->AllowsLazyCompilationWithoutContext();
   bool allow_lazy = literal->AllowsLazyCompilation() &&
-      !LiveEditFunctionTracker::IsActive(info.isolate()) &&
-      (!info.isolate()->DebuggerHasBreakPoints() || allow_lazy_without_ctx);
+      !DebuggerWantsEagerCompilation(&info, allow_lazy_without_ctx);
 
   Handle<ScopeInfo> scope_info(ScopeInfo::Empty());
 

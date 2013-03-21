@@ -37,6 +37,8 @@ namespace WebCore {
     
     class ActiveDOMObject;
     class DOMDataStore;
+    class EventTarget;
+    class Node;
 
     static const int v8DOMWrapperTypeIndex = 0;
     static const int v8DOMWrapperObjectIndex = 1;
@@ -45,11 +47,12 @@ namespace WebCore {
     static const uint16_t v8DOMNodeClassId = 1;
     static const uint16_t v8DOMObjectClassId = 2;
 
-    typedef v8::Persistent<v8::FunctionTemplate> (*GetTemplateFunction)();
+    typedef v8::Persistent<v8::FunctionTemplate> (*GetTemplateFunction)(v8::Isolate*);
     typedef void (*DerefObjectFunction)(void*);
     typedef ActiveDOMObject* (*ToActiveDOMObjectFunction)(v8::Handle<v8::Object>);
-    typedef void* (*OpaqueRootForGC)(void*, v8::Persistent<v8::Object>);
-    typedef void (*InstallPerContextPrototypePropertiesFunction)(v8::Handle<v8::Object>);
+    typedef EventTarget* (*ToEventTargetFunction)(v8::Handle<v8::Object>);
+    typedef void* (*OpaqueRootForGC)(void*, v8::Persistent<v8::Object>, v8::Isolate*);
+    typedef void (*InstallPerContextPrototypePropertiesFunction)(v8::Handle<v8::Object>, v8::Isolate*);
 
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
@@ -82,7 +85,7 @@ namespace WebCore {
             return false;
         }
         
-        v8::Persistent<v8::FunctionTemplate> getTemplate() { return getTemplateFunction(); }
+        v8::Persistent<v8::FunctionTemplate> getTemplate(v8::Isolate* isolate) { return getTemplateFunction(isolate); }
         
         void derefObject(void* object)
         {
@@ -90,10 +93,10 @@ namespace WebCore {
                 derefObjectFunction(object);
         }
         
-        void installPerContextPrototypeProperties(v8::Handle<v8::Object> proto)
+        void installPerContextPrototypeProperties(v8::Handle<v8::Object> proto, v8::Isolate* isolate)
         {
             if (installPerContextPrototypePropertiesFunction)
-                installPerContextPrototypePropertiesFunction(proto);
+                installPerContextPrototypePropertiesFunction(proto, isolate);
         }
 
         ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object> object)
@@ -103,16 +106,24 @@ namespace WebCore {
             return toActiveDOMObjectFunction(object);
         }
 
-        void* opaqueRootForGC(void* object, v8::Persistent<v8::Object> wrapper)
+        EventTarget* toEventTarget(v8::Handle<v8::Object> object)
+        {
+            if (!toEventTargetFunction)
+                return 0;
+            return toEventTargetFunction(object);
+        }
+
+        void* opaqueRootForGC(void* object, v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate)
         {
             if (!opaqueRootForGCFunction)
                 return object;
-            return opaqueRootForGCFunction(object, wrapper);
+            return opaqueRootForGCFunction(object, wrapper, isolate);
         }
 
         const GetTemplateFunction getTemplateFunction;
         const DerefObjectFunction derefObjectFunction;
         const ToActiveDOMObjectFunction toActiveDOMObjectFunction;
+        const ToEventTargetFunction toEventTargetFunction;
         const OpaqueRootForGC opaqueRootForGCFunction;
         const InstallPerContextPrototypePropertiesFunction installPerContextPrototypePropertiesFunction;
         const WrapperTypeInfo* parentClass;
@@ -131,6 +142,34 @@ namespace WebCore {
         return static_cast<WrapperTypeInfo*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
     }
 
+    struct WrapperConfiguration {
+
+        enum Lifetime {
+            Dependent, Independent
+        };
+
+        void configureWrapper(v8::Persistent<v8::Object> wrapper, v8::Isolate* isolate) const
+        {
+            wrapper.SetWrapperClassId(isolate, classId);
+            if (lifetime == Independent)
+                wrapper.MarkIndependent(isolate);
+        }
+
+        const uint16_t classId;
+        const Lifetime lifetime;
+    };
+
+    inline WrapperConfiguration buildWrapperConfiguration(void*, WrapperConfiguration::Lifetime lifetime)
+    {
+        WrapperConfiguration configuration = {v8DOMObjectClassId, lifetime};
+        return configuration;
+    }
+
+    inline WrapperConfiguration buildWrapperConfiguration(Node*, WrapperConfiguration::Lifetime lifetime)
+    {
+        WrapperConfiguration configuration = {v8DOMNodeClassId, lifetime};
+        return configuration;
+    }
 }
 
 #endif // WrapperTypeInfo_h

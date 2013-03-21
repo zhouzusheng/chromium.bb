@@ -47,14 +47,19 @@ static AtomicString makeVisibleEmptyValue(const Vector<String>& symbols)
     return builder.toAtomicString();
 }
 
-DateTimeSymbolicFieldElement::DateTimeSymbolicFieldElement(Document* document, FieldOwner& fieldOwner, const Vector<String>& symbols)
+DateTimeSymbolicFieldElement::DateTimeSymbolicFieldElement(Document* document, FieldOwner& fieldOwner, const Vector<String>& symbols, int minimum, int maximum)
     : DateTimeFieldElement(document, fieldOwner)
     , m_symbols(symbols)
     , m_visibleEmptyValue(makeVisibleEmptyValue(symbols))
     , m_selectedIndex(-1)
     , m_typeAhead(this)
+    , m_minimumIndex(minimum)
+    , m_maximumIndex(maximum)
 {
     ASSERT(!symbols.isEmpty());
+    ASSERT(m_minimumIndex >= 0);
+    ASSERT(m_maximumIndex < static_cast<int>(m_symbols.size()));
+    ASSERT(m_minimumIndex <= m_maximumIndex);
 }
 
 float DateTimeSymbolicFieldElement::maximumWidth(const Font& font)
@@ -92,12 +97,12 @@ void DateTimeSymbolicFieldElement::initialize(const AtomicString& pseudo, const 
     // The minimum and maximum below are exposed to users, and 1-based numbers
     // are natural for symbolic fields. For example, the minimum value of a
     // month field should be 1, not 0.
-    DateTimeFieldElement::initialize(pseudo, axHelpText, 1, static_cast<int>(m_symbols.size()));
+    DateTimeFieldElement::initialize(pseudo, axHelpText, m_minimumIndex + 1, m_maximumIndex + 1);
 }
 
 void DateTimeSymbolicFieldElement::setEmptyValue(EventBehavior eventBehavior)
 {
-    if (isReadOnly())
+    if (isDisabled())
         return;
     m_selectedIndex = invalidIndex;
     updateVisibleValue(eventBehavior);
@@ -111,14 +116,21 @@ void DateTimeSymbolicFieldElement::setValueAsInteger(int newSelectedIndex, Event
 
 void DateTimeSymbolicFieldElement::stepDown()
 {
-    const int size = m_symbols.size();
-    m_selectedIndex = hasValue() ? (m_selectedIndex + size - 1) % size : size - 1;
+    if (hasValue()) {
+        if (!indexIsInRange(--m_selectedIndex))
+            m_selectedIndex = m_maximumIndex;
+    } else
+        m_selectedIndex = m_maximumIndex;
     updateVisibleValue(DispatchEvent);
 }
 
 void DateTimeSymbolicFieldElement::stepUp()
 {
-    m_selectedIndex = hasValue() ? (m_selectedIndex + 1) % m_symbols.size() : 0;
+    if (hasValue()) {
+        if (!indexIsInRange(++m_selectedIndex))
+            m_selectedIndex = m_minimumIndex;
+    } else
+        m_selectedIndex = m_minimumIndex;
     updateVisibleValue(DispatchEvent);
 }
 

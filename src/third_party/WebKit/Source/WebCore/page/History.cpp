@@ -79,7 +79,7 @@ bool History::stateChanged() const
 
 bool History::isSameAsCurrentState(SerializedScriptValue* state) const
 {
-    return state == stateInternal();
+    return state == stateInternal().get();
 }
 
 void History::back()

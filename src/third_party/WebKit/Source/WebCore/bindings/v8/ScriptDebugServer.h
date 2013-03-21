@@ -93,13 +93,16 @@ public:
         virtual ~Task() { }
         virtual void run() = 0;
     };
-    static void interruptAndRun(PassOwnPtr<Task>, v8::Isolate* = 0);
+    static void interruptAndRun(PassOwnPtr<Task>, v8::Isolate*);
     void runPendingTasks();
 
     bool isPaused();
+    bool runningNestedMessageLoop() { return m_runningNestedMessageLoop; }
 
     v8::Local<v8::Value> functionScopes(v8::Handle<v8::Function>);
     v8::Local<v8::Value> getInternalProperties(v8::Handle<v8::Object>&);
+    v8::Local<v8::Value> setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue);
+
 
     virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage);
     virtual void clearCompiledScripts();
@@ -140,6 +143,7 @@ protected:
 private:
     class ScriptPreprocessor;
     OwnPtr<ScriptPreprocessor> m_scriptPreprocessor;
+    bool m_runningNestedMessageLoop;
 };
 
 } // namespace WebCore

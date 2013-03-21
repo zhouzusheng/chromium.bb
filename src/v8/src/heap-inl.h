@@ -98,19 +98,43 @@ MaybeObject* Heap::AllocateStringFromUtf8(Vector<const char> str,
 }
 
 
-MaybeObject* Heap::AllocateSymbol(Vector<const char> str,
-                                  int chars,
-                                  uint32_t hash_field) {
-  unibrow::Utf8InputBuffer<> buffer(str.start(),
-                                    static_cast<unsigned>(str.length()));
-  return AllocateInternalSymbol(&buffer, chars, hash_field);
+template<>
+bool inline Heap::IsOneByte(Vector<const char> str, int chars) {
+  // TODO(dcarney): incorporate Latin-1 check when Latin-1 is supported?
+  // ASCII only check.
+  return chars == str.length();
 }
 
 
-MaybeObject* Heap::AllocateAsciiSymbol(Vector<const char> str,
+template<>
+bool inline Heap::IsOneByte(String* str, int chars) {
+  return str->IsOneByteRepresentation();
+}
+
+
+MaybeObject* Heap::AllocateSymbolFromUtf8(Vector<const char> str,
+                                          int chars,
+                                          uint32_t hash_field) {
+  if (IsOneByte(str, chars)) {
+    return AllocateOneByteSymbol(Vector<const uint8_t>::cast(str), hash_field);
+  }
+  return AllocateInternalSymbol<false>(str, chars, hash_field);
+}
+
+
+template<typename T>
+MaybeObject* Heap::AllocateInternalSymbol(T t, int chars, uint32_t hash_field) {
+  if (IsOneByte(t, chars)) {
+    return AllocateInternalSymbol<true>(t, chars, hash_field);
+  }
+  return AllocateInternalSymbol<false>(t, chars, hash_field);
+}
+
+
+MaybeObject* Heap::AllocateOneByteSymbol(Vector<const uint8_t> str,
                                        uint32_t hash_field) {
   if (str.length() > SeqOneByteString::kMaxLength) {
-    return Failure::OutOfMemoryException();
+    return Failure::OutOfMemoryException(0x2);
   }
   // Compute map and object size.
   Map* map = ascii_symbol_map();
@@ -144,7 +168,7 @@ MaybeObject* Heap::AllocateAsciiSymbol(Vector<const char> str,
 MaybeObject* Heap::AllocateTwoByteSymbol(Vector<const uc16> str,
                                          uint32_t hash_field) {
   if (str.length() > SeqTwoByteString::kMaxLength) {
-    return Failure::OutOfMemoryException();
+    return Failure::OutOfMemoryException(0x3);
   }
   // Compute map and object size.
   Map* map = symbol_map();
@@ -239,8 +263,9 @@ MaybeObject* Heap::NumberFromInt32(
 
 MaybeObject* Heap::NumberFromUint32(
     uint32_t value, PretenureFlag pretenure) {
-  if ((int32_t)value >= 0 && Smi::IsValid((int32_t)value)) {
-    return Smi::FromInt((int32_t)value);
+  if (static_cast<int32_t>(value) >= 0 &&
+      Smi::IsValid(static_cast<int32_t>(value))) {
+    return Smi::FromInt(static_cast<int32_t>(value));
   }
   // Bypass NumberFromDouble to avoid various redundant checks.
   return AllocateHeapNumber(FastUI2D(value), pretenure);
@@ -608,20 +633,24 @@ void ExternalStringTable::Verify() {
     // TODO(yangguo): check that the object is indeed an external string.
     ASSERT(heap_->InNewSpace(obj));
     ASSERT(obj != HEAP->the_hole_value());
+#ifndef ENABLE_LATIN_1
     if (obj->IsExternalAsciiString()) {
       ExternalAsciiString* string = ExternalAsciiString::cast(obj);
       ASSERT(String::IsAscii(string->GetChars(), string->length()));
     }
+#endif
   }
   for (int i = 0; i < old_space_strings_.length(); ++i) {
     Object* obj = Object::cast(old_space_strings_[i]);
     // TODO(yangguo): check that the object is indeed an external string.
     ASSERT(!heap_->InNewSpace(obj));
     ASSERT(obj != HEAP->the_hole_value());
+#ifndef ENABLE_LATIN_1
     if (obj->IsExternalAsciiString()) {
       ExternalAsciiString* string = ExternalAsciiString::cast(obj);
       ASSERT(String::IsAscii(string->GetChars(), string->length()));
     }
+#endif
   }
 #endif
 }
@@ -641,6 +670,19 @@ void ExternalStringTable::ShrinkNewStrings(int position) {
     Verify();
   }
 #endif
+}
+
+
+void ErrorObjectList::Add(JSObject* object) {
+  list_.Add(object);
+}
+
+
+void ErrorObjectList::Iterate(ObjectVisitor* v) {
+  if (!list_.is_empty()) {
+    Object** start = &list_[0];
+    v->VisitPointers(start, start + list_.length());
+  }
 }
 
 
@@ -737,6 +779,18 @@ AlwaysAllocateScope::~AlwaysAllocateScope() {
   HEAP->always_allocate_scope_depth_--;
   ASSERT(HEAP->always_allocate_scope_depth_ == 0);
 }
+
+
+#ifdef VERIFY_HEAP
+NoWeakEmbeddedMapsVerificationScope::NoWeakEmbeddedMapsVerificationScope() {
+  HEAP->no_weak_embedded_maps_verification_scope_depth_++;
+}
+
+
+NoWeakEmbeddedMapsVerificationScope::~NoWeakEmbeddedMapsVerificationScope() {
+  HEAP->no_weak_embedded_maps_verification_scope_depth_--;
+}
+#endif
 
 
 void VerifyPointersVisitor::VisitPointers(Object** start, Object** end) {

@@ -4,18 +4,17 @@
 
 #include "cc/layer.h"
 
-#include "cc/active_animation.h"
+#include "cc/animation.h"
 #include "cc/animation_events.h"
 #include "cc/layer_animation_controller.h"
 #include "cc/layer_impl.h"
 #include "cc/layer_tree_host.h"
+#include "cc/layer_tree_impl.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebAnimationDelegate.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebLayerScrollClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
-#include <public/WebAnimationDelegate.h>
-#include <public/WebLayerScrollClient.h>
-#include <public/WebSize.h>
-
-using namespace std;
 
 namespace cc {
 
@@ -33,12 +32,9 @@ Layer::Layer()
     , m_ignoreSetNeedsCommit(false)
     , m_parent(0)
     , m_layerTreeHost(0)
-    , m_layerAnimationController(LayerAnimationController::create(this))
     , m_scrollable(false)
     , m_shouldScrollOnMainThread(false)
     , m_haveWheelEventHandlers(false)
-    , m_nonFastScrollableRegionChanged(false)
-    , m_touchEventHandlerRegionChanged(false)
     , m_anchorPoint(0.5, 0.5)
     , m_backgroundColor(0)
     , m_opacity(1.0)
@@ -65,7 +61,9 @@ Layer::Layer()
         m_layerId = s_nextLayerId++;
     }
 
-    addLayerAnimationObserver(m_layerAnimationController.get());
+    m_layerAnimationController = LayerAnimationController::create(m_layerId);
+    m_layerAnimationController->addObserver(this);
+    addLayerAnimationEventObserver(m_layerAnimationController.get());
 }
 
 Layer::~Layer()
@@ -73,6 +71,8 @@ Layer::~Layer()
     // Our parent should be holding a reference to us so there should be no
     // way for us to be destroyed while we still have a parent.
     DCHECK(!parent());
+
+    m_layerAnimationController->removeObserver(this);
 
     // Remove the parent reference from all children.
     removeAllChildren();
@@ -93,9 +93,10 @@ void Layer::setLayerTreeHost(LayerTreeHost* host)
     if (m_replicaLayer)
         m_replicaLayer->setLayerTreeHost(host);
 
-    // If this layer already has active animations, the host needs to be notified.
-    if (host && m_layerAnimationController->hasActiveAnimation())
-        host->didAddAnimation();
+    m_layerAnimationController->setAnimationRegistrar(host ? host->animationRegistrar() : 0);
+
+    if (host && m_layerAnimationController->hasAnyAnimation())
+        host->setNeedsCommit();
 }
 
 void Layer::setNeedsCommit()
@@ -126,6 +127,27 @@ bool Layer::blocksPendingCommit() const
     return false;
 }
 
+bool Layer::canClipSelf() const
+{
+    return false;
+}
+
+bool Layer::blocksPendingCommitRecursive() const
+{
+    if (blocksPendingCommit())
+        return true;
+    if (maskLayer() && maskLayer()->blocksPendingCommitRecursive())
+        return true;
+    if (replicaLayer() && replicaLayer()->blocksPendingCommitRecursive())
+        return true;
+    for (size_t i = 0; i < m_children.size(); ++i)
+    {
+        if (m_children[i]->blocksPendingCommitRecursive())
+            return true;
+    }
+    return false;
+}
+
 void Layer::setParent(Layer* layer)
 {
     DCHECK(!layer || !layer->hasAncestor(this));
@@ -146,7 +168,7 @@ bool Layer::hasAncestor(Layer* ancestor) const
 
 void Layer::addChild(scoped_refptr<Layer> child)
 {
-    insertChild(child, numChildren());
+    insertChild(child, m_children.size());
 }
 
 void Layer::insertChild(scoped_refptr<Layer> child, size_t index)
@@ -155,9 +177,8 @@ void Layer::insertChild(scoped_refptr<Layer> child, size_t index)
     child->setParent(this);
     child->m_stackingOrderChanged = true;
 
-    index = min(index, m_children.size());
-    LayerList::iterator iter = m_children.begin();
-    m_children.insert(iter + index, child);
+    index = std::min(index, m_children.size());
+    m_children.insert(m_children.begin() + index, child);
     setNeedsFullTreeSync();
 }
 
@@ -205,7 +226,7 @@ void Layer::replaceChild(Layer* reference, scoped_refptr<Layer> newLayer)
 
 int Layer::indexOfChild(const Layer* reference)
 {
-    for (size_t i = 0; i < m_children.size(); i++) {
+    for (size_t i = 0; i < m_children.size(); ++i) {
         if (m_children[i] == reference)
             return i;
     }
@@ -257,9 +278,14 @@ void Layer::setChildren(const LayerList& children)
         return;
 
     removeAllChildren();
-    size_t listSize = children.size();
-    for (size_t i = 0; i < listSize; i++)
+    for (size_t i = 0; i < children.size(); ++i)
         addChild(children[i]);
+}
+
+Layer* Layer::childAt(size_t index)
+{
+  DCHECK_LT(index, m_children.size());
+  return m_children[index].get();
 }
 
 void Layer::setAnchorPoint(const gfx::PointF& anchorPoint)
@@ -288,6 +314,7 @@ void Layer::setBackgroundColor(SkColor backgroundColor)
 
 void Layer::calculateContentsScale(
     float idealContentsScale,
+    bool animatingTransformToScreen,
     float* contentsScaleX,
     float* contentsScaleY,
     gfx::Size* contentBounds)
@@ -363,11 +390,6 @@ void Layer::setBackgroundFilters(const WebKit::WebFilterOperations& backgroundFi
         LayerTreeHost::setNeedsFilterContext(true);
 }
 
-bool Layer::needsDisplay() const
-{
-    return m_needsDisplay;
-}
-
 void Layer::setOpacity(float opacity)
 {
     if (m_opacity == opacity)
@@ -376,9 +398,14 @@ void Layer::setOpacity(float opacity)
     setNeedsCommit();
 }
 
+float Layer::opacity() const
+{
+    return m_opacity;
+}
+
 bool Layer::opacityIsAnimating() const
 {
-    return m_layerAnimationController->isAnimatingProperty(ActiveAnimation::Opacity);
+    return m_layerAnimationController->isAnimatingProperty(Animation::Opacity);
 }
 
 void Layer::setContentsOpaque(bool opaque)
@@ -386,7 +413,7 @@ void Layer::setContentsOpaque(bool opaque)
     if (m_contentsOpaque == opaque)
         return;
     m_contentsOpaque = opaque;
-    setNeedsDisplay();
+    setNeedsCommit();
 }
 
 void Layer::setPosition(const gfx::PointF& position)
@@ -413,9 +440,14 @@ void Layer::setTransform(const gfx::Transform& transform)
     setNeedsCommit();
 }
 
+const gfx::Transform& Layer::transform() const
+{
+    return m_transform;
+}
+
 bool Layer::transformIsAnimating() const
 {
-    return m_layerAnimationController->isAnimatingProperty(ActiveAnimation::Transform);
+    return m_layerAnimationController->isAnimatingProperty(Animation::Transform);
 }
 
 void Layer::setScrollOffset(gfx::Vector2d scrollOffset)
@@ -425,7 +457,7 @@ void Layer::setScrollOffset(gfx::Vector2d scrollOffset)
     m_scrollOffset = scrollOffset;
     if (m_layerScrollClient)
         m_layerScrollClient->didScroll();
-    setNeedsFullTreeSync();
+    setNeedsCommit();
 }
 
 void Layer::setMaxScrollOffset(gfx::Vector2d maxScrollOffset)
@@ -465,7 +497,6 @@ void Layer::setNonFastScrollableRegion(const Region& region)
     if (m_nonFastScrollableRegion == region)
         return;
     m_nonFastScrollableRegion = region;
-    m_nonFastScrollableRegionChanged = true;
     setNeedsCommit();
 }
 
@@ -474,7 +505,6 @@ void Layer::setTouchEventHandlerRegion(const Region& region)
     if (m_touchEventHandlerRegion == region)
         return;
     m_touchEventHandlerRegion = region;
-    m_touchEventHandlerRegionChanged = true;
 }
 
 void Layer::setDrawCheckerboardForMissingTiles(bool checkerboard)
@@ -521,14 +551,12 @@ void Layer::setIsDrawable(bool isDrawable)
 void Layer::setNeedsDisplayRect(const gfx::RectF& dirtyRect)
 {
     m_updateRect.Union(dirtyRect);
+    m_needsDisplay = true;
 
     // Simply mark the contents as dirty. For non-root layers, the call to
     // setNeedsCommit will schedule a fresh compositing pass.
     // For the root layer, setNeedsCommit has no effect.
-    if (!dirtyRect.IsEmpty())
-        m_needsDisplay = true;
-
-    if (drawsContent())
+    if (drawsContent() && !m_updateRect.IsEmpty())
         setNeedsCommit();
 }
 
@@ -580,19 +608,10 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     layer->setFilter(filter());
     layer->setBackgroundFilters(backgroundFilters());
     layer->setMasksToBounds(m_masksToBounds);
-    layer->setScrollable(m_scrollable);
     layer->setShouldScrollOnMainThread(m_shouldScrollOnMainThread);
     layer->setHaveWheelEventHandlers(m_haveWheelEventHandlers);
-    // Copying a Region is more expensive than most layer properties, since it involves copying two Vectors that may be
-    // arbitrarily large depending on page content, so we only push the property if it's changed.
-    if (m_nonFastScrollableRegionChanged) {
-        layer->setNonFastScrollableRegion(m_nonFastScrollableRegion);
-        m_nonFastScrollableRegionChanged = false;
-    }
-    if (m_touchEventHandlerRegionChanged) {
-        layer->setTouchEventHandlerRegion(m_touchEventHandlerRegion);
-        m_touchEventHandlerRegionChanged = false;
-    }
+    layer->setNonFastScrollableRegion(m_nonFastScrollableRegion);
+    layer->setTouchEventHandlerRegion(m_touchEventHandlerRegion);
     layer->setContentsOpaque(m_contentsOpaque);
     if (!opacityIsAnimating())
         layer->setOpacity(m_opacity);
@@ -601,11 +620,13 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     layer->setFixedToContainerLayer(m_fixedToContainerLayer);
     layer->setPreserves3D(preserves3D());
     layer->setUseParentBackfaceVisibility(m_useParentBackfaceVisibility);
-    layer->setScrollOffset(m_scrollOffset);
-    layer->setMaxScrollOffset(m_maxScrollOffset);
     layer->setSublayerTransform(m_sublayerTransform);
     if (!transformIsAnimating())
         layer->setTransform(m_transform);
+
+    layer->setScrollable(m_scrollable);
+    layer->setScrollOffset(m_scrollOffset);
+    layer->setMaxScrollOffset(m_maxScrollOffset);
 
     // If the main thread commits multiple times before the impl thread actually draws, then damage tracking
     // will become incorrect if we simply clobber the updateRect here. The LayerImpl's updateRect needs to
@@ -613,15 +634,22 @@ void Layer::pushPropertiesTo(LayerImpl* layer)
     m_updateRect.Union(layer->updateRect());
     layer->setUpdateRect(m_updateRect);
 
-    layer->setScrollDelta(layer->scrollDelta() - layer->sentScrollDelta());
-    layer->setSentScrollDelta(gfx::Vector2d());
+    if (layer->layerTreeImpl()->settings().implSidePainting) {
+        DCHECK(layer->layerTreeImpl()->IsPendingTree());
+        LayerImpl* active_twin = layer->layerTreeImpl()->FindActiveTreeLayerById(id());
+        // Update the scroll delta from the active layer, which may have
+        // adjusted its scroll delta prior to this pending layer being created.
+        // This code is identical to that in LayerImpl::setScrollDelta.
+        if (active_twin) {
+            DCHECK(layer->sentScrollDelta().IsZero());
+            layer->setScrollDelta(active_twin->scrollDelta() - active_twin->sentScrollDelta());
+        }
+    } else {
+        layer->setScrollDelta(layer->scrollDelta() - layer->sentScrollDelta());
+        layer->setSentScrollDelta(gfx::Vector2d());
+    }
 
     layer->setStackingOrderChanged(m_stackingOrderChanged);
-
-    if (maskLayer())
-        maskLayer()->pushPropertiesTo(layer->maskLayer());
-    if (replicaLayer())
-        replicaLayer()->pushPropertiesTo(layer->replicaLayer());
 
     m_layerAnimationController->pushAnimationUpdatesTo(layer->layerAnimationController());
 
@@ -679,8 +707,10 @@ void Layer::forceAutomaticRasterScaleToBeRecomputed()
 {
     if (!m_automaticallyComputeRasterScale)
         return;
+    if (!m_rasterScale)
+        return;
     m_rasterScale = 0;
-    setNeedsDisplay();
+    setNeedsCommit();
 }
 
 void Layer::setBoundsContainPageScale(bool boundsContainPageScale)
@@ -707,12 +737,7 @@ int Layer::id() const
     return m_layerId;
 }
 
-float Layer::opacity() const
-{
-    return m_opacity;
-}
-
-void Layer::setOpacityFromAnimation(float opacity)
+void Layer::OnOpacityAnimated(float opacity)
 {
     // This is called due to an ongoing accelerated animation. Since this animation is
     // also being run on the impl thread, there is no need to request a commit to push
@@ -720,12 +745,7 @@ void Layer::setOpacityFromAnimation(float opacity)
     m_opacity = opacity;
 }
 
-const gfx::Transform& Layer::transform() const
-{
-    return m_transform;
-}
-
-void Layer::setTransformFromAnimation(const gfx::Transform& transform)
+void Layer::OnTransformAnimated(const gfx::Transform& transform)
 {
     // This is called due to an ongoing accelerated animation. Since this animation is
     // also being run on the impl thread, there is no need to request a commit to push
@@ -733,7 +753,12 @@ void Layer::setTransformFromAnimation(const gfx::Transform& transform)
     m_transform = transform;
 }
 
-bool Layer::addAnimation(scoped_ptr <ActiveAnimation> animation)
+bool Layer::IsActive() const
+{
+    return true;
+}
+
+bool Layer::addAnimation(scoped_ptr <Animation> animation)
 {
     // WebCore currently assumes that accelerated animations will start soon
     // after the animation is added. However we cannot guarantee that if we do
@@ -752,10 +777,7 @@ bool Layer::addAnimation(scoped_ptr <ActiveAnimation> animation)
 #endif
 
     m_layerAnimationController->addAnimation(animation.Pass());
-    if (m_layerTreeHost) {
-        m_layerTreeHost->didAddAnimation();
-        setNeedsCommit();
-    }
+    setNeedsCommit();
     return true;
 }
 
@@ -783,25 +805,24 @@ void Layer::resumeAnimations(double monotonicTime)
     setNeedsCommit();
 }
 
-void Layer::setLayerAnimationController(scoped_ptr<LayerAnimationController> layerAnimationController)
+void Layer::setLayerAnimationController(scoped_refptr<LayerAnimationController> layerAnimationController)
 {
-    if (m_layerAnimationController)
-        removeLayerAnimationObserver(m_layerAnimationController.get());
-
-    m_layerAnimationController = layerAnimationController.Pass();
-    if (m_layerAnimationController) {
-        m_layerAnimationController->setClient(this);
-        m_layerAnimationController->setForceSync();
-        addLayerAnimationObserver(m_layerAnimationController.get());
-    }
+    removeLayerAnimationEventObserver(m_layerAnimationController.get());
+    m_layerAnimationController->removeObserver(this);
+    m_layerAnimationController = layerAnimationController;
+    m_layerAnimationController->setForceSync();
+    m_layerAnimationController->addObserver(this);
+    addLayerAnimationEventObserver(m_layerAnimationController.get());
     setNeedsCommit();
 }
 
-scoped_ptr<LayerAnimationController> Layer::releaseLayerAnimationController()
+scoped_refptr<LayerAnimationController> Layer::releaseLayerAnimationController()
 {
-    scoped_ptr<LayerAnimationController> toReturn = m_layerAnimationController.Pass();
-    m_layerAnimationController = LayerAnimationController::create(this);
-    return toReturn.Pass();
+    m_layerAnimationController->removeObserver(this);
+    scoped_refptr<LayerAnimationController> toReturn = m_layerAnimationController;
+    m_layerAnimationController = LayerAnimationController::create(id());
+    m_layerAnimationController->addObserver(this);
+    return toReturn;
 }
 
 bool Layer::hasActiveAnimation() const
@@ -811,7 +832,7 @@ bool Layer::hasActiveAnimation() const
 
 void Layer::notifyAnimationStarted(const AnimationEvent& event, double wallClockTime)
 {
-    FOR_EACH_OBSERVER(LayerAnimationObserver, m_layerAnimationObservers,
+    FOR_EACH_OBSERVER(LayerAnimationEventObserver, m_layerAnimationObservers,
                       OnAnimationStarted(event));
     if (m_layerAnimationDelegate)
         m_layerAnimationDelegate->notifyAnimationStarted(wallClockTime);
@@ -823,13 +844,13 @@ void Layer::notifyAnimationFinished(double wallClockTime)
         m_layerAnimationDelegate->notifyAnimationFinished(wallClockTime);
 }
 
-void Layer::addLayerAnimationObserver(LayerAnimationObserver* animationObserver)
+void Layer::addLayerAnimationEventObserver(LayerAnimationEventObserver* animationObserver)
 {
     if (!m_layerAnimationObservers.HasObserver(animationObserver))
         m_layerAnimationObservers.AddObserver(animationObserver);
 }
 
-void Layer::removeLayerAnimationObserver(LayerAnimationObserver* animationObserver)
+void Layer::removeLayerAnimationEventObserver(LayerAnimationEventObserver* animationObserver)
 {
     m_layerAnimationObservers.RemoveObserver(animationObserver);
 }

@@ -293,14 +293,14 @@ def DoInline(
     flat_text = rewrite_function(input_filepath, flat_text, distribution)
 
   flat_text = re.sub(
-      '<(?!script)[^>]+?src=(?P<quote>")(?P<filename>[^"\']*)\\1',
+      '<(?!script)(?:[^>]+?\s)src=(?P<quote>")(?P<filename>[^"\']*)\\1',
       SrcReplace, flat_text)
 
   # TODO(arv): Only do this inside <style> tags.
   flat_text = InlineCSSImages(flat_text)
 
   flat_text = re.sub(
-      '<link rel="icon".+?href=(?P<quote>")(?P<filename>[^"\']*)\\1',
+      '<link rel="icon"\s(?:[^>]+?\s)?href=(?P<quote>")(?P<filename>[^"\']*)\\1',
       SrcReplace, flat_text)
 
   if names_only:

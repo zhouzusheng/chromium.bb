@@ -556,7 +556,7 @@ public:
 
 } // namespace
 
-InspectorIndexedDBAgent::InspectorIndexedDBAgent(InstrumentingAgents* instrumentingAgents, InspectorState* state, InjectedScriptManager* injectedScriptManager, InspectorPageAgent* pageAgent)
+InspectorIndexedDBAgent::InspectorIndexedDBAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, InspectorPageAgent* pageAgent)
     : InspectorBaseAgent<InspectorIndexedDBAgent>("IndexedDB", instrumentingAgents, state)
     , m_injectedScriptManager(injectedScriptManager)
     , m_pageAgent(pageAgent)
@@ -652,7 +652,12 @@ void InspectorIndexedDBAgent::requestDatabaseNamesForFrame(ErrorString* errorStr
     v8::Context::Scope contextScope(context);
 #endif
 
-    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document);
+    ExceptionCode ec = 0;
+    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document, ec);
+    if (ec) {
+        requestCallback->sendFailure("Could not obtain database names.");
+        return;
+    }
     idbRequest->addEventListener(eventNames().successEvent, GetDatabaseNamesCallback::create(requestCallback, document->securityOrigin()->toString()), false);
 }
 

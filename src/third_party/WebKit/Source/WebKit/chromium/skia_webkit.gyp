@@ -42,10 +42,6 @@
           # Defines should be in single quotes and a comma must appear after every one.
           # DO NOT remove the define until you are ready to rebaseline, and
           # AFTER the flag has been removed from skia.gyp in Chromium.
-
-          'SK_DISABLE_DITHER_32BIT_GRADIENT',
-
-          'SK_DISABLE_DASHING_OPTIMIZATION',
         ],
       },
     },

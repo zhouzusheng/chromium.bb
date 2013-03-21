@@ -61,14 +61,24 @@ using namespace WebCore;
 
 namespace WebKit {
 
+static WebIDBFactory* s_webIDBFactory = 0;
+
+void setIDBFactory(WebIDBFactory* factory)
+{
+    s_webIDBFactory = factory;
+}
+
 PassRefPtr<IDBFactoryBackendInterface> IDBFactoryBackendProxy::create()
 {
     return adoptRef(new IDBFactoryBackendProxy());
 }
 
 IDBFactoryBackendProxy::IDBFactoryBackendProxy()
-    : m_webIDBFactory(webKitPlatformSupport()->idbFactory())
 {
+    if (s_webIDBFactory)
+        m_webIDBFactory = s_webIDBFactory;
+    else
+        m_webIDBFactory = webKitPlatformSupport()->idbFactory();
 }
 
 IDBFactoryBackendProxy::~IDBFactoryBackendProxy()
@@ -101,7 +111,7 @@ public:
     {
         MutexLocker locker(m_mutex);
         if (m_webWorkerBase)
-            m_webWorkerBase->postTaskForModeToWorkerContext(createCallbackTask(&didComplete, this, result), mode);
+            m_webWorkerBase->workerLoaderProxy()->postTaskForModeToWorkerContext(createCallbackTask(&didComplete, this, result), mode);
     }
 
 private:
@@ -153,7 +163,7 @@ private:
 bool IDBFactoryBackendProxy::allowIndexedDB(ScriptExecutionContext* context, const String& name, const WebSecurityOrigin& origin, PassRefPtr<IDBCallbacks> callbacks)
 {
     bool allowed;
-    ASSERT(context->isDocument() || context->isWorkerContext());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument() || context->isWorkerContext());
     if (context->isDocument()) {
         Document* document = static_cast<Document*>(context);
         WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
@@ -162,7 +172,7 @@ bool IDBFactoryBackendProxy::allowIndexedDB(ScriptExecutionContext* context, con
         allowed = !webView->permissionClient() || webView->permissionClient()->allowIndexedDB(webFrame, name, origin);
     } else {
         WorkerContext* workerContext = static_cast<WorkerContext*>(context);
-        WebWorkerBase* webWorkerBase = static_cast<WebWorkerBase*>(&workerContext->thread()->workerLoaderProxy());
+        WebWorkerBase* webWorkerBase = static_cast<WebWorkerBase*>(workerContext->thread()->workerLoaderProxy().toWebWorkerBase());
         WorkerRunLoop& runLoop = workerContext->thread()->runLoop();
 
         String mode = allowIndexedDBMode;
@@ -185,7 +195,7 @@ bool IDBFactoryBackendProxy::allowIndexedDB(ScriptExecutionContext* context, con
 
 static WebFrameImpl* getWebFrame(ScriptExecutionContext* context)
 {
-    ASSERT(context->isDocument() || context->isWorkerContext());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument() || context->isWorkerContext());
     if (context->isDocument()) {
         Document* document = static_cast<Document*>(context);
         return WebFrameImpl::fromFrame(document->frame());
@@ -202,20 +212,6 @@ void IDBFactoryBackendProxy::getDatabaseNames(PassRefPtr<IDBCallbacks> prpCallba
 
     WebFrameImpl* webFrame = getWebFrame(context);
     m_webIDBFactory->getDatabaseNames(new WebIDBCallbacksImpl(callbacks), origin, webFrame, dataDir);
-}
-
-
-// FIXME: Remove this method in https://bugs.webkit.org/show_bug.cgi?id=103923.
-void IDBFactoryBackendProxy::open(const String& name, int64_t version, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<IDBDatabaseCallbacks> prpDatabaseCallbacks, PassRefPtr<SecurityOrigin> securityOrigin, ScriptExecutionContext* context, const String& dataDir)
-{
-    RefPtr<IDBCallbacks> callbacks(prpCallbacks);
-    RefPtr<IDBDatabaseCallbacks> databaseCallbacks(prpDatabaseCallbacks);
-    WebSecurityOrigin origin(securityOrigin);
-    if (!allowIndexedDB(context, name, origin, callbacks))
-        return;
-
-    WebFrameImpl* webFrame = getWebFrame(context);
-    m_webIDBFactory->open(name, version, new WebIDBCallbacksImpl(callbacks), new WebIDBDatabaseCallbacksImpl(databaseCallbacks), origin, webFrame, dataDir);
 }
 
 void IDBFactoryBackendProxy::open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks> prpCallbacks, PassRefPtr<IDBDatabaseCallbacks> prpDatabaseCallbacks, PassRefPtr<SecurityOrigin> securityOrigin, ScriptExecutionContext* context, const String& dataDir)

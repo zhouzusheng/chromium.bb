@@ -34,7 +34,8 @@ class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
       const CryptoHandshakeMessage& message) = 0;
 };
 
-// A class for framing the crypto message that are exchanged in a QUIC session.
+// A class for framing the crypto messages that are exchanged in a QUIC
+// session.
 class NET_EXPORT_PRIVATE CryptoFramer {
  public:
   CryptoFramer();
@@ -57,6 +58,12 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   // false if there was an error, and true otherwise.
   bool ProcessInput(base::StringPiece input);
 
+  // Returns the number of bytes of buffered input data remaining to be
+  // parsed.
+  size_t InputBytesRemaining() const {
+    return buffer_.length();
+  }
+
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or NULL if there was an error.
   QuicData* ConstructHandshakeMessage(const CryptoHandshakeMessage& message);
@@ -69,7 +76,7 @@ class NET_EXPORT_PRIVATE CryptoFramer {
     error_ = error;
   }
 
-  // Represents the current state of the framing state machine.
+  // Represents the current state of the parsing state machine.
   enum CryptoFramerState {
     STATE_READING_TAG,
     STATE_READING_NUM_ENTRIES,

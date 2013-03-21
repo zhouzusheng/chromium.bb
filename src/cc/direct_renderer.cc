@@ -8,6 +8,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "cc/draw_quad.h"
 #include "cc/math_util.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
@@ -157,16 +158,15 @@ void DirectRenderer::decideRenderPassAllocationsForFrame(const RenderPassList& r
     }
 }
 
-void DirectRenderer::drawFrame(RenderPassList& renderPassesInDrawOrder, RenderPassIdHashMap& renderPassesById)
+void DirectRenderer::drawFrame(RenderPassList& renderPassesInDrawOrder)
 {
     TRACE_EVENT0("cc", "DirectRenderer::drawFrame");
-    HISTOGRAM_COUNTS("Renderer4.renderPassCount", renderPassesInDrawOrder.size());
+    UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount", renderPassesInDrawOrder.size());
 
     const RenderPass* rootRenderPass = renderPassesInDrawOrder.back();
     DCHECK(rootRenderPass);
 
     DrawingFrame frame;
-    frame.renderPassesById = &renderPassesById;
     frame.rootRenderPass = rootRenderPass;
     frame.rootDamageRect = capabilities().usingPartialSwap ? rootRenderPass->damage_rect : rootRenderPass->output_rect;
     frame.rootDamageRect.Intersect(gfx::Rect(gfx::Point(), viewportSize()));
@@ -177,7 +177,6 @@ void DirectRenderer::drawFrame(RenderPassList& renderPassesInDrawOrder, RenderPa
     finishDrawingFrame(frame);
 
     renderPassesInDrawOrder.clear();
-    renderPassesById.clear();
 }
 
 gfx::RectF DirectRenderer::computeScissorRectForRenderPass(const DrawingFrame& frame)

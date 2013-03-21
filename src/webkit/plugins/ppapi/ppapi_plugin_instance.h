@@ -44,14 +44,13 @@
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/ppb_gamepad_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
-#include "third_party/skia/include/core/SkRefCnt.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCanvas.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebCanvas.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/ppb_flash_impl.h"
 #include "webkit/plugins/ppapi/ppp_pdf.h"
 #include "webkit/plugins/webkit_plugins_export.h"
 
@@ -363,7 +362,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   virtual uint32_t GetAudioHardwareOutputBufferSize(PP_Instance instance)
       OVERRIDE;
   virtual PP_Var GetDefaultCharSet(PP_Instance instance) OVERRIDE;
-  virtual PP_Var GetFontFamilies(PP_Instance instance) OVERRIDE;
   virtual void NumberOfFindResultsChanged(PP_Instance instance,
                                           int32_t total,
                                           PP_Bool final_result) OVERRIDE;
@@ -373,7 +371,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                 PP_Bool fullscreen) OVERRIDE;
   virtual PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size)
       OVERRIDE;
-  virtual ::ppapi::thunk::PPB_Flash_API* GetFlashAPI() OVERRIDE;
   virtual ::ppapi::Resource* GetSingletonResource(PP_Instance instance,
       ::ppapi::SingletonResourceID id) OVERRIDE;
   virtual int32_t RequestInputEvents(PP_Instance instance,
@@ -382,8 +379,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
                                               uint32_t event_classes) OVERRIDE;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) OVERRIDE;
-  virtual void ClosePendingUserGesture(PP_Instance instance,
-                                       PP_TimeTicks timestamp);
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
@@ -463,11 +458,19 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   virtual unsigned prepareTexture(cc::ResourceUpdateQueue&) OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* context() OVERRIDE;
 
-  // Reset this instance as proxied. Resets cached interfaces to point to the
-  // proxy and re-sends DidCreate, DidChangeView, and HandleDocumentLoad (if
-  // necessary).
-  // This is for use with the NaCl proxy.
+  // Reset this instance as proxied. Assigns the instance a new module, resets
+  // cached interfaces to point to the out-of-process proxy and re-sends
+  // DidCreate, DidChangeView, and HandleDocumentLoad (if necessary).
+  // This should be used only when switching a trusted NaCl in-process instance
+  // to an untrusted NaCl out-of-process instance.
   PP_NaClResult ResetAsProxied(scoped_refptr<PluginModule> module);
+
+  // Checks whether this is a valid instance of the given module. After calling
+  // ResetAsProxied above, a NaCl plugin instance's module changes, so external
+  // hosts won't recognize it as a valid instance of the original module. This
+  // method fixes that be checking that either module_ or original_module_ match
+  // the given module.
+  bool IsValidInstanceOf(PluginModule* module);
 
  private:
   friend class PpapiUnittest;
@@ -758,9 +761,6 @@ class WEBKIT_PLUGINS_EXPORT PluginInstance :
   // Track pending user gestures so out-of-process plugins can respond to
   // a user gesture after it has been processed.
   PP_TimeTicks pending_user_gesture_;
-
-  // The Flash proxy is associated with the instance.
-  PPB_Flash_Impl flash_impl_;
 
   // We store the arguments so we can re-send them if we are reset to talk to
   // NaCl via the IPC NaCl proxy.

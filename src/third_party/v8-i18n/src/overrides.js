@@ -18,9 +18,40 @@
 
 
 // Save references to Intl objects and methods we use, for added security.
-var collator = Intl.Collator;
-var numberFormat = Intl.NumberFormat;
-var dateFormat = Intl.DateTimeFormat;
+var savedObjects = {
+  'collator': Intl.Collator,
+  'numberformat': Intl.NumberFormat,
+  'dateformatall': Intl.DateTimeFormat,
+  'dateformatdate': Intl.DateTimeFormat,
+  'dateformattime': Intl.DateTimeFormat
+};
+
+
+// Default (created with undefined locales and options parameters) collator,
+// number and date format instances. They'll be created as needed.
+var defaultObjects = {
+  'collator': undefined,
+  'numberformat': undefined,
+  'dateformatall': undefined,
+  'dateformatdate': undefined,
+  'dateformattime': undefined,
+};
+
+
+/**
+ * Returns cached or newly created instance of a given service.
+ * We cache only default instances (where no locales or options are provided).
+ */
+function cachedOrNewService(service, locales, options, defaults) {
+  var useOptions = (defaults === undefined) ? options : defaults;
+  if (locales === undefined && options === undefined) {
+    if (defaultObjects[service] === undefined) {
+      defaultObjects[service] = new savedObjects[service](locales, useOptions);
+    }
+    return defaultObjects[service];
+  }
+  return new savedObjects[service](locales, useOptions);
+}
 
 
 /**
@@ -29,8 +60,8 @@ var dateFormat = Intl.DateTimeFormat;
  */
 Object.defineProperty(String.prototype, 'localeCompare', {
   value: function(that, locales, options) {
-    // Call internal method.
-    return compare(new collator(locales, options), this, that);
+    var collator = cachedOrNewService('collator', locales, options);
+    return compare(collator, this, that);
   },
   writable: true,
   configurable: true,
@@ -44,8 +75,8 @@ Object.defineProperty(String.prototype, 'localeCompare', {
  */
 Object.defineProperty(Number.prototype, 'toLocaleString', {
   value: function(locales, options) {
-    // Call internal method.
-    return formatNumber(new numberFormat(locales, options), this);
+    var numberFormat = cachedOrNewService('numberformat', locales, options);
+    return formatNumber(numberFormat, this);
   },
   writable: true,
   configurable: true,
@@ -54,9 +85,9 @@ Object.defineProperty(Number.prototype, 'toLocaleString', {
 
 
 /**
- * Returns actual formatted date.
+ * Returns actual formatted date or fails if date parameter is invalid.
  */
-function toLocaleDateTime(date, locales, options, required, defaults) {
+function toLocaleDateTime(date, locales, options, required, defaults, service) {
   if (!(date instanceof Date)) {
     throw new TypeError('Method invoked on an object that is not Date.');
   }
@@ -66,8 +97,11 @@ function toLocaleDateTime(date, locales, options, required, defaults) {
   }
 
   var internalOptions = toDateTimeOptions(options, required, defaults);
-  // Call internal method.
-  return formatDate(new dateFormat(locales, internalOptions), date);
+
+  var dateFormat =
+      cachedOrNewService(service, locales, options, internalOptions);
+
+  return formatDate(dateFormat, date);
 }
 
 
@@ -78,7 +112,8 @@ function toLocaleDateTime(date, locales, options, required, defaults) {
  */
 Object.defineProperty(Date.prototype, 'toLocaleString', {
   value: function(locales, options) {
-    return toLocaleDateTime(this, locales, options, 'any', 'all');
+    return toLocaleDateTime(
+        this, locales, options, 'any', 'all', 'dateformatall');
   },
   writable: true,
   configurable: true,
@@ -93,7 +128,8 @@ Object.defineProperty(Date.prototype, 'toLocaleString', {
  */
 Object.defineProperty(Date.prototype, 'toLocaleDateString', {
   value: function(locales, options) {
-    return toLocaleDateTime(this, locales, options, 'date', 'date');
+    return toLocaleDateTime(
+        this, locales, options, 'date', 'date', 'dateformatdate');
   },
   writable: true,
   configurable: true,
@@ -108,7 +144,8 @@ Object.defineProperty(Date.prototype, 'toLocaleDateString', {
  */
 Object.defineProperty(Date.prototype, 'toLocaleTimeString', {
   value: function(locales, options) {
-    return toLocaleDateTime(this, locales, options, 'time', 'time');
+    return toLocaleDateTime(
+        this, locales, options, 'time', 'time', 'dateformattime');
   },
   writable: true,
   configurable: true,

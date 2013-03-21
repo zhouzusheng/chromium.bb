@@ -112,9 +112,9 @@ inline void copyLCharsFromUCharSource(LChar* destination, const UChar* source, s
     }
 
     const uintptr_t sourceLoadSize = 32; // Process 32 bytes (16 UChars) each iteration
-    const unsigned ucharsPerLoop = sourceLoadSize / sizeof(UChar);
+    const size_t ucharsPerLoop = sourceLoadSize / sizeof(UChar);
     if (length > ucharsPerLoop) {
-        const unsigned endLength = length - ucharsPerLoop + 1;
+        const size_t endLength = length - ucharsPerLoop + 1;
         for (; i < endLength; i += ucharsPerLoop) {
 #ifndef NDEBUG
             for (unsigned checkIndex = 0; checkIndex < ucharsPerLoop; ++checkIndex)
@@ -138,9 +138,8 @@ inline void copyLCharsFromUCharSource(LChar* destination, const UChar* source, s
     if (length >= (2 * memoryAccessSize) - 1) {
         // Prefix: align dst on 64 bits.
         const uintptr_t memoryAccessMask = memoryAccessSize - 1;
-        do {
+        while (!isAlignedTo<memoryAccessMask>(destination))
             *destination++ = static_cast<LChar>(*source++);
-        } while (!isAlignedTo<memoryAccessMask>(destination));
 
         // Vector interleaved unpack, we only store the lower 8 bits.
         const uintptr_t lengthLeft = end - destination;

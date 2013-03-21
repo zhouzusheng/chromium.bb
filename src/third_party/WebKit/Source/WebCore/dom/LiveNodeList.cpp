@@ -52,6 +52,14 @@ Node* LiveNodeListBase::rootNode() const
     return m_ownerNode.get();
 }
 
+ContainerNode* LiveNodeListBase::rootContainerNode() const
+{
+    Node* rootNode = this->rootNode();
+    if (!rootNode->isContainerNode())
+        return 0;
+    return toContainerNode(rootNode);
+}
+
 void LiveNodeListBase::invalidateCache() const
 {
     m_cachedItem = 0;
@@ -86,7 +94,7 @@ void LiveNodeListBase::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) con
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     NodeList::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_ownerNode);
+    info.addMember(m_ownerNode, "ownerNode");
     info.addWeakPointer(m_cachedItem);
 }
 

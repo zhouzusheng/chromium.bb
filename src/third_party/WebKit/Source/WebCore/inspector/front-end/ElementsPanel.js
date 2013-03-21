@@ -49,9 +49,13 @@ WebInspector.ElementsPanel = function()
 
     const initialSidebarWidth = 325;
     const minimumContentWidthPercent = 34;
-    this.createSidebarView(this.element, WebInspector.SidebarView.SidebarPosition.Right, initialSidebarWidth);
+    const initialSidebarHeight = 325;
+    const minimumContentHeightPercent = 34;
+    this.createSidebarView(this.element, WebInspector.SidebarView.SidebarPosition.End, initialSidebarWidth, initialSidebarHeight);
     this.splitView.setMinimumSidebarWidth(Preferences.minElementsSidebarWidth);
     this.splitView.setMinimumMainWidthPercent(minimumContentWidthPercent);
+    this.splitView.setMinimumSidebarHeight(Preferences.minElementsSidebarHeight);
+    this.splitView.setMinimumMainHeightPercent(minimumContentHeightPercent);
 
     this.contentElement = this.splitView.mainElement;
     this.contentElement.id = "elements-content";
@@ -78,25 +82,24 @@ WebInspector.ElementsPanel = function()
     this.sidebarPanes.styles = new WebInspector.StylesSidebarPane(this.sidebarPanes.computedStyle, this._setPseudoClassForNodeId.bind(this));
     this.sidebarPanes.metrics = new WebInspector.MetricsSidebarPane();
     this.sidebarPanes.properties = new WebInspector.PropertiesSidebarPane();
-    this.sidebarPanes.domBreakpoints = WebInspector.domBreakpointsSidebarPane;
+    this.sidebarPanes.domBreakpoints = WebInspector.domBreakpointsSidebarPane.createProxy(this);
     this.sidebarPanes.eventListeners = new WebInspector.EventListenersSidebarPane();
 
-    this.sidebarPanes.styles.onexpand = this.updateStyles.bind(this);
-    this.sidebarPanes.metrics.onexpand = this.updateMetrics.bind(this);
-    this.sidebarPanes.properties.onexpand = this.updateProperties.bind(this);
-    this.sidebarPanes.eventListeners.onexpand = this.updateEventListeners.bind(this);
-
-    this.sidebarPanes.styles.expanded = true;
+    this.sidebarPanes.styles.setShowCallback(this.updateStyles.bind(this, false));
+    this.sidebarPanes.metrics.setShowCallback(this.updateMetrics.bind(this));
+    this.sidebarPanes.properties.setShowCallback(this.updateProperties.bind(this));
+    this.sidebarPanes.eventListeners.setShowCallback(this.updateEventListeners.bind(this));
 
     this.sidebarPanes.styles.addEventListener("style edited", this._stylesPaneEdited, this);
     this.sidebarPanes.styles.addEventListener("style property toggled", this._stylesPaneEdited, this);
     this.sidebarPanes.metrics.addEventListener("metrics edited", this._metricsPaneEdited, this);
 
-    for (var pane in this.sidebarPanes) {
-        this.sidebarElement.appendChild(this.sidebarPanes[pane].element);
-        if (this.sidebarPanes[pane].onattach)
-            this.sidebarPanes[pane].onattach();
-    }
+    this.sidebarPaneView = new WebInspector.SidebarPaneGroup();
+    for (var pane in this.sidebarPanes)
+        this.sidebarPaneView.addPane(this.sidebarPanes[pane]);
+    this.sidebarPaneView.attachToPanel(this);
+
+    this.sidebarPanes.styles.expand();
 
     this._popoverHelper = new WebInspector.PopoverHelper(this.element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this));
     this._popoverHelper.setTimeout(0);
@@ -141,8 +144,6 @@ WebInspector.ElementsPanel.prototype = {
 
         if (!this.treeOutline.rootDOMNode)
             WebInspector.domAgent.requestDocument();
-
-        this.sidebarElement.insertBefore(this.sidebarPanes.domBreakpoints.element, this.sidebarPanes.eventListeners.element);
     },
 
     willHide: function()
@@ -153,11 +154,6 @@ WebInspector.ElementsPanel.prototype = {
 
         // Detach heavy component on hide
         this.contentElement.removeChild(this.treeOutline.element);
-
-        for (var pane in this.sidebarPanes) {
-            if (this.sidebarPanes[pane].willHide)
-                this.sidebarPanes[pane].willHide();
-        }
 
         WebInspector.Panel.prototype.willHide.call(this);
     },
@@ -258,7 +254,7 @@ WebInspector.ElementsPanel.prototype = {
             return;
         }
 
-        this.sidebarPanes.domBreakpoints.restoreBreakpoints();
+        WebInspector.domBreakpointsSidebarPane.restoreBreakpoints();
 
         /**
          * @this {WebInspector.ElementsPanel}
@@ -354,6 +350,8 @@ WebInspector.ElementsPanel.prototype = {
         contextMenu.appendSeparator();
         contextMenu.appendCheckboxItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Word wrap" : "Word Wrap"), toggleWordWrap.bind(this), WebInspector.settings.domWordWrap.get());
 
+        this.sidebarPaneView.populateContextMenu(contextMenu);
+
         contextMenu.show();
     },
 
@@ -392,7 +390,7 @@ WebInspector.ElementsPanel.prototype = {
     {
         // Add debbuging-related actions
         contextMenu.appendSeparator();
-        var pane = this.sidebarPanes.domBreakpoints;
+        var pane = WebInspector.domBreakpointsSidebarPane;
         pane.populateNodeContextMenu(node, contextMenu);
     },
 
@@ -523,6 +521,9 @@ WebInspector.ElementsPanel.prototype = {
         if (treeElement) {
             treeElement.highlightSearchResults(this._searchQuery);
             treeElement.reveal();
+            var matches = treeElement.listItemElement.getElementsByClassName("webkit-search-result");
+            if (matches.length)
+                matches[0].scrollIntoViewIfNeeded();
         }
     },
 
@@ -969,11 +970,14 @@ WebInspector.ElementsPanel.prototype = {
         collapse(selectedCrumb, true);
     },
 
+    /**
+     * @param {boolean=} forceUpdate
+     */
     updateStyles: function(forceUpdate)
     {
         var stylesSidebarPane = this.sidebarPanes.styles;
         var computedStylePane = this.sidebarPanes.computedStyle;
-        if ((!stylesSidebarPane.expanded && !computedStylePane.expanded) || !stylesSidebarPane.needsUpdate)
+        if ((!stylesSidebarPane.isShowing() && !computedStylePane.isShowing()) || !stylesSidebarPane.needsUpdate)
             return;
 
         stylesSidebarPane.update(this.selectedDOMNode(), forceUpdate);
@@ -983,7 +987,7 @@ WebInspector.ElementsPanel.prototype = {
     updateMetrics: function()
     {
         var metricsSidebarPane = this.sidebarPanes.metrics;
-        if (!metricsSidebarPane.expanded || !metricsSidebarPane.needsUpdate)
+        if (!metricsSidebarPane.isShowing() || !metricsSidebarPane.needsUpdate)
             return;
 
         metricsSidebarPane.update(this.selectedDOMNode());
@@ -993,7 +997,7 @@ WebInspector.ElementsPanel.prototype = {
     updateProperties: function()
     {
         var propertiesSidebarPane = this.sidebarPanes.properties;
-        if (!propertiesSidebarPane.expanded || !propertiesSidebarPane.needsUpdate)
+        if (!propertiesSidebarPane.isShowing() || !propertiesSidebarPane.needsUpdate)
             return;
 
         propertiesSidebarPane.update(this.selectedDOMNode());
@@ -1003,7 +1007,7 @@ WebInspector.ElementsPanel.prototype = {
     updateEventListeners: function()
     {
         var eventListenersSidebarPane = this.sidebarPanes.eventListeners;
-        if (!eventListenersSidebarPane.expanded || !eventListenersSidebarPane.needsUpdate)
+        if (!eventListenersSidebarPane.isShowing() || !eventListenersSidebarPane.needsUpdate)
             return;
 
         eventListenersSidebarPane.update(this.selectedDOMNode());

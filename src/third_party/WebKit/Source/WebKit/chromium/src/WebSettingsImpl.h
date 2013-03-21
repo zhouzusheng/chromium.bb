@@ -117,7 +117,6 @@ public:
     virtual void setLayoutFallbackWidth(int);
     virtual void setLoadsImagesAutomatically(bool);
     virtual void setLocalStorageEnabled(bool);
-    virtual void setLowLatencyRenderingEnabled(bool);
     virtual void setMaxUntiledLayerSize(WebSize);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
@@ -136,7 +135,9 @@ public:
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setPluginsEnabled(bool);
     virtual void setPrivilegedWebGLExtensionsEnabled(bool);
+    virtual void setRecordRenderingStats(bool);
     virtual void setRenderVSyncEnabled(bool);
+    virtual void setRenderVSyncNotificationEnabled(bool);
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setShouldDisplayCaptions(bool);
@@ -157,7 +158,9 @@ public:
     virtual void setTextAutosizingFontScaleFactor(float);
     virtual void setTextDirectionSubmenuInclusionBehaviorNeverIncluded();
     virtual void setTouchDragDropEnabled(bool);
+    virtual void setThreadedHTMLParser(bool);
     virtual void setUnifiedTextCheckerEnabled(bool);
+    virtual void setUnsafePluginPastingEnabled(bool);
     virtual void setUserStyleSheetLocation(const WebURL&);
     virtual void setUsesEncodingDetector(bool);
     virtual void setUsesPageCache(bool);
@@ -173,7 +176,7 @@ public:
     bool showPlatformLayerTree() const { return m_showPlatformLayerTree; }
     bool showPaintRects() const { return m_showPaintRects; }
     bool renderVSyncEnabled() const { return m_renderVSyncEnabled; }
-    bool lowLatencyRenderingEnabled() const { return m_lowLatencyRenderingEnabled; }
+    bool renderVSyncNotificationEnabled() const { return m_renderVSyncNotificationEnabled; }
     bool applyDeviceScaleFactorInCompositor() const;
     bool applyPageScaleFactorInCompositor() const;
     bool autoZoomFocusedNodeToLegibleScale() const { return m_autoZoomFocusedNodeToLegibleScale; }
@@ -181,6 +184,7 @@ public:
     bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool acceleratedAnimationEnabled() const { return m_acceleratedAnimationEnabled; }
+    bool recordRenderingStats() const { return m_recordRenderingStats; }
     WebSize defaultTileSize() const { return m_defaultTileSize; }
     WebSize maxUntiledLayerSize() const { return m_maxUntiledLayerSize; }
 
@@ -190,7 +194,7 @@ private:
     bool m_showPlatformLayerTree;
     bool m_showPaintRects;
     bool m_renderVSyncEnabled;
-    bool m_lowLatencyRenderingEnabled;
+    bool m_renderVSyncNotificationEnabled;
     bool m_viewportEnabled;
     bool m_gestureTapHighlightEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
@@ -198,6 +202,7 @@ private:
     bool m_doubleTapToZoomEnabled;
     bool m_perTilePaintingEnabled;
     bool m_acceleratedAnimationEnabled;
+    bool m_recordRenderingStats;
     WebSize m_defaultTileSize;
     WebSize m_maxUntiledLayerSize;
 };

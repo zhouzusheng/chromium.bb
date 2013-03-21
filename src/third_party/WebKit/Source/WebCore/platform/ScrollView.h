@@ -151,11 +151,18 @@ public:
     virtual int visibleWidth() const OVERRIDE { return visibleContentRect().width(); }
     virtual int visibleHeight() const OVERRIDE { return visibleContentRect().height(); }
 
+    // visibleContentRect().size() is computed from unscaledVisibleContentSize() divided by the value of visibleContentScaleFactor.
+    // visibleContentScaleFactor is usually 1, except when the setting applyPageScaleFactorInCompositor is true and the
+    // ScrollView is the main frame; in that case, visibleContentScaleFactor is equal to the page's pageScaleFactor.
+    // Ports that don't use pageScaleFactor can treat unscaledVisibleContentSize and visibleContentRect().size() as equivalent.
+    IntSize unscaledVisibleContentSize(bool includeScrollbars) const;
+    virtual float visibleContentScaleFactor() const { return 1; }
+
     // Functions for getting/setting the size webkit should use to layout the contents. By default this is the same as the visible
     // content size. Explicitly setting a layout size value will cause webkit to layout the contents using this size instead.
     IntSize layoutSize() const;
-    int layoutWidth() const;
-    int layoutHeight() const;
+    int layoutWidth() const { return layoutSize().width(); }
+    int layoutHeight() const { return layoutSize().height(); }
     IntSize fixedLayoutSize() const;
     void setFixedLayoutSize(const IntSize&);
     bool useFixedLayout() const;
@@ -170,7 +177,7 @@ public:
 
     // Functions for querying the current scrolled position (both as a point, a size, or as individual X and Y values).
     virtual IntPoint scrollPosition() const OVERRIDE { return visibleContentRect().location(); }
-    IntSize scrollOffset() const { return visibleContentRect().location() - IntPoint(); } // Gets the scrolled position as an IntSize. Convenient for adding to other sizes.
+    IntSize scrollOffset() const { return toIntSize(visibleContentRect().location()); } // Gets the scrolled position as an IntSize. Convenient for adding to other sizes.
     virtual IntPoint maximumScrollPosition() const OVERRIDE; // The maximum position we can be scrolled to.
     virtual IntPoint minimumScrollPosition() const OVERRIDE; // The minimum position we can be scrolled to.
     // Adjust the passed in scroll position to keep it between the minimum and maximum positions.
@@ -235,6 +242,9 @@ public:
     
     // Widget override to update our scrollbars and notify our contents of the resize.
     virtual void setFrameRect(const IntRect&);
+
+    // Widget override to notify our contents of a cliprect change.
+    virtual void clipRectChanged() OVERRIDE;
 
     // For platforms that need to hit test scrollbars from within the engine's event handlers (like Win32).
     Scrollbar* scrollbarAtPoint(const IntPoint& windowPoint);

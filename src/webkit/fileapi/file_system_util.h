@@ -27,17 +27,28 @@ extern const char kTestDir[];
 
 class WEBKIT_STORAGE_EXPORT VirtualPath {
  public:
-  // Use this instead of FilePath::BaseName when operating on virtual paths.
-  // FilePath::BaseName will get confused by ':' on Windows when it looks like a
-  // drive letter separator; this will treat it as just another character.
-  static FilePath BaseName(const FilePath& virtual_path);
+  static const FilePath::CharType kRoot[];
+  static const FilePath::CharType kSeparator;
 
-  // Likewise, use this instead of FilePath::GetComponents when operating on
+  // Use this instead of base::FilePath::BaseName when operating on virtual
+  // paths. base::FilePath::BaseName will get confused by ':' on Windows when it
+  // looks like a drive letter separator; this will treat it as just another
+  // character.
+  static base::FilePath BaseName(const base::FilePath& virtual_path);
+
+  // Likewise, use this instead of base::FilePath::GetComponents when operating on
   // virtual paths.
   // Note that this assumes very clean input, with no leading slash, and it will
   // not evaluate '.' or '..' components.
-  static void GetComponents(const FilePath& path,
-      std::vector<FilePath::StringType>* components);
+  static void GetComponents(const base::FilePath& path,
+      std::vector<base::FilePath::StringType>* components);
+
+  // Returns a path name ensuring that it begins with kRoot and all path
+  // separators are forward slashes /.
+  static FilePath::StringType GetNormalizedFilePath(const FilePath& path);
+
+  // Returns true if the given path begins with kRoot.
+  static bool IsAbsolute(const FilePath::StringType& path);
 };
 
 // Returns the root URI of the filesystem that can be specified by a pair of
@@ -91,6 +102,12 @@ WEBKIT_STORAGE_EXPORT GURL GetOriginURLFromIdentifier(
 // Returns an empty string if the |type| is invalid.
 WEBKIT_STORAGE_EXPORT std::string GetFileSystemTypeString(FileSystemType type);
 
+// Sets type to FileSystemType enum that corresponds to the string name.
+// Returns false if the |type_string| is invalid.
+WEBKIT_STORAGE_EXPORT bool GetFileSystemPublicType(
+    std::string type_string,
+    WebKit::WebFileSystem::Type* type);
+
 // Encodes |file_path| to a string.
 // Following conditions should be held:
 //  - StringToFilePath(FilePathToString(path)) == path
@@ -99,10 +116,10 @@ WEBKIT_STORAGE_EXPORT std::string GetFileSystemTypeString(FileSystemType type);
 //
 // TODO(tzik): Replace CreateFilePath and FilePathToString in
 // third_party/leveldatabase/env_chromium.cc with them.
-WEBKIT_STORAGE_EXPORT std::string FilePathToString(const FilePath& file_path);
+WEBKIT_STORAGE_EXPORT std::string FilePathToString(const base::FilePath& file_path);
 
 // Decode a file path from |file_path_string|.
-WEBKIT_STORAGE_EXPORT FilePath StringToFilePath(
+WEBKIT_STORAGE_EXPORT base::FilePath StringToFilePath(
     const std::string& file_path_string);
 
 // File error conversion
@@ -122,6 +139,14 @@ WEBKIT_STORAGE_EXPORT std::string GetIsolatedFileSystemName(
 WEBKIT_STORAGE_EXPORT bool CrackIsolatedFileSystemName(
     const std::string& filesystem_name,
     std::string* filesystem_id);
+
+// Returns the root URI for an isolated filesystem for origin |origin_url|
+// and |filesystem_id|. If the |optional_root_name| is given the resulting
+// root URI will point to the subfolder within the isolated filesystem.
+WEBKIT_STORAGE_EXPORT std::string GetIsolatedFileSystemRootURIString(
+    const GURL& origin_url,
+    const std::string& filesystem_id,
+    const std::string& optional_root_name);
 
 }  // namespace fileapi
 

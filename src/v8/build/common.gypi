@@ -32,6 +32,7 @@
     'use_system_v8%': 0,
     'msvs_use_common_release': 0,
     'gcc_version%': 'unknown',
+    'CXX%': '${CXX:-$(which g++)}',  # Used to assemble a shell command.
     'v8_compress_startup_data%': 'off',
     'v8_target_arch%': '<(target_arch)',
 
@@ -51,6 +52,13 @@
     'v8_can_use_vfp2_instructions%': 'false',
     'v8_can_use_vfp3_instructions%': 'false',
 
+    # Setting 'v8_can_use_vfp32dregs' to 'true' will cause V8 to use the VFP
+    # registers d16-d31 in the generated code, both in the snapshot and for the
+    # ARM target. Leaving the default value of 'false' will avoid the use of
+    # these registers in the snapshot and use CPU feature probing when running
+    # on the target.
+    'v8_can_use_vfp32dregs%': 'false',
+
     # Similar to vfp but on MIPS.
     'v8_can_use_fpu_instructions%': 'true',
 
@@ -66,7 +74,11 @@
     # Default arch variant for MIPS.
     'mips_arch_variant%': 'mips32r2',
 
+    'v8_enable_latin_1%': 0,
+
     'v8_enable_debugger_support%': 1,
+
+    'v8_enable_backtrace%': 0,
 
     'v8_enable_disassembler%': 0,
 
@@ -88,7 +100,6 @@
 
     'v8_use_snapshot%': 'true',
     'host_os%': '<(OS)',
-    'v8_use_liveobjectlist%': 'false',
     'werror%': '-Werror',
 
     # With post mortem support enabled, metadata is embedded into libv8 that
@@ -105,6 +116,9 @@
   },
   'target_defaults': {
     'conditions': [
+      ['v8_enable_latin_1==1', {
+        'defines': ['ENABLE_LATIN_1',],
+      }],
       ['v8_enable_debugger_support==1', {
         'defines': ['ENABLE_DEBUGGER_SUPPORT',],
       }],
@@ -160,7 +174,7 @@
           [ 'v8_use_arm_eabi_hardfloat=="true"', {
             'defines': [
               'USE_EABI_HARDFLOAT=1',
-              'CAN_USE_VFP3_INSTRUCTIONS',
+              'CAN_USE_VFP2_INSTRUCTIONS',
             ],
             'target_conditions': [
               ['_toolset=="target"', {
@@ -170,6 +184,11 @@
           }, {
             'defines': [
               'USE_EABI_HARDFLOAT=0',
+            ],
+          }],
+          [ 'v8_can_use_vfp32dregs=="true"', {
+            'defines': [
+              'CAN_USE_VFP32DREGS',
             ],
           }],
         ],
@@ -184,7 +203,7 @@
           'V8_TARGET_ARCH_MIPS',
         ],
         'variables': {
-          'mipscompiler': '<!($(echo ${CXX:-$(which g++)}) -v 2>&1 | grep -q "^Target: mips" && echo "yes" || echo "no")',
+          'mipscompiler': '<!($(echo <(CXX)) -v 2>&1 | grep -q "^Target: mips" && echo "yes" || echo "no")',
         },
         'conditions': [
           ['mipscompiler=="yes"', {
@@ -250,14 +269,6 @@
         },
         'msvs_configuration_platform': 'x64',
       }],  # v8_target_arch=="x64"
-      ['v8_use_liveobjectlist=="true"', {
-        'defines': [
-          'ENABLE_DEBUGGER_SUPPORT',
-          'INSPECTOR',
-          'OBJECT_PRINT',
-          'LIVEOBJECTLIST',
-        ],
-      }],
       ['v8_compress_startup_data=="bz2"', {
         'defines': [
           'COMPRESS_STARTUP_DATA_BZ2',
@@ -310,7 +321,7 @@
           }],
           ['_toolset=="target"', {
             'variables': {
-              'm32flag': '<!((echo | $(echo ${CXX_target:-${CXX:-$(which g++)}}) -m32 -E - > /dev/null 2>&1) && echo "-m32" || true)',
+              'm32flag': '<!((echo | $(echo ${CXX_target:-<(CXX)}) -m32 -E - > /dev/null 2>&1) && echo "-m32" || true)',
               'clang%': 0,
             },
             'conditions': [
@@ -367,6 +378,10 @@
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd"', {
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                         '-Wnon-virtual-dtor', '-Woverloaded-virtual' ],
+          }],
+          ['OS=="linux" and v8_enable_backtrace==1', {
+            # Support for backtrace_symbols.
+            'ldflags': [ '-rdynamic' ],
           }],
           ['OS=="android"', {
             'variables': {

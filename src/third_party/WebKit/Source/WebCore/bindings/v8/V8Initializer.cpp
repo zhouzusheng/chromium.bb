@@ -40,18 +40,18 @@
 #include "V8History.h"
 #include "V8Location.h"
 #include "V8PerContextData.h"
-#include <v8.h>
+#include <v8-debug.h>
 #include <wtf/RefPtr.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data)
+static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v8::Isolate* isolate)
 {
     WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
     if (V8DOMWindow::info.equals(type)) {
-        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(isolate));
         if (windowWrapper.IsEmpty())
             return 0;
         return V8DOMWindow::toNative(windowWrapper)->frame();
@@ -97,14 +97,23 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
 
 static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8::AccessType type, v8::Local<v8::Value> data)
 {
-    Frame* target = findFrame(host, data);
+    Frame* target = findFrame(host, data, v8::Isolate::GetCurrent());
     if (!target)
         return;
     DOMWindow* targetWindow = target->document()->domWindow();
     targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(activeDOMWindow(BindingState::instance())));
 }
 
-void V8Initializer::initializeMainThreadIfNeeded()
+static void initializeV8Common()
+{
+    v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
+    v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
+    v8::V8::IgnoreOutOfMemoryException();
+
+    v8::Debug::SetLiveEditEnabled(false);
+}
+
+void V8Initializer::initializeMainThreadIfNeeded(v8::Isolate* isolate)
 {
     ASSERT(isMainThread());
 
@@ -113,20 +122,15 @@ void V8Initializer::initializeMainThreadIfNeeded()
         return;
     initialized = true;
 
-    v8::V8::IgnoreOutOfMemoryException();
+    initializeV8Common();
+
     v8::V8::SetFatalErrorHandler(reportFatalErrorInMainThread);
-    v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
-    v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
     v8::V8::AddMessageListener(messageHandlerInMainThread);
     v8::V8::SetFailedAccessCheckCallbackFunction(failedAccessCheckCallbackInMainThread);
 #if ENABLE(JAVASCRIPT_DEBUGGER)
     ScriptProfiler::initialize();
 #endif
-    V8PerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
-
-    // FIXME: Remove the following 2 lines when V8 default has changed.
-    const char es5ReadonlyFlag[] = "--es5_readonly";
-    v8::V8::SetFlagsFromString(es5ReadonlyFlag, sizeof(es5ReadonlyFlag));
+    V8PerIsolateData::ensureInitialized(isolate);
 }
 
 static void reportFatalErrorInWorker(const char* location, const char* message)
@@ -157,25 +161,19 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
 
 static const int kWorkerMaxStackSize = 500 * 1024;
 
-void V8Initializer::initializeWorker()
+void V8Initializer::initializeWorker(v8::Isolate* isolate)
 {
+    initializeV8Common();
+
     v8::V8::AddMessageListener(messageHandlerInWorker);
-    v8::V8::IgnoreOutOfMemoryException();
     v8::V8::SetFatalErrorHandler(reportFatalErrorInWorker);
-
-    v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
-    v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
-
-    // FIXME: Remove the following 2 lines when V8 default has changed.
-    const char es5ReadonlyFlag[] = "--es5_readonly";
-    v8::V8::SetFlagsFromString(es5ReadonlyFlag, sizeof(es5ReadonlyFlag));
 
     v8::ResourceConstraints resourceConstraints;
     uint32_t here;
     resourceConstraints.set_stack_limit(&here - kWorkerMaxStackSize / sizeof(uint32_t*));
     v8::SetResourceConstraints(&resourceConstraints);
 
-    V8PerIsolateData::ensureInitialized(v8::Isolate::GetCurrent());
+    V8PerIsolateData::ensureInitialized(isolate);
 }
 
 } // namespace WebCore

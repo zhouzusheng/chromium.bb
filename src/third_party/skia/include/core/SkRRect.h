@@ -103,6 +103,9 @@ public:
     inline bool isSimple() const { return kSimple_Type == this->getType(); }
     inline bool isComplex() const { return kComplex_Type == this->getType(); }
 
+    SkScalar width() const { return fRect.width(); }
+    SkScalar height() const { return fRect.height(); }
+
     /**
      * Set this RR to the empty rectangle (0,0,0,0) with 0 x & y radii.
      */
@@ -216,6 +219,35 @@ public:
      *  edges of the corners are considered to be inside.
      */
     bool contains(SkScalar x, SkScalar y) const;
+
+    /**
+     *  Call inset on the bounds, and adjust the radii to reflect what happens
+     *  in stroking: If the corner is sharp (no curvature), leave it alone,
+     *  otherwise we grow/shrink the radii by the amount of the inset. If a
+     *  given radius becomes negative, it is pinned to 0.
+     *
+     *  It is valid for dst == this.
+     */
+    void inset(SkScalar dx, SkScalar dy, SkRRect* dst) const;
+
+    void inset(SkScalar dx, SkScalar dy) {
+        this->inset(dx, dy, this);
+    }
+
+    /**
+     *  Call outset on the bounds, and adjust the radii to reflect what happens
+     *  in stroking: If the corner is sharp (no curvature), leave it alone,
+     *  otherwise we grow/shrink the radii by the amount of the inset. If a
+     *  given radius becomes negative, it is pinned to 0.
+     *
+     *  It is valid for dst == this.
+     */
+    void outset(SkScalar dx, SkScalar dy, SkRRect* dst) const {
+        this->inset(-dx, -dy, dst);
+    }
+    void outset(SkScalar dx, SkScalar dy) {
+        this->inset(-dx, -dy, this);
+    }
 
     SkDEBUGCODE(void validate() const;)
 

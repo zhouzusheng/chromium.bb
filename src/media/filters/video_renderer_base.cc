@@ -263,6 +263,12 @@ void VideoRendererBase::ThreadMain() {
   uint32 frames_dropped = 0;
 
   for (;;) {
+    base::AutoLock auto_lock(lock_);
+
+    // Thread exit condition.
+    if (state_ == kStopped)
+      return;
+
     if (frames_dropped > 0) {
       PipelineStatistics statistics;
       statistics.video_frames_dropped = frames_dropped;
@@ -270,12 +276,6 @@ void VideoRendererBase::ThreadMain() {
 
       frames_dropped = 0;
     }
-
-    base::AutoLock auto_lock(lock_);
-
-    // Thread exit condition.
-    if (state_ == kStopped)
-      return;
 
     // Remain idle as long as we're not playing.
     if (state_ != kPlaying || playback_rate_ == 0) {
@@ -325,6 +325,43 @@ void VideoRendererBase::ThreadMain() {
     // At this point we've rendered |current_frame_| for the proper amount
     // of time and also have the next frame that ready for rendering.
 
+    // Check to see if we have any ready frames that we can drop if they've
+    // already expired.
+    if (drop_frames_) {
+      while (!ready_frames_.empty()) {
+        // Can't drop anything if we're at the end.
+        if (ready_frames_.front()->IsEndOfStream())
+          break;
+
+        base::TimeDelta remaining_time =
+            ready_frames_.front()->GetTimestamp() - get_time_cb_.Run();
+
+        // Since we waited/slept if we still had time (see above). In theory,
+        // the |remaining_time| here should be either:
+        // 1) 0, the frame is ready to be rendered right now, or
+        // 2) < 0, the frame is late and should be dropped.
+        // In reality, the timer is never perfect and has errors. Therefore, for
+        // frames that are actually not late, the |remaining_time| here actually
+        // fluctuates around 0. Taking this into account, we allow frames to be
+        // rendered if they are only slightly late (not more than
+        // kMaxTimerErrorAllowedInMs ms).
+        static const int kMaxTimerErrorAllowedInMs = 30;
+        if (remaining_time.InMilliseconds() + kMaxTimerErrorAllowedInMs >= 0)
+          break;
+
+        // Frame dropped: read again.
+        ++frames_dropped;
+        ready_frames_.pop_front();
+        message_loop_->PostTask(FROM_HERE, base::Bind(
+            &VideoRendererBase::AttemptRead, this));
+      }
+    }
+
+    // Continue waiting if all |ready_frames_| are dropped.
+    if (ready_frames_.empty()) {
+      frame_available_.TimedWait(kIdleTimeDelta);
+      continue;
+    }
 
     // If the next frame is end of stream then we are truly at the end of the
     // video stream.
@@ -340,37 +377,11 @@ void VideoRendererBase::ThreadMain() {
       continue;
     }
 
-    // We cannot update |current_frame_| until we've completed the pending
-    // paint. Furthermore, the pending paint might be really slow: check to
-    // see if we have any ready frames that we can drop if they've already
-    // expired.
     if (pending_paint_) {
-      while (!ready_frames_.empty()) {
-        // Can't drop anything if we're at the end.
-        if (ready_frames_.front()->IsEndOfStream())
-          break;
-
-        base::TimeDelta remaining_time =
-            ready_frames_.front()->GetTimestamp() - get_time_cb_.Run();
-
-        // Still a chance we can render the frame!
-        if (remaining_time.InMicroseconds() > 0)
-          break;
-
-        if (!drop_frames_)
-          break;
-
-        // Frame dropped: read again.
-        ++frames_dropped;
-        ready_frames_.pop_front();
-        message_loop_->PostTask(FROM_HERE, base::Bind(
-            &VideoRendererBase::AttemptRead, this));
-      }
       // Continue waiting for the current paint to finish.
       frame_available_.TimedWait(kIdleTimeDelta);
       continue;
     }
-
 
     // Congratulations! You've made it past the video frame timing gauntlet.
     //
@@ -461,7 +472,8 @@ void VideoRendererBase::PutCurrentFrame(scoped_refptr<VideoFrame> frame) {
 
 VideoRendererBase::~VideoRendererBase() {
   base::AutoLock auto_lock(lock_);
-  DCHECK(state_ == kUninitialized || state_ == kStopped) << state_;
+  CHECK(state_ == kUninitialized || state_ == kStopped) << state_;
+  CHECK_EQ(thread_, base::kNullThreadHandle);
 }
 
 void VideoRendererBase::FrameReady(VideoDecoder::Status status,

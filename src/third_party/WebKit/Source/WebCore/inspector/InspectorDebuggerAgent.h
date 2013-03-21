@@ -76,6 +76,7 @@ public:
     virtual void restore();
 
     bool isPaused();
+    bool runningNestedMessageLoop();
     void addMessageToConsole(MessageSource, MessageType);
 
     // Part of the protocol.
@@ -112,6 +113,7 @@ public:
     void compileScript(ErrorString*, const String& expression, const String& sourceURL, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage);
     void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown);
     virtual void setOverlayMessage(ErrorString*, const String*);
+    virtual void setVariableValue(ErrorString*, const String* in_callFrame, const String* in_functionObjectId, int in_scopeNumber, const String& in_variableName, const RefPtr<InspectorObject>& in_newValue);
 
     void schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<InspectorObject> data);
     void cancelPauseOnNextStatement();
@@ -123,6 +125,8 @@ public:
         virtual ~Listener() { }
         virtual void debuggerWasEnabled() = 0;
         virtual void debuggerWasDisabled() = 0;
+        virtual void stepInto() = 0;
+        virtual void didPause() = 0;
     };
     void setListener(Listener* listener) { m_listener = listener; }
 
@@ -131,7 +135,7 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
-    InspectorDebuggerAgent(InstrumentingAgents*, InspectorState*, InjectedScriptManager*);
+    InspectorDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
 
     virtual void startListeningScriptDebugServer() = 0;
     virtual void stopListeningScriptDebugServer() = 0;

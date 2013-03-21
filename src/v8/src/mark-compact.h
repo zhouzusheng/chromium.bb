@@ -423,6 +423,10 @@ class CodeFlusher {
     if (GetNextCandidate(shared_info) == NULL) {
       SetNextCandidate(shared_info, shared_function_info_candidates_head_);
       shared_function_info_candidates_head_ = shared_info;
+    } else {
+      // TODO(mstarzinger): Active in release mode to flush out problems.
+      // Should be turned back into an ASSERT or removed completely.
+      CHECK(ContainsCandidate(shared_info));
     }
   }
 
@@ -433,6 +437,8 @@ class CodeFlusher {
       jsfunction_candidates_head_ = function;
     }
   }
+
+  bool ContainsCandidate(SharedFunctionInfo* shared_info);
 
   void EvictCandidate(SharedFunctionInfo* shared_info);
   void EvictCandidate(JSFunction* function);
@@ -588,18 +594,28 @@ class MarkCompactCollector {
   enum SweeperType {
     CONSERVATIVE,
     LAZY_CONSERVATIVE,
+    PARALLEL_CONSERVATIVE,
     PRECISE
+  };
+
+  enum SweepingParallelism {
+    SWEEP_SEQUENTIALLY,
+    SWEEP_IN_PARALLEL
   };
 
 #ifdef VERIFY_HEAP
   void VerifyMarkbitsAreClean();
   static void VerifyMarkbitsAreClean(PagedSpace* space);
   static void VerifyMarkbitsAreClean(NewSpace* space);
+  void VerifyWeakEmbeddedMapsInOptimizedCode();
 #endif
 
   // Sweep a single page from the given space conservatively.
   // Return a number of reclaimed bytes.
-  static intptr_t SweepConservatively(PagedSpace* space, Page* p);
+  template<SweepingParallelism type>
+  static intptr_t SweepConservatively(PagedSpace* space,
+                                      FreeList* free_list,
+                                      Page* p);
 
   INLINE(static bool ShouldSkipEvacuationSlotRecording(Object** anchor)) {
     return Page::FromAddress(reinterpret_cast<Address>(anchor))->
@@ -665,6 +681,24 @@ class MarkCompactCollector {
 
   MarkingParity marking_parity() { return marking_parity_; }
 
+  // Concurrent and parallel sweeping support.
+  void SweepInParallel(PagedSpace* space,
+                       FreeList* private_free_list,
+                       FreeList* free_list);
+
+  void WaitUntilSweepingCompleted();
+
+  intptr_t StealMemoryFromSweeperThreads(PagedSpace* space);
+
+  bool AreSweeperThreadsActivated();
+
+  bool IsConcurrentSweepingInProgress();
+
+  // Parallel marking support.
+  void MarkInParallel();
+
+  void WaitUntilMarkingCompleted();
+
  private:
   MarkCompactCollector();
   ~MarkCompactCollector();
@@ -673,6 +707,7 @@ class MarkCompactCollector {
   void RemoveDeadInvalidatedCode();
   void ProcessInvalidatedCode(ObjectVisitor* visitor);
 
+  void StartSweeperThreads();
 
 #ifdef DEBUG
   enum CollectorState {
@@ -791,9 +826,12 @@ class MarkCompactCollector {
 
   // Map transitions from a live map to a dead map must be killed.
   // We replace them with a null descriptor, with the same key.
-  void ClearNonLiveTransitions();
+  void ClearNonLiveReferences();
   void ClearNonLivePrototypeTransitions(Map* map);
   void ClearNonLiveMapTransitions(Map* map, MarkBit map_mark);
+
+  void ClearAndDeoptimizeDependentCodes(Map* map);
+  void ClearNonLiveDependentCodes(Map* map);
 
   // Marking detaches initial maps from SharedFunctionInfo objects
   // to make this reference weak. We need to reattach initial maps

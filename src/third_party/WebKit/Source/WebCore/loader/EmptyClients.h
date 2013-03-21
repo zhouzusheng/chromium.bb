@@ -159,7 +159,7 @@ public:
     virtual void print(Frame*) { }
 
 #if ENABLE(SQL_DATABASE)
-    virtual void exceededDatabaseQuota(Frame*, const String&) { }
+    virtual void exceededDatabaseQuota(Frame*, const String&, DatabaseDetails) { }
 #endif
 
     virtual void reachedMaxAppCacheSize(int64_t) { }
@@ -441,7 +441,9 @@ public:
     virtual void respondToChangedContents() { }
     virtual void respondToChangedSelection(Frame*) { }
     virtual void didEndEditing() { }
+    virtual void willWriteSelectionToPasteboard(Range*) { }
     virtual void didWriteSelectionToPasteboard() { }
+    virtual void getClientPasteboardDataForRange(Range*, Vector<String>&, Vector<RefPtr<SharedBuffer> >&) { }
     virtual void didSetSelectionTypesForPasteboard() { }
 
     virtual void registerUndoStep(PassRefPtr<UndoStep>) OVERRIDE;

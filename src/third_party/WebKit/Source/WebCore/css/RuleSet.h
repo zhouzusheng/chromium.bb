@@ -37,6 +37,14 @@ enum AddRuleFlags {
     RuleCanUseFastCheckSelector   = 1 << 1,
     RuleIsInRegionRule            = 1 << 2,
 };
+    
+enum PropertyWhitelistType {
+    PropertyWhitelistNone   = 0,
+    PropertyWhitelistRegion,
+#if ENABLE(VIDEO_TRACK)
+    PropertyWhitelistCue
+#endif
+};
 
 class CSSSelector;
 class ContainerNode;
@@ -51,7 +59,7 @@ public:
 
     unsigned position() const { return m_position; }
     StyleRule* rule() const { return m_rule; }
-    CSSSelector* selector() const { return m_rule->selectorList().selectorAt(m_selectorIndex); }
+    const CSSSelector* selector() const { return m_rule->selectorList().selectorAt(m_selectorIndex); }
     unsigned selectorIndex() const { return m_selectorIndex; }
 
     bool hasFastCheckableSelector() const { return m_hasFastCheckableSelector; }
@@ -61,8 +69,7 @@ public:
     unsigned specificity() const { return m_specificity; }
     unsigned linkMatchType() const { return m_linkMatchType; }
     bool hasDocumentSecurityOrigin() const { return m_hasDocumentSecurityOrigin; }
-    bool isInRegionRule() const { return m_isInRegionRule; }
-
+    PropertyWhitelistType propertyWhitelistType() const { return static_cast<PropertyWhitelistType>(m_propertyWhitelistType); }
     // Try to balance between memory usage (there can be lots of RuleData objects) and good filtering performance.
     static const unsigned maximumIdentifierCount = 4;
     const unsigned* descendantSelectorIdentifierHashes() const { return m_descendantSelectorIdentifierHashes; }
@@ -71,18 +78,18 @@ public:
 
 private:
     StyleRule* m_rule;
-    unsigned m_selectorIndex : 12;
+    unsigned m_selectorIndex : 13;
     // This number was picked fairly arbitrarily. We can probably lower it if we need to.
     // Some simple testing showed <100,000 RuleData's on large sites.
-    unsigned m_position : 20;
-    unsigned m_specificity : 24;
+    unsigned m_position : 18;
     unsigned m_hasFastCheckableSelector : 1;
+    unsigned m_specificity : 24;
     unsigned m_hasMultipartSelector : 1;
     unsigned m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash : 1;
     unsigned m_containsUncommonAttributeSelector : 1;
     unsigned m_linkMatchType : 2; //  SelectorChecker::LinkMatchMask
     unsigned m_hasDocumentSecurityOrigin : 1;
-    unsigned m_isInRegionRule : 1;
+    unsigned m_propertyWhitelistType : 2;
     // Use plain array instead of a Vector to minimize memory overhead.
     unsigned m_descendantSelectorIdentifierHashes[maximumIdentifierCount];
 };
@@ -120,11 +127,18 @@ public:
     const Vector<RuleData>* tagRules(AtomicStringImpl* key) const { return m_tagRules.get(key); }
     const Vector<RuleData>* shadowPseudoElementRules(AtomicStringImpl* key) const { return m_shadowPseudoElementRules.get(key); }
     const Vector<RuleData>* linkPseudoClassRules() const { return &m_linkPseudoClassRules; }
+#if ENABLE(VIDEO_TRACK)
+    const Vector<RuleData>* cuePseudoRules() const { return &m_cuePseudoRules; }
+#endif
     const Vector<RuleData>* focusPseudoClassRules() const { return &m_focusPseudoClassRules; }
     const Vector<RuleData>* universalRules() const { return &m_universalRules; }
     const Vector<StyleRulePage*>& pageRules() const { return m_pageRules; }
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
+
+private:
+    void addChildRules(const Vector<RefPtr<StyleRuleBase> >&, const MediaQueryEvaluator& medium, StyleResolver*, const ContainerNode* scope, bool hasDocumentSecurityOrigin, AddRuleFlags);
+    bool findBestRuleSetAndAdd(const CSSSelector*, RuleData&);
 
 public:
     RuleSet();
@@ -134,6 +148,9 @@ public:
     AtomRuleMap m_tagRules;
     AtomRuleMap m_shadowPseudoElementRules;
     Vector<RuleData> m_linkPseudoClassRules;
+#if ENABLE(VIDEO_TRACK)
+    Vector<RuleData> m_cuePseudoRules;
+#endif
     Vector<RuleData> m_focusPseudoClassRules;
     Vector<RuleData> m_universalRules;
     Vector<StyleRulePage*> m_pageRules;
@@ -142,11 +159,11 @@ public:
     RuleFeatureSet m_features;
 
     struct RuleSetSelectorPair {
-        RuleSetSelectorPair(CSSSelector* selector, PassOwnPtr<RuleSet> ruleSet) : selector(selector), ruleSet(ruleSet) { }
+        RuleSetSelectorPair(const CSSSelector* selector, PassOwnPtr<RuleSet> ruleSet) : selector(selector), ruleSet(ruleSet) { }
         RuleSetSelectorPair(const RuleSetSelectorPair& rs) : selector(rs.selector), ruleSet(const_cast<RuleSetSelectorPair*>(&rs)->ruleSet.release()) { }
         void reportMemoryUsage(MemoryObjectInfo*) const;
 
-        CSSSelector* selector;
+        const CSSSelector* selector;
         OwnPtr<RuleSet> ruleSet;
     };
 

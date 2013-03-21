@@ -10,10 +10,13 @@
 #include "base/message_loop_proxy.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
+#include "base/values.h"
 #include "net/base/host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/single_request_host_resolver.h"
+#include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_client_session.h"
+#include "net/quic/quic_clock.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_http_stream.h"
@@ -194,7 +197,8 @@ scoped_ptr<QuicHttpStream> QuicStreamRequest::ReleaseStream() {
 int QuicStreamFactory::Job::DoConnect() {
   io_state_ = STATE_CONNECT_COMPLETE;
 
-  session_ = factory_->CreateSession(address_list_, net_log_);
+  session_ = factory_->CreateSession(host_port_proxy_pair_.first.host(),
+                                     address_list_, net_log_);
   session_->StartReading();
   int rv = session_->CryptoConnect(
       base::Bind(&QuicStreamFactory::Job::OnIOComplete,
@@ -215,12 +219,14 @@ int QuicStreamFactory::Job::DoConnectComplete(int rv) {
 QuicStreamFactory::QuicStreamFactory(
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
-    const RandomUint64Callback& random_uint64_callback,
-    QuicClock* clock)
+    QuicRandom* random_generator,
+    QuicClock* clock,
+    bool use_spdy_over_quic)
     : host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
-      random_uint64_callback_(random_uint64_callback),
+      random_generator_(random_generator),
       clock_(clock),
+      use_spdy_over_quic_(use_spdy_over_quic),
       ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
@@ -297,7 +303,8 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
   QuicClientSession* session = active_sessions_[host_port_proxy_pair];
   DCHECK(session);
   return scoped_ptr<QuicHttpStream>(
-      new QuicHttpStream(session->CreateOutgoingReliableStream()));
+      new QuicHttpStream(session->CreateOutgoingReliableStream(),
+                         use_spdy_over_quic_));
 }
 
 void QuicStreamFactory::OnIdleSession(QuicClientSession* session) {
@@ -313,6 +320,7 @@ void QuicStreamFactory::OnSessionClose(QuicClientSession* session) {
     active_sessions_.erase(*it);
   }
   all_sessions_.erase(session);
+  session_aliases_.erase(session);
   delete session;
 }
 
@@ -323,16 +331,40 @@ void QuicStreamFactory::CancelRequest(QuicStreamRequest* request) {
   active_requests_.erase(request);
 }
 
+void QuicStreamFactory::CloseAllSessions(int error) {
+  while (!active_sessions_.empty()) {
+    active_sessions_.begin()->second->CloseSessionOnError(error);
+  }
+  while (!all_sessions_.empty()) {
+    (*all_sessions_.begin())->CloseSessionOnError(error);
+  }
+  DCHECK(all_sessions_.empty());
+}
+
+base::Value* QuicStreamFactory::QuicStreamFactoryInfoToValue() const {
+  base::ListValue* list = new base::ListValue();
+
+  for (SessionMap::const_iterator it = active_sessions_.begin();
+       it != active_sessions_.end(); ++it) {
+    const HostPortProxyPair& pair = it->first;
+    const QuicClientSession* session = it->second;
+
+    list->Append(session->GetInfoAsValue(pair.first));
+  }
+  return list;
+}
+
 bool QuicStreamFactory::HasActiveSession(
     const HostPortProxyPair& host_port_proxy_pair) {
   return ContainsKey(active_sessions_, host_port_proxy_pair);
 }
 
 QuicClientSession* QuicStreamFactory::CreateSession(
-    const AddressList& address_list_,
+    const std::string& host,
+    const AddressList& address_list,
     const BoundNetLog& net_log) {
-  QuicGuid guid = random_uint64_callback_.Run();
-  IPEndPoint addr = *address_list_.begin();
+  QuicGuid guid = random_generator_->RandUint64();
+  IPEndPoint addr = *address_list.begin();
   DatagramClientSocket* socket =
       client_socket_factory_->CreateDatagramClientSocket(
           DatagramSocket::DEFAULT_BIND, base::Bind(&base::RandInt),
@@ -342,10 +374,11 @@ QuicClientSession* QuicStreamFactory::CreateSession(
 
   QuicConnectionHelper* helper = new QuicConnectionHelper(
       MessageLoop::current()->message_loop_proxy(),
-      clock_.get(), socket);
+      clock_.get(), random_generator_, socket);
 
   QuicConnection* connection = new QuicConnection(guid, addr, helper);
-  QuicClientSession* session = new QuicClientSession(connection, helper, this);
+  QuicClientSession* session = new QuicClientSession(connection, helper, this,
+                                                     host);
   all_sessions_.insert(session);  // owning pointer
   return session;
 }

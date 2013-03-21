@@ -4,6 +4,10 @@
 
 #include "cc/gl_renderer.h"
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/string_split.h"
@@ -25,6 +29,9 @@
 #include "cc/stream_video_draw_quad.h"
 #include "cc/texture_draw_quad.h"
 #include "cc/video_layer_impl.h"
+#include "gpu/GLES2/gl2extchromium.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSharedGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -35,13 +42,7 @@
 #include "third_party/skia/include/gpu/SkGrTexturePixelRef.h"
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
-#include <public/WebGraphicsContext3D.h>
-#include <public/WebSharedGraphicsContext3D.h>
-#include <set>
-#include <string>
-#include <vector>
 
-using namespace std;
 using WebKit::WebGraphicsContext3D;
 using WebKit::WebGraphicsMemoryAllocation;
 using WebKit::WebSharedGraphicsContext3D;
@@ -49,6 +50,23 @@ using WebKit::WebSharedGraphicsContext3D;
 namespace cc {
 
 namespace {
+
+// TODO(epenner): This should probably be moved to output surface.
+//
+// This implements a simple fence based on client side swaps.
+// This is to isolate the ResourceProvider from 'frames' which
+// it shouldn't need to care about, while still allowing us to
+// enforce good texture recycling behavior strictly throughout
+// the compositor (don't recycle a texture while it's in use).
+class SimpleSwapFence : public ResourceProvider::Fence {
+public:
+    SimpleSwapFence() : m_hasPassed(false) {}
+    virtual bool hasPassed() OVERRIDE { return m_hasPassed; }
+    void setHasPassed() { m_hasPassed = true; }
+private:
+    virtual ~SimpleSwapFence() {}
+    bool m_hasPassed;
+};
 
 bool needsIOSurfaceReadbackWorkaround()
 {
@@ -97,7 +115,7 @@ bool GLRenderer::initialize()
     std::string extensionsString = UTF16ToASCII(m_context->getString(GL_EXTENSIONS));
     std::vector<std::string> extensionsList;
     base::SplitString(extensionsString, ' ', &extensionsList);
-    std::set<string> extensions(extensionsList.begin(), extensionsList.end());
+    std::set<std::string> extensions(extensionsList.begin(), extensionsList.end());
 
     if (settings().acceleratePainting && extensions.count("GL_EXT_texture_format_BGRA8888")
                                       && extensions.count("GL_EXT_read_format_bgra"))
@@ -118,7 +136,8 @@ bool GLRenderer::initialize()
     if (extensions.count("GL_CHROMIUM_iosurface"))
         DCHECK(extensions.count("GL_ARB_texture_rectangle"));
 
-    m_capabilities.usingGpuMemoryManager = extensions.count("GL_CHROMIUM_gpu_memory_manager");
+    m_capabilities.usingGpuMemoryManager = extensions.count("GL_CHROMIUM_gpu_memory_manager")
+                                           && settings().useMemoryManagement;
     if (m_capabilities.usingGpuMemoryManager)
         m_context->setMemoryAllocationChangedCallbackCHROMIUM(this);
 
@@ -131,6 +150,10 @@ bool GLRenderer::initialize()
 
     // The updater can access textures while the GLRenderer is using them.
     m_capabilities.allowPartialTextureUpdates = true;
+
+    // Check for texture fast paths. Currently we always use MO8 textures,
+    // so we only need to avoid POT textures if we have an NPOT fast-path.
+    m_capabilities.avoidPow2Textures = extensions.count("GL_CHROMIUM_fast_NPOT_MO8_textures");
 
     m_isUsingBindUniform = extensions.count("GL_CHROMIUM_bind_uniform_location");
 
@@ -399,12 +422,13 @@ static SkBitmap applyImageFilter(GLRenderer* renderer, SkImageFilter* filter, Sc
     ResourceProvider::ScopedWriteLockGL lock(renderer->resourceProvider(), sourceTexture->id());
 
     // Wrap the source texture in a Ganesh platform texture.
-    GrPlatformTextureDesc platformTextureDescription;
-    platformTextureDescription.fWidth = sourceTexture->size().width();
-    platformTextureDescription.fHeight = sourceTexture->size().height();
-    platformTextureDescription.fConfig = kSkia8888_GrPixelConfig;
-    platformTextureDescription.fTextureHandle = lock.textureId();
-    skia::RefPtr<GrTexture> texture = skia::AdoptRef(grContext->createPlatformTexture(platformTextureDescription));
+    GrBackendTextureDesc backendTextureDescription;
+    backendTextureDescription.fWidth = sourceTexture->size().width();
+    backendTextureDescription.fHeight = sourceTexture->size().height();
+    backendTextureDescription.fConfig = kSkia8888_GrPixelConfig;
+    backendTextureDescription.fTextureHandle = lock.textureId();
+    backendTextureDescription.fOrigin = kTopLeft_GrSurfaceOrigin;
+    skia::RefPtr<GrTexture> texture = skia::AdoptRef(grContext->wrapBackendTexture(backendTextureDescription));
 
     // Place the platform texture inside an SkBitmap.
     SkBitmap source;
@@ -419,6 +443,7 @@ static SkBitmap applyImageFilter(GLRenderer* renderer, SkImageFilter* filter, Sc
     desc.fWidth = source.width();
     desc.fHeight = source.height();
     desc.fConfig = kSkia8888_GrPixelConfig;
+    desc.fOrigin = kTopLeft_GrSurfaceOrigin;
     GrAutoScratchTexture scratchTexture(grContext, desc, GrContext::kExact_ScratchTexMatch);
     skia::RefPtr<GrTexture> backingStore = skia::AdoptRef(scratchTexture.detach());
 
@@ -438,7 +463,6 @@ static SkBitmap applyImageFilter(GLRenderer* renderer, SkImageFilter* filter, Sc
 
 scoped_ptr<ScopedResource> GLRenderer::drawBackgroundFilters(
     DrawingFrame& frame, const RenderPassDrawQuad* quad,
-    const WebKit::WebFilterOperations& filters,
     const gfx::Transform& contentsDeviceTransform,
     const gfx::Transform& contentsDeviceTransformInverse)
 {
@@ -458,6 +482,7 @@ scoped_ptr<ScopedResource> GLRenderer::drawBackgroundFilters(
 
     // FIXME: When this algorithm changes, update LayerTreeHost::prioritizeTextures() accordingly.
 
+    const WebKit::WebFilterOperations& filters = quad->background_filters;
     if (filters.isEmpty())
         return scoped_ptr<ScopedResource>();
 
@@ -516,14 +541,10 @@ void GLRenderer::drawRenderPassQuad(DrawingFrame& frame, const RenderPassDrawQua
     if (!contentsTexture || !contentsTexture->id())
         return;
 
-    const RenderPass* renderPass = frame.renderPassesById->get(quad->render_pass_id);
-    DCHECK(renderPass);
-    if (!renderPass)
-        return;
-
     gfx::Transform quadRectMatrix;
     quadRectTransform(&quadRectMatrix, quad->quadTransform(), quad->rect);
-    gfx::Transform contentsDeviceTransform = MathUtil::to2dTransform(frame.windowMatrix * frame.projectionMatrix * quadRectMatrix);
+    gfx::Transform contentsDeviceTransform = frame.windowMatrix * frame.projectionMatrix * quadRectMatrix;
+    contentsDeviceTransform.FlattenTo2d();
 
     // Can only draw surface if device matrix is invertible.
     gfx::Transform contentsDeviceTransformInverse(gfx::Transform::kSkipInitialization);
@@ -531,16 +552,15 @@ void GLRenderer::drawRenderPassQuad(DrawingFrame& frame, const RenderPassDrawQua
         return;
 
     scoped_ptr<ScopedResource> backgroundTexture = drawBackgroundFilters(
-        frame, quad, renderPass->background_filters,
-        contentsDeviceTransform, contentsDeviceTransformInverse);
+        frame, quad, contentsDeviceTransform, contentsDeviceTransformInverse);
 
     // FIXME: Cache this value so that we don't have to do it for both the surface and its replica.
     // Apply filters to the contents texture.
     SkBitmap filterBitmap;
-    if (renderPass->filter) {
-        filterBitmap = applyImageFilter(this, renderPass->filter.get(), contentsTexture, m_client->hasImplThread());
+    if (quad->filter) {
+        filterBitmap = applyImageFilter(this, quad->filter.get(), contentsTexture, m_client->hasImplThread());
     } else {
-        filterBitmap = applyFilters(this, renderPass->filters, contentsTexture, m_client->hasImplThread());
+        filterBitmap = applyFilters(this, quad->filters, contentsTexture, m_client->hasImplThread());
     }
 
     // Draw the background texture if there is one.
@@ -647,7 +667,7 @@ void GLRenderer::drawRenderPassQuad(DrawingFrame& frame, const RenderPassDrawQua
         GLC(context(), context()->uniform2f(shaderTexScaleLocation,
                                             tex_scale_x, tex_scale_y));
     } else {
-      NOTREACHED();
+        DCHECK(isContextLost());
     }
 
     if (shaderMaskSamplerLocation != -1) {
@@ -670,7 +690,7 @@ void GLRenderer::drawRenderPassQuad(DrawingFrame& frame, const RenderPassDrawQua
         GLC(context(), context()->uniform3fv(shaderEdgeLocation, 8, edge));
     }
 
-    // Map device space quad to surface space. contentsDeviceTransform has no 3d component since it was generated with to2dTransform() so we don't need to project.
+    // Map device space quad to surface space. contentsDeviceTransform has no 3d component since it was flattened, so we don't need to project.
     gfx::QuadF surfaceQuad = MathUtil::mapQuad(contentsDeviceTransformInverse, deviceLayerEdges.ToQuadF(), clipped);
     DCHECK(!clipped);
 
@@ -775,7 +795,8 @@ void GLRenderer::drawTileQuad(const DrawingFrame& frame, const TileDrawQuad* qua
 
 
     gfx::QuadF localQuad;
-    gfx::Transform deviceTransform = MathUtil::to2dTransform(frame.windowMatrix * frame.projectionMatrix * quad->quadTransform());
+    gfx::Transform deviceTransform = frame.windowMatrix * frame.projectionMatrix * quad->quadTransform();
+    deviceTransform.FlattenTo2d();
     if (!deviceTransform.IsInvertible())
         return;
 
@@ -866,7 +887,7 @@ void GLRenderer::drawTileQuad(const DrawingFrame& frame, const TileDrawQuad* qua
         // Create device space quad.
         LayerQuad deviceQuad(leftEdge, topEdge, rightEdge, bottomEdge);
 
-        // Map device space quad to local space. deviceTransform has no 3d component since it was generated with to2dTransform() so we don't need to project.
+        // Map device space quad to local space. deviceTransform has no 3d component since it was flattened, so we don't need to project.
         // We should have already checked that the transform was uninvertible above.
         gfx::Transform inverseDeviceTransform(gfx::Transform::kSkipInitialization);
         bool didInvert = deviceTransform.GetInverse(&inverseDeviceTransform);
@@ -1090,8 +1111,9 @@ void GLRenderer::enqueueTextureQuad(const DrawingFrame& frame, const TextureDraw
     }
 
     // Generate the uv-transform
-    const gfx::RectF& uvRect = quad->uv_rect;
-    Float4 uv = {uvRect.x(), uvRect.y(), uvRect.width(), uvRect.height()};
+    const gfx::PointF& uv0 = quad->uv_top_left;
+    const gfx::PointF& uv1 = quad->uv_bottom_right;
+    Float4 uv = {uv0.x(), uv0.y(), uv1.x() - uv0.x(), uv1.y() - uv0.y()};
     m_drawCache.uv_xform_data.push_back(uv);
 
     // Generate the vertex opacity
@@ -1120,8 +1142,9 @@ void GLRenderer::drawTextureQuad(const DrawingFrame& frame, const TextureDrawQua
         binding.set(textureProgram(), context());
     setUseProgram(binding.programId);
     GLC(context(), context()->uniform1i(binding.samplerLocation, 0));
-    const gfx::RectF& uvRect = quad->uv_rect;
-    GLC(context(), context()->uniform4f(binding.texTransformLocation, uvRect.x(), uvRect.y(), uvRect.width(), uvRect.height()));
+    const gfx::PointF& uv0 = quad->uv_top_left;
+    const gfx::PointF& uv1 = quad->uv_bottom_right;
+    GLC(context(), context()->uniform4f(binding.texTransformLocation, uv0.x(), uv0.y(), uv1.x() - uv0.x(), uv1.y() - uv0.y()));
 
     GLC(context(), context()->uniform1fv(binding.vertexOpacityLocation, 4, quad->vertex_opacity));
 
@@ -1180,7 +1203,7 @@ void GLRenderer::finishDrawingFrame(DrawingFrame& frame)
         compositor_frame.metadata = m_client->makeCompositorFrameMetadata();
         compositor_frame.gl_frame_data.reset(new GLFrameData());
         // FIXME: Fill in GLFrameData when we implement swapping with it.
-        m_outputSurface->SendFrameToParentCompositor(compositor_frame);
+        m_outputSurface->SendFrameToParentCompositor(&compositor_frame);
     }
 }
 
@@ -1314,6 +1337,14 @@ bool GLRenderer::swapBuffers()
 
     m_swapBufferRect = gfx::Rect();
 
+    // We don't have real fences, so we mark read fences as passed
+    // assuming a double-buffered GPU pipeline. A texture can be
+    // written to after one full frame has past since it was last read.
+    if (m_lastSwapFence)
+        static_cast<SimpleSwapFence*>(m_lastSwapFence.get())->setHasPassed();
+    m_lastSwapFence = m_resourceProvider->getReadLockFence();
+    m_resourceProvider->setReadLockFence(new SimpleSwapFence());
+
     return true;
 }
 
@@ -1330,9 +1361,9 @@ void GLRenderer::onMemoryAllocationChanged(WebGraphicsMemoryAllocation allocatio
     if (allocation.bytesLimitWhenVisible) {
         ManagedMemoryPolicy policy(
             allocation.bytesLimitWhenVisible,
-            priorityCutoffValue(allocation.priorityCutoffWhenVisible),
+            priorityCutoff(allocation.priorityCutoffWhenVisible),
             allocation.bytesLimitWhenNotVisible,
-            priorityCutoffValue(allocation.priorityCutoffWhenNotVisible));
+            priorityCutoff(allocation.priorityCutoffWhenNotVisible));
 
         if (allocation.enforceButDoNotKeepAsPolicy)
             m_client->enforceManagedMemoryPolicy(policy);
@@ -1347,20 +1378,21 @@ void GLRenderer::onMemoryAllocationChanged(WebGraphicsMemoryAllocation allocatio
         m_discardBackbufferWhenNotVisible = oldDiscardBackbufferWhenNotVisible;
 }
 
-int GLRenderer::priorityCutoffValue(WebKit::WebGraphicsMemoryAllocation::PriorityCutoff priorityCutoff)
+ManagedMemoryPolicy::PriorityCutoff GLRenderer::priorityCutoff(WebKit::WebGraphicsMemoryAllocation::PriorityCutoff priorityCutoff)
 {
+    // This is simple a 1:1 map, the names differ only because the WebKit names should be to match the cc names.
     switch (priorityCutoff) {
     case WebKit::WebGraphicsMemoryAllocation::PriorityCutoffAllowNothing:
-        return PriorityCalculator::allowNothingCutoff();
+        return ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING;
     case WebKit::WebGraphicsMemoryAllocation::PriorityCutoffAllowVisibleOnly:
-        return PriorityCalculator::allowVisibleOnlyCutoff();
+        return ManagedMemoryPolicy::CUTOFF_ALLOW_REQUIRED_ONLY;
     case WebKit::WebGraphicsMemoryAllocation::PriorityCutoffAllowVisibleAndNearby:
-        return PriorityCalculator::allowVisibleAndNearbyCutoff();
+        return ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE;
     case WebKit::WebGraphicsMemoryAllocation::PriorityCutoffAllowEverything:
-        return PriorityCalculator::allowEverythingCutoff();
+        return ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING;
     }
     NOTREACHED();
-    return 0;
+    return ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING;
 }
 
 void GLRenderer::enforceMemoryPolicy()
@@ -1513,7 +1545,7 @@ bool GLRenderer::bindFramebufferToTexture(DrawingFrame& frame, const ScopedResou
     unsigned textureId = m_currentFramebufferLock->textureId();
     GLC(m_context, m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureId, 0));
 
-    DCHECK(m_context->checkFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    DCHECK(m_context->checkFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE || isContextLost());
 
     initializeMatrices(frame, framebufferRect, false);
     setDrawViewportSize(framebufferRect.size());

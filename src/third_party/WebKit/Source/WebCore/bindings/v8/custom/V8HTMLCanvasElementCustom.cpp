@@ -50,7 +50,6 @@ namespace WebCore {
 
 v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.HTMLCanvasElement.context");
     v8::Handle<v8::Object> holder = args.Holder();
     HTMLCanvasElement* imp = V8HTMLCanvasElement::toNative(holder);
     String contextId = toWebCoreString(args[0]);
@@ -86,7 +85,7 @@ v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Argument
     if (!result)
         return v8Null(args.GetIsolate());
     else if (result->is2d()) {
-        v8::Handle<v8::Value> v8Result = toV8(static_cast<CanvasRenderingContext2D*>(result), args.Holder(), args.GetIsolate());
+        v8::Handle<v8::Value> v8Result = toV8Fast(static_cast<CanvasRenderingContext2D*>(result), args, imp);
         if (InspectorInstrumentation::canvasAgentEnabled(imp->document())) {
             ScriptState* scriptState = ScriptState::forContext(v8::Context::GetCurrent());
             ScriptObject context(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
@@ -98,13 +97,7 @@ v8::Handle<v8::Value> V8HTMLCanvasElement::getContextCallback(const v8::Argument
     }
 #if ENABLE(WEBGL)
     else if (result->is3d()) {
-        // 3D canvas contexts can hold on to lots of GPU resources, and we want to take an
-        // opportunity to get rid of them as soon as possible when we navigate away from pages using
-        // them.
-        V8PerIsolateData* perIsolateData = V8PerIsolateData::from(args.GetIsolate());
-        perIsolateData->setShouldCollectGarbageSoon();
-
-        v8::Handle<v8::Value> v8Result = toV8(static_cast<WebGLRenderingContext*>(result), args.Holder(), args.GetIsolate());
+        v8::Handle<v8::Value> v8Result = toV8Fast(static_cast<WebGLRenderingContext*>(result), args, imp);
         if (InspectorInstrumentation::canvasAgentEnabled(imp->document())) {
             ScriptState* scriptState = ScriptState::forContext(v8::Context::GetCurrent());
             ScriptObject glContext(scriptState, v8::Handle<v8::Object>::Cast(v8Result));

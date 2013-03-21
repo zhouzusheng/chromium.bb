@@ -45,7 +45,6 @@
 
 namespace WebCore {
 
-class IDBVersionChangeRequest;
 class ScriptExecutionContext;
 
 typedef int ExceptionCode;
@@ -65,6 +64,7 @@ public:
     PassRefPtr<DOMStringList> objectStoreNames() const;
 
     PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionCode&);
+    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionCode&);
     PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionCode& ec) { return transaction(context, *scope, mode, ec); }
     PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const Vector<String>&, const String& mode, ExceptionCode&);
     PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const String&, const String& mode, ExceptionCode&);
@@ -92,14 +92,17 @@ public:
     void forceClose();
     const IDBDatabaseMetadata metadata() const { return m_metadata; }
     void enqueueEvent(PassRefPtr<Event>);
-    bool dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec) { return EventTarget::dispatchEvent(event, ec); }
-    virtual bool dispatchEvent(PassRefPtr<Event>);
+
+    using EventTarget::dispatchEvent;
+    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     int64_t findObjectStoreId(const String& name) const;
     bool containsObjectStore(const String& name) const
     {
         return findObjectStoreId(name) != IDBObjectStoreMetadata::InvalidId;
     }
+
+    IDBDatabaseBackendInterface* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
 

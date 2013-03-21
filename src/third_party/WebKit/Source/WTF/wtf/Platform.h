@@ -555,7 +555,6 @@
 #define ENABLE_DASHBOARD_SUPPORT 1
 #endif
 #define WTF_USE_CF 1
-#define WTF_USE_PTHREADS 1
 #define HAVE_READLINE 1
 #define HAVE_RUNLOOP_TIMER 1
 #define ENABLE_FULLSCREEN_API 1
@@ -574,7 +573,6 @@
 
 #if PLATFORM(CHROMIUM) && OS(DARWIN)
 #define WTF_USE_CF 1
-#define WTF_USE_PTHREADS 1
 #define WTF_USE_WK_SCROLLBAR_PAINTER 1
 #endif
 
@@ -616,7 +614,7 @@
 #define WTF_USE_CF 1
 #define WTF_USE_CFNETWORK 1
 #define WTF_USE_NETWORK_CFDATA_ARRAY_CALLBACK 1
-#define WTF_USE_PTHREADS 1
+#define WTF_USE_WEB_THREAD 1
 
 #if PLATFORM(IOS_SIMULATOR)
     #define ENABLE_JIT 0
@@ -635,7 +633,7 @@
 #define WTF_USE_CF 1
 #endif
 
-#if PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(CHROMIUM) && !PLATFORM(WIN_CAIRO)
+#if PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(WIN_CAIRO)
 #define WTF_USE_CFNETWORK 1
 #endif
 
@@ -643,11 +641,11 @@
 #define WTF_USE_CFURLCACHE 1
 #endif
 
-#if PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(CHROMIUM) && !PLATFORM(QT)
+#if PLATFORM(WIN) && !OS(WINCE)
 #define ENABLE_WEB_ARCHIVE 1
 #endif
 
-#if PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(CHROMIUM) && !PLATFORM(WIN_CAIRO) && !PLATFORM(QT)
+#if PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(WIN_CAIRO)
 #define ENABLE_FULLSCREEN_API 1
 #endif
 
@@ -666,10 +664,6 @@
 #endif
 #endif
 
-#if OS(UNIX) && (PLATFORM(GTK) || PLATFORM(QT))
-#define WTF_USE_PTHREADS 1
-#endif
-
 #if !defined(HAVE_ACCESSIBILITY)
 #if PLATFORM(IOS) || PLATFORM(MAC) || PLATFORM(WIN) || PLATFORM(GTK) || (PLATFORM(CHROMIUM) && !OS(ANDROID)) || PLATFORM(EFL)
 #define HAVE_ACCESSIBILITY 1
@@ -677,8 +671,18 @@
 #endif /* !defined(HAVE_ACCESSIBILITY) */
 
 #if OS(UNIX)
+#define HAVE_ERRNO_H 1
+#define HAVE_MMAP 1   
 #define HAVE_SIGNAL_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_SYS_PARAM_H 1
+#define HAVE_SYS_TIME_H 1 
 #define WTF_USE_OS_RANDOMNESS 1
+#define WTF_USE_PTHREADS 1
+#endif /* OS(UNIX) */
+
+#if OS(UNIX) && !OS(ANDROID) && !OS(QNX)
+#define HAVE_LANGINFO_H 1
 #endif
 
 #if (OS(FREEBSD) || OS(OPENBSD)) && !defined(__GLIBC__)
@@ -707,13 +711,7 @@
 
 #if OS(DARWIN)
 
-#define HAVE_ERRNO_H 1
-#define HAVE_LANGINFO_H 1
-#define HAVE_MMAP 1
 #define HAVE_MERGESORT 1
-#define HAVE_STRINGS_H 1
-#define HAVE_SYS_PARAM_H 1
-#define HAVE_SYS_TIME_H 1
 #define HAVE_SYS_TIMEB_H 1
 #define WTF_USE_ACCELERATE 1
 
@@ -721,60 +719,31 @@
 
 #define HAVE_DISPATCH_H 1
 #define HAVE_HOSTED_CORE_ANIMATION 1
+#define HAVE_MADV_FREE 1
+#define HAVE_PTHREAD_SETNAME_NP 1
 
 #if !PLATFORM(IOS)
 #define HAVE_MADV_FREE_REUSE 1
-#define HAVE_MADV_FREE 1
-#define HAVE_PTHREAD_SETNAME_NP 1
-#endif
+#endif /* !PLATFORM(IOS) */
 
-#endif
+#endif /* PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1060 */
 
-#if PLATFORM(IOS)
-#define HAVE_MADV_FREE 1
-#define HAVE_PTHREAD_SETNAME_NP 1
-#endif
+#endif /* OS(DARWIN) */
 
-#elif OS(WINDOWS)
-
-#if !OS(WINCE)
+#if OS(WINDOWS) && !OS(WINCE)
 #define HAVE_SYS_TIMEB_H 1
 #define HAVE_ALIGNED_MALLOC 1
 #define HAVE_ISDEBUGGERPRESENT 1
 #endif
+
+#if OS(WINDOWS)
 #define HAVE_VIRTUALALLOC 1
 #define WTF_USE_OS_RANDOMNESS 1
+#endif
 
-#elif OS(QNX)
-
-#define HAVE_ERRNO_H 1
-#define HAVE_MMAP 1
+#if OS(QNX)
 #define HAVE_MADV_FREE_REUSE 1
 #define HAVE_MADV_FREE 1
-#define HAVE_STRINGS_H 1
-#define HAVE_SYS_PARAM_H 1
-#define HAVE_SYS_TIME_H 1
-#define WTF_USE_PTHREADS 1
-
-#elif OS(ANDROID)
-
-#define HAVE_ERRNO_H 1
-#define HAVE_NMAP 1
-#define HAVE_STRINGS_H 1
-#define HAVE_SYS_PARAM_H 1
-#define HAVE_SYS_TIME_H 1
-
-#else
-
-/* FIXME: is this actually used or do other platforms generate their own config.h? */
-
-#define HAVE_ERRNO_H 1
-#define HAVE_LANGINFO_H 1
-#define HAVE_MMAP 1
-#define HAVE_STRINGS_H 1
-#define HAVE_SYS_PARAM_H 1
-#define HAVE_SYS_TIME_H 1
-
 #endif
 
 /* ENABLE macro defaults */
@@ -828,8 +797,8 @@
 #endif
 
 #if !defined(ENABLE_SUBPIXEL_LAYOUT)
-#if PLATFORM(CHROMIUM)
-#define ENABLE_SUBPIXEL_LAYOUT 1 
+#if PLATFORM(CHROMIUM) || PLATFORM(EFL)
+#define ENABLE_SUBPIXEL_LAYOUT 1
 #else
 #define ENABLE_SUBPIXEL_LAYOUT 0
 #endif
@@ -927,7 +896,7 @@
     && ENABLE(JIT) \
     && (OS(DARWIN) || OS(LINUX)) \
     && (PLATFORM(MAC) || PLATFORM(IOS) || PLATFORM(GTK) || PLATFORM(QT)) \
-    && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2))
+    && (CPU(X86) || CPU(X86_64) || CPU(ARM_THUMB2) || CPU(MIPS))
 #define ENABLE_LLINT 1
 #endif
 
@@ -1076,7 +1045,7 @@
 #endif
 
 /* Compositing on the UI-process in WebKit2 */
-#if PLATFORM(QT)
+#if USE(3D_GRAPHICS) && PLATFORM(QT)
 #define WTF_USE_COORDINATED_GRAPHICS 1
 #endif
 
@@ -1120,7 +1089,7 @@
 #define ENABLE_THREADING_GENERIC 1
 #endif
 
-#if ENABLE(GLIB_SUPPORT)
+#if USE(GLIB)
 #include <wtf/gobject/GTypedefs.h>
 #endif
 
@@ -1167,6 +1136,7 @@
 
 #if PLATFORM(MAC) && !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
 #define HAVE_AVFOUNDATION_TEXT_TRACK_SUPPORT 1
+#define ENABLE_ENCRYPTED_MEDIA_V2 1
 #endif
 
 #if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(EFL) || (PLATFORM(WIN) && !OS(WINCE) && !PLATFORM(WIN_CAIRO)) || PLATFORM(BLACKBERRY)
@@ -1207,6 +1177,10 @@
 #if defined(QT_OPENGL_ES_2) && !defined(WTF_USE_OPENGL_ES_2)
 #define WTF_USE_OPENGL_ES_2 1
 #endif
+#endif
+
+#if !PLATFORM(IOS) && PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
+#define WTF_USE_CONTENT_FILTERING 1
 #endif
 
 #endif /* WTF_Platform_h */

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
@@ -290,24 +289,6 @@ void SkGradientShaderBase::Build16bitCache(uint16_t cache[], SkColor c0, SkColor
     } while (--count != 0);
 }
 
-/*
- *  2x2 dither a fixed-point color component (8.16) down to 8, matching the
- *  semantics of how we 2x2 dither 32->16
- */
-static inline U8CPU dither_fixed_to_8(SkFixed n) {
-    n >>= 8;
-    return ((n << 1) - ((n >> 8 << 8) | (n >> 8))) >> 8;
-}
-
-/*
- *  For dithering with premultiply, we want to ceiling the alpha component,
- *  to ensure that it is always >= any color component.
- */
-static inline U8CPU dither_ceil_fixed_to_8(SkFixed n) {
-    n >>= 8;
-    return ((n << 1) - (n | (n >> 8))) >> 8;
-}
-
 void SkGradientShaderBase::Build32bitCache(SkPMColor cache[], SkColor c0, SkColor c1,
                                       int count, U8CPU paintAlpha) {
     SkASSERT(count > 1);
@@ -320,31 +301,94 @@ void SkGradientShaderBase::Build32bitCache(SkPMColor cache[], SkColor c0, SkColo
         da = SkIntToFixed(tmp - a) / (count - 1);
     }
 
-    SkFixed r = SkColorGetR(c0);
-    SkFixed g = SkColorGetG(c0);
-    SkFixed b = SkColorGetB(c0);
+    /*
+     *  r,g,b used to be SkFixed, but on gcc (4.2.1 mac and 4.6.3 goobuntu) in
+     *  release builds, we saw a compiler error where the 0xFF parameter in
+     *  SkPackARGB32() was being totally ignored whenever it was called with
+     *  a non-zero add (e.g. 0x8000).
+     *
+     *  We found two work-arounds:
+     *      1. change r,g,b to unsigned (or just one of them)
+     *      2. change SkPackARGB32 to + its (a << SK_A32_SHIFT) value instead
+     *         of using |
+     *
+     *  We chose #1 just because it was more localized.
+     *  See http://code.google.com/p/skia/issues/detail?id=1113
+     */
+    uint32_t r = SkColorGetR(c0);
+    uint32_t g = SkColorGetG(c0);
+    uint32_t b = SkColorGetB(c0);
+
     SkFixed dr = SkIntToFixed(SkColorGetR(c1) - r) / (count - 1);
     SkFixed dg = SkIntToFixed(SkColorGetG(c1) - g) / (count - 1);
     SkFixed db = SkIntToFixed(SkColorGetB(c1) - b) / (count - 1);
 
-    a = SkIntToFixed(a) + 0x8000;
-    r = SkIntToFixed(r) + 0x8000;
-    g = SkIntToFixed(g) + 0x8000;
-    b = SkIntToFixed(b) + 0x8000;
+    /*  We pre-add 1/8 to avoid having to add this to our [0] value each time
+        in the loop. Without this, the bias for each would be
+            0x2000  0xA000  0xE000  0x6000
+        With this trick, we can add 0 for the first (no-op) and just adjust the
+        others.
+     */
+    r = SkIntToFixed(r) + 0x2000;
+    g = SkIntToFixed(g) + 0x2000;
+    b = SkIntToFixed(b) + 0x2000;
 
-    do {
-        cache[0] = SkPremultiplyARGBInline(a >> 16, r >> 16, g >> 16, b >> 16);
-        cache[kCache32Count] =
-            SkPremultiplyARGBInline(dither_ceil_fixed_to_8(a),
-                                    dither_fixed_to_8(r),
-                                    dither_fixed_to_8(g),
-                                    dither_fixed_to_8(b));
-        cache += 1;
-        a += da;
-        r += dr;
-        g += dg;
-        b += db;
-    } while (--count != 0);
+    /*
+     *  Our dither-cell (spatially) is
+     *      0 2
+     *      3 1
+     *  Where
+     *      [0] -> [-1/8 ... 1/8 ) values near 0
+     *      [1] -> [ 1/8 ... 3/8 ) values near 1/4
+     *      [2] -> [ 3/8 ... 5/8 ) values near 1/2
+     *      [3] -> [ 5/8 ... 7/8 ) values near 3/4
+     */
+
+    if (0xFF == a && 0 == da) {
+        do {
+            cache[kCache32Count*0] = SkPackARGB32(0xFF, (r + 0     ) >> 16,
+                                                        (g + 0     ) >> 16,
+                                                        (b + 0     ) >> 16);
+            cache[kCache32Count*1] = SkPackARGB32(0xFF, (r + 0x8000) >> 16,
+                                                        (g + 0x8000) >> 16,
+                                                        (b + 0x8000) >> 16);
+            cache[kCache32Count*2] = SkPackARGB32(0xFF, (r + 0xC000) >> 16,
+                                                        (g + 0xC000) >> 16,
+                                                        (b + 0xC000) >> 16);
+            cache[kCache32Count*3] = SkPackARGB32(0xFF, (r + 0x4000) >> 16,
+                                                        (g + 0x4000) >> 16,
+                                                        (b + 0x4000) >> 16);
+            cache += 1;
+            r += dr;
+            g += dg;
+            b += db;
+        } while (--count != 0);
+    } else {
+        a = SkIntToFixed(a) + 0x2000;
+        do {
+            cache[kCache32Count*0] = SkPremultiplyARGBInline((a + 0     ) >> 16,
+                                                             (r + 0     ) >> 16,
+                                                             (g + 0     ) >> 16,
+                                                             (b + 0     ) >> 16);
+            cache[kCache32Count*1] = SkPremultiplyARGBInline((a + 0x8000) >> 16,
+                                                             (r + 0x8000) >> 16,
+                                                             (g + 0x8000) >> 16,
+                                                             (b + 0x8000) >> 16);
+            cache[kCache32Count*2] = SkPremultiplyARGBInline((a + 0xC000) >> 16,
+                                                             (r + 0xC000) >> 16,
+                                                             (g + 0xC000) >> 16,
+                                                             (b + 0xC000) >> 16);
+            cache[kCache32Count*3] = SkPremultiplyARGBInline((a + 0x4000) >> 16,
+                                                             (r + 0x4000) >> 16,
+                                                             (g + 0x4000) >> 16,
+                                                             (b + 0x4000) >> 16);
+            cache += 1;
+            a += da;
+            r += dr;
+            g += dg;
+            b += db;
+        } while (--count != 0);
+    }
 }
 
 static inline int SkFixedToFFFF(SkFixed x) {
@@ -364,14 +408,6 @@ static inline U16CPU bitsTo16(unsigned x, const unsigned bits) {
     return 0;
 }
 
-/** We duplicate the last value in each half of the cache so that
-    interpolation doesn't have to special-case being at the last point.
-*/
-static void complete_16bit_cache(uint16_t* cache, int stride) {
-    cache[stride - 1] = cache[stride - 2];
-    cache[2 * stride - 1] = cache[2 * stride - 2];
-}
-
 const uint16_t* SkGradientShaderBase::getCache16() const {
     if (fCache16 == NULL) {
         // double the count for dither entries
@@ -384,7 +420,7 @@ const uint16_t* SkGradientShaderBase::getCache16() const {
         fCache16 = fCache16Storage;
         if (fColorCount == 2) {
             Build16bitCache(fCache16, fOrigColors[0], fOrigColors[1],
-                            kGradient16Length);
+                            kCache16Count);
         } else {
             Rec* rec = fRecs;
             int prevIndex = 0;
@@ -396,8 +432,6 @@ const uint16_t* SkGradientShaderBase::getCache16() const {
                     Build16bitCache(fCache16 + prevIndex, fOrigColors[i-1], fOrigColors[i], nextIndex - prevIndex + 1);
                 prevIndex = nextIndex;
             }
-            // one extra space left over at the end for complete_16bit_cache()
-            SkASSERT(prevIndex == kGradient16Length - 1);
         }
 
         if (fMapper) {
@@ -405,7 +439,7 @@ const uint16_t* SkGradientShaderBase::getCache16() const {
             uint16_t* linear = fCache16;         // just computed linear data
             uint16_t* mapped = fCache16Storage;  // storage for mapped data
             SkUnitMapper* map = fMapper;
-            for (int i = 0; i < kGradient16Length; i++) {
+            for (int i = 0; i < kCache16Count; i++) {
                 int index = map->mapUnit16(bitsTo16(i, kCache16Bits)) >> kCache16Shift;
                 mapped[i] = linear[index];
                 mapped[i + kCache16Count] = linear[index + kCache16Count];
@@ -413,23 +447,14 @@ const uint16_t* SkGradientShaderBase::getCache16() const {
             sk_free(fCache16);
             fCache16 = fCache16Storage;
         }
-        complete_16bit_cache(fCache16, kCache16Count);
     }
     return fCache16;
-}
-
-/** We duplicate the last value in each half of the cache so that
-    interpolation doesn't have to special-case being at the last point.
-*/
-static void complete_32bit_cache(SkPMColor* cache, int stride) {
-    cache[stride - 1] = cache[stride - 2];
-    cache[2 * stride - 1] = cache[2 * stride - 2];
 }
 
 const SkPMColor* SkGradientShaderBase::getCache32() const {
     if (fCache32 == NULL) {
         // double the count for dither entries
-        const int entryCount = kCache32Count * 2;
+        const int entryCount = kCache32Count * 4;
         const size_t allocSize = sizeof(SkPMColor) * entryCount;
 
         if (NULL == fCache32PixelRef) {
@@ -439,13 +464,13 @@ const SkPMColor* SkGradientShaderBase::getCache32() const {
         fCache32 = (SkPMColor*)fCache32PixelRef->getAddr();
         if (fColorCount == 2) {
             Build32bitCache(fCache32, fOrigColors[0], fOrigColors[1],
-                            kGradient32Length, fCacheAlpha);
+                            kCache32Count, fCacheAlpha);
         } else {
             Rec* rec = fRecs;
             int prevIndex = 0;
             for (int i = 1; i < fColorCount; i++) {
                 int nextIndex = SkFixedToFFFF(rec[i].fPos) >> kCache32Shift;
-                SkASSERT(nextIndex < kGradient32Length);
+                SkASSERT(nextIndex < kCache32Count);
 
                 if (nextIndex > prevIndex)
                     Build32bitCache(fCache32 + prevIndex, fOrigColors[i-1],
@@ -453,7 +478,6 @@ const SkPMColor* SkGradientShaderBase::getCache32() const {
                                     nextIndex - prevIndex + 1, fCacheAlpha);
                 prevIndex = nextIndex;
             }
-            SkASSERT(prevIndex == kGradient32Length - 1);
         }
 
         if (fMapper) {
@@ -462,16 +486,17 @@ const SkPMColor* SkGradientShaderBase::getCache32() const {
             SkPMColor* linear = fCache32;           // just computed linear data
             SkPMColor* mapped = (SkPMColor*)newPR->getAddr();    // storage for mapped data
             SkUnitMapper* map = fMapper;
-            for (int i = 0; i < kGradient32Length; i++) {
+            for (int i = 0; i < kCache32Count; i++) {
                 int index = map->mapUnit16((i << 8) | i) >> 8;
-                mapped[i] = linear[index];
-                mapped[i + kCache32Count] = linear[index + kCache32Count];
+                mapped[i + kCache32Count*0] = linear[index + kCache32Count*0];
+                mapped[i + kCache32Count*1] = linear[index + kCache32Count*1];
+                mapped[i + kCache32Count*2] = linear[index + kCache32Count*2];
+                mapped[i + kCache32Count*3] = linear[index + kCache32Count*3];
             }
             fCache32PixelRef->unref();
             fCache32PixelRef = newPR;
             fCache32 = (SkPMColor*)newPR->getAddr();
         }
-        complete_32bit_cache(fCache32, kCache32Count);
     }
     return fCache32;
 }
@@ -493,7 +518,7 @@ void SkGradientShaderBase::getGradientTableBitmap(SkBitmap* bitmap) const {
     if (fMapper) {
         // force our cahce32pixelref to be built
         (void)this->getCache32();
-        bitmap->setConfig(SkBitmap::kARGB_8888_Config, kGradient32Length, 1);
+        bitmap->setConfig(SkBitmap::kARGB_8888_Config, kCache32Count, 1);
         bitmap->setPixelRef(fCache32PixelRef);
         return;
     }
@@ -533,9 +558,7 @@ void SkGradientShaderBase::getGradientTableBitmap(SkBitmap* bitmap) const {
     if (!gCache->find(storage.get(), size, bitmap)) {
         // force our cahce32pixelref to be built
         (void)this->getCache32();
-        // Only expose the linear section of the cache; don't let the caller
-        // know about the padding at the end to make interpolation faster.
-        bitmap->setConfig(SkBitmap::kARGB_8888_Config, kGradient32Length, 1);
+        bitmap->setConfig(SkBitmap::kARGB_8888_Config, kCache32Count, 1);
         bitmap->setPixelRef(fCache32PixelRef);
 
         gCache->add(storage.get(), size, *bitmap);
@@ -546,16 +569,16 @@ void SkGradientShaderBase::commonAsAGradient(GradientInfo* info) const {
     if (info) {
         if (info->fColorCount >= fColorCount) {
             if (info->fColors) {
-                memcpy(info->fColors, fOrigColors,
-                       fColorCount * sizeof(SkColor));
+                memcpy(info->fColors, fOrigColors, fColorCount * sizeof(SkColor));
             }
             if (info->fColorOffsets) {
                 if (fColorCount == 2) {
                     info->fColorOffsets[0] = 0;
                     info->fColorOffsets[1] = SK_Scalar1;
                 } else if (fColorCount > 2) {
-                    for (int i = 0; i < fColorCount; i++)
+                    for (int i = 0; i < fColorCount; ++i) {
                         info->fColorOffsets[i] = SkFixedToScalar(fRecs[i].fPos);
+                    }
                 }
             }
         }
@@ -563,6 +586,42 @@ void SkGradientShaderBase::commonAsAGradient(GradientInfo* info) const {
         info->fTileMode = fTileMode;
     }
 }
+
+#ifdef SK_DEVELOPER
+void SkGradientShaderBase::toString(SkString* str) const {
+
+    str->appendf("%d colors: ", fColorCount);
+
+    for (int i = 0; i < fColorCount; ++i) {
+        str->appendHex(fOrigColors[i]);
+        if (i < fColorCount-1) {
+            str->append(", ");
+        }
+    }
+
+    if (fColorCount > 2) {
+        str->append(" points: (");
+        for (int i = 0; i < fColorCount; ++i) {
+            str->appendScalar(SkFixedToScalar(fRecs[i].fPos));
+            if (i < fColorCount-1) {
+                str->append(", ");
+            }
+        }
+        str->append(")");
+    }
+
+    static const char* gTileModeName[SkShader::kTileModeCount] = {
+        "clamp", "repeat", "mirror"
+    };
+
+    str->append(" ");
+    str->append(gTileModeName[fTileMode]);
+
+    // TODO: add "fMapper->toString(str);" when SkUnitMapper::toString is added
+
+    this->INHERITED::toString(str);
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -691,7 +750,7 @@ void GrGLGradientEffect::emitYCoordUniform(GrGLShaderBuilder* builder) {
 }
 
 void GrGLGradientEffect::setData(const GrGLUniformManager& uman, const GrEffectStage& stage) {
-    const GrGradientEffect& e = static_cast<const GrGradientEffect&>(*stage.getEffect());
+    const GrGradientEffect& e = GetEffectFromStage<GrGradientEffect>(stage);
     const GrTexture* texture = e.texture(0);
     fEffectMatrix.setData(uman, e.getMatrix(), stage.getCoordChangeMatrix(), texture);
 
@@ -703,7 +762,7 @@ void GrGLGradientEffect::setData(const GrGLUniformManager& uman, const GrEffectS
 }
 
 GrGLEffect::EffectKey GrGLGradientEffect::GenMatrixKey(const GrEffectStage& s) {
-    const GrGradientEffect& e = static_cast<const GrGradientEffect&>(*s.getEffect());
+    const GrGradientEffect& e = GetEffectFromStage<GrGradientEffect>(s);
     const GrTexture* texture = e.texture(0);
     return GrGLEffectMatrix::GenKey(e.getMatrix(), s.getCoordChangeMatrix(), texture);
 }
@@ -742,8 +801,7 @@ void GrGLGradientEffect::emitColorLookup(GrGLShaderBuilder* builder,
 GrGradientEffect::GrGradientEffect(GrContext* ctx,
                                    const SkGradientShaderBase& shader,
                                    const SkMatrix& matrix,
-                                   SkShader::TileMode tileMode)
-    : INHERITED(1) {
+                                   SkShader::TileMode tileMode) {
     // TODO: check for simple cases where we don't need a texture:
     //GradientInfo info;
     //shader.asAGradient(&info);
@@ -753,6 +811,8 @@ GrGradientEffect::GrGradientEffect(GrContext* ctx,
 
     SkBitmap bitmap;
     shader.getGradientTableBitmap(&bitmap);
+
+    fIsOpaque = shader.isOpaque();
 
     GrTextureStripAtlas::Desc desc;
     desc.fWidth  = bitmap.width();
@@ -774,15 +834,16 @@ GrGradientEffect::GrGradientEffect(GrContext* ctx,
                   fAtlas->getVerticalScaleFactor();
         fTextureAccess.reset(fAtlas->getTexture(), params);
     } else {
-        GrTexture* texture = GrLockCachedBitmapTexture(ctx, bitmap, &params);
+        GrTexture* texture = GrLockAndRefCachedBitmapTexture(ctx, bitmap, &params);
         fTextureAccess.reset(texture, params);
         fYCoord = SK_ScalarHalf;
 
         // Unlock immediately, this is not great, but we don't have a way of
         // knowing when else to unlock it currently, so it may get purged from
         // the cache, but it'll still be ref'd until it's no longer being used.
-        GrUnlockCachedBitmapTexture(texture);
+        GrUnlockAndUnrefCachedBitmapTexture(texture);
     }
+    this->addTextureAccess(&fTextureAccess);
 }
 
 GrGradientEffect::~GrGradientEffect() {
@@ -791,9 +852,22 @@ GrGradientEffect::~GrGradientEffect() {
     }
 }
 
-const GrTextureAccess& GrGradientEffect::textureAccess(int index) const {
-    GrAssert(0 == index);
-    return fTextureAccess;
+bool GrGradientEffect::onIsEqual(const GrEffect& effect) const {
+    const GrGradientEffect& s = CastEffect<GrGradientEffect>(effect);
+    return fTextureAccess.getTexture() == s.fTextureAccess.getTexture()  &&
+           fTextureAccess.getParams().getTileModeX() ==
+                s.fTextureAccess.getParams().getTileModeX() &&
+           this->useAtlas() == s.useAtlas() &&
+           fYCoord == s.getYCoord() &&
+           fMatrix.cheapEqualTo(s.getMatrix());
+}
+
+void GrGradientEffect::getConstantColorComponents(GrColor* color, uint32_t* validFlags) const {
+    if (fIsOpaque && (kA_ValidComponentFlag & *validFlags) && 0xff == GrColorUnpackA(*color)) {
+        *validFlags = kA_ValidComponentFlag;
+    } else {
+        *validFlags = 0;
+    }
 }
 
 int GrGradientEffect::RandomGradientParams(SkRandom* random,

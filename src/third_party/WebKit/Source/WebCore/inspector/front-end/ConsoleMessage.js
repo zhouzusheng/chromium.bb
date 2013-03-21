@@ -167,12 +167,20 @@ WebInspector.ConsoleMessageImpl.prototype = {
         var formattedMessage = this.formattedMessage;
         return this._message;
     },
-   
+
     get formattedMessage()
     {
         if (!this._formattedMessage)
             this._formatMessage();
         return this._formattedMessage;
+    },
+
+    /**
+     * @return {?WebInspector.NetworkRequest}
+     */
+    request: function()
+    {
+        return this._request;
     },
 
     _linkifyLocation: function(url, lineNumber, columnNumber)
@@ -239,6 +247,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
     },
 
     /**
+     * @param {Object} output
      * @param {boolean=} forceObjectFormat
      * @param {boolean=} includePreview
      */
@@ -296,6 +305,9 @@ WebInspector.ConsoleMessageImpl.prototype = {
         var section = new WebInspector.ObjectPropertiesSection(obj, titleElement);
         section.enableContextMenu();
         elem.appendChild(section.element);
+
+        var note = section.titleElement.createChild("span", "object-info-state-note");
+        note.title = WebInspector.UIString("Object state below is captured upon first expansion");
     },
 
     /**
@@ -436,7 +448,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
         {
             if (index - lastNonEmptyIndex <= 1)
                 return;
-            var span = elem.createChild(span, "console-formatted-undefined");
+            var span = elem.createChild("span", "console-formatted-undefined");
             span.textContent = WebInspector.UIString("undefined × %d", index - lastNonEmptyIndex - 1);
         }
 
@@ -469,7 +481,7 @@ WebInspector.ConsoleMessageImpl.prototype = {
 
     _formatWithSubstitutionString: function(parameters, formattedResult)
     {
-        var formatters = {}
+        var formatters = {};
 
         function parameterFormatter(force, obj)
         {
@@ -584,7 +596,6 @@ WebInspector.ConsoleMessageImpl.prototype = {
         regexObject.lastIndex = 0;
         var text = element.textContent;
         var match = regexObject.exec(text);
-        var offset = 0;
         var matchRanges = [];
         while (match) {
             matchRanges.push({ offset: match.index, length: match[0].length });

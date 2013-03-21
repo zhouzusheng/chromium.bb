@@ -51,11 +51,10 @@ GpuVideoDecoder::BufferData::BufferData(
 GpuVideoDecoder::BufferData::~BufferData() {}
 
 GpuVideoDecoder::GpuVideoDecoder(
-    const scoped_refptr<base::MessageLoopProxy>& gvd_loop_proxy,
-    const scoped_refptr<base::MessageLoopProxy>& vda_loop_proxy,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop,
     const scoped_refptr<Factories>& factories)
-    : gvd_loop_proxy_(gvd_loop_proxy),
-      vda_loop_proxy_(vda_loop_proxy),
+    : gvd_loop_proxy_(message_loop),
+      vda_loop_proxy_(factories->GetMessageLoop()),
       factories_(factories),
       state_(kNormal),
       demuxer_read_in_progress_(false),
@@ -301,7 +300,7 @@ void GpuVideoDecoder::RequestBufferDecode(
 }
 
 void GpuVideoDecoder::RecordBufferData(
-    const BitstreamBuffer& bitstream_buffer, const Buffer& buffer) {
+    const BitstreamBuffer& bitstream_buffer, const DecoderBuffer& buffer) {
   input_buffer_data_.push_front(BufferData(
       bitstream_buffer.id(), buffer.GetTimestamp(),
       demuxer_stream_->video_decoder_config().visible_rect(),

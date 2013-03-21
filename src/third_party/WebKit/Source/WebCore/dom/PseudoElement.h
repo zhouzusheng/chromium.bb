@@ -28,6 +28,7 @@
 #define PseudoElement_h
 
 #include "Element.h"
+#include "Event.h"
 #include "RenderStyle.h"
 #include <wtf/Forward.h>
 
@@ -46,6 +47,8 @@ public:
 
     virtual bool canStartSelection() const OVERRIDE { return false; }
     virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+
+    static String pseudoElementNameForEvents(PseudoId);
 
 private:
     PseudoElement(Element*, PseudoId);

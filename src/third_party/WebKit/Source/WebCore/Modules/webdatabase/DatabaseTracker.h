@@ -31,6 +31,7 @@
 
 #if ENABLE(SQL_DATABASE)
 
+#include "DatabaseError.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/text/StringHash.h>
@@ -44,8 +45,8 @@
 
 namespace WebCore {
 
-class AbstractDatabase;
-class ScriptExecutionContext;
+class DatabaseBackend;
+class DatabaseBackendContext;
 class SecurityOrigin;
 
 struct SecurityOriginHash;
@@ -70,21 +71,25 @@ public:
     // m_databaseGuard and m_openDatabaseMapGuard currently don't overlap.
     // notificationMutex() is currently independent of the other locks.
 
-    bool canEstablishDatabase(ScriptExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize);
+    bool canEstablishDatabase(DatabaseBackendContext*, const String& name, const String& displayName, unsigned long estimatedSize, DatabaseError&);
+    bool retryCanEstablishDatabase(DatabaseBackendContext*, const String& name, const String& displayName, unsigned long estimatedSize, DatabaseError&);
+
     void setDatabaseDetails(SecurityOrigin*, const String& name, const String& displayName, unsigned long estimatedSize);
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
-    void addOpenDatabase(AbstractDatabase*);
-    void removeOpenDatabase(AbstractDatabase*);
-    void getOpenDatabases(SecurityOrigin* origin, const String& name, HashSet<RefPtr<AbstractDatabase> >* databases);
+    void addOpenDatabase(DatabaseBackend*);
+    void removeOpenDatabase(DatabaseBackend*);
+    void getOpenDatabases(SecurityOrigin*, const String& name, HashSet<RefPtr<DatabaseBackend> >* databases);
 
-    unsigned long long getMaxSizeForDatabase(const AbstractDatabase*);
-    void databaseChanged(AbstractDatabase*);
+    unsigned long long getMaxSizeForDatabase(const DatabaseBackend*);
+    void databaseChanged(DatabaseBackend*);
 
-    void interruptAllDatabasesForContext(const ScriptExecutionContext*);
+    void interruptAllDatabasesForContext(const DatabaseBackendContext*);
 
 private:
     explicit DatabaseTracker(const String& databasePath);
+
+    bool hasAdequateQuotaForOrigin(SecurityOrigin*, unsigned long estimatedSize, DatabaseError&);
 
 #if !PLATFORM(CHROMIUM)
 public:
@@ -112,6 +117,8 @@ public:
 
     bool hasEntryForOrigin(SecurityOrigin*);
 
+    void doneCreatingDatabase(DatabaseBackend*);
+
 private:
     bool hasEntryForOriginNoLock(SecurityOrigin* origin);
     String fullPathForDatabaseNoLock(SecurityOrigin*, const String& name, bool createIfDoesNotExist);
@@ -120,7 +127,12 @@ private:
     unsigned long long quotaForOriginNoLock(SecurityOrigin* origin);
 
     String trackerDatabasePath() const;
-    void openTrackerDatabase(bool createIfDoesNotExist);
+
+    enum TrackerCreationAction {
+        DontCreateIfDoesNotExist,
+        CreateIfDoesNotExist
+    };
+    void openTrackerDatabase(TrackerCreationAction);
 
     String originPath(SecurityOrigin*) const;
 
@@ -131,14 +143,14 @@ private:
 
     bool deleteDatabaseFile(SecurityOrigin*, const String& name);
 
-    typedef HashSet<AbstractDatabase*> DatabaseSet;
+    typedef HashSet<DatabaseBackend*> DatabaseSet;
     typedef HashMap<String, DatabaseSet*> DatabaseNameMap;
     typedef HashMap<RefPtr<SecurityOrigin>, DatabaseNameMap*, SecurityOriginHash> DatabaseOriginMap;
 
     Mutex m_openDatabaseMapGuard;
     mutable OwnPtr<DatabaseOriginMap> m_openDatabaseMap;
 
-    // This lock protects m_database, m_quotaMap, m_proposedDatabases, m_databaseDirectoryPath, m_originsBeingDeleted, m_beingCreated, and m_beingDeleted.
+    // This lock protects m_database, m_quotaMap, m_databaseDirectoryPath, m_originsBeingDeleted, m_beingCreated, and m_beingDeleted.
     Mutex m_databaseGuard;
     SQLiteDatabase m_database;
 
@@ -149,45 +161,45 @@ private:
 
     DatabaseManagerClient* m_client;
 
-    typedef std::pair<RefPtr<SecurityOrigin>, DatabaseDetails> ProposedDatabase;
-    HashSet<ProposedDatabase*> m_proposedDatabases;
-
     typedef HashMap<String, long> NameCountMap;
     typedef HashMap<RefPtr<SecurityOrigin>, NameCountMap*, SecurityOriginHash> CreateSet;
     CreateSet m_beingCreated;
     typedef HashSet<String> NameSet;
     HashMap<RefPtr<SecurityOrigin>, NameSet*, SecurityOriginHash> m_beingDeleted;
     HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash> m_originsBeingDeleted;
-    bool canCreateDatabase(SecurityOrigin *origin, const String& name);
-    void recordCreatingDatabase(SecurityOrigin *origin, const String& name);
-    void doneCreatingDatabase(SecurityOrigin *origin, const String& name);
-    bool creatingDatabase(SecurityOrigin *origin, const String& name);
-    bool canDeleteDatabase(SecurityOrigin *origin, const String& name);
-    void recordDeletingDatabase(SecurityOrigin *origin, const String& name);
-    void doneDeletingDatabase(SecurityOrigin *origin, const String& name);
-    bool deletingDatabase(SecurityOrigin *origin, const String& name);
-    bool canDeleteOrigin(SecurityOrigin *origin);
-    bool deletingOrigin(SecurityOrigin *origin);
-    void recordDeletingOrigin(SecurityOrigin *origin);
-    void doneDeletingOrigin(SecurityOrigin *origin);
+    bool isDeletingDatabaseOrOriginFor(SecurityOrigin*, const String& name);
+    void recordCreatingDatabase(SecurityOrigin*, const String& name);
+    void doneCreatingDatabase(SecurityOrigin*, const String& name);
+    bool creatingDatabase(SecurityOrigin*, const String& name);
+    bool canDeleteDatabase(SecurityOrigin*, const String& name);
+    void recordDeletingDatabase(SecurityOrigin*, const String& name);
+    void doneDeletingDatabase(SecurityOrigin*, const String& name);
+    bool isDeletingDatabase(SecurityOrigin*, const String& name);
+    bool canDeleteOrigin(SecurityOrigin*);
+    bool isDeletingOrigin(SecurityOrigin*);
+    void recordDeletingOrigin(SecurityOrigin*);
+    void doneDeletingOrigin(SecurityOrigin*);
 
     static void scheduleForNotification();
     static void notifyDatabasesChanged(void*);
-#else
+#else // PLATFORM(CHROMIUM)
 public:
     void closeDatabasesImmediately(const String& originIdentifier, const String& name);
 
+    void prepareToOpenDatabase(DatabaseBackend*);
+    void failedToOpenDatabase(DatabaseBackend*);
+
 private:
-    typedef HashSet<AbstractDatabase*> DatabaseSet;
+    typedef HashSet<DatabaseBackend*> DatabaseSet;
     typedef HashMap<String, DatabaseSet*> DatabaseNameMap;
     typedef HashMap<String, DatabaseNameMap*> DatabaseOriginMap;
     class CloseOneDatabaseImmediatelyTask;
 
-    void closeOneDatabaseImmediately(const String& originIdentifier, const String& name, AbstractDatabase* database);
+    void closeOneDatabaseImmediately(const String& originIdentifier, const String& name, DatabaseBackend*);
 
     Mutex m_openDatabaseMapGuard;
     mutable OwnPtr<DatabaseOriginMap> m_openDatabaseMap;
-#endif // !PLATFORM(CHROMIUM)
+#endif // PLATFORM(CHROMIUM)
 };
 
 } // namespace WebCore

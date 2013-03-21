@@ -52,7 +52,10 @@
     readonly attribute RTCSessionDescription remoteDescription
         getter raises(DOMException);
 
+    // DEPRECATED
     readonly attribute DOMString readyState;
+
+    readonly attribute DOMString signalingState;
 
     void updateIce(in [Optional] Dictionary configuration, in [Optional] Dictionary mediaConstraints)
         raises(DOMException);
@@ -61,10 +64,10 @@
         raises(DOMException);
 
     readonly attribute DOMString iceGatheringState;
-    readonly attribute DOMString iceState;
+    readonly attribute DOMString iceConnectionState;
 
-    readonly attribute MediaStreamList localStreams;
-    readonly attribute MediaStreamList remoteStreams;
+    sequence<MediaStream> getLocalStreams();
+    sequence<MediaStream> getRemoteStreams();
 
     [StrictTypeChecking] void addStream(in MediaStream stream, in [Optional] Dictionary mediaConstraints)
         raises(DOMException);
@@ -76,12 +79,14 @@
     RTCDataChannel createDataChannel(in [TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString label, in [Optional] Dictionary options)
          raises(DOMException);
 
+    RTCDTMFSender createDTMFSender(in MediaStreamTrack track)
+         raises(DOMException);
+
     void close()
         raises(DOMException);
 
     attribute EventListener onnegotiationneeded;
     attribute EventListener onicecandidate;
-    attribute EventListener onopen;
     attribute EventListener onstatechange;
     attribute EventListener onaddstream;
     attribute EventListener onremovestream;

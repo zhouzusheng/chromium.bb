@@ -213,14 +213,10 @@
         '../plugins/ppapi/ppb_buffer_impl.h',
         '../plugins/ppapi/ppb_directory_reader_impl.cc',
         '../plugins/ppapi/ppb_directory_reader_impl.h',
-        '../plugins/ppapi/ppb_file_io_impl.cc',
-        '../plugins/ppapi/ppb_file_io_impl.h',
         '../plugins/ppapi/ppb_file_ref_impl.cc',
         '../plugins/ppapi/ppb_file_ref_impl.h',
         '../plugins/ppapi/ppb_file_system_impl.cc',
         '../plugins/ppapi/ppb_file_system_impl.h',
-        '../plugins/ppapi/ppb_flash_impl.cc',
-        '../plugins/ppapi/ppb_flash_impl.h',
         '../plugins/ppapi/ppb_flash_message_loop_impl.cc',
         '../plugins/ppapi/ppb_flash_message_loop_impl.h',
         '../plugins/ppapi/ppb_gpu_blacklist_private_impl.cc',
@@ -243,8 +239,6 @@
         '../plugins/ppapi/ppb_tcp_server_socket_private_impl.h',
         '../plugins/ppapi/ppb_tcp_socket_private_impl.cc',
         '../plugins/ppapi/ppb_tcp_socket_private_impl.h',
-        '../plugins/ppapi/ppb_udp_socket_private_impl.cc',
-        '../plugins/ppapi/ppb_udp_socket_private_impl.h',
         '../plugins/ppapi/ppb_uma_private_impl.cc',
         '../plugins/ppapi/ppb_uma_private_impl.h',
         '../plugins/ppapi/ppb_url_loader_impl.cc',
@@ -291,6 +285,8 @@
         'cpp_variant.h',
         'dom_operations.cc',
         'dom_operations.h',
+        'fling_curve_configuration.cc',
+        'fling_curve_configuration.h',
         'fling_animator_impl_android.cc',
         'fling_animator_impl_android.h',
         'ftp_directory_listing_response_delegate.cc',
@@ -320,8 +316,10 @@
         'scoped_clipboard_writer_glue.h',
         'simple_webmimeregistry_impl.cc',
         'simple_webmimeregistry_impl.h',
-        'touch_fling_platform_gesture_curve.cc',
-        'touch_fling_platform_gesture_curve.h',
+        'touch_fling_gesture_curve.cc',
+        'touch_fling_gesture_curve.h',
+        'web_discardable_memory_impl.cc',
+        'web_discardable_memory_impl.h',
         'webclipboard_impl.cc',
         'webclipboard_impl.h',
         'webcookie.cc',
@@ -381,8 +379,6 @@
         'web_intent_service_data.h',
         'web_io_operators.cc',
         'web_io_operators.h',
-        'window_open_disposition.h',
-        'window_open_disposition.cc',
         'worker_task_runner.cc',
         'worker_task_runner.h',
       ],
@@ -438,6 +434,16 @@
             ['exclude', '^\\.\\./plugins/npapi/webplugin_delegate_impl_aura'],
           ],
         }],
+        ['enable_web_intents==0', {
+          'sources!': [
+            'web_intent_data.cc',
+            'web_intent_data.h',
+            'web_intent_reply_data.cc',
+            'web_intent_reply_data.h',
+            'web_intent_service_data.cc',
+            'web_intent_service_data.h',
+          ],
+        }],
         ['OS!="mac"', {
           'sources/': [['exclude', '_mac\\.(cc|mm)$']],
           'sources!': [
@@ -471,7 +477,8 @@
           'sources!': [
             'plugins/plugin_stubs.cc',
           ],
-          'msvs_disabled_warnings': [ 4800 ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4800, 4267 ],
           'conditions': [
             ['inside_chromium_build==1 and component=="shared_library"', {
               'dependencies': [

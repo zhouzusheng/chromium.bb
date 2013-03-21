@@ -53,9 +53,9 @@
 
 namespace WebCore {
 
-RenderView::RenderView(Node* node, FrameView* view)
-    : RenderBlock(node)
-    , m_frameView(view)
+RenderView::RenderView(Document* document)
+    : RenderBlock(document)
+    , m_frameView(document->view())
     , m_selectionStart(0)
     , m_selectionEnd(0)
     , m_selectionStartPos(-1)
@@ -69,10 +69,6 @@ RenderView::RenderView(Node* node, FrameView* view)
     , m_renderCounterCount(0)
     , m_layoutPhase(RenderViewNormalLayout)
 {
-    // Clear our anonymous bit, set because RenderObject assumes
-    // any renderer with document as the node is anonymous.
-    setIsAnonymous(false);
-
     // init RenderObject attributes
     setInline(false);
     
@@ -81,7 +77,7 @@ RenderView::RenderView(Node* node, FrameView* view)
 
     setPreferredLogicalWidthsDirty(true, MarkOnlyThis);
     
-    setPositioned(true); // to 0,0 :)
+    setPositionState(AbsolutePosition); // to 0,0 :)
 }
 
 RenderView::~RenderView()
@@ -114,19 +110,12 @@ void RenderView::updateLogicalWidth()
         setLogicalWidth(viewLogicalWidth());
 }
 
-void RenderView::computePreferredLogicalWidths()
-{
-    ASSERT(preferredLogicalWidthsDirty());
-
-    RenderBlock::computePreferredLogicalWidths();
-}
-
-LayoutUnit RenderView::availableLogicalHeight() const
+LayoutUnit RenderView::availableLogicalHeight(AvailableLogicalHeightType heightType) const
 {
     // If we have columns, then the available logical height is reduced to the column height.
     if (hasColumns())
         return columnInfo()->columnHeight();
-    return RenderBlock::availableLogicalHeight();
+    return RenderBlock::availableLogicalHeight(heightType);
 }
 
 bool RenderView::isChildAllowed(RenderObject* child, RenderStyle*) const
@@ -156,6 +145,34 @@ void RenderView::checkLayoutState(const LayoutState& state)
 }
 #endif
 
+// The algorithm to layout the flow thread content in auto height regions has to make sure
+// that when a two-pass layout is needed, the auto height regions always start the first
+// pass without a computed override logical content height (from previous layouts).
+// This way, the layout algorithm gives the same result in all situations.
+// If the flow thread content does not need layout, the decision of whether we need a full
+// two pass layout cannot be made up-front. Therefore, we do a first layout, and if an auto
+// height region needs layout or a non-auto height region changes its box dimensions,
+// we need to perform a full two pass layout.
+void RenderView::layoutContentInAutoLogicalHeightRegions(const LayoutState& state)
+{
+    ASSERT(!flowThreadController()->needsTwoPassLayoutForAutoHeightRegions());
+
+    if (!flowThreadController()->hasRenderNamedFlowThreadsNeedingLayout()) {
+        layoutContent(state);
+        if (!flowThreadController()->needsTwoPassLayoutForAutoHeightRegions())
+            return;
+    }
+
+    // Start a full two phase layout for regions with auto logical height.
+    flowThreadController()->resetRegionsOverrideLogicalContentHeight();
+    layoutContent(state);
+
+    m_layoutPhase = ConstrainedFlowThreadsLayoutInAutoLogicalHeightRegions;
+    flowThreadController()->markAutoLogicalHeightRegionsForLayout();
+    layoutContent(state);
+    flowThreadController()->setNeedsTwoPassLayoutForAutoHeightRegions(false);
+}
+
 void RenderView::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
@@ -170,10 +187,13 @@ void RenderView::layout()
     if (relayoutChildren) {
         setChildNeedsLayout(true, MarkOnlyThis);
         for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-            if ((child->isBox() && toRenderBox(child)->hasRelativeLogicalHeight())
+            if ((child->isBox() && (toRenderBox(child)->hasRelativeLogicalHeight() || toRenderBox(child)->hasViewportPercentageLogicalHeight()))
                     || child->style()->logicalHeight().isPercent()
                     || child->style()->logicalMinHeight().isPercent()
-                    || child->style()->logicalMaxHeight().isPercent())
+                    || child->style()->logicalMaxHeight().isPercent()
+                    || child->style()->logicalHeight().isViewportPercentage()
+                    || child->style()->logicalMinHeight().isViewportPercentage()
+                    || child->style()->logicalMaxHeight().isViewportPercentage())
                 child->setChildNeedsLayout(true, MarkOnlyThis);
         }
     }
@@ -192,20 +212,10 @@ void RenderView::layout()
     m_layoutState = &state;
 
     m_layoutPhase = RenderViewNormalLayout;
-    bool needsTwoPassLayoutForAutoLogicalHeightRegions = hasRenderNamedFlowThreads()
-        && flowThreadController()->hasAutoLogicalHeightRegions()
-        && flowThreadController()->hasRenderNamedFlowThreadsNeedingLayout();
-
-    if (needsTwoPassLayoutForAutoLogicalHeightRegions)
-        flowThreadController()->resetRegionsOverrideLogicalContentHeight();
-
-    layoutContent(state);
-
-    if (needsTwoPassLayoutForAutoLogicalHeightRegions) {
-        m_layoutPhase = ConstrainedFlowThreadsLayoutInAutoLogicalHeightRegions;
-        flowThreadController()->markAutoLogicalHeightRegionsForLayout();
+    if (checkTwoPassLayoutForAutoHeightRegions())
+        layoutContentInAutoLogicalHeightRegions(state);
+    else
         layoutContent(state);
-    }
 
 #ifndef NDEBUG
     checkLayoutState(state);
@@ -356,6 +366,9 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint&)
     }
 
     if (document()->ownerElement() || !view())
+        return;
+
+    if (paintInfo.skipRootBackground())
         return;
 
     bool rootFillsViewport = false;
@@ -595,6 +608,9 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
     // Just return if the selection hasn't changed.
     if (m_selectionStart == start && m_selectionStartPos == startPos &&
         m_selectionEnd == end && m_selectionEndPos == endPos)
+        return;
+
+    if ((start && end) && (start->enclosingRenderFlowThread() != end->enclosingRenderFlowThread()))
         return;
 
     // Record the old selected objects.  These will be used later
@@ -848,6 +864,16 @@ IntRect RenderView::unscaledDocumentRect() const
     return pixelSnappedIntRect(overflowRect);
 }
 
+bool RenderView::rootBackgroundIsEntirelyFixed() const
+{
+    RenderObject* rootObject = document()->documentElement() ? document()->documentElement()->renderer() : 0;
+    if (!rootObject)
+        return false;
+
+    RenderObject* rootRenderer = rootObject->rendererForRootBackground();
+    return rootRenderer->hasEntirelyFixedBackground();
+}
+
 LayoutRect RenderView::backgroundRect(RenderBox* backgroundRenderer) const
 {
     if (!hasColumns())
@@ -1022,6 +1048,11 @@ bool RenderView::hasRenderNamedFlowThreads() const
     return m_flowThreadController && m_flowThreadController->hasRenderNamedFlowThreads();
 }
 
+bool RenderView::checkTwoPassLayoutForAutoHeightRegions() const
+{
+    return hasRenderNamedFlowThreads() && m_flowThreadController->hasFlowThreadsWithAutoLogicalHeightRegions();
+}
+
 FlowThreadController* RenderView::flowThreadController()
 {
     if (!m_flowThreadController)
@@ -1044,17 +1075,18 @@ void RenderView::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
     info.addWeakPointer(m_frameView);
     info.addWeakPointer(m_selectionStart);
     info.addWeakPointer(m_selectionEnd);
-    info.addMember(m_widgets);
-    info.addMember(m_layoutState);
+    info.addMember(m_widgets, "widgets");
+    info.addMember(m_layoutState, "layoutState");
 #if USE(ACCELERATED_COMPOSITING)
-    info.addMember(m_compositor);
+    info.addMember(m_compositor, "compositor");
 #endif
 #if ENABLE(CSS_SHADERS) && USE(3D_GRAPHICS)
-    info.addMember(m_customFilterGlobalContext);
+    info.addMember(m_customFilterGlobalContext, "customFilterGlobalContext");
 #endif
-    info.addMember(m_flowThreadController);
-    info.addMember(m_intervalArena);
+    info.addMember(m_flowThreadController, "flowThreadController");
+    info.addMember(m_intervalArena, "intervalArena");
     info.addWeakPointer(m_renderQuoteHead);
+    info.addMember(m_legacyPrinting, "legacyPrinting");
 }
 
 } // namespace WebCore

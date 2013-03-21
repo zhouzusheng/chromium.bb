@@ -140,22 +140,16 @@ public:
     const KURL& url() const { return m_request.url(); } 
     ResourceHandle* handle() const { return m_handle.get(); }
     bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
+    void setSendCallbackPolicy(SendCallbackPolicy sendLoadCallbacks) { m_options.sendLoadCallbacks = sendLoadCallbacks; }
     bool shouldSniffContent() const { return m_options.sniffContent == SniffContent; }
 
     bool reachedTerminalState() const { return m_reachedTerminalState; }
 
     const ResourceRequest& request() const { return m_request; }
 
-    void setShouldBufferData(DataBufferingPolicy);
+    void setDataBufferingPolicy(DataBufferingPolicy);
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
-#if PLATFORM(MAC)
-    // FIXME (NetworkProcess): This is temporary to allow WebKit to directly set the identifier on a ResourceLoader.
-    // More permanently we want the identifier to be piped through ResourceLoader::init/start so
-    // it always has it, especially in willSendRequest.
-    void setIdentifier(unsigned long);
-#endif
 
 protected:
     ResourceLoader(Frame*, ResourceLoaderOptions);

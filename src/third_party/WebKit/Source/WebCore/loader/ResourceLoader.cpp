@@ -32,6 +32,7 @@
 
 #include "ApplicationCacheHost.h"
 #include "AsyncFileStream.h"
+#include "AuthenticationChallenge.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
 #include "FrameLoader.h"
@@ -154,7 +155,7 @@ void ResourceLoader::start()
     ASSERT(m_deferredRequest.isNull());
 
 #if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
-    if (m_documentLoader->scheduleArchiveLoad(this, m_request, m_request.url()))
+    if (m_documentLoader->scheduleArchiveLoad(this, m_request))
         return;
 #endif
 
@@ -189,19 +190,19 @@ FrameLoader* ResourceLoader::frameLoader() const
     return m_frame->loader();
 }
 
-void ResourceLoader::setShouldBufferData(DataBufferingPolicy shouldBufferData)
+void ResourceLoader::setDataBufferingPolicy(DataBufferingPolicy dataBufferingPolicy)
 { 
-    m_options.shouldBufferData = shouldBufferData; 
+    m_options.dataBufferingPolicy = dataBufferingPolicy; 
 
     // Reset any already buffered data
-    if (shouldBufferData == DoNotBufferData)
+    if (dataBufferingPolicy == DoNotBufferData)
         m_resourceData = 0;
 }
     
 
 void ResourceLoader::addData(const char* data, int length, bool allAtOnce)
 {
-    if (m_options.shouldBufferData == DoNotBufferData)
+    if (m_options.dataBufferingPolicy == DoNotBufferData)
         return;
 
     if (allAtOnce) {
@@ -299,7 +300,7 @@ void ResourceLoader::didReceiveData(const char* data, int length, long long enco
 
 void ResourceLoader::willStopBufferingData(const char* data, int length)
 {
-    if (m_options.shouldBufferData == DoNotBufferData)
+    if (m_options.dataBufferingPolicy == DoNotBufferData)
         return;
 
     ASSERT(!m_resourceData);
@@ -484,7 +485,7 @@ bool ResourceLoader::shouldUseCredentialStorage()
 
 void ResourceLoader::didReceiveAuthenticationChallenge(const AuthenticationChallenge& challenge)
 {
-    ASSERT(!handle() || handle()->hasAuthenticationChallenge());
+    ASSERT(handle()->hasAuthenticationChallenge());
 
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
@@ -538,24 +539,14 @@ AsyncFileStream* ResourceLoader::createAsyncFileStream(FileStreamClient* client)
 void ResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
-    info.addMember(m_handle.get());
-    info.addMember(m_frame);
-    info.addMember(m_documentLoader);
-    info.addMember(m_request);
-    info.addMember(m_originalRequest);
-    info.addMember(m_resourceData);
-    info.addMember(m_deferredRequest);
-    info.addMember(m_options);
+    info.addMember(m_handle, "handle");
+    info.addMember(m_frame, "frame");
+    info.addMember(m_documentLoader, "documentLoader");
+    info.addMember(m_request, "request");
+    info.addMember(m_originalRequest, "originalRequest");
+    info.addMember(m_resourceData, "resourceData");
+    info.addMember(m_deferredRequest, "deferredRequest");
+    info.addMember(m_options, "options");
 }
-
-#if PLATFORM(MAC)
-void ResourceLoader::setIdentifier(unsigned long identifier)
-{
-    // FIXME (NetworkProcess): This is temporary to allow WebKit to directly set the identifier on a ResourceLoader.
-    // More permanently we'll want the identifier to be piped through ResourceLoader::init/start so
-    // it always has it, especially in willSendRequest.
-    m_identifier = identifier;
-}
-#endif
 
 }

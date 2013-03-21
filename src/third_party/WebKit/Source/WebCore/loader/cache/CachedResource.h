@@ -26,6 +26,7 @@
 #include "CachePolicy.h"
 #include "FrameLoaderTypes.h"
 #include "PurgePriority.h"
+#include "ResourceError.h"
 #include "ResourceLoadPriority.h"
 #include "ResourceLoaderOptions.h"
 #include "ResourceRequest.h"
@@ -185,7 +186,8 @@ public:
     ResourceBuffer* resourceBuffer() const { ASSERT(!m_purgeableData); return m_data.get(); }
 
     virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
-    virtual void setResponse(const ResourceResponse&);
+    virtual void responseReceived(const ResourceResponse&);
+    void setResponse(const ResourceResponse& response) { m_response = response; }
     const ResourceResponse& response() const { return m_response; }
 
     // Sets the serialized metadata retrieved from the platform's cache.
@@ -214,7 +216,7 @@ public:
     bool loadFailedOrCanceled() { return !m_error.isNull(); }
 
     bool shouldSendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
-    bool shouldBufferData() const { return m_options.shouldBufferData == BufferData; }
+    DataBufferingPolicy dataBufferingPolicy() const { return m_options.dataBufferingPolicy; }
     
     virtual void destroyDecodedData() { }
 
@@ -242,7 +244,7 @@ public:
     
     // HTTP revalidation support methods for CachedResourceLoader.
     void setResourceToRevalidate(CachedResource*);
-    void switchClientsToRevalidatedResource();
+    virtual void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
     void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
     
@@ -255,6 +257,8 @@ public:
     double loadFinishTime() const { return m_loadFinishTime; }
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+
+    virtual bool canReuse(const ResourceRequest&) const { return true; }
 
 protected:
     virtual void checkNotify();

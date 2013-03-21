@@ -12,8 +12,8 @@
 #include "base/message_loop.h"
 #include "base/stl_util.h"
 #include "base/stringprintf.h"
+#include "base/strings/utf_offset_string_conversions.h"
 #include "base/time.h"
-#include "base/utf_offset_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "cc/texture_layer.h"
 #include "ppapi/c/dev/ppb_find_dev.h"
@@ -44,25 +44,25 @@
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
 #include "printing/units.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkRect.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGamepads.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintParams.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScopedUserGesture.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/rect_conversions.h"
@@ -387,8 +387,7 @@ PluginInstance::PluginInstance(
       text_input_caret_set_(false),
       selection_caret_(0),
       selection_anchor_(0),
-      pending_user_gesture_(0.0),
-      flash_impl_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      pending_user_gesture_(0.0) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -646,7 +645,7 @@ bool PluginInstance::SendCompositionEventWithUnderlineInformationToPlugin(
     utf16_offsets.push_back(underlines[i].endOffset);
   }
   std::vector<size_t> utf8_offsets(utf16_offsets);
-  event.character_text = UTF16ToUTF8AndAdjustOffsets(text, &utf8_offsets);
+  event.character_text = base::UTF16ToUTF8AndAdjustOffsets(text, &utf8_offsets);
 
   // Set the converted selection range.
   event.composition_selection_start = (utf8_offsets[0] == std::string::npos ?
@@ -728,7 +727,7 @@ void PluginInstance::GetSurroundingText(string16* text,
   std::vector<size_t> offsets;
   offsets.push_back(selection_anchor_);
   offsets.push_back(selection_caret_);
-  *text = UTF8ToUTF16AndAdjustOffsets(surrounding_text_, &offsets);
+  *text = base::UTF8ToUTF16AndAdjustOffsets(surrounding_text_, &offsets);
   range->set_start(offsets[0] == string16::npos ? text->size() : offsets[0]);
   range->set_end(offsets[1] == string16::npos ? text->size() : offsets[1]);
 }
@@ -1765,8 +1764,7 @@ bool PluginInstance::IsFullPagePlugin() const {
 bool PluginInstance::IsProcessingUserGesture() {
   PP_TimeTicks now =
       ::ppapi::TimeTicksToPPTimeTicks(base::TimeTicks::Now());
-  // Give a lot of slack so tests won't be flaky. Well behaved plugins will
-  // close the user gesture.
+  // Give a lot of slack so tests won't be flaky.
   const PP_TimeTicks kUserGestureDurationInSeconds = 10.0;
   return (now - pending_user_gesture_ < kUserGestureDurationInSeconds);
 }
@@ -1840,7 +1838,7 @@ void PluginInstance::SimulateImeSetCompositionEvent(
                  input_event.composition_segment_offsets.end());
 
   string16 utf16_text =
-      UTF8ToUTF16AndAdjustOffsets(input_event.character_text, &offsets);
+      base::UTF8ToUTF16AndAdjustOffsets(input_event.character_text, &offsets);
 
   std::vector<WebKit::WebCompositionUnderline> underlines;
   for (size_t i = 2; i + 1 < offsets.size(); ++i) {
@@ -1870,13 +1868,6 @@ ContentDecryptorDelegate* PluginInstance::GetContentDecryptorDelegate() {
   content_decryptor_delegate_.reset(
       new ContentDecryptorDelegate(pp_instance_, plugin_decryption_interface));
   return content_decryptor_delegate_.get();
-}
-
-void PluginInstance::ClosePendingUserGesture(PP_Instance instance,
-                                             PP_TimeTicks timestamp) {
-  // Do nothing so that the pending user gesture will stay open for
-  // kUserGestureDurationInSeconds.
-  // TODO(yzshen): remove the code for closing pending user gesture.
 }
 
 PP_Bool PluginInstance::BindGraphics(PP_Instance instance,
@@ -2028,11 +2019,6 @@ PP_Var PluginInstance::GetDefaultCharSet(PP_Instance instance) {
   return StringVar::StringToPPVar(encoding);
 }
 
-PP_Var PluginInstance::GetFontFamilies(PP_Instance instance) {
-  // No in-process implementation.
-  return PP_MakeUndefined();
-}
-
 // These PPB_ContentDecryptor_Private calls are responses to
 // PPP_ContentDecryptor_Private calls made on |content_decryptor_delegate_|.
 // Therefore, |content_decryptor_delegate_| must have been initialized when
@@ -2145,16 +2131,13 @@ PP_Bool PluginInstance::GetScreenSize(PP_Instance instance, PP_Size* size) {
   return PP_TRUE;
 }
 
-::ppapi::thunk::PPB_Flash_API* PluginInstance::GetFlashAPI() {
-  return &flash_impl_;
-}
-
 ::ppapi::Resource* PluginInstance::GetSingletonResource(
     PP_Instance instance,
     ::ppapi::SingletonResourceID id) {
   // Flash APIs and some others aren't implemented in-process.
   switch (id) {
     case ::ppapi::BROKER_SINGLETON_ID:
+    case ::ppapi::BROWSER_FONT_SINGLETON_ID:
     case ::ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ::ppapi::FLASH_FILE_SINGLETON_ID:
     case ::ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
@@ -2451,6 +2434,12 @@ PP_NaClResult PluginInstance::ResetAsProxied(
   if (document_loader_)
     HandleDocumentLoad(document_loader_.get());
   return PP_NACL_OK;
+}
+
+bool PluginInstance::IsValidInstanceOf(PluginModule* module) {
+  DCHECK(module);
+  return module == module_.get() ||
+         module == original_module_.get();
 }
 
 void PluginInstance::DoSetCursor(WebCursorInfo* cursor) {

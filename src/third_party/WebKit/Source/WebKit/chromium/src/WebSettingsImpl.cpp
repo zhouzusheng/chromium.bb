@@ -52,7 +52,7 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_showPlatformLayerTree(false)
     , m_showPaintRects(false)
     , m_renderVSyncEnabled(true)
-    , m_lowLatencyRenderingEnabled(false)
+    , m_renderVSyncNotificationEnabled(false)
     , m_viewportEnabled(false)
     , m_gestureTapHighlightEnabled(true)
     , m_autoZoomFocusedNodeToLegibleScale(false)
@@ -292,6 +292,11 @@ void WebSettingsImpl::setXSSAuditorEnabled(bool enabled)
     m_settings->setXSSAuditorEnabled(enabled);
 }
 
+void WebSettingsImpl::setUnsafePluginPastingEnabled(bool enabled)
+{
+    m_settings->setUnsafePluginPastingEnabled(enabled);
+}
+
 void WebSettingsImpl::setDNSPrefetchingEnabled(bool enabled)
 {
     m_settings->setDNSPrefetchingEnabled(enabled);
@@ -351,6 +356,13 @@ void WebSettingsImpl::setTouchDragDropEnabled(bool enabled)
     m_settings->setTouchDragDropEnabled(enabled);
 }
 
+void WebSettingsImpl::setThreadedHTMLParser(bool enabled)
+{
+#if ENABLE(THREADED_HTML_PARSER)
+    m_settings->setThreadedHTMLParser(enabled);
+#endif
+}
+
 void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
 {
     m_settings->setOfflineWebApplicationCacheEnabled(enabled);
@@ -396,14 +408,19 @@ void WebSettingsImpl::setPrivilegedWebGLExtensionsEnabled(bool enabled)
     m_settings->setPrivilegedWebGLExtensionsEnabled(enabled);
 }
 
+void WebSettingsImpl::setRecordRenderingStats(bool enabled)
+{
+    m_recordRenderingStats = enabled;
+}
+
 void WebSettingsImpl::setRenderVSyncEnabled(bool enabled)
 {
     m_renderVSyncEnabled = enabled;
 }
 
-void WebSettingsImpl::setLowLatencyRenderingEnabled(bool lowLatencyRenderingEnabled)
+void WebSettingsImpl::setRenderVSyncNotificationEnabled(bool enabled)
 {
-    m_lowLatencyRenderingEnabled = lowLatencyRenderingEnabled;
+    m_renderVSyncNotificationEnabled = enabled;
 }
 
 void WebSettingsImpl::setWebGLErrorsToConsoleEnabled(bool enabled)

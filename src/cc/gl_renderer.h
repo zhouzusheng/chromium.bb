@@ -60,10 +60,10 @@ public:
 
     virtual void sendManagedMemoryStats(size_t bytesVisible, size_t bytesVisibleAndNearby, size_t bytesAllocated) OVERRIDE;
 
+    static void debugGLCall(WebKit::WebGraphicsContext3D*, const char* command, const char* file, int line);
+
 protected:
     GLRenderer(RendererClient*, OutputSurface*, ResourceProvider*);
-
-    static void debugGLCall(WebKit::WebGraphicsContext3D*, const char* command, const char* file, int line);
 
     bool isBackbufferDiscarded() const { return m_isBackbufferDiscarded; }
     bool initialize();
@@ -89,13 +89,12 @@ protected:
 
 private:
     static void toGLMatrix(float*, const gfx::Transform&);
-    static int priorityCutoffValue(WebKit::WebGraphicsMemoryAllocation::PriorityCutoff);
+    static ManagedMemoryPolicy::PriorityCutoff priorityCutoff(WebKit::WebGraphicsMemoryAllocation::PriorityCutoff);
 
     void drawCheckerboardQuad(const DrawingFrame&, const CheckerboardDrawQuad*);
     void drawDebugBorderQuad(const DrawingFrame&, const DebugBorderDrawQuad*);
     scoped_ptr<ScopedResource> drawBackgroundFilters(
         DrawingFrame&, const RenderPassDrawQuad*,
-        const WebKit::WebFilterOperations&,
         const gfx::Transform& contentsDeviceTransform,
         const gfx::Transform& contentsDeviceTransformInverse);
     void drawRenderPassQuad(DrawingFrame&, const RenderPassDrawQuad*);
@@ -161,7 +160,7 @@ private:
 
     // Texture shaders.
     typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexVaryingAlpha> TextureProgram;
-    typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexFlipVaryingAlpha> TextureProgramFlip;
+    typedef ProgramBinding<VertexShaderPosTexTransformFlip, FragmentShaderRGBATexVaryingAlpha> TextureProgramFlip;
     typedef ProgramBinding<VertexShaderPosTexTransform, FragmentShaderRGBATexRectVaryingAlpha> TextureIOSurfaceProgram;
 
     // Video shaders.
@@ -231,6 +230,8 @@ private:
     TexturedQuadDrawCache m_drawCache;
 
     scoped_ptr<ResourceProvider::ScopedWriteLockGL> m_currentFramebufferLock;
+
+    scoped_refptr<ResourceProvider::Fence> m_lastSwapFence;
 
     DISALLOW_COPY_AND_ASSIGN(GLRenderer);
 };

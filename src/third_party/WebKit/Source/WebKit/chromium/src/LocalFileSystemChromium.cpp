@@ -203,8 +203,7 @@ static void openFileSystemHelper(ScriptExecutionContext* context, FileSystemType
     } else {
 #if ENABLE(WORKERS)
         WorkerContext* workerContext = static_cast<WorkerContext*>(context);
-        WorkerLoaderProxy* workerLoaderProxy = &workerContext->thread()->workerLoaderProxy();
-        WebWorkerBase* webWorker = static_cast<WebWorkerBase*>(workerLoaderProxy);
+        WebWorkerBase* webWorker = static_cast<WebWorkerBase*>(workerContext->thread()->workerLoaderProxy().toWebWorkerBase());
         if (!allowFileSystemForWorker(webWorker->commonClient()))
             allowed = false;
         else
@@ -234,7 +233,7 @@ void LocalFileSystem::requestFileSystem(ScriptExecutionContext* context, FileSys
 void LocalFileSystem::deleteFileSystem(ScriptExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     ASSERT(context);
-    ASSERT(context->isDocument());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
 
     Document* document = static_cast<Document*>(context);
     WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());

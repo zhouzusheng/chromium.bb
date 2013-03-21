@@ -128,7 +128,7 @@ void DecryptingVideoDecoder::Stop(const base::Closure& closure) {
   // render thread to be processing messages to complete (such as PPAPI
   // callbacks).
   if (decryptor_) {
-    decryptor_->RegisterKeyAddedCB(Decryptor::kVideo, Decryptor::KeyAddedCB());
+    decryptor_->RegisterNewKeyCB(Decryptor::kVideo, Decryptor::NewKeyCB());
     decryptor_->DeinitializeDecoder(Decryptor::kVideo);
     decryptor_ = NULL;
   }
@@ -190,7 +190,7 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
     return;
   }
 
-  decryptor_->RegisterKeyAddedCB(Decryptor::kVideo, BindToCurrentLoop(
+  decryptor_->RegisterNewKeyCB(Decryptor::kVideo, BindToCurrentLoop(
       base::Bind(&DecryptingVideoDecoder::OnKeyAdded, this)));
 
   // Success!
@@ -287,10 +287,15 @@ void DecryptingVideoDecoder::DecodePendingBuffer() {
   DCHECK_EQ(state_, kPendingDecode) << state_;
   TRACE_EVENT_ASYNC_BEGIN0(
       "eme", "DecryptingVideoDecoder::DecodePendingBuffer", ++trace_id_);
+
+  int buffer_size = 0;
+  if (!pending_buffer_to_decode_->IsEndOfStream()) {
+    buffer_size = pending_buffer_to_decode_->GetDataSize();
+  }
+
   decryptor_->DecryptAndDecodeVideo(
       pending_buffer_to_decode_, BindToCurrentLoop(base::Bind(
-          &DecryptingVideoDecoder::DeliverFrame, this,
-          pending_buffer_to_decode_->GetDataSize())));
+          &DecryptingVideoDecoder::DeliverFrame, this, buffer_size)));
 }
 
 void DecryptingVideoDecoder::DeliverFrame(

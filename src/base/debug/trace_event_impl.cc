@@ -14,9 +14,9 @@
 #include "base/memory/singleton.h"
 #include "base/process_util.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/sys_info.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
@@ -65,7 +65,9 @@ const int g_category_categories_exhausted = 1;
 const int g_category_metadata = 2;
 int g_category_index = 3; // skip initial 3 categories
 
-// The most-recently captured name of the current thread
+// The name of the current thread. This is used to decide if the current
+// thread name has changed. We combine all the seen thread names into the
+// output name for the thread.
 LazyInstance<ThreadLocalPointer<const char> >::Leaky
     g_current_thread_name = LAZY_INSTANCE_INITIALIZER;
 
@@ -160,7 +162,7 @@ TraceEvent::TraceEvent(int thread_id,
   }
 
   if (alloc_size) {
-    parameter_copy_storage_ = new base::RefCountedString;
+    parameter_copy_storage_ = new RefCountedString;
     parameter_copy_storage_->data().resize(alloc_size);
     char* ptr = string_as_array(&parameter_copy_storage_->data());
     const char* end = ptr + alloc_size;
@@ -277,7 +279,7 @@ void TraceEvent::AppendAsJSON(std::string* out) const {
 
 TraceResultBuffer::OutputCallback
     TraceResultBuffer::SimpleOutput::GetCallback() {
-  return base::Bind(&SimpleOutput::Append, base::Unretained(this));
+  return Bind(&SimpleOutput::Append, Unretained(this));
 }
 
 void TraceResultBuffer::SimpleOutput::Append(
@@ -346,7 +348,7 @@ TraceLog* TraceLog::GetInstance() {
 }
 
 TraceLog::TraceLog()
-    : enabled_(false),
+    : enable_count_(0),
       dispatching_to_observer_list_(false),
       watch_category_(NULL) {
   // Trace is enabled or disabled on one thread while other threads are
@@ -363,7 +365,7 @@ TraceLog::TraceLog()
 #if defined(OS_NACL)  // NaCl shouldn't expose the process id.
   SetProcessID(0);
 #else
-  SetProcessID(static_cast<int>(base::GetCurrentProcId()));
+  SetProcessID(static_cast<int>(GetCurrentProcId()));
 #endif
 }
 
@@ -440,11 +442,11 @@ const unsigned char* TraceLog::GetCategoryEnabledInternal(const char* name) {
       // Don't hold on to the name pointer, so that we can create categories
       // with strings not known at compile time (this is required by
       // SetWatchEvent).
-      const char* new_name = base::strdup(name);
+      const char* new_name = strdup(name);
       ANNOTATE_LEAKING_OBJECT_PTR(new_name);
       g_categories[new_index] = new_name;
       DCHECK(!g_category_enabled[new_index]);
-      if (enabled_) {
+      if (enable_count_) {
         // Note that if both included and excluded_categories are empty, the
         // else clause below excludes nothing, thereby enabling this category.
         if (!included_categories_.empty()) {
@@ -477,8 +479,23 @@ void TraceLog::GetKnownCategories(std::vector<std::string>* categories) {
 void TraceLog::SetEnabled(const std::vector<std::string>& included_categories,
                           const std::vector<std::string>& excluded_categories) {
   AutoLock lock(lock_);
-  if (enabled_)
+
+  if (enable_count_++ > 0) {
+    // Tracing is already enabled, so just merge in enabled categories.
+    // We only expand the set of enabled categories upon nested SetEnable().
+    if (!included_categories_.empty() && !included_categories.empty()) {
+      included_categories_.insert(included_categories_.end(),
+                                  included_categories.begin(),
+                                  included_categories.end());
+      EnableMatchingCategories(included_categories_, CATEGORY_ENABLED, 0);
+    } else {
+      // If either old or new included categories are empty, allow all events.
+      included_categories_.clear();
+      excluded_categories_.clear();
+      EnableMatchingCategories(excluded_categories_, 0, CATEGORY_ENABLED);
+    }
     return;
+  }
 
   if (dispatching_to_observer_list_) {
     DLOG(ERROR) <<
@@ -492,7 +509,6 @@ void TraceLog::SetEnabled(const std::vector<std::string>& included_categories,
   dispatching_to_observer_list_ = false;
 
   logged_events_.reserve(1024);
-  enabled_ = true;
   included_categories_ = included_categories;
   excluded_categories_ = excluded_categories;
   // Note that if both included and excluded_categories are empty, the else
@@ -528,7 +544,7 @@ void TraceLog::GetEnabledTraceCategories(
     std::vector<std::string>* included_out,
     std::vector<std::string>* excluded_out) {
   AutoLock lock(lock_);
-  if (enabled_) {
+  if (enable_count_) {
     *included_out = included_categories_;
     *excluded_out = excluded_categories_;
   }
@@ -536,7 +552,8 @@ void TraceLog::GetEnabledTraceCategories(
 
 void TraceLog::SetDisabled() {
   AutoLock lock(lock_);
-  if (!enabled_)
+  DCHECK(enable_count_ > 0);
+  if (--enable_count_ != 0)
     return;
 
   if (dispatching_to_observer_list_) {
@@ -550,7 +567,6 @@ void TraceLog::SetDisabled() {
                     OnTraceLogWillDisable());
   dispatching_to_observer_list_ = false;
 
-  enabled_ = false;
   included_categories_.clear();
   excluded_categories_.clear();
   watch_category_ = NULL;
@@ -558,9 +574,6 @@ void TraceLog::SetDisabled() {
   for (int i = 0; i < g_category_index; i++)
     g_category_enabled[i] = 0;
   AddThreadNameMetadataEvents();
-#if defined(OS_ANDROID)
-  AddClockSyncMetadataEvents();
-#endif
 }
 
 void TraceLog::SetEnabled(bool enabled) {
@@ -644,7 +657,7 @@ void TraceLog::AddTraceEvent(char phase,
     if (new_name != g_current_thread_name.Get().Get() &&
         new_name && *new_name) {
       g_current_thread_name.Get().Set(new_name);
-      base::hash_map<int, std::string>::iterator existing_name =
+      hash_map<int, std::string>::iterator existing_name =
           thread_names_.find(thread_id);
       if (existing_name == thread_names_.end()) {
         // This is a new thread id, and a new name.
@@ -652,7 +665,7 @@ void TraceLog::AddTraceEvent(char phase,
       } else {
         // This is a thread id that we've seen before, but potentially with a
         // new name.
-        std::vector<base::StringPiece> existing_names;
+        std::vector<StringPiece> existing_names;
         Tokenize(existing_name->second, ",", &existing_names);
         bool found = std::find(existing_names.begin(),
                                existing_names.end(),
@@ -743,7 +756,7 @@ void TraceLog::CancelWatchEvent() {
 
 void TraceLog::AddThreadNameMetadataEvents() {
   lock_.AssertAcquired();
-  for(base::hash_map<int, std::string>::iterator it = thread_names_.begin();
+  for(hash_map<int, std::string>::iterator it = thread_names_.begin();
       it != thread_names_.end();
       it++) {
     if (!it->second.empty()) {

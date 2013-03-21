@@ -21,7 +21,7 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
       public QuicReliableClientStream::Delegate,
       public HttpStream {
  public:
-  explicit QuicHttpStream(QuicReliableClientStream* stream);
+  QuicHttpStream(QuicReliableClientStream* stream, bool use_spdy);
 
   virtual ~QuicHttpStream();
 
@@ -46,6 +46,8 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual bool IsConnectionReused() const OVERRIDE;
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
   virtual void GetSSLCertRequestInfo(
       SSLCertRequestInfo* cert_request_info) OVERRIDE;
@@ -58,6 +60,7 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual int OnSendDataComplete(int status, bool* eof) OVERRIDE;
   virtual int OnDataReceived(const char* data, int length) OVERRIDE;
   virtual void OnClose(QuicErrorCode error) OVERRIDE;
+  virtual void OnError(int error) OVERRIDE;
 
  private:
   enum State {
@@ -102,8 +105,16 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   // |response_info_| is the HTTP response data object which is filled in
   // when a the response headers are read.  It is not owned by this stream.
   HttpResponseInfo* response_info_;
+  // Because response data is buffered, also buffer the response status if the
+  // stream is explicitly closed via OnError or OnClose with an error.
+  // Once all buffered data has been returned, this will be used as the final
+  // response.
+  int response_status_;
 
   bool response_headers_received_;
+
+  // True if the request and response bodies should be serialized via SPDY.
+  bool use_spdy_;
 
   // Serialized HTTP request.
   std::string request_;

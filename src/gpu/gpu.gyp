@@ -27,6 +27,8 @@
       'sources': [
         '<@(gles2_implementation_source_files)',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
     {
       # Library emulates GLES2 using command_buffers.
@@ -46,6 +48,8 @@
       'sources': [
         '<@(gles2_implementation_source_files)',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       # Library emulates GLES2 using command_buffers.
@@ -84,6 +88,8 @@
       'sources': [
         '<@(gles2_c_lib_source_files)',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
     {
       # Same as gles2_c_lib except with no parameter checking. Required for
@@ -206,6 +212,8 @@
           ],
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'gl_tests',
@@ -288,6 +296,8 @@
           'sources': [
             'gpu_export.h',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
         },
         {
           'target_name': 'command_buffer_common',
@@ -368,6 +378,8 @@
             '../base/base.gyp:base',
             'command_buffer/command_buffer.gyp:gles2_utils',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
         },
         {
           'target_name': 'command_buffer_common',
@@ -407,7 +419,7 @@
         },
       ],
     }],
-    ['disable_nacl!=1 and OS=="win"', {
+    ['disable_nacl!=1 and OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'gpu_ipc_win64',

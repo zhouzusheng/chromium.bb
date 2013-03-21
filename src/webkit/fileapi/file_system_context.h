@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
@@ -14,10 +15,13 @@
 #include "base/platform_file.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "webkit/fileapi/file_system_types.h"
+#include "webkit/fileapi/file_system_url.h"
 #include "webkit/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/storage/webkit_storage_export.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace quota {
 class QuotaManagerProxy;
@@ -25,12 +29,15 @@ class SpecialStoragePolicy;
 }
 
 namespace webkit_blob {
+class BlobURLRequestJobTest;
 class FileStreamReader;
 }
 
 namespace fileapi {
 
+class AsyncFileUtil;
 class ExternalFileSystemMountPointProvider;
+class ExternalMountPoints;
 class FileSystemFileUtil;
 class FileSystemMountPointProvider;
 class FileSystemOperation;
@@ -40,8 +47,9 @@ class FileSystemTaskRunners;
 class FileSystemURL;
 class IsolatedMountPointProvider;
 class LocalFileChangeTracker;
-class SandboxMountPointProvider;
 class LocalFileSyncContext;
+class MountPoints;
+class SandboxMountPointProvider;
 
 struct DefaultContextDeleter;
 
@@ -58,11 +66,18 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // task_runners->file_task_runner()->RunsTasksOnCurrentThread()
   // returns false if the current task is not running on the thread that allows
   // blocking file operations (like SequencedWorkerPool implementation does).
+  //
+  // |external_mount_points| contains non-system external mount points available
+  // in the context. If not NULL, it will be used during URL cracking. On
+  // ChromeOS, it will be passed to external_mount_point_provider.
+  // |external_mount_points| may be NULL only on platforms different from
+  // ChromeOS (i.e. platforms that don't use external_mount_point_provider).
   FileSystemContext(
       scoped_ptr<FileSystemTaskRunners> task_runners,
+      ExternalMountPoints* external_mount_points,
       quota::SpecialStoragePolicy* special_storage_policy,
       quota::QuotaManagerProxy* quota_manager_proxy,
-      const FilePath& partition_path,
+      const base::FilePath& partition_path,
       const FileSystemOptions& options);
 
   bool DeleteDataForOriginOnFileThread(const GURL& origin_url);
@@ -76,10 +91,8 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // it is not a quota-managed storage.
   FileSystemQuotaUtil* GetQuotaUtil(FileSystemType type) const;
 
-  // Returns the appropriate FileUtil instance for the given |type|.
-  // This may return NULL if it is given an invalid or unsupported filesystem
-  // type.
-  FileSystemFileUtil* GetFileUtil(FileSystemType type) const;
+  // Returns the appropriate AsyncFileUtil instance for the given |type|.
+  AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) const;
 
   // Returns the mount point provider instance for the given |type|.
   // This may return NULL if it is given an invalid or unsupported filesystem
@@ -138,9 +151,9 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
       FileSystemType type,
       const DeleteFileSystemCallback& callback);
 
-  // Creates a new FileSystemOperation instance by cracking
-  // the given filesystem URL |url| to get an appropriate MountPointProvider
-  // and calling the provider's corresponding CreateFileSystemOperation method.
+  // Creates a new FileSystemOperation instance by getting an appropriate
+  // MountPointProvider for |url| and calling the provider's corresponding
+  // CreateFileSystemOperation method.
   // The resolved MountPointProvider could perform further specialization
   // depending on the filesystem type pointed by the |url|.
   FileSystemOperation* CreateFileSystemOperation(
@@ -175,9 +188,34 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   LocalFileSyncContext* sync_context() { return sync_context_.get(); }
   void set_sync_context(LocalFileSyncContext* sync_context);
 
-  const FilePath& partition_path() const { return partition_path_; }
+  const base::FilePath& partition_path() const { return partition_path_; }
+
+  // Same as |CrackFileSystemURL|, but cracks FileSystemURL created from |url|.
+  FileSystemURL CrackURL(const GURL& url) const;
+  // Same as |CrackFileSystemURL|, but cracks FileSystemURL created from method
+  // arguments.
+  FileSystemURL CreateCrackedFileSystemURL(const GURL& origin,
+                                           FileSystemType type,
+                                           const base::FilePath& path) const;
 
  private:
+  // Friended for GetFileUtil.
+  // These classes know the target filesystem (i.e. sandbox filesystem)
+  // supports synchronous FileUtil.
+  friend class LocalFileSystemOperation;
+  friend class LocalFileChangeTracker;
+  friend class LocalFileSyncContext;
+
+  // Friended for GetFileUtil.
+  // Test classes that rely on synchronous FileUtils.
+  friend class webkit_blob::BlobURLRequestJobTest;
+  friend class FileSystemQuotaClientTest;
+  friend class LocalFileSystemTestOriginHelper;
+  friend class NativeMediaFileUtilTest;
+  friend class FileSystemURLRequestJobTest;
+  friend class UploadFileSystemFileElementReaderTest;
+
+  // Deleters.
   friend struct DefaultContextDeleter;
   friend class base::DeleteHelper<FileSystemContext>;
   friend class base::RefCountedThreadSafe<FileSystemContext,
@@ -185,6 +223,20 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   ~FileSystemContext();
 
   void DeleteOnCorrectThread() const;
+
+  // For non-cracked isolated and external mount points, returns a FileSystemURL
+  // created by cracking |url|. The url is cracked using MountPoints registered
+  // as |url_crackers_|. If the url cannot be cracked, returns invalid
+  // FileSystemURL.
+  //
+  // If the original url does not point to an isolated or external filesystem,
+  // returns the original url, without attempting to crack it.
+  FileSystemURL CrackFileSystemURL(const FileSystemURL& url) const;
+
+  // Returns the appropriate FileUtil instance for the given |type|.
+  // This may return NULL if it is given an invalid type or the filesystem
+  // does not support synchronous file operations.
+  FileSystemFileUtil* GetFileUtil(FileSystemType type) const;
 
   scoped_ptr<FileSystemTaskRunners> task_runners_;
 
@@ -198,8 +250,16 @@ class WEBKIT_STORAGE_EXPORT FileSystemContext
   // Registered mount point providers.
   std::map<FileSystemType, FileSystemMountPointProvider*> provider_map_;
 
+  // External mount points visible in the file system context (excluding system
+  // external mount points).
+  scoped_refptr<ExternalMountPoints> external_mount_points_;
+
+  // MountPoints used to crack FileSystemURLs. The MountPoints are ordered
+  // in order they should try to crack a FileSystemURL.
+  std::vector<MountPoints*> url_crackers_;
+
   // The base path of the storage partition for this context.
-  const FilePath partition_path_;
+  const base::FilePath partition_path_;
 
   // For syncable file systems.
   scoped_ptr<LocalFileChangeTracker> change_tracker_;

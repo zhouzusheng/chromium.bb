@@ -41,7 +41,7 @@
 namespace net {
 
 HttpCache::DefaultBackend::DefaultBackend(CacheType type,
-                                          const FilePath& path,
+                                          const base::FilePath& path,
                                           int max_bytes,
                                           base::MessageLoopProxy* thread)
     : type_(type),
@@ -54,7 +54,7 @@ HttpCache::DefaultBackend::~DefaultBackend() {}
 
 // static
 HttpCache::BackendFactory* HttpCache::DefaultBackend::InMemory(int max_bytes) {
-  return new DefaultBackend(MEMORY_CACHE, FilePath(), max_bytes, NULL);
+  return new DefaultBackend(MEMORY_CACHE, base::FilePath(), max_bytes, NULL);
 }
 
 int HttpCache::DefaultBackend::CreateBackend(
@@ -388,7 +388,7 @@ void HttpCache::OnExternalCacheHit(const GURL& url,
   disk_cache_->OnExternalCacheHit(key);
 }
 
-void HttpCache::InitializeInfiniteCache(const FilePath& path) {
+void HttpCache::InitializeInfiniteCache(const base::FilePath& path) {
   if (base::FieldTrialList::FindFullName("InfiniteCache") != "Yes")
     return;
   // To be enabled after everything is fully wired.
@@ -530,6 +530,7 @@ int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
   // all consumers are finished with the entry).
   ActiveEntriesMap::iterator it = active_entries_.find(key);
   if (it == active_entries_.end()) {
+    DCHECK(trans);
     return AsyncDoomEntry(key, trans);
   }
 
@@ -548,7 +549,6 @@ int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
 }
 
 int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
-  DCHECK(trans);
   WorkItem* item = new WorkItem(WI_DOOM_ENTRY, trans, NULL);
   PendingOp* pending_op = GetPendingOp(key);
   if (pending_op->writer) {
@@ -569,6 +569,20 @@ int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
   }
 
   return rv;
+}
+
+void HttpCache::DoomMainEntryForUrl(const GURL& url) {
+  HttpRequestInfo temp_info;
+  temp_info.url = url;
+  temp_info.method = "GET";
+  std::string key = GenerateCacheKey(&temp_info);
+
+  // Defer to DoomEntry if there is an active entry, otherwise call
+  // AsyncDoomEntry without triggering a callback.
+  if (active_entries_.count(key))
+    DoomEntry(key, NULL);
+  else
+    AsyncDoomEntry(key, NULL);
 }
 
 void HttpCache::FinalizeDoomedEntry(ActiveEntry* entry) {

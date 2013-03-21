@@ -88,8 +88,9 @@ class MediaControls : public HTMLDivElement {
     virtual void changedVolume();
 
     virtual void changedClosedCaptionsVisibility();
+    virtual void refreshClosedCaptionsButtonVisibility();
     virtual void toggleClosedCaptionTrackList() { }
-    virtual void closedCaptionTracksChanged() { }
+    virtual void closedCaptionTracksChanged();
 
     virtual void enteredFullscreen();
     virtual void exitedFullscreen();
@@ -105,6 +106,7 @@ class MediaControls : public HTMLDivElement {
     virtual void showTextTrackDisplay();
     virtual void hideTextTrackDisplay();
     virtual void updateTextTrackDisplay();
+    virtual void textTrackPreferencesChanged();
 #endif
 
 protected:
@@ -145,7 +147,7 @@ private:
 
 inline MediaControls* toMediaControls(Node* node)
 {
-    ASSERT(!node || node->isMediaControls());
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isMediaControls());
     return static_cast<MediaControls*>(node);
 }
 

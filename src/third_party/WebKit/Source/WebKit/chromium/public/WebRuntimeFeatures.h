@@ -31,9 +31,7 @@
 #ifndef WebRuntimeFeatures_h
 #define WebRuntimeFeatures_h
 
-#define HAS_WEBAUDIO_RUNTIMEFEATURES 1
-
-#include "platform/WebCommon.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
 
 namespace WebKit {
 
@@ -163,8 +161,16 @@ public:
     WEBKIT_EXPORT static void enableExperimentalContentSecurityPolicyFeatures(bool);
     WEBKIT_EXPORT static bool isExperimentalContentSecurityPolicyFeaturesEnabled();
 
+    WEBKIT_EXPORT static void enableSeamlessIFrames(bool);
+    WEBKIT_EXPORT static bool areSeamlessIFramesEnabled();
+
     WEBKIT_EXPORT static void enableWebIntents(bool);
     WEBKIT_EXPORT static bool isWebIntentsEnabled();
+
+    // If the flag is set, we use WebViewClient::showValidationMessage and
+    // hideVlidationMessage for interactive form validation.
+    WEBKIT_EXPORT static void enableNativeValidationMessage(bool);
+    WEBKIT_EXPORT static bool isNativeValidationMessageEnabled();
 
 private:
     WebRuntimeFeatures();

@@ -122,9 +122,6 @@ namespace WebCore {
 
         static FloatRect adjustWindowRect(Page*, const FloatRect& pendingChanges);
 
-        // FIXME: We can remove this function once V8 showModalDialog is changed to use DOMWindow.
-        static void parseModalDialogFeatures(const String&, HashMap<String, String>&);
-
         bool allowPopUp(); // Call on first window, not target window.
         static bool allowPopUp(Frame* firstFrame);
         static bool canShowModalDialog(const Frame*);
@@ -276,6 +273,7 @@ namespace WebCore {
 
         using EventTarget::dispatchEvent;
         bool dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget);
+
         void dispatchLoadEvent();
 
         DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
@@ -348,6 +346,7 @@ namespace WebCore {
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkittransitionend, webkitTransitionEnd);
+        DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(transitionend, transitionend);
 
         void captureEvents();
         void releaseEvents();

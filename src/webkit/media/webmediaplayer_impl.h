@@ -54,10 +54,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
+#include "base/threading/thread.h"
 #include "googleurl/src/gurl.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
-#include "media/base/message_loop_factory.h"
 #include "media/base/pipeline.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAudioSourceProvider.h"
@@ -69,12 +69,10 @@
 class RenderAudioSourceProvider;
 
 namespace WebKit {
-class WebAudioSourceProvider;
 class WebFrame;
 }
 
 namespace media {
-class AudioRendererSink;
 class ChunkDemuxer;
 class MediaLog;
 }
@@ -82,7 +80,9 @@ class MediaLog;
 namespace webkit_media {
 
 class MediaStreamClient;
+class WebAudioSourceProviderImpl;
 class WebMediaPlayerDelegate;
+class WebMediaPlayerParams;
 class WebMediaPlayerProxy;
 
 class WebMediaPlayerImpl
@@ -90,37 +90,14 @@ class WebMediaPlayerImpl
       public MessageLoop::DestructionObserver,
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
-  // Construct a WebMediaPlayerImpl with reference to the client, and media
-  // filter collection. By providing the filter collection the implementor can
-  // provide more specific media filters that does resource loading and
-  // rendering.
+  // Constructs a WebMediaPlayer implementation using Chromium's media stack.
   //
-  // WebMediaPlayerImpl comes packaged with the following media filters:
-  //   - URL fetching
-  //   - Demuxing
-  //   - Software audio/video decoding
-  //   - Video rendering
-  //
-  // Clients are expected to add their platform-specific audio rendering media
-  // filter if they wish to hear any sound coming out the speakers, otherwise
-  // audio data is discarded and media plays back based on wall clock time.
-  //
-  // When calling this, the |audio_source_provider| and
-  // |audio_renderer_sink| arguments should be the same object.
-  //
-  // TODO(scherkus): Remove WebAudioSourceProvider parameter once we
-  // refactor RenderAudioSourceProvider to live under webkit/media/
-  // instead of content/renderer/, see http://crbug.com/136442
-
-  WebMediaPlayerImpl(WebKit::WebFrame* frame,
-                     WebKit::WebMediaPlayerClient* client,
-                     base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                     media::FilterCollection* collection,
-                     WebKit::WebAudioSourceProvider* audio_source_provider,
-                     media::AudioRendererSink* audio_renderer_sink,
-                     media::MessageLoopFactory* message_loop_factory,
-                     MediaStreamClient* media_stream_client,
-                     media::MediaLog* media_log);
+  // |delegate| may be null.
+  WebMediaPlayerImpl(
+      WebKit::WebFrame* frame,
+      WebKit::WebMediaPlayerClient* client,
+      base::WeakPtr<WebMediaPlayerDelegate> delegate,
+      const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
   virtual void load(const WebKit::WebURL& url, CORSMode cors_mode);
@@ -229,7 +206,7 @@ class WebMediaPlayerImpl
   void Repaint();
 
   void OnPipelineSeek(media::PipelineStatus status);
-  void OnPipelineEnded(media::PipelineStatus status);
+  void OnPipelineEnded();
   void OnPipelineError(media::PipelineStatus error);
   void OnPipelineBufferingState(
       media::Pipeline::BufferingState buffering_state);
@@ -242,7 +219,7 @@ class WebMediaPlayerImpl
   void OnKeyMessage(const std::string& key_system,
                     const std::string& session_id,
                     const std::string& message,
-                    const GURL& default_url);
+                    const std::string& default_url);
   void OnNeedKey(const std::string& key_system,
                  const std::string& type,
                  const std::string& session_id,
@@ -290,6 +267,12 @@ class WebMediaPlayerImpl
       const WebKit::WebString& key_system,
       const WebKit::WebString& session_id);
 
+  // Gets the duration value reported by the pipeline.
+  double GetPipelineDuration() const;
+
+  // Notifies WebKit of the duration change.
+  void OnDurationChange();
+
   WebKit::WebFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
@@ -305,12 +288,11 @@ class WebMediaPlayerImpl
 
   scoped_ptr<media::FilterCollection> filter_collection_;
   scoped_refptr<media::Pipeline> pipeline_;
+  base::Thread media_thread_;
 
   // The currently selected key system. Empty string means that no key system
   // has been selected.
   WebKit::WebString current_key_system_;
-
-  scoped_ptr<media::MessageLoopFactory> message_loop_factory_;
 
   // Playback state.
   //
@@ -328,6 +310,13 @@ class WebMediaPlayerImpl
   bool seeking_;
   float playback_rate_;
   base::TimeDelta paused_time_;
+
+  // The duration passed to the last sourceSetDuration(). If
+  // sourceSetDuration() is never called or a sourceAppend() call or
+  // a sourceEndOfStream() call changes the pipeline duration, then this
+  // variable is set to < 0 to indicate that the pipeline duration represents
+  // the actual duration instead of a user specified value.
+  double user_specified_duration_;
 
   // Seek gets pending if another seek is in progress. Only last pending seek
   // will have effect.
@@ -350,9 +339,8 @@ class WebMediaPlayerImpl
 
   bool incremented_externally_allocated_memory_;
 
-  WebKit::WebAudioSourceProvider* audio_source_provider_;
-
-  scoped_refptr<media::AudioRendererSink> audio_renderer_sink_;
+  // Routes audio playback to either AudioRendererSink or WebAudio.
+  scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;
 
   bool is_local_source_;
   bool supports_save_;

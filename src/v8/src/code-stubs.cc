@@ -48,20 +48,6 @@ bool CodeStub::FindCodeInCache(Code** code_out, Isolate* isolate) {
 }
 
 
-void CodeStub::GenerateCode(MacroAssembler* masm) {
-  // Update the static counter each time a new code stub is generated.
-  masm->isolate()->counters()->code_stubs()->Increment();
-
-  // Nested stubs are not allowed for leaves.
-  AllowStubCallsScope allow_scope(masm, false);
-
-  // Generate the code for the stub.
-  masm->set_generating_stub(true);
-  NoCurrentFrameScope scope(masm);
-  Generate(masm);
-}
-
-
 SmartArrayPointer<const char> CodeStub::GetName() {
   char buffer[100];
   NoAllocationStringAllocator allocator(buffer,
@@ -72,8 +58,7 @@ SmartArrayPointer<const char> CodeStub::GetName() {
 }
 
 
-void CodeStub::RecordCodeGeneration(Code* code, MacroAssembler* masm) {
-  Isolate* isolate = masm->isolate();
+void CodeStub::RecordCodeGeneration(Code* code, Isolate* isolate) {
   SmartArrayPointer<const char> name = GetName();
   PROFILE(isolate, CodeCreateEvent(Logger::STUB_TAG, code, *name));
   GDBJIT(AddCode(GDBJITInterface::STUB, *name, code));
@@ -84,6 +69,39 @@ void CodeStub::RecordCodeGeneration(Code* code, MacroAssembler* masm) {
 
 int CodeStub::GetCodeKind() {
   return Code::STUB;
+}
+
+
+Handle<Code> PlatformCodeStub::GenerateCode() {
+  Isolate* isolate = Isolate::Current();
+  Factory* factory = isolate->factory();
+
+  // Generate the new code.
+  MacroAssembler masm(isolate, NULL, 256);
+
+  {
+    // Update the static counter each time a new code stub is generated.
+    isolate->counters()->code_stubs()->Increment();
+
+    // Nested stubs are not allowed for leaves.
+    AllowStubCallsScope allow_scope(&masm, false);
+
+    // Generate the code for the stub.
+    masm.set_generating_stub(true);
+    NoCurrentFrameScope scope(&masm);
+    Generate(&masm);
+  }
+
+  // Create the code object.
+  CodeDesc desc;
+  masm.GetCode(&desc);
+
+  // Copy the generated code into a heap object.
+  Code::Flags flags = Code::ComputeFlags(
+      static_cast<Code::Kind>(GetCodeKind()), GetICState(), GetExtraICState());
+  Handle<Code> new_object = factory->NewCode(
+      desc, flags, masm.CodeObject(), NeedsImmovableCode());
+  return new_object;
 }
 
 
@@ -102,23 +120,10 @@ Handle<Code> CodeStub::GetCode() {
   {
     HandleScope scope(isolate);
 
-    // Generate the new code.
-    MacroAssembler masm(isolate, NULL, 256);
-    GenerateCode(&masm);
-
-    // Create the code object.
-    CodeDesc desc;
-    masm.GetCode(&desc);
-
-    // Copy the generated code into a heap object.
-    Code::Flags flags = Code::ComputeFlags(
-        static_cast<Code::Kind>(GetCodeKind()),
-        GetICState());
-    Handle<Code> new_object = factory->NewCode(
-        desc, flags, masm.CodeObject(), NeedsImmovableCode());
+    Handle<Code> new_object = GenerateCode();
     new_object->set_major_key(MajorKey());
     FinishCode(new_object);
-    RecordCodeGeneration(*new_object, &masm);
+    RecordCodeGeneration(*new_object, isolate);
 
 #ifdef ENABLE_DISASSEMBLER
     if (FLAG_print_code_stubs) {
@@ -416,36 +421,8 @@ void JSEntryStub::FinishCode(Handle<Code> code) {
 }
 
 
-void KeyedLoadElementStub::Generate(MacroAssembler* masm) {
-  switch (elements_kind_) {
-    case FAST_ELEMENTS:
-    case FAST_HOLEY_ELEMENTS:
-    case FAST_SMI_ELEMENTS:
-    case FAST_HOLEY_SMI_ELEMENTS:
-      KeyedLoadStubCompiler::GenerateLoadFastElement(masm);
-      break;
-    case FAST_DOUBLE_ELEMENTS:
-    case FAST_HOLEY_DOUBLE_ELEMENTS:
-      KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(masm);
-      break;
-    case EXTERNAL_BYTE_ELEMENTS:
-    case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-    case EXTERNAL_SHORT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-    case EXTERNAL_INT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-    case EXTERNAL_FLOAT_ELEMENTS:
-    case EXTERNAL_DOUBLE_ELEMENTS:
-    case EXTERNAL_PIXEL_ELEMENTS:
-      KeyedLoadStubCompiler::GenerateLoadExternalArray(masm, elements_kind_);
-      break;
-    case DICTIONARY_ELEMENTS:
-      KeyedLoadStubCompiler::GenerateLoadDictionaryElement(masm);
-      break;
-    case NON_STRICT_ARGUMENTS_ELEMENTS:
-      UNREACHABLE();
-      break;
-  }
+void KeyedLoadDictionaryElementStub::Generate(MacroAssembler* masm) {
+  KeyedLoadStubCompiler::GenerateLoadDictionaryElement(masm);
 }
 
 
@@ -593,15 +570,16 @@ bool ToBooleanStub::Types::CanBeUndetectable() const {
 
 void ElementsTransitionAndStoreStub::Generate(MacroAssembler* masm) {
   Label fail;
+  AllocationSiteMode mode = AllocationSiteInfo::GetMode(from_, to_);
   ASSERT(!IsFastHoleyElementsKind(from_) || IsFastHoleyElementsKind(to_));
   if (!FLAG_trace_elements_transitions) {
     if (IsFastSmiOrObjectElementsKind(to_)) {
       if (IsFastSmiOrObjectElementsKind(from_)) {
         ElementsTransitionGenerator::
-            GenerateMapChangeElementsTransition(masm);
+            GenerateMapChangeElementsTransition(masm, mode, &fail);
       } else if (IsFastDoubleElementsKind(from_)) {
         ASSERT(!IsFastSmiElementsKind(to_));
-        ElementsTransitionGenerator::GenerateDoubleToObject(masm, &fail);
+        ElementsTransitionGenerator::GenerateDoubleToObject(masm, mode, &fail);
       } else {
         UNREACHABLE();
       }
@@ -611,20 +589,28 @@ void ElementsTransitionAndStoreStub::Generate(MacroAssembler* masm) {
                                                        grow_mode_);
     } else if (IsFastSmiElementsKind(from_) &&
                IsFastDoubleElementsKind(to_)) {
-      ElementsTransitionGenerator::GenerateSmiToDouble(masm, &fail);
+      ElementsTransitionGenerator::GenerateSmiToDouble(masm, mode, &fail);
       KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(masm,
                                                              is_jsarray_,
                                                              grow_mode_);
     } else if (IsFastDoubleElementsKind(from_)) {
       ASSERT(to_ == FAST_HOLEY_DOUBLE_ELEMENTS);
       ElementsTransitionGenerator::
-          GenerateMapChangeElementsTransition(masm);
+          GenerateMapChangeElementsTransition(masm, mode, &fail);
     } else {
       UNREACHABLE();
     }
   }
   masm->bind(&fail);
   KeyedStoreIC::GenerateRuntimeSetProperty(masm, strict_mode_);
+}
+
+
+void StubFailureTrampolineStub::GenerateAheadOfTime() {
+  int i = 0;
+  for (; i <= StubFailureTrampolineStub::kMaxExtraExpressionStackCount; ++i) {
+    StubFailureTrampolineStub(i).GetCode();
+  }
 }
 
 

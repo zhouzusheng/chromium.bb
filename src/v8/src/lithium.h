@@ -581,6 +581,7 @@ class ShallowIterator BASE_EMBEDDED {
 
   LOperand* Current() {
     ASSERT(!Done());
+    ASSERT(env_->values()->at(current_) != NULL);
     return env_->values()->at(current_);
   }
 
@@ -622,6 +623,7 @@ class DeepIterator BASE_EMBEDDED {
 
   LOperand* Current() {
     ASSERT(!current_iterator_.Done());
+    ASSERT(current_iterator_.Current() != NULL);
     return current_iterator_.Current();
   }
 
@@ -682,22 +684,24 @@ class LChunk: public ZoneObject {
 
   Zone* zone() const { return info_->zone(); }
 
-  Handle<Code> Codegen();
+  Handle<Code> Codegen(Code::Kind kind);
+
+  void set_allocated_double_registers(BitVector* allocated_registers);
+  BitVector* allocated_double_registers() {
+    return allocated_double_registers_;
+  }
 
  protected:
-  LChunk(CompilationInfo* info, HGraph* graph)
-      : spill_slot_count_(0),
-        info_(info),
-        graph_(graph),
-        instructions_(32, graph->zone()),
-        pointer_maps_(8, graph->zone()),
-        inlined_closures_(1, graph->zone()) { }
+  LChunk(CompilationInfo* info, HGraph* graph);
+
+  void RegisterDependentCodeForEmbeddedMaps(Handle<Code> code);
 
   int spill_slot_count_;
 
  private:
   CompilationInfo* info_;
   HGraph* const graph_;
+  BitVector* allocated_double_registers_;
   ZoneList<LInstruction*> instructions_;
   ZoneList<LPointerMap*> pointer_maps_;
   ZoneList<Handle<JSFunction> > inlined_closures_;
@@ -706,6 +710,13 @@ class LChunk: public ZoneObject {
 
 int ElementsKindToShiftSize(ElementsKind elements_kind);
 int StackSlotOffset(int index);
+
+enum NumberUntagDMode {
+  NUMBER_CANDIDATE_IS_SMI,
+  NUMBER_CANDIDATE_IS_SMI_OR_HOLE,
+  NUMBER_CANDIDATE_IS_SMI_CONVERT_HOLE,
+  NUMBER_CANDIDATE_IS_ANY_TAGGED
+};
 
 
 } }  // namespace v8::internal

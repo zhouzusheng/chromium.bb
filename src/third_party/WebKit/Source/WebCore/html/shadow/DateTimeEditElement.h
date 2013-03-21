@@ -27,6 +27,7 @@
 #define DateTimeEditElement_h
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#include "DateComponents.h"
 #include "DateTimeFieldElement.h"
 #include "StepRange.h"
 
@@ -65,8 +66,8 @@ public:
         String fallbackDateTimeFormat;
         Locale& locale;
         const StepRange stepRange;
-        int minimumYear;
-        int maximumYear;
+        DateComponents minimum;
+        DateComponents maximum;
         String placeholderForDay;
         String placeholderForMonth;
         String placeholderForYear;
@@ -74,12 +75,8 @@ public:
         LayoutParameters(Locale& locale, const StepRange& stepRange)
             : locale(locale)
             , stepRange(stepRange)
-            , minimumYear(undefinedYear())
-            , maximumYear(undefinedYear())
         {
         }
-
-        static inline int undefinedYear() { return -1; }
     };
 
     static PassRefPtr<DateTimeEditElement> create(Document*, EditControlOwner&);
@@ -126,6 +123,7 @@ private:
     size_t fieldIndexOf(const DateTimeFieldElement&) const;
     DateTimeFieldElement* focusedField() const;
     size_t focusedFieldIndex() const;
+    bool focusOnNextFocusableField(size_t startIndex);
     bool isDisabled() const;
     bool isReadOnly() const;
     void layout(const LayoutParameters&, const DateComponents&);
@@ -140,7 +138,8 @@ private:
     virtual void fieldValueChanged() OVERRIDE FINAL;
     virtual bool focusOnNextField(const DateTimeFieldElement&) OVERRIDE FINAL;
     virtual bool focusOnPreviousField(const DateTimeFieldElement&) OVERRIDE FINAL;
-    virtual bool isFieldOwnerDisabledOrReadOnly() const OVERRIDE FINAL;
+    virtual bool isFieldOwnerDisabled() const OVERRIDE FINAL;
+    virtual bool isFieldOwnerReadOnly() const OVERRIDE FINAL;
     virtual AtomicString localeIdentifier() const OVERRIDE FINAL;
 
     Vector<DateTimeFieldElement*, maximumNumberOfFields> m_fields;

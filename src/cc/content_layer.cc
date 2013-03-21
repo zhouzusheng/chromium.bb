@@ -25,14 +25,17 @@ scoped_ptr<ContentLayerPainter> ContentLayerPainter::create(ContentLayerClient* 
     return make_scoped_ptr(new ContentLayerPainter(client));
 }
 
-void ContentLayerPainter::paint(SkCanvas* canvas, const gfx::Rect& contentRect, gfx::RectF& opaque)
+void ContentLayerPainter::paint(SkCanvas* canvas, gfx::Rect contentRect, gfx::RectF& opaque)
 {
     base::TimeTicks paintStart = base::TimeTicks::HighResNow();
     m_client->paintContents(canvas, contentRect, opaque);
     base::TimeTicks paintEnd = base::TimeTicks::HighResNow();
     double pixelsPerSec = (contentRect.width() * contentRect.height()) / (paintEnd - paintStart).InSecondsF();
-    HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintDurationMS", (paintEnd - paintStart).InMilliseconds(), 0, 120, 30);
-    HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintMegapixPerSecond", pixelsPerSec / 1000000, 10, 210, 30);
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintDurationMS",
+                                (paintEnd - paintStart).InMilliseconds(),
+                                0, 120, 30);
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintMegapixPerSecond",
+                                pixelsPerSec / 1000000, 10, 210, 30);
 }
 
 scoped_refptr<ContentLayer> ContentLayer::create(ContentLayerClient* client)
@@ -63,7 +66,7 @@ void ContentLayer::setTexturePriorities(const PriorityCalculator& priorityCalc)
     TiledLayer::setTexturePriorities(priorityCalc);
 }
 
-void ContentLayer::update(ResourceUpdateQueue& queue, const OcclusionTracker* occlusion, RenderingStats& stats)
+void ContentLayer::update(ResourceUpdateQueue& queue, const OcclusionTracker* occlusion, RenderingStats* stats)
 {
     {
         base::AutoReset<bool> ignoreSetNeedsCommit(&m_ignoreSetNeedsCommit, true);
@@ -98,7 +101,7 @@ void ContentLayer::createUpdaterIfNeeded()
         m_updater = BitmapContentLayerUpdater::create(painter.Pass());
     m_updater->setOpaque(contentsOpaque());
 
-    GLenum textureFormat = layerTreeHost()->rendererCapabilities().bestTextureFormat;
+    unsigned textureFormat = layerTreeHost()->rendererCapabilities().bestTextureFormat;
     setTextureFormat(textureFormat);
 }
 

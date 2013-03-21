@@ -5,20 +5,24 @@
 #ifndef CC_RESOURCE_PROVIDER_H_
 #define CC_RESOURCE_PROVIDER_H_
 
+#include <deque>
+#include <string>
+#include <vector>
+
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "cc/cc_export.h"
 #include "cc/output_surface.h"
 #include "cc/texture_copier.h"
+#include "cc/texture_mailbox.h"
 #include "cc/transferable_resource.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
-#include <deque>
-#include <vector>
 
 namespace WebKit {
 class WebGraphicsContext3D;
@@ -81,6 +85,9 @@ public:
     ResourceId createBitmap(const gfx::Size&);
     // Wraps an external texture into a GL resource.
     ResourceId createResourceFromExternalTexture(unsigned textureId);
+
+    // Wraps an external texture mailbox into a GL resource.
+    ResourceId createResourceFromTextureMailbox(const TextureMailbox&);
 
     void deleteResource(ResourceId);
 
@@ -214,6 +221,14 @@ public:
         DISALLOW_COPY_AND_ASSIGN(ScopedWriteLockSoftware);
     };
 
+    class Fence : public base::RefCounted<Fence> {
+    public:
+        virtual bool hasPassed() = 0;
+    protected:
+        friend class base::RefCounted<Fence>;
+        virtual ~Fence() {}
+    };
+
     // Acquire pixel buffer for resource. The pixel buffer can be used to
     // set resource pixels without performing unnecessary copying.
     void acquirePixelBuffer(ResourceId id);
@@ -229,10 +244,28 @@ public:
     // Asynchronously update pixels from acquired pixel buffer.
     void beginSetPixels(ResourceId id);
     bool didSetPixelsComplete(ResourceId id);
+    void abortSetPixels(ResourceId id);
+
+    // For tests only! This prevents detecting uninitialized reads.
+    // Use setPixels or lockForWrite to allocate implicitly.
+    void allocateForTesting(ResourceId id);
+
+    // Sets the current read fence. If a resource is locked for read
+    // and has read fences enabled, the resource will not allow writes
+    // until this fence has passed.
+    void setReadLockFence(scoped_refptr<Fence> fence) { m_currentReadLockFence = fence; }
+    Fence* getReadLockFence() { return m_currentReadLockFence; }
+
+    // Enable read lock fences for a specific resource.
+    void enableReadLockFences(ResourceProvider::ResourceId, bool enable);
+
+    // Indicates if we can currently lock this resource for write.
+    bool canLockForWrite(ResourceId);
 
 private:
     struct Resource {
         Resource();
+        ~Resource();
         Resource(unsigned textureId, const gfx::Size& size, GLenum format, GLenum filter);
         Resource(uint8_t* pixels, const gfx::Size& size, GLenum format, GLenum filter);
 
@@ -241,7 +274,7 @@ private:
         unsigned glPixelBufferId;
         // Query used to determine when asynchronous set pixels complete.
         unsigned glUploadQueryId;
-        Mailbox mailbox;
+        TextureMailbox mailbox;
         uint8_t* pixels;
         uint8_t* pixelBuffer;
         int lockForReadCount;
@@ -250,6 +283,9 @@ private:
         bool exported;
         bool markedForDeletion;
         bool pendingSetPixels;
+        bool allocated;
+        bool enableReadLockFences;
+        scoped_refptr<Fence> readLockFence;
         gfx::Size size;
         GLenum format;
         // TODO(skyostil): Use a separate sampler object for filter state.
@@ -266,6 +302,9 @@ private:
     };
     typedef base::hash_map<int, Child> ChildMap;
 
+    bool readLockFenceHasPassed(Resource* resource) { return !resource->readLockFence ||
+                                                              resource->readLockFence->hasPassed(); }
+
     explicit ResourceProvider(OutputSurface*);
     bool initialize();
 
@@ -277,6 +316,7 @@ private:
 
     bool transferResource(WebKit::WebGraphicsContext3D*, ResourceId, TransferableResource*);
     void deleteResourceInternal(ResourceMap::iterator it);
+    void lazyAllocate(Resource*);
 
     OutputSurface* m_outputSurface;
     ResourceId m_nextId;
@@ -294,6 +334,8 @@ private:
     GLenum m_bestTextureFormat;
 
     base::ThreadChecker m_threadChecker;
+
+    scoped_refptr<Fence> m_currentReadLockFence;
 
     DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

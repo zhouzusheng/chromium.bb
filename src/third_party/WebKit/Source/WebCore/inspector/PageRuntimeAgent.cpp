@@ -52,7 +52,7 @@ namespace PageRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
 
-PageRuntimeAgent::PageRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorState* state, InjectedScriptManager* injectedScriptManager, Page* page, InspectorPageAgent* pageAgent)
+PageRuntimeAgent::PageRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, Page* page, InspectorPageAgent* pageAgent)
     : InspectorRuntimeAgent(instrumentingAgents, state, injectedScriptManager)
     , m_inspectedPage(page)
     , m_pageAgent(pageAgent)
@@ -135,7 +135,10 @@ InjectedScript PageRuntimeAgent::injectedScriptForEval(ErrorString* errorString,
 {
     if (!executionContextId) {
         ScriptState* scriptState = mainWorldScriptState(m_inspectedPage->mainFrame());
-        return injectedScriptManager()->injectedScriptFor(scriptState);
+        InjectedScript result = injectedScriptManager()->injectedScriptFor(scriptState);
+        if (result.hasNoValue())
+            *errorString = "Internal error: main world execution context not found.";
+        return result;
     }
     InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
     if (injectedScript.hasNoValue())

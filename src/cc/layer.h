@@ -5,7 +5,6 @@
 #ifndef CC_LAYER_H_
 #define CC_LAYER_H_
 
-#include <public/WebFilterOperations.h>
 #include <string>
 #include <vector>
 
@@ -14,11 +13,13 @@
 #include "cc/cc_export.h"
 #include "cc/draw_properties.h"
 #include "cc/layer_animation_controller.h"
-#include "cc/layer_animation_observer.h"
+#include "cc/layer_animation_event_observer.h"
+#include "cc/layer_animation_value_observer.h"
 #include "cc/occlusion_tracker.h"
 #include "cc/region.h"
 #include "cc/render_surface.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect.h"
@@ -32,7 +33,7 @@ class WebLayerScrollClient;
 
 namespace cc {
 
-class ActiveAnimation;
+class Animation;
 struct AnimationEvent;
 class LayerAnimationDelegate;
 class LayerImpl;
@@ -46,21 +47,14 @@ struct RenderingStats;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
-class CC_EXPORT Layer : public base::RefCounted<Layer>, public LayerAnimationControllerClient {
+class CC_EXPORT Layer : public base::RefCounted<Layer>,
+                        public LayerAnimationValueObserver {
 public:
     typedef std::vector<scoped_refptr<Layer> > LayerList;
 
     static scoped_refptr<Layer> create();
 
-    // LayerAnimationControllerClient implementation
-    virtual int id() const OVERRIDE;
-    virtual void setOpacityFromAnimation(float) OVERRIDE;
-    virtual float opacity() const OVERRIDE;
-    virtual void setTransformFromAnimation(const gfx::Transform&) OVERRIDE;
-    // A layer's transform operates layer space. That is, entirely in logical,
-    // non-page-scaled pixels (that is, they have page zoom baked in, but not page scale).
-    // The root layer is a special case -- it operates in physical pixels.
-    virtual const gfx::Transform& transform() const OVERRIDE;
+    int id() const;
 
     Layer* rootLayer();
     Layer* parent() { return m_parent; }
@@ -73,6 +67,7 @@ public:
     void setChildren(const LayerList&);
 
     const LayerList& children() const { return m_children; }
+    Layer* childAt(size_t index);
 
     void setAnchorPoint(const gfx::PointF&);
     gfx::PointF anchorPoint() const { return m_anchorPoint; }
@@ -99,9 +94,9 @@ public:
 
     virtual void setNeedsDisplayRect(const gfx::RectF& dirtyRect);
     void setNeedsDisplay() { setNeedsDisplayRect(gfx::RectF(gfx::PointF(), bounds())); }
-    virtual bool needsDisplay() const;
 
     void setOpacity(float);
+    float opacity() const;
     bool opacityIsAnimating() const;
 
     void setFilters(const WebKit::WebFilterOperations&);
@@ -131,6 +126,7 @@ public:
     const gfx::Transform& sublayerTransform() const { return m_sublayerTransform; }
 
     void setTransform(const gfx::Transform&);
+    const gfx::Transform& transform() const;
     bool transformIsAnimating() const;
 
     DrawProperties<Layer, RenderSurface>& drawProperties() { return m_drawProperties; }
@@ -169,11 +165,9 @@ public:
     bool haveWheelEventHandlers() const { return m_haveWheelEventHandlers; }
 
     void setNonFastScrollableRegion(const Region&);
-    void setNonFastScrollableRegionChanged() { m_nonFastScrollableRegionChanged = true; }
     const Region& nonFastScrollableRegion() const { return m_nonFastScrollableRegion; }
 
     void setTouchEventHandlerRegion(const Region&);
-    void setTouchEventHandlerRegionChanged() { m_touchEventHandlerRegionChanged = true; }
     const Region& touchEventHandlerRegion() const { return m_touchEventHandlerRegion; }
 
     void setLayerScrollClient(WebKit::WebLayerScrollClient* layerScrollClient) { m_layerScrollClient = layerScrollClient; }
@@ -215,7 +209,7 @@ public:
 
     // These methods typically need to be overwritten by derived classes.
     virtual bool drawsContent() const;
-    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) { }
+    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats*) { }
     virtual bool needMoreUpdates();
     virtual void setIsMask(bool) { }
 
@@ -234,6 +228,7 @@ public:
     gfx::Size contentBounds() const { return m_drawProperties.content_bounds; }
     virtual void calculateContentsScale(
         float idealContentsScale,
+        bool animatingTransformToScreen,
         float* contentsScaleX,
         float* contentsScaleY,
         gfx::Size* contentBounds);
@@ -261,7 +256,7 @@ public:
     // Set the priority of all desired textures in this layer.
     virtual void setTexturePriorities(const PriorityCalculator&) { }
 
-    bool addAnimation(scoped_ptr<ActiveAnimation>);
+    bool addAnimation(scoped_ptr<Animation>);
     void pauseAnimation(int animationId, double timeOffset);
     void removeAnimation(int animationId);
 
@@ -269,8 +264,8 @@ public:
     void resumeAnimations(double monotonicTime);
 
     LayerAnimationController* layerAnimationController() { return m_layerAnimationController.get(); }
-    void setLayerAnimationController(scoped_ptr<LayerAnimationController>);
-    scoped_ptr<LayerAnimationController> releaseLayerAnimationController();
+    void setLayerAnimationController(scoped_refptr<LayerAnimationController>);
+    scoped_refptr<LayerAnimationController> releaseLayerAnimationController();
 
     void setLayerAnimationDelegate(WebKit::WebAnimationDelegate* layerAnimationDelegate) { m_layerAnimationDelegate = layerAnimationDelegate; }
 
@@ -279,8 +274,8 @@ public:
     virtual void notifyAnimationStarted(const AnimationEvent&, double wallClockTime);
     virtual void notifyAnimationFinished(double wallClockTime);
 
-    void addLayerAnimationObserver(LayerAnimationObserver* animationObserver);
-    void removeLayerAnimationObserver(LayerAnimationObserver* animationObserver);
+    void addLayerAnimationEventObserver(LayerAnimationEventObserver* animationObserver);
+    void removeLayerAnimationEventObserver(LayerAnimationEventObserver* animationObserver);
 
     virtual Region visibleContentOpaqueRegion() const;
 
@@ -292,6 +287,16 @@ public:
     // compatible with the main thread running freely, such as a double-buffered
     // canvas that doesn't want to be triple-buffered across all three trees.
     virtual bool blocksPendingCommit() const;
+    // Returns true if anything in this tree blocksPendingCommit.
+    bool blocksPendingCommitRecursive() const;
+
+    virtual bool canClipSelf() const;
+
+    // Constructs a LayerImpl of the correct runtime type for this Layer type.
+    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl);
+
+    bool needsDisplayForTesting() const { return m_needsDisplay; }
+    void resetNeedsDisplayForTesting() { m_needsDisplay = false; }
 
 protected:
     friend class LayerImpl;
@@ -317,8 +322,6 @@ protected:
 
     scoped_refptr<Layer> m_maskLayer;
 
-    // Constructs a LayerImpl of the correct runtime type for this Layer type.
-    virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl);
     int m_layerId;
 
     // When true, the layer is about to perform an update. Any commit requests
@@ -332,13 +335,16 @@ private:
     bool hasAncestor(Layer*) const;
     bool descendantIsFixedToContainerLayer() const;
 
-    size_t numChildren() const { return m_children.size(); }
-
     // Returns the index of the child or -1 if not found.
     int indexOfChild(const Layer*);
 
     // This should only be called from removeFromParent.
     void removeChild(Layer*);
+
+    // LayerAnimationValueObserver implementation.
+    virtual void OnOpacityAnimated(float) OVERRIDE;
+    virtual void OnTransformAnimated(const gfx::Transform&) OVERRIDE;
+    virtual bool IsActive() const OVERRIDE;
 
     LayerList m_children;
     Layer* m_parent;
@@ -348,8 +354,9 @@ private:
     // updated via setLayerTreeHost() if a layer moves between trees.
     LayerTreeHost* m_layerTreeHost;
 
-    scoped_ptr<LayerAnimationController> m_layerAnimationController;
-    ObserverList<LayerAnimationObserver> m_layerAnimationObservers;
+    ObserverList<LayerAnimationEventObserver> m_layerAnimationObservers;
+
+    scoped_refptr<LayerAnimationController> m_layerAnimationController;
 
     // Layer properties.
     gfx::Size m_bounds;
@@ -360,9 +367,7 @@ private:
     bool m_shouldScrollOnMainThread;
     bool m_haveWheelEventHandlers;
     Region m_nonFastScrollableRegion;
-    bool m_nonFastScrollableRegionChanged;
     Region m_touchEventHandlerRegion;
-    bool m_touchEventHandlerRegionChanged;
     gfx::PointF m_position;
     gfx::PointF m_anchorPoint;
     SkColor m_backgroundColor;

@@ -59,25 +59,6 @@ void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
     m_dateTimeChooser = chrome->openDateTimeChooser(this, parameters);
 }
 
-RenderObject* BaseChooserOnlyDateAndTimeInputType::createRenderer(RenderArena* arena, RenderStyle* style) const
-{
-    // Cancel the override by TextFieldInputType.
-    // FIXME: Remove this function when we stop inheriting TextFieldInputType.
-    return InputType::createRenderer(arena, style);
-}
-
-void BaseChooserOnlyDateAndTimeInputType::updateInnerTextValue()
-{
-    // Cancel the override by TextFieldInputType.
-    // FIXME: Remove this function when we stop inheriting TextFieldInputType.
-}
-
-void BaseChooserOnlyDateAndTimeInputType::forwardEvent(Event*)
-{
-    // Cancel the override by TextFieldInputType.
-    // FIXME: Remove this function when we stop inheriting TextFieldInputType.
-}
-
 void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()
 {
     DEFINE_STATIC_LOCAL(AtomicString, valueContainerPseudo, ("-webkit-date-and-time-value", AtomicString::ConstructFromLiteral));
@@ -148,6 +129,11 @@ void BaseChooserOnlyDateAndTimeInputType::accessKeyAction(bool sendMouseEvents)
 {
     BaseDateAndTimeInputType::accessKeyAction(sendMouseEvents);
     BaseClickableWithKeyInputType::accessKeyAction(element(), sendMouseEvents);
+}
+
+bool BaseChooserOnlyDateAndTimeInputType::isMouseFocusable() const
+{
+    return element()->isTextFormControlFocusable();
 }
 
 }

@@ -58,7 +58,8 @@ WebInspector.displayNameForURL = function(url)
     if (resource)
         return resource.displayName;
 
-    var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
+    var uri = WebInspector.fileMapping.uriForURL(url);
+    var uiSourceCode = WebInspector.workspace.uiSourceCodeForURI(uri);
     if (uiSourceCode)
         return uiSourceCode.parsedURL.displayName;
 
@@ -212,7 +213,6 @@ WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipT
 {
     var linkText = WebInspector.formatLinkText(url, lineNumber);
     var anchor = WebInspector.linkifyURLAsNode(url, linkText, classes, false, tooltipText);
-    anchor.preferredPanel = "resources";
     anchor.lineNumber = lineNumber;
     return anchor;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,13 +33,14 @@
 
 #include "ChangeVersionWrapper.h"
 #include "CrossThreadTask.h"
+#include "DatabaseBackendContext.h"
 #include "DatabaseCallback.h"
 #include "DatabaseContext.h"
+#include "DatabaseManager.h"
 #include "DatabaseTask.h"
 #include "DatabaseThread.h"
 #include "DatabaseTracker.h"
 #include "Document.h"
-#include "InspectorDatabaseInstrumentation.h"
 #include "Logging.h"
 #include "NotImplemented.h"
 #include "Page.h"
@@ -49,7 +50,6 @@
 #include "SQLTransactionCoordinator.h"
 #include "SQLTransactionErrorCallback.h"
 #include "SQLiteStatement.h"
-#include "ScriptController.h"
 #include "ScriptExecutionContext.h"
 #include "SecurityOrigin.h"
 #include "VoidCallback.h"
@@ -66,72 +66,23 @@
 
 namespace WebCore {
 
-class DatabaseCreationCallbackTask : public ScriptExecutionContext::Task {
-public:
-    static PassOwnPtr<DatabaseCreationCallbackTask> create(PassRefPtr<Database> database, PassRefPtr<DatabaseCallback> creationCallback)
-    {
-        return adoptPtr(new DatabaseCreationCallbackTask(database, creationCallback));
-    }
-
-    virtual void performTask(ScriptExecutionContext*)
-    {
-        m_creationCallback->handleEvent(m_database.get());
-    }
-
-private:
-    DatabaseCreationCallbackTask(PassRefPtr<Database> database, PassRefPtr<DatabaseCallback> callback)
-        : m_database(database)
-        , m_creationCallback(callback)
-    {
-    }
-
-    RefPtr<Database> m_database;
-    RefPtr<DatabaseCallback> m_creationCallback;
-};
-
-PassRefPtr<Database> Database::openDatabase(ScriptExecutionContext* context, const String& name,
-                                            const String& expectedVersion, const String& displayName,
-                                            unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback,
-                                            ExceptionCode& e)
+PassRefPtr<Database> Database::create(ScriptExecutionContext*, PassRefPtr<DatabaseBackend> backend)
 {
-    if (!DatabaseTracker::tracker().canEstablishDatabase(context, name, displayName, estimatedSize)) {
-        LOG(StorageAPI, "Database %s for origin %s not allowed to be established", name.ascii().data(), context->securityOrigin()->toString().ascii().data());
-        return 0;
-    }
-
-    RefPtr<Database> database = adoptRef(new Database(context, name, expectedVersion, displayName, estimatedSize));
-
-    String errorMessage;
-    if (!database->openAndVerifyVersion(!creationCallback, e, errorMessage)) {
-        database->logErrorMessage(errorMessage);
-        DatabaseTracker::tracker().removeOpenDatabase(database.get());
-        return 0;
-    }
-
-    DatabaseTracker::tracker().setDatabaseDetails(context->securityOrigin(), name, displayName, estimatedSize);
-
-    DatabaseContext::from(context)->setHasOpenDatabases();
-
-    InspectorInstrumentation::didOpenDatabase(context, database, context->securityOrigin()->host(), name, expectedVersion);
-
-    if (database->isNew() && creationCallback.get()) {
-        LOG(StorageAPI, "Scheduling DatabaseCreationCallbackTask for database %p\n", database.get());
-        database->m_scriptExecutionContext->postTask(DatabaseCreationCallbackTask::create(database, creationCallback));
-    }
-
-    return database;
+    return static_cast<Database*>(backend.get());
 }
 
-Database::Database(ScriptExecutionContext* context, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
-    : AbstractDatabase(context, name, expectedVersion, displayName, estimatedSize, AsyncDatabase)
+Database::Database(PassRefPtr<DatabaseBackendContext> databaseContext,
+    const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
+    : DatabaseBase(databaseContext->scriptExecutionContext())
+    , DatabaseBackendAsync(databaseContext, name, expectedVersion, displayName, estimatedSize)
     , m_transactionInProgress(false)
     , m_isTransactionQueueEnabled(true)
     , m_deleted(false)
 {
     m_databaseThreadSecurityOrigin = m_contextThreadSecurityOrigin->isolatedCopy();
+    setFrontend(this);
 
-    ScriptController::initializeThreading();
-    ASSERT(databaseContext()->databaseThread());
+    ASSERT(m_databaseContext->databaseThread());
 }
 
 class DerefContextTask : public ScriptExecutionContext::Task {
@@ -170,25 +121,21 @@ Database::~Database()
     }
 }
 
+Database* Database::from(DatabaseBackendAsync* backend)
+{
+    return static_cast<Database*>(backend->m_frontend);
+}
+
+PassRefPtr<DatabaseBackendAsync> Database::backend()
+{
+    return this;
+}
+
 String Database::version() const
 {
     if (m_deleted)
         return String();
-    return AbstractDatabase::version();
-}
-
-bool Database::openAndVerifyVersion(bool setVersionInNewDatabase, ExceptionCode& e, String& errorMessage)
-{
-    DatabaseTaskSynchronizer synchronizer;
-    if (!databaseContext()->databaseThread() || databaseContext()->databaseThread()->terminationRequested(&synchronizer))
-        return false;
-
-    bool success = false;
-    OwnPtr<DatabaseOpenTask> task = DatabaseOpenTask::create(this, setVersionInNewDatabase, &synchronizer, e, errorMessage, success);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
-    synchronizer.waitForTaskCompletion();
-
-    return success;
+    return DatabaseBackend::version();
 }
 
 void Database::markAsDeletedAndClose()
@@ -228,7 +175,6 @@ void Database::close()
     RefPtr<Database> protect = this;
     databaseContext()->databaseThread()->recordDatabaseClosed(this);
     databaseContext()->databaseThread()->unscheduleDatabaseTasks(this);
-    DatabaseTracker::tracker().removeOpenDatabase(this);
 }
 
 void Database::closeImmediately()
@@ -243,19 +189,7 @@ void Database::closeImmediately()
 
 unsigned long long Database::maximumSize() const
 {
-    return DatabaseTracker::tracker().getMaxSizeForDatabase(this);
-}
-
-bool Database::performOpenAndVerify(bool setVersionInNewDatabase, ExceptionCode& e, String& errorMessage)
-{
-    if (AbstractDatabase::performOpenAndVerify(setVersionInNewDatabase, e, errorMessage)) {
-        if (databaseContext()->databaseThread())
-            databaseContext()->databaseThread()->recordDatabaseOpen(this);
-
-        return true;
-    }
-
-    return false;
+    return DatabaseManager::manager().getMaxSizeForDatabase(this);
 }
 
 void Database::changeVersion(const String& oldVersion, const String& newVersion,
@@ -321,7 +255,7 @@ void Database::scheduleTransaction()
         m_transactionInProgress = false;
 }
 
-void Database::scheduleTransactionStep(SQLTransaction* transaction, bool immediately)
+void Database::scheduleTransactionStep(SQLTransactionBackend* transaction, bool immediately)
 {
     if (!databaseContext()->databaseThread())
         return;

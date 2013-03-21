@@ -508,6 +508,7 @@ class DeterministicSocketData
   bool stopped_;
   base::WeakPtr<DeterministicMockTCPClientSocket> socket_;
   bool print_debug_;
+  bool is_running_;
 };
 
 // Holds an array of SocketDataProvider elements.  As Mock{TCP,SSL}StreamSocket
@@ -590,8 +591,9 @@ class MockClientSocket : public SSLClientSocket {
   // Value returned by GetTLSUniqueChannelBinding().
   static const char kTlsUnique[];
 
-  // TODO(ajwong): Why do we need net::NetLog?
-  explicit MockClientSocket(net::NetLog* net_log);
+  // The BoundNetLog is needed to test LoadTimingInfo, which uses NetLog IDs as
+  // unique socket IDs.
+  explicit MockClientSocket(const BoundNetLog& net_log);
 
   // Socket implementation.
   virtual int Read(IOBuffer* buf, int buf_len,

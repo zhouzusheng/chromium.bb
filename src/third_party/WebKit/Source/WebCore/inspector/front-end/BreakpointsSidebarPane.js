@@ -96,7 +96,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
         checkbox.addEventListener("click", this._breakpointCheckboxClicked.bind(this, breakpoint), false);
         element.appendChild(checkbox);
 
-        var labelElement = document.createTextNode(WebInspector.formatLinkText(uiLocation.uiSourceCode.url, uiLocation.lineNumber));
+        var labelElement = document.createTextNode(WebInspector.formatLinkText(uiLocation.uiSourceCode.originURL(), uiLocation.lineNumber));
         element.appendChild(labelElement);
 
         var snippetElement = document.createElement("div");
@@ -130,8 +130,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
         breakpointItem.checkbox = checkbox;
         this._items.put(breakpoint, breakpointItem);
 
-        if (!this.expanded)
-            this.expanded = true;
+        this.expand();
     },
 
     /**
@@ -255,7 +254,7 @@ WebInspector.JavaScriptBreakpointsSidebarPane.prototype = {
 
     _compareBreakpoints: function(b1, b2)
     {
-        return this._compare(b1.url, b2.url) || this._compare(b1.lineNumber, b2.lineNumber);
+        return this._compare(b1.uiSourceCode.originURL(), b2.uiSourceCode.originURL()) || this._compare(b1.lineNumber, b2.lineNumber);
     },
 
     reset: function()
@@ -305,7 +304,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
         if (event)
             event.consume();
 
-        this.expanded = true;
+        this.expand();
 
         var inputElementContainer = document.createElement("p");
         inputElementContainer.className = "breakpoint-condition";
@@ -438,7 +437,7 @@ WebInspector.XHRBreakpointsSidebarPane.prototype = {
         var element = this._breakpointElements[url];
         if (!element)
             return;
-        this.expanded = true;
+        this.expand();
         element.addStyleClass("breakpoint-hit");
         this._highlightedElement = element;
     },
@@ -636,7 +635,7 @@ WebInspector.EventListenerBreakpointsSidebarPane.prototype = {
         var breakpointItem = this._breakpointItems[eventName];
         if (!breakpointItem)
             return;
-        this.expanded = true;
+        this.expand();
         breakpointItem.parent.element.expand();
         breakpointItem.element.listItemElement.addStyleClass("breakpoint-hit");
         this._highlightedElement = breakpointItem.element.listItemElement;

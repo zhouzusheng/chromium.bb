@@ -42,7 +42,7 @@
 #endif
 
 namespace base {
-class Histogram;
+class HistogramBase;
 class RunLoop;
 class ThreadTaskRunnerHandle;
 #if defined(OS_ANDROID)
@@ -53,11 +53,11 @@ class MessagePumpForUI;
 // A MessageLoop is used to process events for a particular thread.  There is
 // at most one MessageLoop instance per thread.
 //
-// Events include at a minimum Task instances submitted to PostTask or those
-// managed by TimerManager.  Depending on the type of message pump used by the
-// MessageLoop other events such as UI messages may be processed.  On Windows
-// APC calls (as time permits) and signals sent to a registered set of HANDLEs
-// may also be processed.
+// Events include at a minimum Task instances submitted to PostTask and its
+// variants.  Depending on the type of message pump used by the MessageLoop
+// other events such as UI messages may be processed.  On Windows APC calls (as
+// time permits) and signals sent to a registered set of HANDLEs may also be
+// processed.
 //
 // NOTE: Unless otherwise specified, a MessageLoop's methods may only be called
 // on the thread where the MessageLoop's Run method executes.
@@ -120,9 +120,10 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   static void EnableHistogrammer(bool enable_histogrammer);
 
   typedef base::MessagePump* (MessagePumpFactory)();
-  // Using the given base::MessagePumpForUIFactory to override the default
-  // MessagePump implementation for 'TYPE_UI'.
-  static void InitMessagePumpForUIFactory(MessagePumpFactory* factory);
+  // Uses the given base::MessagePumpForUIFactory to override the default
+  // MessagePump implementation for 'TYPE_UI'. Returns true if the factory
+  // was successfully registered.
+  static bool InitMessagePumpForUIFactory(MessagePumpFactory* factory);
 
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These observers are notified prior to MessageLoop::current()
@@ -225,9 +226,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // Process all pending tasks, windows messages, etc., but don't wait/sleep.
   // Return as soon as all items that can be run are taken care of.
   void RunUntilIdle();
-
-  // TODO(jbates) remove this. crbug.com/131220. See RunUntilIdle().
-  void RunAllPending() { RunUntilIdle(); }
 
   // TODO(jbates) remove this. crbug.com/131220. See QuitWhenIdle().
   void Quit() { QuitWhenIdle(); }
@@ -341,10 +339,10 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
     TaskObserver();
 
     // This method is called before processing a task.
-    virtual void WillProcessTask(base::TimeTicks time_posted) = 0;
+    virtual void WillProcessTask(const base::PendingTask& pending_task) = 0;
 
     // This method is called after processing a task.
-    virtual void DidProcessTask(base::TimeTicks time_posted) = 0;
+    virtual void DidProcessTask(const base::PendingTask& pending_task) = 0;
 
    protected:
     virtual ~TaskObserver();
@@ -387,7 +385,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   //----------------------------------------------------------------------------
  protected:
-  friend class base::RunLoop;
 
 #if defined(OS_WIN)
   base::MessagePumpWin* pump_win() {
@@ -398,6 +395,11 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
     return static_cast<base::MessagePumpLibevent*>(pump_.get());
   }
 #endif
+
+  scoped_refptr<base::MessagePump> pump_;
+
+ private:
+  friend class base::RunLoop;
 
   // A function to encapsulate all the exception handling capability in the
   // stacks around the running of a main message loop.  It will run the message
@@ -479,8 +481,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   // once we're out of nested message loops.
   base::TaskQueue deferred_non_nestable_work_queue_;
 
-  scoped_refptr<base::MessagePump> pump_;
-
   ObserverList<DestructionObserver> destruction_observers_;
 
   // A recursion block that prevents accidentally running additional tasks when
@@ -491,12 +491,11 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
 
   std::string thread_name_;
   // A profiling histogram showing the counts of various messages and events.
-  base::Histogram* message_histogram_;
+  base::HistogramBase* message_histogram_;
 
-  // A null terminated list which creates an incoming_queue of tasks that are
-  // acquired under a mutex for processing on this instance's thread. These
-  // tasks have not yet been sorted out into items for our work_queue_ vs items
-  // that will be handled by the TimerManager.
+  // An incoming queue of tasks that are acquired under a mutex for processing
+  // on this instance's thread. These tasks have not yet been sorted out into
+  // items for our work_queue_ vs delayed_work_queue_.
   base::TaskQueue incoming_queue_;
   // Protect access to incoming_queue_.
   mutable base::Lock incoming_queue_lock_;
@@ -520,7 +519,6 @@ class BASE_EXPORT MessageLoop : public base::MessagePump::Delegate {
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   scoped_ptr<base::ThreadTaskRunnerHandle> thread_task_runner_handle_;
 
- private:
   template <class T, class R> friend class base::subtle::DeleteHelperInternal;
   template <class T, class R> friend class base::subtle::ReleaseHelperInternal;
 

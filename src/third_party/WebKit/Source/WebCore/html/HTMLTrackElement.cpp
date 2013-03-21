@@ -24,7 +24,6 @@
  */
 
 #include "config.h"
-
 #if ENABLE(VIDEO_TRACK)
 #include "HTMLTrackElement.h"
 
@@ -36,8 +35,8 @@
 #include "RuntimeEnabledFeatures.h"
 #include "ScriptCallStack.h"
 #include "ScriptEventListener.h"
-using namespace std;
 
+using namespace std;
 
 namespace WebCore {
 
@@ -56,6 +55,7 @@ static String urlForLoggingTrack(const KURL& url)
     
 inline HTMLTrackElement::HTMLTrackElement(const QualifiedName& tagName, Document* document)
     : HTMLElement(tagName, document)
+    , m_loadTimer(this, &HTMLTrackElement::loadTimerFired)
 {
     LOG(Media, "HTMLTrackElement::HTMLTrackElement - %p", this);
     ASSERT(hasTagName(trackTag));
@@ -74,6 +74,9 @@ PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(const QualifiedName& tagNa
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)
 {
+    // Since we've moved to a new parent, we may now be able to load.
+    scheduleLoad();
+
     HTMLElement::insertedInto(insertionPoint);
     HTMLMediaElement* parent = mediaElement();
     if (insertionPoint == parent)
@@ -92,10 +95,13 @@ void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicStr
 {
     if (RuntimeEnabledFeatures::webkitVideoTrackEnabled()) {
         if (name == srcAttr) {
-            if (!value.isEmpty() && mediaElement())
+            if (!value.isEmpty())
                 scheduleLoad();
-            // 4.8.10.12.3 Sourcing out-of-band text tracks
-            // As the kind, label, and srclang attributes are set, changed, or removed, the text track must update accordingly...
+            else if (m_track)
+                m_track->removeAllCues();
+
+        // 4.8.10.12.3 Sourcing out-of-band text tracks
+        // As the kind, label, and srclang attributes are set, changed, or removed, the text track must update accordingly...
         } else if (name == kindAttr)
             track()->setKind(value.lower());
         else if (name == labelAttr)
@@ -188,21 +194,39 @@ bool HTMLTrackElement::isURLAttribute(const Attribute& attribute) const
 
 void HTMLTrackElement::scheduleLoad()
 {
+    // 1. If another occurrence of this algorithm is already running for this text track and its track element,
+    // abort these steps, letting that other algorithm take care of this element.
+    if (m_loadTimer.isActive())
+        return;
+
     if (!RuntimeEnabledFeatures::webkitVideoTrackEnabled())
         return;
 
+    // 2. If the text track's text track mode is not set to one of hidden or showing, abort these steps.
+    if (ensureTrack()->mode() != TextTrack::hiddenKeyword() && ensureTrack()->mode() != TextTrack::showingKeyword())
+        return;
+
+    // 3. If the text track's track element does not have a media element as a parent, abort these steps.
     if (!mediaElement())
         return;
 
+    // 4. Run the remainder of these steps asynchronously, allowing whatever caused these steps to run to continue.
+    m_loadTimer.startOneShot(0);
+}
+
+void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
+{
     if (!fastHasAttribute(srcAttr))
         return;
 
-    // 4.8.10.12.3 Sourcing out-of-band text tracks
-
-    // 1. Set the text track readiness state to loading.
+    // 6. Set the text track readiness state to loading.
     setReadyState(HTMLTrackElement::LOADING);
 
+    // 7. Let URL be the track URL of the track element.
     KURL url = getNonEmptyURLAttribute(srcAttr);
+
+    // 8. If the track element's parent is a media element then let CORS mode be the state of the parent media
+    // element's crossorigin content attribute. Otherwise, let CORS mode be No CORS.
     if (!canLoadUrl(url)) {
         didCompleteLoad(ensureTrack(), HTMLTrackElement::Failure);
         return;
@@ -229,8 +253,6 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
         return false;
 
     if (!document()->contentSecurityPolicy()->allowMediaFromSource(url)) {
-        DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Text track load denied by Content Security Policy.")));
-        document()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, consoleMessage);
         LOG(Media, "HTMLTrackElement::canLoadUrl(%s) -> rejected by Content Security Policy", urlForLoggingTrack(url).utf8().data());
         return false;
     }
@@ -240,8 +262,6 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
 
 void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 {
-    ExceptionCode ec = 0;
-
     // 4.8.10.12.3 Sourcing out-of-band text tracks (continued)
     
     // 4. Download: ...
@@ -254,7 +274,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     if (status == Failure) {
         setReadyState(HTMLTrackElement::TRACK_ERROR);
-        dispatchEvent(Event::create(eventNames().errorEvent, false, false), ec);
+        dispatchEvent(Event::create(eventNames().errorEvent, false, false), IGNORE_EXCEPTION);
         return;
     }
 
@@ -265,7 +285,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     //     2. If the file was successfully processed, fire a simple event named load at the 
     //        track element.
-    dispatchEvent(Event::create(eventNames().loadEvent, false, false), ec);
+    dispatchEvent(Event::create(eventNames().loadEvent, false, false), IGNORE_EXCEPTION);
 }
 
 // NOTE: The values in the TextTrack::ReadinessState enum must stay in sync with those in HTMLTrackElement::ReadyState.
@@ -302,6 +322,10 @@ void HTMLTrackElement::textTrackKindChanged(TextTrack* track)
 
 void HTMLTrackElement::textTrackModeChanged(TextTrack* track)
 {
+    // Since we've moved to a new parent, we may now be able to load.
+    if (readyState() == HTMLTrackElement::NONE)
+        scheduleLoad();
+
     if (HTMLMediaElement* parent = mediaElement())
         return parent->textTrackModeChanged(track);
 }

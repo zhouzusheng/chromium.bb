@@ -8,15 +8,18 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/Platform.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFileSystem.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgentClient.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace WebKit {
 class WebApplicationCacheHost;
@@ -49,6 +52,14 @@ class MediaStreamClient;
 // implementation classes.
 namespace webkit_support {
 
+// DIR_SOURCE_ROOT does not return a reliable result for standalone WebKit
+// builds. This reliably returns the root of the chromium source, which is the
+// directory containing all dependencies pulled by gclient. In a
+// webkit-in-chromium build, this is the root directory of the checkout. In a
+// standalone webkit build, it is Source/WebKit/chromium relative from the
+// checkout's root directory.
+base::FilePath GetChromiumRootDirFilePath();
+
 // Initializes or terminates a test environment.
 // |unit_test_mode| should be set to true when running in a TestSuite, in which
 // case no AtExitManager is created and ICU is not initialized (as it is already
@@ -65,6 +76,7 @@ void SetUpTestEnvironment(WebKit::Platform* shadow_platform_delegate);
 void SetUpTestEnvironmentForUnitTests(
     WebKit::Platform* shadow_platform_delegate);
 void TearDownTestEnvironment();
+void ResetTestEnvironment();
 
 // Returns a pointer to a WebKitPlatformSupport implementation for
 // DumpRenderTree.  Needs to call SetUpTestEnvironment() before this.
@@ -88,6 +100,7 @@ WebKit::WebMediaPlayer* CreateMediaPlayer(
     const WebKit::WebURL& url,
     WebKit::WebMediaPlayerClient* client);
 
+// DEPRECATED: Use ResetTestEnvironment() instead.
 #if defined(OS_ANDROID)
 void ReleaseMediaResources();
 #endif

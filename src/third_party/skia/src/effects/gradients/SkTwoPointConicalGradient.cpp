@@ -113,11 +113,12 @@ SkFixed TwoPtRadial::nextT() {
     return SkFloatToFixed(t);
 }
 
-typedef void (*TwoPointRadialProc)(TwoPtRadial* rec, SkPMColor* dstC,
-                                   const SkPMColor* cache, int count);
+typedef void (*TwoPointConicalProc)(TwoPtRadial* rec, SkPMColor* dstC,
+                                    const SkPMColor* cache, int toggle, int count);
 
 static void twopoint_clamp(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
-                           const SkPMColor* SK_RESTRICT cache, int count) {
+                           const SkPMColor* SK_RESTRICT cache, int toggle,
+                           int count) {
     for (; count > 0; --count) {
         SkFixed t = rec->nextT();
         if (TwoPtRadial::DontDrawT(t)) {
@@ -125,13 +126,18 @@ static void twopoint_clamp(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
         } else {
             SkFixed index = SkClampMax(t, 0xFFFF);
             SkASSERT(index <= 0xFFFF);
-            *dstC++ = cache[index >> SkGradientShaderBase::kCache32Shift];
+            *dstC++ = cache[toggle +
+                            (index >> SkGradientShaderBase::kCache32Shift)];
         }
+#ifndef SK_IGNORE_GRADIENT_DITHER_FIX
+        toggle = next_dither_toggle(toggle);
+#endif
     }
 }
 
 static void twopoint_repeat(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
-                            const SkPMColor* SK_RESTRICT cache, int count) {
+                            const SkPMColor* SK_RESTRICT cache, int toggle,
+                            int count) {
     for (; count > 0; --count) {
         SkFixed t = rec->nextT();
         if (TwoPtRadial::DontDrawT(t)) {
@@ -139,13 +145,18 @@ static void twopoint_repeat(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
         } else {
             SkFixed index = repeat_tileproc(t);
             SkASSERT(index <= 0xFFFF);
-            *dstC++ = cache[index >> SkGradientShaderBase::kCache32Shift];
+            *dstC++ = cache[toggle +
+                            (index >> SkGradientShaderBase::kCache32Shift)];
         }
+#ifndef SK_IGNORE_GRADIENT_DITHER_FIX
+        toggle = next_dither_toggle(toggle);
+#endif
     }
 }
 
 static void twopoint_mirror(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
-                            const SkPMColor* SK_RESTRICT cache, int count) {
+                            const SkPMColor* SK_RESTRICT cache, int toggle,
+                            int count) {
     for (; count > 0; --count) {
         SkFixed t = rec->nextT();
         if (TwoPtRadial::DontDrawT(t)) {
@@ -153,8 +164,12 @@ static void twopoint_mirror(TwoPtRadial* rec, SkPMColor* SK_RESTRICT dstC,
         } else {
             SkFixed index = mirror_tileproc(t);
             SkASSERT(index <= 0xFFFF);
-            *dstC++ = cache[index >> SkGradientShaderBase::kCache32Shift];
+            *dstC++ = cache[toggle +
+                            (index >> SkGradientShaderBase::kCache32Shift)];
         }
+#ifndef SK_IGNORE_GRADIENT_DITHER_FIX
+        toggle = next_dither_toggle(toggle);
+#endif
     }
 }
 
@@ -183,6 +198,12 @@ SkTwoPointConicalGradient::SkTwoPointConicalGradient(
 
 void SkTwoPointConicalGradient::shadeSpan(int x, int y, SkPMColor* dstCParam,
                                           int count) {
+#ifndef SK_IGNORE_GRADIENT_DITHER_FIX
+    int toggle = init_dither_toggle(x, y);
+#else
+    int toggle = 0;
+#endif
+
     SkASSERT(count > 0);
 
     SkPMColor* SK_RESTRICT dstC = dstCParam;
@@ -191,7 +212,7 @@ void SkTwoPointConicalGradient::shadeSpan(int x, int y, SkPMColor* dstCParam,
 
     const SkPMColor* SK_RESTRICT cache = this->getCache32();
 
-    TwoPointRadialProc shadeProc = twopoint_repeat;
+    TwoPointConicalProc shadeProc = twopoint_repeat;
     if (SkShader::kClamp_TileMode == fTileMode) {
         shadeProc = twopoint_clamp;
     } else if (SkShader::kMirror_TileMode == fTileMode) {
@@ -219,7 +240,7 @@ void SkTwoPointConicalGradient::shadeSpan(int x, int y, SkPMColor* dstCParam,
         }
 
         fRec.setup(fx, fy, dx, dy);
-        (*shadeProc)(&fRec, dstC, cache, count);
+        (*shadeProc)(&fRec, dstC, cache, toggle, count);
     } else {    // perspective case
         SkScalar dstX = SkIntToScalar(x);
         SkScalar dstY = SkIntToScalar(y);
@@ -229,7 +250,10 @@ void SkTwoPointConicalGradient::shadeSpan(int x, int y, SkPMColor* dstCParam,
             dstX += SK_Scalar1;
 
             fRec.setup(srcPt.fX, srcPt.fY, 0, 0);
-            (*shadeProc)(&fRec, dstC, cache, 1);
+            (*shadeProc)(&fRec, dstC, cache, toggle, 1);
+#ifndef SK_IGNORE_GRADIENT_DITHER_FIX
+            toggle = next_dither_toggle(toggle);
+#endif
         }
     }
 }
@@ -325,7 +349,7 @@ class GrGLConical2Gradient : public GrGLGradientEffect {
 public:
 
     GrGLConical2Gradient(const GrBackendEffectFactory& factory,
-                         const GrEffect&);
+                         const GrEffectRef&);
     virtual ~GrGLConical2Gradient() { }
 
     virtual void emitCode(GrGLShaderBuilder*,
@@ -369,27 +393,19 @@ private:
 class GrConical2Gradient : public GrGradientEffect {
 public:
 
-    GrConical2Gradient(GrContext* ctx,
-                       const SkTwoPointConicalGradient& shader,
-                       const SkMatrix& matrix,
-                       SkShader::TileMode tm)
-        : INHERITED(ctx, shader, matrix, tm)
-        , fCenterX1(shader.getCenterX1())
-        , fRadius0(shader.getStartRadius())
-        , fDiffRadius(shader.getDiffRadius()) { }
+    static GrEffectRef* Create(GrContext* ctx,
+                               const SkTwoPointConicalGradient& shader,
+                               const SkMatrix& matrix,
+                               SkShader::TileMode tm) {
+        AutoEffectUnref effect(SkNEW_ARGS(GrConical2Gradient, (ctx, shader, matrix, tm)));
+        return CreateEffectRef(effect);
+    }
 
     virtual ~GrConical2Gradient() { }
 
     static const char* Name() { return "Two-Point Conical Gradient"; }
     virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE {
         return GrTBackendEffectFactory<GrConical2Gradient>::getInstance();
-    }
-    virtual bool isEqual(const GrEffect& sBase) const SK_OVERRIDE {
-        const GrConical2Gradient& s = static_cast<const GrConical2Gradient&>(sBase);
-        return (INHERITED::isEqual(sBase) &&
-                this->fCenterX1 == s.fCenterX1 &&
-                this->fRadius0 == s.fRadius0 &&
-                this->fDiffRadius == s.fDiffRadius);
     }
 
     // The radial gradient parameters can collapse to a linear (instead of quadratic) equation.
@@ -401,6 +417,23 @@ public:
     typedef GrGLConical2Gradient GLEffect;
 
 private:
+    virtual bool onIsEqual(const GrEffect& sBase) const SK_OVERRIDE {
+        const GrConical2Gradient& s = CastEffect<GrConical2Gradient>(sBase);
+        return (INHERITED::onIsEqual(sBase) &&
+                this->fCenterX1 == s.fCenterX1 &&
+                this->fRadius0 == s.fRadius0 &&
+                this->fDiffRadius == s.fDiffRadius);
+    }
+
+    GrConical2Gradient(GrContext* ctx,
+                       const SkTwoPointConicalGradient& shader,
+                       const SkMatrix& matrix,
+                       SkShader::TileMode tm)
+        : INHERITED(ctx, shader, matrix, tm)
+        , fCenterX1(shader.getCenterX1())
+        , fRadius0(shader.getStartRadius())
+        , fDiffRadius(shader.getDiffRadius()) { }
+
     GR_DECLARE_EFFECT_TEST;
 
     // @{
@@ -418,9 +451,9 @@ private:
 
 GR_DEFINE_EFFECT_TEST(GrConical2Gradient);
 
-GrEffect* GrConical2Gradient::TestCreate(SkRandom* random,
-                                         GrContext* context,
-                                         GrTexture**) {
+GrEffectRef* GrConical2Gradient::TestCreate(SkRandom* random,
+                                            GrContext* context,
+                                            GrTexture**) {
     SkPoint center1 = {random->nextUScalar1(), random->nextUScalar1()};
     SkScalar radius1 = random->nextUScalar1();
     SkPoint center2;
@@ -440,20 +473,15 @@ GrEffect* GrConical2Gradient::TestCreate(SkRandom* random,
                                                                           center2, radius2,
                                                                           colors, stops, colorCount,
                                                                           tm));
-    GrEffectStage stage;
-    shader->asNewEffect(context, &stage);
-    GrAssert(NULL != stage.getEffect());
-    // const_cast and ref is a hack! Will remove when asNewEffect returns GrEffect*
-    stage.getEffect()->ref();
-    return const_cast<GrEffect*>(stage.getEffect());
+    SkPaint paint;
+    return shader->asNewEffect(context, paint);
 }
 
 
 /////////////////////////////////////////////////////////////////////
 
-GrGLConical2Gradient::GrGLConical2Gradient(
-        const GrBackendEffectFactory& factory,
-        const GrEffect& baseData)
+GrGLConical2Gradient::GrGLConical2Gradient(const GrBackendEffectFactory& factory,
+                                           const GrEffectRef& baseData)
     : INHERITED(factory)
     , fVSParamUni(kInvalidUniformHandle)
     , fFSParamUni(kInvalidUniformHandle)
@@ -463,8 +491,7 @@ GrGLConical2Gradient::GrGLConical2Gradient(
     , fCachedRadius(-SK_ScalarMax)
     , fCachedDiffRadius(-SK_ScalarMax) {
 
-    const GrConical2Gradient& data =
-        static_cast<const GrConical2Gradient&>(baseData);
+    const GrConical2Gradient& data = CastEffect<GrConical2Gradient>(baseData);
     fIsDegenerate = data.isDegenerate();
 }
 
@@ -640,7 +667,7 @@ void GrGLConical2Gradient::emitCode(GrGLShaderBuilder* builder,
 
 void GrGLConical2Gradient::setData(const GrGLUniformManager& uman, const GrEffectStage& stage) {
     INHERITED::setData(uman, stage);
-    const GrConical2Gradient& data = static_cast<const GrConical2Gradient&>(*stage.getEffect());
+    const GrConical2Gradient& data = GetEffectFromStage<GrConical2Gradient>(stage);
     GrAssert(data.isDegenerate() == fIsDegenerate);
     SkScalar centerX1 = data.center();
     SkScalar radius0 = data.radius();
@@ -680,7 +707,7 @@ GrGLEffect::EffectKey GrGLConical2Gradient::GenKey(const GrEffectStage& s, const
     };
 
     EffectKey key = GenMatrixKey(s);
-    if (static_cast<const GrConical2Gradient&>(*s.getEffect()).isDegenerate()) {
+    if (GetEffectFromStage<GrConical2Gradient>(s).isDegenerate()) {
         key |= kIsDegenerate;
     }
     return key;
@@ -688,14 +715,13 @@ GrGLEffect::EffectKey GrGLConical2Gradient::GenKey(const GrEffectStage& s, const
 
 /////////////////////////////////////////////////////////////////////
 
-bool SkTwoPointConicalGradient::asNewEffect(GrContext* context,
-                                            GrEffectStage* stage) const {
-    SkASSERT(NULL != context && NULL != stage);
+GrEffectRef* SkTwoPointConicalGradient::asNewEffect(GrContext* context, const SkPaint&) const {
+    SkASSERT(NULL != context);
     SkASSERT(fPtsToUnit.isIdentity());
     // invert the localM, translate to center1, rotate so center2 is on x axis.
     SkMatrix matrix;
     if (!this->getLocalMatrix().invert(&matrix)) {
-        return false;
+        return NULL;
     }
     matrix.postTranslate(-fCenter1.fX, -fCenter1.fY);
 
@@ -709,16 +735,40 @@ bool SkTwoPointConicalGradient::asNewEffect(GrContext* context,
         matrix.postConcat(rot);
     }
 
-    stage->setEffect(SkNEW_ARGS(GrConical2Gradient, (context, *this, matrix, fTileMode)))->unref();
-
-    return true;
+    return GrConical2Gradient::Create(context, *this, matrix, fTileMode);
 }
 
 #else
 
-bool SkTwoPointConicalGradient::asNewEffect(GrContext*, GrEffectStage*) const {
+GrEffectRef* SkTwoPointConicalGradient::asNewEffect(GrContext*, const SkPaint&) const {
     SkDEBUGFAIL("Should not call in GPU-less build");
-    return false;
+    return NULL;
 }
 
+#endif
+
+#ifdef SK_DEVELOPER
+void SkTwoPointConicalGradient::toString(SkString* str) const {
+    str->append("SkTwoPointConicalGradient: (");
+
+    str->append("center1: (");
+    str->appendScalar(fCenter1.fX);
+    str->append(", ");
+    str->appendScalar(fCenter1.fY);
+    str->append(") radius1: ");
+    str->appendScalar(fRadius1);
+    str->append(" ");
+
+    str->append("center2: (");
+    str->appendScalar(fCenter2.fX);
+    str->append(", ");
+    str->appendScalar(fCenter2.fY);
+    str->append(") radius2: ");
+    str->appendScalar(fRadius2);
+    str->append(" ");
+
+    this->INHERITED::toString(str);
+
+    str->append(")");
+}
 #endif

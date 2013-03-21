@@ -209,6 +209,7 @@ namespace internal {
   V(char_at_symbol, "CharAt")                                            \
   V(undefined_symbol, "undefined")                                       \
   V(value_of_symbol, "valueOf")                                          \
+  V(stack_symbol, "stack")                                               \
   V(InitializeVarGlobal_symbol, "InitializeVarGlobal")                   \
   V(InitializeConstGlobal_symbol, "InitializeConstGlobal")               \
   V(KeyedLoadElementMonomorphic_symbol,                                  \
@@ -223,6 +224,9 @@ namespace internal {
   V(illegal_execution_state_symbol, "illegal execution state")           \
   V(get_symbol, "get")                                                   \
   V(set_symbol, "set")                                                   \
+  V(map_field_symbol, "%map")                                            \
+  V(elements_field_symbol, "%elements")                                  \
+  V(length_field_symbol, "%length")                                      \
   V(function_class_symbol, "Function")                                   \
   V(illegal_argument_symbol, "illegal argument")                         \
   V(MakeReferenceError_symbol, "MakeReferenceError")                     \
@@ -427,6 +431,41 @@ class ExternalStringTable {
 };
 
 
+// The stack property of an error object is implemented as a getter that
+// formats the attached raw stack trace into a string.  This raw stack trace
+// keeps code and function objects alive until the getter is called the first
+// time.  To release those objects, we call the getter after each GC for
+// newly tenured error objects that are kept in a list.
+class ErrorObjectList {
+ public:
+  inline void Add(JSObject* object);
+
+  inline void Iterate(ObjectVisitor* v);
+
+  void TearDown();
+
+  void RemoveUnmarked(Heap* heap);
+
+  void DeferredFormatStackTrace(Isolate* isolate);
+
+  void UpdateReferences();
+
+  void UpdateReferencesInNewSpace(Heap* heap);
+
+ private:
+  static const int kBudgetPerGC = 16;
+
+  ErrorObjectList() : nested_(false) { }
+
+  friend class Heap;
+
+  List<Object*> list_;
+  bool nested_;
+
+  DISALLOW_COPY_AND_ASSIGN(ErrorObjectList);
+};
+
+
 enum ArrayStorageAllocationMode {
   DONT_INITIALIZE_ARRAY_ELEMENTS,
   INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE
@@ -588,7 +627,9 @@ class Heap {
   // Returns a deep copy of the JavaScript object.
   // Properties and elements are copied too.
   // Returns failure if allocation failed.
-  MUST_USE_RESULT MaybeObject* CopyJSObject(JSObject* source);
+  MUST_USE_RESULT MaybeObject* CopyJSObject(
+      JSObject* source,
+      AllocationSiteMode mode = DONT_TRACK_ALLOCATION_SITE);
 
   // Allocates the function prototype.
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
@@ -699,8 +740,15 @@ class Heap {
   // failed.
   // Please note this does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* AllocateStringFromOneByte(
-      Vector<const char> str,
+      Vector<const uint8_t> str,
       PretenureFlag pretenure = NOT_TENURED);
+  // TODO(dcarney): remove this function.
+  MUST_USE_RESULT inline MaybeObject* AllocateStringFromOneByte(
+      Vector<const char> str,
+      PretenureFlag pretenure = NOT_TENURED) {
+    return AllocateStringFromOneByte(Vector<const uint8_t>::cast(str),
+                                     pretenure);
+  }
   MUST_USE_RESULT inline MaybeObject* AllocateStringFromUtf8(
       Vector<const char> str,
       PretenureFlag pretenure = NOT_TENURED);
@@ -716,24 +764,29 @@ class Heap {
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT inline MaybeObject* AllocateSymbol(Vector<const char> str,
-                                                     int chars,
-                                                     uint32_t hash_field);
+  MUST_USE_RESULT inline MaybeObject* AllocateSymbolFromUtf8(
+      Vector<const char> str,
+      int chars,
+      uint32_t hash_field);
 
-  MUST_USE_RESULT inline MaybeObject* AllocateAsciiSymbol(
-        Vector<const char> str,
+  MUST_USE_RESULT inline MaybeObject* AllocateOneByteSymbol(
+        Vector<const uint8_t> str,
         uint32_t hash_field);
 
   MUST_USE_RESULT inline MaybeObject* AllocateTwoByteSymbol(
         Vector<const uc16> str,
         uint32_t hash_field);
 
-  MUST_USE_RESULT MaybeObject* AllocateInternalSymbol(
-      unibrow::CharacterStream* buffer, int chars, uint32_t hash_field);
+  template<typename T>
+  static inline bool IsOneByte(T t, int chars);
 
-  MUST_USE_RESULT MaybeObject* AllocateExternalSymbol(
-      Vector<const char> str,
-      int chars);
+  template<typename T>
+  MUST_USE_RESULT inline MaybeObject* AllocateInternalSymbol(
+      T t, int chars, uint32_t hash_field);
+
+  template<bool is_one_byte, typename T>
+  MUST_USE_RESULT MaybeObject* AllocateInternalSymbol(
+      T t, int chars, uint32_t hash_field);
 
   // Allocates and partially initializes a String.  There are two String
   // encodings: ASCII and two byte.  These functions allocate a string of the
@@ -800,6 +853,10 @@ class Heap {
   // failed.
   // Please note this does not perform a garbage collection.
   MUST_USE_RESULT MaybeObject* AllocateUninitializedFixedArray(int length);
+
+  // Move len elements within a given array from src_index index to dst_index
+  // index.
+  void MoveElements(FixedArray* array, int dst_index, int src_index, int len);
 
   // Make a copy of src and return it. Returns
   // Failure::RetryAfterGC(requested_bytes, space) if the allocation failed.
@@ -1030,14 +1087,14 @@ class Heap {
   // Returns Failure::RetryAfterGC(requested_bytes, space) if allocation
   // failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT MaybeObject* LookupSymbol(Vector<const char> str);
-  MUST_USE_RESULT MaybeObject* LookupAsciiSymbol(Vector<const char> str);
-  MUST_USE_RESULT MaybeObject* LookupTwoByteSymbol(Vector<const uc16> str);
-  MUST_USE_RESULT MaybeObject* LookupAsciiSymbol(const char* str) {
-    return LookupSymbol(CStrVector(str));
+  MUST_USE_RESULT MaybeObject* LookupUtf8Symbol(Vector<const char> str);
+  MUST_USE_RESULT MaybeObject* LookupUtf8Symbol(const char* str) {
+    return LookupUtf8Symbol(CStrVector(str));
   }
+  MUST_USE_RESULT MaybeObject* LookupOneByteSymbol(Vector<const uint8_t> str);
+  MUST_USE_RESULT MaybeObject* LookupTwoByteSymbol(Vector<const uc16> str);
   MUST_USE_RESULT MaybeObject* LookupSymbol(String* str);
-  MUST_USE_RESULT MaybeObject* LookupAsciiSymbol(
+  MUST_USE_RESULT MaybeObject* LookupOneByteSymbol(
       Handle<SeqOneByteString> string, int from, int length);
 
   bool LookupSymbolIfExists(String* str, String** symbol);
@@ -1268,6 +1325,11 @@ class Heap {
 #ifdef VERIFY_HEAP
   // Verify the heap is in its normal state before or after a GC.
   void Verify();
+
+
+  bool weak_embedded_maps_verification_enabled() {
+    return no_weak_embedded_maps_verification_scope_depth_ == 0;
+  }
 #endif
 
 #ifdef DEBUG
@@ -1542,6 +1604,24 @@ class Heap {
   // Returns minimal interval between two subsequent collections.
   int get_min_in_mutator() { return min_in_mutator_; }
 
+  // TODO(hpayer): remove, should be handled by GCTracer
+  void AddMarkingTime(double marking_time) {
+    marking_time_ += marking_time;
+  }
+
+  double marking_time() const {
+    return marking_time_;
+  }
+
+  // TODO(hpayer): remove, should be handled by GCTracer
+  void AddSweepingTime(double sweeping_time) {
+    sweeping_time_ += sweeping_time;
+  }
+
+  double sweeping_time() const {
+    return sweeping_time_;
+  }
+
   MarkCompactCollector* mark_compact_collector() {
     return &mark_compact_collector_;
   }
@@ -1559,11 +1639,13 @@ class Heap {
   }
 
   bool IsSweepingComplete() {
-    return old_data_space()->IsSweepingComplete() &&
-           old_pointer_space()->IsSweepingComplete();
+    return !mark_compact_collector()->IsConcurrentSweepingInProgress() &&
+           old_data_space()->IsLazySweepingComplete() &&
+           old_pointer_space()->IsLazySweepingComplete();
   }
 
   bool AdvanceSweepers(int step_size) {
+    ASSERT(!FLAG_parallel_sweeping && !FLAG_concurrent_sweeping);
     bool sweeping_complete = old_data_space()->AdvanceSweeper(step_size);
     sweeping_complete &= old_pointer_space()->AdvanceSweeper(step_size);
     return sweeping_complete;
@@ -1573,6 +1655,10 @@ class Heap {
     return &external_string_table_;
   }
 
+  ErrorObjectList* error_object_list() {
+    return &error_object_list_;
+  }
+
   // Returns the current sweep generation.
   int sweep_generation() {
     return sweep_generation_;
@@ -1580,13 +1666,8 @@ class Heap {
 
   inline Isolate* isolate();
 
-  inline void CallGlobalGCPrologueCallback() {
-    if (global_gc_prologue_callback_ != NULL) global_gc_prologue_callback_();
-  }
-
-  inline void CallGlobalGCEpilogueCallback() {
-    if (global_gc_epilogue_callback_ != NULL) global_gc_epilogue_callback_();
-  }
+  void CallGCPrologueCallbacks(GCType gc_type);
+  void CallGCEpilogueCallbacks(GCType gc_type);
 
   inline bool OldGenerationAllocationLimitReached();
 
@@ -1982,7 +2063,6 @@ class Heap {
 
   GCTracer* tracer_;
 
-
   // Allocates a small number to string cache.
   MUST_USE_RESULT MaybeObject* AllocateInitialNumberStringCache();
   // Creates and installs the full-sized number string cache.
@@ -2120,6 +2200,12 @@ class Heap {
 
   double last_gc_end_timestamp_;
 
+  // Cumulative GC time spent in marking
+  double marking_time_;
+
+  // Cumulative GC time spent in sweeping
+  double sweeping_time_;
+
   MarkCompactCollector mark_compact_collector_;
 
   StoreBuffer store_buffer_;
@@ -2137,6 +2223,10 @@ class Heap {
   unsigned int gc_count_at_last_idle_gc_;
   int scavenges_since_last_idle_round_;
 
+#ifdef VERIFY_HEAP
+  int no_weak_embedded_maps_verification_scope_depth_;
+#endif
+
   static const int kMaxMarkSweepsInIdleRound = 7;
   static const int kIdleScavengeThreshold = 5;
 
@@ -2148,6 +2238,8 @@ class Heap {
   bool configured_;
 
   ExternalStringTable external_string_table_;
+
+  ErrorObjectList error_object_list_;
 
   VisitorDispatchTable<ScavengingCallback> scavenging_visitors_table_;
 
@@ -2164,6 +2256,9 @@ class Heap {
   friend class MarkCompactCollector;
   friend class MarkCompactMarkingVisitor;
   friend class MapCompact;
+#ifdef VERIFY_HEAP
+  friend class NoWeakEmbeddedMapsVerificationScope;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(Heap);
 };
@@ -2223,6 +2318,14 @@ class AlwaysAllocateScope {
   // Implicitly disable artificial allocation failures.
   DisallowAllocationFailure disallow_allocation_failure_;
 };
+
+#ifdef VERIFY_HEAP
+class NoWeakEmbeddedMapsVerificationScope {
+ public:
+  inline NoWeakEmbeddedMapsVerificationScope();
+  inline ~NoWeakEmbeddedMapsVerificationScope();
+};
+#endif
 
 
 // Visitor class to verify interior pointers in spaces that do not contain
@@ -2782,7 +2885,7 @@ class IntrusiveMarking {
 };
 
 
-#if defined(DEBUG) || defined(LIVE_OBJECT_LIST)
+#ifdef DEBUG
 // Helper class for tracing paths to a search target Object from all roots.
 // The TracePathFrom() method can be used to trace paths from a specific
 // object to the search target object.
@@ -2839,7 +2942,7 @@ class PathTracer : public ObjectVisitor {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(PathTracer);
 };
-#endif  // DEBUG || LIVE_OBJECT_LIST
+#endif  // DEBUG
 
 } }  // namespace v8::internal
 

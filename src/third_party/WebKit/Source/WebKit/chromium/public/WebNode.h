@@ -31,9 +31,10 @@
 #ifndef WebNode_h
 #define WebNode_h
 
-#include "platform/WebCommon.h"
-#include "platform/WebPrivatePtr.h"
-#include "platform/WebString.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
+#include "../../../Platform/chromium/public/WebPrivatePtr.h"
+#include "../../../Platform/chromium/public/WebString.h"
+#include "WebExceptionCode.h"
 
 namespace WebCore { class Node; }
 
@@ -112,6 +113,7 @@ public:
     WEBKIT_EXPORT bool dispatchEvent(const WebDOMEvent&);
     WEBKIT_EXPORT void simulateClick();
     WEBKIT_EXPORT WebNodeList getElementsByTagName(const WebString&) const;
+    WEBKIT_EXPORT WebElement querySelector(const WebString&, WebExceptionCode&) const;
     WEBKIT_EXPORT WebElement rootEditableElement() const;
     WEBKIT_EXPORT bool focused() const;
     WEBKIT_EXPORT bool remove();
@@ -121,6 +123,7 @@ public:
     // Note: This method only works properly after layout has occurred.
     WEBKIT_EXPORT bool hasNonEmptyBoundingBox() const;
     WEBKIT_EXPORT WebPluginContainer* pluginContainer() const;
+    WEBKIT_EXPORT WebElement shadowHost() const;
 
     template<typename T> T to()
     {

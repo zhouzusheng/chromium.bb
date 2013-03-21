@@ -5,10 +5,9 @@
 #ifndef CC_ANIMATION_CURVE_H_
 #define CC_ANIMATION_CURVE_H_
 
-#include <public/WebTransformationMatrix.h>
-
 #include "base/memory/scoped_ptr.h"
 #include "cc/cc_export.h"
+#include "ui/gfx/transform.h"
 
 namespace cc {
 
@@ -46,7 +45,7 @@ class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
 public:
     virtual ~TransformAnimationCurve() { }
 
-    virtual WebKit::WebTransformationMatrix getValue(double t) const = 0;
+    virtual gfx::Transform getValue(double t) const = 0;
 
     // Partial Animation implementation.
     virtual Type type() const OVERRIDE;

@@ -2,23 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "web_scrollbar_layer_impl.h"
+#include "webkit/compositor_bindings/web_scrollbar_layer_impl.h"
 
 #include "cc/scrollbar_layer.h"
-#include "web_layer_impl.h"
+#include "webkit/compositor_bindings/web_layer_impl.h"
+#include "webkit/compositor_bindings/web_to_ccscrollbar_theme_painter_adapter.h"
 
 using cc::ScrollbarLayer;
+using cc::ScrollbarThemePainter;
 
 namespace WebKit {
 
-WebScrollbarLayer* WebScrollbarLayer::create(WebScrollbar* scrollbar, WebScrollbarThemePainter painter, WebScrollbarThemeGeometry* geometry)
-{
-    return new WebScrollbarLayerImpl(scrollbar, painter, geometry);
-}
-
-
 WebScrollbarLayerImpl::WebScrollbarLayerImpl(WebScrollbar* scrollbar, WebScrollbarThemePainter painter, WebScrollbarThemeGeometry* geometry)
-    : m_layer(new WebLayerImpl(ScrollbarLayer::create(make_scoped_ptr(scrollbar), painter, make_scoped_ptr(geometry), 0)))
+    : m_layer(new WebLayerImpl(ScrollbarLayer::create(
+        make_scoped_ptr(scrollbar),
+        WebToCCScrollbarThemePainterAdapter::Create(
+            make_scoped_ptr(new WebScrollbarThemePainter(painter)))
+            .PassAs<ScrollbarThemePainter>(),
+        make_scoped_ptr(geometry),
+        0)))
 {
 }
 

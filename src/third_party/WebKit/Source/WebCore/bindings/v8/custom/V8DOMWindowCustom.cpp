@@ -56,6 +56,7 @@
 #include "Storage.h"
 #include "V8Binding.h"
 #include "V8EventListener.h"
+#include "V8EventListenerList.h"
 #include "V8GCForContextDispose.h"
 #include "V8HiddenPropertyName.h"
 #include "V8HTMLCollection.h"
@@ -120,7 +121,7 @@ v8::Handle<v8::Value> WindowSetTimeoutImpl(const v8::Arguments& args, bool singl
 
         // params is passed to action, and released in action's destructor
         ASSERT(imp->frame());
-        OwnPtr<ScheduledAction> action = adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), v8::Handle<v8::Function>::Cast(function), paramCount, params));
+        OwnPtr<ScheduledAction> action = adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), v8::Handle<v8::Function>::Cast(function), paramCount, params, args.GetIsolate()));
 
         // FIXME: We should use OwnArrayPtr for params.
         delete[] params;
@@ -130,7 +131,7 @@ v8::Handle<v8::Value> WindowSetTimeoutImpl(const v8::Arguments& args, bool singl
         if (imp->document() && !imp->document()->contentSecurityPolicy()->allowEval())
             return v8Integer(0, args.GetIsolate());
         ASSERT(imp->frame());
-        id = DOMTimer::install(scriptContext, adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), functionString)), timeout, singleShot);
+        id = DOMTimer::install(scriptContext, adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), functionString, KURL(), args.GetIsolate())), timeout, singleShot);
     }
 
     // Try to do the idle notification before the timeout expires to get better
@@ -145,7 +146,7 @@ v8::Handle<v8::Value> WindowSetTimeoutImpl(const v8::Arguments& args, bool singl
 
 v8::Handle<v8::Value> V8DOMWindow::eventAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(info.GetIsolate()));
     if (holder.IsEmpty())
         return v8::Undefined();
 
@@ -167,7 +168,7 @@ v8::Handle<v8::Value> V8DOMWindow::eventAccessorGetter(v8::Local<v8::String> nam
 
 void V8DOMWindow::eventAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(info.GetIsolate()));
     if (holder.IsEmpty())
         return;
 
@@ -227,8 +228,6 @@ void V8DOMWindow::openerAccessorSetter(v8::Local<v8::String> name, v8::Local<v8:
 
 v8::Handle<v8::Value> V8DOMWindow::addEventListenerCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.addEventListener()");
-
     String eventType = toWebCoreString(args[0]);
     bool useCapture = args[2]->BooleanValue();
 
@@ -246,11 +245,11 @@ v8::Handle<v8::Value> V8DOMWindow::addEventListenerCallback(const v8::Arguments&
     if (!imp->frame())
         return v8::Undefined();
 
-    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(args[1], false, ListenerFindOrCreate);
+    RefPtr<EventListener> listener = V8EventListenerList::getEventListener(args[1], false, ListenerFindOrCreate);
 
     if (listener) {
         imp->addEventListener(eventType, listener, useCapture);
-        createHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex);
+        createHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex, args.GetIsolate());
     }
 
     return v8::Undefined();
@@ -259,8 +258,6 @@ v8::Handle<v8::Value> V8DOMWindow::addEventListenerCallback(const v8::Arguments&
 
 v8::Handle<v8::Value> V8DOMWindow::removeEventListenerCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.removeEventListener()");
-
     String eventType = toWebCoreString(args[0]);
     bool useCapture = args[2]->BooleanValue();
 
@@ -277,11 +274,11 @@ v8::Handle<v8::Value> V8DOMWindow::removeEventListenerCallback(const v8::Argumen
     if (!imp->frame())
         return v8::Undefined();
 
-    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(args[1], false, ListenerFindOnly);
+    RefPtr<EventListener> listener = V8EventListenerList::getEventListener(args[1], false, ListenerFindOnly);
 
     if (listener) {
         imp->removeEventListener(eventType, listener.get(), useCapture);
-        removeHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex);
+        removeHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex, args.GetIsolate());
     }
 
     return v8::Undefined();
@@ -295,7 +292,7 @@ static bool isLegacyTargetOriginDesignation(v8::Handle<v8::Value> value)
 }
 
 
-static v8::Handle<v8::Value> handlePostMessageCallback(const v8::Arguments& args)
+v8::Handle<v8::Value> V8DOMWindow::postMessageCallback(const v8::Arguments& args)
 {
     // None of these need to be RefPtr because args and context are guaranteed
     // to hold on to them.
@@ -341,28 +338,13 @@ static v8::Handle<v8::Value> handlePostMessageCallback(const v8::Arguments& args
     return setDOMException(ec, args.GetIsolate());
 }
 
-v8::Handle<v8::Value> V8DOMWindow::postMessageCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.DOMWindow.postMessage()");
-    return handlePostMessageCallback(args);
-}
-
-#if ENABLE(LEGACY_VENDOR_PREFIXES)
-v8::Handle<v8::Value> V8DOMWindow::webkitPostMessageCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.DOMWindow.webkitPostMessage()");
-    return handlePostMessageCallback(args);
-}
-#endif
-
 // FIXME(fqian): returning string is cheating, and we should
 // fix this by calling toString function on the receiver.
 // However, V8 implements toString in JavaScript, which requires
 // switching context of receiver. I consider it is dangerous.
 v8::Handle<v8::Value> V8DOMWindow::toStringCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.toString()");
-    v8::Handle<v8::Object> domWrapper = args.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> domWrapper = args.This()->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(args.GetIsolate()));
     if (domWrapper.IsEmpty())
         return args.This()->ObjectProtoToString();
     return domWrapper->ObjectProtoToString();
@@ -370,13 +352,11 @@ v8::Handle<v8::Value> V8DOMWindow::toStringCallback(const v8::Arguments& args)
 
 v8::Handle<v8::Value> V8DOMWindow::releaseEventsCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.nop()");
     return v8::Undefined();
 }
 
 v8::Handle<v8::Value> V8DOMWindow::captureEventsCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.nop()");
     return v8::Undefined();
 }
 
@@ -424,7 +404,6 @@ static void setUpDialog(DOMWindow* dialog, void* handler)
 
 v8::Handle<v8::Value> V8DOMWindow::showModalDialogCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.showModalDialog()");
     DOMWindow* impl = V8DOMWindow::toNative(args.Holder());
     BindingState* state = BindingState::instance();
     if (!BindingSecurity::shouldAllowAccessToFrame(state, impl->frame()))
@@ -442,7 +421,6 @@ v8::Handle<v8::Value> V8DOMWindow::showModalDialogCallback(const v8::Arguments& 
 
 v8::Handle<v8::Value> V8DOMWindow::openCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.open()");
     DOMWindow* impl = V8DOMWindow::toNative(args.Holder());
     BindingState* state = BindingState::instance();
     if (!BindingSecurity::shouldAllowAccessToFrame(state, impl->frame()))
@@ -457,12 +435,11 @@ v8::Handle<v8::Value> V8DOMWindow::openCallback(const v8::Arguments& args)
     if (!openedWindow)
         return v8::Undefined();
 
-    return toV8(openedWindow.release(), args.Holder(), args.GetIsolate());
+    return toV8Fast(openedWindow.release(), args, impl);
 }
 
 v8::Handle<v8::Value> V8DOMWindow::indexedPropertyGetter(uint32_t index, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.DOMWindow.IndexedPropertyGetter");
 
     DOMWindow* window = V8DOMWindow::toNative(info.Holder());
     if (!window)
@@ -474,14 +451,13 @@ v8::Handle<v8::Value> V8DOMWindow::indexedPropertyGetter(uint32_t index, const v
 
     Frame* child = frame->tree()->scopedChild(index);
     if (child)
-        return toV8(child->document()->domWindow(), info.Holder(), info.GetIsolate());
+        return toV8Fast(child->document()->domWindow(), info, window);
 
     return v8Undefined();
 }
 
 v8::Handle<v8::Value> V8DOMWindow::namedPropertyGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.DOMWindow.NamedPropertyGetter");
 
     DOMWindow* window = V8DOMWindow::toNative(info.Holder());
     if (!window)
@@ -496,7 +472,7 @@ v8::Handle<v8::Value> V8DOMWindow::namedPropertyGetter(v8::Local<v8::String> nam
     AtomicString propName = toWebCoreAtomicString(name);
     Frame* child = frame->tree()->scopedChild(propName);
     if (child)
-        return toV8(child->document()->domWindow(), info.Holder(), info.GetIsolate());
+        return toV8Fast(child->document()->domWindow(), info, window);
 
     // Search IDL functions defined in the prototype
     if (!info.Holder()->GetRealNamedProperty(name).IsEmpty())
@@ -510,8 +486,8 @@ v8::Handle<v8::Value> V8DOMWindow::namedPropertyGetter(v8::Local<v8::String> nam
             RefPtr<HTMLCollection> items = doc->windowNamedItems(propName);
             if (!items->isEmpty()) {
                 if (items->hasExactlyOneItem())
-                    return toV8(items->item(0), info.Holder(), info.GetIsolate());
-                return toV8(items.release(), info.Holder(), info.GetIsolate());
+                    return toV8Fast(items->item(0), info, window);
+                return toV8Fast(items.release(), info, window);
             }
         }
     }
@@ -522,20 +498,19 @@ v8::Handle<v8::Value> V8DOMWindow::namedPropertyGetter(v8::Local<v8::String> nam
 
 v8::Handle<v8::Value> V8DOMWindow::setTimeoutCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.setTimeout()");
     return WindowSetTimeoutImpl(args, true);
 }
 
 
 v8::Handle<v8::Value> V8DOMWindow::setIntervalCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.DOMWindow.setInterval()");
     return WindowSetTimeoutImpl(args, false);
 }
 
 bool V8DOMWindow::namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value>)
 {
-    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(isolate));
     if (window.IsEmpty())
         return false;  // the frame is gone.
 
@@ -568,7 +543,8 @@ bool V8DOMWindow::namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::V
 
 bool V8DOMWindow::indexedSecurityCheck(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value>)
 {
-    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(isolate));
     if (window.IsEmpty())
         return false;
 
@@ -610,7 +586,7 @@ v8::Handle<v8::Value> toV8(DOMWindow* window, v8::Handle<v8::Object> creationCon
     // necessarily the first global object associated with that DOMWindow.
     v8::Handle<v8::Context> currentContext = v8::Context::GetCurrent();
     v8::Handle<v8::Object> currentGlobal = currentContext->Global();
-    v8::Handle<v8::Object> windowWrapper = currentGlobal->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> windowWrapper = currentGlobal->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(isolate));
     if (!windowWrapper.IsEmpty()) {
         if (V8DOMWindow::toNative(windowWrapper) == window)
             return currentGlobal;

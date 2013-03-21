@@ -37,6 +37,7 @@
 #include "CSSRuleList.h"
 #include "CSSStyleRule.h"
 #include "CSSStyleSheet.h"
+#include "CSSSupportsRule.h"
 #include "ContentSecurityPolicy.h"
 #include "Document.h"
 #include "Element.h"
@@ -109,6 +110,10 @@ static void flattenSourceData(RuleSourceDataList* dataList, RuleSourceDataList* 
             target->append(data);
         else if (data->type == CSSRuleSourceData::MEDIA_RULE)
             flattenSourceData(&data->childRules, target);
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        else if (data->type == CSSRuleSourceData::SUPPORTS_RULE)
+            flattenSourceData(&data->childRules, target);
+#endif
     }
 }
 
@@ -208,6 +213,11 @@ static PassRefPtr<CSSRuleList> asCSSRuleList(CSSRule* rule)
 
     if (rule->type() == CSSRule::WEBKIT_KEYFRAMES_RULE)
         return static_cast<WebKitCSSKeyframesRule*>(rule)->cssRules();
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+    if (rule->type() == CSSRule::SUPPORTS_RULE)
+        return static_cast<CSSSupportsRule*>(rule)->cssRules();
+#endif
 
     return 0;
 }
@@ -821,7 +831,7 @@ static bool checkStyleRuleSelector(Document* document, const String& selector)
 {
     CSSSelectorList selectorList;
     createCSSParser(document)->parseSelector(selector, selectorList);
-    return selectorList.first();
+    return selectorList.isValid();
 }
 
 CSSStyleRule* InspectorStyleSheet::addRule(const String& selector, ExceptionCode& ec)
@@ -852,8 +862,7 @@ CSSStyleRule* InspectorStyleSheet::addRule(const String& selector, ExceptionCode
     if (!styleRule) {
         // What we just added has to be a CSSStyleRule - we cannot handle other types of rules yet.
         // If it is not a style rule, pretend we never touched the stylesheet.
-        m_pageStyleSheet->deleteRule(lastRuleIndex, ec);
-        ASSERT(!ec);
+        m_pageStyleSheet->deleteRule(lastRuleIndex, ASSERT_NO_EXCEPTION);
         ec = SYNTAX_ERR;
         return 0;
     }
@@ -984,7 +993,7 @@ PassRefPtr<TypeBuilder::CSS::SelectorList> InspectorStyleSheet::buildObjectForSe
     else {
         selectors = TypeBuilder::Array<String>::create();
         const CSSSelectorList& selectorList = rule->styleRule()->selectorList();
-        for (CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector))
+        for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector))
             selectors->addItem(selector->selectorText());
     }
     RefPtr<TypeBuilder::CSS::SelectorList> result = TypeBuilder::CSS::SelectorList::create()
@@ -1248,7 +1257,7 @@ bool InspectorStyleSheet::styleSheetTextWithChangedStyle(CSSStyleDeclaration* st
     ASSERT(bodyStart <= bodyEnd);
 
     String text = m_parsedStyleSheet->text();
-    ASSERT(bodyEnd <= text.length()); // bodyEnd is exclusive
+    ASSERT_WITH_SECURITY_IMPLICATION(bodyEnd <= text.length()); // bodyEnd is exclusive
 
     text.replace(bodyStart, bodyEnd - bodyStart, newStyleText);
     *result = text;

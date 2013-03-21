@@ -40,6 +40,7 @@
 #include "isolate.h"
 #include "lithium-allocator.h"
 #include "log.h"
+#include "marking-thread.h"
 #include "messages.h"
 #include "platform.h"
 #include "regexp-stack.h"
@@ -49,6 +50,7 @@
 #include "simulator.h"
 #include "spaces.h"
 #include "stub-cache.h"
+#include "sweeper-thread.h"
 #include "version.h"
 #include "vm-state-inl.h"
 
@@ -408,9 +410,9 @@ void Isolate::EnterDefaultIsolate() {
 }
 
 
-Isolate* Isolate::GetDefaultIsolateForLocking() {
+v8::Isolate* Isolate::GetDefaultIsolateForLocking() {
   EnsureDefaultIsolate();
-  return default_isolate_;
+  return reinterpret_cast<v8::Isolate*>(default_isolate_);
 }
 
 
@@ -536,14 +538,15 @@ void Isolate::PushStackTraceAndDie(unsigned int magic,
                                    unsigned int magic2) {
   const int kMaxStackTraceSize = 8192;
   Handle<String> trace = StackTraceString();
-  char buffer[kMaxStackTraceSize];
+  uint8_t buffer[kMaxStackTraceSize];
   int length = Min(kMaxStackTraceSize - 1, trace->length());
   String::WriteToFlat(*trace, buffer, 0, length);
   buffer[length] = '\0';
+  // TODO(dcarney): convert buffer to utf8?
   OS::PrintError("Stacktrace (%x-%x) %p %p: %s\n",
                  magic, magic2,
                  static_cast<void*>(object), static_cast<void*>(map),
-                 buffer);
+                 reinterpret_cast<char*>(buffer));
   OS::Abort();
 }
 
@@ -656,15 +659,21 @@ Handle<JSArray> Isolate::CaptureCurrentStackTrace(
   int limit = Max(frame_limit, 0);
   Handle<JSArray> stack_trace = factory()->NewJSArray(frame_limit);
 
-  Handle<String> column_key = factory()->LookupAsciiSymbol("column");
-  Handle<String> line_key = factory()->LookupAsciiSymbol("lineNumber");
-  Handle<String> script_key = factory()->LookupAsciiSymbol("scriptName");
+  Handle<String> column_key =
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("column"));
+  Handle<String> line_key =
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("lineNumber"));
+  Handle<String> script_key =
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("scriptName"));
   Handle<String> script_name_or_source_url_key =
-      factory()->LookupAsciiSymbol("scriptNameOrSourceURL");
-  Handle<String> function_key = factory()->LookupAsciiSymbol("functionName");
-  Handle<String> eval_key = factory()->LookupAsciiSymbol("isEval");
+      factory()->LookupOneByteSymbol(
+          STATIC_ASCII_VECTOR("scriptNameOrSourceURL"));
+  Handle<String> function_key =
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("functionName"));
+  Handle<String> eval_key =
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("isEval"));
   Handle<String> constructor_key =
-      factory()->LookupAsciiSymbol("isConstructor");
+      factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("isConstructor"));
 
   StackTraceFrameIterator it(this);
   int frames_seen = 0;
@@ -811,7 +820,7 @@ static void PrintFrames(StringStream* accumulator,
 void Isolate::PrintStack(StringStream* accumulator) {
   if (!IsInitialized()) {
     accumulator->Add(
-        "\n==== Stack trace is not available ==========================\n\n");
+        "\n==== JS stack trace is not available =======================\n\n");
     accumulator->Add(
         "\n==== Isolate for the thread is not initialized =============\n\n");
     return;
@@ -824,7 +833,7 @@ void Isolate::PrintStack(StringStream* accumulator) {
   if (c_entry_fp(thread_local_top()) == 0) return;
 
   accumulator->Add(
-      "\n==== Stack trace ============================================\n\n");
+      "\n==== JS stack trace =========================================\n\n");
   PrintFrames(accumulator, StackFrame::OVERVIEW);
 
   accumulator->Add(
@@ -916,7 +925,11 @@ bool Isolate::MayNamedAccess(JSObject* receiver, Object* key,
   if (decision != UNKNOWN) return decision == YES;
 
   // Get named access check callback
-  JSFunction* constructor = JSFunction::cast(receiver->map()->constructor());
+  // TODO(dcarney): revert
+  Map* map = receiver->map();
+  CHECK(map->IsMap());
+  CHECK(map->constructor()->IsJSFunction());
+  JSFunction* constructor = JSFunction::cast(map->constructor());
   if (!constructor->shared()->IsApiFunction()) return false;
 
   Object* data_obj =
@@ -1154,7 +1167,8 @@ bool Isolate::ShouldReportException(bool* can_be_caught_externally,
 bool Isolate::IsErrorObject(Handle<Object> obj) {
   if (!obj->IsJSObject()) return false;
 
-  String* error_key = *(factory()->LookupAsciiSymbol("$Error"));
+  String* error_key =
+      *(factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("$Error")));
   Object* error_constructor =
       js_builtins_object()->GetPropertyNoExceptionThrown(error_key);
 
@@ -1235,7 +1249,8 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
         bool failed = false;
         exception_arg = Execution::ToDetailString(exception_arg, &failed);
         if (failed) {
-          exception_arg = factory()->LookupAsciiSymbol("exception");
+          exception_arg =
+              factory()->LookupOneByteSymbol(STATIC_ASCII_VECTOR("exception"));
         }
       }
       Handle<Object> message_obj = MessageHandler::MakeMessageObject(
@@ -1336,7 +1351,7 @@ void Isolate::ReportPendingMessages() {
   // since the GenerateThrowOutOfMemory stub cannot make a RuntimeCall to
   // set it.
   HandleScope scope;
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top_.pending_exception_->IsOutOfMemory()) {
     context()->mark_out_of_memory();
   } else if (thread_local_top_.pending_exception_ ==
              heap()->termination_exception()) {
@@ -1367,7 +1382,7 @@ void Isolate::ReportPendingMessages() {
 MessageLocation Isolate::GetMessageLocation() {
   ASSERT(has_pending_exception());
 
-  if (thread_local_top_.pending_exception_ != Failure::OutOfMemoryException() &&
+  if (!thread_local_top_.pending_exception_->IsOutOfMemory() &&
       thread_local_top_.pending_exception_ != heap()->termination_exception() &&
       thread_local_top_.has_pending_message_ &&
       !thread_local_top_.pending_message_obj_->IsTheHole() &&
@@ -1626,7 +1641,7 @@ Isolate::Isolate()
       free_list_(0),
       preallocated_storage_preallocated_(false),
       inner_pointer_to_code_cache_(NULL),
-      write_input_buffer_(NULL),
+      write_iterator_(NULL),
       global_handles_(NULL),
       context_switcher_(NULL),
       thread_manager_(NULL),
@@ -1635,9 +1650,12 @@ Isolate::Isolate()
       string_tracker_(NULL),
       regexp_stack_(NULL),
       date_cache_(NULL),
+      code_stub_interface_descriptors_(NULL),
       context_exit_happened_(false),
       deferred_handles_head_(NULL),
-      optimizing_compiler_thread_(this) {
+      optimizing_compiler_thread_(this),
+      marking_thread_(NULL),
+      sweeper_thread_(NULL) {
   TRACE_ISOLATE(constructor);
 
   memset(isolate_addresses_, 0,
@@ -1663,6 +1681,8 @@ Isolate::Isolate()
   memset(&js_spill_information_, 0, sizeof(js_spill_information_));
   memset(code_kind_statistics_, 0,
          sizeof(code_kind_statistics_[0]) * Code::NUMBER_OF_KINDS);
+
+  allow_handle_deref_ = true;
 #endif
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
@@ -1682,6 +1702,7 @@ Isolate::Isolate()
   ISOLATE_INIT_ARRAY_LIST(ISOLATE_INIT_ARRAY_EXECUTE)
 #undef ISOLATE_INIT_ARRAY_EXECUTE
 }
+
 
 void Isolate::TearDown() {
   TRACE_ISOLATE(tear_down);
@@ -1718,6 +1739,22 @@ void Isolate::Deinit() {
   if (state_ == INITIALIZED) {
     TRACE_ISOLATE(deinit);
 
+    if (FLAG_concurrent_sweeping || FLAG_parallel_sweeping) {
+      for (int i = 0; i < FLAG_sweeper_threads; i++) {
+        sweeper_thread_[i]->Stop();
+        delete sweeper_thread_[i];
+      }
+      delete[] sweeper_thread_;
+    }
+
+    if (FLAG_parallel_marking) {
+      for (int i = 0; i < FLAG_marking_threads; i++) {
+        marking_thread_[i]->Stop();
+        delete marking_thread_[i];
+      }
+      delete[] marking_thread_;
+    }
+
     if (FLAG_parallel_recompilation) optimizing_compiler_thread_.Stop();
 
     if (FLAG_hydrogen_stats) HStatistics::Instance()->Print();
@@ -1728,7 +1765,7 @@ void Isolate::Deinit() {
     delete deoptimizer_data_;
     deoptimizer_data_ = NULL;
     if (FLAG_preemption) {
-      v8::Locker locker;
+      v8::Locker locker(reinterpret_cast<v8::Isolate*>(this));
       v8::Locker::StopPreemption();
     }
     builtins_.TearDown();
@@ -1797,6 +1834,9 @@ Isolate::~Isolate() {
   delete date_cache_;
   date_cache_ = NULL;
 
+  delete[] code_stub_interface_descriptors_;
+  code_stub_interface_descriptors_ = NULL;
+
   delete regexp_stack_;
   regexp_stack_ = NULL;
 
@@ -1833,8 +1873,8 @@ Isolate::~Isolate() {
   bootstrapper_ = NULL;
   delete inner_pointer_to_code_cache_;
   inner_pointer_to_code_cache_ = NULL;
-  delete write_input_buffer_;
-  write_input_buffer_ = NULL;
+  delete write_iterator_;
+  write_iterator_ = NULL;
 
   delete context_switcher_;
   context_switcher_ = NULL;
@@ -1877,7 +1917,7 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
 
   if (!external_caught) return;
 
-  if (thread_local_top_.pending_exception_ == Failure::OutOfMemoryException()) {
+  if (thread_local_top_.pending_exception_->IsOutOfMemory()) {
     // Do not propagate OOM exception: we should kill VM asap.
   } else if (thread_local_top_.pending_exception_ ==
              heap()->termination_exception()) {
@@ -1952,7 +1992,7 @@ bool Isolate::Init(Deserializer* des) {
   descriptor_lookup_cache_ = new DescriptorLookupCache();
   unicode_cache_ = new UnicodeCache();
   inner_pointer_to_code_cache_ = new InnerPointerToCodeCache(this);
-  write_input_buffer_ = new StringInputBuffer();
+  write_iterator_ = new ConsStringIteratorOp();
   global_handles_ = new GlobalHandles(this);
   bootstrapper_ = new Bootstrapper();
   handle_scope_implementer_ = new HandleScopeImplementer(this);
@@ -1960,6 +2000,10 @@ bool Isolate::Init(Deserializer* des) {
   regexp_stack_ = new RegExpStack();
   regexp_stack_->isolate_ = this;
   date_cache_ = new DateCache();
+  code_stub_interface_descriptors_ =
+      new CodeStubInterfaceDescriptor[CodeStub::NUMBER_OF_IDS];
+  memset(code_stub_interface_descriptors_, 0,
+         kPointerSize * CodeStub::NUMBER_OF_IDS);
 
   // Enable logging before setting up the heap
   logger_->SetUp();
@@ -1986,7 +2030,7 @@ bool Isolate::Init(Deserializer* des) {
   const bool create_heap_objects = (des == NULL);
   ASSERT(!heap_.HasBeenSetUp());
   if (!heap_.SetUp(create_heap_objects)) {
-    V8::SetFatalError();
+    V8::FatalProcessOutOfMemory("heap setup");
     return false;
   }
 
@@ -2012,13 +2056,15 @@ bool Isolate::Init(Deserializer* des) {
   }
 
   if (FLAG_preemption) {
-    v8::Locker locker;
+    v8::Locker locker(reinterpret_cast<v8::Isolate*>(this));
     v8::Locker::StartPreemption(100);
   }
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   debug_->SetUp(create_heap_objects);
 #endif
+
+  deoptimizer_data_ = new DeoptimizerData;
 
   // If we are deserializing, read the state into the now-empty heap.
   if (!create_heap_objects) {
@@ -2038,7 +2084,6 @@ bool Isolate::Init(Deserializer* des) {
   // Quiet the heap NaN if needed on target platform.
   if (!create_heap_objects) Assembler::QuietNaN(heap_.nan_value());
 
-  deoptimizer_data_ = new DeoptimizerData;
   runtime_profiler_ = new RuntimeProfiler(this);
   runtime_profiler_->SetUp();
 
@@ -2060,7 +2105,47 @@ bool Isolate::Init(Deserializer* des) {
 
   state_ = INITIALIZED;
   time_millis_at_init_ = OS::TimeCurrentMillis();
+
+  if (!create_heap_objects) {
+    // Now that the heap is consistent, it's OK to generate the code for the
+    // deopt entry table that might have been referred to by optimized code in
+    // the snapshot.
+    HandleScope scope(this);
+    Deoptimizer::EnsureCodeForDeoptimizationEntry(
+        Deoptimizer::LAZY,
+        kDeoptTableSerializeEntryCount - 1);
+  }
+
+  if (!Serializer::enabled()) {
+    // Ensure that the stub failure trampoline has been generated.
+    HandleScope scope(this);
+    CodeStub::GenerateFPStubs();
+    StubFailureTrampolineStub::GenerateAheadOfTime();
+  }
+
   if (FLAG_parallel_recompilation) optimizing_compiler_thread_.Start();
+
+  if (FLAG_parallel_marking) {
+    if (FLAG_marking_threads < 1) {
+      FLAG_marking_threads = 1;
+    }
+    marking_thread_ = new MarkingThread*[FLAG_marking_threads];
+    for (int i = 0; i < FLAG_marking_threads; i++) {
+      marking_thread_[i] = new MarkingThread(this);
+      marking_thread_[i]->Start();
+    }
+  }
+
+  if (FLAG_parallel_sweeping || FLAG_concurrent_sweeping) {
+    if (FLAG_sweeper_threads < 1) {
+      FLAG_sweeper_threads = 1;
+    }
+    sweeper_thread_ = new SweeperThread*[FLAG_sweeper_threads];
+    for (int i = 0; i < FLAG_sweeper_threads; i++) {
+      sweeper_thread_[i] = new SweeperThread(this);
+      sweeper_thread_[i]->Start();
+    }
+  }
   return true;
 }
 
@@ -2171,6 +2256,12 @@ void Isolate::UnlinkDeferredHandles(DeferredHandles* deferred) {
   if (deferred->previous_ != NULL) {
     deferred->previous_->next_ = deferred->next_;
   }
+}
+
+
+CodeStubInterfaceDescriptor*
+    Isolate::code_stub_interface_descriptor(int index) {
+  return code_stub_interface_descriptors_ + index;
 }
 
 

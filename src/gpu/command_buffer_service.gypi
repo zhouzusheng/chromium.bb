@@ -5,6 +5,8 @@
 {
   'include_dirs': [
     '..',
+    # SHEZ: add include path for stdint.h
+    '../third_party/ffmpeg/chromium/include/win',
   ],
   'all_dependent_settings': {
     'include_dirs': [
@@ -21,6 +23,7 @@
     '../third_party/angle/src/build_angle.gyp:translator_glsl',
     '../third_party/khronos/khronos.gyp:khronos_headers',
     '../third_party/smhasher/smhasher.gyp:cityhash',
+    '../third_party/re2/re2.gyp:re2',
   ],
   'sources': [
     'command_buffer/service/buffer_manager.h',

@@ -311,11 +311,7 @@ void RenderSVGResourceFilter::postApplyResource(RenderObject* object, GraphicsCo
             filterData->state = FilterData::Applying;
             lastEffect->apply();
             lastEffect->correctFilterResultIfNeeded();
-#if !USE(CG)
-            ImageBuffer* resultImage = lastEffect->asImageBuffer();
-            if (resultImage)
-                resultImage->transformColorSpace(lastEffect->colorSpace(), ColorSpaceDeviceRGB);
-#endif
+            lastEffect->transformResultColorSpace(ColorSpaceDeviceRGB);
         }
         filterData->state = FilterData::Built;
 
@@ -365,6 +361,7 @@ void RenderSVGResourceFilter::primitiveAttributeChanged(RenderObject* object, co
         // Repaint the image on the screen.
         markClientForInvalidation(it->key, RepaintInvalidation);
     }
+    markAllClientLayersForInvalidation();
 }
 
 }

@@ -51,7 +51,7 @@ namespace WebCore {
 
 WrapperTypeInfo* npObjectTypeInfo()
 {
-    static WrapperTypeInfo typeInfo = { 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype };
+    static WrapperTypeInfo typeInfo = { 0, 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype };
     return &typeInfo;
 }
 
@@ -92,17 +92,17 @@ static void freeV8NPObject(NPObject* npObject)
                 v8NPObjectMap->remove(v8ObjectHash);
         }
     }
-    v8NpObject->v8Object.Dispose();
+    v8NpObject->v8Object.Dispose(v8::Isolate::GetCurrent());
     v8NpObject->v8Object.Clear();
     free(v8NpObject);
 }
 
-static PassOwnArrayPtr<v8::Handle<v8::Value> > createValueListFromVariantArgs(const NPVariant* arguments, uint32_t argumentCount, NPObject* owner)
+static PassOwnArrayPtr<v8::Handle<v8::Value> > createValueListFromVariantArgs(const NPVariant* arguments, uint32_t argumentCount, NPObject* owner, v8::Isolate* isolate)
 {
     OwnArrayPtr<v8::Handle<v8::Value> > argv = adoptArrayPtr(new v8::Handle<v8::Value>[argumentCount]);
     for (uint32_t index = 0; index < argumentCount; index++) {
         const NPVariant* arg = &arguments[index];
-        argv[index] = convertNPVariantToV8Object(arg, owner);
+        argv[index] = convertNPVariantToV8Object(arg, owner, isolate);
     }
     return argv.release();
 }
@@ -166,7 +166,7 @@ NPObject* npCreateV8ScriptObject(NPP npp, v8::Handle<v8::Object> object, DOMWind
         objectVector = &iter->value;
     }
     V8NPObject* v8npObject = reinterpret_cast<V8NPObject*>(_NPN_CreateObject(npp, &V8NPObjectClass));
-    v8npObject->v8Object = v8::Persistent<v8::Object>::New(object);
+    v8npObject->v8Object = v8::Persistent<v8::Object>::New(v8::Isolate::GetCurrent(), object);
     v8npObject->rootObject = root;
 
     if (objectVector)
@@ -181,6 +181,8 @@ bool _NPN_Invoke(NPP npp, NPObject* npObject, NPIdentifier methodName, const NPV
 {
     if (!npObject)
         return false;
+
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
 
     if (npObject->_class != npScriptObjectClass) {
         if (npObject->_class->invoke)
@@ -228,7 +230,7 @@ bool _NPN_Invoke(NPP npp, NPObject* npObject, NPIdentifier methodName, const NPV
 
     // Call the function object.
     v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(functionObject);
-    OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject);
+    OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
     v8::Local<v8::Value> resultObject = frame->script()->callFunction(function, v8NpObject->v8Object, argumentCount, argv.get());
 
     // If we had an error, return false.  The spec is a little unclear here, but says "Returns true if the method was
@@ -245,6 +247,8 @@ bool _NPN_InvokeDefault(NPP npp, NPObject* npObject, const NPVariant* arguments,
 {
     if (!npObject)
         return false;
+
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
 
     if (npObject->_class != npScriptObjectClass) {
         if (npObject->_class->invokeDefault)
@@ -277,7 +281,7 @@ bool _NPN_InvokeDefault(NPP npp, NPObject* npObject, const NPVariant* arguments,
         Frame* frame = v8NpObject->rootObject->frame();
         ASSERT(frame);
 
-        OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject);
+        OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
         resultObject = frame->script()->callFunction(function, functionObject, argumentCount, argv.get());
     }
     // If we had an error, return false.  The spec is a little unclear here, but says "Returns true if the method was
@@ -392,8 +396,7 @@ bool _NPN_SetProperty(NPP npp, NPObject* npObject, NPIdentifier propertyName, co
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj(object->v8Object);
-        obj->Set(npIdentifierToV8Identifier(propertyName),
-                 convertNPVariantToV8Object(value, object->rootObject->frame()->script()->windowScriptNPObject()));
+        obj->Set(npIdentifierToV8Identifier(propertyName), convertNPVariantToV8Object(value, object->rootObject->frame()->script()->windowScriptNPObject(), context->GetIsolate()));
         return true;
     }
 
@@ -479,7 +482,7 @@ void _NPN_SetException(NPObject* npObject, const NPUTF8 *message)
     if (!npObject || npObject->_class != npScriptObjectClass) {
         // We won't be able to find a proper scope for this exception, so just throw it.
         // This is consistent with JSC, which throws a global exception all the time.
-        throwError(v8GeneralError, message);
+        throwError(v8GeneralError, message, v8::Isolate::GetCurrent());
         return;
     }
     v8::HandleScope handleScope;
@@ -490,7 +493,7 @@ void _NPN_SetException(NPObject* npObject, const NPUTF8 *message)
     v8::Context::Scope scope(context);
     ExceptionCatcher exceptionCatcher;
 
-    throwError(v8GeneralError, message);
+    throwError(v8GeneralError, message, context->GetIsolate());
 }
 
 bool _NPN_Enumerate(NPP npp, NPObject* npObject, NPIdentifier** identifier, uint32_t* count)
@@ -536,7 +539,7 @@ bool _NPN_Enumerate(NPP npp, NPObject* npObject, NPIdentifier** identifier, uint
         *count = props->Length();
         *identifier = static_cast<NPIdentifier*>(malloc(sizeof(NPIdentifier*) * *count));
         for (uint32_t i = 0; i < *count; ++i) {
-            v8::Local<v8::Value> name = props->Get(deprecatedV8Integer(i));
+            v8::Local<v8::Value> name = props->Get(v8Integer(i, context->GetIsolate()));
             (*identifier)[i] = getStringIdentifier(v8::Local<v8::String>::Cast(name));
         }
         return true;
@@ -552,6 +555,8 @@ bool _NPN_Construct(NPP npp, NPObject* npObject, const NPVariant* arguments, uin
 {
     if (!npObject)
         return false;
+
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
 
     if (npObject->_class == npScriptObjectClass) {
         V8NPObject* object = reinterpret_cast<V8NPObject*>(npObject);
@@ -574,7 +579,7 @@ bool _NPN_Construct(NPP npp, NPObject* npObject, const NPVariant* arguments, uin
         if (!ctor->IsNull()) {
             Frame* frame = object->rootObject->frame();
             ASSERT(frame);
-            OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject);
+            OwnArrayPtr<v8::Handle<v8::Value> > argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
             resultObject = V8ObjectConstructor::newInstanceInDocument(ctor, argumentCount, argv.get(), frame ? frame->document() : 0);
         }
 

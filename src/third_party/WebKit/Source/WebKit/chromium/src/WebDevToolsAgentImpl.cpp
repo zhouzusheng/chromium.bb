@@ -40,6 +40,7 @@
 #include "InspectorController.h"
 #include "InspectorFrontend.h"
 #include "InspectorProtocolVersion.h"
+#include "InspectorValues.h"
 #include "MemoryCache.h"
 #include "Page.h"
 #include "PageGroup.h"
@@ -54,6 +55,7 @@
 #include "WebDataSource.h"
 #include "WebDevToolsAgentClient.h"
 #include "WebFrameImpl.h"
+#include "WebMemoryUsageInfo.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include <public/Platform.h>
@@ -78,6 +80,12 @@ static const int highlight = 99;
 }
 
 namespace WebKit {
+
+namespace BrowserDataHintStringValues {
+static const char screenshot[] = "screenshot";
+static const char acceptJavaScriptDialog[] = "acceptJavaScriptDialog";
+static const char dismissJavaScriptDialog[] = "dismissJavaScriptDialog";
+}
 
 class ClientMessageLoopAdapter : public PageScriptDebugServer::ClientMessageLoop {
 public:
@@ -366,6 +374,7 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     , m_client(client)
     , m_webViewImpl(webViewImpl)
     , m_attached(false)
+    , m_sendWithBrowserDataHint(BrowserDataHintNone)
 {
     ASSERT(m_hostId > 0);
 }
@@ -396,6 +405,7 @@ void WebDevToolsAgentImpl::reattach(const WebString& savedState)
 
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
     inspectorController()->reconnectFrontend(this, savedState);
+    WebKit::Platform::current()->currentThread()->addTaskObserver(this);
     m_attached = true;
 }
 
@@ -566,6 +576,21 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
     m_client->dumpUncountedAllocatedObjects(&provider);
 }
 
+bool WebDevToolsAgentImpl::captureScreenshot(String* data)
+{
+    // Value is going to be substituted with the actual data in the browser process.
+    *data = "{screenshot-placeholder}";
+    m_sendWithBrowserDataHint = BrowserDataHintScreenshot;
+    return true;
+}
+
+bool WebDevToolsAgentImpl::handleJavaScriptDialog(bool accept)
+{
+    // Operation is going to be performed in the browser process.
+    m_sendWithBrowserDataHint = accept ? BrowserDataHintAcceptJavaScriptDialog : BrowserDataHintDismissJavaScriptDialog;
+    return true;
+}
+
 void WebDevToolsAgentImpl::dispatchOnInspectorBackend(const WebString& message)
 {
     inspectorController()->dispatchMessageFromFrontend(message);
@@ -612,8 +637,22 @@ void WebDevToolsAgentImpl::bringFrontendToFront()
 void WebDevToolsAgentImpl::paintPageOverlay(WebCanvas* canvas)
 {
     InspectorController* ic = inspectorController();
-    if (ic)
-        ic->drawHighlight(GraphicsContextBuilder(canvas).context());
+    if (ic) {
+        GraphicsContextBuilder builder(canvas);
+        GraphicsContext& context = builder.context();
+        context.platformContext()->setDrawingToImageBuffer(true);
+        ic->drawHighlight(context);
+    }
+}
+
+WebVector<WebMemoryUsageInfo> WebDevToolsAgentImpl::processMemoryDistribution() const
+{
+    HashMap<String, size_t> memoryInfo = m_webViewImpl->page()->inspectorController()->processMemoryDistribution();
+    WebVector<WebMemoryUsageInfo> memoryInfoVector((size_t)memoryInfo.size());
+    size_t i = 0;
+    for (HashMap<String, size_t>::const_iterator it = memoryInfo.begin(); it != memoryInfo.end(); ++it)
+        memoryInfoVector[i++] = WebMemoryUsageInfo(it->key, it->value);
+    return memoryInfoVector;
 }
 
 void WebDevToolsAgentImpl::highlight()
@@ -626,13 +665,47 @@ void WebDevToolsAgentImpl::hideHighlight()
     m_webViewImpl->removePageOverlay(this);
 }
 
+static String browserHintToString(WebDevToolsAgent::BrowserDataHint dataHint)
+{
+    switch (dataHint) {
+    case WebDevToolsAgent::BrowserDataHintScreenshot:
+        return BrowserDataHintStringValues::screenshot;
+    case WebDevToolsAgent::BrowserDataHintAcceptJavaScriptDialog:
+        return BrowserDataHintStringValues::acceptJavaScriptDialog;
+    case WebDevToolsAgent::BrowserDataHintDismissJavaScriptDialog:
+        return BrowserDataHintStringValues::dismissJavaScriptDialog;
+    case WebDevToolsAgent::BrowserDataHintNone:
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    return String();
+}
+
+static WebDevToolsAgent::BrowserDataHint browserHintFromString(const String& value)
+{
+    if (value == BrowserDataHintStringValues::screenshot)
+        return WebDevToolsAgent::BrowserDataHintScreenshot;
+    if (value == BrowserDataHintStringValues::acceptJavaScriptDialog)
+        return WebDevToolsAgent::BrowserDataHintAcceptJavaScriptDialog;
+    if (value == BrowserDataHintStringValues::dismissJavaScriptDialog)
+        return WebDevToolsAgent::BrowserDataHintDismissJavaScriptDialog;
+    ASSERT_NOT_REACHED();
+    return WebDevToolsAgent::BrowserDataHintNone;
+}
+
 bool WebDevToolsAgentImpl::sendMessageToFrontend(const String& message)
 {
     WebDevToolsAgentImpl* devToolsAgent = static_cast<WebDevToolsAgentImpl*>(m_webViewImpl->devToolsAgent());
     if (!devToolsAgent)
         return false;
 
-    m_client->sendMessageToInspectorFrontend(message);
+    if (m_sendWithBrowserDataHint != BrowserDataHintNone) {
+        String prefix = browserHintToString(m_sendWithBrowserDataHint);
+        m_client->sendMessageToInspectorFrontend(makeString("<", prefix, ">", message));
+    } else
+        m_client->sendMessageToInspectorFrontend(message);
+
+    m_sendWithBrowserDataHint = BrowserDataHintNone;
     return true;
 }
 
@@ -689,7 +762,7 @@ void WebDevToolsAgent::interruptAndDispatch(MessageDescriptor* rawDescriptor)
     // rawDescriptor can't be a PassOwnPtr because interruptAndDispatch is a WebKit API function.
     OwnPtr<MessageDescriptor> descriptor = adoptPtr(rawDescriptor);
     OwnPtr<DebuggerTask> task = adoptPtr(new DebuggerTask(descriptor.release()));
-    PageScriptDebugServer::interruptAndRun(task.release());
+    PageScriptDebugServer::interruptAndRun(task.release(), v8::Isolate::GetCurrent());
 }
 
 bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
@@ -704,7 +777,8 @@ bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kDebugger_setBreakpointsActiveCmd]
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_startCmd]
         || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_stopCmd]
-        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_getProfileCmd];
+        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_getCPUProfileCmd]
+        || commandName == InspectorBackendDispatcher::commandNames[InspectorBackendDispatcher::kProfiler_getHeapSnapshotCmd];
 }
 
 void WebDevToolsAgent::processPendingMessages()
@@ -730,10 +804,55 @@ WebString WebDevToolsAgent::workerDisconnectedFromWorkerEvent()
     return channel.m_message;
 }
 
-// FIXME: remove this once migrated to workerDisconnectedFromWorkerEvent().
-WebString WebDevToolsAgent::disconnectEventAsText()
+WebDevToolsAgent::BrowserDataHint WebDevToolsAgent::shouldPatchWithBrowserData(const char* message, size_t messageLength)
 {
-    return WebDevToolsAgent::workerDisconnectedFromWorkerEvent();
+    if (!messageLength || message[0] != '<')
+        return BrowserDataHintNone;
+
+    String messageString(message, messageLength);
+    size_t hintEnd = messageString.find(">", 1);
+    if (hintEnd == notFound)
+        return BrowserDataHintNone;
+    messageString = messageString.substring(1, hintEnd - 1);
+    return browserHintFromString(messageString);
+}
+
+WebString WebDevToolsAgent::patchWithBrowserData(const WebString& message, BrowserDataHint dataHint, const WebString& hintData)
+{
+    String messageString = message;
+    size_t hintEnd = messageString.find(">");
+    if (hintEnd == notFound) {
+        ASSERT_NOT_REACHED();
+        return message;
+    }
+
+    messageString = messageString.substring(hintEnd + 1);
+    RefPtr<InspectorValue> messageObject = InspectorValue::parseJSON(messageString);
+    if (!messageObject || messageObject->type() != InspectorValue::TypeObject) {
+        ASSERT_NOT_REACHED();
+        return messageString;
+    }
+
+    RefPtr<InspectorObject> resultObject = messageObject->asObject()->getObject("result");
+    if (!resultObject) {
+        ASSERT_NOT_REACHED();
+        return messageString;
+    }
+
+    // Patch message below.
+    switch (dataHint) {
+    case BrowserDataHintScreenshot:
+        resultObject->setString("data", hintData);
+        break;
+    case BrowserDataHintAcceptJavaScriptDialog:
+        break;
+    case BrowserDataHintDismissJavaScriptDialog:
+        break;
+    case BrowserDataHintNone:
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    return messageObject->toJSONString();
 }
 
 } // namespace WebKit

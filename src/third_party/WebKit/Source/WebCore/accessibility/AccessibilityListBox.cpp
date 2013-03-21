@@ -54,9 +54,7 @@ AccessibilityListBox::~AccessibilityListBox()
     
 PassRefPtr<AccessibilityListBox> AccessibilityListBox::create(RenderObject* renderer)
 {
-    AccessibilityListBox* obj = new AccessibilityListBox(renderer);
-    obj->init();
-    return adoptRef(obj);
+    return adoptRef(new AccessibilityListBox(renderer));
 }
     
 bool AccessibilityListBox::canSetSelectedChildrenAttribute() const
@@ -154,7 +152,7 @@ AccessibilityObject* AccessibilityListBox::listBoxOptionAccessibilityObject(HTML
     return listBoxObject;
 }
     
-bool AccessibilityListBox::accessibilityIsIgnored() const
+bool AccessibilityListBox::computeAccessibilityIsIgnored() const
 {
     AccessibilityObjectInclusion decision = accessibilityIsIgnoredBase();
     if (decision == IncludeObject)

@@ -31,38 +31,13 @@
 #include "config.h"
 #include "V8DOMWrapper.h"
 
-#include <wtf/ArrayBufferView.h>
-#include "DocumentLoader.h"
-#include "Frame.h"
-#include "FrameLoaderClient.h"
-#include "StylePropertySet.h"
-#include "V8AbstractEventListener.h"
 #include "V8Binding.h"
-#include "V8Collection.h"
 #include "V8DOMWindow.h"
-#include "V8EventListener.h"
-#include "V8EventListenerList.h"
 #include "V8HTMLCollection.h"
 #include "V8HTMLDocument.h"
 #include "V8HiddenPropertyName.h"
-#include "V8Location.h"
-#include "V8NamedNodeMap.h"
-#include "V8NodeFilterCondition.h"
-#include "V8NodeList.h"
 #include "V8ObjectConstructor.h"
 #include "V8PerContextData.h"
-#include "V8StyleSheet.h"
-#include "V8WorkerContextEventListener.h"
-#include "WebGLContextAttributes.h"
-#include "WebGLUniformLocation.h"
-#include "WrapperTypeInfo.h"
-#include <algorithm>
-#include <utility>
-#include <v8-debug.h>
-#include <wtf/Assertions.h>
-#include <wtf/OwnArrayPtr.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
@@ -98,21 +73,15 @@ private:
     v8::Handle<v8::Context> m_context;
 };
 
-void V8DOMWrapper::setNamedHiddenReference(v8::Handle<v8::Object> parent, const char* name, v8::Handle<v8::Value> child)
-{
-    ASSERT(name);
-    parent->SetHiddenValue(V8HiddenPropertyName::hiddenReferenceName(name, strlen(name)), child);
-}
-
-v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl)
+v8::Local<v8::Object> V8DOMWrapper::createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo* type, void* impl, v8::Isolate* isolate)
 {
     V8WrapperInstantiationScope scope(creationContext);
 
     V8PerContextData* perContextData = V8PerContextData::from(scope.context());
-    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate()->GetFunction());
+    v8::Local<v8::Object> wrapper = perContextData ? perContextData->createWrapperFromCache(type) : V8ObjectConstructor::newInstance(type->getTemplate(isolate)->GetFunction());
 
     if (type == &V8HTMLDocument::info && !wrapper.IsEmpty())
-        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl));
+        wrapper = V8HTMLDocument::wrapInShadowObject(wrapper, static_cast<Node*>(impl), isolate);
 
     return wrapper;
 }
@@ -140,6 +109,21 @@ bool V8DOMWrapper::maybeDOMWrapper(v8::Handle<v8::Value> value)
 }
 #endif
 
+bool V8DOMWrapper::isDOMWrapper(v8::Handle<v8::Value> value)
+{
+    if (value.IsEmpty() || !value->IsObject())
+        return false;
+
+    v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(value);
+    if (wrapper->InternalFieldCount() < v8DefaultWrapperInternalFieldCount)
+        return false;
+    ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
+    ASSERT(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
+
+    // FIXME: Add class id checks.
+    return true;
+}
+
 bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo* type)
 {
     if (!hasInternalField(value))
@@ -151,22 +135,6 @@ bool V8DOMWrapper::isWrapperOfType(v8::Handle<v8::Value> value, WrapperTypeInfo*
 
     WrapperTypeInfo* typeInfo = static_cast<WrapperTypeInfo*>(wrapper->GetAlignedPointerFromInternalField(v8DOMWrapperTypeIndex));
     return typeInfo == type;
-}
-
-PassRefPtr<EventListener> V8DOMWrapper::getEventListener(v8::Local<v8::Value> value, bool isAttribute, ListenerLookupType lookup)
-{
-    v8::Handle<v8::Context> context = v8::Context::GetCurrent();
-    if (context.IsEmpty())
-        return 0;
-    if (lookup == ListenerFindOnly)
-        return V8EventListenerList::findWrapper(value, isAttribute);
-    if (isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info))
-        return V8EventListenerList::findOrCreateWrapper<V8EventListener>(value, isAttribute);
-#if ENABLE(WORKERS)
-    return V8EventListenerList::findOrCreateWrapper<V8WorkerContextEventListener>(value, isAttribute);
-#else
-    return 0;
-#endif
 }
 
 }  // namespace WebCore

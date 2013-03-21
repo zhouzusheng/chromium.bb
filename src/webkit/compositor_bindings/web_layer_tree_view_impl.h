@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/layer_tree_host_client.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebLayerTreeView.h"
+#include "webkit/compositor_bindings/webkit_compositor_bindings_export.h"
 
 namespace cc {
 class FontAtlas;
@@ -22,19 +23,23 @@ class WebLayerTreeViewClientAdapter;
 
 class WebLayerTreeViewImpl : public WebLayerTreeView, public cc::LayerTreeHostClient {
 public:
-    explicit WebLayerTreeViewImpl(WebLayerTreeViewClient*);
+    WEBKIT_COMPOSITOR_BINDINGS_EXPORT explicit WebLayerTreeViewImpl(
+        WebLayerTreeViewClient*);
     virtual ~WebLayerTreeViewImpl();
 
-    bool initialize(const Settings&, scoped_ptr<cc::Thread> implThread);
+    WEBKIT_COMPOSITOR_BINDINGS_EXPORT bool initialize(
+        const Settings&, scoped_ptr<cc::Thread> implThread);
+
+    WEBKIT_COMPOSITOR_BINDINGS_EXPORT cc::LayerTreeHost* layer_tree_host() const;
 
     // WebLayerTreeView implementation.
     virtual void setSurfaceReady() OVERRIDE;
     virtual void setRootLayer(const WebLayer&) OVERRIDE;
     virtual void clearRootLayer() OVERRIDE;
-    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize = WebSize()) OVERRIDE;
+    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize) OVERRIDE;
     virtual WebSize layoutViewportSize() const OVERRIDE;
     virtual WebSize deviceViewportSize() const OVERRIDE;
-    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& point) const OVERRIDE;
+    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& point) const; // FIXME: remove this after WebKit roll.
     virtual void setDeviceScaleFactor(float) OVERRIDE;
     virtual float deviceScaleFactor() const OVERRIDE;
     virtual void setBackgroundColor(WebColor) OVERRIDE;
@@ -54,7 +59,8 @@ public:
     virtual void renderingStats(WebRenderingStats&) const OVERRIDE;
     virtual void setShowFPSCounter(bool show);
     virtual void setShowPaintRects(bool show);
-    virtual void loseCompositorContext(int numTimes) OVERRIDE;
+    virtual void setShowDebugBorders(bool show);
+    virtual void setContinuousPaintingEnabled(bool);
 
     // cc::LayerTreeHostClient implementation.
     virtual void willBeginFrame() OVERRIDE;

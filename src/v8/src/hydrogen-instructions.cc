@@ -342,6 +342,10 @@ const char* HType::ToString() {
 
 
 HType HType::TypeFromValue(Handle<Object> value) {
+  // Handle dereferencing is safe here: an object's type as checked below
+  // never changes.
+  AllowHandleDereference allow_handle_deref;
+
   HType result = HType::Tagged();
   if (value->IsSmi()) {
     result = HType::Smi();
@@ -357,6 +361,54 @@ HType HType::TypeFromValue(Handle<Object> value) {
     result = HType::JSArray();
   }
   return result;
+}
+
+
+bool HValue::Dominates(HValue* dominator, HValue* dominated) {
+  if (dominator->block() != dominated->block()) {
+    // If they are in different blocks we can use the dominance relation
+    // between the blocks.
+    return dominator->block()->Dominates(dominated->block());
+  } else {
+    // Otherwise we must see which instruction comes first, considering
+    // that phis always precede regular instructions.
+    if (dominator->IsInstruction()) {
+      if (dominated->IsInstruction()) {
+        for (HInstruction* next = HInstruction::cast(dominator)->next();
+             next != NULL;
+             next = next->next()) {
+          if (next == dominated) return true;
+        }
+        return false;
+      } else if (dominated->IsPhi()) {
+        return false;
+      } else {
+        UNREACHABLE();
+      }
+    } else if (dominator->IsPhi()) {
+      if (dominated->IsInstruction()) {
+        return true;
+      } else {
+        // We cannot compare which phi comes first.
+        UNREACHABLE();
+      }
+    } else {
+      UNREACHABLE();
+    }
+    return false;
+  }
+}
+
+
+bool HValue::TestDominanceUsingProcessedFlag(HValue* dominator,
+                                             HValue* dominated) {
+  if (dominator->block() != dominated->block()) {
+    return dominator->block()->Dominates(dominated->block());
+  } else {
+    // If both arguments are in the same block we check if "dominator" has
+    // already been processed or if it is a phi: if yes it dominates the other.
+    return dominator->CheckFlag(kIDefsProcessingDone) || dominator->IsPhi();
+  }
 }
 
 
@@ -567,6 +619,11 @@ void HValue::PrintNameTo(StringStream* stream) {
 }
 
 
+bool HValue::HasMonomorphicJSObjectType() {
+  return !GetMonomorphicJSObjectMap().is_null();
+}
+
+
 bool HValue::UpdateInferredType() {
   HType type = CalculateInferredType();
   bool result = (!type.Equals(type_));
@@ -737,6 +794,11 @@ void HInstruction::Verify() {
 #endif
 
 
+void HDummyUse::PrintDataTo(StringStream* stream) {
+  value()->PrintNameTo(stream);
+}
+
+
 void HUnaryCall::PrintDataTo(StringStream* stream) {
   value()->PrintNameTo(stream);
   stream->Add(" ");
@@ -757,6 +819,28 @@ void HBoundsCheck::PrintDataTo(StringStream* stream) {
   index()->PrintNameTo(stream);
   stream->Add(" ");
   length()->PrintNameTo(stream);
+}
+
+
+void HBoundsCheck::InferRepresentation(HInferRepresentation* h_infer) {
+  ASSERT(CheckFlag(kFlexibleRepresentation));
+  Representation r;
+  if (key_mode_ == DONT_ALLOW_SMI_KEY ||
+      !length()->representation().IsTagged()) {
+    r = Representation::Integer32();
+  } else if (index()->representation().IsTagged() ||
+      (index()->IsConstant() &&
+       HConstant::cast(index())->HasInteger32Value() &&
+       Smi::IsValid(HConstant::cast(index())->Integer32Value()))) {
+    // If the index is tagged, or a constant that holds a Smi, allow the length
+    // to be tagged, since it is usually already tagged from loading it out of
+    // the length field of a JSArray. This allows for direct comparison without
+    // untagging.
+    r = Representation::Tagged();
+  } else {
+    r = Representation::Integer32();
+  }
+  UpdateRepresentation(r, h_infer, "boundscheck");
 }
 
 
@@ -1026,6 +1110,12 @@ void HTypeof::PrintDataTo(StringStream* stream) {
 }
 
 
+void HForceRepresentation::PrintDataTo(StringStream* stream) {
+  stream->Add("%s ", representation().Mnemonic());
+  value()->PrintNameTo(stream);
+}
+
+
 void HChange::PrintDataTo(StringStream* stream) {
   HUnaryOperation::PrintDataTo(stream);
   stream->Add(" %s to %s", from().Mnemonic(), to().Mnemonic());
@@ -1038,8 +1128,10 @@ void HChange::PrintDataTo(StringStream* stream) {
 
 void HJSArrayLength::PrintDataTo(StringStream* stream) {
   value()->PrintNameTo(stream);
-  stream->Add(" ");
-  typecheck()->PrintNameTo(stream);
+  if (HasTypeCheck()) {
+    stream->Add(" ");
+    typecheck()->PrintNameTo(stream);
+  }
 }
 
 
@@ -1106,10 +1198,11 @@ HValue* HCheckInstanceType::Canonicalize() {
       value()->type().IsString()) {
     return NULL;
   }
-  if (check_ == IS_SYMBOL &&
-      value()->IsConstant() &&
-      HConstant::cast(value())->handle()->IsSymbol()) {
-    return NULL;
+
+  if (check_ == IS_SYMBOL && value()->IsConstant()) {
+    // Dereferencing is safe here: a symbol cannot become a non-symbol.
+    AllowHandleDereference allow_handle_deref;
+    if (HConstant::cast(value())->handle()->IsSymbol()) return NULL;
   }
   return this;
 }
@@ -1149,10 +1242,32 @@ void HCheckInstanceType::GetCheckMaskAndTag(uint8_t* mask, uint8_t* tag) {
 }
 
 
+void HCheckMaps::SetSideEffectDominator(GVNFlag side_effect,
+                                        HValue* dominator) {
+  ASSERT(side_effect == kChangesMaps);
+  // TODO(mstarzinger): For now we specialize on HStoreNamedField, but once
+  // type information is rich enough we should generalize this to any HType
+  // for which the map is known.
+  if (HasNoUses() && dominator->IsStoreNamedField()) {
+    HStoreNamedField* store = HStoreNamedField::cast(dominator);
+    Handle<Map> map = store->transition();
+    if (map.is_null() || store->object() != value()) return;
+    for (int i = 0; i < map_set()->length(); i++) {
+      if (map.is_identical_to(map_set()->at(i))) {
+        DeleteAndReplaceWith(NULL);
+        return;
+      }
+    }
+  }
+}
+
+
 void HLoadElements::PrintDataTo(StringStream* stream) {
   value()->PrintNameTo(stream);
-  stream->Add(" ");
-  typecheck()->PrintNameTo(stream);
+  if (HasTypeCheck()) {
+    stream->Add(" ");
+    typecheck()->PrintNameTo(stream);
+  }
 }
 
 
@@ -1190,7 +1305,8 @@ void HCheckInstanceType::PrintDataTo(StringStream* stream) {
 
 
 void HCheckPrototypeMaps::PrintDataTo(StringStream* stream) {
-  stream->Add("[receiver_prototype=%p,holder=%p]", *prototype(), *holder());
+  stream->Add("[receiver_prototype=%p,holder=%p]",
+              *prototypes_.first(), *prototypes_.last());
 }
 
 
@@ -1345,6 +1461,11 @@ Range* HMod::InferRange(Zone* zone) {
     if (a->CanBeMinusZero() || a->CanBeNegative()) {
       result->set_can_be_minus_zero(true);
     }
+
+    if (right()->range()->Includes(-1) && left()->range()->Includes(kMinInt)) {
+      SetFlag(HValue::kCanOverflow);
+    }
+
     if (!right()->range()->CanBeZero()) {
       ClearFlag(HValue::kCanBeDivByZero);
     }
@@ -1534,6 +1655,8 @@ HConstant::HConstant(Handle<Object> handle, Representation r)
     : handle_(handle),
       has_int32_value_(false),
       has_double_value_(false) {
+  // Dereferencing here is safe: the value of a number object does not change.
+  AllowHandleDereference allow_handle_deref;
   SetFlag(kUseGVN);
   if (handle_->IsNumber()) {
     double n = handle_->Number();
@@ -1612,12 +1735,14 @@ bool HConstant::ToBoolean() {
     double v = DoubleValue();
     return v != 0 && !isnan(v);
   }
-  Handle<Object> literal = handle();
-  if (literal->IsTrue()) return true;
-  if (literal->IsFalse()) return false;
-  if (literal->IsUndefined()) return false;
-  if (literal->IsNull()) return false;
-  if (literal->IsString() && String::cast(*literal)->length() == 0) {
+  // Dereferencing is safe: singletons do not change and strings are
+  // immutable.
+  AllowHandleDereference allow_handle_deref;
+  if (handle_->IsTrue()) return true;
+  if (handle_->IsFalse()) return false;
+  if (handle_->IsUndefined()) return false;
+  if (handle_->IsNull()) return false;
+  if (handle_->IsString() && String::cast(*handle_)->length() == 0) {
     return false;
   }
   return true;
@@ -2030,15 +2155,41 @@ void HLoadKeyed::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   if (IsDehoisted()) {
-    stream->Add(" + %d] ", index_offset());
+    stream->Add(" + %d]", index_offset());
   } else {
-    stream->Add("] ");
+    stream->Add("]");
   }
 
-  dependency()->PrintNameTo(stream);
+  if (HasDependency()) {
+    stream->Add(" ");
+    dependency()->PrintNameTo(stream);
+  }
+
   if (RequiresHoleCheck()) {
     stream->Add(" check_hole");
   }
+}
+
+
+bool HLoadKeyed::UsesMustHandleHole() const {
+  if (IsFastPackedElementsKind(elements_kind())) {
+    return false;
+  }
+
+  if (hole_mode() == ALLOW_RETURN_HOLE) return true;
+
+  if (IsFastDoubleElementsKind(elements_kind())) {
+    return false;
+  }
+
+  for (HUseIterator it(uses()); !it.Done(); it.Advance()) {
+    HValue* use = it.value();
+    if (!use->IsChange()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 
@@ -2047,18 +2198,7 @@ bool HLoadKeyed::RequiresHoleCheck() const {
     return false;
   }
 
-  if (IsFastDoubleElementsKind(elements_kind())) {
-    return true;
-  }
-
-  for (HUseIterator it(uses()); !it.Done(); it.Advance()) {
-    HValue* use = it.value();
-    if (!use->IsChange()) {
-      return true;
-    }
-  }
-
-  return false;
+  return !UsesMustHandleHole();
 }
 
 
@@ -2332,6 +2472,11 @@ HType HAllocateObject::CalculateInferredType() {
 }
 
 
+HType HAllocate::CalculateInferredType() {
+  return type_;
+}
+
+
 HType HFastLiteral::CalculateInferredType() {
   // TODO(mstarzinger): Be smarter, could also be JSArray here.
   return HType::JSObject();
@@ -2453,11 +2598,20 @@ HValue* HAdd::EnsureAndPropagateNotMinusZero(BitVector* visited) {
 
 
 bool HStoreKeyed::NeedsCanonicalization() {
-  // If value is an integer or comes from the result of a keyed load
-  // then it will be a non-hole value: no need for canonicalization.
-  if (value()->IsLoadKeyed() ||
-      (value()->IsChange() && HChange::cast(value())->from().IsInteger32())) {
+  // If value is an integer or smi or comes from the result of a keyed load or
+  // constant then it is either be a non-hole value or in the case of a constant
+  // the hole is only being stored explicitly: no need for canonicalization.
+  if (value()->IsLoadKeyed() || value()->IsConstant()) {
     return false;
+  }
+
+  if (value()->IsChange()) {
+    if (HChange::cast(value())->from().IsInteger32()) {
+      return false;
+    }
+    if (HChange::cast(value())->value()->type().IsSmi()) {
+      return false;
+    }
   }
   return true;
 }

@@ -29,6 +29,7 @@
  */
 
 #include "config.h"
+#if ENABLE(INPUT_TYPE_TIME)
 #include "TimeInputType.h"
 
 #include "DateComponents.h"
@@ -39,8 +40,6 @@
 #include <wtf/DateMath.h>
 #include <wtf/MathExtras.h>
 #include <wtf/PassOwnPtr.h>
-
-#if ENABLE(INPUT_TYPE_TIME)
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFieldsState.h"
@@ -64,6 +63,11 @@ TimeInputType::TimeInputType(HTMLInputElement*  element)
 PassOwnPtr<InputType> TimeInputType::create(HTMLInputElement* element)
 {
     return adoptPtr(new TimeInputType(element));
+}
+
+void TimeInputType::attach()
+{
+    observeFeatureIfVisible(FeatureObserver::InputTypeTime);
 }
 
 const AtomicString& TimeInputType::formControlType() const

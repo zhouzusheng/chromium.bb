@@ -51,6 +51,7 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libpng/libpng.gyp:libpng',
+        'shell_dialogs',
         'ui',
         'ui_resources',
         'ui_test_support',
@@ -84,6 +85,7 @@
         'gfx/image/image_unittest_util_ios.mm',
         'gfx/image/image_unittest_util_mac.mm',
         'gfx/insets_unittest.cc',
+        'gfx/matrix3_unittest.cc',
         'gfx/point_unittest.cc',
         'gfx/point3_unittest.cc',
         'gfx/quad_unittest.cc',
@@ -109,7 +111,6 @@
         'base/cocoa/events_mac_unittest.mm',
         'base/cocoa/focus_tracker_unittest.mm',
         'base/cocoa/fullscreen_window_manager_unittest.mm',
-        'base/dialogs/select_file_dialog_win_unittest.cc',
         'base/events/event_dispatcher_unittest.cc',
         'base/events/event_unittest.cc',
         'base/gtk/gtk_expanded_container_unittest.cc',
@@ -117,12 +118,14 @@
         'base/gtk/menu_label_accelerator_util_unittest.cc',
         'base/keycodes/usb_keycode_map_unittest.cc',
         'base/models/list_model_unittest.cc',
+        'base/models/list_selection_model_unittest.cc',
         'base/models/tree_node_model_unittest.cc',
         'base/test/data/resource.h',
         'base/text/bytes_formatting_unittest.cc',
         'base/text/utf16_indexing_unittest.cc',
         'base/view_prop_unittest.cc',
         'gfx/blit_unittest.cc',
+        'gfx/break_list_unittest.cc',
         'gfx/canvas_unittest.cc',
         'gfx/codec/jpeg_codec_unittest.cc',
         'gfx/color_analysis_unittest.cc',
@@ -133,6 +136,8 @@
         'gfx/render_text_unittest.cc',
         'gfx/transform_util_unittest.cc',
         'gfx/video_decode_acceleration_support_mac_unittest.mm',
+        'shell_dialogs/select_file_dialog_win_unittest.cc',
+        'webui/web_ui_util_unittest.cc',
       ],
       'include_dirs': [
         '../',
@@ -156,6 +161,7 @@
         }],
         ['OS == "win"', {
           'sources': [
+            'test/ui_unittests.rc',
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
@@ -184,9 +190,12 @@
               '-loleacc.lib',
             ],
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS == "linux"', {
           'sources': [
+            'base/x/x11_util_unittest.cc',
             'gfx/platform_font_pango_unittest.cc',
           ],
         }],
@@ -214,7 +223,6 @@
         ['use_glib == 1', {
           'dependencies': [
             '../build/linux/system.gyp:pangocairo',
-            '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
           'conditions': [
             ['linux_use_tcmalloc==1', {
@@ -227,6 +235,11 @@
                 'browser/ui/gtk/gtk_expanded_container_unittest.cc',
               ],
             }],
+          ],
+        }],
+        ['use_x11==1', {
+          'dependencies': [
+            '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
         }],
         ['toolkit_uses_gtk == 1', {

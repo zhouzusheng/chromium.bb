@@ -40,7 +40,7 @@ public:
     /** Returns the format of the resulting mask that this subclass will return
         when its filterMask() method is called.
     */
-    virtual SkMask::Format getFormat() = 0;
+    virtual SkMask::Format getFormat() const = 0;
 
     /** Create a new mask by filter the src mask.
         If src.fImage == null, then do not allocate or create the dst image
@@ -56,7 +56,7 @@ public:
         @return true if the dst mask was correctly created.
     */
     virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
-                            SkIPoint* margin);
+                            SkIPoint* margin) const;
 
     enum BlurType {
         kNone_BlurType,    //!< this maskfilter is not a blur
@@ -81,14 +81,6 @@ public:
     virtual BlurType asABlur(BlurInfo*) const;
 
     /**
-     * TEMPORARY HACK -- SkMaskFilters are designed to be immutable
-     * Optional method for maskfilters that can be described as a blur. If so,
-     * set the current blur to respect the [radius / ignore-transform /
-     * quality] settings.
-     */
-    virtual void setAsABlur(const BlurInfo& );
-
-    /**
      * The fast bounds function is used to enable the paint to be culled early
      * in the drawing pipeline. This function accepts the current bounds of the
      * paint as its src param and the filter adjust those bounds using its
@@ -99,7 +91,7 @@ public:
      *  The default impl calls filterMask with the src mask having no image,
      *  but subclasses may override this if they can compute the rect faster.
      */
-    virtual void computeFastBounds(const SkRect& src, SkRect* dest);
+    virtual void computeFastBounds(const SkRect& src, SkRect* dest) const;
 
 protected:
     // empty for now, but lets get our subclass to remember to init us for the future
@@ -135,7 +127,7 @@ protected:
     virtual FilterReturn filterRectsToNine(const SkRect[], int count,
                                            const SkMatrix&,
                                            const SkIRect& clipBounds,
-                                           NinePatch*);
+                                           NinePatch*) const;
 
 private:
     friend class SkDraw;
@@ -147,10 +139,9 @@ private:
      */
     bool filterPath(const SkPath& devPath, const SkMatrix& devMatrix,
                     const SkRasterClip&, SkBounder*, SkBlitter* blitter,
-                    SkPaint::Style style);
+                    SkPaint::Style style) const;
 
     typedef SkFlattenable INHERITED;
 };
 
 #endif
-

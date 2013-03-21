@@ -29,6 +29,7 @@
  */
 
 #include "config.h"
+#if ENABLE(INPUT_TYPE_MONTH)
 #include "MonthInputType.h"
 
 #include "DateComponents.h"
@@ -39,8 +40,6 @@
 #include <wtf/DateMath.h>
 #include <wtf/MathExtras.h>
 #include <wtf/PassOwnPtr.h>
-
-#if ENABLE(INPUT_TYPE_MONTH)
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "DateTimeFieldsState.h"
@@ -60,6 +59,11 @@ static const int monthStepScaleFactor = 1;
 PassOwnPtr<InputType> MonthInputType::create(HTMLInputElement* element)
 {
     return adoptPtr(new MonthInputType(element));
+}
+
+void MonthInputType::attach()
+{
+    observeFeatureIfVisible(FeatureObserver::InputTypeMonth);
 }
 
 const AtomicString& MonthInputType::formControlType() const
@@ -155,9 +159,11 @@ String MonthInputType::formatDateTimeFieldsState(const DateTimeFieldsState& date
 void MonthInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters& layoutParameters, const DateComponents& date) const
 {
     layoutParameters.dateTimeFormat = layoutParameters.locale.monthFormat();
-    layoutParameters.fallbackDateTimeFormat = "MM/yyyy";
-    layoutParameters.minimumYear = fullYear(element()->fastGetAttribute(minAttr));
-    layoutParameters.maximumYear = fullYear(element()->fastGetAttribute(maxAttr));
+    layoutParameters.fallbackDateTimeFormat = "yyyy-MM";
+    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+        layoutParameters.minimum = DateComponents();
+    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+        layoutParameters.maximum = DateComponents();
     layoutParameters.placeholderForMonth = "--";
     layoutParameters.placeholderForYear = "----";
 }

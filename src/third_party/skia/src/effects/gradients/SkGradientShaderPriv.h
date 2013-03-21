@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2012 Google Inc.
  *
@@ -20,11 +19,7 @@
 #include "SkBitmapCache.h"
 #include "SkShader.h"
 
-#ifndef SK_DISABLE_DITHER_32BIT_GRADIENT
-    #define USE_DITHER_32BIT_GRADIENT
-#endif
-
-static void sk_memset32_dither(uint32_t dst[], uint32_t v0, uint32_t v1,
+static inline void sk_memset32_dither(uint32_t dst[], uint32_t v0, uint32_t v1,
                                int count) {
     if (count > 0) {
         if (v0 == v1) {
@@ -44,13 +39,13 @@ static void sk_memset32_dither(uint32_t dst[], uint32_t v0, uint32_t v1,
 
 //  Clamp
 
-static SkFixed clamp_tileproc(SkFixed x) {
+static inline SkFixed clamp_tileproc(SkFixed x) {
     return SkClampMax(x, 0xFFFF);
 }
 
 // Repeat
 
-static SkFixed repeat_tileproc(SkFixed x) {
+static inline SkFixed repeat_tileproc(SkFixed x) {
     return x & 0xFFFF;
 }
 
@@ -101,44 +96,28 @@ public:
         /// Seems like enough for visual accuracy. TODO: if pos[] deserves
         /// it, use a larger cache.
         kCache16Bits    = 8,
-        kGradient16Length = (1 << kCache16Bits),
-        /// Each cache gets 1 extra entry at the end so we don't have to
-        /// test for end-of-cache in lerps. This is also the value used
-        /// to stride *writes* into the dither cache; it must not be zero.
-        /// Total space for a cache is 2x kCache16Count entries: one
-        /// regular cache, one for dithering.
-        kCache16Count   = kGradient16Length + 1,
+        kCache16Count = (1 << kCache16Bits),
         kCache16Shift   = 16 - kCache16Bits,
         kSqrt16Shift    = 8 - kCache16Bits,
 
         /// Seems like enough for visual accuracy. TODO: if pos[] deserves
         /// it, use a larger cache.
         kCache32Bits    = 8,
-        kGradient32Length = (1 << kCache32Bits),
-        /// Each cache gets 1 extra entry at the end so we don't have to
-        /// test for end-of-cache in lerps. This is also the value used
-        /// to stride *writes* into the dither cache; it must not be zero.
-        /// Total space for a cache is 2x kCache32Count entries: one
-        /// regular cache, one for dithering.
-        kCache32Count   = kGradient32Length + 1,
+        kCache32Count   = (1 << kCache32Bits),
         kCache32Shift   = 16 - kCache32Bits,
         kSqrt32Shift    = 8 - kCache32Bits,
 
         /// This value is used to *read* the dither cache; it may be 0
         /// if dithering is disabled.
-#ifdef USE_DITHER_32BIT_GRADIENT
         kDitherStride32 = kCache32Count,
-#else
-        kDitherStride32 = 0,
-#endif
         kDitherStride16 = kCache16Count,
-        kLerpRemainderMask32 = (1 << (16 - kCache32Bits)) - 1
     };
 
 
 protected:
     SkGradientShaderBase(SkFlattenableReadBuffer& );
     virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SK_DEVELOPER_TO_STRING()
 
     SkUnitMapper* fMapper;
     SkMatrix    fPtsToUnit;     // set by subclass
@@ -187,6 +166,24 @@ private:
     typedef SkShader INHERITED;
 };
 
+static inline int init_dither_toggle(int x, int y) {
+    x &= 1;
+    y = (y & 1) << 1;
+    return (x | y) * SkGradientShaderBase::kDitherStride32;
+}
+
+static inline int next_dither_toggle(int toggle) {
+    return toggle ^ SkGradientShaderBase::kDitherStride32;
+}
+
+static inline int init_dither_toggle16(int x, int y) {
+    return ((x ^ y) & 1) * SkGradientShaderBase::kDitherStride16;
+}
+
+static inline int next_dither_toggle16(int toggle) {
+    return toggle ^ SkGradientShaderBase::kDitherStride16;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #if SK_SUPPORT_GPU
@@ -233,17 +230,11 @@ public:
 
     virtual ~GrGradientEffect();
 
-    virtual const GrTextureAccess& textureAccess(int index) const SK_OVERRIDE;
-
     bool useAtlas() const { return SkToBool(-1 != fRow); }
     SkScalar getYCoord() const { return fYCoord; };
     const SkMatrix& getMatrix() const { return fMatrix;}
 
-    virtual bool isEqual(const GrEffect& effect) const SK_OVERRIDE {
-        const GrGradientEffect& s = static_cast<const GrGradientEffect&>(effect);
-        return INHERITED::isEqual(effect) && this->useAtlas() == s.useAtlas() &&
-               fYCoord == s.getYCoord() && fMatrix.cheapEqualTo(s.getMatrix());
-    }
+    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
 
 protected:
 
@@ -260,12 +251,16 @@ protected:
                                     SkScalar** stops,
                                     SkShader::TileMode* tm);
 
+    virtual bool onIsEqual(const GrEffect& effect) const SK_OVERRIDE;
+
 private:
+
     GrTextureAccess fTextureAccess;
     SkScalar fYCoord;
     GrTextureStripAtlas* fAtlas;
     int fRow;
     SkMatrix fMatrix;
+    bool fIsOpaque;
 
     typedef GrEffect INHERITED;
 
@@ -336,4 +331,3 @@ private:
 #endif
 
 #endif
-

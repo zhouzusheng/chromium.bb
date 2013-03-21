@@ -7,7 +7,9 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
+#include "cc/animation_registrar.h"
 #include "cc/font_atlas.h"
 #include "cc/heads_up_display_layer.h"
 #include "cc/heads_up_display_layer_impl.h"
@@ -21,13 +23,13 @@
 #include "cc/math_util.h"
 #include "cc/occlusion_tracker.h"
 #include "cc/overdraw_metrics.h"
+#include "cc/prioritized_resource_manager.h"
 #include "cc/single_thread_proxy.h"
 #include "cc/switches.h"
 #include "cc/thread.h"
 #include "cc/thread_proxy.h"
+#include "cc/top_controls_manager.h"
 #include "cc/tree_synchronizer.h"
-
-using namespace std;
 
 namespace {
 static int numLayerTreeInstances;
@@ -48,6 +50,7 @@ RendererCapabilities::RendererCapabilities()
     , usingEglImage(false)
     , allowPartialTextureUpdates(false)
     , maxTextureSize(0)
+    , avoidPow2Textures(false)
 {
 }
 
@@ -70,14 +73,12 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::create(LayerTreeHostClient* client, con
 
 LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings)
     : m_animating(false)
-    , m_needsAnimateLayers(false)
     , m_needsFullTreeSync(true)
     , m_client(client)
     , m_commitNumber(0)
     , m_renderingStats()
     , m_rendererInitialized(false)
     , m_outputSurfaceLost(false)
-    , m_numTimesRecreateShouldFail(0)
     , m_numFailedRecreateAttempts(0)
     , m_settings(settings)
     , m_debugState(settings.initialDebugState)
@@ -90,6 +91,7 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSetting
     , m_backgroundColor(SK_ColorWHITE)
     , m_hasTransparentBackground(false)
     , m_partialTextureUpdateRequests(0)
+    , m_animationRegistrar(AnimationRegistrar::create())
 {
     numLayerTreeInstances++;
 }
@@ -128,6 +130,13 @@ LayerTreeHost::~LayerTreeHost()
     RateLimiterMap::iterator it = m_rateLimiters.begin();
     if (it != m_rateLimiters.end())
         it->second->stop();
+
+    if (m_rootLayer) {
+        // The layer tree must be destroyed before the layer tree host. We've
+        // made a contract with our animation controllers that the registrar
+        // will outlive them, and we must make good.
+        m_rootLayer = NULL;
+    }
 }
 
 void LayerTreeHost::setSurfaceReady()
@@ -150,7 +159,7 @@ void LayerTreeHost::initializeRenderer()
     // Update m_settings based on partial update capability.
     size_t maxPartialTextureUpdates = 0;
     if (m_proxy->rendererCapabilities().allowPartialTextureUpdates)
-        maxPartialTextureUpdates = min(m_settings.maxPartialTextureUpdates, m_proxy->maxPartialTextureUpdates());
+        maxPartialTextureUpdates = std::min(m_settings.maxPartialTextureUpdates, m_proxy->maxPartialTextureUpdates());
     m_settings.maxPartialTextureUpdates = maxPartialTextureUpdates;
 
     m_contentsTextureManager = PrioritizedResourceManager::create(m_proxy.get());
@@ -158,10 +167,10 @@ void LayerTreeHost::initializeRenderer()
 
     m_rendererInitialized = true;
 
-    m_settings.defaultTileSize = gfx::Size(min(m_settings.defaultTileSize.width(), m_proxy->rendererCapabilities().maxTextureSize),
-                                           min(m_settings.defaultTileSize.height(), m_proxy->rendererCapabilities().maxTextureSize));
-    m_settings.maxUntiledLayerSize = gfx::Size(min(m_settings.maxUntiledLayerSize.width(), m_proxy->rendererCapabilities().maxTextureSize),
-                                               min(m_settings.maxUntiledLayerSize.height(), m_proxy->rendererCapabilities().maxTextureSize));
+    m_settings.defaultTileSize = gfx::Size(std::min(m_settings.defaultTileSize.width(), m_proxy->rendererCapabilities().maxTextureSize),
+                                           std::min(m_settings.defaultTileSize.height(), m_proxy->rendererCapabilities().maxTextureSize));
+    m_settings.maxUntiledLayerSize = gfx::Size(std::min(m_settings.maxUntiledLayerSize.width(), m_proxy->rendererCapabilities().maxTextureSize),
+                                               std::min(m_settings.maxUntiledLayerSize.height(), m_proxy->rendererCapabilities().maxTextureSize));
 }
 
 LayerTreeHost::RecreateResult LayerTreeHost::recreateOutputSurface()
@@ -169,13 +178,7 @@ LayerTreeHost::RecreateResult LayerTreeHost::recreateOutputSurface()
     TRACE_EVENT0("cc", "LayerTreeHost::recreateOutputSurface");
     DCHECK(m_outputSurfaceLost);
 
-    bool recreated = false;
-    if (!m_numTimesRecreateShouldFail)
-        recreated = m_proxy->recreateOutputSurface();
-    else
-        m_numTimesRecreateShouldFail--;
-
-    if (recreated) {
+    if (m_proxy->recreateOutputSurface()) {
         m_client->didRecreateOutputSurface(true);
         m_outputSurfaceLost = false;
         return RecreateSucceeded;
@@ -212,6 +215,11 @@ void LayerTreeHost::acquireLayerTextures()
     m_proxy->acquireLayerTextures();
 }
 
+void LayerTreeHost::didBeginFrame()
+{
+    m_client->didBeginFrame();
+}
+
 void LayerTreeHost::updateAnimations(base::TimeTicks frameBeginTime)
 {
     m_animating = true;
@@ -238,28 +246,6 @@ void LayerTreeHost::beginCommitOnImplThread(LayerTreeHostImpl* hostImpl)
     TRACE_EVENT0("cc", "LayerTreeHost::commitTo");
 }
 
-static void pushPropertiesRecursive(Layer* layer, LayerImpl* layerImpl)
-{
-    if (!layer) {
-        DCHECK(!layerImpl);
-        return;
-    }
-
-    DCHECK_EQ(layer->id(), layerImpl->id());
-    layer->pushPropertiesTo(layerImpl);
-
-    pushPropertiesRecursive(layer->maskLayer(), layerImpl->maskLayer());
-    pushPropertiesRecursive(layer->replicaLayer(), layerImpl->replicaLayer());
-
-    const std::vector<scoped_refptr<Layer> >& children = layer->children();
-    const ScopedPtrVector<LayerImpl>& implChildren = layerImpl->children();
-    DCHECK_EQ(children.size(), implChildren.size());
-
-    for (size_t i = 0; i < children.size(); ++i) {
-        pushPropertiesRecursive(children[i].get(), implChildren[i]);
-    }
-}
-
 // This function commits the LayerTreeHost to an impl tree. When modifying
 // this function, keep in mind that the function *runs* on the impl thread! Any
 // code that is logically a main thread operation, e.g. deletion of a Layer,
@@ -269,34 +255,81 @@ void LayerTreeHost::finishCommitOnImplThread(LayerTreeHostImpl* hostImpl)
 {
     DCHECK(m_proxy->isImplThread());
 
-    m_contentsTextureManager->updateBackingsInDrawingImplTree();
-    m_contentsTextureManager->reduceMemory(hostImpl->resourceProvider());
+    // If there are linked evicted backings, these backings' resources may be put into the
+    // impl tree, so we can't draw yet. Determine this before clearing all evicted backings.
+    bool newImplTreeHasNoEvictedResources = !m_contentsTextureManager->linkedEvictedBackingsExist();
 
-    if (m_needsFullTreeSync) {
-        hostImpl->setRootLayer(TreeSynchronizer::synchronizeTrees(rootLayer(), hostImpl->detachLayerTree(), hostImpl->activeTree()));
+    m_contentsTextureManager->updateBackingsInDrawingImplTree();
+
+    // In impl-side painting, synchronize to the pending tree so that it has
+    // time to raster before being displayed.  If no pending tree is needed,
+    // synchronization can happen directly to the active tree and
+    // unlinked contents resources can be reclaimed immediately.
+    LayerTreeImpl* syncTree;
+    if (m_settings.implSidePainting) {
+        // Commits should not occur while there is already a pending tree.
+        DCHECK(!hostImpl->pendingTree());
+        hostImpl->createPendingTree();
+        syncTree = hostImpl->pendingTree();
     } else {
-        TRACE_EVENT0("cc", "LayerTreeHost::pushPropertiesRecursive");
-        pushPropertiesRecursive(rootLayer(), hostImpl->rootLayer());
+        m_contentsTextureManager->reduceMemory(hostImpl->resourceProvider());
+        syncTree = hostImpl->activeTree();
     }
+
+    if (m_needsFullTreeSync)
+        syncTree->SetRootLayer(TreeSynchronizer::synchronizeTrees(rootLayer(), syncTree->DetachLayerTree(), syncTree));
+    {
+        TRACE_EVENT0("cc", "LayerTreeHost::pushProperties");
+        TreeSynchronizer::pushProperties(rootLayer(), syncTree->RootLayer());
+    }
+
+    syncTree->set_needs_full_tree_sync(m_needsFullTreeSync);
     m_needsFullTreeSync = false;
 
     if (m_rootLayer && m_hudLayer)
-        hostImpl->activeTree()->set_hud_layer(static_cast<HeadsUpDisplayLayerImpl*>(LayerTreeHostCommon::findLayerInSubtree(hostImpl->rootLayer(), m_hudLayer->id())));
+        syncTree->set_hud_layer(static_cast<HeadsUpDisplayLayerImpl*>(LayerTreeHostCommon::findLayerInSubtree(syncTree->RootLayer(), m_hudLayer->id())));
     else
-        hostImpl->activeTree()->set_hud_layer(0);
+        syncTree->set_hud_layer(0);
 
-    // We may have added an animation during the tree sync. This will cause both layer tree hosts
-    // to visit their controllers.
-    if (rootLayer() && m_needsAnimateLayers)
-        hostImpl->setNeedsAnimateLayers();
+    syncTree->set_source_frame_number(commitNumber());
+    syncTree->set_background_color(m_backgroundColor);
+    syncTree->set_has_transparent_background(m_hasTransparentBackground);
 
-    hostImpl->activeTree()->set_source_frame_number(commitNumber());
+    syncTree->FindRootScrollLayer();
+
+    float page_scale_delta, sent_page_scale_delta;
+    if (m_settings.implSidePainting) {
+        // Update the delta from the active tree, which may have
+        // adjusted its delta prior to the pending tree being created.
+        // This code is equivalent to that in LayerTreeImpl::SetPageScaleDelta.
+        DCHECK_EQ(1, syncTree->sent_page_scale_delta());
+        page_scale_delta = hostImpl->activeTree()->page_scale_delta();
+        sent_page_scale_delta = hostImpl->activeTree()->sent_page_scale_delta();
+    } else {
+        page_scale_delta = syncTree->page_scale_delta();
+        sent_page_scale_delta = syncTree->sent_page_scale_delta();
+        syncTree->set_sent_page_scale_delta(1);
+    }
+
+    syncTree->SetPageScaleFactorAndLimits(m_pageScaleFactor, m_minPageScaleFactor, m_maxPageScaleFactor);
+    syncTree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
+
+    if (!m_settings.implSidePainting) {
+        // If we're not in impl-side painting, the tree is immediately
+        // considered active.
+        syncTree->DidBecomeActive();
+    }
+
     hostImpl->setViewportSize(layoutViewportSize(), deviceViewportSize());
     hostImpl->setDeviceScaleFactor(deviceScaleFactor());
-    hostImpl->setPageScaleFactorAndLimits(m_pageScaleFactor, m_minPageScaleFactor, m_maxPageScaleFactor);
-    hostImpl->setBackgroundColor(m_backgroundColor);
-    hostImpl->setHasTransparentBackground(m_hasTransparentBackground);
     hostImpl->setDebugState(m_debugState);
+    hostImpl->savePaintTime(m_renderingStats.totalPaintTime);
+
+    if (newImplTreeHasNoEvictedResources) {
+        if (syncTree->ContentsTexturesPurged())
+            syncTree->ResetContentsTexturesPurged();
+    }
+    syncTree->ResetViewportSizeInvalid();
 
     m_commitNumber++;
 }
@@ -375,6 +408,7 @@ void LayerTreeHost::didDeferCommit()
 
 void LayerTreeHost::renderingStats(RenderingStats* stats) const
 {
+    CHECK(m_debugState.recordRenderingStats());
     *stats = m_renderingStats;
     m_proxy->renderingStats(stats);
 }
@@ -421,12 +455,6 @@ void LayerTreeHost::setAnimationEvents(scoped_ptr<AnimationEventsVector> events,
 {
     DCHECK(m_proxy->isMainThread());
     setAnimationEventsRecursive(*events.get(), m_rootLayer.get(), wallClockTime);
-}
-
-void LayerTreeHost::didAddAnimation()
-{
-    m_needsAnimateLayers = true;
-    m_proxy->didAddAnimation();
 }
 
 void LayerTreeHost::setRootLayer(scoped_refptr<Layer> rootLayer)
@@ -490,13 +518,6 @@ void LayerTreeHost::setVisible(bool visible)
 void LayerTreeHost::startPageScaleAnimation(gfx::Vector2d targetOffset, bool useAnchor, float scale, base::TimeDelta duration)
 {
     m_proxy->startPageScaleAnimation(targetOffset, useAnchor, scale, duration);
-}
-
-void LayerTreeHost::loseOutputSurface(int numTimes)
-{
-    TRACE_EVENT1("cc", "LayerTreeHost::loseCompositorOutputSurface", "numTimes", numTimes);
-    m_numTimesRecreateShouldFail = numTimes - 1;
-    m_proxy->loseOutputSurface();
 }
 
 PrioritizedResourceManager* LayerTreeHost::contentsTextureManager() const
@@ -678,16 +699,18 @@ bool LayerTreeHost::paintMasksForRenderSurface(Layer* renderSurfaceLayer, Resour
     // in code, we already know that at least something will be drawn into this render surface, so the
     // mask and replica should be painted.
 
+    RenderingStats* stats = m_debugState.recordRenderingStats() ? &m_renderingStats : NULL;
+
     bool needMoreUpdates = false;
     Layer* maskLayer = renderSurfaceLayer->maskLayer();
     if (maskLayer) {
-        maskLayer->update(queue, 0, m_renderingStats);
+        maskLayer->update(queue, 0, stats);
         needMoreUpdates |= maskLayer->needMoreUpdates();
     }
 
     Layer* replicaMaskLayer = renderSurfaceLayer->replicaLayer() ? renderSurfaceLayer->replicaLayer()->maskLayer() : 0;
     if (replicaMaskLayer) {
-        replicaMaskLayer->update(queue, 0, m_renderingStats);
+        replicaMaskLayer->update(queue, 0, stats);
         needMoreUpdates |= replicaMaskLayer->needMoreUpdates();
     }
     return needMoreUpdates;
@@ -705,6 +728,8 @@ bool LayerTreeHost::paintLayerContents(const LayerList& renderSurfaceLayerList, 
 
     prioritizeTextures(renderSurfaceLayerList, occlusionTracker.overdrawMetrics());
 
+    RenderingStats* stats = m_debugState.recordRenderingStats() ? &m_renderingStats : NULL;
+
     LayerIteratorType end = LayerIteratorType::end(&renderSurfaceLayerList);
     for (LayerIteratorType it = LayerIteratorType::begin(&renderSurfaceLayerList); it != end; ++it) {
         occlusionTracker.enterLayer(it);
@@ -714,7 +739,7 @@ bool LayerTreeHost::paintLayerContents(const LayerList& renderSurfaceLayerList, 
             needMoreUpdates |= paintMasksForRenderSurface(*it, queue);
         } else if (it.representsItself()) {
             DCHECK(!it->bounds().IsEmpty());
-            it->update(queue, &occlusionTracker, m_renderingStats);
+            it->update(queue, &occlusionTracker, stats);
             needMoreUpdates |= it->needMoreUpdates();
         }
 
@@ -745,33 +770,6 @@ void LayerTreeHost::applyScrollAndScale(const ScrollAndScaleSet& info)
     }
     if (!rootScrollDelta.IsZero() || info.pageScaleDelta != 1)
         m_client->applyScrollAndScale(rootScrollDelta, info.pageScaleDelta);
-}
-
-gfx::PointF LayerTreeHost::adjustEventPointForPinchZoom(const gfx::PointF& zoomedViewportPoint)
-    const
-{
-    if (m_implTransform.IsIdentity())
-        return zoomedViewportPoint;
-
-    DCHECK(m_implTransform.IsInvertible());
-
-    // Scale to screen space before applying implTransform inverse.
-    gfx::PointF zoomedScreenspacePoint = gfx::ScalePoint(zoomedViewportPoint, deviceScaleFactor());
-
-    gfx::Transform inverseImplTransform(gfx::Transform::kSkipInitialization);
-    if (!m_implTransform.GetInverse(&inverseImplTransform)) {
-        // TODO(shawnsingh): Either we need to handle uninvertible transforms
-        // here, or DCHECK that the transform is invertible.
-    }
-
-    bool wasClipped = false;
-    gfx::PointF unzoomedScreenspacePoint = MathUtil::projectPoint(inverseImplTransform, zoomedScreenspacePoint, wasClipped);
-    DCHECK(!wasClipped);
-
-    // Convert back to logical pixels for hit testing.
-    gfx::PointF unzoomedViewportPoint = gfx::ScalePoint(unzoomedScreenspacePoint, 1 / deviceScaleFactor());
-
-    return unzoomedViewportPoint;
 }
 
 void LayerTreeHost::setImplTransform(const gfx::Transform& transform)
@@ -813,7 +811,7 @@ void LayerTreeHost::rateLimit()
 
 bool LayerTreeHost::bufferedUpdates()
 {
-    return m_settings.maxPartialTextureUpdates != numeric_limits<size_t>::max();
+    return m_settings.maxPartialTextureUpdates != std::numeric_limits<size_t>::max();
 }
 
 bool LayerTreeHost::requestPartialTextureUpdate()
@@ -834,35 +832,27 @@ void LayerTreeHost::setDeviceScaleFactor(float deviceScaleFactor)
     setNeedsCommit();
 }
 
+bool LayerTreeHost::blocksPendingCommit() const
+{
+    if (!m_rootLayer)
+        return false;
+    return m_rootLayer->blocksPendingCommitRecursive();
+}
+
 void LayerTreeHost::animateLayers(base::TimeTicks time)
 {
-    if (!m_settings.acceleratedAnimationEnabled || !m_needsAnimateLayers)
+    if (!m_settings.acceleratedAnimationEnabled || m_animationRegistrar->active_animation_controllers().empty())
         return;
 
     TRACE_EVENT0("cc", "LayerTreeHostImpl::animateLayers");
-    m_needsAnimateLayers = animateLayersRecursive(m_rootLayer.get(), time);
-}
 
-bool LayerTreeHost::animateLayersRecursive(Layer* current, base::TimeTicks time)
-{
-    if (!current)
-        return false;
-
-    bool subtreeNeedsAnimateLayers = false;
-    LayerAnimationController* currentController = current->layerAnimationController();
     double monotonicTime = (time - base::TimeTicks()).InSecondsF();
-    currentController->animate(monotonicTime, 0);
 
-    // If the current controller still has an active animation, we must continue animating layers.
-    if (currentController->hasActiveAnimation())
-         subtreeNeedsAnimateLayers = true;
-
-    for (size_t i = 0; i < current->children().size(); ++i) {
-        if (animateLayersRecursive(current->children()[i].get(), time))
-            subtreeNeedsAnimateLayers = true;
+    AnimationRegistrar::AnimationControllerMap copy = m_animationRegistrar->active_animation_controllers();
+    for (AnimationRegistrar::AnimationControllerMap::iterator iter = copy.begin(); iter != copy.end(); ++iter) {
+        (*iter).second->animate(monotonicTime);
+        (*iter).second->updateState(0);
     }
-
-    return subtreeNeedsAnimateLayers;
 }
 
 void LayerTreeHost::setAnimationEventsRecursive(const AnimationEventsVector& events, Layer* layer, base::Time wallClockTime)
@@ -881,6 +871,11 @@ void LayerTreeHost::setAnimationEventsRecursive(const AnimationEventsVector& eve
 
     for (size_t childIndex = 0; childIndex < layer->children().size(); ++childIndex)
         setAnimationEventsRecursive(events, layer->children()[childIndex].get(), wallClockTime);
+}
+
+skia::RefPtr<SkPicture> LayerTreeHost::capturePicture()
+{
+    return m_proxy->capturePicture();
 }
 
 }  // namespace cc

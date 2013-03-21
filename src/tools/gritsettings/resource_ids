@@ -27,7 +27,7 @@
   "chrome/browser/resources/net_internals_resources.grd": {
     "includes": [1500],
   },
-  "chrome/browser/resources/shared_resources.grd": {
+  "ui/webui/resources/webui_resources.grd": {
     "includes": [2000],
     "structures": [2200],
   },
@@ -167,7 +167,7 @@
     "includes": [22000],
   },
   # This file is generated during the build.
-  "chrome/browser/debugger/frontend/devtools_discovery_page_resources.grd": {
+  "chrome/browser/devtools/frontend/devtools_discovery_page_resources.grd": {
     "includes": [22500],
   },
   "chrome/browser/resources/options_resources.grd": {
@@ -196,6 +196,9 @@
   },
   "third_party/trace-viewer/src/tracing.grd": {
     "includes": [27000],
+  },
+  "chrome/browser/resources/memory_internals_resources.grd": {
+    "includes": [27500],
   },
 
   # Resource ids starting at 31000 are reserved for projects built on Chromium.

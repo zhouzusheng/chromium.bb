@@ -81,14 +81,15 @@ static void setInjectedScriptContextDebugId(v8::Handle<v8::Context> targetContex
     targetContext->SetEmbedderData(0, v8::String::NewSymbol(buffer));
 }
 
-PassOwnPtr<V8DOMWindowShell> V8DOMWindowShell::create(Frame* frame, PassRefPtr<DOMWrapperWorld> world)
+PassOwnPtr<V8DOMWindowShell> V8DOMWindowShell::create(Frame* frame, PassRefPtr<DOMWrapperWorld> world, v8::Isolate* isolate)
 {
-    return adoptPtr(new V8DOMWindowShell(frame, world));
+    return adoptPtr(new V8DOMWindowShell(frame, world, isolate));
 }
 
-V8DOMWindowShell::V8DOMWindowShell(Frame* frame, PassRefPtr<DOMWrapperWorld> world)
+V8DOMWindowShell::V8DOMWindowShell(Frame* frame, PassRefPtr<DOMWrapperWorld> world, v8::Isolate* isolate)
     : m_frame(frame)
     , m_world(world)
+    , m_isolate(isolate)
 {
 }
 
@@ -152,7 +153,7 @@ void V8DOMWindowShell::clearForNavigation()
     // will be protected by the security checks on the DOMWindow wrapper.
     clearDocumentProperty();
 
-    v8::Handle<v8::Object> windowWrapper = m_global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+    v8::Handle<v8::Object> windowWrapper = m_global->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(m_isolate));
     ASSERT(!windowWrapper.IsEmpty());
     windowWrapper->TurnOnAccessCheck();
     m_context->DetachGlobal();
@@ -201,18 +202,18 @@ bool V8DOMWindowShell::initializeIfNeeded()
 
     v8::HandleScope handleScope;
 
-    V8Initializer::initializeMainThreadIfNeeded();
+    V8Initializer::initializeMainThreadIfNeeded(m_isolate);
 
     createContext();
     if (m_context.isEmpty())
         return false;
 
+    m_world->setIsolatedWorldField(m_context.get());
+
     bool isMainWorld = m_world->isMainWorld();
 
     v8::Local<v8::Context> context = v8::Local<v8::Context>::New(m_context.get());
     v8::Context::Scope contextScope(context);
-
-    m_world->setIsolatedWorldField(m_context.get());
 
     if (m_global.isEmpty()) {
         m_global.set(context->Global());
@@ -245,7 +246,7 @@ bool V8DOMWindowShell::initializeIfNeeded()
         if (m_frame->document()) {
             ContentSecurityPolicy* csp = m_frame->document()->contentSecurityPolicy();
             context->AllowCodeGenerationFromStrings(csp->allowEval(0, ContentSecurityPolicy::SuppressReport));
-            context->SetErrorMessageForCodeGenerationFromStrings(deprecatedV8String(csp->evalDisabledErrorMessage()));
+            context->SetErrorMessageForCodeGenerationFromStrings(v8String(csp->evalDisabledErrorMessage(), m_isolate));
         }
     } else {
         // Using the default security token means that the canAccess is always
@@ -275,7 +276,7 @@ void V8DOMWindowShell::createContext()
 
     // Create a new environment using an empty template for the shadow
     // object. Reuse the global object if one has been created earlier.
-    v8::Persistent<v8::ObjectTemplate> globalTemplate = V8DOMWindow::GetShadowObjectTemplate();
+    v8::Persistent<v8::ObjectTemplate> globalTemplate = V8DOMWindow::GetShadowObjectTemplate(m_isolate);
     if (globalTemplate.IsEmpty())
         return;
 
@@ -314,7 +315,7 @@ bool V8DOMWindowShell::installDOMWindow()
     if (windowWrapper.IsEmpty())
         return false;
 
-    V8DOMWindow::installPerContextProperties(windowWrapper, window);
+    V8DOMWindow::installPerContextProperties(windowWrapper, window, m_isolate);
 
     V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object>::Cast(windowWrapper->GetPrototype()), &V8DOMWindow::info, window);
 
@@ -334,7 +335,7 @@ bool V8DOMWindowShell::installDOMWindow()
     v8::Handle<v8::Object> innerGlobalObject = toInnerGlobalObject(m_context.get());
     V8DOMWrapper::setNativeInfo(innerGlobalObject, &V8DOMWindow::info, window);
     innerGlobalObject->SetPrototype(windowWrapper);
-    V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<DOMWindow>(window), &V8DOMWindow::info, windowWrapper);
+    V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<DOMWindow>(window), &V8DOMWindow::info, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
     return true;
 }
 
@@ -353,7 +354,7 @@ void V8DOMWindowShell::updateDocumentProperty()
     // FIXME: Should we use a new Local handle here?
     v8::Context::Scope contextScope(m_context.get());
 
-    v8::Handle<v8::Value> documentWrapper = toV8(m_frame->document());
+    v8::Handle<v8::Value> documentWrapper = toV8(m_frame->document(), v8::Handle<v8::Object>(), m_context.get()->GetIsolate());
     ASSERT(documentWrapper == m_document.get() || m_document.isEmpty());
     if (m_document.isEmpty())
         updateDocumentWrapper(v8::Handle<v8::Object>::Cast(documentWrapper));
@@ -452,7 +453,7 @@ void V8DOMWindowShell::namedItemAdded(HTMLDocument* document, const AtomicString
 
     ASSERT(!m_document.isEmpty());
     checkDocumentWrapper(m_document.get(), document);
-    m_document->SetAccessor(deprecatedV8String(name), getter);
+    m_document->SetAccessor(v8String(name, m_isolate), getter);
 }
 
 void V8DOMWindowShell::namedItemRemoved(HTMLDocument* document, const AtomicString& name)
@@ -470,7 +471,7 @@ void V8DOMWindowShell::namedItemRemoved(HTMLDocument* document, const AtomicStri
 
     ASSERT(!m_document.isEmpty());
     checkDocumentWrapper(m_document.get(), document);
-    m_document->Delete(deprecatedV8String(name));
+    m_document->Delete(v8String(name, m_isolate));
 }
 
 void V8DOMWindowShell::updateSecurityOrigin()

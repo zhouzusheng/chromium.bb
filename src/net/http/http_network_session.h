@@ -80,7 +80,10 @@ class NET_EXPORT HttpNetworkSession
     size_t spdy_max_concurrent_streams_limit;
     SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
+    bool enable_quic;
     uint16 origin_port_to_force_quic_on;
+    bool use_spdy_over_quic;
+    bool enable_user_alternate_protocol_ports;
   };
 
   enum SocketPoolType {
@@ -140,6 +143,10 @@ class NET_EXPORT HttpNetworkSession
   // Creates a Value summary of the state of the SPDY sessions. The caller is
   // responsible for deleting the returned value.
   base::Value* SpdySessionPoolInfoToValue() const;
+
+  // Creates a Value summary of the state of the QUIC sessions and
+  // configuration. The caller is responsible for deleting the returned value.
+  base::Value* QuicInfoToValue() const;
 
   void CloseAllConnections();
   void CloseIdleConnections();

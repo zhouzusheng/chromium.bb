@@ -43,11 +43,12 @@
 
 namespace WebCore {
 
-WorkerScriptDebugServer::WorkerScriptDebugServer(WorkerContext* workerContext)
+WorkerScriptDebugServer::WorkerScriptDebugServer(WorkerContext* workerContext, const String& mode)
     : ScriptDebugServer()
     , m_listener(0)
     , m_workerContext(workerContext)
     , m_isolate(v8::Isolate::GetCurrent())
+    , m_debuggerTaskMode(mode)
 {
     ASSERT(m_isolate);
 }
@@ -73,7 +74,7 @@ void WorkerScriptDebugServer::addListener(ScriptDebugListener* listener)
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(deprecatedV8Integer(i))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8Integer(i, debuggerContext->GetIsolate()))));
 }
 
 void WorkerScriptDebugServer::removeListener(ScriptDebugListener* listener)
@@ -99,7 +100,7 @@ void WorkerScriptDebugServer::runMessageLoopOnPause(v8::Handle<v8::Context>)
 {
     MessageQueueWaitResult result;
     do {
-        result = m_workerContext->thread()->runLoop().runInMode(m_workerContext, WorkerDebuggerAgent::debuggerTaskMode);
+        result = m_workerContext->thread()->runLoop().runInMode(m_workerContext, m_debuggerTaskMode);
     // Keep waiting until execution is resumed.
     } while (result == MessageQueueMessageReceived && isPaused());
     

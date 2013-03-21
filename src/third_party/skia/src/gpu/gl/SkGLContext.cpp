@@ -20,9 +20,10 @@ SkGLContext::SkGLContext()
 SkGLContext::~SkGLContext() {
 
     if (fGL) {
-        SK_GL(*this, DeleteFramebuffers(1, &fFBO));
-        SK_GL(*this, DeleteRenderbuffers(1, &fColorBufferID));
-        SK_GL(*this, DeleteRenderbuffers(1, &fDepthStencilBufferID));
+        // TODO: determine why DeleteFramebuffers is generating a GL error in tests
+        SK_GL_NOERRCHECK(*this, DeleteFramebuffers(1, &fFBO));
+        SK_GL_NOERRCHECK(*this, DeleteRenderbuffers(1, &fColorBufferID));
+        SK_GL_NOERRCHECK(*this, DeleteRenderbuffers(1, &fDepthStencilBufferID));
     }
 
     SkSafeUnref(fGL);
@@ -40,18 +41,19 @@ bool SkGLContext::init(int width, int height) {
 
     fGL = this->createGLContext();
     if (fGL) {
-        fExtensionString =
-            reinterpret_cast<const char*>(SK_GL(*this,
-                                                 GetString(GR_GL_EXTENSIONS)));
-        const char* versionStr =
-            reinterpret_cast<const char*>(SK_GL(*this,
-                                                GetString(GR_GL_VERSION)));
+        const GrGLubyte* temp;
+
+        SK_GL_RET(*this, temp, GetString(GR_GL_EXTENSIONS));
+        fExtensionString = reinterpret_cast<const char*>(temp);
+
+        SK_GL_RET(*this, temp, GetString(GR_GL_VERSION));
+        const char* versionStr = reinterpret_cast<const char*>(temp);
         GrGLVersion version = GrGLGetVersionFromString(versionStr);
 
         // clear any existing GL erorrs
         GrGLenum error;
         do {
-            error = SK_GL(*this, GetError());
+            SK_GL_RET(*this, error, GetError());
         } while (GR_GL_NO_ERROR != error);
 
         GrGLBinding bindingInUse = GrGLGetBindingInUse(this->gl());
@@ -118,9 +120,9 @@ bool SkGLContext::init(int width, int height) {
         SK_GL(*this, ClearStencil(0));
         SK_GL(*this, Clear(GR_GL_STENCIL_BUFFER_BIT));
 
-        error = SK_GL(*this, GetError());
-        GrGLenum status =
-            SK_GL(*this, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
+        SK_GL_RET(*this, error, GetError());
+        GrGLenum status;
+        SK_GL_RET(*this, status, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
 
         if (GR_GL_FRAMEBUFFER_COMPLETE != status ||
             GR_GL_NO_ERROR != error) {

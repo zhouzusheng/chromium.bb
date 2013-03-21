@@ -8,6 +8,7 @@
 
 import os.path
 import re
+import sys
 
 from grit import constants
 from grit import exception
@@ -166,6 +167,7 @@ class GritNode(base.Node):
     self.output_language = ''
     self.defines = {}
     self.substituter = None
+    self.target_platform = sys.platform
 
   def _IsValidChild(self, child):
     from grit.node import empty
@@ -382,6 +384,9 @@ class GritNode(base.Node):
   def SetDefines(self, defines):
     self.defines = defines
     self.substituter = None  # force recalculate
+
+  def SetTargetPlatform(self, target_platform):
+    self.target_platform = target_platform
 
   def GetSubstituter(self):
     if self.substituter is None:

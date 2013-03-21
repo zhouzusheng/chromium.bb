@@ -32,6 +32,7 @@
 #include "execution.h"
 #include "factory.h"
 #include "jsregexp.h"
+#include "jsregexp-inl.h"
 #include "platform.h"
 #include "string-search.h"
 #include "runtime.h"
@@ -309,16 +310,16 @@ int RegExpImpl::AtomExecRaw(Handle<JSRegExp> regexp,
     index = (needle_content.IsAscii()
              ? (subject_content.IsAscii()
                 ? SearchString(isolate,
-                               subject_content.ToAsciiVector(),
-                               needle_content.ToAsciiVector(),
+                               subject_content.ToOneByteVector(),
+                               needle_content.ToOneByteVector(),
                                index)
                 : SearchString(isolate,
                                subject_content.ToUC16Vector(),
-                               needle_content.ToAsciiVector(),
+                               needle_content.ToOneByteVector(),
                                index))
              : (subject_content.IsAscii()
                 ? SearchString(isolate,
-                               subject_content.ToAsciiVector(),
+                               subject_content.ToOneByteVector(),
                                needle_content.ToUC16Vector(),
                                index)
                 : SearchString(isolate,
@@ -757,68 +758,6 @@ RegExpImpl::GlobalCache::GlobalCache(Handle<JSRegExp> regexp,
       &register_array_[current_match_index_ * registers_per_match_];
   last_match[0] = -1;
   last_match[1] = 0;
-}
-
-
-RegExpImpl::GlobalCache::~GlobalCache() {
-  // Deallocate the register array if we allocated it in the constructor
-  // (as opposed to using the existing jsregexp_static_offsets_vector).
-  if (register_array_size_ > Isolate::kJSRegexpStaticOffsetsVectorSize) {
-    DeleteArray(register_array_);
-  }
-}
-
-
-int32_t* RegExpImpl::GlobalCache::FetchNext() {
-  current_match_index_++;
-  if (current_match_index_ >= num_matches_) {
-    // Current batch of results exhausted.
-    // Fail if last batch was not even fully filled.
-    if (num_matches_ < max_matches_) {
-      num_matches_ = 0;  // Signal failed match.
-      return NULL;
-    }
-
-    int32_t* last_match =
-        &register_array_[(current_match_index_ - 1) * registers_per_match_];
-    int last_end_index = last_match[1];
-
-    if (regexp_->TypeTag() == JSRegExp::ATOM) {
-      num_matches_ = RegExpImpl::AtomExecRaw(regexp_,
-                                             subject_,
-                                             last_end_index,
-                                             register_array_,
-                                             register_array_size_);
-    } else {
-      int last_start_index = last_match[0];
-      if (last_start_index == last_end_index) last_end_index++;
-      if (last_end_index > subject_->length()) {
-        num_matches_ = 0;  // Signal failed match.
-        return NULL;
-      }
-      num_matches_ = RegExpImpl::IrregexpExecRaw(regexp_,
-                                                 subject_,
-                                                 last_end_index,
-                                                 register_array_,
-                                                 register_array_size_);
-    }
-
-    if (num_matches_ <= 0) return NULL;
-    current_match_index_ = 0;
-    return register_array_;
-  } else {
-    return &register_array_[current_match_index_ * registers_per_match_];
-  }
-}
-
-
-int32_t* RegExpImpl::GlobalCache::LastSuccessfulMatch() {
-  int index = current_match_index_ * registers_per_match_;
-  if (num_matches_ == 0) {
-    // After a failed match we shift back by one result.
-    index -= registers_per_match_;
-  }
-  return &register_array_[index];
 }
 
 
@@ -1681,7 +1620,7 @@ static int GetCaseIndependentLetters(Isolate* isolate,
     letters[0] = character;
     length = 1;
   }
-  if (!ascii_subject || character <= String::kMaxAsciiCharCode) {
+  if (!ascii_subject || character <= String::kMaxOneByteCharCode) {
     return length;
   }
   // The standard requires that non-ASCII characters cannot have ASCII
@@ -1732,7 +1671,7 @@ static inline bool EmitAtomNonLetter(Isolate* isolate,
   bool checked = false;
   // We handle the length > 1 case in a later pass.
   if (length == 1) {
-    if (ascii && c > String::kMaxAsciiCharCodeU) {
+    if (ascii && c > String::kMaxOneByteCharCodeU) {
       // Can't match - see above.
       return false;  // Bounds not checked.
     }
@@ -1753,7 +1692,7 @@ static bool ShortCutEmitCharacterPair(RegExpMacroAssembler* macro_assembler,
                                       Label* on_failure) {
   uc16 char_mask;
   if (ascii) {
-    char_mask = String::kMaxAsciiCharCode;
+    char_mask = String::kMaxOneByteCharCode;
   } else {
     char_mask = String::kMaxUtf16CodeUnit;
   }
@@ -2007,7 +1946,7 @@ static void SplitSearchSpace(ZoneList<int>* ranges,
   // range with a single not-taken branch, speeding up this important
   // character range (even non-ASCII charset-based text has spaces and
   // punctuation).
-  if (*border - 1 > String::kMaxAsciiCharCode &&  // ASCII case.
+  if (*border - 1 > String::kMaxOneByteCharCode &&  // ASCII case.
       end_index - start_index > (*new_start_index - start_index) * 2 &&
       last - first > kSize * 2 &&
       binary_chop_index > *new_start_index &&
@@ -2211,7 +2150,7 @@ static void EmitCharClass(RegExpMacroAssembler* macro_assembler,
 
   int max_char;
   if (ascii) {
-    max_char = String::kMaxAsciiCharCode;
+    max_char = String::kMaxOneByteCharCode;
   } else {
     max_char = String::kMaxUtf16CodeUnit;
   }
@@ -2513,7 +2452,7 @@ bool QuickCheckDetails::Rationalize(bool asc) {
   bool found_useful_op = false;
   uint32_t char_mask;
   if (asc) {
-    char_mask = String::kMaxAsciiCharCode;
+    char_mask = String::kMaxOneByteCharCode;
   } else {
     char_mask = String::kMaxUtf16CodeUnit;
   }
@@ -2522,7 +2461,7 @@ bool QuickCheckDetails::Rationalize(bool asc) {
   int char_shift = 0;
   for (int i = 0; i < characters_; i++) {
     Position* pos = &positions_[i];
-    if ((pos->mask & String::kMaxAsciiCharCode) != 0) {
+    if ((pos->mask & String::kMaxOneByteCharCode) != 0) {
       found_useful_op = true;
     }
     mask_ |= (pos->mask & char_mask) << char_shift;
@@ -2565,7 +2504,7 @@ bool RegExpNode::EmitQuickCheck(RegExpCompiler* compiler,
     // load so the value is already masked down.
     uint32_t char_mask;
     if (compiler->ascii()) {
-      char_mask = String::kMaxAsciiCharCode;
+      char_mask = String::kMaxOneByteCharCode;
     } else {
       char_mask = String::kMaxUtf16CodeUnit;
     }
@@ -2575,7 +2514,11 @@ bool RegExpNode::EmitQuickCheck(RegExpCompiler* compiler,
     // For 2-character preloads in ASCII mode or 1-character preloads in
     // TWO_BYTE mode we also use a 16 bit load with zero extend.
     if (details->characters() == 2 && compiler->ascii()) {
-      if ((mask & 0x7f7f) == 0x7f7f) need_mask = false;
+#ifndef ENABLE_LATIN_1
+      if ((mask & 0x7f7f) == 0xffff) need_mask = false;
+#else
+      if ((mask & 0xffff) == 0xffff) need_mask = false;
+#endif
     } else if (details->characters() == 1 && !compiler->ascii()) {
       if ((mask & 0xffff) == 0xffff) need_mask = false;
     } else {
@@ -2617,7 +2560,7 @@ void TextNode::GetQuickCheckDetails(QuickCheckDetails* details,
   int characters = details->characters();
   int char_mask;
   if (compiler->ascii()) {
-    char_mask = String::kMaxAsciiCharCode;
+    char_mask = String::kMaxOneByteCharCode;
   } else {
     char_mask = String::kMaxUtf16CodeUnit;
   }
@@ -2834,24 +2777,47 @@ class VisitMarker {
 };
 
 
-RegExpNode* SeqRegExpNode::FilterASCII(int depth) {
+RegExpNode* SeqRegExpNode::FilterASCII(int depth, bool ignore_case) {
   if (info()->replacement_calculated) return replacement();
   if (depth < 0) return this;
   ASSERT(!info()->visited);
   VisitMarker marker(info());
-  return FilterSuccessor(depth - 1);
+  return FilterSuccessor(depth - 1, ignore_case);
 }
 
 
-RegExpNode* SeqRegExpNode::FilterSuccessor(int depth) {
-  RegExpNode* next = on_success_->FilterASCII(depth - 1);
+RegExpNode* SeqRegExpNode::FilterSuccessor(int depth, bool ignore_case) {
+  RegExpNode* next = on_success_->FilterASCII(depth - 1, ignore_case);
   if (next == NULL) return set_replacement(NULL);
   on_success_ = next;
   return set_replacement(this);
 }
 
 
-RegExpNode* TextNode::FilterASCII(int depth) {
+// We need to check for the following characters: 0x39c 0x3bc 0x178.
+static inline bool RangeContainsLatin1Equivalents(CharacterRange range) {
+#ifdef ENABLE_LATIN_1
+  // TODO(dcarney): this could be a lot more efficient.
+  return range.Contains(0x39c) ||
+      range.Contains(0x3bc) || range.Contains(0x178);
+#else
+  return false;
+#endif
+}
+
+
+#ifdef ENABLE_LATIN_1
+static bool RangesContainLatin1Equivalents(ZoneList<CharacterRange>* ranges) {
+  for (int i = 0; i < ranges->length(); i++) {
+    // TODO(dcarney): this could be a lot more efficient.
+    if (RangeContainsLatin1Equivalents(ranges->at(i))) return true;
+  }
+  return false;
+}
+#endif
+
+
+RegExpNode* TextNode::FilterASCII(int depth, bool ignore_case) {
   if (info()->replacement_calculated) return replacement();
   if (depth < 0) return this;
   ASSERT(!info()->visited);
@@ -2862,12 +2828,23 @@ RegExpNode* TextNode::FilterASCII(int depth) {
     if (elm.type == TextElement::ATOM) {
       Vector<const uc16> quarks = elm.data.u_atom->data();
       for (int j = 0; j < quarks.length(); j++) {
-        // We don't need special handling for case independence
-        // because of the rule that case independence cannot make
-        // a non-ASCII character match an ASCII character.
-        if (quarks[j] > String::kMaxAsciiCharCode) {
+#ifndef ENABLE_LATIN_1
+        if (quarks[j] > String::kMaxOneByteCharCode) {
           return set_replacement(NULL);
         }
+#else
+        uint16_t c = quarks[j];
+        if (c <= String::kMaxOneByteCharCode) continue;
+        if (!ignore_case) return set_replacement(NULL);
+        // Here, we need to check for characters whose upper and lower cases
+        // are outside the Latin-1 range.
+        uint16_t converted = unibrow::Latin1::ConvertNonLatin1ToLatin1(c);
+        // Character is outside Latin-1 completely
+        if (converted == 0) return set_replacement(NULL);
+        // Convert quark to Latin-1 in place.
+        uint16_t* copy = const_cast<uint16_t*>(quarks.start());
+        copy[j] = converted;
+#endif
       }
     } else {
       ASSERT(elm.type == TextElement::CHAR_CLASS);
@@ -2881,39 +2858,48 @@ RegExpNode* TextNode::FilterASCII(int depth) {
       if (cc->is_negated()) {
         if (range_count != 0 &&
             ranges->at(0).from() == 0 &&
-            ranges->at(0).to() >= String::kMaxAsciiCharCode) {
+            ranges->at(0).to() >= String::kMaxOneByteCharCode) {
+#ifdef ENABLE_LATIN_1
+          // This will be handled in a later filter.
+          if (ignore_case && RangesContainLatin1Equivalents(ranges)) continue;
+#endif
           return set_replacement(NULL);
         }
       } else {
         if (range_count == 0 ||
-            ranges->at(0).from() > String::kMaxAsciiCharCode) {
+            ranges->at(0).from() > String::kMaxOneByteCharCode) {
+#ifdef ENABLE_LATIN_1
+          // This will be handled in a later filter.
+          if (ignore_case && RangesContainLatin1Equivalents(ranges)) continue;
+#endif
           return set_replacement(NULL);
         }
       }
     }
   }
-  return FilterSuccessor(depth - 1);
+  return FilterSuccessor(depth - 1, ignore_case);
 }
 
 
-RegExpNode* LoopChoiceNode::FilterASCII(int depth) {
+RegExpNode* LoopChoiceNode::FilterASCII(int depth, bool ignore_case) {
   if (info()->replacement_calculated) return replacement();
   if (depth < 0) return this;
   if (info()->visited) return this;
   {
     VisitMarker marker(info());
 
-    RegExpNode* continue_replacement = continue_node_->FilterASCII(depth - 1);
+    RegExpNode* continue_replacement =
+        continue_node_->FilterASCII(depth - 1, ignore_case);
     // If we can't continue after the loop then there is no sense in doing the
     // loop.
     if (continue_replacement == NULL) return set_replacement(NULL);
   }
 
-  return ChoiceNode::FilterASCII(depth - 1);
+  return ChoiceNode::FilterASCII(depth - 1, ignore_case);
 }
 
 
-RegExpNode* ChoiceNode::FilterASCII(int depth) {
+RegExpNode* ChoiceNode::FilterASCII(int depth, bool ignore_case) {
   if (info()->replacement_calculated) return replacement();
   if (depth < 0) return this;
   if (info()->visited) return this;
@@ -2932,7 +2918,8 @@ RegExpNode* ChoiceNode::FilterASCII(int depth) {
   RegExpNode* survivor = NULL;
   for (int i = 0; i < choice_count; i++) {
     GuardedAlternative alternative = alternatives_->at(i);
-    RegExpNode* replacement = alternative.node()->FilterASCII(depth - 1);
+    RegExpNode* replacement =
+        alternative.node()->FilterASCII(depth - 1, ignore_case);
     ASSERT(replacement != this);  // No missing EMPTY_MATCH_CHECK.
     if (replacement != NULL) {
       alternatives_->at(i).set_node(replacement);
@@ -2952,7 +2939,7 @@ RegExpNode* ChoiceNode::FilterASCII(int depth) {
       new(zone()) ZoneList<GuardedAlternative>(surviving, zone());
   for (int i = 0; i < choice_count; i++) {
     RegExpNode* replacement =
-        alternatives_->at(i).node()->FilterASCII(depth - 1);
+        alternatives_->at(i).node()->FilterASCII(depth - 1, ignore_case);
     if (replacement != NULL) {
       alternatives_->at(i).set_node(replacement);
       new_alternatives->Add(alternatives_->at(i), zone());
@@ -2963,7 +2950,8 @@ RegExpNode* ChoiceNode::FilterASCII(int depth) {
 }
 
 
-RegExpNode* NegativeLookaheadChoiceNode::FilterASCII(int depth) {
+RegExpNode* NegativeLookaheadChoiceNode::FilterASCII(int depth,
+                                                     bool ignore_case) {
   if (info()->replacement_calculated) return replacement();
   if (depth < 0) return this;
   if (info()->visited) return this;
@@ -2971,12 +2959,12 @@ RegExpNode* NegativeLookaheadChoiceNode::FilterASCII(int depth) {
   // Alternative 0 is the negative lookahead, alternative 1 is what comes
   // afterwards.
   RegExpNode* node = alternatives_->at(1).node();
-  RegExpNode* replacement = node->FilterASCII(depth - 1);
+  RegExpNode* replacement = node->FilterASCII(depth - 1, ignore_case);
   if (replacement == NULL) return set_replacement(NULL);
   alternatives_->at(1).set_node(replacement);
 
   RegExpNode* neg_node = alternatives_->at(0).node();
-  RegExpNode* neg_replacement = neg_node->FilterASCII(depth - 1);
+  RegExpNode* neg_replacement = neg_node->FilterASCII(depth - 1, ignore_case);
   // If the negative lookahead is always going to fail then
   // we don't need to check it.
   if (neg_replacement == NULL) return set_replacement(replacement);
@@ -3299,7 +3287,7 @@ void TextNode::TextEmitPass(RegExpCompiler* compiler,
         switch (pass) {
           case NON_ASCII_MATCH:
             ASSERT(ascii);
-            if (quarks[j] > String::kMaxAsciiCharCode) {
+            if (quarks[j] > String::kMaxOneByteCharCode) {
               assembler->GoTo(backtrack);
               return;
             }
@@ -3498,7 +3486,7 @@ RegExpNode* TextNode::GetSuccessorOfOmnivorousTextNode(
   if (ranges->length() != 1) return NULL;
   uint32_t max_char;
   if (compiler->ascii()) {
-    max_char = String::kMaxAsciiCharCode;
+    max_char = String::kMaxOneByteCharCode;
   } else {
     max_char = String::kMaxUtf16CodeUnit;
   }
@@ -3698,7 +3686,7 @@ BoyerMooreLookahead::BoyerMooreLookahead(
     : length_(length),
       compiler_(compiler) {
   if (compiler->ascii()) {
-    max_char_ = String::kMaxAsciiCharCode;
+    max_char_ = String::kMaxOneByteCharCode;
   } else {
     max_char_ = String::kMaxUtf16CodeUnit;
   }
@@ -5336,9 +5324,9 @@ void CharacterRange::AddCaseEquivalents(ZoneList<CharacterRange>* ranges,
   Isolate* isolate = Isolate::Current();
   uc16 bottom = from();
   uc16 top = to();
-  if (is_ascii) {
-    if (bottom > String::kMaxAsciiCharCode) return;
-    if (top > String::kMaxAsciiCharCode) top = String::kMaxAsciiCharCode;
+  if (is_ascii && !RangeContainsLatin1Equivalents(*this)) {
+    if (bottom > String::kMaxOneByteCharCode) return;
+    if (top > String::kMaxOneByteCharCode) top = String::kMaxOneByteCharCode;
   }
   unibrow::uchar chars[unibrow::Ecma262UnCanonicalize::kMaxWidth];
   if (top == bottom) {
@@ -5885,7 +5873,7 @@ void TextNode::FillInBMInfo(int initial_offset,
           int length = GetCaseIndependentLetters(
               ISOLATE,
               character,
-              bm->max_char() == String::kMaxAsciiCharCode,
+              bm->max_char() == String::kMaxOneByteCharCode,
               chars);
           for (int j = 0; j < length; j++) {
             bm->Set(offset, chars[j]);
@@ -6099,10 +6087,12 @@ RegExpEngine::CompilationResult RegExpEngine::Compile(
     }
   }
   if (is_ascii) {
-    node = node->FilterASCII(RegExpCompiler::kMaxRecursion);
+    node = node->FilterASCII(RegExpCompiler::kMaxRecursion, ignore_case);
     // Do it again to propagate the new nodes to places where they were not
     // put because they had not been calculated yet.
-    if (node != NULL) node = node->FilterASCII(RegExpCompiler::kMaxRecursion);
+    if (node != NULL) {
+      node = node->FilterASCII(RegExpCompiler::kMaxRecursion, ignore_case);
+    }
   }
 
   if (node == NULL) node = new(zone) EndNode(EndNode::BACKTRACK, zone);

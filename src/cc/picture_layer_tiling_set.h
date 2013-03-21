@@ -14,34 +14,55 @@ namespace cc {
 
 class CC_EXPORT PictureLayerTilingSet {
  public:
-  PictureLayerTilingSet(PictureLayerTilingClient* client);
+  explicit PictureLayerTilingSet(PictureLayerTilingClient* client);
   ~PictureLayerTilingSet();
 
-  // Shallow copies all data (except client) from other.
+  void SetClient(PictureLayerTilingClient* client);
+
+  // Shallow copies all data (except client and bounds from other).
   void CloneAll(
      const PictureLayerTilingSet& other,
      const Region& invalidation);
   void Clone(const PictureLayerTiling* tiling, const Region& invalidation);
 
-  // TODO(enne): Remove this once syncing happens to the pending tree.
-  void Invalidate(const Region& invalidation);
-
   void SetLayerBounds(gfx::Size layer_bounds);
   gfx::Size LayerBounds() const;
 
-  const PictureLayerTiling* AddTiling(
-      float contents_scale,
-      gfx::Size tile_size);
+  PictureLayerTiling* AddTiling(float contents_scale);
   size_t num_tilings() const { return tilings_.size(); }
+  PictureLayerTiling* tiling_at(size_t idx) { return tilings_[idx]; }
+  const PictureLayerTiling* tiling_at(size_t idx) const {
+    return tilings_[idx];
+  }
 
-  void Reset();
+  // Remove all tilings.
+  void RemoveAllTilings();
 
-  void UpdateTilePriorities(const gfx::Size& device_viewport,
-                            float layer_content_scale_x,
-                            float layer_content_scale_y,
-                            const gfx::Transform& last_screen_transform,
-                            const gfx::Transform& current_screen_transform,
-                            double time_delta);
+  // Remove one tiling.
+  void Remove(PictureLayerTiling* tiling);
+
+  // Remove all tiles; keep all tilings.
+  void RemoveAllTiles();
+
+  // For all tilings, create any tile that intersects |layer_rect|.
+  void CreateTilesFromLayerRect(gfx::Rect layer_rect);
+
+  void UpdateTilePriorities(
+      WhichTree tree,
+      gfx::Size device_viewport,
+      gfx::Rect viewport_in_content_space,
+      gfx::Size last_layer_bounds,
+      gfx::Size current_layer_bounds,
+      gfx::Size last_layer_content_bounds,
+      gfx::Size current_layer_content_bounds,
+      float last_layer_contents_scale,
+      float current_layer_contents_scale,
+      const gfx::Transform& last_screen_transform,
+      const gfx::Transform& current_screen_transform,
+      int current_source_frame_number,
+      double current_frame_time);
+
+  void DidBecomeActive();
 
   // For a given rect, iterates through tiles that can fill it.  If no
   // set of tiles with resources can fill the rect, then it will iterate
@@ -50,7 +71,11 @@ class CC_EXPORT PictureLayerTilingSet {
   // exactly fill rect with no overlap.
   class CC_EXPORT Iterator {
    public:
-    Iterator(PictureLayerTilingSet* set, float contents_scale, gfx::Rect rect);
+    Iterator(const PictureLayerTilingSet* set,
+      float contents_scale,
+      gfx::Rect content_rect,
+      float ideal_contents_scale,
+      PictureLayerTiling::LayerDeviceAlignment layerDeviceAlignment);
     ~Iterator();
 
     // Visible rect (no borders), always in the space of rect,
@@ -67,11 +92,18 @@ class CC_EXPORT PictureLayerTilingSet {
     Iterator& operator++();
     operator bool() const;
 
+    PictureLayerTiling* CurrentTiling();
+
    private:
-    PictureLayerTilingSet* set_;
+    int NextTiling() const;
+
+    const PictureLayerTilingSet* set_;
     float contents_scale_;
+    float ideal_contents_scale_;
+    PictureLayerTiling::LayerDeviceAlignment layer_device_alignment_;
     PictureLayerTiling::Iterator tiling_iter_;
     int current_tiling_;
+    int ideal_tiling_;
 
     Region current_region_;
     Region missing_region_;
@@ -82,7 +114,6 @@ class CC_EXPORT PictureLayerTilingSet {
   PictureLayerTilingClient* client_;
   gfx::Size layer_bounds_;
   ScopedPtrVector<PictureLayerTiling> tilings_;
-  Region invalidation_;
 
   friend class Iterator;
 };

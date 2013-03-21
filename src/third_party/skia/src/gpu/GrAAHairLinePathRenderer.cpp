@@ -502,7 +502,7 @@ bool GrAAHairLinePathRenderer::createGeom(
     target->getClip()->getConservativeBounds(drawState.getRenderTarget(),
                                              &devClipBounds);
 
-    GrVertexLayout layout = GrDrawTarget::kEdge_VertexLayoutBit;
+    GrVertexLayout layout = GrDrawState::kEdge_VertexLayoutBit;
     SkMatrix viewM = drawState.getViewMatrix();
 
     PREALLOC_PTARRAY(128) lines;
@@ -514,9 +514,10 @@ bool GrAAHairLinePathRenderer::createGeom(
     *lineCnt = lines.count() / 2;
     int vertCnt = kVertsPerLineSeg * *lineCnt + kVertsPerQuad * *quadCnt;
 
-    GrAssert(sizeof(Vertex) == GrDrawTarget::VertexSize(layout));
+    target->drawState()->setVertexLayout(layout);
+    GrAssert(sizeof(Vertex) == target->getDrawState().getVertexSize());
 
-    if (!arg->set(target, layout, vertCnt, 0)) {
+    if (!arg->set(target, vertCnt, 0)) {
         return false;
     }
 
@@ -547,10 +548,10 @@ bool GrAAHairLinePathRenderer::createGeom(
 }
 
 bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
-                                           const SkStroke& stroke,
+                                           const SkStrokeRec& stroke,
                                            const GrDrawTarget* target,
                                            bool antiAlias) const {
-    if ((0 != stroke.getWidthIfStroked()) || !antiAlias) {
+    if (!stroke.isHairlineStyle() || !antiAlias) {
         return false;
     }
 
@@ -564,7 +565,7 @@ bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
 }
 
 bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
-                                          const SkStroke&,
+                                          const SkStrokeRec&,
                                           GrDrawTarget* target,
                                           bool antiAlias) {
 
@@ -624,4 +625,3 @@ bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
     drawState->setVertexEdgeType(oldEdgeType);
     return true;
 }
-

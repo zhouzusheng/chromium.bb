@@ -7,16 +7,18 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebAnimation.h"
+#include "webkit/compositor_bindings/webkit_compositor_bindings_export.h"
 
 namespace cc {
-class ActiveAnimation;
+class Animation;
 }
 
 namespace WebKit {
 
 class WebAnimationImpl : public WebAnimation {
 public:
-    WebAnimationImpl(const WebAnimationCurve&, TargetProperty, int animationId, int groupId = 0);
+    WEBKIT_COMPOSITOR_BINDINGS_EXPORT WebAnimationImpl(
+        const WebAnimationCurve&, TargetProperty, int animationId, int groupId = 0);
     virtual ~WebAnimationImpl();
 
     // WebAnimation implementation
@@ -31,10 +33,10 @@ public:
     virtual bool alternatesDirection() const OVERRIDE;
     virtual void setAlternatesDirection(bool) OVERRIDE;
 
-    scoped_ptr<cc::ActiveAnimation> cloneToAnimation();
+    scoped_ptr<cc::Animation> cloneToAnimation();
 
 private:
-    scoped_ptr<cc::ActiveAnimation> m_animation;
+    scoped_ptr<cc::Animation> m_animation;
 };
 
 }

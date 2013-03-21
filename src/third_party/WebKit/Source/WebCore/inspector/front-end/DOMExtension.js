@@ -144,6 +144,9 @@ Node.prototype.rangeBoundaryForOffset = function(offset)
     return { container: node, offset: offset };
 }
 
+/**
+ * @param {string} className
+ */
 Element.prototype.removeStyleClass = function(className)
 {
     this.classList.remove(className);
@@ -156,14 +159,33 @@ Element.prototype.removeMatchingStyleClasses = function(classNameRegex)
         this.className = this.className.replace(regex, " ");
 }
 
+/**
+ * @param {string} className
+ */
 Element.prototype.addStyleClass = function(className)
 {
     this.classList.add(className);
 }
 
+/**
+ * @param {string} className
+ * @return {boolean}
+ */
 Element.prototype.hasStyleClass = function(className)
 {
     return this.classList.contains(className);
+}
+
+/**
+ * @param {string} className
+ * @param {*} enable
+ */
+Element.prototype.enableStyleClass = function(className, enable)
+{
+    if (enable)
+        this.addStyleClass(className);
+    else
+        this.removeStyleClass(className);
 }
 
 /**
@@ -189,11 +211,14 @@ Element.prototype.isScrolledToBottom = function()
     return this.scrollTop + this.clientHeight === this.scrollHeight;
 }
 
-Element.prototype.remove = function()
+Element.prototype.removeSelf = function()
 {
     if (this.parentElement)
         this.parentElement.removeChild(this);
 }
+
+CharacterData.prototype.removeSelf = Element.prototype.removeSelf;
+DocumentType.prototype.removeSelf = Element.prototype.removeSelf;
 
 /**
  * @param {Node} fromNode
@@ -204,7 +229,7 @@ function removeSubsequentNodes(fromNode, toNode)
     for (var node = fromNode; node && node !== toNode; ) {
         var nodeToRemove = node;
         node = node.nextSibling;
-        nodeToRemove.remove();
+        nodeToRemove.removeSelf();
     }
 }
 
@@ -246,9 +271,13 @@ Node.prototype.enclosingNodeOrSelfWithNodeName = function(nodeName)
     return this.enclosingNodeOrSelfWithNodeNameInArray([nodeName]);
 }
 
-Node.prototype.enclosingNodeOrSelfWithClass = function(className)
+/**
+ * @param {string} className
+ * @param {Element=} stayWithin
+ */
+Node.prototype.enclosingNodeOrSelfWithClass = function(className, stayWithin)
 {
-    for (var node = this; node && node !== this.ownerDocument; node = node.parentNode)
+    for (var node = this; node && node !== stayWithin && node !== this.ownerDocument; node = node.parentNode)
         if (node.nodeType === Node.ELEMENT_NODE && node.hasStyleClass(className))
             return node;
     return null;
@@ -558,7 +587,7 @@ function NonLeakingMutationObserver(handler)
 {
     this._observer = new WebKitMutationObserver(handler);
     NonLeakingMutationObserver._instances.push(this);
-    if (!window.testRunner && !window.isUnderTest && !NonLeakingMutationObserver._unloadListener) {
+    if (!NonLeakingMutationObserver._unloadListener) {
         NonLeakingMutationObserver._unloadListener = function() {
             while (NonLeakingMutationObserver._instances.length)
                 NonLeakingMutationObserver._instances[NonLeakingMutationObserver._instances.length - 1].disconnect();

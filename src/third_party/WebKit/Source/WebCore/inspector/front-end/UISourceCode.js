@@ -33,16 +33,19 @@
  * @constructor
  * @extends {WebInspector.Object}
  * @implements {WebInspector.ContentProvider}
- * @param {WebInspector.Workspace} workspace
+ * @param {WebInspector.Project} project
+ * @param {string} uri
  * @param {string} url
  * @param {WebInspector.ResourceType} contentType
  * @param {boolean} isEditable
  */
-WebInspector.UISourceCode = function(workspace, url, contentType, isEditable)
+WebInspector.UISourceCode = function(project, uri, originURL, url, contentType, isEditable)
 {
-    this._workspace = workspace;
+    this._project = project;
+    this._uri = uri;
+    this._originURL = originURL;
     this._url = url;
-    this._parsedURL = new WebInspector.ParsedURL(url);
+    this._parsedURL = new WebInspector.ParsedURL(originURL);
     this._contentType = contentType;
     this._isEditable = isEditable;
     /**
@@ -88,12 +91,32 @@ WebInspector.UISourceCode.prototype = {
     },
 
     /**
-     * @param {string} url
+     * @return {string}
      */
-    urlChanged: function(url)
+    uri: function()
     {
-        this._url = url;
-        this._parsedURL = new WebInspector.ParsedURL(this._url);
+        return this._uri;
+    },
+
+    /**
+     * @return {string}
+     */
+    originURL: function()
+    {
+        return this._originURL;
+    },
+
+    /**
+     * @param {string} newName
+     */
+    rename: function(newName)
+    {
+        if (!this._path.length)
+            return;
+        this._path[this._path.length - 1] = newName;
+        this._url = newName;
+        this._originURL = newName;
+        this._parsedURL = new WebInspector.ParsedURL(url);
         this.dispatchEventToListeners(WebInspector.UISourceCode.Events.TitleChanged, null);
     },
 
@@ -110,7 +133,7 @@ WebInspector.UISourceCode.prototype = {
      */
     contentURL: function()
     {
-        return this._url;
+        return this.originURL();
     },
 
     /**
@@ -154,6 +177,14 @@ WebInspector.UISourceCode.prototype = {
     },
 
     /**
+     * @return {WebInspector.Project}
+     */
+    project: function()
+    {
+        return this._project;
+    },
+
+    /**
      * @param {function(?string,boolean,string)} callback
      */
     requestContent: function(callback)
@@ -164,7 +195,7 @@ WebInspector.UISourceCode.prototype = {
         }
         this._requestContentCallbacks.push(callback);
         if (this._requestContentCallbacks.length === 1)
-            this._workspace.requestFileContent(this, this._fireContentAvailable.bind(this));
+            this._project.requestFileContent(this, this._fireContentAvailable.bind(this));
     },
 
     /**
@@ -172,7 +203,7 @@ WebInspector.UISourceCode.prototype = {
      */
     requestOriginalContent: function(callback)
     {
-        this._workspace.requestFileContent(this, callback);
+        this._project.requestFileContent(this, callback);
     },
 
     /**
@@ -193,11 +224,11 @@ WebInspector.UISourceCode.prototype = {
         var oldWorkingCopy = this._workingCopy;
         delete this._workingCopy;
         this.dispatchEventToListeners(WebInspector.UISourceCode.Events.WorkingCopyCommitted, {oldWorkingCopy: oldWorkingCopy, workingCopy: this.workingCopy()});
-        this._workspace.dispatchEventToListeners(WebInspector.Workspace.Events.UISourceCodeContentCommitted, { uiSourceCode: this, content: this._content });
         if (this._url && WebInspector.fileManager.isURLSaved(this._url)) {
             WebInspector.fileManager.save(this._url, this._content, false);
             WebInspector.fileManager.close(this._url);
         }
+        this._project.setFileContent(this, this._content, function() { });
     },
 
     /**
@@ -394,7 +425,7 @@ WebInspector.UISourceCode.prototype = {
             return;
         }
 
-        this._workspace.searchInFileContent(this, query, caseSensitive, isRegex, callback);
+        this._project.searchInFileContent(this, query, caseSensitive, isRegex, callback);
     },
 
     /**
@@ -595,8 +626,6 @@ WebInspector.UISourceCodeProvider = function()
 
 WebInspector.UISourceCodeProvider.Events = {
     UISourceCodeAdded: "UISourceCodeAdded",
-    TemporaryUISourceCodeAdded: "TemporaryUISourceCodeAdded",
-    TemporaryUISourceCodeRemoved: "TemporaryUISourceCodeRemoved",
     UISourceCodeRemoved: "UISourceCodeRemoved"
 }
 
@@ -811,7 +840,7 @@ WebInspector.Revision.prototype = {
      */
     contentURL: function()
     {
-        return this._uiSourceCode.url;
+        return this._uiSourceCode.originURL();
     },
 
     /**

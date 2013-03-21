@@ -1,4 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
+// Copyright 2013 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -44,8 +44,18 @@ DeoptimizerData::DeoptimizerData() {
   eager_deoptimization_entry_code_entries_ = -1;
   lazy_deoptimization_entry_code_entries_ = -1;
   size_t deopt_table_size = Deoptimizer::GetMaxDeoptTableSize();
-  eager_deoptimization_entry_code_ = new VirtualMemory(deopt_table_size);
-  lazy_deoptimization_entry_code_ = new VirtualMemory(deopt_table_size);
+  MemoryAllocator* allocator = Isolate::Current()->memory_allocator();
+  size_t initial_commit_size = OS::CommitPageSize();
+  eager_deoptimization_entry_code_ =
+      allocator->AllocateChunk(deopt_table_size,
+                               initial_commit_size,
+                               EXECUTABLE,
+                               NULL);
+  lazy_deoptimization_entry_code_ =
+       allocator->AllocateChunk(deopt_table_size,
+                               initial_commit_size,
+                               EXECUTABLE,
+                               NULL);
   current_ = NULL;
   deoptimizing_code_list_ = NULL;
 #ifdef ENABLE_DEBUGGER_SUPPORT
@@ -55,9 +65,11 @@ DeoptimizerData::DeoptimizerData() {
 
 
 DeoptimizerData::~DeoptimizerData() {
-  delete eager_deoptimization_entry_code_;
+  Isolate::Current()->memory_allocator()->Free(
+      eager_deoptimization_entry_code_);
   eager_deoptimization_entry_code_ = NULL;
-  delete lazy_deoptimization_entry_code_;
+  Isolate::Current()->memory_allocator()->Free(
+      lazy_deoptimization_entry_code_);
   lazy_deoptimization_entry_code_ = NULL;
 
   DeoptimizingCodeListNode* current = deoptimizing_code_list_;
@@ -77,6 +89,36 @@ void DeoptimizerData::Iterate(ObjectVisitor* v) {
   }
 }
 #endif
+
+
+Code* DeoptimizerData::FindDeoptimizingCode(Address addr) {
+  for (DeoptimizingCodeListNode* node = deoptimizing_code_list_;
+       node != NULL;
+       node = node->next()) {
+    if (node->code()->contains(addr)) return *node->code();
+  }
+  return NULL;
+}
+
+
+void DeoptimizerData::RemoveDeoptimizingCode(Code* code) {
+  for (DeoptimizingCodeListNode *prev = NULL, *cur = deoptimizing_code_list_;
+       cur != NULL;
+       prev = cur, cur = cur->next()) {
+    if (*cur->code() == code) {
+      if (prev == NULL) {
+        deoptimizing_code_list_ = cur->next();
+      } else {
+        prev->set_next(cur->next());
+      }
+      delete cur;
+      return;
+    }
+  }
+  // Deoptimizing code is removed through weak callback. Each object is expected
+  // to be removed once and only once.
+  UNREACHABLE();
+}
 
 
 // We rely on this function not causing a GC.  It is called from generated code
@@ -247,45 +289,6 @@ void Deoptimizer::GenerateDeoptimizationEntries(MacroAssembler* masm,
 }
 
 
-class DeoptimizingVisitor : public OptimizedFunctionVisitor {
- public:
-  virtual void EnterContext(Context* context) {
-    if (FLAG_trace_deopt) {
-      PrintF("[deoptimize context: %" V8PRIxPTR "]\n",
-             reinterpret_cast<intptr_t>(context));
-    }
-  }
-
-  virtual void VisitFunction(JSFunction* function) {
-    Deoptimizer::DeoptimizeFunction(function);
-  }
-
-  virtual void LeaveContext(Context* context) {
-    context->ClearOptimizedFunctions();
-  }
-};
-
-
-void Deoptimizer::DeoptimizeAll() {
-  AssertNoAllocation no_allocation;
-
-  if (FLAG_trace_deopt) {
-    PrintF("[deoptimize all contexts]\n");
-  }
-
-  DeoptimizingVisitor visitor;
-  VisitAllOptimizedFunctions(&visitor);
-}
-
-
-void Deoptimizer::DeoptimizeGlobalObject(JSObject* object) {
-  AssertNoAllocation no_allocation;
-
-  DeoptimizingVisitor visitor;
-  VisitAllOptimizedFunctionsForGlobalObject(object, &visitor);
-}
-
-
 void Deoptimizer::VisitAllOptimizedFunctionsForContext(
     Context* context, OptimizedFunctionVisitor* visitor) {
   Isolate* isolate = context->GetIsolate();
@@ -315,22 +318,6 @@ void Deoptimizer::VisitAllOptimizedFunctionsForContext(
 }
 
 
-void Deoptimizer::VisitAllOptimizedFunctionsForGlobalObject(
-    JSObject* object, OptimizedFunctionVisitor* visitor) {
-  AssertNoAllocation no_allocation;
-
-  if (object->IsJSGlobalProxy()) {
-    Object* proto = object->GetPrototype();
-    ASSERT(proto->IsJSGlobalObject());
-    VisitAllOptimizedFunctionsForContext(
-        GlobalObject::cast(proto)->native_context(), visitor);
-  } else if (object->IsGlobalObject()) {
-    VisitAllOptimizedFunctionsForContext(
-        GlobalObject::cast(object)->native_context(), visitor);
-  }
-}
-
-
 void Deoptimizer::VisitAllOptimizedFunctions(
     OptimizedFunctionVisitor* visitor) {
   AssertNoAllocation no_allocation;
@@ -338,28 +325,162 @@ void Deoptimizer::VisitAllOptimizedFunctions(
   // Run through the list of all native contexts and deoptimize.
   Object* context = Isolate::Current()->heap()->native_contexts_list();
   while (!context->IsUndefined()) {
-    // GC can happen when the context is not fully initialized,
-    // so the global field of the context can be undefined.
-    Object* global = Context::cast(context)->get(Context::GLOBAL_OBJECT_INDEX);
-    if (!global->IsUndefined()) {
-      VisitAllOptimizedFunctionsForGlobalObject(JSObject::cast(global),
-                                                visitor);
-    }
+    VisitAllOptimizedFunctionsForContext(Context::cast(context), visitor);
     context = Context::cast(context)->get(Context::NEXT_CONTEXT_LINK);
   }
 }
 
 
-void Deoptimizer::HandleWeakDeoptimizedCode(
-    v8::Persistent<v8::Value> obj, void* data) {
+// Removes the functions selected by the given filter from the optimized
+// function list of the given context and partitions the removed functions
+// into one or more lists such that all functions in a list share the same
+// code. The head of each list is written in the deoptimizing_functions field
+// of the corresponding code object.
+// The found code objects are returned in the given zone list.
+static void PartitionOptimizedFunctions(Context* context,
+                                        OptimizedFunctionFilter* filter,
+                                        ZoneList<Code*>* partitions,
+                                        Zone* zone,
+                                        Object* undefined) {
+  AssertNoAllocation no_allocation;
+  Object* current = context->get(Context::OPTIMIZED_FUNCTIONS_LIST);
+  Object* remainder_head = undefined;
+  Object* remainder_tail = undefined;
+  ASSERT_EQ(0, partitions->length());
+  while (current != undefined) {
+    JSFunction* function = JSFunction::cast(current);
+    current = function->next_function_link();
+    if (filter->TakeFunction(function)) {
+      Code* code = function->code();
+      if (code->deoptimizing_functions() == undefined) {
+        partitions->Add(code, zone);
+      } else {
+        ASSERT(partitions->Contains(code));
+      }
+      function->set_next_function_link(code->deoptimizing_functions());
+      code->set_deoptimizing_functions(function);
+    } else {
+      if (remainder_head == undefined) {
+        remainder_head = function;
+      } else {
+        JSFunction::cast(remainder_tail)->set_next_function_link(function);
+      }
+      remainder_tail = function;
+    }
+  }
+  if (remainder_tail != undefined) {
+    JSFunction::cast(remainder_tail)->set_next_function_link(undefined);
+  }
+  context->set(Context::OPTIMIZED_FUNCTIONS_LIST, remainder_head);
+}
+
+
+class DeoptimizeAllFilter : public OptimizedFunctionFilter {
+ public:
+  virtual bool TakeFunction(JSFunction* function) {
+    return true;
+  }
+};
+
+
+class DeoptimizeWithMatchingCodeFilter : public OptimizedFunctionFilter {
+ public:
+  explicit DeoptimizeWithMatchingCodeFilter(Code* code) : code_(code) {}
+  virtual bool TakeFunction(JSFunction* function) {
+    return function->code() == code_;
+  }
+ private:
+  Code* code_;
+};
+
+
+void Deoptimizer::DeoptimizeAll() {
+  AssertNoAllocation no_allocation;
+
+  if (FLAG_trace_deopt) {
+    PrintF("[deoptimize all contexts]\n");
+  }
+
+  DeoptimizeAllFilter filter;
+  DeoptimizeAllFunctionsWith(&filter);
+}
+
+
+void Deoptimizer::DeoptimizeGlobalObject(JSObject* object) {
+  AssertNoAllocation no_allocation;
+  DeoptimizeAllFilter filter;
+  if (object->IsJSGlobalProxy()) {
+    Object* proto = object->GetPrototype();
+    ASSERT(proto->IsJSGlobalObject());
+    DeoptimizeAllFunctionsForContext(
+        GlobalObject::cast(proto)->native_context(), &filter);
+  } else if (object->IsGlobalObject()) {
+    DeoptimizeAllFunctionsForContext(
+        GlobalObject::cast(object)->native_context(), &filter);
+  }
+}
+
+
+void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
+  if (!function->IsOptimized()) return;
+  Code* code = function->code();
+  Context* context = function->context()->native_context();
+  Isolate* isolate = context->GetIsolate();
+  Object* undefined = isolate->heap()->undefined_value();
+  Zone* zone = isolate->runtime_zone();
+  ZoneScope zone_scope(zone, DELETE_ON_EXIT);
+  ZoneList<Code*> codes(1, zone);
+  DeoptimizeWithMatchingCodeFilter filter(code);
+  PartitionOptimizedFunctions(context, &filter, &codes, zone, undefined);
+  ASSERT_EQ(1, codes.length());
+  DeoptimizeFunctionWithPreparedFunctionList(
+      JSFunction::cast(codes.at(0)->deoptimizing_functions()));
+  codes.at(0)->set_deoptimizing_functions(undefined);
+}
+
+
+void Deoptimizer::DeoptimizeAllFunctionsForContext(
+    Context* context, OptimizedFunctionFilter* filter) {
+  ASSERT(context->IsNativeContext());
+  Isolate* isolate = context->GetIsolate();
+  Object* undefined = isolate->heap()->undefined_value();
+  Zone* zone = isolate->runtime_zone();
+  ZoneScope zone_scope(zone, DELETE_ON_EXIT);
+  ZoneList<Code*> codes(1, zone);
+  PartitionOptimizedFunctions(context, filter, &codes, zone, undefined);
+  for (int i = 0; i < codes.length(); ++i) {
+    DeoptimizeFunctionWithPreparedFunctionList(
+        JSFunction::cast(codes.at(i)->deoptimizing_functions()));
+    codes.at(i)->set_deoptimizing_functions(undefined);
+  }
+}
+
+
+void Deoptimizer::DeoptimizeAllFunctionsWith(OptimizedFunctionFilter* filter) {
+  AssertNoAllocation no_allocation;
+
+  // Run through the list of all native contexts and deoptimize.
+  Object* context = Isolate::Current()->heap()->native_contexts_list();
+  while (!context->IsUndefined()) {
+    DeoptimizeAllFunctionsForContext(Context::cast(context), filter);
+    context = Context::cast(context)->get(Context::NEXT_CONTEXT_LINK);
+  }
+}
+
+
+void Deoptimizer::HandleWeakDeoptimizedCode(v8::Isolate* isolate,
+                                            v8::Persistent<v8::Value> obj,
+                                            void* parameter) {
   DeoptimizingCodeListNode* node =
-      reinterpret_cast<DeoptimizingCodeListNode*>(data);
-  RemoveDeoptimizingCode(*node->code());
+      reinterpret_cast<DeoptimizingCodeListNode*>(parameter);
+  DeoptimizerData* data =
+      reinterpret_cast<Isolate*>(isolate)->deoptimizer_data();
+  data->RemoveDeoptimizingCode(*node->code());
 #ifdef DEBUG
-  node = Isolate::Current()->deoptimizer_data()->deoptimizing_code_list_;
-  while (node != NULL) {
-    ASSERT(node != reinterpret_cast<DeoptimizingCodeListNode*>(data));
-    node = node->next();
+  for (DeoptimizingCodeListNode* current = data->deoptimizing_code_list_;
+       current != NULL;
+       current = current->next()) {
+    ASSERT(current != node);
   }
 #endif
 }
@@ -367,6 +488,38 @@ void Deoptimizer::HandleWeakDeoptimizedCode(
 
 void Deoptimizer::ComputeOutputFrames(Deoptimizer* deoptimizer) {
   deoptimizer->DoComputeOutputFrames();
+}
+
+
+bool Deoptimizer::TraceEnabledFor(BailoutType deopt_type,
+                                  StackFrame::Type frame_type) {
+  switch (deopt_type) {
+    case EAGER:
+    case LAZY:
+    case DEBUGGER:
+      return (frame_type == StackFrame::STUB)
+          ? FLAG_trace_stub_failures
+          : FLAG_trace_deopt;
+    case OSR:
+      return FLAG_trace_osr;
+  }
+  UNREACHABLE();
+  return false;
+}
+
+
+const char* Deoptimizer::MessageFor(BailoutType type) {
+  switch (type) {
+    case EAGER:
+    case LAZY:
+      return "DEOPT";
+    case DEBUGGER:
+      return "DEOPT FOR DEBUGGER";
+    case OSR:
+      return "OSR";
+  }
+  UNREACHABLE();
+  return NULL;
 }
 
 
@@ -390,69 +543,77 @@ Deoptimizer::Deoptimizer(Isolate* isolate,
       output_(NULL),
       deferred_arguments_objects_values_(0),
       deferred_arguments_objects_(0),
-      deferred_heap_numbers_(0) {
-  if (FLAG_trace_deopt && type != OSR) {
-    if (type == DEBUGGER) {
-      PrintF("**** DEOPT FOR DEBUGGER: ");
-    } else {
-      PrintF("**** DEOPT: ");
-    }
-    function->PrintName();
-    PrintF(" at bailout #%u, address 0x%" V8PRIxPTR ", frame size %d\n",
-           bailout_id,
-           reinterpret_cast<intptr_t>(from),
-           fp_to_sp_delta - (2 * kPointerSize));
-  } else if (FLAG_trace_osr && type == OSR) {
-    PrintF("**** OSR: ");
-    function->PrintName();
-    PrintF(" at ast id #%u, address 0x%" V8PRIxPTR ", frame size %d\n",
-           bailout_id,
-           reinterpret_cast<intptr_t>(from),
-           fp_to_sp_delta - (2 * kPointerSize));
+      deferred_heap_numbers_(0),
+      trace_(false) {
+  // For COMPILED_STUBs called from builtins, the function pointer is a SMI
+  // indicating an internal frame.
+  if (function->IsSmi()) {
+    function = NULL;
   }
-  function->shared()->increment_deopt_count();
-  // Find the optimized code.
-  if (type == EAGER) {
-    ASSERT(from == NULL);
-    optimized_code_ = function_->code();
-    if (FLAG_trace_deopt && FLAG_code_comments) {
-      // Print instruction associated with this bailout.
-      const char* last_comment = NULL;
-      int mask = RelocInfo::ModeMask(RelocInfo::COMMENT)
-          | RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
-      for (RelocIterator it(optimized_code_, mask); !it.done(); it.next()) {
-        RelocInfo* info = it.rinfo();
-        if (info->rmode() == RelocInfo::COMMENT) {
-          last_comment = reinterpret_cast<const char*>(info->data());
-        }
-        if (info->rmode() == RelocInfo::RUNTIME_ENTRY) {
-          unsigned id = Deoptimizer::GetDeoptimizationId(
-              info->target_address(), Deoptimizer::EAGER);
-          if (id == bailout_id && last_comment != NULL) {
-            PrintF("            %s\n", last_comment);
-            break;
-          }
-        }
-      }
-    }
-  } else if (type == LAZY) {
-    optimized_code_ = FindDeoptimizingCodeFromAddress(from);
-    ASSERT(optimized_code_ != NULL);
-  } else if (type == OSR) {
-    // The function has already been optimized and we're transitioning
-    // from the unoptimized shared version to the optimized one in the
-    // function. The return address (from) points to unoptimized code.
-    optimized_code_ = function_->code();
-    ASSERT(optimized_code_->kind() == Code::OPTIMIZED_FUNCTION);
-    ASSERT(!optimized_code_->contains(from));
-  } else if (type == DEBUGGER) {
-    optimized_code_ = optimized_code;
-    ASSERT(optimized_code_->contains(from));
+  if (function != NULL && function->IsOptimized()) {
+    function->shared()->increment_deopt_count();
   }
+  compiled_code_ = FindOptimizedCode(function, optimized_code);
+  StackFrame::Type frame_type = function == NULL
+      ? StackFrame::STUB
+      : StackFrame::JAVA_SCRIPT;
+  trace_ = TraceEnabledFor(type, frame_type);
+  if (trace_) Trace();
   ASSERT(HEAP->allow_allocation(false));
   unsigned size = ComputeInputFrameSize();
   input_ = new(size) FrameDescription(size, function);
-  input_->SetFrameType(StackFrame::JAVA_SCRIPT);
+  input_->SetFrameType(frame_type);
+}
+
+
+Code* Deoptimizer::FindOptimizedCode(JSFunction* function,
+                                     Code* optimized_code) {
+  switch (bailout_type_) {
+    case Deoptimizer::EAGER:
+      ASSERT(from_ == NULL);
+      return function->code();
+    case Deoptimizer::LAZY: {
+      Code* compiled_code =
+          isolate_->deoptimizer_data()->FindDeoptimizingCode(from_);
+      return (compiled_code == NULL)
+          ? static_cast<Code*>(isolate_->heap()->FindCodeObject(from_))
+          : compiled_code;
+    }
+    case Deoptimizer::OSR: {
+      // The function has already been optimized and we're transitioning
+      // from the unoptimized shared version to the optimized one in the
+      // function. The return address (from_) points to unoptimized code.
+      Code* compiled_code = function->code();
+      ASSERT(compiled_code->kind() == Code::OPTIMIZED_FUNCTION);
+      ASSERT(!compiled_code->contains(from_));
+      return compiled_code;
+    }
+    case Deoptimizer::DEBUGGER:
+      ASSERT(optimized_code->contains(from_));
+      return optimized_code;
+  }
+  UNREACHABLE();
+  return NULL;
+}
+
+
+void Deoptimizer::Trace() {
+  PrintF("**** %s: ", Deoptimizer::MessageFor(bailout_type_));
+  PrintFunctionName();
+  PrintF(" at id #%u, address 0x%" V8PRIxPTR ", frame size %d\n",
+         bailout_id_,
+         reinterpret_cast<intptr_t>(from_),
+         fp_to_sp_delta_ - (2 * kPointerSize));
+  if (bailout_type_ == EAGER) compiled_code_->PrintDeoptLocation(bailout_id_);
+}
+
+
+void Deoptimizer::PrintFunctionName() {
+  if (function_->IsJSFunction()) {
+    function_->PrintName();
+  } else {
+    PrintF("%s", Code::Kind2String(compiled_code_->kind()));
+  }
 }
 
 
@@ -478,7 +639,7 @@ Address Deoptimizer::GetDeoptimizationEntry(int id,
                                             GetEntryMode mode) {
   ASSERT(id >= 0);
   if (id >= kMaxNumberOfEntries) return NULL;
-  VirtualMemory* base = NULL;
+  MemoryChunk* base = NULL;
   if (mode == ENSURE_ENTRY_CODE) {
     EnsureCodeForDeoptimizationEntry(type, id);
   } else {
@@ -490,28 +651,27 @@ Address Deoptimizer::GetDeoptimizationEntry(int id,
   } else {
     base = data->lazy_deoptimization_entry_code_;
   }
-  return
-      static_cast<Address>(base->address()) + (id * table_entry_size_);
+  return base->area_start() + (id * table_entry_size_);
 }
 
 
 int Deoptimizer::GetDeoptimizationId(Address addr, BailoutType type) {
-  VirtualMemory* base = NULL;
+  MemoryChunk* base = NULL;
   DeoptimizerData* data = Isolate::Current()->deoptimizer_data();
   if (type == EAGER) {
     base = data->eager_deoptimization_entry_code_;
   } else {
     base = data->lazy_deoptimization_entry_code_;
   }
-  Address base_casted = reinterpret_cast<Address>(base->address());
+  Address start = base->area_start();
   if (base == NULL ||
-      addr < base->address() ||
-      addr >= base_casted + (kMaxNumberOfEntries * table_entry_size_)) {
+      addr < start ||
+      addr >= start + (kMaxNumberOfEntries * table_entry_size_)) {
     return kNotDeoptimizationEntry;
   }
   ASSERT_EQ(0,
-            static_cast<int>(addr - base_casted) % table_entry_size_);
-  return static_cast<int>(addr - base_casted) / table_entry_size_;
+            static_cast<int>(addr - start) % table_entry_size_);
+  return static_cast<int>(addr - start) / table_entry_size_;
 }
 
 
@@ -562,18 +722,18 @@ void Deoptimizer::DoComputeOutputFrames() {
 
   // Print some helpful diagnostic information.
   int64_t start = OS::Ticks();
-  if (FLAG_trace_deopt) {
+  if (trace_) {
     PrintF("[deoptimizing%s: begin 0x%08" V8PRIxPTR " ",
            (bailout_type_ == LAZY ? " (lazy)" : ""),
            reinterpret_cast<intptr_t>(function_));
-    function_->PrintName();
+    PrintFunctionName();
     PrintF(" @%d]\n", bailout_id_);
   }
 
   // Determine basic deoptimization information.  The optimized frame is
   // described by the input data.
   DeoptimizationInputData* input_data =
-      DeoptimizationInputData::cast(optimized_code_->deoptimization_data());
+      DeoptimizationInputData::cast(compiled_code_->deoptimization_data());
   BailoutId node_id = input_data->AstId(bailout_id_);
   ByteArray* translations = input_data->TranslationByteArray();
   unsigned translation_index =
@@ -618,6 +778,9 @@ void Deoptimizer::DoComputeOutputFrames() {
       case Translation::SETTER_STUB_FRAME:
         DoComputeAccessorStubFrame(&iterator, i, true);
         break;
+      case Translation::COMPILED_STUB_FRAME:
+        DoCompiledStubFrame(&iterator, i);
+        break;
       case Translation::BEGIN:
       case Translation::REGISTER:
       case Translation::INT32_REGISTER:
@@ -630,19 +793,20 @@ void Deoptimizer::DoComputeOutputFrames() {
       case Translation::LITERAL:
       case Translation::ARGUMENTS_OBJECT:
       case Translation::DUPLICATE:
+      default:
         UNREACHABLE();
         break;
     }
   }
 
   // Print some helpful diagnostic information.
-  if (FLAG_trace_deopt) {
+  if (trace_) {
     double ms = static_cast<double>(OS::Ticks() - start) / 1000;
     int index = output_count_ - 1;  // Index of the topmost frame.
     JSFunction* function = output_[index]->GetFunction();
     PrintF("[deoptimizing: end 0x%08" V8PRIxPTR " ",
            reinterpret_cast<intptr_t>(function));
-    function->PrintName();
+    if (function != NULL) function->PrintName();
     PrintF(" => node=%d, pc=0x%08" V8PRIxPTR ", state=%s, alignment=%s,"
            " took %0.3f ms]\n",
            node_id.ToInt(),
@@ -674,7 +838,7 @@ void Deoptimizer::MaterializeHeapObjects(JavaScriptFrameIterator* it) {
   for (int i = 0; i < deferred_heap_numbers_.length(); i++) {
     HeapNumberMaterializationDescriptor d = deferred_heap_numbers_[i];
     Handle<Object> num = isolate_->factory()->NewNumber(d.value());
-    if (FLAG_trace_deopt) {
+    if (trace_) {
       PrintF("Materializing a new heap number %p [%e] in slot %p\n",
              reinterpret_cast<void*>(*num),
              d.value(),
@@ -719,7 +883,7 @@ void Deoptimizer::MaterializeHeapObjects(JavaScriptFrameIterator* it) {
         }
         frame->SetExpression(i, *arguments);
         ASSERT_EQ(Memory::Object_at(descriptor.slot_address()), *arguments);
-        if (FLAG_trace_deopt) {
+        if (trace_) {
           PrintF("Materializing %sarguments object for %p: ",
                  frame->has_adapted_arguments() ? "(adapted) " : "",
                  reinterpret_cast<void*>(descriptor.slot_address()));
@@ -754,7 +918,7 @@ void Deoptimizer::MaterializeHeapNumbersForDebuggerInspectableFrame(
       int index = (info->parameters_count() - 1) -
           static_cast<int>(slot - parameters_top) / kPointerSize;
 
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("Materializing a new heap number %p [%e] in slot %p"
                "for parameter slot #%d\n",
                reinterpret_cast<void*>(*num),
@@ -770,7 +934,7 @@ void Deoptimizer::MaterializeHeapNumbersForDebuggerInspectableFrame(
       int index = info->expression_count() - 1 -
           static_cast<int>(slot - expressions_top) / kPointerSize;
 
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("Materializing a new heap number %p [%e] in slot %p"
                "for expression slot #%d\n",
                reinterpret_cast<void*>(*num),
@@ -809,6 +973,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
     case Translation::CONSTRUCT_STUB_FRAME:
     case Translation::GETTER_STUB_FRAME:
     case Translation::SETTER_STUB_FRAME:
+    case Translation::COMPILED_STUB_FRAME:
     case Translation::DUPLICATE:
       UNREACHABLE();
       return;
@@ -816,7 +981,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
     case Translation::REGISTER: {
       int input_reg = iterator->Next();
       intptr_t input_value = input_->GetRegister(input_reg);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF(
             "    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR " ; %s ",
             output_[frame_index]->GetTop() + output_offset,
@@ -834,7 +999,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
       int input_reg = iterator->Next();
       intptr_t value = input_->GetRegister(input_reg);
       bool is_smi = Smi::IsValid(value);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF(
             "    0x%08" V8PRIxPTR ": [top + %d] <- %" V8PRIdPTR " ; %s (%s)\n",
             output_[frame_index]->GetTop() + output_offset,
@@ -861,7 +1026,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
       int input_reg = iterator->Next();
       uintptr_t value = static_cast<uintptr_t>(input_->GetRegister(input_reg));
       bool is_smi = (value <= static_cast<uintptr_t>(Smi::kMaxValue));
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF(
             "    0x%08" V8PRIxPTR ": [top + %d] <- %" V8PRIuPTR
             " ; uint %s (%s)\n",
@@ -888,7 +1053,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
     case Translation::DOUBLE_REGISTER: {
       int input_reg = iterator->Next();
       double value = input_->GetDoubleRegister(input_reg);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- %e ; %s\n",
                output_[frame_index]->GetTop() + output_offset,
                output_offset,
@@ -907,7 +1072,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
       unsigned input_offset =
           input_->GetOffsetFromSlotIndex(input_slot_index);
       intptr_t input_value = input_->GetFrameSlot(input_offset);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": ",
                output_[frame_index]->GetTop() + output_offset);
         PrintF("[top + %d] <- 0x%08" V8PRIxPTR " ; [sp + %d] ",
@@ -927,7 +1092,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
           input_->GetOffsetFromSlotIndex(input_slot_index);
       intptr_t value = input_->GetFrameSlot(input_offset);
       bool is_smi = Smi::IsValid(value);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": ",
                output_[frame_index]->GetTop() + output_offset);
         PrintF("[top + %d] <- %" V8PRIdPTR " ; [sp + %d] (%s)\n",
@@ -957,7 +1122,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
       uintptr_t value =
           static_cast<uintptr_t>(input_->GetFrameSlot(input_offset));
       bool is_smi = (value <= static_cast<uintptr_t>(Smi::kMaxValue));
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": ",
                output_[frame_index]->GetTop() + output_offset);
         PrintF("[top + %d] <- %" V8PRIuPTR " ; [sp + %d] (uint32 %s)\n",
@@ -985,7 +1150,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
       unsigned input_offset =
           input_->GetOffsetFromSlotIndex(input_slot_index);
       double value = input_->GetDoubleFrameSlot(input_offset);
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- %e ; [sp + %d]\n",
                output_[frame_index]->GetTop() + output_offset,
                output_offset,
@@ -1001,7 +1166,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
 
     case Translation::LITERAL: {
       Object* literal = ComputeLiteral(iterator->Next());
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- ",
                output_[frame_index]->GetTop() + output_offset,
                output_offset);
@@ -1016,7 +1181,7 @@ void Deoptimizer::DoTranslateCommand(TranslationIterator* iterator,
     case Translation::ARGUMENTS_OBJECT: {
       int args_index = iterator->Next() + 1;  // Skip receiver.
       int args_length = iterator->Next() - 1;  // Skip receiver.
-      if (FLAG_trace_deopt) {
+      if (trace_) {
         PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- ",
                output_[frame_index]->GetTop() + output_offset,
                output_offset);
@@ -1117,6 +1282,7 @@ bool Deoptimizer::DoOsrTranslateCommand(TranslationIterator* iterator,
     case Translation::CONSTRUCT_STUB_FRAME:
     case Translation::GETTER_STUB_FRAME:
     case Translation::SETTER_STUB_FRAME:
+    case Translation::COMPILED_STUB_FRAME:
     case Translation::DUPLICATE:
       UNREACHABLE();  // Malformed input.
        return false;
@@ -1336,8 +1502,8 @@ unsigned Deoptimizer::ComputeInputFrameSize() const {
     // size matches with the stack height we can compute based on the
     // environment at the OSR entry. The code for that his built into
     // the DoComputeOsrOutputFrame function for now.
-  } else {
-    unsigned stack_slots = optimized_code_->stack_slots();
+  } else if (compiled_code_->kind() != Code::COMPILED_STUB) {
+    unsigned stack_slots = compiled_code_->stack_slots();
     unsigned outgoing_size = ComputeOutgoingArgumentSize();
     ASSERT(result == fixed_size + (stack_slots * kPointerSize) + outgoing_size);
   }
@@ -1357,6 +1523,10 @@ unsigned Deoptimizer::ComputeFixedSize(JSFunction* function) const {
 unsigned Deoptimizer::ComputeIncomingArgumentSize(JSFunction* function) const {
   // The incoming arguments is the values for formal parameters and
   // the receiver. Every slot contains a pointer.
+  if (function->IsSmi()) {
+    ASSERT(Smi::cast(function) == Smi::FromInt(StackFrame::STUB));
+    return 0;
+  }
   unsigned arguments = function->shared()->formal_parameter_count() + 1;
   return arguments * kPointerSize;
 }
@@ -1364,7 +1534,7 @@ unsigned Deoptimizer::ComputeIncomingArgumentSize(JSFunction* function) const {
 
 unsigned Deoptimizer::ComputeOutgoingArgumentSize() const {
   DeoptimizationInputData* data = DeoptimizationInputData::cast(
-      optimized_code_->deoptimization_data());
+      compiled_code_->deoptimization_data());
   unsigned height = data->ArgumentsStackHeight(bailout_id_)->value();
   return height * kPointerSize;
 }
@@ -1372,7 +1542,7 @@ unsigned Deoptimizer::ComputeOutgoingArgumentSize() const {
 
 Object* Deoptimizer::ComputeLiteral(int index) const {
   DeoptimizationInputData* data = DeoptimizationInputData::cast(
-      optimized_code_->deoptimization_data());
+      compiled_code_->deoptimization_data());
   FixedArray* literals = data->LiteralArray();
   return literals->get(index);
 }
@@ -1403,8 +1573,6 @@ void Deoptimizer::EnsureCodeForDeoptimizationEntry(BailoutType type,
   // cause us to emit relocation information for the external
   // references. This is fine because the deoptimizer's code section
   // isn't meant to be serialized at all.
-  ASSERT(!Serializer::enabled());
-
   ASSERT(type == EAGER || type == LAZY);
   DeoptimizerData* data = Isolate::Current()->deoptimizer_data();
   int entry_count = (type == EAGER)
@@ -1420,16 +1588,15 @@ void Deoptimizer::EnsureCodeForDeoptimizationEntry(BailoutType type,
   GenerateDeoptimizationEntries(&masm, entry_count, type);
   CodeDesc desc;
   masm.GetCode(&desc);
-  ASSERT(desc.reloc_size == 0);
 
-  VirtualMemory* memory = type == EAGER
+  MemoryChunk* chunk = type == EAGER
       ? data->eager_deoptimization_entry_code_
       : data->lazy_deoptimization_entry_code_;
-  size_t table_size = Deoptimizer::GetMaxDeoptTableSize();
-  ASSERT(static_cast<int>(table_size) >= desc.instr_size);
-  memory->Commit(memory->address(), table_size, true);
-  memcpy(memory->address(), desc.buffer, desc.instr_size);
-  CPU::FlushICache(memory->address(), desc.instr_size);
+  ASSERT(static_cast<int>(Deoptimizer::GetMaxDeoptTableSize()) >=
+         desc.instr_size);
+  chunk->CommitArea(desc.instr_size);
+  memcpy(chunk->area_start(), desc.buffer, desc.instr_size);
+  CPU::FlushICache(chunk->area_start(), desc.instr_size);
 
   if (type == EAGER) {
     data->eager_deoptimization_entry_code_entries_ = entry_count;
@@ -1439,82 +1606,11 @@ void Deoptimizer::EnsureCodeForDeoptimizationEntry(BailoutType type,
 }
 
 
-Code* Deoptimizer::FindDeoptimizingCodeFromAddress(Address addr) {
-  DeoptimizingCodeListNode* node =
-      Isolate::Current()->deoptimizer_data()->deoptimizing_code_list_;
-  while (node != NULL) {
-    if (node->code()->contains(addr)) return *node->code();
-    node = node->next();
-  }
-  return NULL;
-}
-
-
-void Deoptimizer::RemoveDeoptimizingCode(Code* code) {
-  DeoptimizerData* data = Isolate::Current()->deoptimizer_data();
-  ASSERT(data->deoptimizing_code_list_ != NULL);
-  // Run through the code objects to find this one and remove it.
-  DeoptimizingCodeListNode* prev = NULL;
-  DeoptimizingCodeListNode* current = data->deoptimizing_code_list_;
-  while (current != NULL) {
-    if (*current->code() == code) {
-      // Unlink from list. If prev is NULL we are looking at the first element.
-      if (prev == NULL) {
-        data->deoptimizing_code_list_ = current->next();
-      } else {
-        prev->set_next(current->next());
-      }
-      delete current;
-      return;
-    }
-    // Move to next in list.
-    prev = current;
-    current = current->next();
-  }
-  // Deoptimizing code is removed through weak callback. Each object is expected
-  // to be removed once and only once.
-  UNREACHABLE();
-}
-
-
-static Object* CutOutRelatedFunctionsList(Context* context,
-                                          Code* code,
-                                          Object* undefined) {
-  Object* result_list_head = undefined;
-  Object* head;
-  Object* current;
-  current = head = context->get(Context::OPTIMIZED_FUNCTIONS_LIST);
-  JSFunction* prev = NULL;
-  while (current != undefined) {
-    JSFunction* func = JSFunction::cast(current);
-    current = func->next_function_link();
-    if (func->code() == code) {
-      func->set_next_function_link(result_list_head);
-      result_list_head = func;
-      if (prev) {
-        prev->set_next_function_link(current);
-      } else {
-        head = current;
-      }
-    } else {
-      prev = func;
-    }
-  }
-  if (head != context->get(Context::OPTIMIZED_FUNCTIONS_LIST)) {
-    context->set(Context::OPTIMIZED_FUNCTIONS_LIST, head);
-  }
-  return result_list_head;
-}
-
-
 void Deoptimizer::ReplaceCodeForRelatedFunctions(JSFunction* function,
                                                  Code* code) {
-  Context* context = function->context()->native_context();
-
   SharedFunctionInfo* shared = function->shared();
-
   Object* undefined = Isolate::Current()->heap()->undefined_value();
-  Object* current = CutOutRelatedFunctionsList(context, code, undefined);
+  Object* current = function;
 
   while (current != undefined) {
     JSFunction* func = JSFunction::cast(current);
@@ -1575,6 +1671,8 @@ int FrameDescription::ComputeParametersCount() {
       // Can't use GetExpression(0) because it would cause infinite recursion.
       return reinterpret_cast<Smi*>(*GetFrameSlotPointer(0))->value();
     }
+    case StackFrame::STUB:
+      return 0;
     default:
       UNREACHABLE();
       return 0;
@@ -1682,6 +1780,11 @@ void Translation::BeginJSFrame(BailoutId node_id,
 }
 
 
+void Translation::BeginCompiledStubFrame() {
+  buffer_->Add(COMPILED_STUB_FRAME, zone());
+}
+
+
 void Translation::StoreRegister(Register reg) {
   buffer_->Add(REGISTER, zone());
   buffer_->Add(reg.code(), zone());
@@ -1763,6 +1866,7 @@ int Translation::NumberOfOperandsFor(Opcode opcode) {
     case UINT32_STACK_SLOT:
     case DOUBLE_STACK_SLOT:
     case LITERAL:
+    case COMPILED_STUB_FRAME:
       return 1;
     case BEGIN:
     case ARGUMENTS_ADAPTOR_FRAME:
@@ -1793,6 +1897,8 @@ const char* Translation::StringFor(Opcode opcode) {
       return "GETTER_STUB_FRAME";
     case SETTER_STUB_FRAME:
       return "SETTER_STUB_FRAME";
+    case COMPILED_STUB_FRAME:
+      return "COMPILED_STUB_FRAME";
     case REGISTER:
       return "REGISTER";
     case INT32_REGISTER:
@@ -1829,6 +1935,7 @@ DeoptimizingCodeListNode::DeoptimizingCodeListNode(Code* code): next_(NULL) {
   code_ = Handle<Code>::cast(global_handles->Create(code));
   global_handles->MakeWeak(reinterpret_cast<Object**>(code_.location()),
                            this,
+                           NULL,
                            Deoptimizer::HandleWeakDeoptimizedCode);
 }
 
@@ -1900,6 +2007,10 @@ SlotRef SlotRef::ComputeSlotForNextArgument(TranslationIterator* iterator,
       int literal_index = iterator->Next();
       return SlotRef(data->LiteralArray()->get(literal_index));
     }
+
+    case Translation::COMPILED_STUB_FRAME:
+      UNREACHABLE();
+      break;
   }
 
   UNREACHABLE();

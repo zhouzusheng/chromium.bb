@@ -50,11 +50,11 @@ public:
     virtual bool isList() const { return true; }
     bool isUnorderedList() const;
     bool isOrderedList() const;
-    bool isDefinitionList() const;
+    bool isDescriptionList() const;
 
     virtual AccessibilityRole roleValue() const { return ListRole; }
-    virtual bool accessibilityIsIgnored() const;
-    
+private:
+    virtual bool computeAccessibilityIsIgnored() const;
 };
     
 } // namespace WebCore

@@ -54,25 +54,21 @@ class BinaryImageSource : public gfx::ImageSkiaSource {
   virtual ImageSkiaRep GetImageForScale(ui::ScaleFactor scale_factor) OVERRIDE {
     ImageSkiaRep first_rep = first_.GetRepresentation(scale_factor);
     ImageSkiaRep second_rep = second_.GetRepresentation(scale_factor);
-    if (first_rep.pixel_width() != second_rep.pixel_width() ||
-        first_rep.pixel_height() != second_rep.pixel_height()) {
+    if (first_rep.pixel_size() != second_rep.pixel_size()) {
       DCHECK_NE(first_rep.scale_factor(), second_rep.scale_factor());
       if (first_rep.scale_factor() == second_rep.scale_factor()) {
         LOG(ERROR) << "ImageSkiaRep size mismatch in " << source_name_;
         return GetErrorImageRep(first_rep.scale_factor(),
-                                gfx::Size(first_rep.pixel_width(),
-                                          first_rep.pixel_height()));
+                                first_rep.pixel_size());
       }
       first_rep = first_.GetRepresentation(ui::SCALE_FACTOR_100P);
       second_rep = second_.GetRepresentation(ui::SCALE_FACTOR_100P);
       DCHECK_EQ(first_rep.pixel_width(), second_rep.pixel_width());
       DCHECK_EQ(first_rep.pixel_height(), second_rep.pixel_height());
-      if (first_rep.pixel_width() != second_rep.pixel_width() ||
-          first_rep.pixel_height() != second_rep.pixel_height()) {
+      if (first_rep.pixel_size() != second_rep.pixel_size()) {
         LOG(ERROR) << "ImageSkiaRep size mismatch in " << source_name_;
         return GetErrorImageRep(first_rep.scale_factor(),
-                                gfx::Size(first_rep.pixel_width(),
-                                          first_rep.pixel_height()));
+                                first_rep.pixel_size());
       }
     } else {
       DCHECK_EQ(first_rep.scale_factor(), second_rep.scale_factor());
@@ -437,6 +433,9 @@ class RotatedSource : public ImageSkiaSource {
 ImageSkia ImageSkiaOperations::CreateBlendedImage(const ImageSkia& first,
                                                   const ImageSkia& second,
                                                   double alpha) {
+  if (first.isNull() || second.isNull())
+    return ImageSkia();
+
   return ImageSkia(new BlendingImageSource(first, second, alpha), first.size());
 }
 
@@ -444,18 +443,27 @@ ImageSkia ImageSkiaOperations::CreateBlendedImage(const ImageSkia& first,
 ImageSkia ImageSkiaOperations::CreateSuperimposedImage(
     const ImageSkia& first,
     const ImageSkia& second) {
+  if (first.isNull() || second.isNull())
+    return ImageSkia();
+
   return ImageSkia(new SuperimposedImageSource(first, second), first.size());
 }
 
 // static
 ImageSkia ImageSkiaOperations::CreateTransparentImage(const ImageSkia& image,
                                                       double alpha) {
+  if (image.isNull())
+    return ImageSkia();
+
   return ImageSkia(new TransparentImageSource(image, alpha), image.size());
 }
 
 // static
 ImageSkia ImageSkiaOperations::CreateMaskedImage(const ImageSkia& rgb,
                                                  const ImageSkia& alpha) {
+  if (rgb.isNull() || alpha.isNull())
+    return ImageSkia();
+
   return ImageSkia(new MaskedImageSource(rgb, alpha), rgb.size());
 }
 
@@ -463,6 +471,9 @@ ImageSkia ImageSkiaOperations::CreateMaskedImage(const ImageSkia& rgb,
 ImageSkia ImageSkiaOperations::CreateTiledImage(const ImageSkia& source,
                                                 int src_x, int src_y,
                                                 int dst_w, int dst_h) {
+  if (source.isNull())
+    return ImageSkia();
+
   return ImageSkia(new TiledImageSource(source, src_x, src_y, dst_w, dst_h),
                    gfx::Size(dst_w, dst_h));
 }
@@ -471,6 +482,9 @@ ImageSkia ImageSkiaOperations::CreateTiledImage(const ImageSkia& source,
 ImageSkia ImageSkiaOperations::CreateHSLShiftedImage(
     const ImageSkia& image,
     const color_utils::HSL& hsl_shift) {
+  if (image.isNull())
+    return ImageSkia();
+
   return ImageSkia(new HSLImageSource(image, hsl_shift), image.size());
 }
 
@@ -478,6 +492,9 @@ ImageSkia ImageSkiaOperations::CreateHSLShiftedImage(
 ImageSkia ImageSkiaOperations::CreateButtonBackground(SkColor color,
                                                       const ImageSkia& image,
                                                       const ImageSkia& mask) {
+  if (image.isNull() || mask.isNull())
+    return ImageSkia();
+
   return ImageSkia(new ButtonImageSource(color, image, mask), mask.size());
 }
 
@@ -499,6 +516,9 @@ ImageSkia ImageSkiaOperations::CreateResizedImage(
     const ImageSkia& source,
     skia::ImageOperations::ResizeMethod method,
     const Size& target_dip_size) {
+  if (source.isNull())
+    return ImageSkia();
+
   return ImageSkia(new ResizeSource(source, method, target_dip_size),
                    target_dip_size);
 }
@@ -507,6 +527,9 @@ ImageSkia ImageSkiaOperations::CreateResizedImage(
 ImageSkia ImageSkiaOperations::CreateImageWithDropShadow(
     const ImageSkia& source,
     const ShadowValues& shadows) {
+  if (source.isNull())
+    return ImageSkia();
+
   const gfx::Insets shadow_padding = -gfx::ShadowValue::GetMargin(shadows);
   gfx::Size shadow_image_size = source.size();
   shadow_image_size.Enlarge(shadow_padding.width(),
@@ -518,6 +541,9 @@ ImageSkia ImageSkiaOperations::CreateImageWithDropShadow(
 ImageSkia ImageSkiaOperations::CreateRotatedImage(
       const ImageSkia& source,
       SkBitmapOperations::RotationAmount rotation) {
+  if (source.isNull())
+    return ImageSkia();
+
   return ImageSkia(new RotatedSource(source, rotation),
       SkBitmapOperations::ROTATION_180_CW == rotation ?
           source.size() :

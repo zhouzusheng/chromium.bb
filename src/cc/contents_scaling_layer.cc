@@ -22,6 +22,7 @@ ContentsScalingLayer::~ContentsScalingLayer() {
 
 void ContentsScalingLayer::calculateContentsScale(
     float ideal_contents_scale,
+    bool animating_transform_to_screen,
     float* contents_scale_x,
     float* contents_scale_y,
     gfx::Size* content_bounds) {
@@ -41,7 +42,7 @@ void ContentsScalingLayer::didUpdateBounds() {
 void ContentsScalingLayer::update(
     ResourceUpdateQueue& queue,
     const OcclusionTracker* occlusion,
-    RenderingStats& stats) {
+    RenderingStats* stats) {
   if (drawProperties().contents_scale_x == last_update_contents_scale_x_ &&
       drawProperties().contents_scale_y == last_update_contents_scale_y_)
     return;

@@ -182,6 +182,12 @@ text-underline-mode
 text-underline-style
 text-underline-width
 top
+transition
+transition-delay
+transition-duration
+transition-property
+transition-timing-function
+
 unicode-bidi
 unicode-range
 vertical-align
@@ -267,6 +273,7 @@ z-index
 #endif
 #if defined(ENABLE_CSS_COMPOSITING) && ENABLE_CSS_COMPOSITING
 -webkit-blend-mode
+-webkit-background-blend-mode
 #endif
 #if defined(ENABLE_CSS_FILTERS) && ENABLE_CSS_FILTERS
 -webkit-filter
@@ -287,6 +294,7 @@ z-index
 -webkit-grid-rows
 -webkit-grid-column
 -webkit-grid-row
+-webkit-grid-auto-flow
 -webkit-highlight
 -webkit-hyphenate-character
 -webkit-hyphenate-limit-after

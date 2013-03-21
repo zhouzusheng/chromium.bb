@@ -28,9 +28,64 @@
 
 #if ENABLE(SQL_DATABASE)
 
+#include "DatabaseBasicTypes.h"
+#include "DatabaseDetails.h"
+#include "DatabaseError.h"
+#include <wtf/RefPtr.h>
+#include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
+
 namespace WebCore {
 
+class DatabaseBackend;
+class DatabaseBackendContext;
+class DatabaseManagerClient;
+class SecurityOrigin;
+
 class AbstractDatabaseServer {
+public:
+    virtual void initialize(const String& databasePath) = 0;
+
+    virtual void setClient(DatabaseManagerClient*) = 0;
+    virtual String databaseDirectoryPath() const = 0;
+    virtual void setDatabaseDirectoryPath(const String&) = 0;
+
+    virtual String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true) = 0;
+
+    enum OpenAttempt {
+        FirstTryToOpenDatabase,
+        RetryOpenDatabase
+    };
+
+    virtual PassRefPtr<DatabaseBackend> openDatabase(RefPtr<DatabaseBackendContext>&, DatabaseType, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError&, String& errorMessage, OpenAttempt = FirstTryToOpenDatabase) = 0;
+
+#if !PLATFORM(CHROMIUM)
+    virtual bool hasEntryForOrigin(SecurityOrigin*) = 0;
+    virtual void origins(Vector<RefPtr<SecurityOrigin> >& result) = 0;
+    virtual bool databaseNamesForOrigin(SecurityOrigin*, Vector<String>& result) = 0;
+    virtual DatabaseDetails detailsForNameAndOrigin(const String&, SecurityOrigin*) = 0;
+
+    virtual unsigned long long usageForOrigin(SecurityOrigin*) = 0;
+    virtual unsigned long long quotaForOrigin(SecurityOrigin*) = 0;
+
+    virtual void setQuota(SecurityOrigin*, unsigned long long) = 0;
+
+    virtual void deleteAllDatabases() = 0;
+    virtual bool deleteOrigin(SecurityOrigin*) = 0;
+    virtual bool deleteDatabase(SecurityOrigin*, const String& name) = 0;
+
+    // From a secondary thread, must be thread safe with its data
+    virtual void scheduleNotifyDatabaseChanged(SecurityOrigin*, const String& name) = 0;
+    virtual void databaseChanged(DatabaseBackend*) = 0;
+
+#else // PLATFORM(CHROMIUM)
+    virtual void closeDatabasesImmediately(const String& originIdentifier, const String& name) = 0;
+#endif // PLATFORM(CHROMIUM)
+
+    virtual void interruptAllDatabasesForContext(const DatabaseBackendContext*) = 0;
+
+    virtual unsigned long long getMaxSizeForDatabase(const DatabaseBackend*) = 0;
+
 protected:
     AbstractDatabaseServer() { }
     virtual ~AbstractDatabaseServer() { }

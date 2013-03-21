@@ -151,6 +151,7 @@ StringImpl::~StringImpl()
 
 PassRefPtr<StringImpl> StringImpl::createFromLiteral(const char* characters, unsigned length)
 {
+    ASSERT_WITH_MESSAGE(length, "Use StringImpl::empty() to create an empty string");
     ASSERT(charactersAreAllASCII<LChar>(reinterpret_cast<const LChar*>(characters), length));
     return adoptRef(new StringImpl(characters, length, ConstructFromLiteral));
 }
@@ -158,6 +159,7 @@ PassRefPtr<StringImpl> StringImpl::createFromLiteral(const char* characters, uns
 PassRefPtr<StringImpl> StringImpl::createFromLiteral(const char* characters)
 {
     size_t length = strlen(characters);
+    ASSERT_WITH_MESSAGE(length, "Use StringImpl::empty() to create an empty string");
     ASSERT(charactersAreAllASCII<LChar>(reinterpret_cast<const LChar*>(characters), length));
     return adoptRef(new StringImpl(characters, length, ConstructFromLiteral));
 }

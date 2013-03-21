@@ -9,12 +9,12 @@
 #include "SkColorPriv.h"
 #include "SkFlattenableBuffers.h"
 
-SkMask::Format SkKernel33ProcMaskFilter::getFormat() {
+SkMask::Format SkKernel33ProcMaskFilter::getFormat() const {
     return SkMask::kA8_Format;
 }
 
 bool SkKernel33ProcMaskFilter::filterMask(SkMask* dst, const SkMask& src,
-                                          const SkMatrix&, SkIPoint* margin) {
+                                      const SkMatrix&, SkIPoint* margin) const {
     // margin???
     dst->fImage = NULL;
     dst->fBounds = src.fBounds;
@@ -86,7 +86,7 @@ SkKernel33ProcMaskFilter::SkKernel33ProcMaskFilter(SkFlattenableReadBuffer& rb)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-uint8_t SkKernel33MaskFilter::computeValue(uint8_t* const* srcRows) {
+uint8_t SkKernel33MaskFilter::computeValue(uint8_t* const* srcRows) const {
     int value = 0;
 
     for (int i = 0; i < 3; i++) {
@@ -113,8 +113,7 @@ void SkKernel33MaskFilter::flatten(SkFlattenableWriteBuffer& wb) const {
 
 SkKernel33MaskFilter::SkKernel33MaskFilter(SkFlattenableReadBuffer& rb)
         : SkKernel33ProcMaskFilter(rb) {
-    const uint32_t count = rb.readIntArray(&fKernel[0][0]);
+    SkDEBUGCODE(const uint32_t count = )rb.readIntArray(&fKernel[0][0]);
     SkASSERT(9 == count);
     fShift = rb.readInt();
 }
-

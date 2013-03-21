@@ -19,9 +19,9 @@
  */
 
 #include "config.h"
+#if ENABLE(METER_ELEMENT)
 #include "HTMLMeterElement.h"
 
-#if ENABLE(METER_ELEMENT)
 #include "Attribute.h"
 #include "EventNames.h"
 #include "ExceptionCode.h"
@@ -43,7 +43,6 @@ using namespace HTMLNames;
 
 HTMLMeterElement::HTMLMeterElement(const QualifiedName& tagName, Document* document)
     : LabelableElement(tagName, document)
-    , m_hasAuthorShadowRoot(false)
 {
     ASSERT(hasTagName(meterTag));
 }
@@ -55,7 +54,7 @@ HTMLMeterElement::~HTMLMeterElement()
 PassRefPtr<HTMLMeterElement> HTMLMeterElement::create(const QualifiedName& tagName, Document* document)
 {
     RefPtr<HTMLMeterElement> meter = adoptRef(new HTMLMeterElement(tagName, document));
-    meter->createShadowSubtree();
+    meter->ensureUserAgentShadowRoot();
     return meter;
 }
 
@@ -74,7 +73,7 @@ bool HTMLMeterElement::childShouldCreateRenderer(const NodeRenderingContext& chi
 
 bool HTMLMeterElement::supportsFocus() const
 {
-    return Node::supportsFocus() && !disabled();
+    return HTMLElement::supportsFocus() && !disabled();
 }
 
 void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -225,11 +224,6 @@ void HTMLMeterElement::didElementStateChange()
         render->updateFromElement();
 }
 
-void HTMLMeterElement::willAddAuthorShadowRoot()
-{
-    m_hasAuthorShadowRoot = true;
-}
-
 RenderMeter* HTMLMeterElement::renderMeter() const
 {
     if (renderer() && renderer()->isMeter())
@@ -240,11 +234,9 @@ RenderMeter* HTMLMeterElement::renderMeter() const
     return static_cast<RenderMeter*>(renderObject);
 }
 
-void HTMLMeterElement::createShadowSubtree()
+void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 {
-    ASSERT(!userAgentShadowRoot());
-           
-    RefPtr<ShadowRoot> root = ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot, ASSERT_NO_EXCEPTION);
+    ASSERT(!m_value);
 
     RefPtr<MeterInnerElement> inner = MeterInnerElement::create(document());
     root->appendChild(inner);

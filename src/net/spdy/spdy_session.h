@@ -43,7 +43,12 @@ const int kMaxSpdyFrameChunkSize = (2 * kMss) - SpdyFrame::kHeaderSize;
 // Specifies the maxiumum concurrent streams server could send (via push).
 const int kMaxConcurrentPushedStreams = 1000;
 
+// Specifies the number of bytes read synchronously (without yielding) if the
+// data is available.
+const int kMaxReadBytes = 32 * 1024;
+
 class BoundNetLog;
+struct LoadTimingInfo;
 class SpdyStream;
 class SSLInfo;
 
@@ -59,7 +64,7 @@ enum SpdyProtocolErrorDetails {
   SPDY_ERROR_CREDENTIAL_FRAME_CORRUPT,
   SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
 
-  // SpdyStatusCodes
+  // SpdyRstStreamStatus
   STATUS_CODE_INVALID,
   STATUS_CODE_PROTOCOL_ERROR,
   STATUS_CODE_INVALID_STREAM,
@@ -87,8 +92,8 @@ COMPILE_ASSERT(STATUS_CODE_INVALID ==
                SpdyProtocolErrorDetails_SpdyErrors_mismatch);
 
 COMPILE_ASSERT(PROTOCOL_ERROR_UNEXPECTED_PING ==
-               static_cast<SpdyProtocolErrorDetails>(NUM_STATUS_CODES +
-                                                     STATUS_CODE_INVALID),
+               static_cast<SpdyProtocolErrorDetails>(
+                   RST_STREAM_NUM_STATUS_CODES + STATUS_CODE_INVALID),
                SpdyProtocolErrorDetails_SpdyErrors_mismatch);
 
 class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
@@ -236,7 +241,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Also closes the stream.  Was not piggybacked to CloseStream since not
   // all of the calls to CloseStream necessitate sending a RST_STREAM.
   void ResetStream(SpdyStreamId stream_id,
-                   SpdyStatusCodes status,
+                   SpdyRstStreamStatus status,
                    const std::string& description);
 
   // Check if a stream is active.
@@ -264,7 +269,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   void SendWindowUpdate(SpdyStreamId stream_id, int32 delta_window_size);
 
   // If session is closed, no new streams/transactions should be created.
-  bool IsClosed() const { return state_ == CLOSED; }
+  bool IsClosed() const { return state_ == STATE_CLOSED; }
 
   // Closes this session.  This will close all active streams and mark
   // the session as permanently closed.
@@ -290,6 +295,17 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   bool WasEverUsed() const {
     return connection_->socket()->WasEverUsed();
   }
+
+  // Returns the load timing information from the perspective of the given
+  // stream.  If it's not the first stream, the connection is considered reused
+  // for that stream.
+  //
+  // This uses a different notion of reuse than IsReused().  This function
+  // sets |socket_reused| to false only if |stream_id| is the ID of the first
+  // stream using the session.  IsReused(), on the other hand, indicates if the
+  // session has been used to send/receive data at all.
+  bool GetLoadTimingInfo(SpdyStreamId stream_id,
+                         LoadTimingInfo* load_timing_info) const;
 
   void set_spdy_session_pool(SpdySessionPool* pool) {
     spdy_session_pool_ = NULL;
@@ -410,10 +426,11 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       PendingCallbackMap;
 
   enum State {
-    IDLE,
-    CONNECTING,
-    CONNECTED,
-    CLOSED
+    STATE_IDLE,
+    STATE_CONNECTING,
+    STATE_DO_READ,
+    STATE_DO_READ_COMPLETE,
+    STATE_CLOSED
   };
 
   virtual ~SpdySession();
@@ -424,6 +441,21 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
       RequestPriority priority,
       scoped_refptr<SpdyStream>* spdy_stream,
       const BoundNetLog& stream_net_log);
+
+  // Start the DoLoop to read data from socket.
+  void StartRead();
+
+  // Try to make progress by reading and processing data.
+  int DoLoop(int result);
+  // The implementations of STATE_DO_READ/STATE_DO_READ_COMPLETE state changes
+  // of the state machine.
+  int DoRead();
+  int DoReadComplete(int bytes_read);
+
+  // Check if session is connected or not.
+  bool IsConnected() const {
+    return state_ == STATE_DO_READ || state_ == STATE_DO_READ_COMPLETE;
+  }
 
   // IO Callbacks
   void OnReadComplete(int result);
@@ -458,10 +490,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   // Check the status of the connection. It calls |CloseSessionOnError| if we
   // haven't received any data in |kHungInterval| time period.
   void CheckPingStatus(base::TimeTicks last_check_time);
-
-  // Start reading from the socket.
-  // Returns OK on success, or an error on failure.
-  net::Error ReadSocket();
 
   // Write current data to the socket.
   void WriteSocketLater();
@@ -515,7 +543,7 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
                              const std::string& description) OVERRIDE;
   virtual void OnPing(uint32 unique_id) OVERRIDE;
   virtual void OnRstStream(SpdyStreamId stream_id,
-                           SpdyStatusCodes status) OVERRIDE;
+                           SpdyRstStreamStatus status) OVERRIDE;
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
                         SpdyGoAwayStatus status) OVERRIDE;
   virtual void OnStreamFrameData(SpdyStreamId stream_id,
@@ -597,7 +625,6 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
 
   // The read buffer used to read data from the socket.
   scoped_refptr<IOBuffer> read_buffer_;
-  bool read_pending_;
 
   int stream_hi_water_mark_;  // The next stream id to use.
 
@@ -660,7 +687,15 @@ class NET_EXPORT SpdySession : public base::RefCounted<SpdySession>,
   int streams_pushed_count_;
   int streams_pushed_and_claimed_count_;
   int streams_abandoned_count_;
-  int bytes_received_;
+
+  // |total_bytes_received_| keeps track of all the bytes read by the
+  // SpdySession. It is used by the |Net.SpdySettingsCwnd...| histograms.
+  int total_bytes_received_;
+
+  // |bytes_read_| keeps track of number of bytes read continously in the
+  // DoLoop() without yielding.
+  int bytes_read_;
+
   bool sent_settings_;      // Did this session send settings when it started.
   bool received_settings_;  // Did this session receive at least one settings
                             // frame.

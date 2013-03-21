@@ -269,6 +269,16 @@ int StackSlotOffset(int index) {
 }
 
 
+LChunk::LChunk(CompilationInfo* info, HGraph* graph)
+    : spill_slot_count_(0),
+      info_(info),
+      graph_(graph),
+      instructions_(32, graph->zone()),
+      pointer_maps_(8, graph->zone()),
+      inlined_closures_(1, graph->zone()) {
+}
+
+
 LLabel* LChunk::GetLabel(int block_id) const {
   HBasicBlock* block = graph_->blocks()->at(block_id);
   int first_instruction = block->first_instruction_index();
@@ -422,11 +432,14 @@ LChunk* LChunk::NewChunk(HGraph* graph) {
     return NULL;
   }
 
+  chunk->set_allocated_double_registers(
+      allocator.assigned_double_registers());
+
   return chunk;
 }
 
 
-Handle<Code> LChunk::Codegen() {
+Handle<Code> LChunk::Codegen(Code::Kind kind) {
   MacroAssembler assembler(info()->isolate(), NULL, 0);
   LCodeGen generator(this, &assembler, info());
 
@@ -437,14 +450,59 @@ Handle<Code> LChunk::Codegen() {
       PrintF("Crankshaft Compiler - ");
     }
     CodeGenerator::MakeCodePrologue(info());
-    Code::Flags flags = Code::ComputeFlags(Code::OPTIMIZED_FUNCTION);
+    Code::Flags flags = Code::ComputeFlags(kind);
     Handle<Code> code =
         CodeGenerator::MakeCodeEpilogue(&assembler, flags, info());
     generator.FinishCode(code);
+    if (FLAG_weak_embedded_maps_in_optimized_code) {
+      RegisterDependentCodeForEmbeddedMaps(code);
+    }
     CodeGenerator::PrintCode(code, info());
     return code;
   }
   return Handle<Code>::null();
+}
+
+
+void LChunk::RegisterDependentCodeForEmbeddedMaps(Handle<Code> code) {
+  ZoneList<Handle<Map> > maps(1, zone());
+  int mode_mask = RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT);
+  for (RelocIterator it(*code, mode_mask); !it.done(); it.next()) {
+    RelocInfo::Mode mode = it.rinfo()->rmode();
+    if (mode == RelocInfo::EMBEDDED_OBJECT &&
+        it.rinfo()->target_object()->IsMap()) {
+      Handle<Map> map(Map::cast(it.rinfo()->target_object()));
+      if (map->CanTransition()) {
+        maps.Add(map, zone());
+      }
+    }
+  }
+#ifdef VERIFY_HEAP
+  // This disables verification of weak embedded maps after full GC.
+  // AddDependentCode can cause a GC, which would observe the state where
+  // this code is not yet in the depended code lists of the embedded maps.
+  NoWeakEmbeddedMapsVerificationScope disable_verification_of_embedded_maps;
+#endif
+  for (int i = 0; i < maps.length(); i++) {
+    maps.at(i)->AddDependentCode(code);
+  }
+}
+
+
+void LChunk::set_allocated_double_registers(BitVector* allocated_registers) {
+  allocated_double_registers_ = allocated_registers;
+  BitVector* doubles = allocated_double_registers();
+  BitVector::Iterator iterator(doubles);
+  while (!iterator.Done()) {
+    if (info()->saves_caller_doubles()) {
+      if (kDoubleSize == kPointerSize * 2) {
+        spill_slot_count_ += 2;
+      } else {
+        spill_slot_count_++;
+      }
+    }
+    iterator.Advance();
+  }
 }
 
 

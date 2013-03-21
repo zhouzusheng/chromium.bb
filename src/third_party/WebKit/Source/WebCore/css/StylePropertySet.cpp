@@ -172,6 +172,8 @@ String StylePropertySet::getPropertyValue(CSSPropertyID propertyID) const
         return getCommonValue(overflowShorthand());
     case CSSPropertyPadding:
         return get4Values(paddingShorthand());
+    case CSSPropertyTransition:
+        return getLayeredShorthandValue(transitionShorthand());
     case CSSPropertyListStyle:
         return getShorthandValue(listStyleShorthand());
     case CSSPropertyWebkitMaskPosition:
@@ -225,15 +227,15 @@ String StylePropertySet::borderSpacingValue(const StylePropertyShorthand& shorth
     return horizontalValueCSSText + ' ' + verticalValueCSSText;
 }
 
-bool StylePropertySet::appendFontLonghandValueIfExplicit(CSSPropertyID propertyID, StringBuilder& result, String& commonValue) const
+void StylePropertySet::appendFontLonghandValueIfExplicit(CSSPropertyID propertyID, StringBuilder& result, String& commonValue) const
 {
     int foundPropertyIndex = findPropertyIndex(propertyID);
     if (foundPropertyIndex == -1)
-        return false; // All longhands must have at least implicit values if "font" is specified.
+        return; // All longhands must have at least implicit values if "font" is specified.
 
     if (propertyAt(foundPropertyIndex).isImplicit()) {
         commonValue = String();
-        return true;
+        return;
     }
 
     char prefix = '\0';
@@ -258,37 +260,32 @@ bool StylePropertySet::appendFontLonghandValueIfExplicit(CSSPropertyID propertyI
     result.append(value);
     if (!commonValue.isNull() && commonValue != value)
         commonValue = String();
-
-    return true;
 }
 
 String StylePropertySet::fontValue() const
 {
-    int foundPropertyIndex = findPropertyIndex(CSSPropertyFontSize);
-    if (foundPropertyIndex == -1)
+    int fontSizePropertyIndex = findPropertyIndex(CSSPropertyFontSize);
+    int fontFamilyPropertyIndex = findPropertyIndex(CSSPropertyFontFamily);
+    if (fontSizePropertyIndex == -1 || fontFamilyPropertyIndex == -1)
         return emptyString();
 
-    PropertyReference fontSizeProperty = propertyAt(foundPropertyIndex);
-    if (fontSizeProperty.isImplicit())
+    PropertyReference fontSizeProperty = propertyAt(fontSizePropertyIndex);
+    PropertyReference fontFamilyProperty = propertyAt(fontFamilyPropertyIndex);
+    if (fontSizeProperty.isImplicit() || fontFamilyProperty.isImplicit())
         return emptyString();
 
     String commonValue = fontSizeProperty.value()->cssText();
     StringBuilder result;
-    bool success = true;
-    success &= appendFontLonghandValueIfExplicit(CSSPropertyFontStyle, result, commonValue);
-    success &= appendFontLonghandValueIfExplicit(CSSPropertyFontVariant, result, commonValue);
-    success &= appendFontLonghandValueIfExplicit(CSSPropertyFontWeight, result, commonValue);
+    appendFontLonghandValueIfExplicit(CSSPropertyFontStyle, result, commonValue);
+    appendFontLonghandValueIfExplicit(CSSPropertyFontVariant, result, commonValue);
+    appendFontLonghandValueIfExplicit(CSSPropertyFontWeight, result, commonValue);
     if (!result.isEmpty())
         result.append(' ');
     result.append(fontSizeProperty.value()->cssText());
-    success &= appendFontLonghandValueIfExplicit(CSSPropertyLineHeight, result, commonValue);
-    success &= appendFontLonghandValueIfExplicit(CSSPropertyFontFamily, result, commonValue);
-    if (!success) {
-        // An invalid "font" value has been built (should never happen, as at least implicit values
-        // for mandatory longhands are always found in the style), report empty value instead.
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
+    appendFontLonghandValueIfExplicit(CSSPropertyLineHeight, result, commonValue);
+    if (!result.isEmpty())
+        result.append(' ');
+    result.append(fontFamilyProperty.value()->cssText());
     if (isInitialOrInherit(commonValue))
         return commonValue;
     return result.toString();
@@ -583,7 +580,15 @@ bool StylePropertySet::removeShorthandProperty(CSSPropertyID propertyID)
     StylePropertyShorthand shorthand = shorthandForProperty(propertyID);
     if (!shorthand.length())
         return false;
-    return removePropertiesInSet(shorthand.properties(), shorthand.length());
+
+    bool ret = removePropertiesInSet(shorthand.properties(), shorthand.length());
+
+    CSSPropertyID prefixingVariant = prefixingVariantForPropertyId(propertyID);
+    if (prefixingVariant == propertyID)
+        return ret;
+
+    StylePropertyShorthand shorthandPrefixingVariant = shorthandForProperty(prefixingVariant);
+    return removePropertiesInSet(shorthandPrefixingVariant.properties(), shorthandPrefixingVariant.length());
 }
 
 bool StylePropertySet::removeProperty(CSSPropertyID propertyID, String* returnText)
@@ -609,8 +614,18 @@ bool StylePropertySet::removeProperty(CSSPropertyID propertyID, String* returnTe
     // A more efficient removal strategy would involve marking entries as empty
     // and sweeping them when the vector grows too big.
     mutablePropertyVector().remove(foundPropertyIndex);
-    
+
+    removePrefixedOrUnprefixedProperty(propertyID);
+
     return true;
+}
+
+void StylePropertySet::removePrefixedOrUnprefixedProperty(CSSPropertyID propertyID)
+{
+    int foundPropertyIndex = findPropertyIndex(prefixingVariantForPropertyId(propertyID));
+    if (foundPropertyIndex == -1)
+        return;
+    mutablePropertyVector().remove(foundPropertyIndex);
 }
 
 bool StylePropertySet::propertyIsImportant(CSSPropertyID propertyID) const
@@ -684,10 +699,28 @@ void StylePropertySet::setProperty(const CSSProperty& property, CSSProperty* slo
         CSSProperty* toReplace = slot ? slot : findMutableCSSPropertyWithID(property.id());
         if (toReplace) {
             *toReplace = property;
+            setPrefixingVariantProperty(property);
             return;
         }
     }
+    appendPrefixingVariantProperty(property);
+}
+
+void StylePropertySet::appendPrefixingVariantProperty(const CSSProperty& property)
+{
     mutablePropertyVector().append(property);
+    CSSPropertyID prefixingVariant = prefixingVariantForPropertyId(property.id());
+    if (prefixingVariant == property.id())
+        return;
+    mutablePropertyVector().append(CSSProperty(prefixingVariant, property.value(), property.isImportant(), property.shorthandID(), property.metadata().m_implicit));
+}
+
+void StylePropertySet::setPrefixingVariantProperty(const CSSProperty& property)
+{
+    CSSPropertyID prefixingVariant = prefixingVariantForPropertyId(property.id());
+    CSSProperty* toReplace = findMutableCSSPropertyWithID(prefixingVariant);
+    if (toReplace)
+        *toReplace = CSSProperty(prefixingVariant, property.value(), property.isImportant(), property.shorthandID(), property.metadata().m_implicit);
 }
 
 bool StylePropertySet::setProperty(CSSPropertyID propertyID, int identifier, bool important)
@@ -837,6 +870,12 @@ String StylePropertySet::asText() const
         case CSSPropertyPaddingBottom:
         case CSSPropertyPaddingLeft:
             shorthandPropertyID = CSSPropertyPadding;
+            break;
+        case CSSPropertyTransitionProperty:
+        case CSSPropertyTransitionDuration:
+        case CSSPropertyTransitionTimingFunction:
+        case CSSPropertyTransitionDelay:
+            shorthandPropertyID = CSSPropertyTransition;
             break;
         case CSSPropertyWebkitAnimationName:
         case CSSPropertyWebkitAnimationDuration:
@@ -996,7 +1035,7 @@ void StylePropertySet::mergeAndOverrideOnConflict(const StylePropertySet* other)
         if (old)
             setProperty(toMerge.toCSSProperty(), old);
         else
-            mutablePropertyVector().append(toMerge.toCSSProperty());
+            appendPrefixingVariantProperty(toMerge.toCSSProperty());
     }
 }
 
@@ -1217,10 +1256,10 @@ void StylePropertySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) con
     size_t actualSize = m_isMutable ? sizeof(StylePropertySet) : sizeForImmutableStylePropertySetWithPropertyCount(m_arraySize);
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS, actualSize);
     if (m_isMutable)
-        info.addMember(mutablePropertyVector());
+        info.addMember(mutablePropertyVector(), "mutablePropertyVector()");
     else {
         for (unsigned i = 0; i < propertyCount(); ++i)
-            info.addMember(propertyAt(i).value());
+            info.addMember(propertyAt(i).value(), "value");
     }
 }
 
@@ -1252,6 +1291,8 @@ String StylePropertySet::PropertyReference::cssName() const
 #if ENABLE(CSS_VARIABLES)
     if (id() == CSSPropertyVariable) {
         ASSERT(propertyValue()->isVariableValue());
+        if (!propertyValue()->isVariableValue())
+            return emptyString(); // Should not happen, but if it does, avoid a bad cast.
         return "-webkit-var-" + static_cast<const CSSVariableValue*>(propertyValue())->name();
     }
 #endif

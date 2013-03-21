@@ -23,10 +23,17 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "ui/base/win/dpi.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/rect_conversions.h"
 #include "ui/native_theme/common_theme.h"
+
+// This was removed from Winvers.h but is still used.
+#if !defined(COLOR_MENUHIGHLIGHT)
+#define COLOR_MENUHIGHLIGHT 29
+#endif
 
 namespace {
 
@@ -34,7 +41,7 @@ namespace {
 // Theme colors returned by GetSystemColor().
 const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
 // Dialogs:
-const SkColor kDialogBackgroundColor = SkColorSetRGB(200, 200, 200);
+const SkColor kDialogBackgroundColor = SkColorSetRGB(251, 251, 251);
 // FocusableBorder:
 const SkColor kFocusedBorderColor = SkColorSetRGB(0x4d, 0x90, 0xfe);
 const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
@@ -49,6 +56,8 @@ const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
 const SkColor kMenuSeparatorColor = SkColorSetARGB(50, 0, 0, 0);
 // Textfield:
 const SkColor kTextfieldSelectionBackgroundUnfocused = SK_ColorLTGRAY;
+// Table:
+const SkColor kTreeSelectionBackgroundUnfocused = SkColorSetRGB(240, 240, 240);
 
 // Windows system color IDs cached and updated by the native theme.
 const int kSystemColors[] = {
@@ -60,6 +69,8 @@ const int kSystemColors[] = {
   COLOR_SCROLLBAR,
   COLOR_WINDOW,
   COLOR_WINDOWTEXT,
+  COLOR_BTNFACE,
+  COLOR_MENUHIGHLIGHT,
 };
 
 void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
@@ -115,6 +126,14 @@ RECT InsetRect(const RECT* rect, int size) {
   gfx::Rect result(*rect);
   result.Inset(size, size);
   return result.ToRECT();
+}
+
+// Returns true if using a high contrast theme.
+bool UsingHighContrastTheme() {
+  HIGHCONTRAST result;
+  result.cbSize = sizeof(HIGHCONTRAST);
+  return SystemParametersInfo(SPI_GETHIGHCONTRAST, result.cbSize, &result, 0) &&
+      (result.dwFlags & HCF_HIGHCONTRASTON) == HCF_HIGHCONTRASTON;
 }
 
 }  // namespace
@@ -234,6 +253,17 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
         // size of these controls, so determined these values empirically.
         size.cx = 13;
         size.cy = 13;
+        break;
+      case kScrollbarDownArrow:
+      case kScrollbarLeftArrow:
+      case kScrollbarRightArrow:
+      case kScrollbarUpArrow:
+      case kScrollbarHorizontalThumb:
+      case kScrollbarVerticalThumb:
+      case kScrollbarHorizontalTrack:
+      case kScrollbarVerticalTrack:
+        size.cx = size.cy = GetSystemMetrics(SM_CXVSCROLL) /
+            ui::win::GetDeviceScaleFactor();
         break;
       default:
         size.cx = 0;
@@ -448,10 +478,8 @@ void NativeThemeWin::PaintDirect(SkCanvas* canvas,
 
 SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
   SkColor color;
-  if (IsNewMenuStyleEnabled() &&
-      CommonThemeGetSystemColor(color_id, &color)) {
+  if (IsNewMenuStyleEnabled() && CommonThemeGetSystemColor(color_id, &color))
     return color;
-  }
 
   switch (color_id) {
     // Windows
@@ -460,9 +488,7 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
 
     // Dialogs
     case kColorId_DialogBackground:
-      // TODO(benrg): Should this use the new Windows theme functions? The old
-      // code in DialogClientView::OnPaint used GetSysColor(COLOR_3DFACE).
-      return system_colors_[COLOR_3DFACE];
+      return kDialogBackgroundColor;
 
     // FocusableBorder
     case kColorId_FocusedBorderColor:
@@ -516,8 +542,43 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_TextfieldSelectionBackgroundUnfocused:
       return kTextfieldSelectionBackgroundUnfocused;
 
+    // Tree
+    // NOTE: these aren't right for all themes, but as close as I could get.
+    case kColorId_TreeBackground:
+      return system_colors_[COLOR_WINDOW];
+    case kColorId_TreeText:
+      return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_TreeSelectedText:
+      return system_colors_[COLOR_HIGHLIGHTTEXT];
+    case kColorId_TreeSelectedTextUnfocused:
+      return system_colors_[COLOR_BTNTEXT];
+    case kColorId_TreeSelectionBackgroundFocused:
+      return system_colors_[COLOR_HIGHLIGHT];
+    case kColorId_TreeSelectionBackgroundUnfocused:
+      return system_colors_[UsingHighContrastTheme() ?
+                              COLOR_MENUHIGHLIGHT : COLOR_BTNFACE];
+    case kColorId_TreeArrow:
+      return system_colors_[COLOR_WINDOWTEXT];
+
+    // Table
+    case kColorId_TableBackground:
+      return system_colors_[COLOR_WINDOW];
+    case kColorId_TableText:
+      return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_TableSelectedText:
+      return system_colors_[COLOR_HIGHLIGHTTEXT];
+    case kColorId_TableSelectedTextUnfocused:
+      return system_colors_[COLOR_BTNTEXT];
+    case kColorId_TableSelectionBackgroundFocused:
+      return system_colors_[COLOR_HIGHLIGHT];
+    case kColorId_TableSelectionBackgroundUnfocused:
+      return system_colors_[UsingHighContrastTheme() ?
+                              COLOR_MENUHIGHLIGHT : COLOR_BTNFACE];
+    case kColorId_TableGroupingIndicatorColor:
+      return system_colors_[COLOR_GRAYTEXT];
+
     default:
-      NOTREACHED() << "Invalid color_id: " << color_id;
+      NOTREACHED();
       break;
   }
   return kInvalidColorIdColor;
@@ -1023,8 +1084,7 @@ HRESULT NativeThemeWin::PaintScrollbarArrow(
           break;
       }
     }
-
-    return draw_theme_(handle, hdc, SBP_ARROWBTN, state_id, &rect_win, NULL);
+    return PaintScaledTheme(handle, hdc, SBP_ARROWBTN, state_id, rect);
   }
 
   int classic_state = DFCS_SCROLLDOWN;
@@ -1113,7 +1173,7 @@ HRESULT NativeThemeWin::PaintScrollbarThumb(
   }
 
   if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, part_id, state_id, &rect_win, NULL);
+    return PaintScaledTheme(handle, hdc, part_id, state_id, rect);
 
   // Draw it manually.
   if ((part_id == SBP_THUMBBTNHORZ) || (part_id == SBP_THUMBBTNVERT))
@@ -1543,6 +1603,35 @@ HRESULT NativeThemeWin::PaintTextField(HDC hdc,
   return hr;
 }
 
+HRESULT NativeThemeWin::PaintScaledTheme(HANDLE theme,
+                                         HDC hdc,
+                                         int part_id,
+                                         int state_id,
+                                         const gfx::Rect& rect) const {
+  // Correct the scaling and positioning of sub-components such as scrollbar
+  // arrows and thumb grippers in the event that the world transform applies
+  // scaling (e.g. in high-DPI mode).
+  XFORM save_transform;
+  if (GetWorldTransform(hdc, &save_transform)) {
+    float scale = save_transform.eM11;
+    if (scale != 1 && save_transform.eM12 == 0) {
+      ModifyWorldTransform(hdc, NULL, MWT_IDENTITY);
+      gfx::Rect scaled_rect = gfx::ToEnclosedRect(
+          gfx::ScaleRect(rect, scale));
+      RECT bounds = gfx::Rect(scaled_rect.x() + save_transform.eDx,
+                              scaled_rect.y() + save_transform.eDy,
+                              scaled_rect.width(),
+                              scaled_rect.height()).ToRECT();
+      HRESULT result = draw_theme_(theme, hdc, part_id, state_id, &bounds,
+                                   NULL);
+      SetWorldTransform(hdc, &save_transform);
+      return result;
+    }
+  }
+  RECT bounds = rect.ToRECT();
+  return draw_theme_(theme, hdc, part_id, state_id, &bounds, NULL);
+}
+
 // static
 NativeThemeWin::ThemeName NativeThemeWin::GetThemeName(Part part) {
   ThemeName name;
@@ -1629,12 +1718,10 @@ int NativeThemeWin::GetWindowsPart(Part part,
       part_id = SBP_ARROWBTN;
       break;
     case kScrollbarHorizontalThumb:
-      part_id = extra.scrollbar_track.is_upper ? SBP_UPPERTRACKHORZ :
-                                                 SBP_LOWERTRACKHORZ;
+      part_id = SBP_THUMBBTNHORZ;
       break;
     case kScrollbarVerticalThumb:
-      part_id = extra.scrollbar_track.is_upper ? SBP_UPPERTRACKVERT :
-                                                 SBP_LOWERTRACKVERT;
+      part_id = SBP_THUMBBTNVERT;
       break;
     default:
       NOTREACHED() << "Invalid part: " << part;

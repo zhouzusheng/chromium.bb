@@ -70,11 +70,6 @@ public:
 
     virtual void svgAttributeChanged(const QualifiedName&) { }
 
-    bool hasPendingResources() const;
-    void setHasPendingResources();
-    void clearHasPendingResourcesIfPossible();
-    virtual void buildPendingResource() { }
-
     virtual void animatedPropertyTypeForAttribute(const QualifiedName&, Vector<AnimatedPropertyType>&);
 
     void sendSVGLoadEventIfPossible(bool sendParentLoadEvents = false);
@@ -113,7 +108,7 @@ public:
     virtual SVGAttributeToPropertyMap& localAttributeToPropertyMap();
 
 #ifndef NDEBUG
-    static bool isAnimatableAttribute(const QualifiedName&);
+    bool isAnimatableAttribute(const QualifiedName&) const;
 #endif
 
     StylePropertySet* animatedSMILStyleProperties() const;
@@ -141,12 +136,12 @@ protected:
 
     void reportAttributeParsingError(SVGParsingError, const QualifiedName&, const AtomicString&);
 
+private:
+    friend class SVGElementInstance;
+
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=77938
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-private:
-    friend class SVGElementInstance;
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
@@ -175,7 +170,7 @@ struct SVGAttributeHashTranslator {
 
 inline SVGElement* toSVGElement(Element* element)
 {
-    ASSERT(!element || element->isSVGElement());
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->isSVGElement());
     return static_cast<SVGElement*>(element);
 }
 

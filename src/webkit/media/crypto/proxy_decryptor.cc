@@ -6,16 +6,10 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/location.h"
 #include "base/logging.h"
-#include "media/base/audio_decoder_config.h"
-#include "media/base/decoder_buffer.h"
-#include "media/base/decryptor_client.h"
-#include "media/base/video_decoder_config.h"
-#include "media/base/video_frame.h"
 #include "media/crypto/aes_decryptor.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/media/crypto/key_systems.h"
 #include "webkit/media/crypto/ppapi_decryptor.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
@@ -28,7 +22,10 @@
 
 namespace webkit_media {
 
-static scoped_refptr<webkit::ppapi::PluginInstance> CreatePluginInstance(
+// Returns the PluginInstance associated with the Helper Plugin.
+// If a non-NULL pointer is returned, the caller must call closeHelperPlugin()
+// when the Helper Plugin is no longer needed.
+static scoped_refptr<webkit::ppapi::PluginInstance> CreateHelperPlugin(
     const std::string& plugin_type,
     WebKit::WebMediaPlayerClient* web_media_player_client,
     WebKit::WebFrame* web_frame) {
@@ -47,16 +44,39 @@ static scoped_refptr<webkit::ppapi::PluginInstance> CreatePluginInstance(
   return ppapi_plugin->instance();
 }
 
+static void DestroyHelperPlugin(
+    WebKit::WebMediaPlayerClient* web_media_player_client) {
+  web_media_player_client->closeHelperPlugin();
+}
+
 ProxyDecryptor::ProxyDecryptor(
-    media::DecryptorClient* decryptor_client,
     WebKit::WebMediaPlayerClient* web_media_player_client,
-    WebKit::WebFrame* web_frame)
-    : client_(decryptor_client),
-      web_media_player_client_(web_media_player_client),
-      web_frame_(web_frame) {
+    WebKit::WebFrame* web_frame,
+    const media::KeyAddedCB& key_added_cb,
+    const media::KeyErrorCB& key_error_cb,
+    const media::KeyMessageCB& key_message_cb,
+    const media::NeedKeyCB& need_key_cb)
+    : web_media_player_client_(web_media_player_client),
+      web_frame_(web_frame),
+      did_create_helper_plugin_(false),
+      key_added_cb_(key_added_cb),
+      key_error_cb_(key_error_cb),
+      key_message_cb_(key_message_cb),
+      need_key_cb_(need_key_cb),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
 }
 
 ProxyDecryptor::~ProxyDecryptor() {
+  // Destroy the decryptor explicitly before destroying the plugin.
+  {
+    base::AutoLock auto_lock(lock_);
+    decryptor_.reset();
+  }
+
+  if (did_create_helper_plugin_)
+    DestroyHelperPlugin(web_media_player_client_);
+
+  web_media_player_client_ = NULL;  // We should be done using it now.
 }
 
 // TODO(xhwang): Support multiple decryptor notification request (e.g. from
@@ -97,7 +117,7 @@ bool ProxyDecryptor::GenerateKeyRequest(const std::string& key_system,
   if (!decryptor_) {
     decryptor_ = CreateDecryptor(key_system);
     if (!decryptor_) {
-      client_->KeyError(key_system, "", media::Decryptor::kUnknownError, 0);
+      key_error_cb_.Run(key_system, "", media::Decryptor::kUnknownError, 0);
       return false;
     }
   }
@@ -135,84 +155,70 @@ void ProxyDecryptor::CancelKeyRequest(const std::string& key_system,
   decryptor_->CancelKeyRequest(key_system, session_id);
 }
 
-void ProxyDecryptor::RegisterKeyAddedCB(StreamType stream_type,
-                                        const KeyAddedCB& key_added_cb) {
-  NOTREACHED() << "KeyAddedCB should not be registered with ProxyDecryptor.";
-}
-
-void ProxyDecryptor::Decrypt(
-    StreamType stream_type,
-    const scoped_refptr<media::DecoderBuffer>& encrypted,
-    const DecryptCB& decrypt_cb) {
-  NOTREACHED() << "ProxyDecryptor does not support decryption";
-}
-
-void ProxyDecryptor::CancelDecrypt(StreamType stream_type) {
-  NOTREACHED() << "ProxyDecryptor does not support decryption";
-}
-
-void ProxyDecryptor::InitializeAudioDecoder(
-    scoped_ptr<media::AudioDecoderConfig> config,
-    const DecoderInitCB& init_cb) {
-  NOTREACHED() << "ProxyDecryptor does not support audio decoding";
-}
-
-void ProxyDecryptor::InitializeVideoDecoder(
-    scoped_ptr<media::VideoDecoderConfig> config,
-    const DecoderInitCB& init_cb) {
-  NOTREACHED() << "ProxyDecryptor does not support video decoding";
-}
-
-void ProxyDecryptor::DecryptAndDecodeAudio(
-    const scoped_refptr<media::DecoderBuffer>& encrypted,
-    const AudioDecodeCB& audio_decode_cb) {
-  NOTREACHED() << "ProxyDecryptor does not support audio decoding";
-}
-
-void ProxyDecryptor::DecryptAndDecodeVideo(
-    const scoped_refptr<media::DecoderBuffer>& encrypted,
-    const VideoDecodeCB& video_decode_cb) {
-  NOTREACHED() << "ProxyDecryptor does not support video decoding";
-}
-
-void ProxyDecryptor::ResetDecoder(StreamType stream_type) {
-  NOTREACHED() << "ProxyDecryptor does not support audio/video decoding";
-}
-
-void ProxyDecryptor::DeinitializeDecoder(StreamType stream_type) {
-  NOTREACHED() << "ProxyDecryptor does not support audio/video decoding";
-}
-
 scoped_ptr<media::Decryptor> ProxyDecryptor::CreatePpapiDecryptor(
     const std::string& key_system) {
-  DCHECK(client_);
   DCHECK(web_media_player_client_);
   DCHECK(web_frame_);
 
   std::string plugin_type = GetPluginType(key_system);
   DCHECK(!plugin_type.empty());
   const scoped_refptr<webkit::ppapi::PluginInstance>& plugin_instance =
-    CreatePluginInstance(plugin_type, web_media_player_client_, web_frame_);
-  if (!plugin_instance) {
+      CreateHelperPlugin(plugin_type, web_media_player_client_, web_frame_);
+  did_create_helper_plugin_ = plugin_instance != NULL;
+  if (!did_create_helper_plugin_) {
     DVLOG(1) << "ProxyDecryptor: plugin instance creation failed.";
     return scoped_ptr<media::Decryptor>();
   }
 
-  return scoped_ptr<media::Decryptor>(new PpapiDecryptor(client_,
-                                                         plugin_instance));
+  return scoped_ptr<media::Decryptor>(new PpapiDecryptor(
+      plugin_instance,
+      base::Bind(&ProxyDecryptor::KeyAdded, weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&ProxyDecryptor::KeyError, weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&ProxyDecryptor::KeyMessage, weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&ProxyDecryptor::NeedKey, weak_ptr_factory_.GetWeakPtr())));
 }
 
 scoped_ptr<media::Decryptor> ProxyDecryptor::CreateDecryptor(
     const std::string& key_system) {
-  DCHECK(client_);
-
   if (CanUseAesDecryptor(key_system))
-    return scoped_ptr<media::Decryptor>(new media::AesDecryptor(client_));
+    return scoped_ptr<media::Decryptor>(new media::AesDecryptor(
+        base::Bind(&ProxyDecryptor::KeyAdded, weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&ProxyDecryptor::KeyError, weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&ProxyDecryptor::KeyMessage, weak_ptr_factory_.GetWeakPtr()),
+        base::Bind(&ProxyDecryptor::NeedKey, weak_ptr_factory_.GetWeakPtr())));
 
   // We only support AesDecryptor and PpapiDecryptor. So if we cannot
   // use the AesDecryptor, then we'll try to create a PpapiDecryptor for given
   // |key_system|.
   return CreatePpapiDecryptor(key_system);
+}
+
+void ProxyDecryptor::KeyAdded(const std::string& key_system,
+                              const std::string& session_id) {
+  key_added_cb_.Run(key_system, session_id);
+}
+
+void ProxyDecryptor::KeyError(const std::string& key_system,
+                              const std::string& session_id,
+                              media::Decryptor::KeyError error_code,
+                              int system_code) {
+  key_error_cb_.Run(key_system, session_id, error_code, system_code);
+}
+
+void ProxyDecryptor::KeyMessage(const std::string& key_system,
+                                const std::string& session_id,
+                                const std::string& message,
+                                const std::string& default_url) {
+  key_message_cb_.Run(key_system, session_id, message, default_url);
+}
+
+void ProxyDecryptor::NeedKey(const std::string& key_system,
+                             const std::string& session_id,
+                             const std::string& type,
+                             scoped_array<uint8> init_data,
+                             int init_data_size) {
+  need_key_cb_.Run(key_system, session_id, type,
+                   init_data.Pass(), init_data_size);
 }
 
 }  // namespace webkit_media

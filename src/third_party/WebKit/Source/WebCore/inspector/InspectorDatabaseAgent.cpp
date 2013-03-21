@@ -34,6 +34,7 @@
 
 #include "Database.h"
 #include "ExceptionCode.h"
+#include "ExceptionCodePlaceholder.h"
 #include "InspectorDatabaseResource.h"
 #include "InspectorFrontend.h"
 #include "InspectorState.h"
@@ -145,8 +146,7 @@ public:
         Vector<SQLValue> sqlValues;
         RefPtr<SQLStatementCallback> callback(StatementCallback::create(m_requestCallback.get()));
         RefPtr<SQLStatementErrorCallback> errorCallback(StatementErrorCallback::create(m_requestCallback.get()));
-        ExceptionCode ec = 0;
-        transaction->executeSQL(m_sqlStatement, sqlValues, callback.release(), errorCallback.release(), ec);
+        transaction->executeSQL(m_sqlStatement, sqlValues, callback.release(), errorCallback.release(), IGNORE_EXCEPTION);
         return true;
     }
 private:
@@ -213,7 +213,7 @@ void InspectorDatabaseAgent::clearResources()
     m_resources.clear();
 }
 
-InspectorDatabaseAgent::InspectorDatabaseAgent(InstrumentingAgents* instrumentingAgents, InspectorState* state)
+InspectorDatabaseAgent::InspectorDatabaseAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state)
     : InspectorBaseAgent<InspectorDatabaseAgent>("Database", instrumentingAgents, state)
     , m_enabled(false)
 {

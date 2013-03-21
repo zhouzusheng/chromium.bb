@@ -7,11 +7,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop_proxy.h"
 #include "cc/thread_impl.h"
+#include "cc/transform_operations.h"
 #include "webkit/compositor_bindings/web_animation_impl.h"
 #include "webkit/compositor_bindings/web_compositor_support_output_surface.h"
 #include "webkit/compositor_bindings/web_compositor_support_software_output_device.h"
 #include "webkit/compositor_bindings/web_content_layer_impl.h"
-#include "webkit/compositor_bindings/web_delegated_renderer_layer_impl.h"
 #include "webkit/compositor_bindings/web_external_texture_layer_impl.h"
 #include "webkit/compositor_bindings/web_float_animation_curve_impl.h"
 #include "webkit/compositor_bindings/web_image_layer_impl.h"
@@ -21,6 +21,7 @@
 #include "webkit/compositor_bindings/web_scrollbar_layer_impl.h"
 #include "webkit/compositor_bindings/web_solid_color_layer_impl.h"
 #include "webkit/compositor_bindings/web_transform_animation_curve_impl.h"
+#include "webkit/compositor_bindings/web_transform_operations_impl.h"
 #include "webkit/compositor_bindings/web_video_layer_impl.h"
 #include "webkit/glue/webthread_impl.h"
 #include "webkit/support/webkit_support.h"
@@ -29,7 +30,6 @@ using WebKit::WebAnimation;
 using WebKit::WebAnimationCurve;
 using WebKit::WebContentLayer;
 using WebKit::WebContentLayerClient;
-using WebKit::WebDelegatedRendererLayer;
 using WebKit::WebExternalTextureLayer;
 using WebKit::WebExternalTextureLayerClient;
 using WebKit::WebFloatAnimationCurve;
@@ -45,6 +45,7 @@ using WebKit::WebScrollbarThemeGeometry;
 using WebKit::WebScrollbarThemePainter;
 using WebKit::WebSolidColorLayer;
 using WebKit::WebTransformAnimationCurve;
+using WebKit::WebTransformOperations;
 using WebKit::WebVideoFrameProvider;
 using WebKit::WebVideoLayer;
 
@@ -79,22 +80,6 @@ void WebCompositorSupportImpl::shutdown() {
   impl_thread_message_loop_proxy_ = NULL;
 }
 
-WebLayerTreeView* WebCompositorSupportImpl::createLayerTreeView(
-    WebLayerTreeViewClient* client, const WebLayer& root,
-    const WebLayerTreeView::Settings& settings) {
-  DCHECK(initialized_);
-  scoped_ptr<WebKit::WebLayerTreeViewImpl> layerTreeViewImpl(
-      new WebKit::WebLayerTreeViewImpl(client));
-  scoped_ptr<cc::Thread> impl_thread;
-  if (impl_thread_message_loop_proxy_)
-    impl_thread = cc::ThreadImpl::createForDifferentThread(
-        impl_thread_message_loop_proxy_);
-  if (!layerTreeViewImpl->initialize(settings, impl_thread.Pass()))
-    return NULL;
-  layerTreeViewImpl->setRootLayer(root);
-  return layerTreeViewImpl.release();
-}
-
 WebKit::WebCompositorOutputSurface*
     WebCompositorSupportImpl::createOutputSurfaceFor3D(
         WebKit::WebGraphicsContext3D* context) {
@@ -118,11 +103,6 @@ WebLayer* WebCompositorSupportImpl::createLayer() {
 WebContentLayer* WebCompositorSupportImpl::createContentLayer(
     WebContentLayerClient* client) {
   return new WebKit::WebContentLayerImpl(client);
-}
-
-WebDelegatedRendererLayer*
-    WebCompositorSupportImpl::createDelegatedRendererLayer() {
-  return new WebKit::WebDelegatedRendererLayerImpl();
 }
 
 WebExternalTextureLayer* WebCompositorSupportImpl::createExternalTextureLayer(
@@ -169,6 +149,26 @@ WebFloatAnimationCurve* WebCompositorSupportImpl::createFloatAnimationCurve() {
 WebTransformAnimationCurve*
     WebCompositorSupportImpl::createTransformAnimationCurve() {
   return new WebKit::WebTransformAnimationCurveImpl();
+}
+
+WebTransformOperations* WebCompositorSupportImpl::createTransformOperations() {
+  return new WebTransformOperationsImpl();
+}
+
+WebLayerTreeView* WebCompositorSupportImpl::createLayerTreeView(
+    WebLayerTreeViewClient* client, const WebLayer& root,
+    const WebLayerTreeView::Settings& settings) {
+  DCHECK(initialized_);
+  scoped_ptr<WebKit::WebLayerTreeViewImpl> layerTreeViewImpl(
+      new WebKit::WebLayerTreeViewImpl(client));
+  scoped_ptr<cc::Thread> impl_thread;
+  if (impl_thread_message_loop_proxy_)
+    impl_thread = cc::ThreadImpl::createForDifferentThread(
+        impl_thread_message_loop_proxy_);
+  if (!layerTreeViewImpl->initialize(settings, impl_thread.Pass()))
+    return NULL;
+  layerTreeViewImpl->setRootLayer(root);
+  return layerTreeViewImpl.release();
 }
 
 }  // namespace webkit

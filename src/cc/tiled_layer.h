@@ -8,9 +8,11 @@
 #include "cc/cc_export.h"
 #include "cc/contents_scaling_layer.h"
 #include "cc/layer_tiling_data.h"
-#include "cc/layer_updater.h"
 
 namespace cc {
+class LayerUpdater;
+class PrioritizedResourceManager;
+class PrioritizedResource;
 class UpdatableTile;
 
 class CC_EXPORT TiledLayer : public ContentsScalingLayer {
@@ -33,7 +35,7 @@ public:
 
     virtual Region visibleContentOpaqueRegion() const OVERRIDE;
 
-    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&) OVERRIDE;
+    virtual void update(ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats*) OVERRIDE;
 
 protected:
     TiledLayer();
@@ -44,7 +46,7 @@ protected:
 
     // Exposed to subclasses for testing.
     void setTileSize(const gfx::Size&);
-    void setTextureFormat(GLenum textureFormat) { m_textureFormat = textureFormat; }
+    void setTextureFormat(unsigned textureFormat) { m_textureFormat = textureFormat; }
     void setBorderTexelOption(LayerTilingData::BorderTexelOption);
     size_t numPaintedTiles() { return m_tiler->tiles().size(); }
 
@@ -65,6 +67,8 @@ protected:
 
     // Virtual for testing
     virtual PrioritizedResourceManager* resourceManager() const;
+    const LayerTilingData* tilerForTesting() const { return m_tiler.get(); }
+    const PrioritizedResource* resourceAtForTesting(int, int) const;
 
 private:
     virtual scoped_ptr<LayerImpl> createLayerImpl(LayerTreeImpl* treeImpl) OVERRIDE;
@@ -77,10 +81,10 @@ private:
 
     void markOcclusionsAndRequestTextures(int left, int top, int right, int bottom, const OcclusionTracker*);
 
-    bool updateTiles(int left, int top, int right, int bottom, ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&, bool& didPaint);
+    bool updateTiles(int left, int top, int right, int bottom, ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats*, bool& didPaint);
     bool haveTexturesForTiles(int left, int top, int right, int bottom, bool ignoreOcclusions);
     gfx::Rect markTilesForUpdate(int left, int top, int right, int bottom, bool ignoreOcclusions);
-    void updateTileTextures(const gfx::Rect& paintRect, int left, int top, int right, int bottom, ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats&);
+    void updateTileTextures(const gfx::Rect& paintRect, int left, int top, int right, int bottom, ResourceUpdateQueue&, const OcclusionTracker*, RenderingStats*);
     void updateScrollPrediction();
 
     UpdatableTile* tileAt(int, int) const;
@@ -88,7 +92,7 @@ private:
 
     bool isSmallAnimatedLayer() const;
 
-    GLenum m_textureFormat;
+    unsigned m_textureFormat;
     bool m_skipsDraw;
     bool m_failedUpdate;
 

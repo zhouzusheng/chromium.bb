@@ -62,13 +62,13 @@ namespace WebCore {
     v8::Handle<v8::Value> setDOMException(int, v8::Isolate*);
 
     // Schedule a JavaScript error to be thrown.
-    v8::Handle<v8::Value> throwError(V8ErrorType, const char*, v8::Isolate* = 0);
+    v8::Handle<v8::Value> throwError(V8ErrorType, const char*, v8::Isolate*);
 
     // Schedule a JavaScript error to be thrown.
-    v8::Handle<v8::Value> throwError(v8::Local<v8::Value>, v8::Isolate* = 0);
+    v8::Handle<v8::Value> throwError(v8::Local<v8::Value>, v8::Isolate*);
 
     // A helper for throwing JavaScript TypeError.
-    v8::Handle<v8::Value> throwTypeError(const char* = 0, v8::Isolate* = 0);
+    v8::Handle<v8::Value> throwTypeError(const char*, v8::Isolate*);
 
     // A helper for throwing JavaScript TypeError for not enough arguments.
     v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate*);
@@ -145,48 +145,32 @@ namespace WebCore {
     // Return a V8 external string that shares the underlying buffer with the given
     // WebCore string. The reference counting mechanism is used to keep the
     // underlying buffer alive while the string is still live in the V8 engine.
-    inline v8::Handle<v8::String> v8String(const String& string, v8::Isolate* isolate = 0)
+    inline v8::Handle<v8::String> v8String(const String& string, v8::Isolate* isolate, ReturnHandleType handleType = ReturnLocalHandle)
     {
-        if (UNLIKELY(!isolate))
-            isolate = v8::Isolate::GetCurrent();
         if (string.isNull())
             return v8::String::Empty(isolate);
-        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), isolate);
+        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), handleType, isolate);
     }
 
-    // FIXME: All call sites of this method should use v8String().
-    inline v8::Handle<v8::String> deprecatedV8String(const String& string)
-    {
-        return v8String(string, v8::Isolate::GetCurrent());
-    }
-
-    inline v8::Handle<v8::Value> v8StringOrNull(const String& string, v8::Isolate* isolate)
+    inline v8::Handle<v8::Value> v8StringOrNull(const String& string, v8::Isolate* isolate, ReturnHandleType handleType = ReturnLocalHandle)
     {
         ASSERT(isolate);
         if (string.isNull())
             return v8Null(isolate);
-        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), isolate);
+        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), handleType, isolate);
     }
 
-    inline v8::Handle<v8::Value> v8StringOrUndefined(const String& string, v8::Isolate* isolate)
+    inline v8::Handle<v8::Value> v8StringOrUndefined(const String& string, v8::Isolate* isolate, ReturnHandleType handleType = ReturnLocalHandle)
     {
         ASSERT(isolate);
         if (string.isNull())
             return v8::Undefined(isolate);
-        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), isolate);
+        return V8PerIsolateData::from(isolate)->stringCache()->v8ExternalString(string.impl(), handleType, isolate);
     }
 
-    inline v8::Handle<v8::Integer> v8Integer(int value, v8::Isolate* isolate = 0)
+    inline v8::Handle<v8::Integer> v8Integer(int value, v8::Isolate* isolate)
     {
-        if (UNLIKELY(!isolate))
-            isolate = v8::Isolate::GetCurrent();
         return V8PerIsolateData::from(isolate)->integerCache()->v8Integer(value, isolate);
-    }
-
-    // FIXME: All call sites of this method should use v8Integer().
-    inline v8::Handle<v8::Integer> deprecatedV8Integer(int value)
-    {
-        return v8Integer(value, v8::Isolate::GetCurrent());
     }
 
     inline v8::Handle<v8::Integer> v8UnsignedInteger(unsigned value, v8::Isolate* isolate)
@@ -281,7 +265,7 @@ namespace WebCore {
     };
 
     template <class T, class V8T>
-    Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value)
+    Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, v8::Isolate* isolate)
     {
         if (!value->IsArray())
             return Vector<RefPtr<T> >();
@@ -293,11 +277,11 @@ namespace WebCore {
         for (size_t i = 0; i < length; ++i) {
             v8::Handle<v8::Value> element = array->Get(i);
 
-            if (V8T::HasInstance(element)) {
+            if (V8T::HasInstance(element, isolate)) {
                 v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(element);
                 result.append(V8T::toNative(object));
             } else {
-                throwTypeError("Invalid Array element type");
+                throwTypeError("Invalid Array element type", isolate);
                 return Vector<RefPtr<T> >();
             }
         }
@@ -334,10 +318,10 @@ namespace WebCore {
 
     // Validates that the passed object is a sequence type per WebIDL spec
     // http://www.w3.org/TR/2012/WD-WebIDL-20120207/#es-sequence
-    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length)
+    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, v8::Isolate* isolate)
     {
         if (!value->IsObject()) {
-            throwTypeError();
+            throwTypeError(0, isolate);
             return v8Undefined();
         }
 
@@ -347,7 +331,7 @@ namespace WebCore {
         V8TRYCATCH(v8::Local<v8::Value>, lengthValue, object->Get(v8::String::NewSymbol("length")));
 
         if (lengthValue->IsUndefined() || lengthValue->IsNull()) {
-            throwTypeError();
+            throwTypeError(0, isolate);
             return v8Undefined();
         }
 
@@ -431,15 +415,16 @@ namespace WebCore {
         return (object->IsDate() || object->IsNumber()) ? object->NumberValue() : std::numeric_limits<double>::quiet_NaN();
     }
 
-    inline v8::Handle<v8::Value> v8DateOrNull(double value, v8::Isolate* isolate = 0)
+    inline v8::Handle<v8::Value> v8DateOrNull(double value, v8::Isolate* isolate)
     {
+        ASSERT(isolate);
         return isfinite(value) ? v8::Date::New(value) : v8NullWithCheck(isolate);
     }
 
-    v8::Persistent<v8::FunctionTemplate> createRawTemplate();
+    v8::Persistent<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 
     PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value>, v8::Isolate*);
-    PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>);
+    PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);
 
     v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context>);
     DOMWindow* toDOMWindow(v8::Handle<v8::Context>);
@@ -447,21 +432,40 @@ namespace WebCore {
 
     // Returns the context associated with a ScriptExecutionContext.
     v8::Local<v8::Context> toV8Context(ScriptExecutionContext*, const WorldContextHandle&);
+    v8::Local<v8::Context> toV8Context(ScriptExecutionContext*, DOMWrapperWorld*);
 
     // Returns the frame object of the window object associated with
     // a context, if the window is currently being displayed in the Frame.
     Frame* toFrameIfNotDetached(v8::Handle<v8::Context>);
 
-    inline DOMWrapperWorld* worldForEnteredContextIfIsolated()
+    inline DOMWrapperWorld* worldForEnteredContext()
     {
-        if (!v8::Context::InContext())
+        v8::Handle<v8::Context> context = v8::Context::GetEntered();
+        if (context.IsEmpty())
             return 0;
-        return DOMWrapperWorld::isolated(v8::Context::GetEntered());
+        return DOMWrapperWorld::getWorld(context);
+    }
+
+    // This is a slightly different version of worldForEnteredContext().
+    // The difference is just that worldForEnteredContextWithoutContextCheck()
+    // does not call assertContextHasCorrectPrototype() (which is enabled on
+    // Debug builds only). Because assertContextHasCorrectPrototype() crashes
+    // if it is called when a current context is not completely initialized,
+    // you have to use worldForEnteredContextWithoutContextCheck() if you need
+    // to get a DOMWrapperWorld while a current context is being initialized.
+    // See https://bugs.webkit.org/show_bug.cgi?id=108579#c15 for more details.
+    inline DOMWrapperWorld* worldForEnteredContextWithoutContextCheck()
+    {
+        v8::Handle<v8::Context> context = v8::Context::GetEntered();
+        if (context.IsEmpty())
+            return 0;
+        return DOMWrapperWorld::getWorldWithoutContextCheck(context);
     }
 
     // If the current context causes out of memory, JavaScript setting
     // is disabled and it returns true.
     bool handleOutOfMemory();
+    // FIXME: This should receive an Isolate.
     v8::Local<v8::Value> handleMaxRecursionDepthExceeded();
 
     void crashIfV8IsDead();

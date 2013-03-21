@@ -35,6 +35,7 @@
 #include "code-stubs.h"
 #include "codegen.h"
 #include "compiler.h"
+#include "data-flow.h"
 
 namespace v8 {
 namespace internal {
@@ -48,7 +49,9 @@ class JumpPatchSite;
 // debugger to piggybag on.
 class BreakableStatementChecker: public AstVisitor {
  public:
-  BreakableStatementChecker() : is_breakable_(false) {}
+  BreakableStatementChecker() : is_breakable_(false) {
+    InitializeAstVisitor();
+  }
 
   void Check(Statement* stmt);
   void Check(Expression* stmt);
@@ -63,6 +66,7 @@ class BreakableStatementChecker: public AstVisitor {
 
   bool is_breakable_;
 
+  DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
   DISALLOW_COPY_AND_ASSIGN(BreakableStatementChecker);
 };
 
@@ -813,6 +817,7 @@ class FullCodeGenerator: public AstVisitor {
   int module_index_;
   const ExpressionContext* context_;
   ZoneList<BailoutEntry> bailout_entries_;
+  GrowableBitVector prepared_bailout_ids_;
   // TODO(svenpanne) Rename this to something like back_edges_ and rename
   // related functions accordingly.
   ZoneList<BailoutEntry> stack_checks_;
@@ -825,6 +830,7 @@ class FullCodeGenerator: public AstVisitor {
 
   friend class NestedStatement;
 
+  DEFINE_AST_VISITOR_SUBCLASS_MEMBERS();
   DISALLOW_COPY_AND_ASSIGN(FullCodeGenerator);
 };
 

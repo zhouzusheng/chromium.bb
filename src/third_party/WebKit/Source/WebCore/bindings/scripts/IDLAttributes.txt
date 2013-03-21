@@ -28,6 +28,7 @@ CheckSecurityForNode
 Clamp
 Conditional=*
 Constructor
+ConstructorConditional=*
 ConstructorParameters=*
 ConstructorRaisesException
 ConstructorTemplate=Event|TypedArray
@@ -96,6 +97,7 @@ ObjCPolymorphic
 ObjCProtocol
 OmitConstructor
 Optional=|DefaultIsNullString|DefaultIsUndefined
+PassContext
 PassThisToCallback=*
 Reflect=*
 Replaceable

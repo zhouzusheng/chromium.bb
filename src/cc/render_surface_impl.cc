@@ -150,27 +150,6 @@ void RenderSurfaceImpl::clearLayerLists()
     m_contributingDelegatedRenderPassLayerList.clear();
 }
 
-static inline gfx::Rect computeClippedRectInTarget(const LayerImpl* owningLayer)
-{
-    DCHECK(owningLayer->parent());
-
-    const LayerImpl* renderTarget = owningLayer->parent()->renderTarget();
-    const RenderSurfaceImpl* self = owningLayer->renderSurface();
-
-    gfx::Rect clippedRectInTarget = self->clipRect();
-    if (owningLayer->backgroundFilters().hasFilterThatMovesPixels()) {
-        // If the layer has background filters that move pixels, we cannot scissor as tightly.
-        // FIXME: this should be able to be a tighter scissor, perhaps expanded by the filter outsets?
-        clippedRectInTarget = renderTarget->renderSurface()->contentRect();
-    } else if (clippedRectInTarget.IsEmpty()) {
-        // For surfaces, empty clipRect means that the surface does not clip anything.
-        clippedRectInTarget = renderTarget->renderSurface()->contentRect();
-        clippedRectInTarget.Intersect(gfx::ToEnclosingRect(self->drawableContentRect()));
-    } else
-        clippedRectInTarget.Intersect(gfx::ToEnclosingRect(self->drawableContentRect()));
-    return clippedRectInTarget;
-}
-
 RenderPass::Id RenderSurfaceImpl::renderPassId()
 {
     int layerId = m_owningLayer->id();
@@ -182,13 +161,10 @@ RenderPass::Id RenderSurfaceImpl::renderPassId()
 void RenderSurfaceImpl::appendRenderPasses(RenderPassSink& passSink)
 {
     for (size_t i = 0; i < m_contributingDelegatedRenderPassLayerList.size(); ++i)
-        m_contributingDelegatedRenderPassLayerList[i]->appendContributingRenderPasses(passSink);
+        m_contributingDelegatedRenderPassLayerList[i]->AppendContributingRenderPasses(&passSink);
 
     scoped_ptr<RenderPass> pass = RenderPass::Create();
     pass->SetNew(renderPassId(), m_contentRect, m_damageTracker->currentDamageRect(), m_screenSpaceTransform);
-    pass->filters = m_owningLayer->filters();
-    pass->filter = m_owningLayer->filter();
-    pass->background_filters = m_owningLayer->backgroundFilters();
     passSink.appendRenderPass(pass.Pass());
 }
 
@@ -196,10 +172,9 @@ void RenderSurfaceImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& appendQ
 {
     DCHECK(!forReplica || m_owningLayer->hasReplica());
 
-    gfx::Rect clippedRectInTarget = computeClippedRectInTarget(m_owningLayer);
     const gfx::Transform& drawTransform = forReplica ? m_replicaDrawTransform : m_drawTransform;
     SharedQuadState* sharedQuadState = quadSink.useSharedQuadState(SharedQuadState::Create());
-    sharedQuadState->SetAll(drawTransform, m_contentRect, clippedRectInTarget, m_clipRect, m_isClipped, m_drawOpacity);
+    sharedQuadState->SetAll(drawTransform, m_contentRect, m_clipRect, m_isClipped, m_drawOpacity);
 
     if (m_owningLayer->showDebugBorders()) {
         SkColor color = forReplica ? DebugColors::SurfaceReplicaBorderColor() : DebugColors::SurfaceBorderColor();
@@ -227,26 +202,30 @@ void RenderSurfaceImpl::appendQuads(QuadSink& quadSink, AppendQuadsData& appendQ
 
     gfx::RectF maskUVRect(0.0f, 0.0f, 1.0f, 1.0f);
     if (maskLayer) {
-        // Because the RenderSurface is sized base on the screen footprint,
-        // there can be a scale between the RenderSurface and the owning layer,
-        // as well as the mask. While the mask doesn't have a drawTransform, the
-        // owning layer has it (and should be pure scaling), so use that to
-        // scale the mask to the right size.
-        gfx::Vector2dF maskDrawScale = MathUtil::computeTransform2dScaleComponents(m_owningLayer->drawTransform(), 1.f);
-        float scaleX = contentRect().width() / maskLayer->contentsScaleX() / maskLayer->bounds().width() / maskDrawScale.x();
-        float scaleY = contentRect().height() / maskLayer->contentsScaleY() / maskLayer->bounds().height() / maskDrawScale.y();
+        gfx::Vector2dF owningLayerDrawScale = MathUtil::computeTransform2dScaleComponents(m_owningLayer->drawTransform(), 1.f);
+        gfx::SizeF unclippedSurfaceSize = gfx::ScaleSize(
+            m_owningLayer->contentBounds(),
+            owningLayerDrawScale.x(),
+            owningLayerDrawScale.y());
+        // This assumes that the owning layer clips its subtree when a mask is
+        // present.
+        DCHECK(gfx::RectF(unclippedSurfaceSize).Contains(contentRect()));
 
-        maskUVRect = gfx::RectF(static_cast<float>(contentRect().x()) / contentRect().width() * scaleX,
-                                static_cast<float>(contentRect().y()) / contentRect().height() * scaleY,
-                                scaleX,
-                                scaleY);
+        float uvScaleX = contentRect().width() / unclippedSurfaceSize.width();
+        float uvScaleY = contentRect().height() / unclippedSurfaceSize.height();
+
+        maskUVRect = gfx::RectF(
+            static_cast<float>(contentRect().x()) / contentRect().width() * uvScaleX,
+            static_cast<float>(contentRect().y()) / contentRect().height() * uvScaleY,
+            uvScaleX,
+            uvScaleY);
     }
 
     ResourceProvider::ResourceId maskResourceId = maskLayer ? maskLayer->contentsResourceId() : 0;
     gfx::Rect contentsChangedSinceLastFrame = contentsChanged() ? m_contentRect : gfx::Rect();
 
     scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
-    quad->SetNew(sharedQuadState, contentRect(), renderPassId, forReplica, maskResourceId, contentsChangedSinceLastFrame, maskUVRect);
+    quad->SetNew(sharedQuadState, contentRect(), renderPassId, forReplica, maskResourceId, contentsChangedSinceLastFrame, maskUVRect, m_owningLayer->filters(), m_owningLayer->filter(), m_owningLayer->backgroundFilters());
     quadSink.append(quad.PassAs<DrawQuad>(), appendQuadsData);
 }
 

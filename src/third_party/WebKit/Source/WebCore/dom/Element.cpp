@@ -84,6 +84,7 @@
 #include <wtf/text/CString.h>
 
 #if ENABLE(SVG)
+#include "SVGDocumentExtensions.h"
 #include "SVGElement.h"
 #include "SVGNames.h"
 #endif
@@ -193,15 +194,18 @@ Element::~Element()
         ElementRareData* data = elementRareData();
         data->setPseudoElement(BEFORE, 0);
         data->setPseudoElement(AFTER, 0);
-    }
-
-    if (ElementShadow* elementShadow = shadow()) {
-        elementShadow->removeAllShadowRoots();
-        elementRareData()->setShadow(nullptr);
+        data->clearShadow();
     }
 
     if (hasSyntheticAttrChildNodes())
         detachAllAttrNodesFromElement();
+
+#if ENABLE(SVG)
+    if (hasPendingResources()) {
+        document()->accessSVGExtensions()->removeElementFromPendingResources(this);
+        ASSERT(!hasPendingResources());
+    }
+#endif
 }
 
 inline ElementRareData* Element::elementRareData() const
@@ -215,9 +219,25 @@ inline ElementRareData* Element::ensureElementRareData()
     return static_cast<ElementRareData*>(ensureRareData());
 }
 
-PassOwnPtr<NodeRareData> Element::createRareData()
+void Element::clearTabIndexExplicitlyIfNeeded()
 {
-    return adoptPtr(new ElementRareData(documentInternal()));
+    if (hasRareData())
+        elementRareData()->clearTabIndexExplicitly();
+}
+
+void Element::setTabIndexExplicitly(short tabIndex)
+{
+    ensureElementRareData()->setTabIndexExplicitly(tabIndex);
+}
+
+bool Element::supportsFocus() const
+{
+    return hasRareData() && elementRareData()->tabIndexSetExplicitly();
+}
+
+short Element::tabIndex() const
+{
+    return hasRareData() ? elementRareData()->tabIndex() : 0;
 }
 
 DEFINE_VIRTUAL_ATTRIBUTE_EVENT_LISTENER(Element, blur);
@@ -915,8 +935,8 @@ void Element::classAttributeChanged(const AtomicString& newClassString)
         attributeData->clearClass();
     }
 
-    if (DOMTokenList* classList = optionalClassList())
-        static_cast<ClassList*>(classList)->reset(newClassString);
+    if (hasRareData())
+        elementRareData()->clearClassListValueForQuirksMode();
 
     if (shouldInvalidateStyle)
         setNeedsStyleRecalc();
@@ -925,15 +945,15 @@ void Element::classAttributeChanged(const AtomicString& newClassString)
 bool Element::shouldInvalidateDistributionWhenAttributeChanged(ElementShadow* elementShadow, const QualifiedName& name, const AtomicString& newValue)
 {
     ASSERT(elementShadow);
-    elementShadow->ensureSelectFeatureSetCollected();
+    const SelectRuleFeatureSet& featureSet = elementShadow->distributor().ensureSelectFeatureSet(elementShadow);
 
     if (isIdAttributeName(name)) {
         AtomicString oldId = attributeData()->idForStyleResolution();
         AtomicString newId = makeIdForStyleResolution(newValue, document()->inQuirksMode());
         if (newId != oldId) {
-            if (!oldId.isEmpty() && elementShadow->selectRuleFeatureSet().hasSelectorForId(oldId))
+            if (!oldId.isEmpty() && featureSet.hasSelectorForId(oldId))
                 return true;
-            if (!newId.isEmpty() && elementShadow->selectRuleFeatureSet().hasSelectorForId(newId))
+            if (!newId.isEmpty() && featureSet.hasSelectorForId(newId))
                 return true;
         }
     }
@@ -945,16 +965,16 @@ bool Element::shouldInvalidateDistributionWhenAttributeChanged(ElementShadow* el
             const bool shouldFoldCase = document()->inQuirksMode();
             const SpaceSplitString& oldClasses = attributeData->classNames();
             const SpaceSplitString newClasses(newClassString, shouldFoldCase);
-            if (checkSelectorForClassChange(oldClasses, newClasses, elementShadow->selectRuleFeatureSet()))
+            if (checkSelectorForClassChange(oldClasses, newClasses, featureSet))
                 return true;
         } else if (const ElementAttributeData* attributeData = this->attributeData()) {
             const SpaceSplitString& oldClasses = attributeData->classNames();
-            if (checkSelectorForClassChange(oldClasses, elementShadow->selectRuleFeatureSet()))
+            if (checkSelectorForClassChange(oldClasses, featureSet))
                 return true;
         }
     }
 
-    return elementShadow->selectRuleFeatureSet().hasSelectorForAttribute(name.localName());
+    return featureSet.hasSelectorForAttribute(name.localName());
 }
 
 // Returns true is the given attribute is an event handler.
@@ -988,8 +1008,8 @@ void Element::parserSetAttributes(const Vector<Attribute>& attributeVector, Frag
 
     // If the element is created as result of a paste or drag-n-drop operation
     // we want to remove all the script and event handlers.
-    if (scriptingPermission == DisallowScriptingContent) {
-        unsigned i = 0;
+    if (!scriptingContentIsAllowed(scriptingPermission)) {
+        size_t i = 0;
         while (i < filteredAttributes.size()) {
             Attribute& attribute = filteredAttributes[i];
             if (isEventHandlerAttribute(attribute.name())) {
@@ -1114,8 +1134,17 @@ Node::InsertionNotificationRequest Element::insertedInto(ContainerNode* insertio
         setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
 #endif
 
+    if (Element* before = pseudoElement(BEFORE))
+        before->insertedInto(insertionPoint);
+
+    if (Element* after = pseudoElement(AFTER))
+        after->insertedInto(insertionPoint);
+
     if (!insertionPoint->isInTreeScope())
         return InsertionDone;
+
+    if (hasRareData())
+        elementRareData()->clearClassListValueForQuirksMode();
 
     TreeScope* scope = insertionPoint->treeScope();
     if (scope != treeScope())
@@ -1139,8 +1168,18 @@ Node::InsertionNotificationRequest Element::insertedInto(ContainerNode* insertio
 
 void Element::removedFrom(ContainerNode* insertionPoint)
 {
+#if ENABLE(SVG)
+    bool wasInDocument = insertionPoint->document();
+#endif
+
+    if (Element* before = pseudoElement(BEFORE))
+        before->removedFrom(insertionPoint);
+
+    if (Element* after = pseudoElement(AFTER))
+        after->removedFrom(insertionPoint);
+
 #if ENABLE(DIALOG_ELEMENT)
-    setIsInTopLayer(false);
+    document()->removeFromTopLayer(this);
 #endif
 #if ENABLE(FULLSCREEN_API)
     if (containsFullScreenElement())
@@ -1170,6 +1209,10 @@ void Element::removedFrom(ContainerNode* insertionPoint)
     }
 
     ContainerNode::removedFrom(insertionPoint);
+#if ENABLE(SVG)
+    if (wasInDocument && hasPendingResources())
+        document()->accessSVGExtensions()->removeElementFromPendingResources(this);
+#endif
 }
 
 void Element::createRendererIfNeeded()
@@ -1390,25 +1433,39 @@ void Element::recalcStyle(StyleChange change)
 
 ElementShadow* Element::shadow() const
 {
-    if (!hasRareData())
-        return 0;
-
-    return elementRareData()->shadow();
+    return hasRareData() ? elementRareData()->shadow() : 0;
 }
 
 ElementShadow* Element::ensureShadow()
 {
-    if (ElementShadow* shadow = ensureElementRareData()->shadow())
-        return shadow;
+    return ensureElementRareData()->ensureShadow();
+}
 
-    ElementRareData* data = elementRareData();
-    data->setShadow(adoptPtr(new ElementShadow()));
-    return data->shadow();
+void Element::didAffectSelector(AffectedSelectorMask mask)
+{
+    setNeedsStyleRecalc();
+    if (ElementShadow* elementShadow = shadowOfParentForDistribution(this))
+        elementShadow->didAffectSelector(mask);
 }
 
 PassRefPtr<ShadowRoot> Element::createShadowRoot(ExceptionCode& ec)
 {
-    return ShadowRoot::create(this, ec);
+    if (alwaysCreateUserAgentShadowRoot())
+        ensureUserAgentShadowRoot();
+
+#if ENABLE(SHADOW_DOM)
+    if (RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled())
+        return ensureShadow()->addShadowRoot(this, ShadowRoot::AuthorShadowRoot);
+#endif
+
+    // Since some elements recreates shadow root dynamically, multiple shadow
+    // subtrees won't work well in that element. Until they are fixed, we disable
+    // adding author shadow root for them.
+    if (!areAuthorShadowsAllowed()) {
+        ec = HIERARCHY_REQUEST_ERR;
+        return 0;
+    }
+    return ensureShadow()->addShadowRoot(this, ShadowRoot::AuthorShadowRoot);
 }
 
 ShadowRoot* Element::shadowRoot() const
@@ -1417,9 +1474,9 @@ ShadowRoot* Element::shadowRoot() const
     if (!elementShadow)
         return 0;
     ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
-    if (!shadowRoot->isAccessible())
-        return 0;
-    return shadowRoot;
+    if (shadowRoot->type() == ShadowRoot::AuthorShadowRoot)
+        return shadowRoot;
+    return 0;
 }
 
 ShadowRoot* Element::userAgentShadowRoot() const
@@ -1432,6 +1489,15 @@ ShadowRoot* Element::userAgentShadowRoot() const
     }
 
     return 0;
+}
+
+ShadowRoot* Element::ensureUserAgentShadowRoot()
+{
+    if (ShadowRoot* shadowRoot = userAgentShadowRoot())
+        return shadowRoot;
+    ShadowRoot* shadowRoot = ensureShadow()->addShadowRoot(this, ShadowRoot::UserAgentShadowRoot);
+    didAddUserAgentShadowRoot(shadowRoot);
+    return shadowRoot;
 }
 
 const AtomicString& Element::shadowPseudoId() const
@@ -1600,6 +1666,12 @@ void Element::formatForDebugger(char* buffer, unsigned length) const
 }
 #endif
 
+const Vector<RefPtr<Attr> >& Element::attrNodeList()
+{
+    ASSERT(hasSyntheticAttrChildNodes());
+    return *attrNodeListForElement(this);
+}
+
 PassRefPtr<Attr> Element::setAttributeNode(Attr* attrNode, ExceptionCode& ec)
 {
     if (!attrNode) {
@@ -1695,7 +1767,7 @@ void Element::setAttributeNS(const AtomicString& namespaceURI, const AtomicStrin
 
 void Element::removeAttributeInternal(size_t index, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
 {
-    ASSERT(index < attributeCount());
+    ASSERT_WITH_SECURITY_IMPLICATION(index < attributeCount());
 
     ElementAttributeData* attributeData = mutableAttributeData();
 
@@ -1792,7 +1864,7 @@ CSSStyleDeclaration *Element::style()
     return 0;
 }
 
-void Element::focus(bool restorePreviousSelection)
+void Element::focus(bool restorePreviousSelection, FocusDirection direction)
 {
     if (!inDocument())
         return;
@@ -1819,7 +1891,7 @@ void Element::focus(bool restorePreviousSelection)
         // If a focus event handler changes the focus to a different node it
         // does not make sense to continue and update appearence.
         protect = this;
-        if (!page->focusController()->setFocusedNode(this, doc->frame()))
+        if (!page->focusController()->setFocusedNode(this, doc->frame(), direction))
             return;
     }
 
@@ -1919,6 +1991,9 @@ void Element::setMinimumSizeForResizing(const LayoutSize& size)
 
 RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
 {
+    if (PseudoElement* element = pseudoElement(pseudoElementSpecifier))
+        return element->computedStyle();
+
     // FIXME: Find and use the renderer from the pseudo element instead of the actual element so that the 'length'
     // properties, which are only known by the renderer because it did the layout, will be correct and so that the
     // values returned for the ":selection" pseudo-element will be correct.
@@ -2182,6 +2257,12 @@ void Element::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> elem
     resetNeedsShadowTreeWalker();
 }
 
+RenderObject* Element::pseudoElementRenderer(PseudoId pseudoId) const
+{
+    if (PseudoElement* element = pseudoElement(pseudoId))
+        return element->renderer();
+    return 0;
+}
 
 // ElementTraversal API
 Element* Element::firstElementChild() const
@@ -2237,13 +2318,6 @@ DOMTokenList* Element::classList()
     if (!data->classList())
         data->setClassList(ClassList::create(this));
     return data->classList();
-}
-
-DOMTokenList* Element::optionalClassList() const
-{
-    if (!hasRareData())
-        return 0;
-    return elementRareData()->classList();
 }
 
 DOMStringMap* Element::dataset()
@@ -2311,7 +2385,7 @@ bool Element::childShouldCreateRenderer(const NodeRenderingContext& childContext
     return ContainerNode::childShouldCreateRenderer(childContext);
 }
 #endif
-    
+
 #if ENABLE(FULLSCREEN_API)
 void Element::webkitRequestFullscreen()
 {
@@ -2356,8 +2430,13 @@ bool Element::isInTopLayer() const
 
 void Element::setIsInTopLayer(bool inTopLayer)
 {
+    if (isInTopLayer() == inTopLayer)
+        return;
     ensureElementRareData()->setIsInTopLayer(inTopLayer);
-    setNeedsStyleRecalc(SyntheticStyleChange);
+
+    // We must ensure a reattach occurs so the renderer is inserted in the correct sibling order under RenderView according to its
+    // top layer position, or in its usual place if not in the top layer.
+    reattachIfAttached();
 }
 #endif
 
@@ -2384,7 +2463,7 @@ SpellcheckAttributeState Element::spellcheckAttributeState() const
 
 bool Element::isSpellCheckingEnabled() const
 {
-    for (const Element* element = this; element; element = element->parentOrHostElement()) {
+    for (const Element* element = this; element; element = element->parentOrShadowHostElement()) {
         switch (element->spellcheckAttributeState()) {
         case SpellcheckAttributeTrue:
             return true;
@@ -2461,7 +2540,7 @@ bool Element::fastAttributeLookupAllowed(const QualifiedName& name) const
 
 #if ENABLE(SVG)
     if (isSVGElement())
-        return !SVGElement::isAnimatableAttribute(name);
+        return !static_cast<const SVGElement*>(this)->isAnimatableAttribute(name);
 #endif
 
     return true;
@@ -2503,10 +2582,8 @@ void Element::willModifyAttribute(const QualifiedName& name, const AtomicString&
             updateLabel(scope, oldValue, newValue);
     }
 
-#if ENABLE(MUTATION_OBSERVERS)
     if (OwnPtr<MutationObserverInterestGroup> recipients = MutationObserverInterestGroup::createForAttributesMutation(this, name))
         recipients->enqueueMutationRecord(MutationRecord::createAttributes(this, name, oldValue));
-#endif
 
 #if ENABLE(INSPECTOR)
     InspectorInstrumentation::willModifyDOMAttr(document(), this, oldValue, newValue);
@@ -2725,8 +2802,25 @@ void Element::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     ContainerNode::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_tagName);
-    info.addMember(m_attributeData);
+    info.addMember(m_tagName, "tagName");
+    info.addMember(m_attributeData, "attributeData");
 }
+
+#if ENABLE(SVG)
+bool Element::hasPendingResources() const
+{
+    return hasRareData() && elementRareData()->hasPendingResources();
+}
+
+void Element::setHasPendingResources()
+{
+    ensureElementRareData()->setHasPendingResources(true);
+}
+
+void Element::clearHasPendingResources()
+{
+    ensureElementRareData()->setHasPendingResources(false);
+}
+#endif
 
 } // namespace WebCore

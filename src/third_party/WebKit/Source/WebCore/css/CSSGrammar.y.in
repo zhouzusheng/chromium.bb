@@ -61,7 +61,7 @@ static inline int cssyyerror(void*, const char*)
 
 %}
 
-%expect 65
+%expect 66
 
 %nonassoc LOWEST_PREC
 
@@ -111,6 +111,9 @@ static inline int cssyyerror(void*, const char*)
 %token WEBKIT_SELECTOR_SYM
 %token WEBKIT_REGION_RULE_SYM
 %token WEBKIT_VIEWPORT_RULE_SYM
+#if ENABLE_CSS_SHADERS
+%token WEBKIT_FILTER_RULE_SYM
+#endif
 %token <marginBox> TOPLEFTCORNER_SYM
 %token <marginBox> TOPLEFT_SYM
 %token <marginBox> TOPCENTER_SYM
@@ -166,6 +169,7 @@ static inline int cssyyerror(void*, const char*)
 %token <number> VW
 %token <number> VH
 %token <number> VMIN
+%token <number> VMAX
 %token <number> DPPX
 %token <number> DPI
 %token <number> DPCM
@@ -173,6 +177,9 @@ static inline int cssyyerror(void*, const char*)
 %token <string> URI
 %token <string> FUNCTION
 %token <string> ANYFUNCTION
+#if ENABLE_VIDEO_TRACK
+%token <string> CUEFUNCTION
+#endif
 %token <string> NOTFUNCTION
 %token <string> CALCFUNCTION
 %token <string> MINFUNCTION
@@ -202,6 +209,7 @@ static inline int cssyyerror(void*, const char*)
 %type <rule> rule
 %type <rule> valid_rule
 %type <ruleList> block_rule_list 
+%type <ruleList> region_block_rule_list
 %type <rule> block_rule
 %type <rule> block_valid_rule
 %type <rule> region
@@ -210,6 +218,9 @@ static inline int cssyyerror(void*, const char*)
 #endif
 #if ENABLE_CSS_DEVICE_ADAPTATION
 %type <rule> viewport
+#endif
+#if ENABLE_CSS_SHADERS
+%type <rule> filter
 #endif
 
 %type <string> maybe_ns_prefix
@@ -419,6 +430,9 @@ valid_rule:
 #if ENABLE_CSS_DEVICE_ADAPTATION
   | viewport
 #endif
+#if ENABLE_CSS_SHADERS
+  | filter
+#endif
   ;
 
 rule:
@@ -442,13 +456,32 @@ block_rule_list:
   }
   ;
 
+region_block_rule_list:
+    /* empty */ { $$ = 0; }
+  | region_block_rule_list block_valid_rule maybe_sgml {
+      $$ = $1;
+      if ($2) {
+          if (!$$)
+              $$ = parser->createRuleList();
+          $$->append($2);
+      }
+  }
+  ;
+
 block_valid_rule:
     ruleset
   | page
   | font_face
+  | media
   | keyframes
+#if ENABLE_CSS3_CONDITIONAL_RULES
+  | supports
+#endif
 #if ENABLE_CSS_DEVICE_ADAPTATION
   | viewport
+#endif
+#if ENABLE_CSS_SHADERS
+  | filter
 #endif
   ;
 
@@ -458,10 +491,7 @@ block_rule:
   | invalid_at
   | namespace
   | import
-  | media
-#if ENABLE_CSS3_CONDITIONAL_RULES
-  | supports
-#endif
+  | region
   ;
 
 at_import_header_end_maybe_space:
@@ -659,13 +689,22 @@ medium:
 
 #if ENABLE_CSS3_CONDITIONAL_RULES
 supports:
-    SUPPORTS_SYM maybe_space supports_condition '{' maybe_space block_rule_list save_block {
-        CSSParser* p = static_cast<CSSParser*>(parser);
-        if ($3 && $6 && p->m_styleSheet) {
-            for (unsigned i = 0; i < $6->size(); i++)
-                p->m_styleSheet->parserAppendRule($6->at(i).release());
-        }
-        $$ = 0;
+    before_supports_rule SUPPORTS_SYM maybe_space supports_condition at_supports_rule_header_end '{' at_rule_body_start maybe_space block_rule_list save_block {
+        $$ = parser->createSupportsRule($4, $9);
+    }
+    ;
+
+before_supports_rule:
+    /* empty */ {
+        parser->markRuleHeaderStart(CSSRuleSourceData::SUPPORTS_RULE);
+        parser->markSupportsRuleHeaderStart();
+    }
+    ;
+
+at_supports_rule_header_end:
+    /* empty */ {
+        parser->markRuleHeaderEnd();
+        parser->markSupportsRuleHeaderEnd();
     }
     ;
 
@@ -814,14 +853,13 @@ page:
 
 page_selector:
     IDENT {
-        $$ = parser->createFloatingSelector();
-        $$->setTag(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
+        $$ = parser->createFloatingSelectorWithTagName(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
         $$->setForPage();
     }
     | IDENT pseudo_page {
         $$ = $2;
         if ($$) {
-            $$->setTag(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
+            $$->prependTagSelector(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
             $$->setForPage();
         }
     }
@@ -985,7 +1023,7 @@ before_region_rule:
     ;
 
 region:
-    before_region_rule WEBKIT_REGION_RULE_SYM WHITESPACE region_selector at_rule_header_end '{' at_rule_body_start maybe_space block_rule_list save_block {
+    before_region_rule WEBKIT_REGION_RULE_SYM WHITESPACE region_selector at_rule_header_end '{' at_rule_body_start maybe_space region_block_rule_list save_block {
         if ($4)
             $$ = parser->createRegionRule($4, $9);
         else {
@@ -994,6 +1032,21 @@ region:
         }
     }
 ;
+
+#if ENABLE_CSS_SHADERS
+before_filter_rule:
+    /* empty */ {
+        parser->markRuleHeaderStart(CSSRuleSourceData::FILTER_RULE);
+    }
+    ;
+
+filter:
+    before_filter_rule WEBKIT_FILTER_RULE_SYM WHITESPACE IDENT at_rule_header_end_maybe_space
+    '{' at_rule_body_start maybe_space_before_declaration declaration_list closing_brace {
+        $$ = parser->createFilterRule($4);
+    }
+    ;
+#endif
 
 combinator:
     '+' maybe_space { $$ = CSSSelector::DirectAdjacent; }
@@ -1121,8 +1174,7 @@ namespace_selector:
     
 simple_selector:
     element_name {
-        $$ = parser->createFloatingSelector();
-        $$->setTag(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
+        $$ = parser->createFloatingSelectorWithTagName(QualifiedName(nullAtom, $1, parser->m_defaultNamespace));
     }
     | element_name specifier_list {
         $$ = $2;
@@ -1132,11 +1184,10 @@ simple_selector:
     | specifier_list {
         $$ = $1;
         if ($$)
-            parser->updateSpecifiersWithElementName(nullAtom, starAtom, $$);
+            parser->updateSpecifiersWithNamespaceIfNeeded($$);
     }
     | namespace_selector element_name {
-        $$ = parser->createFloatingSelector();
-        $$->setTag(parser->determineNameInNamespace($1, $2));
+        $$ = parser->createFloatingSelectorWithTagName(parser->determineNameInNamespace($1, $2));
     }
     | namespace_selector element_name specifier_list {
         $$ = $3;
@@ -1323,6 +1374,21 @@ pseudo:
         if (type == CSSSelector::PseudoUnknown)
             $$ = 0;
     }
+#if ENABLE_VIDEO_TRACK
+    // used by ::cue(:past/:future)
+    | ':' ':' CUEFUNCTION maybe_space simple_selector_list maybe_space ')' {
+        if ($5) {
+            $$ = parser->createFloatingSelector();
+            $$->setMatch(CSSSelector::PseudoClass);
+            $$->adoptSelectorVector(*parser->sinkFloatingSelectorVector($5));
+            $$->setValue($3);
+            CSSSelector::PseudoType type = $$->pseudoType();
+            if (type != CSSSelector::PseudoCue)
+                $$ = 0;
+        } else
+            $$ = 0;
+    }
+#endif
     // use by :-webkit-any.
     // FIXME: should we support generic selectors here or just simple_selectors?
     // Use simple_selector_list for now to match -moz-any.
@@ -1646,6 +1712,7 @@ unary_term:
   | VW maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VW; }
   | VH maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VH; }
   | VMIN maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VMIN; }
+  | VMAX maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_VMAX; }
   | DPPX maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_DPPX; }
   | DPI maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_DPI; }
   | DPCM maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_DPCM; }

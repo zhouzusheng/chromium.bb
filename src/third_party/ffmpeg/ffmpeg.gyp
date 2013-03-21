@@ -50,6 +50,10 @@
       }, {
         'ffmpeg_config%': '<(target_arch)',
       }],
+      ['target_arch == "mipsel"', {
+        'asm_sources': [
+        ],
+      }],
       ['OS == "mac" or OS == "win" or OS == "openbsd"', {
         'os_config%': '<(OS)',
       }, {  # all other Unix OS's use the linux config
@@ -110,7 +114,7 @@
             '-fomit-frame-pointer',
           ],
           'conditions': [
-            ['target_arch != "arm"', {
+            ['target_arch != "arm" and target_arch != "mipsel"', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -211,6 +215,12 @@
                 }],
               ],
             }],
+            ['target_arch == "mipsel"', {
+              'cflags': [
+                '-mips32',
+                '-EL -Wl,-EL',
+              ],
+            }],  # target_arch == "mipsel"
             ['os_posix == 1 and OS != "mac"', {
               'defines': [
                 '_ISOC99_SOURCE',
@@ -368,13 +378,26 @@
           # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
           'msvs_disabled_warnings': [
             4996, 4018, 4090, 4305, 4133, 4146, 4554, 4028, 4334, 4101, 4102,
-            4116, 4307
+            4116, 4307, 4273
           ],
-          # This magical incantation is necessary because VC++ will compile all
-          # object files to same directory... even if they have the same name!
+          # TODO(wolenetz): We should fix this.  http://crbug.com/171009
+          'conditions': [
+            ['target_arch == "x64"', {
+              'msvs_disabled_warnings' : [
+                4267
+              ],
+            }],
+          ],
           'msvs_settings': {
+            # This magical incantation is necessary because VC++ will compile
+            # object files to same directory... even if they have the same name!
             'VCCLCompilerTool': {
               'ObjectFile': '$(IntDir)/%(RelativeDir)/',
+            },
+            # Ignore warnings about a local symbol being inefficiently imported,
+            # upstream is working on a fix.
+            'VCLinkerTool': {
+              'AdditionalOptions': ['/ignore:4049', '/ignore:4217'],
             }
           },
           'actions': [
@@ -396,6 +419,7 @@
                          '<@(_inputs)',
               ],
               'message': 'Generating FFmpeg export definitions.',
+              'msvs_cygwin_shell': 1,
             },
           ],
         }
@@ -423,7 +447,13 @@
         ['OS == "win"', {
           'msvs_guid': 'D7A94F58-576A-45D9-A45F-EB87C63ABBB0',
           'variables': {
-            'outfile_type': 'windows_lib',
+            'conditions': [
+              ['target_arch == "x64"', {
+                'outfile_type': 'windows_lib_x64',
+              }, {  # else, generate x86 stub library
+                'outfile_type': 'windows_lib',
+              }],
+            ],
             'output_dir': '<(PRODUCT_DIR)/lib',
             'intermediate_dir': '<(INTERMEDIATE_DIR)',
           },
@@ -487,6 +517,7 @@
             'project_path': 'third_party/ffmpeg',
             'intermediate_dir': '<(INTERMEDIATE_DIR)',
             'output_root': '<(SHARED_INTERMEDIATE_DIR)/ffmpeg',
+            'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)'
           },
           'sources': [
             '<(extra_header)',

@@ -4,17 +4,18 @@
 
 #include "cc/resource_update_controller.h"
 
+#include <limits>
+
 #include "base/debug/trace_event.h"
 #include "cc/prioritized_resource.h"
 #include "cc/resource_provider.h"
 #include "cc/texture_copier.h"
 #include "cc/thread.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSharedGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
-#include <limits>
-#include <public/WebGraphicsContext3D.h>
-#include <public/WebSharedGraphicsContext3D.h>
 
 using WebKit::WebGraphicsContext3D;
 using WebKit::WebSharedGraphicsContext3D;
@@ -22,11 +23,7 @@ using WebKit::WebSharedGraphicsContext3D;
 namespace {
 
 // Number of partial updates we allow.
-#if defined(OS_ANDROID)
-const size_t partialTextureUpdatesMax = 0;
-#else
 const size_t partialTextureUpdatesMax = 12;
-#endif
 
 // Measured in seconds.
 const double textureUpdateTickRate = 0.004;
@@ -40,14 +37,14 @@ const size_t maxBlockingUpdateIntervals = 4;
 skia::RefPtr<SkCanvas> createAcceleratedCanvas(
     GrContext* grContext, gfx::Size canvasSize, unsigned textureId)
 {
-    GrPlatformTextureDesc textureDesc;
-    textureDesc.fFlags = kRenderTarget_GrPlatformTextureFlag;
+    GrBackendTextureDesc textureDesc;
+    textureDesc.fFlags = kRenderTarget_GrBackendTextureFlag;
     textureDesc.fWidth = canvasSize.width();
     textureDesc.fHeight = canvasSize.height();
     textureDesc.fConfig = kSkia8888_GrPixelConfig;
     textureDesc.fTextureHandle = textureId;
     skia::RefPtr<GrTexture> target =
-        skia::AdoptRef(grContext->createPlatformTexture(textureDesc));
+        skia::AdoptRef(grContext->wrapBackendTexture(textureDesc));
     skia::RefPtr<SkDevice> device =
         skia::AdoptRef(new SkGpuDevice(grContext, target.get()));
     return skia::AdoptRef(new SkCanvas(device.get()));
@@ -144,9 +141,9 @@ void ResourceUpdateController::updateTexture(ResourceUpdate update)
         // is available in other shared contexts. It is important to do here
         // because the backing texture is created in one context while it is
         // being written to in another.
-        m_resourceProvider->flush();
         ResourceProvider::ScopedWriteLockGL lock(
             m_resourceProvider, texture->resourceId());
+        m_resourceProvider->flush();
 
         // Make sure ganesh uses the correct GL context.
         paintContext->makeContextCurrent();

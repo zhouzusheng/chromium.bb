@@ -37,7 +37,6 @@ class WebAnimationCurve;
 class WebCompositorOutputSurface;
 class WebContentLayer;
 class WebContentLayerClient;
-class WebDelegatedRendererLayer;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
 class WebFloatAnimationCurve;
@@ -51,6 +50,7 @@ class WebScrollbarThemeGeometry;
 class WebSolidColorLayer;
 class WebThread;
 class WebTransformAnimationCurve;
+class WebTransformOperations;
 class WebVideoFrameProvider;
 class WebVideoLayer;
 
@@ -84,8 +84,6 @@ public:
 
     virtual WebContentLayer* createContentLayer(WebContentLayerClient*) { return 0; }
 
-    virtual WebDelegatedRendererLayer* createDelegatedRendererLayer() { return 0; }
-
     virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient* = 0) { return 0; }
 
     virtual WebIOSurfaceLayer* createIOSurfaceLayer() { return 0; }
@@ -106,6 +104,8 @@ public:
     virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
 
     virtual WebTransformAnimationCurve* createTransformAnimationCurve() { return 0; }
+
+    virtual WebTransformOperations* createTransformOperations() { return 0; }
 
 protected:
     virtual ~WebCompositorSupport() { }

@@ -341,7 +341,17 @@ bool String::IsTwoByteRepresentationUnderneath() {
 
 bool String::HasOnlyAsciiChars() {
   uint32_t type = map()->instance_type();
+#ifndef ENABLE_LATIN_1
+  return (type & kStringEncodingMask) == kOneByteStringTag ||
+         (type & kAsciiDataHintMask) == kAsciiDataHintTag;
+#else
   return (type & kAsciiDataHintMask) == kAsciiDataHintTag;
+#endif
+}
+
+
+bool String::IsOneByteConvertible() {
+  return HasOnlyAsciiChars() || IsOneByteRepresentation();
 }
 
 
@@ -570,6 +580,14 @@ bool Object::IsDeoptimizationOutputData() {
   // a deoptimization data array.  Since this is used for asserts we can check
   // that the length is plausible though.
   if (FixedArray::cast(this)->length() % 2 != 0) return false;
+  return true;
+}
+
+
+bool Object::IsDependentCodes() {
+  if (!IsFixedArray()) return false;
+  // There's actually no way to see the difference between a fixed array and
+  // a dependent codes array.
   return true;
 }
 
@@ -1038,8 +1056,8 @@ Failure* Failure::Exception() {
 }
 
 
-Failure* Failure::OutOfMemoryException() {
-  return Construct(OUT_OF_MEMORY_EXCEPTION);
+Failure* Failure::OutOfMemoryException(intptr_t value) {
+  return Construct(OUT_OF_MEMORY_EXCEPTION, value);
 }
 
 
@@ -1416,16 +1434,29 @@ void JSObject::initialize_elements() {
 
 
 MaybeObject* JSObject::ResetElements() {
-  Object* obj;
+  if (map()->is_observed()) {
+    // Maintain invariant that observed elements are always in dictionary mode.
+    SeededNumberDictionary* dictionary;
+    MaybeObject* maybe = SeededNumberDictionary::Allocate(0);
+    if (!maybe->To(&dictionary)) return maybe;
+    if (map() == GetHeap()->non_strict_arguments_elements_map()) {
+      FixedArray::cast(elements())->set(1, dictionary);
+    } else {
+      set_elements(dictionary);
+    }
+    return this;
+  }
+
   ElementsKind elements_kind = GetInitialFastElementsKind();
   if (!FLAG_smi_only_arrays) {
     elements_kind = FastSmiToObjectElementsKind(elements_kind);
   }
-  MaybeObject* maybe_obj = GetElementsTransitionMap(GetIsolate(),
-                                                    elements_kind);
-  if (!maybe_obj->ToObject(&obj)) return maybe_obj;
-  set_map(Map::cast(obj));
+  MaybeObject* maybe = GetElementsTransitionMap(GetIsolate(), elements_kind);
+  Map* map;
+  if (!maybe->To(&map)) return maybe;
+  set_map(map);
   initialize_elements();
+
   return this;
 }
 
@@ -1721,7 +1752,7 @@ bool Object::IsStringObjectWithCharacterAt(uint32_t index) {
   if (!js_value->value()->IsString()) return false;
 
   String* str = String::cast(js_value->value());
-  if (index >= (uint32_t)str->length()) return false;
+  if (index >= static_cast<uint32_t>(str->length())) return false;
 
   return true;
 }
@@ -2111,6 +2142,16 @@ Object** DescriptorArray::GetKeySlot(int descriptor_number) {
 }
 
 
+Object** DescriptorArray::GetDescriptorStartSlot(int descriptor_number) {
+  return GetKeySlot(descriptor_number);
+}
+
+
+Object** DescriptorArray::GetDescriptorEndSlot(int descriptor_number) {
+  return GetValueSlot(descriptor_number - 1) + 1;
+}
+
+
 String* DescriptorArray::GetKey(int descriptor_number) {
   ASSERT(descriptor_number < number_of_descriptors());
   return String::cast(get(ToKeyIndex(descriptor_number)));
@@ -2351,6 +2392,7 @@ CAST_ACCESSOR(FixedDoubleArray)
 CAST_ACCESSOR(DescriptorArray)
 CAST_ACCESSOR(DeoptimizationInputData)
 CAST_ACCESSOR(DeoptimizationOutputData)
+CAST_ACCESSOR(DependentCodes)
 CAST_ACCESSOR(TypeFeedbackCells)
 CAST_ACCESSOR(SymbolTable)
 CAST_ACCESSOR(JSFunctionResultCache)
@@ -2521,50 +2563,44 @@ void String::Visit(
     String* string,
     unsigned offset,
     Visitor& visitor,
-    ConsOp& consOp,
+    ConsOp& cons_op,
     int32_t type,
     unsigned length) {
-
   ASSERT(length == static_cast<unsigned>(string->length()));
   ASSERT(offset <= length);
-
-  unsigned sliceOffset = offset;
+  unsigned slice_offset = offset;
   while (true) {
     ASSERT(type == string->map()->instance_type());
 
     switch (type & (kStringRepresentationMask | kStringEncodingMask)) {
       case kSeqStringTag | kOneByteStringTag:
         visitor.VisitOneByteString(
-            reinterpret_cast<const uint8_t*>(
-                SeqOneByteString::cast(string)->GetChars()) + sliceOffset,
-                length - offset);
+            SeqOneByteString::cast(string)->GetChars() + slice_offset,
+            length - offset);
         return;
 
       case kSeqStringTag | kTwoByteStringTag:
         visitor.VisitTwoByteString(
-            reinterpret_cast<const uint16_t*>(
-                SeqTwoByteString::cast(string)->GetChars()) + sliceOffset,
-                length - offset);
+            SeqTwoByteString::cast(string)->GetChars() + slice_offset,
+            length - offset);
         return;
 
       case kExternalStringTag | kOneByteStringTag:
         visitor.VisitOneByteString(
-            reinterpret_cast<const uint8_t*>(
-                ExternalAsciiString::cast(string)->GetChars()) + sliceOffset,
-                length - offset);
+            ExternalAsciiString::cast(string)->GetChars() + slice_offset,
+            length - offset);
         return;
 
       case kExternalStringTag | kTwoByteStringTag:
         visitor.VisitTwoByteString(
-            reinterpret_cast<const uint16_t*>(
-                ExternalTwoByteString::cast(string)->GetChars()) + sliceOffset,
-                length - offset);
+            ExternalTwoByteString::cast(string)->GetChars() + slice_offset,
+            length - offset);
         return;
 
       case kSlicedStringTag | kOneByteStringTag:
       case kSlicedStringTag | kTwoByteStringTag: {
         SlicedString* slicedString = SlicedString::cast(string);
-        sliceOffset += slicedString->offset();
+        slice_offset += slicedString->offset();
         string = slicedString->parent();
         type = string->map()->instance_type();
         continue;
@@ -2572,10 +2608,9 @@ void String::Visit(
 
       case kConsStringTag | kOneByteStringTag:
       case kConsStringTag | kTwoByteStringTag:
-        string = consOp.Operate(ConsString::cast(string), &offset, &type,
-            &length);
+        string = cons_op.Operate(string, &offset, &type, &length);
         if (string == NULL) return;
-        sliceOffset = offset;
+        slice_offset = offset;
         ASSERT(length == static_cast<unsigned>(string->length()));
         continue;
 
@@ -2594,7 +2629,7 @@ uint16_t SeqOneByteString::SeqOneByteStringGet(int index) {
 
 
 void SeqOneByteString::SeqOneByteStringSet(int index, uint16_t value) {
-  ASSERT(index >= 0 && index < length() && value <= kMaxAsciiCharCode);
+  ASSERT(index >= 0 && index < length() && value <= kMaxOneByteCharCode);
   WRITE_BYTE_FIELD(this, kHeaderSize + index * kCharSize,
                    static_cast<byte>(value));
 }
@@ -2605,8 +2640,8 @@ Address SeqOneByteString::GetCharsAddress() {
 }
 
 
-char* SeqOneByteString::GetChars() {
-  return reinterpret_cast<char*>(GetCharsAddress());
+uint8_t* SeqOneByteString::GetChars() {
+  return reinterpret_cast<uint8_t*>(GetCharsAddress());
 }
 
 
@@ -2716,8 +2751,8 @@ void ExternalAsciiString::set_resource(
 }
 
 
-const char* ExternalAsciiString::GetChars() {
-  return resource()->data();
+const uint8_t* ExternalAsciiString::GetChars() {
+  return reinterpret_cast<const uint8_t*>(resource()->data());
 }
 
 
@@ -2765,23 +2800,13 @@ const uint16_t* ExternalTwoByteString::ExternalTwoByteStringGetData(
 }
 
 
+String* ConsStringNullOp::Operate(String*, unsigned*, int32_t*, unsigned*) {
+  return NULL;
+}
+
+
 unsigned ConsStringIteratorOp::OffsetForDepth(unsigned depth) {
   return depth & kDepthMask;
-}
-
-
-uint32_t ConsStringIteratorOp::MaskForDepth(unsigned depth) {
-  return 1 << OffsetForDepth(depth);
-}
-
-
-void ConsStringIteratorOp::SetRightDescent() {
-  trace_ |= MaskForDepth(depth_ - 1);
-}
-
-
-void ConsStringIteratorOp::ClearRightDescent() {
-  trace_ &= ~MaskForDepth(depth_ - 1);
 }
 
 
@@ -2790,14 +2815,9 @@ void ConsStringIteratorOp::PushLeft(ConsString* string) {
 }
 
 
-void ConsStringIteratorOp::PushRight(ConsString* string, int32_t type) {
-  // Inplace update
+void ConsStringIteratorOp::PushRight(ConsString* string) {
+  // Inplace update.
   frames_[(depth_-1) & kDepthMask] = string;
-  if (depth_ != 1) return;
-  // Optimization: can replace root in this case.
-  root_ = string;
-  root_type_ = type;
-  root_length_ = string->length();
 }
 
 
@@ -2813,78 +2833,82 @@ void ConsStringIteratorOp::Pop() {
 }
 
 
-void ConsStringIteratorOp::Reset() {
-  consumed_ = 0;
-  ResetStack();
-}
-
-
 bool ConsStringIteratorOp::HasMore() {
   return depth_ != 0;
 }
 
 
-void ConsStringIteratorOp::ResetStack() {
+void ConsStringIteratorOp::Reset() {
   depth_ = 0;
-  maximum_depth_ = 0;
 }
 
 
-bool ConsStringIteratorOp::ContinueOperation(ContinueResponse* response) {
-  bool blewStack;
-  int32_t type;
-  String* string = NextLeaf(&blewStack, &type);
+String* ConsStringIteratorOp::ContinueOperation(int32_t* type_out,
+                                                unsigned* length_out) {
+  bool blew_stack = false;
+  String* string = NextLeaf(&blew_stack, type_out, length_out);
   // String found.
   if (string != NULL) {
-    unsigned length = string->length();
-    consumed_ += length;
-    response->string_ = string;
-    response->offset_ = 0;
-    response->length_ = length;
-    response->type_ = type;
-    return true;
+    // Verify output.
+    ASSERT(*length_out == static_cast<unsigned>(string->length()));
+    ASSERT(*type_out == string->map()->instance_type());
+    return string;
   }
   // Traversal complete.
-  if (!blewStack) return false;
-  // Restart search.
-  ResetStack();
-  response->string_ = root_;
-  response->offset_ = consumed_;
-  response->length_ = root_length_;
-  response->type_ = root_type_;
-  return true;
+  if (!blew_stack) return NULL;
+  // Restart search from root.
+  unsigned offset_out;
+  string = Search(&offset_out, type_out, length_out);
+  // Verify output.
+  ASSERT(string == NULL || offset_out == 0);
+  ASSERT(string == NULL ||
+         *length_out == static_cast<unsigned>(string->length()));
+  ASSERT(string == NULL || *type_out == string->map()->instance_type());
+  return string;
 }
 
 
 uint16_t StringCharacterStream::GetNext() {
-  ASSERT(buffer8_ != NULL);
+  ASSERT(buffer8_ != NULL && end_ != NULL);
+  // Advance cursor if needed.
+  // TODO(dcarney): Ensure uses of the api call HasMore first and avoid this.
+  if (buffer8_ == end_) HasMore();
+  ASSERT(buffer8_ < end_);
   return is_one_byte_ ? *buffer8_++ : *buffer16_++;
 }
 
 
-StringCharacterStream::StringCharacterStream(
-    String* string, unsigned offset, ConsStringIteratorOp* op)
-  : is_one_byte_(true),
-    buffer8_(NULL),
-    end_(NULL),
+StringCharacterStream::StringCharacterStream(String* string,
+                                             ConsStringIteratorOp* op,
+                                             unsigned offset)
+  : is_one_byte_(false),
     op_(op) {
-  op->Reset();
-  String::Visit(string,
-      offset, *this, *op, string->map()->instance_type(), string->length());
+  Reset(string, offset);
+}
+
+
+void StringCharacterStream::Reset(String* string, unsigned offset) {
+  op_->Reset();
+  buffer8_ = NULL;
+  end_ = NULL;
+  int32_t type = string->map()->instance_type();
+  unsigned length = string->length();
+  String::Visit(string, offset, *this, *op_, type, length);
 }
 
 
 bool StringCharacterStream::HasMore() {
   if (buffer8_ != end_) return true;
   if (!op_->HasMore()) return false;
-  ConsStringIteratorOp::ContinueResponse response;
-  // This has been checked above
-  if (!op_->ContinueOperation(&response)) {
-    UNREACHABLE();
-    return false;
-  }
-  String::Visit(response.string_,
-      response.offset_, *this, *op_, response.type_, response.length_);
+  unsigned length;
+  int32_t type;
+  String* string = op_->ContinueOperation(&type, &length);
+  if (string == NULL) return false;
+  ASSERT(!string->IsConsString());
+  ASSERT(string->length() != 0);
+  ConsStringNullOp null_op;
+  String::Visit(string, 0, *this, null_op, type, length);
+  ASSERT(buffer8_ != end_);
   return true;
 }
 
@@ -3373,6 +3397,11 @@ Code::Flags Code::flags() {
 }
 
 
+inline bool Map::CanTrackAllocationSite() {
+  return instance_type() == JS_ARRAY_TYPE;
+}
+
+
 void Map::set_owns_descriptors(bool is_shared) {
   set_bit_field3(OwnsDescriptors::update(bit_field3(), is_shared));
 }
@@ -3384,12 +3413,56 @@ bool Map::owns_descriptors() {
 
 
 void Map::set_is_observed(bool is_observed) {
+  ASSERT(instance_type() < FIRST_JS_OBJECT_TYPE ||
+         instance_type() > LAST_JS_OBJECT_TYPE ||
+         has_slow_elements_kind() || has_external_array_elements());
   set_bit_field3(IsObserved::update(bit_field3(), is_observed));
 }
 
 
 bool Map::is_observed() {
   return IsObserved::decode(bit_field3());
+}
+
+
+void Map::AddDependentCode(Handle<Code> code) {
+  Handle<DependentCodes> codes =
+      DependentCodes::Append(Handle<DependentCodes>(dependent_codes()), code);
+  if (*codes != dependent_codes()) {
+    set_dependent_codes(*codes);
+  }
+}
+
+
+int DependentCodes::number_of_codes() {
+  if (length() == 0) return 0;
+  return Smi::cast(get(kNumberOfCodesIndex))->value();
+}
+
+
+void DependentCodes::set_number_of_codes(int value) {
+  set(kNumberOfCodesIndex, Smi::FromInt(value));
+}
+
+
+Code* DependentCodes::code_at(int i) {
+  return Code::cast(get(kCodesIndex + i));
+}
+
+
+void DependentCodes::set_code_at(int i, Code* value) {
+  set(kCodesIndex + i, value);
+}
+
+
+Object** DependentCodes::code_slot_at(int i) {
+  return HeapObject::RawField(
+      this, FixedArray::OffsetOfElementAt(kCodesIndex + i));
+}
+
+
+void DependentCodes::clear_code_at(int i) {
+  set_undefined(kCodesIndex + i);
 }
 
 
@@ -3415,14 +3488,13 @@ InlineCacheState Code::ic_state() {
   // a call to code object has been replaced with a debug break call.
   ASSERT(is_inline_cache_stub() ||
          result == UNINITIALIZED ||
-         result == DEBUG_BREAK ||
-         result == DEBUG_PREPARE_STEP_IN);
+         result == DEBUG_STUB);
   return result;
 }
 
 
 Code::ExtraICState Code::extra_ic_state() {
-  ASSERT(is_inline_cache_stub());
+  ASSERT(is_inline_cache_stub() || ic_state() == DEBUG_STUB);
   return ExtractExtraICStateFromFlags(flags());
 }
 
@@ -3440,9 +3512,12 @@ int Code::arguments_count() {
 
 int Code::major_key() {
   ASSERT(kind() == STUB ||
+         kind() == COMPILED_STUB ||
          kind() == UNARY_OP_IC ||
          kind() == BINARY_OP_IC ||
          kind() == COMPARE_IC ||
+         kind() == LOAD_IC ||
+         kind() == KEYED_LOAD_IC ||
          kind() == TO_BOOLEAN_IC);
   return StubMajorKeyField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags2Offset));
@@ -3451,9 +3526,14 @@ int Code::major_key() {
 
 void Code::set_major_key(int major) {
   ASSERT(kind() == STUB ||
+         kind() == COMPILED_STUB ||
          kind() == UNARY_OP_IC ||
          kind() == BINARY_OP_IC ||
          kind() == COMPARE_IC ||
+         kind() == LOAD_IC ||
+         kind() == KEYED_LOAD_IC ||
+         kind() == STORE_IC ||
+         kind() == KEYED_STORE_IC ||
          kind() == TO_BOOLEAN_IC);
   ASSERT(0 <= major && major < 256);
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags2Offset);
@@ -3559,7 +3639,7 @@ void Code::set_profiler_ticks(int ticks) {
 
 
 unsigned Code::stack_slots() {
-  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  ASSERT(kind() == OPTIMIZED_FUNCTION || kind() == COMPILED_STUB);
   return StackSlotsField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags1Offset));
 }
@@ -3567,7 +3647,7 @@ unsigned Code::stack_slots() {
 
 void Code::set_stack_slots(unsigned slots) {
   CHECK(slots <= (1 << kStackSlotsBitCount));
-  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  ASSERT(kind() == OPTIMIZED_FUNCTION || kind() == COMPILED_STUB);
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags1Offset);
   int updated = StackSlotsField::update(previous, slots);
   WRITE_UINT32_FIELD(this, kKindSpecificFlags1Offset, updated);
@@ -3575,7 +3655,7 @@ void Code::set_stack_slots(unsigned slots) {
 
 
 unsigned Code::safepoint_table_offset() {
-  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  ASSERT(kind() == OPTIMIZED_FUNCTION || kind() == COMPILED_STUB);
   return SafepointTableOffsetField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags2Offset));
 }
@@ -3583,7 +3663,7 @@ unsigned Code::safepoint_table_offset() {
 
 void Code::set_safepoint_table_offset(unsigned offset) {
   CHECK(offset <= (1 << kSafepointTableOffsetBitCount));
-  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  ASSERT(kind() == OPTIMIZED_FUNCTION || kind() == COMPILED_STUB);
   ASSERT(IsAligned(offset, static_cast<unsigned>(kIntSize)));
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags2Offset);
   int updated = SafepointTableOffsetField::update(previous, offset);
@@ -3665,9 +3745,29 @@ void Code::set_has_function_cache(bool flag) {
 }
 
 
+bool Code::marked_for_deoptimization() {
+  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  return MarkedForDeoptimizationField::decode(
+      READ_UINT32_FIELD(this, kKindSpecificFlags1Offset));
+}
+
+
+void Code::set_marked_for_deoptimization(bool flag) {
+  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  int previous = READ_UINT32_FIELD(this, kKindSpecificFlags1Offset);
+  int updated = MarkedForDeoptimizationField::update(previous, flag);
+  WRITE_UINT32_FIELD(this, kKindSpecificFlags1Offset, updated);
+}
+
+
 bool Code::is_inline_cache_stub() {
   Kind kind = this->kind();
   return kind >= FIRST_IC_KIND && kind <= LAST_IC_KIND;
+}
+
+
+bool Code::is_debug_break() {
+  return ic_state() == DEBUG_STUB && extra_ic_state() == DEBUG_BREAK;
 }
 
 
@@ -3988,6 +4088,7 @@ HeapObject* Map::UncheckedPrototypeTransitions() {
 
 
 ACCESSORS(Map, code_cache, Object, kCodeCacheOffset)
+ACCESSORS(Map, dependent_codes, DependentCodes, kDependentCodesOffset)
 ACCESSORS(Map, constructor, Object, kConstructorOffset)
 
 ACCESSORS(JSFunction, shared, SharedFunctionInfo, kSharedFunctionInfoOffset)
@@ -4059,6 +4160,8 @@ ACCESSORS(SignatureInfo, args, Object, kArgsOffset)
 
 ACCESSORS(TypeSwitchInfo, types, Object, kTypesOffset)
 
+ACCESSORS(AllocationSiteInfo, payload, Object, kPayloadOffset)
+
 ACCESSORS(Script, source, Object, kSourceOffset)
 ACCESSORS(Script, name, Object, kNameOffset)
 ACCESSORS(Script, id, Object, kIdOffset)
@@ -4103,6 +4206,7 @@ ACCESSORS(SharedFunctionInfo, this_property_assignments, Object,
 SMI_ACCESSORS(SharedFunctionInfo, ast_node_count, kAstNodeCountOffset)
 
 
+SMI_ACCESSORS(FunctionTemplateInfo, length, kLengthOffset)
 BOOL_ACCESSORS(FunctionTemplateInfo, flag, hidden_prototype,
                kHiddenPrototypeBit)
 BOOL_ACCESSORS(FunctionTemplateInfo, flag, undetectable, kUndetectableBit)
@@ -4825,15 +4929,32 @@ void Code::set_type_feedback_info(Object* value, WriteBarrierMode mode) {
 
 
 int Code::stub_info() {
-  ASSERT(kind() == COMPARE_IC || kind() == BINARY_OP_IC);
+  ASSERT(kind() == COMPARE_IC || kind() == BINARY_OP_IC || kind() == LOAD_IC);
   Object* value = READ_FIELD(this, kTypeFeedbackInfoOffset);
   return Smi::cast(value)->value();
 }
 
 
 void Code::set_stub_info(int value) {
-  ASSERT(kind() == COMPARE_IC || kind() == BINARY_OP_IC);
+  ASSERT(kind() == COMPARE_IC ||
+         kind() == BINARY_OP_IC ||
+         kind() == LOAD_IC ||
+         kind() == KEYED_LOAD_IC ||
+         kind() == STORE_IC ||
+         kind() == KEYED_STORE_IC);
   WRITE_FIELD(this, kTypeFeedbackInfoOffset, Smi::FromInt(value));
+}
+
+
+void Code::set_deoptimizing_functions(Object* value) {
+  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  WRITE_FIELD(this, kTypeFeedbackInfoOffset, value);
+}
+
+
+Object* Code::deoptimizing_functions() {
+  ASSERT(kind() == OPTIMIZED_FUNCTION);
+  return Object::cast(READ_FIELD(this, kTypeFeedbackInfoOffset));
 }
 
 
@@ -5142,7 +5263,7 @@ bool StringHasher::has_trivial_hash() {
 }
 
 
-uint32_t StringHasher::AddCharacterCore(uint32_t running_hash, uint32_t c) {
+uint32_t StringHasher::AddCharacterCore(uint32_t running_hash, uint16_t c) {
   running_hash += c;
   running_hash += (running_hash << 10);
   running_hash ^= (running_hash >> 6);
@@ -5161,66 +5282,62 @@ uint32_t StringHasher::GetHashCore(uint32_t running_hash) {
 }
 
 
-void StringHasher::AddCharacter(uint32_t c) {
-  if (c > unibrow::Utf16::kMaxNonSurrogateCharCode) {
-    AddSurrogatePair(c);  // Not inlined.
-    return;
-  }
+void StringHasher::AddCharacter(uint16_t c) {
   // Use the Jenkins one-at-a-time hash function to update the hash
   // for the given character.
   raw_running_hash_ = AddCharacterCore(raw_running_hash_, c);
-  // Incremental array index computation.
-  if (is_array_index_) {
-    if (c < '0' || c > '9') {
+}
+
+
+bool StringHasher::UpdateIndex(uint16_t c) {
+  ASSERT(is_array_index_);
+  if (c < '0' || c > '9') {
+    is_array_index_ = false;
+    return false;
+  }
+  int d = c - '0';
+  if (is_first_char_) {
+    is_first_char_ = false;
+    if (c == '0' && length_ > 1) {
       is_array_index_ = false;
-    } else {
-      int d = c - '0';
-      if (is_first_char_) {
-        is_first_char_ = false;
-        if (c == '0' && length_ > 1) {
-          is_array_index_ = false;
-          return;
-        }
-      }
-      if (array_index_ > 429496729U - ((d + 2) >> 3)) {
-        is_array_index_ = false;
-      } else {
-        array_index_ = array_index_ * 10 + d;
+      return false;
+    }
+  }
+  if (array_index_ > 429496729U - ((d + 2) >> 3)) {
+    is_array_index_ = false;
+    return false;
+  }
+  array_index_ = array_index_ * 10 + d;
+  return true;
+}
+
+
+template<typename Char>
+inline void StringHasher::AddCharacters(const Char* chars, int length) {
+  ASSERT(sizeof(Char) == 1 || sizeof(Char) == 2);
+  int i = 0;
+  if (is_array_index_) {
+    for (; i < length; i++) {
+      AddCharacter(chars[i]);
+      if (!UpdateIndex(chars[i])) {
+        i++;
+        break;
       }
     }
   }
-}
-
-
-void StringHasher::AddCharacterNoIndex(uint32_t c) {
-  ASSERT(!is_array_index());
-  if (c > unibrow::Utf16::kMaxNonSurrogateCharCode) {
-    AddSurrogatePairNoIndex(c);  // Not inlined.
-    return;
+  for (; i < length; i++) {
+    ASSERT(!is_array_index_);
+    AddCharacter(chars[i]);
   }
-  raw_running_hash_ = AddCharacterCore(raw_running_hash_, c);
-}
-
-
-uint32_t StringHasher::GetHash() {
-  // Get the calculated raw hash value and do some more bit ops to distribute
-  // the hash further. Ensure that we never return zero as the hash value.
-  return GetHashCore(raw_running_hash_);
 }
 
 
 template <typename schar>
-uint32_t HashSequentialString(const schar* chars, int length, uint32_t seed) {
+uint32_t StringHasher::HashSequentialString(const schar* chars,
+                                            int length,
+                                            uint32_t seed) {
   StringHasher hasher(length, seed);
-  if (!hasher.has_trivial_hash()) {
-    int i;
-    for (i = 0; hasher.is_array_index() && (i < length); i++) {
-      hasher.AddCharacter(chars[i]);
-    }
-    for (; i < length; i++) {
-      hasher.AddCharacterNoIndex(chars[i]);
-    }
-  }
+  if (!hasher.has_trivial_hash()) hasher.AddCharacters(chars, length);
   return hasher.GetHashField();
 }
 

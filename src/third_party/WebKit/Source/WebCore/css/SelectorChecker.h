@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2004-2005 Allan Sandfeld Jensen (kde@carewolf.com)
  * Copyright (C) 2006, 2007 Nicholas Shanks (webkit@nickshanks.com)
- * Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2007 Alexey Proskuryakov <ap@webkit.org>
  * Copyright (C) 2007, 2008 Eric Seidel <eric@webkit.org>
  * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
@@ -31,86 +31,65 @@
 #include "Attribute.h"
 #include "CSSSelector.h"
 #include "InspectorInstrumentation.h"
-#include "LinkHash.h"
-#include "RenderStyleConstants.h"
 #include "SpaceSplitString.h"
 #include "StyledElement.h"
-#include <wtf/BloomFilter.h>
 #include <wtf/HashSet.h>
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
 class CSSSelector;
-class Document;
 class RenderStyle;
 
 class SelectorChecker {
     WTF_MAKE_NONCOPYABLE(SelectorChecker);
 public:
-    SelectorChecker(Document*, bool strictParsing);
+    explicit SelectorChecker(Document*);
 
-    enum SelectorMatch { SelectorMatches, SelectorFailsLocally, SelectorFailsAllSiblings, SelectorFailsCompletely };
+    enum Match { SelectorMatches, SelectorFailsLocally, SelectorFailsAllSiblings, SelectorFailsCompletely };
     enum VisitedMatchType { VisitedMatchDisabled, VisitedMatchEnabled };
     enum Mode { ResolvingStyle = 0, CollectingRules, QueryingRules, SharingRules };
 
     struct SelectorCheckingContext {
         // Initial selector constructor
-        SelectorCheckingContext(CSSSelector* selector, Element* element, VisitedMatchType visitedMatchType)
+        SelectorCheckingContext(const CSSSelector* selector, Element* element, VisitedMatchType visitedMatchType)
             : selector(selector)
             , element(element)
             , scope(0)
             , visitedMatchType(visitedMatchType)
             , pseudoStyle(NOPSEUDO)
             , elementStyle(0)
-            , elementParentStyle(0)
             , isSubSelector(false)
             , hasScrollbarPseudo(false)
             , hasSelectionPseudo(false)
         { }
 
-        CSSSelector* selector;
+        const CSSSelector* selector;
         Element* element;
         const ContainerNode* scope;
         VisitedMatchType visitedMatchType;
         PseudoId pseudoStyle;
         RenderStyle* elementStyle;
-        RenderStyle* elementParentStyle;
         bool isSubSelector;
         bool hasScrollbarPseudo;
         bool hasSelectionPseudo;
     };
 
-    bool checkSelector(CSSSelector*, Element*, bool isFastCheckableSelector = false) const;
-    SelectorMatch checkSelector(const SelectorCheckingContext&, PseudoId&) const;
+    bool matches(const CSSSelector*, Element*, bool isFastCheckableSelector = false) const;
     template<typename SiblingTraversalStrategy>
-    bool checkOneSelector(const SelectorCheckingContext&, const SiblingTraversalStrategy&) const;
+    Match match(const SelectorCheckingContext&, PseudoId&, const SiblingTraversalStrategy&) const;
+    template<typename SiblingTraversalStrategy>
+    bool checkOne(const SelectorCheckingContext&, const SiblingTraversalStrategy&) const;
 
     static bool isFastCheckableSelector(const CSSSelector*);
-    bool fastCheckSelector(const CSSSelector*, const Element*) const;
+    bool fastCheck(const CSSSelector*, const Element*) const;
 
-    template <unsigned maximumIdentifierCount>
-    inline bool fastRejectSelector(const unsigned* identifierHashes) const;
-    static void collectIdentifierHashes(const CSSSelector*, unsigned* identifierHashes, unsigned maximumIdentifierCount);
-
-    void setupParentStack(Element* parent);
-    void pushParent(Element* parent);
-    void popParent() { popParentStackFrame(); }
-    bool parentStackIsEmpty() const { return m_parentStack.isEmpty(); }
-    bool parentStackIsConsistent(const ContainerNode* parentNode) const { return !m_parentStack.isEmpty() && m_parentStack.last().element == parentNode; }
-
-    EInsideLink determineLinkState(Element*) const;
-    void allVisitedStateChanged();
-    void visitedStateChanged(LinkHash visitedHash);
-
-    Document* document() const { return m_document; }
     bool strictParsing() const { return m_strictParsing; }
 
     Mode mode() const { return m_mode; }
     void setMode(Mode mode) { m_mode = mode; }
 
-    static bool tagMatches(const Element*, const CSSSelector*);
-    static bool attributeNameMatches(const Attribute*, const QualifiedName&);
+    static bool tagMatches(const Element*, const QualifiedName&);
     static bool isCommonPseudoClassSelector(const CSSSelector*);
     bool matchesFocusPseudoClass(const Element*) const;
     static bool fastCheckRightmostAttributeSelector(const Element*, const CSSSelector*);
@@ -120,53 +99,16 @@ public:
     static unsigned determineLinkMatchType(const CSSSelector*);
 
 private:
-    bool checkScrollbarPseudoClass(CSSSelector*) const;
+    bool checkScrollbarPseudoClass(Document*, const CSSSelector*) const;
     static bool isFrameFocused(const Element*);
 
     bool fastCheckRightmostSelector(const CSSSelector*, const Element*, VisitedMatchType) const;
     bool commonPseudoClassSelectorMatches(const Element*, const CSSSelector*, VisitedMatchType) const;
 
-    EInsideLink determineLinkStateSlowCase(Element*) const;
-
-    void pushParentStackFrame(Element* parent);
-    void popParentStackFrame();
-
-    Document* m_document;
     bool m_strictParsing;
     bool m_documentIsHTML;
     Mode m_mode;
-    mutable HashSet<LinkHash, LinkHashHash> m_linksCheckedForVisitedState;
-
-    struct ParentStackFrame {
-        ParentStackFrame() : element(0) { }
-        ParentStackFrame(Element* element) : element(element) { }
-        Element* element;
-        Vector<unsigned, 4> identifierHashes;
-    };
-    Vector<ParentStackFrame> m_parentStack;
-
-    // With 100 unique strings in the filter, 2^12 slot table has false positive rate of ~0.2%.
-    static const unsigned bloomFilterKeyBits = 12;
-    OwnPtr<BloomFilter<bloomFilterKeyBits> > m_ancestorIdentifierFilter;
 };
-
-inline EInsideLink SelectorChecker::determineLinkState(Element* element) const
-{
-    if (!element || !element->isLink())
-        return NotInsideLink;
-    return determineLinkStateSlowCase(element);
-}
-
-template <unsigned maximumIdentifierCount>
-inline bool SelectorChecker::fastRejectSelector(const unsigned* identifierHashes) const
-{
-    ASSERT(m_ancestorIdentifierFilter);
-    for (unsigned n = 0; n < maximumIdentifierCount && identifierHashes[n]; ++n) {
-        if (!m_ancestorIdentifierFilter->mayContain(identifierHashes[n]))
-            return true;
-    }
-    return false;
-}
 
 inline bool SelectorChecker::isCommonPseudoClassSelector(const CSSSelector* selector)
 {
@@ -186,22 +128,15 @@ inline bool SelectorChecker::matchesFocusPseudoClass(const Element* element) con
     return element->focused() && isFrameFocused(element);
 }
 
-inline bool SelectorChecker::tagMatches(const Element* element, const CSSSelector* selector)
+inline bool SelectorChecker::tagMatches(const Element* element, const QualifiedName& tagQName)
 {
-    if (!selector->hasTag())
+    if (tagQName == anyQName())
         return true;
-    const AtomicString& localName = selector->tag().localName();
+    const AtomicString& localName = tagQName.localName();
     if (localName != starAtom && localName != element->localName())
         return false;
-    const AtomicString& namespaceURI = selector->tag().namespaceURI();
+    const AtomicString& namespaceURI = tagQName.namespaceURI();
     return namespaceURI == starAtom || namespaceURI == element->namespaceURI();
-}
-
-inline bool SelectorChecker::attributeNameMatches(const Attribute* attribute, const QualifiedName& selectorAttributeName)
-{
-    if (selectorAttributeName.localName() != attribute->localName())
-        return false;
-    return selectorAttributeName.prefix() == starAtom || selectorAttributeName.namespaceURI() == attribute->namespaceURI();
 }
 
 inline bool SelectorChecker::checkExactAttribute(const Element* element, const QualifiedName& selectorAttributeName, const AtomicStringImpl* value)
@@ -211,7 +146,7 @@ inline bool SelectorChecker::checkExactAttribute(const Element* element, const Q
     unsigned size = element->attributeCount();
     for (unsigned i = 0; i < size; ++i) {
         const Attribute* attribute = element->attributeItem(i);
-        if (attributeNameMatches(attribute, selectorAttributeName) && (!value || attribute->value().impl() == value))
+        if (attribute->matches(selectorAttributeName) && (!value || attribute->value().impl() == value))
             return true;
     }
     return false;

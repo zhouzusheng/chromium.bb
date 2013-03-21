@@ -35,7 +35,6 @@
 #include "EventNames.h"
 #include "EventTarget.h"
 #include "IDBMetadata.h"
-#include "IDBTransactionCallbacks.h"
 #include "ScriptWrappable.h"
 #include <wtf/HashSet.h>
 #include <wtf/RefCounted.h>
@@ -44,12 +43,13 @@ namespace WebCore {
 
 class IDBCursor;
 class IDBDatabase;
+class IDBDatabaseBackendInterface;
+class IDBDatabaseError;
 class IDBObjectStore;
 class IDBOpenDBRequest;
-class IDBTransactionBackendInterface;
 struct IDBObjectStoreMetadata;
 
-class IDBTransaction : public ScriptWrappable, public IDBTransactionCallbacks, public EventTarget, public ActiveDOMObject {
+class IDBTransaction : public ScriptWrappable, public RefCounted<IDBTransaction>, public EventTarget, public ActiveDOMObject {
 public:
     enum Mode {
         READ_ONLY = 0,
@@ -57,8 +57,8 @@ public:
         VERSION_CHANGE = 2
     };
 
-    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, PassRefPtr<IDBTransactionBackendInterface>, const Vector<String>& objectStoreNames, Mode, IDBDatabase*);
-    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, PassRefPtr<IDBTransactionBackendInterface>, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
+    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, const Vector<String>& objectStoreNames, Mode, IDBDatabase*);
+    static PassRefPtr<IDBTransaction> create(ScriptExecutionContext*, int64_t, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata& previousMetadata);
     virtual ~IDBTransaction();
 
     static const AtomicString& modeReadOnly();
@@ -68,9 +68,10 @@ public:
     static const AtomicString& modeReadWriteLegacy();
 
     static Mode stringToMode(const String&, ScriptExecutionContext*, ExceptionCode&);
-    static const AtomicString& modeToString(Mode, ExceptionCode&);
+    static const AtomicString& modeToString(Mode);
 
-    IDBTransactionBackendInterface* backend() const;
+    IDBDatabaseBackendInterface* backendDB() const;
+
     int64_t id() const { return m_id; }
     bool isActive() const { return m_state == Active; }
     bool isFinished() const { return m_state == Finished; }
@@ -106,26 +107,26 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    // IDBTransactionCallbacks
     virtual void onAbort(PassRefPtr<IDBDatabaseError>);
     virtual void onComplete();
 
     // EventTarget
     virtual const AtomicString& interfaceName() const;
     virtual ScriptExecutionContext* scriptExecutionContext() const;
-    virtual bool dispatchEvent(PassRefPtr<Event>);
-    bool dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec) { return EventTarget::dispatchEvent(event, ec); }
+
+    using EventTarget::dispatchEvent;
+    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
     virtual bool canSuspend() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
-    using RefCounted<IDBTransactionCallbacks>::ref;
-    using RefCounted<IDBTransactionCallbacks>::deref;
+    using RefCounted<IDBTransaction>::ref;
+    using RefCounted<IDBTransaction>::deref;
 
 private:
-    IDBTransaction(ScriptExecutionContext*, int64_t, PassRefPtr<IDBTransactionBackendInterface>, const Vector<String>&, Mode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
+    IDBTransaction(ScriptExecutionContext*, int64_t, const Vector<String>&, Mode, IDBDatabase*, IDBOpenDBRequest*, const IDBDatabaseMetadata&);
 
     void enqueueEvent(PassRefPtr<Event>);
     void closeOpenCursors();
@@ -146,8 +147,6 @@ private:
         Finished, // No more events will fire and no new requests may be filed.
     };
 
-    // FIXME: Remove references to the backend when the backend is fully flattened: https://bugs.webkit.org/show_bug.cgi?id=99774
-    RefPtr<IDBTransactionBackendInterface> m_backend;
     int64_t m_id;
     RefPtr<IDBDatabase> m_database;
     const Vector<String> m_objectStoreNames;
@@ -159,7 +158,7 @@ private:
     RefPtr<DOMError> m_error;
     String m_errorMessage;
 
-    ListHashSet<IDBRequest*> m_requestList;
+    ListHashSet<RefPtr<IDBRequest> > m_requestList;
 
     typedef HashMap<String, RefPtr<IDBObjectStore> > IDBObjectStoreMap;
     IDBObjectStoreMap m_objectStoreMap;

@@ -57,7 +57,8 @@
 #include "FrameLoadRequest.h"
 #include "FrameView.h"
 #include "Geolocation.h"
-#include "GraphicsLayer.h"
+#include "GraphicsLayerChromium.h"
+#include "GraphicsLayerFactory.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "HitTestResult.h"
@@ -95,6 +96,7 @@
 #include "WebPopupMenuInfo.h"
 #include "WebPopupType.h"
 #include "WebSettings.h"
+#include "WebSettingsImpl.h"
 #include "WebTextDirection.h"
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
@@ -110,6 +112,20 @@
 #include <wtf/unicode/CharacterNames.h>
 
 using namespace WebCore;
+
+namespace {
+
+class GraphicsLayerFactoryChromium : public GraphicsLayerFactory {
+public:
+    virtual ~GraphicsLayerFactoryChromium() { }
+
+    virtual PassOwnPtr<GraphicsLayer> createGraphicsLayer(GraphicsLayerClient* client) OVERRIDE
+    {
+        return adoptPtr(new GraphicsLayerChromium(client));
+    }
+};
+
+} // namespace
 
 namespace WebKit {
 
@@ -144,6 +160,9 @@ ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     , m_nextNewWindowNavigationPolicy(WebNavigationPolicyIgnore)
 #if ENABLE(PAGE_POPUP)
     , m_pagePopupDriver(webView)
+#endif
+#if USE(ACCELERATED_COMPOSITING)
+    , m_graphicsLayerFactory(adoptPtr(new GraphicsLayerFactoryChromium))
 #endif
 {
 }
@@ -622,38 +641,38 @@ void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
 void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportArguments& arguments) const
 {
 #if ENABLE(VIEWPORT)
-    if (!m_webView->settings()->viewportEnabled() || !m_webView->isFixedLayoutModeEnabled() || !m_webView->client() || !m_webView->page())
+    if (!m_webView->isFixedLayoutModeEnabled() || !m_webView->client() || !m_webView->page())
         return;
 
-    WebViewClient* client = m_webView->client();
-    WebSize deviceSize = m_webView->size();
-    // If the window size has not been set yet don't attempt to set the viewport
-    if (!deviceSize.width || !deviceSize.height)
+    IntSize viewportSize = m_webView->dipSize();
+    float deviceScaleFactor = m_webView->client()->screenInfo().deviceScaleFactor;
+
+    // If the window size has not been set yet don't attempt to set the viewport.
+    if (!viewportSize.width() || !viewportSize.height())
         return;
 
-    Settings* settings = m_webView->page()->settings();
-    float devicePixelRatio = client->screenInfo().deviceScaleFactor;
-    // Call the common viewport computing logic in ViewportArguments.cpp.
-    ViewportAttributes computed = computeViewportAttributes(
-        arguments, settings->layoutFallbackWidth(), deviceSize.width, deviceSize.height,
-        devicePixelRatio, IntSize(deviceSize.width, deviceSize.height));
-
+    ViewportAttributes computed;
+    if (m_webView->settings()->viewportEnabled()) {
+        computed = arguments.resolve(viewportSize, viewportSize, m_webView->page()->settings()->layoutFallbackWidth());
+    } else {
+        // If viewport tag is disabled but fixed layout is still enabled, (for
+        // example, on Android WebView with UseWideViewport false), compute
+        // based on the default viewport arguments.
+        computed = ViewportArguments().resolve(viewportSize, viewportSize, viewportSize.width());
+    }
     restrictScaleFactorToInitialScaleIfNotUserScalable(computed);
 
     if (m_webView->ignoreViewportTagMaximumScale()) {
         computed.maximumScale = max(computed.maximumScale, m_webView->maxPageScaleFactor);
         computed.userScalable = true;
     }
+    if (!m_webView->settingsImpl()->applyDeviceScaleFactorInCompositor())
+        computed.initialScale *= deviceScaleFactor;
 
-    int layoutWidth = computed.layoutSize.width();
-    int layoutHeight = computed.layoutSize.height();
-    m_webView->setFixedLayoutSize(IntSize(layoutWidth, layoutHeight));
-
-    bool needInitializePageScale = !m_webView->isPageScaleFactorSet();
-    m_webView->setDeviceScaleFactor(devicePixelRatio);
+    m_webView->setInitialPageScaleFactor(computed.initialScale);
+    m_webView->setFixedLayoutSize(flooredIntSize(computed.layoutSize));
+    m_webView->setDeviceScaleFactor(deviceScaleFactor);
     m_webView->setPageScaleFactorLimits(computed.minimumScale, computed.maximumScale);
-    if (needInitializePageScale)
-        m_webView->setPageScaleFactorPreservingScrollOffset(computed.initialScale * devicePixelRatio);
 #endif
 }
 
@@ -663,7 +682,7 @@ void ChromeClientImpl::print(Frame* frame)
         m_webView->client()->printPage(WebFrameImpl::fromFrame(frame));
 }
 
-void ChromeClientImpl::exceededDatabaseQuota(Frame* frame, const String& databaseName)
+void ChromeClientImpl::exceededDatabaseQuota(Frame* frame, const String& databaseName, DatabaseDetails)
 {
     // Chromium users cannot currently change the default quota
 }
@@ -920,6 +939,11 @@ bool ChromeClientImpl::paintCustomOverhangArea(GraphicsContext* context, const I
 }
 
 #if USE(ACCELERATED_COMPOSITING)
+GraphicsLayerFactory* ChromeClientImpl::graphicsLayerFactory() const
+{
+    return m_graphicsLayerFactory.get();
+}
+
 void ChromeClientImpl::attachRootGraphicsLayer(Frame* frame, GraphicsLayer* graphicsLayer)
 {
     m_webView->setRootGraphicsLayer(graphicsLayer);
@@ -947,6 +971,8 @@ ChromeClient::CompositingTriggerFlags ChromeClientImpl::allowedCompositingTrigge
         flags |= AnimationTrigger;
     if (settings->acceleratedCompositingForCanvasEnabled())
         flags |= CanvasTrigger;
+    if (settings->acceleratedCompositingForScrollableFramesEnabled())
+        flags |= ScrollableInnerFrameTrigger;
 
     return flags;
 }
@@ -1102,6 +1128,12 @@ void ChromeClientImpl::numWheelEventHandlersChanged(unsigned numberOfWheelHandle
 {
     m_webView->numberOfWheelEventHandlersChanged(numberOfWheelHandlers);
 }
+
+bool ChromeClientImpl::shouldAutoscrollForDragAndDrop(WebCore::RenderBox*) const
+{
+    return true;
+}
+
 
 #if ENABLE(TOUCH_EVENTS)
 void ChromeClientImpl::needTouchEvents(bool needsTouchEvents)

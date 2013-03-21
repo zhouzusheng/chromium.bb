@@ -13,6 +13,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_info.h"
@@ -57,7 +58,7 @@ int fdatasync(int fildes) {
 #if defined(OS_WIN)
   return _commit(fildes);
 #else
-  return fsync(fildes);
+  return HANDLE_EINTR(fsync(fildes));
 #endif
 }
 #endif
@@ -92,11 +93,11 @@ std::string FilePathToString(const ::FilePath& file_path) {
 bool sync_parent(const std::string& fname) {
 #if !defined(OS_WIN)
   FilePath parent_dir = CreateFilePath(fname).DirName();
-  int parent_fd = open(FilePathToString(parent_dir).c_str(), O_RDONLY);
+  int parent_fd = HANDLE_EINTR(open(FilePathToString(parent_dir).c_str(), O_RDONLY));
   if (parent_fd < 0)
     return false;
-  fsync(parent_fd);
-  close(parent_fd);
+  HANDLE_EINTR(fsync(parent_fd));
+  HANDLE_EINTR(close(parent_fd));
 #endif
   return true;
 }
@@ -124,16 +125,12 @@ enum UmaEntry {
   kNumEntries
 };
 
-void LogToUMA(UmaEntry entry) {
-  UMA_HISTOGRAM_ENUMERATION("LevelDBEnv.IOError", entry, kNumEntries);
-}
-
-void LogRandomAccessFileError(base::PlatformFileError error_code) {
-  DCHECK(error_code < 0);
-  UMA_HISTOGRAM_ENUMERATION("LevelDBEnv.IOError.RandomAccessFile",
-                            -error_code,
-                            -base::PLATFORM_FILE_ERROR_MAX);
-}
+class UMALogger {
+ public:
+  virtual void RecordErrorAt(UmaEntry entry) const = 0;
+  virtual void LogRandomAccessFileError(base::PlatformFileError error_code)
+      const = 0;
+};
 
 }  // namespace
 
@@ -191,10 +188,12 @@ class ChromiumSequentialFile: public SequentialFile {
  private:
   std::string filename_;
   FILE* file_;
+  const UMALogger* uma_logger_;
 
  public:
-  ChromiumSequentialFile(const std::string& fname, FILE* f)
-      : filename_(fname), file_(f) { }
+  ChromiumSequentialFile(const std::string& fname, FILE* f,
+                         const UMALogger* uma_logger)
+      : filename_(fname), file_(f), uma_logger_(uma_logger) { }
   virtual ~ChromiumSequentialFile() { fclose(file_); }
 
   virtual Status Read(size_t n, Slice* result, char* scratch) {
@@ -207,7 +206,7 @@ class ChromiumSequentialFile: public SequentialFile {
       } else {
         // A partial read with an error: return a non-ok status
         s = Status::IOError(filename_, strerror(errno));
-        LogToUMA(kSequentialFileRead);
+        uma_logger_->RecordErrorAt(kSequentialFileRead);
       }
     }
     return s;
@@ -215,7 +214,7 @@ class ChromiumSequentialFile: public SequentialFile {
 
   virtual Status Skip(uint64_t n) {
     if (fseek(file_, n, SEEK_CUR)) {
-      LogToUMA(kSequentialFileSkip);
+      uma_logger_->RecordErrorAt(kSequentialFileSkip);
       return Status::IOError(filename_, strerror(errno));
     }
     return Status::OK();
@@ -226,10 +225,12 @@ class ChromiumRandomAccessFile: public RandomAccessFile {
  private:
   std::string filename_;
   ::base::PlatformFile file_;
+  const UMALogger* uma_logger_;
 
  public:
-  ChromiumRandomAccessFile(const std::string& fname, ::base::PlatformFile file)
-      : filename_(fname), file_(file) { }
+  ChromiumRandomAccessFile(const std::string& fname, ::base::PlatformFile file,
+                           const UMALogger* uma_logger)
+      : filename_(fname), file_(file), uma_logger_(uma_logger) { }
   virtual ~ChromiumRandomAccessFile() { ::base::ClosePlatformFile(file_); }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
@@ -240,7 +241,7 @@ class ChromiumRandomAccessFile: public RandomAccessFile {
     if (r < 0) {
       // An error: return a non-ok status
       s = Status::IOError(filename_, "Could not perform read");
-      LogToUMA(kRandomAccessFileRead);
+      uma_logger_->RecordErrorAt(kRandomAccessFileRead);
     }
     return s;
   }
@@ -250,10 +251,12 @@ class ChromiumWritableFile : public WritableFile {
  private:
   std::string filename_;
   FILE* file_;
+  const UMALogger* uma_logger_;
 
  public:
-  ChromiumWritableFile(const std::string& fname, FILE* f)
-      : filename_(fname), file_(f) { }
+  ChromiumWritableFile(const std::string& fname, FILE* f,
+                       const UMALogger* uma_logger)
+      : filename_(fname), file_(f), uma_logger_(uma_logger) { }
 
   ~ChromiumWritableFile() {
     if (file_ != NULL) {
@@ -267,7 +270,7 @@ class ChromiumWritableFile : public WritableFile {
     Status result;
     if (r != data.size()) {
       result = Status::IOError(filename_, strerror(errno));
-      LogToUMA(kWritableFileAppend);
+      uma_logger_->RecordErrorAt(kWritableFileAppend);
     }
     return result;
   }
@@ -276,7 +279,7 @@ class ChromiumWritableFile : public WritableFile {
     Status result;
     if (fclose(file_) != 0) {
       result = Status::IOError(filename_, strerror(errno));
-      LogToUMA(kWritableFileClose);
+      uma_logger_->RecordErrorAt(kWritableFileClose);
     }
     file_ = NULL;
     return result;
@@ -286,7 +289,7 @@ class ChromiumWritableFile : public WritableFile {
     Status result;
     if (fflush_unlocked(file_) != 0) {
       result = Status::IOError(filename_, strerror(errno));
-      LogToUMA(kWritableFileFlush);
+      uma_logger_->RecordErrorAt(kWritableFileFlush);
     }
     return result;
   }
@@ -304,7 +307,7 @@ class ChromiumWritableFile : public WritableFile {
     // Report the first error we found.
     if (error) {
       result = Status::IOError(filename_, strerror(error));
-      LogToUMA(kWritableFileSync);
+      uma_logger_->RecordErrorAt(kWritableFileSync);
     }
     return result;
   }
@@ -315,7 +318,7 @@ class ChromiumFileLock : public FileLock {
   ::base::PlatformFile file_;
 };
 
-class ChromiumEnv : public Env {
+class ChromiumEnv : public Env, public UMALogger {
  public:
   ChromiumEnv();
   virtual ~ChromiumEnv() {
@@ -327,10 +330,10 @@ class ChromiumEnv : public Env {
     FILE* f = fopen_internal(fname.c_str(), "rb");
     if (f == NULL) {
       *result = NULL;
-      LogToUMA(kNewSequentialFile);
+      RecordErrorAt(kNewSequentialFile);
       return Status::IOError(fname, strerror(errno));
     } else {
-      *result = new ChromiumSequentialFile(fname, f);
+      *result = new ChromiumSequentialFile(fname, f, this);
       return Status::OK();
     }
   }
@@ -344,11 +347,11 @@ class ChromiumEnv : public Env {
         CreateFilePath(fname), flags, &created, &error_code);
     if (error_code != ::base::PLATFORM_FILE_OK) {
       *result = NULL;
-      LogToUMA(kNewRandomAccessFile);
+      RecordErrorAt(kNewRandomAccessFile);
       LogRandomAccessFileError(error_code);
       return Status::IOError(fname, PlatformFileErrorString(error_code));
     }
-    *result = new ChromiumRandomAccessFile(fname, file);
+    *result = new ChromiumRandomAccessFile(fname, file, this);
     return Status::OK();
   }
 
@@ -357,14 +360,14 @@ class ChromiumEnv : public Env {
     *result = NULL;
     FILE* f = fopen_internal(fname.c_str(), "wb");
     if (f == NULL) {
-      LogToUMA(kNewWritableFile);
+      RecordErrorAt(kNewWritableFile);
       return Status::IOError(fname, strerror(errno));
     } else {
       if (!sync_parent(fname)) {
         fclose(f);
         return Status::IOError(fname, strerror(errno));
       }
-      *result = new ChromiumWritableFile(fname, f);
+      *result = new ChromiumWritableFile(fname, f, this);
       return Status::OK();
     }
   }
@@ -394,7 +397,7 @@ class ChromiumEnv : public Env {
     // TODO(jorlow): Should we assert this is a file?
     if (!::file_util::Delete(CreateFilePath(fname), false)) {
       result = Status::IOError(fname, "Could not delete file.");
-      LogToUMA(kDeleteFile);
+      RecordErrorAt(kDeleteFile);
     }
     return result;
   };
@@ -403,7 +406,7 @@ class ChromiumEnv : public Env {
     Status result;
     if (!::file_util::CreateDirectory(CreateFilePath(name))) {
       result = Status::IOError(name, "Could not create directory.");
-      LogToUMA(kCreateDir);
+      RecordErrorAt(kCreateDir);
     }
     return result;
   };
@@ -413,7 +416,7 @@ class ChromiumEnv : public Env {
     // TODO(jorlow): Should we assert this is a directory?
     if (!::file_util::Delete(CreateFilePath(name), false)) {
       result = Status::IOError(name, "Could not delete directory.");
-      LogToUMA(kDeleteDir);
+      RecordErrorAt(kDeleteDir);
     }
     return result;
   };
@@ -424,7 +427,7 @@ class ChromiumEnv : public Env {
     if (!::file_util::GetFileSize(CreateFilePath(fname), &signed_size)) {
       *size = 0;
       s = Status::IOError(fname, "Could not determine file size.");
-      LogToUMA(kGetFileSize);
+      RecordErrorAt(kGetFileSize);
     } else {
       *size = static_cast<uint64_t>(signed_size);
     }
@@ -433,9 +436,12 @@ class ChromiumEnv : public Env {
 
   virtual Status RenameFile(const std::string& src, const std::string& dst) {
     Status result;
-    if (!::file_util::ReplaceFile(CreateFilePath(src), CreateFilePath(dst))) {
+    FilePath src_file_path = CreateFilePath(src);
+    if (!::file_util::PathExists(src_file_path))
+      return result;
+    if (!::file_util::ReplaceFile(src_file_path, CreateFilePath(dst))) {
       result = Status::IOError(src, "Could not rename file.");
-      LogToUMA(kRenamefile);
+      RecordErrorAt(kRenamefile);
     } else {
       sync_parent(dst);
       if (src != dst)
@@ -458,7 +464,7 @@ class ChromiumEnv : public Env {
         CreateFilePath(fname), flags, &created, &error_code);
     if (error_code != ::base::PLATFORM_FILE_OK) {
       result = Status::IOError(fname, PlatformFileErrorString(error_code));
-      LogToUMA(kLockFile);
+      RecordErrorAt(kLockFile);
     } else {
       ChromiumFileLock* my_lock = new ChromiumFileLock;
       my_lock->file_ = file;
@@ -472,7 +478,7 @@ class ChromiumEnv : public Env {
     Status result;
     if (!::base::ClosePlatformFile(my_lock->file_)) {
       result = Status::IOError("Could not close lock file.");
-      LogToUMA(kUnlockFile);
+      RecordErrorAt(kUnlockFile);
     }
     delete my_lock;
     return result;
@@ -501,7 +507,7 @@ class ChromiumEnv : public Env {
       if (!::file_util::CreateNewTempDirectory(kLevelDBTestDirectoryPrefix,
                                                &test_directory_)) {
         mu_.Release();
-        LogToUMA(kGetTestDirectory);
+        RecordErrorAt(kGetTestDirectory);
         return Status::IOError("Could not create temp directory.");
       }
     }
@@ -514,11 +520,11 @@ class ChromiumEnv : public Env {
     FILE* f = fopen_internal(fname.c_str(), "w");
     if (f == NULL) {
       *result = NULL;
-      LogToUMA(kNewLogger);
+      RecordErrorAt(kNewLogger);
       return Status::IOError(fname, strerror(errno));
     } else {
       if (!sync_parent(fname)) {
-        fclose(f); 
+        fclose(f);
         return Status::IOError(fname, strerror(errno));
       }
       *result = new ChromiumLogger(f);
@@ -534,6 +540,18 @@ class ChromiumEnv : public Env {
     // Round up to the next millisecond.
     ::base::PlatformThread::Sleep(::base::TimeDelta::FromMicroseconds(micros));
   }
+
+  void RecordErrorAt(UmaEntry entry) const {
+    io_error_histogram_->Add(entry);
+  }
+
+  void LogRandomAccessFileError(base::PlatformFileError error_code) const {
+    DCHECK(error_code < 0);
+    random_access_file_histogram_->Add(-error_code);
+  }
+
+ protected:
+  void InitHistograms(const std::string& uma_title);
 
  private:
   // BGThread() is the body of the background thread
@@ -553,12 +571,31 @@ class ChromiumEnv : public Env {
   struct BGItem { void* arg; void (*function)(void*); };
   typedef std::deque<BGItem> BGQueue;
   BGQueue queue_;
+
+  base::HistogramBase* io_error_histogram_;
+  base::HistogramBase* random_access_file_histogram_;
 };
 
 ChromiumEnv::ChromiumEnv()
     : page_size_(::base::SysInfo::VMAllocationGranularity()),
       bgsignal_(&mu_),
       started_bgthread_(false) {
+  InitHistograms("LevelDBEnv");
+}
+
+void ChromiumEnv::InitHistograms(const std::string& uma_title) {
+  std::string uma_name(uma_title);
+  uma_name.append(".IOError");
+  // Note: The calls to FactoryGet aren't thread-safe. It's ok to call them here
+  // because this method is only called from LazyInstance, which provides
+  // thread-safety.
+  io_error_histogram_ = base::LinearHistogram::FactoryGet(uma_name, 1,
+      kNumEntries, kNumEntries + 1, base::Histogram::kUmaTargetedHistogramFlag);
+
+  uma_name.append(".RandomAccessFile");
+  random_access_file_histogram_ = base::LinearHistogram::FactoryGet(uma_name, 1,
+      -base::PLATFORM_FILE_ERROR_MAX, -base::PLATFORM_FILE_ERROR_MAX + 1,
+      base::Histogram::kUmaTargetedHistogramFlag);
 }
 
 class Thread : public ::base::PlatformThread::Delegate {
@@ -624,9 +661,23 @@ void ChromiumEnv::StartThread(void (*function)(void* arg), void* arg) {
   new Thread(function, arg); // Will self-delete.
 }
 
+class IDBEnv : public ChromiumEnv {
+ public:
+  IDBEnv() : ChromiumEnv() {
+    InitHistograms("LevelDBEnv.IDB");
+  }
+};
+
+::base::LazyInstance<IDBEnv>::Leaky
+    idb_env = LAZY_INSTANCE_INITIALIZER;
+
 ::base::LazyInstance<ChromiumEnv>::Leaky
     default_env = LAZY_INSTANCE_INITIALIZER;
 
+}
+
+Env* IDBEnv() {
+  return idb_env.Pointer();
 }
 
 Env* Env::Default() {

@@ -61,6 +61,7 @@ class WebString;
 class WebURLRequest;
 class WebURLResponse;
 class WebViewImpl;
+struct WebMemoryUsageInfo;
 struct WebURLError;
 struct WebDevToolsMessageData;
 
@@ -110,10 +111,16 @@ public:
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
 
+    virtual bool captureScreenshot(WTF::String* data);
+
+    virtual bool handleJavaScriptDialog(bool accept);
+
     int hostId() { return m_hostId; }
 
     // WebPageOverlay
     virtual void paintPageOverlay(WebCanvas*);
+
+    virtual WebVector<WebMemoryUsageInfo> processMemoryDistribution() const;
 
 private:
     // WebThread::TaskObserver
@@ -128,6 +135,7 @@ private:
     WebViewImpl* m_webViewImpl;
     bool m_attached;
     OwnPtr<DeviceMetricsSupport> m_metricsSupport;
+    BrowserDataHint m_sendWithBrowserDataHint;
 };
 
 } // namespace WebKit

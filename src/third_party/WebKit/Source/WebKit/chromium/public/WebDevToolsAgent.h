@@ -31,7 +31,8 @@
 #ifndef WebDevToolsAgent_h
 #define WebDevToolsAgent_h
 
-#include "platform/WebCommon.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
+#include "../../../Platform/chromium/public/WebVector.h"
 
 namespace WebKit {
 class WebDevToolsAgentClient;
@@ -43,10 +44,19 @@ class WebURLResponse;
 class WebView;
 struct WebDevToolsMessageData;
 struct WebPoint;
+struct WebMemoryUsageInfo;
 struct WebURLError;
 
 class WebDevToolsAgent {
 public:
+    // Hint for the browser on the data it should prepare for message patching.
+    enum BrowserDataHint {
+        BrowserDataHintNone,
+        BrowserDataHintScreenshot,
+        BrowserDataHintAcceptJavaScriptDialog,
+        BrowserDataHintDismissJavaScriptDialog,
+    };
+
     virtual ~WebDevToolsAgent() {}
 
     // Returns WebKit WebInspector protocol version.
@@ -69,6 +79,8 @@ public:
     // Exposed for TestRunner.
     virtual void evaluateInWebInspector(long callId, const WebString& script) = 0;
 
+    virtual WebVector<WebMemoryUsageInfo> processMemoryDistribution() const = 0;
+
     class MessageDescriptor {
     public:
         virtual ~MessageDescriptor() { }
@@ -87,8 +99,12 @@ public:
     // in order to let it know that it has disconnected from the agent.
     WEBKIT_EXPORT static WebString workerDisconnectedFromWorkerEvent();
 
-    // FIXME: remove once migrated to workerDisconnectedFromWorkerEvent().
-    WEBKIT_EXPORT static WebString disconnectEventAsText();
+    // Determines whether given message response should be patch with the data calculatd in browser.
+    // Returns the hint on the data browser should prepare for patching.
+    WEBKIT_EXPORT static BrowserDataHint shouldPatchWithBrowserData(const char* message, size_t messageLength);
+
+    // Patches message response with the data calculated in browser.
+    WEBKIT_EXPORT static WebString patchWithBrowserData(const WebString& message, BrowserDataHint, const WebString& hintData);
 };
 
 } // namespace WebKit

@@ -47,7 +47,6 @@ namespace WebCore {
 
 void V8Location::hashAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.hash._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -59,7 +58,6 @@ void V8Location::hashAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Va
 
 void V8Location::hostAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.host._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -71,7 +69,6 @@ void V8Location::hostAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Va
 
 void V8Location::hostnameAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.hostname._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -83,7 +80,6 @@ void V8Location::hostnameAccessorSetter(v8::Local<v8::String> name, v8::Local<v8
 
 void V8Location::hrefAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.href._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -95,7 +91,6 @@ void V8Location::hrefAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Va
 
 void V8Location::pathnameAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.pathname._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -107,7 +102,6 @@ void V8Location::pathnameAccessorSetter(v8::Local<v8::String> name, v8::Local<v8
 
 void V8Location::portAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.port._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -119,7 +113,6 @@ void V8Location::portAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Va
 
 void V8Location::protocolAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.protocol._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -134,7 +127,6 @@ void V8Location::protocolAccessorSetter(v8::Local<v8::String> name, v8::Local<v8
 
 void V8Location::searchAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.search._set");
     Location* impl = V8Location::toNative(info.Holder());
     BindingState* state = BindingState::instance();
 
@@ -146,9 +138,9 @@ void V8Location::searchAccessorSetter(v8::Local<v8::String> name, v8::Local<v8::
 
 v8::Handle<v8::Value> V8Location::reloadAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.reload._get");
-    static v8::Persistent<v8::FunctionTemplate> privateTemplate = v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::reloadCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate());
+    v8::Isolate* isolate = info.GetIsolate();
+    static v8::Persistent<v8::FunctionTemplate> privateTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::reloadCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate(isolate));
     if (holder.IsEmpty()) {
         // can only reach here by 'object.__proto__.func', and it should passed
         // domain security check already
@@ -156,7 +148,7 @@ v8::Handle<v8::Value> V8Location::reloadAccessorGetter(v8::Local<v8::String> nam
     }
     Location* imp = V8Location::toNative(holder);
     if (!BindingSecurity::shouldAllowAccessToFrame(BindingState::instance(), imp->frame(), DoNotReportSecurityError)) {
-        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::reloadCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
+        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::reloadCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
         return sharedTemplate->GetFunction();
     }
     return privateTemplate->GetFunction();
@@ -164,9 +156,9 @@ v8::Handle<v8::Value> V8Location::reloadAccessorGetter(v8::Local<v8::String> nam
 
 v8::Handle<v8::Value> V8Location::replaceAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.replace._get");
-    static v8::Persistent<v8::FunctionTemplate> privateTemplate = v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::replaceCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate());
+    v8::Isolate* isolate = info.GetIsolate();
+    static v8::Persistent<v8::FunctionTemplate> privateTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::replaceCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate(isolate));
     if (holder.IsEmpty()) {
         // can only reach here by 'object.__proto__.func', and it should passed
         // domain security check already
@@ -174,7 +166,7 @@ v8::Handle<v8::Value> V8Location::replaceAccessorGetter(v8::Local<v8::String> na
     }
     Location* imp = V8Location::toNative(holder);
     if (!BindingSecurity::shouldAllowAccessToFrame(BindingState::instance(), imp->frame(), DoNotReportSecurityError)) {
-        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::replaceCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
+        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::replaceCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
         return sharedTemplate->GetFunction();
     }
     return privateTemplate->GetFunction();
@@ -182,10 +174,10 @@ v8::Handle<v8::Value> V8Location::replaceAccessorGetter(v8::Local<v8::String> na
 
 v8::Handle<v8::Value> V8Location::assignAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.Location.assign._get");
+    v8::Isolate* isolate = info.GetIsolate();
     static v8::Persistent<v8::FunctionTemplate> privateTemplate =
-        v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::assignCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate());
+        v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::assignCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Location::GetTemplate(isolate));
     if (holder.IsEmpty()) {
         // can only reach here by 'object.__proto__.func', and it should passed
         // domain security check already
@@ -193,7 +185,7 @@ v8::Handle<v8::Value> V8Location::assignAccessorGetter(v8::Local<v8::String> nam
     }
     Location* imp = V8Location::toNative(holder);
     if (!BindingSecurity::shouldAllowAccessToFrame(BindingState::instance(), imp->frame(), DoNotReportSecurityError)) {
-        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(v8::FunctionTemplate::New(V8Location::assignCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate())));
+        static v8::Persistent<v8::FunctionTemplate> sharedTemplate = v8::Persistent<v8::FunctionTemplate>::New(isolate, v8::FunctionTemplate::New(V8Location::assignCallback, v8Undefined(), v8::Signature::New(V8Location::GetRawTemplate(isolate))));
         return sharedTemplate->GetFunction();
     }
     return privateTemplate->GetFunction();
@@ -201,7 +193,6 @@ v8::Handle<v8::Value> V8Location::assignAccessorGetter(v8::Local<v8::String> nam
 
 v8::Handle<v8::Value> V8Location::reloadCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.Location.reload");
     Location* impl = V8Location::toNative(args.Holder());
     BindingState* state = BindingState::instance();
 
@@ -211,7 +202,6 @@ v8::Handle<v8::Value> V8Location::reloadCallback(const v8::Arguments& args)
 
 v8::Handle<v8::Value> V8Location::replaceCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.Location.replace");
     Location* impl = V8Location::toNative(args.Holder());
     BindingState* state = BindingState::instance();
 
@@ -224,7 +214,6 @@ v8::Handle<v8::Value> V8Location::replaceCallback(const v8::Arguments& args)
 
 v8::Handle<v8::Value> V8Location::assignCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.Location.assign");
     Location* impl = V8Location::toNative(args.Holder());
     BindingState* state = BindingState::instance();
 
@@ -247,7 +236,6 @@ v8::Handle<v8::Value> V8Location::valueOfCallback(const v8::Arguments& args)
 
 v8::Handle<v8::Value> V8Location::toStringCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.Location.toString");
     v8::Handle<v8::Object> holder = args.Holder();
     Location* imp = V8Location::toNative(holder);
     if (!BindingSecurity::shouldAllowAccessToFrame(BindingState::instance(), imp->frame()))

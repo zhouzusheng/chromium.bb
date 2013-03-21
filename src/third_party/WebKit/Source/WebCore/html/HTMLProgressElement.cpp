@@ -19,11 +19,10 @@
  */
 
 #include "config.h"
+#if ENABLE(PROGRESS_ELEMENT)
 #include "HTMLProgressElement.h"
 
-#if ENABLE(PROGRESS_ELEMENT)
 #include "Attribute.h"
-#include "ElementShadow.h"
 #include "EventNames.h"
 #include "ExceptionCode.h"
 #include "HTMLDivElement.h"
@@ -32,7 +31,6 @@
 #include "NodeRenderingContext.h"
 #include "ProgressShadowElement.h"
 #include "RenderProgress.h"
-#include "SelectRuleFeatureSet.h"
 #include "ShadowRoot.h"
 #include <wtf/StdLibExtras.h>
 
@@ -46,7 +44,6 @@ const double HTMLProgressElement::InvalidPosition = -2;
 HTMLProgressElement::HTMLProgressElement(const QualifiedName& tagName, Document* document)
     : LabelableElement(tagName, document)
     , m_value(0)
-    , m_hasAuthorShadowRoot(false)
 {
     ASSERT(hasTagName(progressTag));
 }
@@ -58,8 +55,8 @@ HTMLProgressElement::~HTMLProgressElement()
 PassRefPtr<HTMLProgressElement> HTMLProgressElement::create(const QualifiedName& tagName, Document* document)
 {
     RefPtr<HTMLProgressElement> progress = adoptRef(new HTMLProgressElement(tagName, document));
-    progress->createShadowSubtree();
-    return progress;
+    progress->ensureUserAgentShadowRoot();
+    return progress.release();
 }
 
 RenderObject* HTMLProgressElement::createRenderer(RenderArena* arena, RenderStyle* style)
@@ -85,14 +82,9 @@ RenderProgress* HTMLProgressElement::renderProgress() const
     return static_cast<RenderProgress*>(renderObject);
 }
 
-void HTMLProgressElement::willAddAuthorShadowRoot()
-{
-    m_hasAuthorShadowRoot = true;
-}
-
 bool HTMLProgressElement::supportsFocus() const
 {
-    return Node::supportsFocus() && !disabled();
+    return HTMLElement::supportsFocus() && !disabled();
 }
 
 void HTMLProgressElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -160,19 +152,14 @@ void HTMLProgressElement::didElementStateChange()
     if (RenderProgress* render = renderProgress()) {
         bool wasDeterminate = render->isDeterminate();
         render->updateFromElement();
-        if (wasDeterminate != isDeterminate()) {
-            setNeedsStyleRecalc();
-            invalidateParentDistributionIfNecessary(this, SelectRuleFeatureSet::RuleFeatureIndeterminate);
-        }
+        if (wasDeterminate != isDeterminate())
+            didAffectSelector(AffectedSelectorIndeterminate);
     }
 }
 
-void HTMLProgressElement::createShadowSubtree()
+void HTMLProgressElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 {
-    ASSERT(!userAgentShadowRoot());
     ASSERT(!m_value);
-           
-    RefPtr<ShadowRoot> root = ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot, ASSERT_NO_EXCEPTION);
 
     RefPtr<ProgressInnerElement> inner = ProgressInnerElement::create(document());
     root->appendChild(inner);

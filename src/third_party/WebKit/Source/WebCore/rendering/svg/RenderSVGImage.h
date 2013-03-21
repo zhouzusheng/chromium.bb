@@ -60,7 +60,7 @@ private:
     virtual FloatRect repaintRectInLocalCoordinates() const { return m_repaintBoundingBox; }
     virtual FloatRect repaintRectInLocalCoordinatesExcludingSVGShadow() const OVERRIDE { return m_repaintBoundingBoxExcludingShadow; }
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
 
@@ -83,13 +83,13 @@ private:
 
 inline RenderSVGImage* toRenderSVGImage(RenderObject* object)
 {
-    ASSERT(!object || object->isSVGImage());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGImage());
     return static_cast<RenderSVGImage*>(object);
 }
 
 inline const RenderSVGImage* toRenderSVGImage(const RenderObject* object)
 {
-    ASSERT(!object || object->isSVGImage());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGImage());
     return static_cast<const RenderSVGImage*>(object);
 }
 

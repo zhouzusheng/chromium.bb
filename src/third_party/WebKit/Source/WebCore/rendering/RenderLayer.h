@@ -258,6 +258,8 @@ public:
     RenderLayer(RenderLayerModelObject*);
     ~RenderLayer();
 
+    String name() const;
+
     RenderLayerModelObject* renderer() const { return m_renderer; }
     RenderBox* renderBox() const { return m_renderer && m_renderer->isBox() ? toRenderBox(m_renderer) : 0; }
     RenderLayer* parent() const { return m_parent; }
@@ -326,7 +328,13 @@ public:
         ScrollOffsetClamped
     };
 
+    enum ScrollPropagation {
+        ShouldPropagateScroll,
+        DontPropagateScroll
+    };
+
     // Scrolling methods for layers that can scroll their overflow.
+    bool scrollBy(const IntSize&, ScrollOffsetClamping = ScrollOffsetUnclamped, ScrollPropagation = DontPropagateScroll);
     void scrollByRecursively(const IntSize&, ScrollOffsetClamping = ScrollOffsetUnclamped);
     void scrollToOffset(const IntSize&, ScrollOffsetClamping = ScrollOffsetUnclamped);
     void scrollToXOffset(int x, ScrollOffsetClamping clamp = ScrollOffsetUnclamped) { scrollToOffset(IntSize(x, scrollYOffset()), clamp); }
@@ -341,7 +349,6 @@ public:
     LayoutRect getRectToExpose(const LayoutRect& visibleRect, const LayoutRect& exposeRect, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
     bool scrollsOverflow() const;
-    bool allowsScrolling() const; // Returns true if at least one scrollbar is visible and enabled.
     bool hasScrollbars() const { return m_hBar || m_vBar; }
     void setHasHorizontalScrollbar(bool);
     void setHasVerticalScrollbar(bool);
@@ -372,8 +379,9 @@ public:
     void updateScrollInfoAfterLayout();
 
     bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1);
-    void autoscroll();
+    void autoscroll(const IntPoint&);
 
+    bool canResize() const;
     void resize(const PlatformMouseEvent&, const LayoutSize&);
     bool inResizeMode() const { return m_inResizeMode; }
     void setInResizeMode(bool b) { m_inResizeMode = b; }
@@ -431,12 +439,17 @@ public:
 
     // A stacking container can have z-order lists. All stacking contexts are
     // stacking containers, but the converse is not true. Layers that use
-    // compositied scrolling are stacking containers, but they may not
+    // composited scrolling are stacking containers, but they may not
     // necessarily be stacking contexts.
     bool isStackingContainer() const { return isStackingContext() || needsCompositedScrolling(); }
 
-    // Gets the enclosing stacking container for this layer.
+    // Gets the enclosing stacking container for this layer, excluding this
+    // layer itself.
     RenderLayer* stackingContainer() const;
+
+    // Gets the enclosing stacking container for this layer, possibly the layer
+    // itself, if it is a stacking container.
+    RenderLayer* enclosingStackingContainer() { return isStackingContainer() ? this : stackingContainer(); }
 
     void dirtyZOrderLists();
     void dirtyStackingContainerZOrderLists();
@@ -470,6 +483,13 @@ public:
 
     void setHasVisibleContent();
     void dirtyVisibleContentStatus();
+
+    bool hasBoxDecorationsOrBackground() const;
+    bool hasVisibleBoxDecorations() const;
+    // Returns true if this layer has visible content (ignoring any child layers).
+    bool isVisuallyNonEmpty() const;
+    // True if this layer container renderers that paint.
+    bool hasNonEmptyChildRenderers() const;
 
     // FIXME: We should ASSERT(!m_hasSelfPaintingLayerDescendantDirty); here but we hit the same bugs as visible content above.
     // Part of the issue is with subtree relayout: we don't check if our ancestors have some descendant flags dirty, missing some updates.
@@ -535,6 +555,8 @@ public:
         PaintLayerPaintingCompositingForegroundPhase = 1 << 6,
         PaintLayerPaintingCompositingMaskPhase = 1 << 7,
         PaintLayerPaintingOverflowContents = 1 << 8,
+        PaintLayerPaintingRootBackgroundOnly = 1 << 9,
+        PaintLayerPaintingSkipRootBackground = 1 << 10,
         PaintLayerPaintingCompositingAllPhases = (PaintLayerPaintingCompositingBackgroundPhase | PaintLayerPaintingCompositingForegroundPhase | PaintLayerPaintingCompositingMaskPhase)
     };
     
@@ -611,6 +633,17 @@ public:
     // Pixel snapped bounding box relative to the root.
     IntRect absoluteBoundingBox() const;
 
+    // Bounds used for layer overlap testing in RenderLayerCompositor.
+    LayoutRect overlapBounds() const { return overlapBoundsIncludeChildren() ? calculateLayerBounds(this) : localBoundingBox(); }
+
+#if ENABLE(CSS_FILTERS)
+    // If true, this layer's children are included in its bounds for overlap testing.
+    // We can't rely on the children's positions if this layer has a filter that could have moved the children's pixels around.
+    bool overlapBoundsIncludeChildren() const { return hasFilter() && renderer()->style()->filter().hasFilterThatMovesPixels(); }
+#else
+    bool overlapBoundsIncludeChildren() const { return false; }
+#endif
+
     // Can pass offsetFromRoot if known.
     IntRect calculateLayerBounds(const RenderLayer* ancestorLayer, const LayoutPoint* offsetFromRoot = 0, CalculateLayerBoundsFlags = DefaultCalculateLayerBoundsFlags) const;
     
@@ -681,6 +714,7 @@ public:
     bool isComposited() const { return false; }
     bool hasCompositedMask() const { return false; }
     bool usesCompositedScrolling() const { return false; }
+    bool needsCompositedScrolling() const { return false; }
 #endif
 
     bool paintsWithTransparency(PaintBehavior paintBehavior) const
@@ -979,10 +1013,10 @@ private:
     void setIndirectCompositingReason(IndirectCompositingReason reason) { m_indirectCompositingReason = reason; }
     IndirectCompositingReason indirectCompositingReason() const { return static_cast<IndirectCompositingReason>(m_indirectCompositingReason); }
     bool mustCompositeForIndirectReasons() const { return m_indirectCompositingReason; }
-
-    // Returns true if z ordering would not change if this layer were to establish a stacking container.
-    bool canBeStackingContainer() const;
 #endif
+
+    // Returns true if z ordering would not change if this layer were a stacking container.
+    bool canBeStackingContainer() const;
 
     friend class RenderLayerBacking;
     friend class RenderLayerCompositor;

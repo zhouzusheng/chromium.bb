@@ -105,7 +105,7 @@ v8::Handle<v8::Value> JSAvailableLocalesOf(const v8::Arguments& args) {
     }
 
     // Index is just a dummy value for the property value.
-    locales->Set(v8::String::New(result, strlen(result)), v8::Integer::New(i));
+    locales->Set(v8::String::New(result), v8::Integer::New(i));
     if (try_catch.HasCaught()) {
       // Ignore error, but stop processing and return.
       break;

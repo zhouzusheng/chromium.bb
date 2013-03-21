@@ -125,6 +125,16 @@ Element* FrameSelection::rootEditableElementOrDocumentElement() const
     return selectionRoot ? selectionRoot : m_frame->document()->documentElement();
 }
 
+Node* FrameSelection::rootEditableElementOrTreeScopeRootNode() const
+{
+    Element* selectionRoot = m_selection.rootEditableElement();
+    if (selectionRoot)
+        return selectionRoot;
+
+    Node* node = m_selection.base().containerNode();
+    return node ? node->treeScope()->rootNode() : 0;
+}
+
 Element* FrameSelection::rootEditableElementRespectingShadowTree() const
 {
     Element* selectionRoot = m_selection.rootEditableElement();
@@ -269,7 +279,13 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
     if (s.base().anchorNode()) {
         Document* document = s.base().anchorNode()->document();
         if (document && document->frame() && document->frame() != m_frame && document != m_frame->document()) {
+            RefPtr<Frame> guard = document->frame();
             document->frame()->selection()->setSelection(s, options, align, granularity);
+            // It's possible that during the above set selection, this FrameSelection has been modified by
+            // selectFrameElementInParentIfFullySelected, but that the selection is no longer valid since
+            // the frame is about to be destroyed. If this is the case, clear our selection.
+            if (guard->hasOneRef() && !m_selection.isNonOrphanedCaretOrRange())
+                clear();
             return;
         }
     }
@@ -338,7 +354,7 @@ static bool removingNodeRemovesPosition(Node* node, const Position& position)
         return false;
 
     Element* element = static_cast<Element*>(node);
-    return element->contains(position.anchorNode()) || element->contains(position.anchorNode()->shadowAncestorNode());
+    return element->containsIncludingShadowDOM(position.anchorNode());
 }
 
 static void clearRenderViewSelection(const Position& position)
@@ -1327,7 +1343,12 @@ static void repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
     if (!caretPainter)
         return;
 
-    caretPainter->repaintRectangle(rect);
+    // FIXME: Need to over-paint 1 pixel to workaround some rounding problems.
+    // https://bugs.webkit.org/show_bug.cgi?id=108283
+    LayoutRect inflatedRect = rect;
+    inflatedRect.inflate(1);
+
+    caretPainter->repaintRectangle(inflatedRect);
 }
 
 bool FrameSelection::recomputeCaretRect()
@@ -1607,13 +1628,13 @@ void FrameSelection::selectAll()
     if (isContentEditable()) {
         root = highestEditableRoot(m_selection.start());
         if (Node* shadowRoot = m_selection.nonBoundaryShadowTreeRootNode())
-            selectStartTarget = shadowRoot->shadowAncestorNode();
+            selectStartTarget = shadowRoot->shadowHost();
         else
             selectStartTarget = root.get();
     } else {
         root = m_selection.nonBoundaryShadowTreeRootNode();
         if (root)
-            selectStartTarget = root->shadowAncestorNode();
+            selectStartTarget = root->shadowHost();
         else {
             root = document->documentElement();
             selectStartTarget = document->body();
@@ -1830,9 +1851,6 @@ void FrameSelection::notifyRendererOfSelectionChange(EUserTriggered userTriggere
 {
     m_frame->document()->updateStyleIfNeeded();
 
-    if (!rootEditableElement())
-        return;
-
     if (HTMLTextFormControlElement* textControl = enclosingTextFormControl(start()))
         textControl->selectionChanged(userTriggered == UserTriggered);
 }
@@ -1873,7 +1891,7 @@ void FrameSelection::setFocusedNodeIfNeeded()
                 m_frame->page()->focusController()->setFocusedNode(target, m_frame);
                 return;
             }
-            target = target->parentOrHostNode(); 
+            target = target->parentOrShadowHostNode();
         }
         m_frame->document()->setFocusedNode(0);
     }

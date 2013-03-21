@@ -33,11 +33,14 @@
 #include "base/memory/scoped_ptr.h"
 #endif
 
+namespace base {
+class FilePath;
+}
+
 namespace gfx {
 class Size;
 }
 
-class FilePath;
 class SkBitmap;
 
 #if defined(TOOLKIT_GTK)
@@ -212,16 +215,6 @@ class UI_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // On linux they are copied into a structure owned by the Clipboard object and
   // kept until the system clipboard is set again.
   void WriteObjects(Buffer buffer, const ObjectMap& objects);
-
-  // On Linux/BSD, we need to know when the clipboard is set to a URL.  Most
-  // platforms don't care.
-#if defined(OS_WIN) || defined(OS_MACOSX)             \
-    || (defined(USE_AURA) && defined(OS_CHROMEOS))    \
-    || defined(OS_ANDROID)
-  void DidWriteURL(const std::string& utf8_text) {}
-#else
-  void DidWriteURL(const std::string& utf8_text);
-#endif
 
   // Returns a sequence number which uniquely identifies clipboard state.
   // This can be used to version the data on the clipboard and determine

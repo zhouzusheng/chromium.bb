@@ -9,13 +9,17 @@
 
 namespace cc {
 
-SchedulerStateMachine::SchedulerStateMachine()
-    : m_commitState(COMMIT_STATE_IDLE)
+SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
+    : m_settings(settings)
+    , m_commitState(COMMIT_STATE_IDLE)
     , m_currentFrameNumber(0)
     , m_lastFrameNumberWhereDrawWasCalled(-1)
+    , m_lastFrameNumberWhereTreeActivationAttempted(-1)
+    , m_lastFrameNumberWhereCheckForCompletedTileUploadsCalled(-1)
     , m_consecutiveFailedDraws(0)
     , m_maximumNumberOfFailedDrawsBeforeDrawIsForced(3)
     , m_needsRedraw(false)
+    , m_swapUsedIncompleteTile(false)
     , m_needsForcedRedraw(false)
     , m_needsForcedRedrawAfterNextCommit(false)
     , m_needsCommit(false)
@@ -26,6 +30,7 @@ SchedulerStateMachine::SchedulerStateMachine()
     , m_visible(false)
     , m_canBeginFrame(false)
     , m_canDraw(false)
+    , m_hasPendingTree(false)
     , m_drawIfPossibleFailed(false)
     , m_textureState(LAYER_TEXTURE_STATE_UNLOCKED)
     , m_outputSurfaceState(OUTPUT_SURFACE_ACTIVE)
@@ -35,12 +40,16 @@ SchedulerStateMachine::SchedulerStateMachine()
 std::string SchedulerStateMachine::toString()
 {
     std::string str;
+    base::StringAppendF(&str, "m_settings.implSidePainting = %d; ", m_settings.implSidePainting);
     base::StringAppendF(&str, "m_commitState = %d; ", m_commitState);
     base::StringAppendF(&str, "m_currentFrameNumber = %d; ", m_currentFrameNumber);
     base::StringAppendF(&str, "m_lastFrameNumberWhereDrawWasCalled = %d; ", m_lastFrameNumberWhereDrawWasCalled);
+    base::StringAppendF(&str, "m_lastFrameNumberWhereTreeActivationAttempted = %d; ", m_lastFrameNumberWhereTreeActivationAttempted);
+    base::StringAppendF(&str, "m_lastFrameNumberWhereCheckForCompletedTileUploadsCalled = %d; ", m_lastFrameNumberWhereCheckForCompletedTileUploadsCalled);
     base::StringAppendF(&str, "m_consecutiveFailedDraws = %d; ", m_consecutiveFailedDraws);
     base::StringAppendF(&str, "m_maximumNumberOfFailedDrawsBeforeDrawIsForced = %d; ", m_maximumNumberOfFailedDrawsBeforeDrawIsForced);
     base::StringAppendF(&str, "m_needsRedraw = %d; ", m_needsRedraw);
+    base::StringAppendF(&str, "m_swapUsedIncompleteTile = %d; ", m_swapUsedIncompleteTile);
     base::StringAppendF(&str, "m_needsForcedRedraw = %d; ", m_needsForcedRedraw);
     base::StringAppendF(&str, "m_needsForcedRedrawAfterNextCommit = %d; ", m_needsForcedRedrawAfterNextCommit);
     base::StringAppendF(&str, "m_needsCommit = %d; ", m_needsCommit);
@@ -52,6 +61,7 @@ std::string SchedulerStateMachine::toString()
     base::StringAppendF(&str, "m_canBeginFrame = %d; ", m_canBeginFrame);
     base::StringAppendF(&str, "m_canDraw = %d; ", m_canDraw);
     base::StringAppendF(&str, "m_drawIfPossibleFailed = %d; ", m_drawIfPossibleFailed);
+    base::StringAppendF(&str, "m_hasPendingTree = %d; ", m_hasPendingTree);
     base::StringAppendF(&str, "m_textureState = %d; ", m_textureState);
     base::StringAppendF(&str, "m_outputSurfaceState = %d; ", m_outputSurfaceState);
     return str;
@@ -60,6 +70,17 @@ std::string SchedulerStateMachine::toString()
 bool SchedulerStateMachine::hasDrawnThisFrame() const
 {
     return m_currentFrameNumber == m_lastFrameNumberWhereDrawWasCalled;
+}
+
+bool SchedulerStateMachine::hasAttemptedTreeActivationThisFrame() const
+{
+    return m_currentFrameNumber == m_lastFrameNumberWhereTreeActivationAttempted;
+}
+
+bool SchedulerStateMachine::hasCheckedForCompletedTileUploadsThisFrame() const
+{
+    return m_currentFrameNumber ==
+           m_lastFrameNumberWhereCheckForCompletedTileUploadsCalled;
 }
 
 bool SchedulerStateMachine::drawSuspendedUntilCommit() const
@@ -98,6 +119,23 @@ bool SchedulerStateMachine::shouldDraw() const
     return true;
 }
 
+bool SchedulerStateMachine::shouldAttemptTreeActivation() const
+{
+    return m_hasPendingTree && m_insideVSync && !hasAttemptedTreeActivationThisFrame();
+}
+
+bool SchedulerStateMachine::shouldCheckForCompletedTileUploads() const
+{
+    if (!m_settings.implSidePainting)
+        return false;
+    if (hasCheckedForCompletedTileUploadsThisFrame())
+        return false;
+
+    return shouldAttemptTreeActivation() ||
+           shouldDraw() ||
+           m_swapUsedIncompleteTile;
+}
+
 bool SchedulerStateMachine::shouldAcquireLayerTexturesForMainThread() const
 {
     if (!m_mainThreadNeedsLayerTextures)
@@ -118,23 +156,34 @@ SchedulerStateMachine::Action SchedulerStateMachine::nextAction() const
 {
     if (shouldAcquireLayerTexturesForMainThread())
         return ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD;
+
     switch (m_commitState) {
     case COMMIT_STATE_IDLE:
         if (m_outputSurfaceState != OUTPUT_SURFACE_ACTIVE && m_needsForcedRedraw)
             return ACTION_DRAW_FORCED;
         if (m_outputSurfaceState != OUTPUT_SURFACE_ACTIVE && m_needsForcedCommit)
-            return ACTION_BEGIN_FRAME;
+            // TODO(enne): Should probably drop the active tree on force commit
+            return m_hasPendingTree ? ACTION_NONE : ACTION_BEGIN_FRAME;
         if (m_outputSurfaceState == OUTPUT_SURFACE_LOST)
             return ACTION_BEGIN_OUTPUT_SURFACE_RECREATION;
         if (m_outputSurfaceState == OUTPUT_SURFACE_RECREATING)
             return ACTION_NONE;
+        if (shouldCheckForCompletedTileUploads())
+            return ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS;
+        if (shouldAttemptTreeActivation())
+            return ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED;
         if (shouldDraw())
             return m_needsForcedRedraw ? ACTION_DRAW_FORCED : ACTION_DRAW_IF_POSSIBLE;
         if (m_needsCommit && ((m_visible && m_canBeginFrame) || m_needsForcedCommit))
-            return ACTION_BEGIN_FRAME;
+            // TODO(enne): Should probably drop the active tree on force commit
+            return m_hasPendingTree ? ACTION_NONE : ACTION_BEGIN_FRAME;
         return ACTION_NONE;
 
     case COMMIT_STATE_FRAME_IN_PROGRESS:
+        if (shouldCheckForCompletedTileUploads())
+            return ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS;
+        if (shouldAttemptTreeActivation())
+            return ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED;
         if (shouldDraw())
             return m_needsForcedRedraw ? ACTION_DRAW_FORCED : ACTION_DRAW_IF_POSSIBLE;
         return ACTION_NONE;
@@ -143,17 +192,25 @@ SchedulerStateMachine::Action SchedulerStateMachine::nextAction() const
         return ACTION_COMMIT;
 
     case COMMIT_STATE_WAITING_FOR_FIRST_DRAW: {
+        if (shouldCheckForCompletedTileUploads())
+            return ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS;
+        if (shouldAttemptTreeActivation())
+            return ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED;
         if (shouldDraw() || m_outputSurfaceState == OUTPUT_SURFACE_LOST)
             return m_needsForcedRedraw ? ACTION_DRAW_FORCED : ACTION_DRAW_IF_POSSIBLE;
         // COMMIT_STATE_WAITING_FOR_FIRST_DRAW wants to enforce a draw. If m_canDraw is false
         // or textures are not available, proceed to the next step (similar as in COMMIT_STATE_IDLE).
         bool canCommit = m_visible || m_needsForcedCommit;
         if (m_needsCommit && canCommit && drawSuspendedUntilCommit())
-            return ACTION_BEGIN_FRAME;
+            return m_hasPendingTree ? ACTION_NONE : ACTION_BEGIN_FRAME;
         return ACTION_NONE;
     }
 
     case COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW:
+        if (shouldCheckForCompletedTileUploads())
+            return ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS;
+        if (shouldAttemptTreeActivation())
+            return ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED;
         if (m_needsForcedRedraw)
             return ACTION_DRAW_FORCED;
         return ACTION_NONE;
@@ -168,7 +225,16 @@ void SchedulerStateMachine::updateState(Action action)
     case ACTION_NONE:
         return;
 
+    case ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS:
+        m_lastFrameNumberWhereCheckForCompletedTileUploadsCalled = m_currentFrameNumber;
+        return;
+
+    case ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED:
+        m_lastFrameNumberWhereTreeActivationAttempted = m_currentFrameNumber;
+        return;
+
     case ACTION_BEGIN_FRAME:
+        DCHECK(!m_hasPendingTree);
         DCHECK(m_visible || m_needsForcedCommit);
         m_commitState = COMMIT_STATE_FRAME_IN_PROGRESS;
         m_needsCommit = false;
@@ -180,7 +246,9 @@ void SchedulerStateMachine::updateState(Action action)
             m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW;
         else
             m_commitState = COMMIT_STATE_WAITING_FOR_FIRST_DRAW;
-        m_needsRedraw = true;
+        // When impl-side painting, we draw on activation instead of on commit.
+        if (!m_settings.implSidePainting)
+            m_needsRedraw = true;
         if (m_drawIfPossibleFailed)
             m_lastFrameNumberWhereDrawWasCalled = -1;
 
@@ -197,6 +265,7 @@ void SchedulerStateMachine::updateState(Action action)
         m_needsRedraw = false;
         m_needsForcedRedraw = false;
         m_drawIfPossibleFailed = false;
+        m_swapUsedIncompleteTile = false;
         if (m_insideVSync)
             m_lastFrameNumberWhereDrawWasCalled = m_currentFrameNumber;
         if (m_commitState == COMMIT_STATE_WAITING_FOR_FIRST_FORCED_DRAW) {
@@ -233,11 +302,19 @@ void SchedulerStateMachine::setMainThreadNeedsLayerTextures()
 
 bool SchedulerStateMachine::vsyncCallbackNeeded() const
 {
+    // If we have a pending tree, need to keep getting notifications until
+    // the tree is ready to be swapped.
+    if (m_hasPendingTree)
+        return true;
+
     // If we can't draw, don't tick until we are notified that we can draw again.
     if (!m_canDraw)
         return false;
 
     if (m_needsForcedRedraw)
+        return true;
+
+    if (m_visible && m_swapUsedIncompleteTile)
         return true;
 
     return m_needsRedraw && m_visible && m_outputSurfaceState == OUTPUT_SURFACE_ACTIVE;
@@ -262,6 +339,11 @@ void SchedulerStateMachine::setVisible(bool visible)
 void SchedulerStateMachine::setNeedsRedraw()
 {
     m_needsRedraw = true;
+}
+
+void SchedulerStateMachine::didSwapUseIncompleteTile()
+{
+    m_swapUsedIncompleteTile = true;
 }
 
 void SchedulerStateMachine::setNeedsForcedRedraw()
@@ -320,6 +402,16 @@ void SchedulerStateMachine::didLoseOutputSurface()
     if (m_outputSurfaceState == OUTPUT_SURFACE_LOST || m_outputSurfaceState == OUTPUT_SURFACE_RECREATING)
         return;
     m_outputSurfaceState = OUTPUT_SURFACE_LOST;
+}
+
+void SchedulerStateMachine::setHasPendingTree(bool hasPendingTree)
+{
+    m_hasPendingTree = hasPendingTree;
+}
+
+void SchedulerStateMachine::setCanDraw(bool can)
+{
+    m_canDraw = can;
 }
 
 void SchedulerStateMachine::didRecreateOutputSurface()

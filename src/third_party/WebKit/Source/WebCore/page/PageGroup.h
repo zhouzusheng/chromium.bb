@@ -111,9 +111,10 @@ namespace WebCore {
 #if ENABLE(VIDEO_TRACK)
         bool userPrefersCaptions();
         bool userHasCaptionPreferences();
-        float captionFontSizeScale();
+        float captionFontSizeScale(bool&);
         void registerForCaptionPreferencesChangedCallbacks(CaptionPreferencesChangedListener*);
         void unregisterForCaptionPreferencesChangedCallbacks(CaptionPreferencesChangedListener*);
+        CaptionUserPreferences* captionPreferences();
 #endif
 
     private:
@@ -122,9 +123,6 @@ namespace WebCore {
         void addVisitedLink(LinkHash stringHash);
         void invalidatedInjectedStyleSheetCacheInAllFrames();
   
-#if ENABLE(VIDEO_TRACK)
-        CaptionUserPreferences* captionPreferences();
-#endif
         String m_name;
 
         HashSet<Page*> m_pages;

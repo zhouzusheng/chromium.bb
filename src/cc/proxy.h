@@ -7,9 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/time.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
 #include "cc/cc_export.h"
+#include "skia/ext/refptr.h"
+#include "third_party/skia/include/core/SkPicture.h"
 
 namespace gfx {
 class Rect;
@@ -80,8 +82,6 @@ public:
     // like compositeAndReadback while commits are deferred.
     virtual void setDeferCommits(bool) = 0;
 
-    virtual void didAddAnimation() = 0;
-
     virtual void mainThreadHasStoppedFlinging() = 0;
 
     virtual bool commitRequested() const = 0;
@@ -98,8 +98,9 @@ public:
 
     virtual void acquireLayerTextures() = 0;
 
+    virtual skia::RefPtr<SkPicture> capturePicture() = 0;
+
     // Testing hooks
-    virtual void loseOutputSurface() = 0;
     virtual bool commitPendingForTesting() = 0;
 
 protected:

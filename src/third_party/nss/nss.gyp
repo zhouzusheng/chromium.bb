@@ -241,7 +241,7 @@
         ],
       },
       # TODO(wtc): suppress C4244 and C4554 in prdtoa.c.
-      'msvs_disabled_warnings': [4018, 4244, 4554, 4267, 4334,],
+      'msvs_disabled_warnings': [4018, 4244, 4554, 4267,],
       'conditions': [
         ['OS=="mac" or OS=="ios"', {
           'defines': [
@@ -540,6 +540,7 @@
         'mozilla/security/nss/lib/freebl/blapi.h',
         'mozilla/security/nss/lib/freebl/blapii.h',
         'mozilla/security/nss/lib/freebl/blapit.h',
+        'mozilla/security/nss/lib/freebl/build_config_mac.h',
         'mozilla/security/nss/lib/freebl/camellia.c',
         'mozilla/security/nss/lib/freebl/camellia.h',
         'mozilla/security/nss/lib/freebl/ctr.c',
@@ -564,6 +565,7 @@
         'mozilla/security/nss/lib/freebl/ecl/ecl_gf.c',
         'mozilla/security/nss/lib/freebl/ecl/ecl_mult.c',
         'mozilla/security/nss/lib/freebl/ecl/ecp.h',
+        'mozilla/security/nss/lib/freebl/ecl/ecp_256_32.c',
         'mozilla/security/nss/lib/freebl/ecl/ecp_aff.c',
         'mozilla/security/nss/lib/freebl/ecl/ecp_jac.c',
         'mozilla/security/nss/lib/freebl/ecl/ecp_jm.c',
@@ -571,6 +573,8 @@
         'mozilla/security/nss/lib/freebl/ecl/ec_naf.c',
         'mozilla/security/nss/lib/freebl/gcm.c',
         'mozilla/security/nss/lib/freebl/gcm.h',
+        'mozilla/security/nss/lib/freebl/hmacct.c',
+        'mozilla/security/nss/lib/freebl/hmacct.h',
         'mozilla/security/nss/lib/freebl/jpake.c',
         'mozilla/security/nss/lib/freebl/md2.c',
         'mozilla/security/nss/lib/freebl/md5.c',
@@ -581,6 +585,8 @@
         'mozilla/security/nss/lib/freebl/mpi/mpi.c',
         'mozilla/security/nss/lib/freebl/mpi/mpi.h',
         'mozilla/security/nss/lib/freebl/mpi/mpi_amd64.c',
+        'mozilla/security/nss/lib/freebl/mpi/mpi_arm.c',
+        'mozilla/security/nss/lib/freebl/mpi/mpi_arm_mac.c',
         'mozilla/security/nss/lib/freebl/mpi/mpi_x86_asm.c',
         'mozilla/security/nss/lib/freebl/mpi/mplogic.c',
         'mozilla/security/nss/lib/freebl/mpi/mplogic.h',
@@ -874,6 +880,7 @@
         'mozilla/security/nss/lib/softoken/sftkdb.h',
         'mozilla/security/nss/lib/softoken/sftkdbt.h',
         'mozilla/security/nss/lib/softoken/sftkdbti.h',
+        'mozilla/security/nss/lib/softoken/sftkhmac.c',
         'mozilla/security/nss/lib/softoken/sftkpars.c',
         'mozilla/security/nss/lib/softoken/sftkpars.h',
         'mozilla/security/nss/lib/softoken/sftkpwd.c',
@@ -945,6 +952,10 @@
         'mozilla/security/nss/lib/util/utilrename.h',
       ],
       'sources!': [
+        # mpi_arm.c is included by mpi_arm_mac.c.
+        # NOTE: mpi_arm.c can be used directly on Linux. mpi_arm.c will need
+        # to be excluded conditionally if we start to build NSS on Linux.
+        'mozilla/security/nss/lib/freebl/mpi/mpi_arm.c',
         # primes.c is included by mpprime.c.
         'mozilla/security/nss/lib/freebl/mpi/primes.c',
         # unix_rand.c and win_rand.c are included by sysrand.c.
@@ -1055,8 +1066,8 @@
           ],
         }],
         ['target_arch=="ia32"', {
-          'sources/': [
-            ['exclude', 'amd64'],
+          'sources!': [
+            'mozilla/security/nss/lib/freebl/mpi/mpi_amd64.c',
           ],
         }],
         ['OS=="mac" or OS=="ios"', {
@@ -1071,29 +1082,26 @@
           ],
           'sources!': [
             'mozilla/security/nss/lib/freebl/mpi/mpi_amd64.c',
-            'mozilla/security/nss/lib/freebl/mpi/mpi_x86_asm.c',
           ],
+          'variables': {
+            'forced_include_file': '<(DEPTH)/third_party/nss/mozilla/security/nss/lib/freebl/build_config_mac.h',
+          },
           'xcode_settings': {
             'conditions': [
               ['component == "shared_library"', {
                 'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',  # no -fvisibility=hidden
               }],
             ],
-            # Can't use 'target_arch=="ia32"' conditional because that is
-            # only checked at GYP file generation time.
-            'GCC_PREPROCESSOR_DEFINITIONS[arch=i386]': [
-              '$(inherited)',
-              'NSS_X86_OR_X64',
-              'NSS_X86',
-              'i386',
-            ],
-            'GCC_PREPROCESSOR_DEFINITIONS[arch=x86_64]': [
-              '$(inherited)',
-              'NSS_USE_64',
-              'NSS_X86_OR_X64',
-              'NSS_X64',
+            # Define processor architecture specific macros in
+            # <(forced_include_file).
+            'OTHER_CFLAGS': [
+              '-include', '<(forced_include_file)',
             ],
           },
+        }, { # else: OS!="mac" and OS!="ios"
+          'sources!': [
+            'mozilla/security/nss/lib/freebl/mpi/mpi_arm_mac.c',
+          ],
         }],
         ['OS=="win"', {
           'defines': [
@@ -1135,6 +1143,11 @@
                 'mozilla/security/nss/lib/freebl/mpi/mpi_x86_asm.c',
               ],
             }],
+          ],
+        }, { # else: OS!="win"
+          'sources!': [
+            # mpi_x86_asm.c contains MSVC inline assembly code.
+            'mozilla/security/nss/lib/freebl/mpi/mpi_x86_asm.c',
           ],
         }],
         ['clang==1', {

@@ -181,7 +181,9 @@ def _ComputeIds(root):
         reason = 'sequentially assigned'
 
       reason = "%s (%s)" % (tid, reason)
-      if id in id_reasons:
+      # Don't fail when 'offset' is specified, as the base and the 0th
+      # offset will have the same ID.
+      if id in id_reasons and not 'offset' in item.attrs:
         raise exception.IdRangeOverlap('ID %d was assigned to both %s and %s.'
                                        % (id, id_reasons[id], reason))
 

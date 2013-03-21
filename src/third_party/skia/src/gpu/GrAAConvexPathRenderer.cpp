@@ -12,7 +12,7 @@
 #include "GrDrawState.h"
 #include "GrPathUtils.h"
 #include "SkString.h"
-#include "SkStroke.h"
+#include "SkStrokeRec.h"
 #include "SkTrace.h"
 
 GrAAConvexPathRenderer::GrAAConvexPathRenderer() {
@@ -429,15 +429,15 @@ void create_vertices(const SegmentArray&  segments,
 }
 
 bool GrAAConvexPathRenderer::canDrawPath(const SkPath& path,
-                                         const SkStroke& stroke,
+                                         const SkStrokeRec& stroke,
                                          const GrDrawTarget* target,
                                          bool antiAlias) const {
     return (target->getCaps().shaderDerivativeSupport() && antiAlias &&
-            stroke.getDoFill() && !path.isInverseFillType() && path.isConvex());
+            stroke.isFillStyle() && !path.isInverseFillType() && path.isConvex());
 }
 
 bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
-                                        const SkStroke&,
+                                        const SkStrokeRec&,
                                         GrDrawTarget* target,
                                         bool antiAlias) {
 
@@ -454,7 +454,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
     const SkMatrix* vm = &adcd.getOriginalMatrix();
 
     GrVertexLayout layout = 0;
-    layout |= GrDrawTarget::kEdge_VertexLayoutBit;
+    layout |= GrDrawState::kEdge_VertexLayoutBit;
 
     // We use the fact that SkPath::transform path does subdivision based on
     // perspective. Otherwise, we apply the view matrix when copying to the
@@ -481,7 +481,8 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
         return false;
     }
 
-    GrDrawTarget::AutoReleaseGeometry arg(target, layout, vCount, iCount);
+    drawState->setVertexLayout(layout);
+    GrDrawTarget::AutoReleaseGeometry arg(target, vCount, iCount);
     if (!arg.succeeded()) {
         return false;
     }
@@ -501,4 +502,3 @@ bool GrAAConvexPathRenderer::onDrawPath(const SkPath& origPath,
 
     return true;
 }
-

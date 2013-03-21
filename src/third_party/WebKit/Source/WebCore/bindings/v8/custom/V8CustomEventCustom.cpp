@@ -48,9 +48,8 @@ namespace WebCore {
 
 v8::Handle<v8::Value> V8CustomEvent::detailAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.CustomEvent.detail._get");
     CustomEvent* imp = V8CustomEvent::toNative(info.Holder());
-    SerializedScriptValue* serialized = imp->serializedScriptValue().get();
+    RefPtr<SerializedScriptValue> serialized = imp->serializedScriptValue();
     if (serialized) {
         v8::Handle<v8::Value> value = info.Holder()->GetHiddenValue(V8HiddenPropertyName::detail());
         if (value.IsEmpty()) {

@@ -46,14 +46,21 @@ public:
         Page,
         Keyframes,
         Keyframe, // Not used. These are internally non-rule StyleKeyframe objects.
-#if ENABLE(SHADOW_DOM)
-        Host,
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        Supports = 12,
 #endif
 #if ENABLE(CSS_DEVICE_ADAPTATION)
         Viewport = 15,
 #endif
-        Region = 16
+        Region = 16,
+#if ENABLE(CSS_SHADERS)
+        Filter = 17,
+#endif
+#if ENABLE(SHADOW_DOM)
+        HostInternal = 18, // Spec says Host = 1001, but we can use only 5 bit for type().
+#endif
     };
+
     Type type() const { return static_cast<Type>(m_type); }
     
     bool isCharsetRule() const { return type() == Charset; }
@@ -63,12 +70,18 @@ public:
     bool isPageRule() const { return type() == Page; }
     bool isStyleRule() const { return type() == Style; }
     bool isRegionRule() const { return type() == Region; }
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+    bool isSupportsRule() const { return type() == Supports; }
+#endif
 #if ENABLE(CSS_DEVICE_ADAPTATION)
     bool isViewportRule() const { return type() == Viewport; }
 #endif
     bool isImportRule() const { return type() == Import; }
 #if ENABLE(SHADOW_DOM)
-    bool isHostRule() const { return type() == Host; }
+    bool isHostRule() const { return type() == HostInternal; }
+#endif
+#if ENABLE(CSS_SHADERS)
+    bool isFilterRule() const { return type() == Filter; }
 #endif
 
     PassRefPtr<StyleRuleBase> copy() const;
@@ -178,7 +191,7 @@ private:
     CSSSelectorList m_selectorList;
 };
 
-class StyleRuleBlock : public StyleRuleBase {
+class StyleRuleGroup : public StyleRuleBase {
 public:
     const Vector<RefPtr<StyleRuleBase> >& childRules() const { return m_childRules; }
     
@@ -188,14 +201,14 @@ public:
     void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
     
 protected:
-    StyleRuleBlock(Type, Vector<RefPtr<StyleRuleBase> >& adoptRule);
-    StyleRuleBlock(const StyleRuleBlock&);
+    StyleRuleGroup(Type, Vector<RefPtr<StyleRuleBase> >& adoptRule);
+    StyleRuleGroup(const StyleRuleGroup&);
     
 private:
     Vector<RefPtr<StyleRuleBase> > m_childRules;
 };
 
-class StyleRuleMedia : public StyleRuleBlock {
+class StyleRuleMedia : public StyleRuleGroup {
 public:
     static PassRefPtr<StyleRuleMedia> create(PassRefPtr<MediaQuerySet> media, Vector<RefPtr<StyleRuleBase> >& adoptRules)
     {
@@ -215,7 +228,28 @@ private:
     RefPtr<MediaQuerySet> m_mediaQueries;
 };
 
-class StyleRuleRegion : public StyleRuleBlock {
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+class StyleRuleSupports : public StyleRuleGroup {
+public:
+    static PassRefPtr<StyleRuleSupports> create(const String& conditionText, bool conditionIsSupported, Vector<RefPtr<StyleRuleBase> >& adoptRules)
+    {
+        return adoptRef(new StyleRuleSupports(conditionText, conditionIsSupported, adoptRules));
+    }
+
+    String conditionText() const { return m_conditionText; }
+    bool conditionIsSupported() const { return m_conditionIsSupported; }
+    PassRefPtr<StyleRuleSupports> copy() const { return adoptRef(new StyleRuleSupports(*this)); }
+
+private:
+    StyleRuleSupports(const String& conditionText, bool conditionIsSupported, Vector<RefPtr<StyleRuleBase> >& adoptRules);
+    StyleRuleSupports(const StyleRuleSupports&);
+
+    String m_conditionText;
+    bool m_conditionIsSupported;
+};
+#endif
+
+class StyleRuleRegion : public StyleRuleGroup {
 public:
     static PassRefPtr<StyleRuleRegion> create(Vector<OwnPtr<CSSParserSelector> >* selectors, Vector<RefPtr<StyleRuleBase> >& adoptRules)
     {
@@ -236,7 +270,7 @@ private:
 };
 
 #if ENABLE(SHADOW_DOM)
-class StyleRuleHost : public StyleRuleBlock {
+class StyleRuleHost : public StyleRuleGroup {
 public:
     static PassRefPtr<StyleRuleHost> create(Vector<RefPtr<StyleRuleBase> >& adoptRules)
     {
@@ -246,8 +280,8 @@ public:
     PassRefPtr<StyleRuleHost> copy() const { return adoptRef(new StyleRuleHost(*this)); }
 
 private:
-    StyleRuleHost(Vector<RefPtr<StyleRuleBase> >& adoptRules) : StyleRuleBlock(Host, adoptRules) { }
-    StyleRuleHost(const StyleRuleHost& o) : StyleRuleBlock(o) { }
+    StyleRuleHost(Vector<RefPtr<StyleRuleBase> >& adoptRules) : StyleRuleGroup(HostInternal, adoptRules) { }
+    StyleRuleHost(const StyleRuleHost& o) : StyleRuleGroup(o) { }
 };
 #endif
 
@@ -274,6 +308,53 @@ private:
     RefPtr<StylePropertySet> m_properties;
 };
 #endif // ENABLE(CSS_DEVICE_ADAPTATION)
+
+inline const StyleRuleMedia* toStyleRuleMedia(const StyleRuleGroup* rule)
+{
+    ASSERT(!rule || rule->isMediaRule());
+    return static_cast<const StyleRuleMedia*>(rule);
+}
+
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+inline const StyleRuleSupports* toStyleRuleSupports(const StyleRuleGroup* rule)
+{
+    ASSERT(!rule || rule->isSupportsRule());
+    return static_cast<const StyleRuleSupports*>(rule);
+}
+#endif
+
+inline const StyleRuleRegion* toStyleRuleRegion(const StyleRuleGroup* rule)
+{
+    ASSERT(!rule || rule->isRegionRule());
+    return static_cast<const StyleRuleRegion*>(rule);
+}
+
+#if ENABLE(CSS_SHADERS)
+class StyleRuleFilter : public StyleRuleBase {
+public:
+    static PassRefPtr<StyleRuleFilter> create(const String& filterName) { return adoptRef(new StyleRuleFilter(filterName)); }
+
+    ~StyleRuleFilter();
+
+    const String& filterName() const { return m_filterName; }
+
+    const StylePropertySet* properties() const { return m_properties.get(); }
+    StylePropertySet* mutableProperties();
+
+    void setProperties(PassRefPtr<StylePropertySet>);
+
+    PassRefPtr<StyleRuleFilter> copy() const { return adoptRef(new StyleRuleFilter(*this)); }
+
+    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
+
+private:
+    StyleRuleFilter(const String&);
+    StyleRuleFilter(const StyleRuleFilter&);
+
+    String m_filterName;
+    RefPtr<StylePropertySet> m_properties;
+};
+#endif // ENABLE(CSS_SHADERS)
 
 } // namespace WebCore
 

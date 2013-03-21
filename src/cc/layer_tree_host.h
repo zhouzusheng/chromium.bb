@@ -20,12 +20,13 @@
 #include "cc/layer_tree_settings.h"
 #include "cc/occlusion_tracker.h"
 #include "cc/output_surface.h"
-#include "cc/prioritized_resource_manager.h"
 #include "cc/proxy.h"
 #include "cc/rate_limiter.h"
 #include "cc/rendering_stats.h"
 #include "cc/scoped_ptr_vector.h"
+#include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/rect.h"
 
 #if defined(COMPILER_GCC)
@@ -41,10 +42,13 @@ struct hash<WebKit::WebGraphicsContext3D*> {
 
 namespace cc {
 
+class AnimationRegistrar;
 class Layer;
 class LayerTreeHostImpl;
 class LayerTreeHostImplClient;
 class PrioritizedResourceManager;
+class PrioritizedResource;
+class ResourceProvider;
 class ResourceUpdateQueue;
 class HeadsUpDisplayLayer;
 class Region;
@@ -56,7 +60,7 @@ struct CC_EXPORT RendererCapabilities {
     RendererCapabilities();
     ~RendererCapabilities();
 
-    GLenum bestTextureFormat;
+    unsigned bestTextureFormat;
     bool usingPartialSwap;
     bool usingAcceleratedPainting;
     bool usingSetVisibility;
@@ -66,6 +70,7 @@ struct CC_EXPORT RendererCapabilities {
     bool usingEglImage;
     bool allowPartialTextureUpdates;
     int maxTextureSize;
+    bool avoidPow2Textures;
 };
 
 class CC_EXPORT LayerTreeHost : public RateLimiterClient {
@@ -84,7 +89,7 @@ public:
 
     // LayerTreeHost interface to Proxy.
     void willBeginFrame() { m_client->willBeginFrame(); }
-    void didBeginFrame() { m_client->didBeginFrame(); }
+    void didBeginFrame();
     void updateAnimations(base::TimeTicks monotonicFrameBeginTime);
     void didStopFlinging();
     void layout();
@@ -135,9 +140,6 @@ public:
 
     const RendererCapabilities& rendererCapabilities() const;
 
-    // Test only hook
-    void loseOutputSurface(int numTimes);
-
     void setNeedsAnimate();
     // virtual for testing
     virtual void setNeedsCommit();
@@ -146,7 +148,6 @@ public:
     bool commitRequested() const;
 
     void setAnimationEvents(scoped_ptr<AnimationEventsVector>, base::Time wallClockTime);
-    virtual void didAddAnimation();
 
     Layer* rootLayer() { return m_rootLayer.get(); }
     const Layer* rootLayer() const { return m_rootLayer.get(); }
@@ -176,11 +177,6 @@ public:
     void startPageScaleAnimation(gfx::Vector2d targetOffset, bool useAnchor, float scale, base::TimeDelta duration);
 
     void applyScrollAndScale(const ScrollAndScaleSet&);
-    // This function converts event coordinates when the deviceViewport is zoomed.
-    // Coordinates are transformed from logical pixels in the zoomed viewport to
-    // logical pixels in the un-zoomed viewport, the latter being the coordinates
-    // required for hit-testing.
-    gfx::PointF adjustEventPointForPinchZoom(const gfx::PointF& zoomedViewportPoint) const;
     void setImplTransform(const gfx::Transform&);
 
     void startRateLimiter(WebKit::WebGraphicsContext3D*);
@@ -198,6 +194,12 @@ public:
     HeadsUpDisplayLayer* hudLayer() const { return m_hudLayer.get(); }
 
     Proxy* proxy() const { return m_proxy.get(); }
+
+    AnimationRegistrar* animationRegistrar() const { return m_animationRegistrar.get(); }
+
+    skia::RefPtr<SkPicture> capturePicture();
+
+    bool blocksPendingCommit() const;
 
 protected:
     LayerTreeHost(LayerTreeHostClient*, const LayerTreeSettings&);
@@ -227,7 +229,6 @@ private:
     void setAnimationEventsRecursive(const AnimationEventsVector&, Layer*, base::Time wallClockTime);
 
     bool m_animating;
-    bool m_needsAnimateLayers;
     bool m_needsFullTreeSync;
 
     base::CancelableClosure m_prepaintCallback;
@@ -240,7 +241,6 @@ private:
 
     bool m_rendererInitialized;
     bool m_outputSurfaceLost;
-    int m_numTimesRecreateShouldFail;
     int m_numFailedRecreateAttempts;
 
     scoped_refptr<Layer> m_rootLayer;
@@ -271,6 +271,8 @@ private:
 
     typedef ScopedPtrVector<PrioritizedResource> TextureList;
     size_t m_partialTextureUpdateRequests;
+
+    scoped_ptr<AnimationRegistrar> m_animationRegistrar;
 
     static bool s_needsFilterContext;
 

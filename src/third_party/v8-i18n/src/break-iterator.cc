@@ -51,8 +51,9 @@ icu::BreakIterator* BreakIterator::UnpackBreakIterator(
   return NULL;
 }
 
-void BreakIterator::DeleteBreakIterator(
-    v8::Persistent<v8::Value> object, void* param) {
+void BreakIterator::DeleteBreakIterator(v8::Isolate* isolate,
+                                        v8::Persistent<v8::Value> object,
+                                        void* param) {
   v8::Persistent<v8::Object> persistent_object =
       v8::Persistent<v8::Object>::Cast(object);
 
@@ -66,7 +67,7 @@ void BreakIterator::DeleteBreakIterator(
       persistent_object->GetAlignedPointerFromInternalField(1));
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose();
+  persistent_object.Dispose(isolate);
 }
 
 // Throws a JavaScript exception.
@@ -183,8 +184,9 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
         v8::String::New("Internal error, wrong parameters.")));
   }
 
+  v8::Isolate* isolate = args.GetIsolate();
   v8::Persistent<v8::ObjectTemplate> break_iterator_template =
-      Utils::GetTemplate2();
+      Utils::GetTemplate2(isolate);
 
   // Create an empty object wrapper.
   v8::Local<v8::Object> local_object = break_iterator_template->NewInstance();
@@ -195,7 +197,7 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
   }
 
   v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(local_object);
+      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set break iterator as internal field of the resulting JS object.
   icu::BreakIterator* break_iterator = InitializeBreakIterator(
@@ -218,7 +220,7 @@ v8::Handle<v8::Value> BreakIterator::JSCreateBreakIterator(
   }
 
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(NULL, DeleteBreakIterator);
+  wrapper.MakeWeak(isolate, NULL, DeleteBreakIterator);
 
   return wrapper;
 }

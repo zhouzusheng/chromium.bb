@@ -47,16 +47,17 @@
 
 namespace WebCore {
 
-void V8AbstractEventListener::weakEventListenerCallback(v8::Persistent<v8::Value>, void* parameter)
+void V8AbstractEventListener::weakEventListenerCallback(v8::Isolate* isolate, v8::Persistent<v8::Value>, void* parameter)
 {
     V8AbstractEventListener* listener = static_cast<V8AbstractEventListener*>(parameter);
     listener->m_listener.clear();
 }
 
-V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, const WorldContextHandle& worldContext)
+V8AbstractEventListener::V8AbstractEventListener(bool isAttribute, const WorldContextHandle& worldContext, v8::Isolate* isolate)
     : EventListener(JSEventListenerType)
     , m_isAttribute(isAttribute)
     , m_worldContext(worldContext)
+    , m_isolate(isolate)
 {
 #if ENABLE(INSPECTOR)
     ThreadLocalInspectorCounters::current().incrementCounter(ThreadLocalInspectorCounters::JSEventListenerCounter);
@@ -96,7 +97,7 @@ void V8AbstractEventListener::handleEvent(ScriptExecutionContext* context, Event
     v8::Context::Scope scope(v8Context);
 
     // Get the V8 wrapper for the event object.
-    v8::Handle<v8::Value> jsEvent = toV8(event);
+    v8::Handle<v8::Value> jsEvent = toV8(event, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     ASSERT(!jsEvent.IsEmpty());
 
     invokeEventHandler(context, event, jsEvent);
@@ -105,7 +106,7 @@ void V8AbstractEventListener::handleEvent(ScriptExecutionContext* context, Event
 void V8AbstractEventListener::setListenerObject(v8::Handle<v8::Object> listener)
 {
     m_listener.set(listener);
-    m_listener.get().MakeWeak(this, &V8AbstractEventListener::weakEventListenerCallback);
+    m_listener.get().MakeWeak(m_isolate, this, &V8AbstractEventListener::weakEventListenerCallback);
 }
 
 void V8AbstractEventListener::invokeEventHandler(ScriptExecutionContext* context, Event* event, v8::Handle<v8::Value> jsEvent)
@@ -182,13 +183,13 @@ bool V8AbstractEventListener::shouldPreventDefault(v8::Local<v8::Value> returnVa
     return returnValue->IsBoolean() && !returnValue->BooleanValue();
 }
 
-v8::Local<v8::Object> V8AbstractEventListener::getReceiverObject(Event* event)
+v8::Local<v8::Object> V8AbstractEventListener::getReceiverObject(ScriptExecutionContext* context, Event* event)
 {
     if (!m_listener.isEmpty() && !m_listener->IsFunction())
         return v8::Local<v8::Object>::New(m_listener.get());
 
     EventTarget* target = event->currentTarget();
-    v8::Handle<v8::Value> value = toV8(target);
+    v8::Handle<v8::Value> value = toV8(target, v8::Handle<v8::Object>(), toV8Context(context, worldContext())->GetIsolate());
     if (value.IsEmpty())
         return v8::Local<v8::Object>();
     return v8::Local<v8::Object>::New(v8::Handle<v8::Object>::Cast(value));

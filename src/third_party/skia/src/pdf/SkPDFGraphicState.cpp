@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #include "SkPDFFormXObject.h"
 #include "SkPDFGraphicState.h"
@@ -16,7 +14,7 @@
 static const char* blend_mode_from_xfermode(SkXfermode::Mode mode) {
     switch (mode) {
         case SkXfermode::kSrcOver_Mode:    return "Normal";
-        case SkXfermode::kMultiply_Mode:   return "Multiply";
+        case SkXfermode::kModulate_Mode:   return "Multiply";
         case SkXfermode::kScreen_Mode:     return "Screen";
         case SkXfermode::kOverlay_Mode:    return "Overlay";
         case SkXfermode::kDarken_Mode:     return "Darken";
@@ -44,6 +42,7 @@ static const char* blend_mode_from_xfermode(SkXfermode::Mode mode) {
         case SkXfermode::kDstATop_Mode:
         case SkXfermode::kXor_Mode:
         case SkXfermode::kPlus_Mode:
+        case SkXfermode::kMultiply_Mode:
             return NULL;
     }
     return NULL;
@@ -113,16 +112,14 @@ SkPDFObject* SkPDFGraphicState::GetInvertFunction() {
     if (!invertFunction) {
         // Acrobat crashes if we use a type 0 function, kpdf crashes if we use
         // a type 2 function, so we use a type 4 function.
-        SkRefPtr<SkPDFArray> domainAndRange = new SkPDFArray;
-        domainAndRange->unref();  // SkRefPtr and new both took a reference.
+        SkAutoTUnref<SkPDFArray> domainAndRange(new SkPDFArray);
         domainAndRange->reserve(2);
         domainAndRange->appendInt(0);
         domainAndRange->appendInt(1);
 
         static const char psInvert[] = "{1 exch sub}";
-        SkRefPtr<SkMemoryStream> psInvertStream =
-            new SkMemoryStream(&psInvert, strlen(psInvert), true);
-        psInvertStream->unref();  // SkRefPtr and new both took a reference.
+        SkAutoTUnref<SkMemoryStream> psInvertStream(
+            new SkMemoryStream(&psInvert, strlen(psInvert), true));
 
         invertFunction = new SkPDFStream(psInvertStream.get());
         invertFunction->insertInt("FunctionType", 4);
@@ -139,8 +136,7 @@ SkPDFGraphicState* SkPDFGraphicState::GetSMaskGraphicState(
     // enough that it's not worth canonicalizing.
     SkAutoMutexAcquire lock(CanonicalPaintsMutex());
 
-    SkRefPtr<SkPDFDict> sMaskDict = new SkPDFDict("Mask");
-    sMaskDict->unref();  // SkRefPtr and new both took a reference.
+    SkAutoTUnref<SkPDFDict> sMaskDict(new SkPDFDict("Mask"));
     sMaskDict->insertName("S", "Alpha");
     sMaskDict->insert("G", new SkPDFObjRef(sMask))->unref();
 
@@ -200,9 +196,8 @@ void SkPDFGraphicState::populateDict() {
         fPopulated = true;
         insertName("Type", "ExtGState");
 
-        SkRefPtr<SkPDFScalar> alpha =
-            new SkPDFScalar(SkScalarDiv(fPaint.getAlpha(), 0xFF));
-        alpha->unref();  // SkRefPtr and new both took a reference.
+        SkAutoTUnref<SkPDFScalar> alpha(
+            new SkPDFScalar(SkScalarDiv(fPaint.getAlpha(), 0xFF)));
         insert("CA", alpha.get());
         insert("ca", alpha.get());
 

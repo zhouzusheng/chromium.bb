@@ -79,9 +79,13 @@ typedef wxWindow* PlatformWidget;
 #endif
 
 #if PLATFORM(EFL)
+#if USE(EO)
+typedef struct _Eo Evas_Object;
+typedef struct _Eo Evas;
+#else
 typedef struct _Evas_Object Evas_Object;
 typedef struct _Evas Evas;
-typedef struct _Ecore_Evas Ecore_Evas;
+#endif
 typedef Evas_Object* PlatformWidget;
 #endif
 
@@ -205,6 +209,9 @@ public:
 
     // Notifies this widget that other widgets on the page have been repositioned.
     virtual void widgetPositionsUpdated() {}
+
+    // Notifies this widget that its clip rect changed.
+    virtual void clipRectChanged() { }
 
     // Whether transforms affect the frame rect. FIXME: We get rid of this and have
     // the frame rects be the same no matter what transforms are applied.

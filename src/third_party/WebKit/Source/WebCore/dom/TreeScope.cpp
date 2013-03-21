@@ -27,7 +27,7 @@
 #include "config.h"
 #include "TreeScope.h"
 
-#include "ComposedShadowTreeWalker.h"
+#include "AncestorChainWalker.h"
 #include "ContainerNode.h"
 #include "DOMSelection.h"
 #include "DOMWindow.h"
@@ -35,15 +35,18 @@
 #include "Element.h"
 #include "FocusController.h"
 #include "Frame.h"
+#include "FrameView.h"
 #include "HTMLAnchorElement.h"
 #include "HTMLFrameOwnerElement.h"
 #include "HTMLLabelElement.h"
 #include "HTMLMapElement.h"
 #include "HTMLNames.h"
+#include "HitTestResult.h"
 #include "IdTargetObserverRegistry.h"
 #include "InsertionPoint.h"
 #include "NodeTraversal.h"
 #include "Page.h"
+#include "RenderView.h"
 #include "RuntimeEnabledFeatures.h"
 #include "ShadowRoot.h"
 #include "TreeScopeAdopter.h"
@@ -55,27 +58,59 @@ namespace WebCore {
 
 struct SameSizeAsTreeScope {
     virtual ~SameSizeAsTreeScope();
-    void* pointers[7];
+    void* pointers[8];
+    int ints[1];
 };
 
 COMPILE_ASSERT(sizeof(TreeScope) == sizeof(SameSizeAsTreeScope), treescope_should_stay_small);
 
 using namespace HTMLNames;
 
-TreeScope::TreeScope(ContainerNode* rootNode)
+TreeScope::TreeScope(ContainerNode* rootNode, Document* document)
     : m_rootNode(rootNode)
-    , m_parentTreeScope(0)
+    , m_documentScope(document)
+    , m_parentTreeScope(document)
+    , m_guardRefCount(0)
     , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
 {
     ASSERT(rootNode);
+    ASSERT(document);
+    ASSERT(rootNode != document);
+    m_parentTreeScope->guardRef();
+    m_rootNode->setTreeScope(this);
+}
+
+TreeScope::TreeScope(Document* document)
+    : m_rootNode(document)
+    , m_documentScope(document)
+    , m_parentTreeScope(0)
+    , m_guardRefCount(0)
+    , m_idTargetObserverRegistry(IdTargetObserverRegistry::create())
+{
+    ASSERT(document);
+    m_rootNode->setTreeScope(this);
+}
+
+TreeScope::TreeScope()
+    : m_rootNode(0)
+    , m_documentScope(0)
+    , m_parentTreeScope(0)
+    , m_guardRefCount(0)
+{
 }
 
 TreeScope::~TreeScope()
 {
+    ASSERT(!m_guardRefCount);
+    m_rootNode->setTreeScope(noDocumentInstance());
+
     if (m_selection) {
         m_selection->clearTreeScope();
         m_selection = 0;
     }
+
+    if (m_parentTreeScope)
+        m_parentTreeScope->guardDeref();
 }
 
 void TreeScope::destroyTreeScopeData()
@@ -85,6 +120,12 @@ void TreeScope::destroyTreeScopeData()
     m_labelsByForAttribute.clear();
 }
 
+void TreeScope::clearDocumentScope()
+{
+    ASSERT(rootNode()->isDocumentNode());
+    m_documentScope = 0;
+}
+
 void TreeScope::setParentTreeScope(TreeScope* newParentScope)
 {
     // A document node cannot be re-parented.
@@ -92,7 +133,11 @@ void TreeScope::setParentTreeScope(TreeScope* newParentScope)
     // Every scope other than document needs a parent scope.
     ASSERT(newParentScope);
 
+    newParentScope->guardRef();
+    if (m_parentTreeScope)
+        m_parentTreeScope->guardDeref();
     m_parentTreeScope = newParentScope;
+    setDocumentScope(newParentScope->documentScope());
 }
 
 Element* TreeScope::getElementById(const AtomicString& elementId) const
@@ -165,6 +210,42 @@ HTMLMapElement* TreeScope::getImageMap(const String& url) const
     if (rootNode()->document()->isHTMLDocument())
         return static_cast<HTMLMapElement*>(m_imageMapsByName->getElementByLowercasedMapName(AtomicString(name.lower()).impl(), this));
     return static_cast<HTMLMapElement*>(m_imageMapsByName->getElementByMapName(AtomicString(name).impl(), this));
+}
+
+Node* nodeFromPoint(Document* document, int x, int y, LayoutPoint* localPoint)
+{
+    Frame* frame = document->frame();
+
+    if (!frame)
+        return 0;
+    FrameView* frameView = frame->view();
+    if (!frameView)
+        return 0;
+
+    float scaleFactor = frame->pageZoomFactor() * frame->frameScaleFactor();
+    IntPoint point = roundedIntPoint(FloatPoint(x * scaleFactor  + frameView->scrollX(), y * scaleFactor + frameView->scrollY()));
+
+    if (!frameView->visibleContentRect().contains(point))
+        return 0;
+
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
+    HitTestResult result(point);
+    document->renderView()->hitTest(request, result);
+
+    if (localPoint)
+        *localPoint = result.localPoint();
+
+    return result.innerNode();
+}
+
+Element* TreeScope::elementFromPoint(int x, int y) const
+{
+    Node* node = nodeFromPoint(rootNode()->document(), x, y);
+    while (node && !node->isElementNode())
+        node = node->parentNode();
+    if (node)
+        node = ancestorInThisScope(node);
+    return toElement(node);
 }
 
 void TreeScope::addLabel(const AtomicString& forAttributeValue, HTMLLabelElement* element)
@@ -306,13 +387,15 @@ Node* TreeScope::focusedNode()
 void TreeScope::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_rootNode);
-    info.addMember(m_parentTreeScope);
-    info.addMember(m_elementsById);
-    info.addMember(m_imageMapsByName);
-    info.addMember(m_labelsByForAttribute);
-    info.addMember(m_idTargetObserverRegistry);
-    info.addMember(m_selection);
+    info.addMember(m_rootNode, "rootNode");
+    info.addMember(m_parentTreeScope, "parentTreeScope");
+    info.addMember(m_elementsById, "elementsById");
+    info.addMember(m_imageMapsByName, "imageMapsByName");
+    info.addMember(m_labelsByForAttribute, "labelsByForAttribute");
+    info.addMember(m_idTargetObserverRegistry, "idTargetObserverRegistry");
+    info.addMember(m_selection, "selection");
+    info.addMember(m_documentScope, "documentScope");
+
 }
 
 static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)
@@ -346,6 +429,26 @@ TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
     for (; indexA > 0 && indexB > 0 && treeScopesA[indexA - 1] == treeScopesB[indexB - 1]; --indexA, --indexB) { }
 
     return treeScopesA[indexA] == treeScopesB[indexB] ? treeScopesA[indexA] : 0;
+}
+
+#ifndef NDEBUG
+bool TreeScope::deletionHasBegun()
+{
+    return rootNode() && rootNode()->m_deletionHasBegun;
+}
+
+void TreeScope::beginDeletion()
+{
+    ASSERT(this != noDocumentInstance());
+    rootNode()->m_deletionHasBegun = true;
+}
+#endif
+
+int TreeScope::refCount() const
+{
+    if (Node* root = rootNode())
+        return root->refCount();
+    return 0;
 }
 
 } // namespace WebCore

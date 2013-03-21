@@ -23,7 +23,7 @@ struct RenderingStats;
 
 class CC_EXPORT Picture
     : public base::RefCountedThreadSafe<Picture> {
-public:
+ public:
   static scoped_refptr<Picture> Create(gfx::Rect layer_rect);
 
   const gfx::Rect& LayerRect() const { return layer_rect_; }
@@ -34,19 +34,24 @@ public:
 
   // Record a paint operation. To be able to safely use this SkPicture for
   // playback on a different thread this can only be called once.
-  void Record(ContentLayerClient*, RenderingStats&);
+  void Record(ContentLayerClient*, RenderingStats*);
 
   // Has Record() been called yet?
-  bool HasRecording() const { return picture_.get(); }
+  bool HasRecording() const { return picture_.get() != NULL; }
 
-  // Raster this Picture's layer_rect into the given canvas.
-  // Assumes contentsScale have already been applied.
-  void Raster(SkCanvas* canvas);
+  // Apply this contents scale and raster the content rect into the canvas.
+  void Raster(SkCanvas* canvas, gfx::Rect content_rect, float contents_scale);
 
-  void GatherPixelRefs(const gfx::Rect& rect,
-                       std::list<skia::LazyPixelRef*>&);
+  // Estimate the cost of rasterizing. To predict the cost of a particular
+  // call to Raster(), pass this the bounds of the canvas that will
+  // be rastered into.
+  bool IsCheapInRect(const gfx::Rect& layer_rect) const;
 
-private:
+  void GatherPixelRefs(
+      const gfx::Rect& layer_rect,
+      std::list<skia::LazyPixelRef*>& pixel_ref_list);
+
+ private:
   Picture(gfx::Rect layer_rect);
   // This constructor assumes SkPicture is already ref'd and transfers
   // ownership to this picture.

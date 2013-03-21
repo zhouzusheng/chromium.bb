@@ -36,6 +36,7 @@
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "ElementShadow.h"
+#include "FocusController.h"
 #include "FormController.h"
 #include "HTMLDataListElement.h"
 #include "HTMLInputElement.h"
@@ -188,9 +189,22 @@ void BaseMultipleFieldsDateAndTimeInputType::blur()
         m_dateTimeEditElement->blurByOwner();
 }
 
-RenderObject* BaseMultipleFieldsDateAndTimeInputType::createRenderer(RenderArena* arena, RenderStyle* style) const
+PassRefPtr<RenderStyle> BaseMultipleFieldsDateAndTimeInputType::customStyleForRenderer(PassRefPtr<RenderStyle> originalStyle)
 {
-    return InputType::createRenderer(arena, style);
+    EDisplay originalDisplay = originalStyle->display();
+    EDisplay newDisplay = originalDisplay;
+    if (originalDisplay == INLINE || originalDisplay == INLINE_BLOCK)
+        newDisplay = INLINE_FLEX;
+    else if (originalDisplay == BLOCK)
+        newDisplay = FLEX;
+    TextDirection contentDirection = element()->locale().isRTL() ? RTL : LTR;
+    if (originalStyle->direction() == contentDirection && originalDisplay == newDisplay)
+        return originalStyle;
+
+    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
+    style->setDirection(contentDirection);
+    style->setDisplay(newDisplay);
+    return style.release();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::createShadowSubtree()
@@ -245,9 +259,19 @@ void BaseMultipleFieldsDateAndTimeInputType::destroyShadowSubtree()
     BaseDateAndTimeInputType::destroyShadowSubtree();
 }
 
-void BaseMultipleFieldsDateAndTimeInputType::focus(bool)
+bool BaseMultipleFieldsDateAndTimeInputType::willCancelFocus(bool restorePreviousSelection, FocusDirection direction)
 {
-    if (m_dateTimeEditElement)
+    return direction == FocusDirectionNone && m_dateTimeEditElement && m_dateTimeEditElement->hasFocusedField();
+}
+
+void BaseMultipleFieldsDateAndTimeInputType::handleFocusEvent(FocusDirection direction)
+{
+    if (!m_dateTimeEditElement)
+        return;
+    if (direction == FocusDirectionBackward) {
+        if (element()->document()->page())
+            element()->document()->page()->focusController()->advanceFocus(direction, 0);
+    } else
         m_dateTimeEditElement->focusByOwner();
 }
 
@@ -290,12 +314,12 @@ bool BaseMultipleFieldsDateAndTimeInputType::hasBadInput() const
 
 bool BaseMultipleFieldsDateAndTimeInputType::isKeyboardFocusable(KeyboardEvent*) const
 {
-    return false;
+    return element()->isTextFormControlFocusable();
 }
 
 bool BaseMultipleFieldsDateAndTimeInputType::isMouseFocusable() const
 {
-    return false;
+    return element()->isTextFormControlFocusable();
 }
 
 AtomicString BaseMultipleFieldsDateAndTimeInputType::localeIdentifier() const
@@ -313,11 +337,6 @@ void BaseMultipleFieldsDateAndTimeInputType::readonlyAttributeChanged()
     m_spinButtonElement->releaseCapture();
     if (m_dateTimeEditElement)
         m_dateTimeEditElement->readOnlyStateChanged();
-}
-
-bool BaseMultipleFieldsDateAndTimeInputType::isTextField() const
-{
-    return false;
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::restoreFormControlState(const FormControlState& state)
@@ -344,11 +363,6 @@ void BaseMultipleFieldsDateAndTimeInputType::setValue(const String& sanitizedVal
         updateInnerTextValue();
         element()->setNeedsValidityCheck();
     }
-}
-
-bool BaseMultipleFieldsDateAndTimeInputType::shouldApplyLocaleDirection() const
-{
-    return true;
 }
 
 bool BaseMultipleFieldsDateAndTimeInputType::shouldUseInputMethod() const
@@ -424,14 +438,6 @@ void BaseMultipleFieldsDateAndTimeInputType::showPickerIndicator()
     m_pickerIndicatorIsVisible = true;
     ASSERT(m_pickerIndicatorElement);
     m_pickerIndicatorElement->removeInlineStyleProperty(CSSPropertyDisplay);
-}
-
-int BaseMultipleFieldsDateAndTimeInputType::fullYear(const String& source) const
-{
-    DateComponents date;
-    if (!parseToDateComponents(source, &date))
-        return DateTimeEditElement::LayoutParameters::undefinedYear();
-    return date.fullYear();
 }
 
 bool BaseMultipleFieldsDateAndTimeInputType::shouldHaveSecondField(const DateComponents& date) const

@@ -31,6 +31,7 @@
 #include "Document.h"
 #include "Event.h"
 #include "EventNames.h"
+#include "FeatureObserver.h"
 #include "Frame.h"
 #include "HTMLBRElement.h"
 #include "HTMLFormElement.h"
@@ -83,12 +84,12 @@ Node::InsertionNotificationRequest HTMLTextFormControlElement::insertedInto(Cont
     return InsertionDone;
 }
 
-void HTMLTextFormControlElement::dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode)
+void HTMLTextFormControlElement::dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection direction)
 {
     if (supportsPlaceholder())
         updatePlaceholderVisibility(false);
-    handleFocusEvent();
-    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedNode);
+    handleFocusEvent(direction);
+    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedNode, direction);
 }
 
 void HTMLTextFormControlElement::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
@@ -330,8 +331,8 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
     // startPosition and endPosition can be null position for example when
     // "-webkit-user-select: none" style attribute is specified.
     if (startPosition.isNotNull() && endPosition.isNotNull()) {
-        ASSERT(startPosition.deepEquivalent().deprecatedNode()->shadowAncestorNode() == this
-            && endPosition.deepEquivalent().deprecatedNode()->shadowAncestorNode() == this);
+        ASSERT(startPosition.deepEquivalent().deprecatedNode()->shadowHost() == this
+            && endPosition.deepEquivalent().deprecatedNode()->shadowHost() == this);
     }
     VisibleSelection newSelection;
     if (direction == SelectionHasBackwardDirection)
@@ -349,12 +350,9 @@ int HTMLTextFormControlElement::indexForVisiblePosition(const VisiblePosition& p
     Position indexPosition = pos.deepEquivalent().parentAnchoredEquivalent();
     if (enclosingTextFormControl(indexPosition) != this)
         return 0;
-    ExceptionCode ec = 0;
     RefPtr<Range> range = Range::create(indexPosition.document());
-    range->setStart(innerTextElement(), 0, ec);
-    ASSERT(!ec);
-    range->setEnd(indexPosition.containerNode(), indexPosition.offsetInContainerNode(), ec);
-    ASSERT(!ec);
+    range->setStart(innerTextElement(), 0, ASSERT_NO_EXCEPTION);
+    range->setEnd(indexPosition.containerNode(), indexPosition.offsetInContainerNode(), ASSERT_NO_EXCEPTION);
     return TextIterator::rangeLength(range.get());
 }
 
@@ -510,9 +508,10 @@ void HTMLTextFormControlElement::selectionChanged(bool userTriggered)
 
 void HTMLTextFormControlElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (name == placeholderAttr)
+    if (name == placeholderAttr) {
         updatePlaceholderVisibility(true);
-    else if (name == onselectAttr)
+        FeatureObserver::observe(document(), FeatureObserver::PlaceholderAttribute);
+    } else if (name == onselectAttr)
         setAttributeEventListener(eventNames().selectEvent, createAttributeEventListener(this, name, value));
     else if (name == onchangeAttr)
         setAttributeEventListener(eventNames().changeEvent, createAttributeEventListener(this, name, value));
@@ -537,14 +536,10 @@ void HTMLTextFormControlElement::setInnerTextValue(const String& value)
         if (textIsChanged && document() && renderer() && AXObjectCache::accessibilityEnabled())
             document()->axObjectCache()->postNotification(this, AXObjectCache::AXValueChanged, false);
 
-        ExceptionCode ec = 0;
-        innerTextElement()->setInnerText(value, ec);
-        ASSERT(!ec);
+        innerTextElement()->setInnerText(value, ASSERT_NO_EXCEPTION);
 
-        if (value.endsWith('\n') || value.endsWith('\r')) {
-            innerTextElement()->appendChild(HTMLBRElement::create(document()), ec);
-            ASSERT(!ec);
-        }
+        if (value.endsWith('\n') || value.endsWith('\r'))
+            innerTextElement()->appendChild(HTMLBRElement::create(document()), ASSERT_NO_EXCEPTION);
     }
 
     setFormControlValueMatchesRenderer(true);
@@ -639,12 +634,14 @@ String HTMLTextFormControlElement::valueWithHardLineBreaks() const
 HTMLTextFormControlElement* enclosingTextFormControl(const Position& position)
 {
     ASSERT(position.isNull() || position.anchorType() == Position::PositionIsOffsetInAnchor
-           || position.containerNode() || !position.anchorNode()->shadowAncestorNode());
+        || position.containerNode() || !position.anchorNode()->shadowHost()
+        || (position.anchorNode()->parentNode() && position.anchorNode()->parentNode()->isShadowRoot()));
+        
     Node* container = position.containerNode();
     if (!container)
         return 0;
-    Node* ancestor = container->shadowAncestorNode();
-    return ancestor != container ? toTextFormControl(ancestor) : 0;
+    Element* ancestor = container->shadowHost();
+    return ancestor && isHTMLTextFormControlElement(ancestor) ? toHTMLTextFormControlElement(ancestor) : 0;
 }
 
 static const Element* parentHTMLElement(const Element* element)
@@ -681,7 +678,7 @@ void HTMLTextFormControlElement::reportMemoryUsage(MemoryObjectInfo* memoryObjec
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     HTMLFormControlElementWithState::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_textAsOfLastFormControlChangeEvent);
+    info.addMember(m_textAsOfLastFormControlChangeEvent, "textAsOfLastFormControlChangeEvent");
 }
 
 } // namespace Webcore

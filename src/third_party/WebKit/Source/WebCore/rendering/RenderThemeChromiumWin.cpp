@@ -346,7 +346,8 @@ bool RenderThemeChromiumWin::paintSliderThumb(RenderObject* o, const PaintInfo& 
 
 static int menuListButtonWidth()
 {
-    static int width = isRunningLayoutTest() ? kStandardMenuListButtonWidth : GetSystemMetrics(SM_CXVSCROLL);
+    static int width = isRunningLayoutTest() ? kStandardMenuListButtonWidth : 
+        IntSize(WebKit::Platform::current()->themeEngine()->getSize(SBP_ARROWBTN)).width();
     return width;
 }
 
@@ -566,7 +567,7 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
         // background (themed or filled) appropriately.
         // FIXME: make sure we do the right thing if css background-clip is set.
         i.context->save();
-        i.context->addRoundedRectClip(o->style()->getRoundedBorderFor(r));
+        i.context->clipRoundedRect(o->style()->getRoundedBorderFor(r));
     }
     {
         const ThemeData& themeData = getThemeData(o);

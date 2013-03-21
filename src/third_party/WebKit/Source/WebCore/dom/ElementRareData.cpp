@@ -36,16 +36,28 @@
 
 namespace WebCore {
 
+struct SameSizeAsElementRareData : NodeRareData {
+    short indices[2];
+    unsigned bitfields;
+    LayoutSize sizeForResizing;
+    IntSize scrollOffset;
+    void* pointers[7];
+};
+
+COMPILE_ASSERT(sizeof(ElementRareData) == sizeof(SameSizeAsElementRareData), ElementRareDataShouldStaySmall);
+
 void ElementRareData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
     NodeRareData::reportMemoryUsage(memoryObjectInfo);
 
-    info.addMember(m_computedStyle);
-    info.addMember(m_dataset);
-    info.addMember(m_classList);
-    info.addMember(m_shadow);
-    info.addMember(m_attributeMap);
+    info.addMember(m_computedStyle, "computedStyle");
+    info.addMember(m_dataset, "dataset");
+    info.addMember(m_classList, "classList");
+    info.addMember(m_shadow, "shadow");
+    info.addMember(m_attributeMap, "attributeMap");
+    info.addMember(m_generatedBefore, "generatedBefore");
+    info.addMember(m_generatedAfter, "generatedAfter");
 }
 
 } // namespace WebCore

@@ -5,6 +5,8 @@
 #ifndef CC_MATH_UTIL_H_
 #define CC_MATH_UTIL_H_
 
+#include <cmath>
+
 #include "base/logging.h"
 #include "cc/cc_export.h"
 #include "ui/gfx/point_f.h"
@@ -75,6 +77,9 @@ public:
     static float Deg2Rad(float deg)  { return deg * PI_FLOAT / 180; }
     static float Rad2Deg(float rad)  { return rad * 180 / PI_FLOAT; }
 
+    static float Round(float f)  { return (f > 0.f) ? std::floor(f + 0.5f) : std::ceil(f - 0.5f); }
+    static double Round(double d)  { return (d > 0.0) ? std::floor(d + 0.5) : std::ceil(d - 0.5); }
+
     // Background: Existing transform code does not do the right thing in
     // mapRect / mapQuad / projectQuad when there is a perspective projection that causes
     // one of the transformed vertices to go to w < 0. In those cases, it is necessary to
@@ -104,8 +109,6 @@ public:
     static gfx::QuadF projectQuad(const gfx::Transform&, const gfx::QuadF&, bool& clipped);
     static gfx::PointF projectPoint(const gfx::Transform&, const gfx::PointF&, bool& clipped);
 
-    static void flattenTransformTo2d(gfx::Transform&);
-
     static gfx::Vector2dF computeTransform2dScaleComponents(const gfx::Transform&, float fallbackValue);
 
     // Returns the smallest angle between the given two vectors in degrees. Neither vector is
@@ -114,22 +117,6 @@ public:
 
     // Projects the |source| vector onto |destination|. Neither vector is assumed to be normalized.
     static gfx::Vector2dF projectVector(gfx::Vector2dF source, gfx::Vector2dF destination);
-
-    // Temporary API to ease migration from gfx::Transform
-    // to gfx::Transform.
-    //
-    // TODO(shawnsingh, vollick) we should phase out as much as possible of
-    // these temporary functions, putting functionality into gfx::Transform.
-    static void rotateEulerAngles(gfx::Transform*, double eulerX, double eulerY, double eulerZ);
-    static gfx::Transform to2dTransform(const gfx::Transform&);
-    // Note carefully: the args here are labeled as per Webcore indexing conventions.
-    static gfx::Transform createGfxTransform(double m11, double m12, double m13, double m14,
-                                             double m21, double m22, double m23, double m24,
-                                             double m31, double m32, double m33, double m34,
-                                             double m41, double m42, double m43, double m44);
-
-    static gfx::Transform createGfxTransform(double a, double b, double c,
-                                             double d, double e, double f);
 };
 
 } // namespace cc

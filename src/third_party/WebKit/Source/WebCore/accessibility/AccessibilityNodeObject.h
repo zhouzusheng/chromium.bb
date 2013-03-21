@@ -91,7 +91,6 @@ public:
     virtual bool isProgressIndicator() const;
     virtual bool isSearchField() const;
     virtual bool isSlider() const;
-    virtual bool isWebArea() const;
 
     virtual bool isChecked() const;
     virtual bool isEnabled() const;
@@ -124,6 +123,7 @@ public:
     virtual String title() const;
     virtual String text() const;
     virtual String stringValue() const;
+    virtual void colorValue(int& r, int& g, int& b) const;
     virtual String ariaLabeledByAttribute() const;
 
     virtual Element* actionElement() const;
@@ -153,6 +153,9 @@ protected:
     AccessibilityRole m_ariaRole;
     bool m_childrenDirty;
     mutable AccessibilityRole m_roleForMSAA;
+#ifndef NDEBUG
+    bool m_initialized;
+#endif
 
     virtual bool isDetached() const { return !m_node; }
 
@@ -162,7 +165,6 @@ protected:
     virtual void insertChild(AccessibilityObject*, unsigned index);
 
     virtual bool canHaveChildren() const;
-    virtual bool accessibilityIsIgnored() const;
     AccessibilityRole ariaRoleAttribute() const;
     AccessibilityRole determineAriaRoleAttribute() const;
     AccessibilityRole remapAriaRoleDueToParent(AccessibilityRole) const;
@@ -195,6 +197,7 @@ private:
     void helpText(Vector<AccessibilityText>&) const;
     String alternativeTextForWebArea() const;
     void ariaLabeledByText(Vector<AccessibilityText>&) const;
+    virtual bool computeAccessibilityIsIgnored() const;
 };
 
 inline AccessibilityNodeObject* toAccessibilityNodeObject(AccessibilityObject* object)

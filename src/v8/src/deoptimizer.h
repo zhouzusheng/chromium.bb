@@ -87,6 +87,14 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
 };
 
 
+class OptimizedFunctionFilter BASE_EMBEDDED {
+ public:
+  virtual ~OptimizedFunctionFilter() {}
+
+  virtual bool TakeFunction(JSFunction* function) = 0;
+};
+
+
 class Deoptimizer;
 
 
@@ -99,11 +107,14 @@ class DeoptimizerData {
   void Iterate(ObjectVisitor* v);
 #endif
 
+  Code* FindDeoptimizingCode(Address addr);
+  void RemoveDeoptimizingCode(Code* code);
+
  private:
   int eager_deoptimization_entry_code_entries_;
   int lazy_deoptimization_entry_code_entries_;
-  VirtualMemory* eager_deoptimization_entry_code_;
-  VirtualMemory* lazy_deoptimization_entry_code_;
+  MemoryChunk* eager_deoptimization_entry_code_;
+  MemoryChunk* lazy_deoptimization_entry_code_;
   Deoptimizer* current_;
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
@@ -133,7 +144,13 @@ class Deoptimizer : public Malloced {
     DEBUGGER
   };
 
+  static bool TraceEnabledFor(BailoutType deopt_type,
+                              StackFrame::Type frame_type);
+  static const char* MessageFor(BailoutType type);
+
   int output_count() const { return output_count_; }
+
+  Code::Kind compiled_code_kind() const { return compiled_code_->kind(); }
 
   // Number of created JS frames. Not all created frames are necessarily JS.
   int jsframe_count() const { return jsframe_count_; }
@@ -177,11 +194,13 @@ class Deoptimizer : public Malloced {
 
   static void DeoptimizeGlobalObject(JSObject* object);
 
+  static void DeoptimizeAllFunctionsWith(OptimizedFunctionFilter* filter);
+
+  static void DeoptimizeAllFunctionsForContext(
+      Context* context, OptimizedFunctionFilter* filter);
+
   static void VisitAllOptimizedFunctionsForContext(
       Context* context, OptimizedFunctionVisitor* visitor);
-
-  static void VisitAllOptimizedFunctionsForGlobalObject(
-      JSObject* object, OptimizedFunctionVisitor* visitor);
 
   static void VisitAllOptimizedFunctions(OptimizedFunctionVisitor* visitor);
 
@@ -297,6 +316,9 @@ class Deoptimizer : public Malloced {
 
   static size_t GetMaxDeoptTableSize();
 
+  static void EnsureCodeForDeoptimizationEntry(BailoutType type,
+                                               int max_entry_id);
+
  private:
   static const int kMinNumberOfEntries = 64;
   static const int kMaxNumberOfEntries = 16384;
@@ -308,6 +330,9 @@ class Deoptimizer : public Malloced {
               Address from,
               int fp_to_sp_delta,
               Code* optimized_code);
+  Code* FindOptimizedCode(JSFunction* function, Code* optimized_code);
+  void Trace();
+  void PrintFunctionName();
   void DeleteFrameDescriptions();
 
   void DoComputeOutputFrames();
@@ -320,6 +345,8 @@ class Deoptimizer : public Malloced {
   void DoComputeAccessorStubFrame(TranslationIterator* iterator,
                                   int frame_index,
                                   bool is_setter_stub_frame);
+  void DoCompiledStubFrame(TranslationIterator* iterator,
+                           int frame_index);
   void DoTranslateCommand(TranslationIterator* iterator,
                           int frame_index,
                           unsigned output_offset);
@@ -342,16 +369,17 @@ class Deoptimizer : public Malloced {
   void AddArgumentsObjectValue(intptr_t value);
   void AddDoubleValue(intptr_t slot_address, double value);
 
-  static void EnsureCodeForDeoptimizationEntry(BailoutType type,
-                                               int max_entry_id);
   static void GenerateDeoptimizationEntries(
       MacroAssembler* masm, int count, BailoutType type);
 
   // Weak handle callback for deoptimizing code objects.
-  static void HandleWeakDeoptimizedCode(
-      v8::Persistent<v8::Value> obj, void* data);
-  static Code* FindDeoptimizingCodeFromAddress(Address addr);
-  static void RemoveDeoptimizingCode(Code* code);
+  static void HandleWeakDeoptimizedCode(v8::Isolate* isolate,
+                                        v8::Persistent<v8::Value> obj,
+                                        void* data);
+
+  // Deoptimize function assuming that function->next_function_link() points
+  // to a list that contains all functions that share the same optimized code.
+  static void DeoptimizeFunctionWithPreparedFunctionList(JSFunction* function);
 
   // Fill the input from from a JavaScript frame. This is used when
   // the debugger needs to inspect an optimized frame. For normal
@@ -360,7 +388,7 @@ class Deoptimizer : public Malloced {
 
   Isolate* isolate_;
   JSFunction* function_;
-  Code* optimized_code_;
+  Code* compiled_code_;
   unsigned bailout_id_;
   BailoutType bailout_type_;
   Address from_;
@@ -379,6 +407,8 @@ class Deoptimizer : public Malloced {
   List<Object*> deferred_arguments_objects_values_;
   List<ArgumentsObjectMaterializationDescriptor> deferred_arguments_objects_;
   List<HeapNumberMaterializationDescriptor> deferred_heap_numbers_;
+
+  bool trace_;
 
   static const int table_entry_size_;
 
@@ -530,7 +560,7 @@ class FrameDescription {
   uintptr_t frame_size_;  // Number of bytes.
   JSFunction* function_;
   intptr_t registers_[Register::kNumRegisters];
-  double double_registers_[DoubleRegister::kNumAllocatableRegisters];
+  double double_registers_[DoubleRegister::kMaxNumRegisters];
   intptr_t top_;
   intptr_t pc_;
   intptr_t fp_;
@@ -600,6 +630,7 @@ class Translation BASE_EMBEDDED {
     GETTER_STUB_FRAME,
     SETTER_STUB_FRAME,
     ARGUMENTS_ADAPTOR_FRAME,
+    COMPILED_STUB_FRAME,
     REGISTER,
     INT32_REGISTER,
     UINT32_REGISTER,
@@ -630,6 +661,7 @@ class Translation BASE_EMBEDDED {
 
   // Commands.
   void BeginJSFrame(BailoutId node_id, int literal_id, unsigned height);
+  void BeginCompiledStubFrame();
   void BeginArgumentsAdaptorFrame(int literal_id, unsigned height);
   void BeginConstructStubFrame(int literal_id, unsigned height);
   void BeginGetterStubFrame(int literal_id);

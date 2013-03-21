@@ -19,6 +19,7 @@
 #include "compiler/depgraph/DependencyGraphOutput.h"
 #include "compiler/timing/RestrictFragmentShaderTiming.h"
 #include "compiler/timing/RestrictVertexShaderTiming.h"
+#include "third_party/compiler/ArrayBoundsClamper.h"
 
 bool isWebGLBasedSpec(ShShaderSpec spec)
 {
@@ -101,6 +102,7 @@ TShHandleBase::~TShHandleBase() {
 TCompiler::TCompiler(ShShaderType type, ShShaderSpec spec)
     : shaderType(type),
       shaderSpec(spec),
+      clampingStrategy(SH_CLAMP_WITH_CLAMP_INTRINSIC),
       builtInFunctionEmulator(type)
 {
     longNameMap = LongNameMap::GetInstance();
@@ -123,6 +125,9 @@ bool TCompiler::Init(const ShBuiltInResources& resources)
     if (!InitBuiltInSymbolTable(resources))
         return false;
     InitExtensionBehavior(resources, extensionBehavior);
+
+    arrayBoundsClamper.SetClampingStrategy(resources.ArrayIndexClampingStrategy);
+    clampingStrategy = resources.ArrayIndexClampingStrategy;
 
     hashFunction = resources.HashFunction;
 
@@ -192,6 +197,10 @@ bool TCompiler::compile(const char* const shaderStrings[],
         if (success && (compileOptions & SH_EMULATE_BUILT_IN_FUNCTIONS))
             builtInFunctionEmulator.MarkBuiltInFunctionsForEmulation(root);
 
+        // Clamping uniform array bounds needs to happen after validateLimitations pass.
+        if (success && (compileOptions & SH_CLAMP_INDIRECT_ARRAY_BOUNDS))
+            arrayBoundsClamper.MarkIndirectArrayBoundsForClamping(root);
+
         // Call mapLongVariableNames() before collectAttribsUniforms() so in
         // collectAttribsUniforms() we already have the mapped symbol names and
         // we could composite mapped and original variable names.
@@ -237,6 +246,7 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources& resources)
 
 void TCompiler::clearResults()
 {
+    arrayBoundsClamper.Cleanup();
     infoSink.info.erase();
     infoSink.obj.erase();
     infoSink.debug.erase();
@@ -347,6 +357,16 @@ int TCompiler::getMappedNameMaxLength() const
 const TExtensionBehavior& TCompiler::getExtensionBehavior() const
 {
     return extensionBehavior;
+}
+
+const ArrayBoundsClamper& TCompiler::getArrayBoundsClamper() const
+{
+    return arrayBoundsClamper;
+}
+
+ShArrayIndexClampingStrategy TCompiler::getArrayIndexClampingStrategy() const
+{
+    return clampingStrategy;
 }
 
 const BuiltInFunctionEmulator& TCompiler::getBuiltInFunctionEmulator() const

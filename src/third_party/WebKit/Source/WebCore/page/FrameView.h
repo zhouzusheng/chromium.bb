@@ -164,6 +164,9 @@ public:
 
     bool isTransparent() const;
     void setTransparent(bool isTransparent);
+    
+    // True if the FrameView is not transparent, and the base background color is opaque.
+    bool hasOpaqueBackground() const;
 
     Color baseBackgroundColor() const;
     void setBaseBackgroundColor(const Color&);
@@ -180,6 +183,8 @@ public:
 
     virtual IntRect windowResizerRect() const;
 
+    virtual float visibleContentScaleFactor() const OVERRIDE;
+
     virtual void setFixedVisibleContentRect(const IntRect&) OVERRIDE;
     virtual void setScrollPosition(const IntPoint&) OVERRIDE;
     void scrollPositionChangedViaPlatformWidget();
@@ -187,6 +192,10 @@ public:
     virtual void updateFixedElementsAfterScrolling();
     virtual bool shouldRubberBandInDirection(ScrollDirection) const;
     virtual bool requestScrollPositionUpdate(const IntPoint&) OVERRIDE;
+
+    // This is different than visibleContentRect() in that it ignores negative (or overly positive)
+    // offsets from rubber-banding, and it takes zooming into account. 
+    LayoutRect viewportConstrainedVisibleContentRect() const;
 
     String mediaType() const;
     void setMediaType(const String&);
@@ -310,6 +319,8 @@ public:
     virtual IntPoint convertToRenderer(const RenderObject*, const IntPoint&) const;
 
     bool isFrameViewScrollCorner(RenderScrollbarPart* scrollCorner) const { return m_scrollCorner == scrollCorner; }
+
+    bool isScrollable();
 
     enum ScrollbarModesCalculationStrategy { RulesFromWebContentOnly, AnyRule };
     void calculateScrollbarModesForLayout(ScrollbarMode& hMode, ScrollbarMode& vMode, ScrollbarModesCalculationStrategy = AnyRule);

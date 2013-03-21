@@ -300,7 +300,7 @@ void RelocInfo::Visit(Heap* heap) {
 
 Immediate::Immediate(int x)  {
   x_ = x;
-  rmode_ = RelocInfo::NONE;
+  rmode_ = RelocInfo::NONE32;
 }
 
 
@@ -326,20 +326,20 @@ Immediate::Immediate(Handle<Object> handle) {
   } else {
     // no relocation needed
     x_ =  reinterpret_cast<intptr_t>(obj);
-    rmode_ = RelocInfo::NONE;
+    rmode_ = RelocInfo::NONE32;
   }
 }
 
 
 Immediate::Immediate(Smi* value) {
   x_ = reinterpret_cast<intptr_t>(value);
-  rmode_ = RelocInfo::NONE;
+  rmode_ = RelocInfo::NONE32;
 }
 
 
 Immediate::Immediate(Address addr) {
   x_ = reinterpret_cast<int32_t>(addr);
-  rmode_ = RelocInfo::NONE;
+  rmode_ = RelocInfo::NONE32;
 }
 
 
@@ -366,7 +366,7 @@ void Assembler::emit(Handle<Object> handle) {
 void Assembler::emit(uint32_t x, RelocInfo::Mode rmode, TypeFeedbackId id) {
   if (rmode == RelocInfo::CODE_TARGET && !id.IsNone()) {
     RecordRelocInfo(RelocInfo::CODE_TARGET_WITH_ID, id.ToInt());
-  } else if (rmode != RelocInfo::NONE) {
+  } else if (!RelocInfo::IsNone(rmode)) {
     RecordRelocInfo(rmode);
   }
   emit(x);
@@ -379,7 +379,7 @@ void Assembler::emit(const Immediate& x) {
     emit_code_relative_offset(label);
     return;
   }
-  if (x.rmode_ != RelocInfo::NONE) RecordRelocInfo(x.rmode_);
+  if (!RelocInfo::IsNone(x.rmode_)) RecordRelocInfo(x.rmode_);
   emit(x.x_);
 }
 
@@ -396,7 +396,7 @@ void Assembler::emit_code_relative_offset(Label* label) {
 
 
 void Assembler::emit_w(const Immediate& x) {
-  ASSERT(x.rmode_ == RelocInfo::NONE);
+  ASSERT(RelocInfo::IsNone(x.rmode_));
   uint16_t value = static_cast<uint16_t>(x.x_);
   reinterpret_cast<uint16_t*>(pc_)[0] = value;
   pc_ += sizeof(uint16_t);

@@ -103,9 +103,9 @@ void SubresourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) co
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
     ResourceLoader::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_resource);
-    info.addMember(m_documentLoader);
-    info.addMember(m_requestCountTracker);
+    info.addMember(m_resource, "resource");
+    info.addMember(m_documentLoader, "documentLoader");
+    info.addMember(m_requestCountTracker, "requestCountTracker");
 }
 
 bool SubresourceLoader::init(const ResourceRequest& request)
@@ -171,6 +171,7 @@ void SubresourceLoader::didReceiveResponse(const ResourceResponse& response)
         if (response.httpStatusCode() == 304) {
             // 304 Not modified / Use local copy
             // Existing resource is ok, just use it updating the expiration time.
+            m_resource->setResponse(response);
             memoryCache()->revalidationSucceeded(m_resource, response);
             if (!reachedTerminalState())
                 ResourceLoader::didReceiveResponse(response);
@@ -180,7 +181,7 @@ void SubresourceLoader::didReceiveResponse(const ResourceResponse& response)
         memoryCache()->revalidationFailed(m_resource);
     }
 
-    m_resource->setResponse(response);
+    m_resource->responseReceived(response);
     if (reachedTerminalState())
         return;
     ResourceLoader::didReceiveResponse(response);
@@ -284,12 +285,13 @@ void SubresourceLoader::didFail(const ResourceError& error)
     if (m_state != Initialized)
         return;
     ASSERT(!reachedTerminalState());
-    ASSERT(!m_resource->resourceToRevalidate());
     LOG(ResourceLoading, "Failed to load '%s'.\n", m_resource->url().string().latin1().data());
 
     RefPtr<SubresourceLoader> protect(this);
     CachedResourceHandle<CachedResource> protectResource(m_resource);
     m_state = Finishing;
+    if (m_resource->resourceToRevalidate())
+        memoryCache()->revalidationFailed(m_resource);
     m_resource->setResourceError(error);
     m_resource->error(CachedResource::LoadError);
     if (!m_resource->isPreloaded())

@@ -148,7 +148,7 @@ void StyleSheetContents::parserAppendRule(PassRefPtr<StyleRuleBase> rule)
 
 StyleRuleBase* StyleSheetContents::ruleAt(unsigned index) const
 {
-    ASSERT(index < ruleCount());
+    ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
     
     unsigned childVectorIndex = index;
     if (hasCharsetRule()) {
@@ -198,7 +198,7 @@ void StyleSheetContents::parserSetEncodingFromCharsetRule(const String& encoding
 bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsigned index)
 {
     ASSERT(m_isMutable);
-    ASSERT(index <= ruleCount());
+    ASSERT_WITH_SECURITY_IMPLICATION(index <= ruleCount());
     // Parser::parseRule doesn't currently allow @charset so we don't need to deal with it.
     ASSERT(!rule->isCharsetRule());
     
@@ -234,7 +234,7 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsig
 void StyleSheetContents::wrapperDeleteRule(unsigned index)
 {
     ASSERT(m_isMutable);
-    ASSERT(index < ruleCount());
+    ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
 
     unsigned childVectorIndex = index;
     if (hasCharsetRule()) {
@@ -444,7 +444,7 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
                 return true;
             break;
 #if ENABLE(SHADOW_DOM)
-        case StyleRuleBase::Host:
+        case StyleRuleBase::HostInternal:
             if (childRulesHaveFailedOrCanceledSubresources(static_cast<const StyleRuleHost*>(rule)->childRules()))
                 return true;
             break;
@@ -456,8 +456,14 @@ static bool childRulesHaveFailedOrCanceledSubresources(const Vector<RefPtr<Style
         case StyleRuleBase::Unknown:
         case StyleRuleBase::Charset:
         case StyleRuleBase::Keyframe:
+#if ENABLE(CSS3_CONDITIONAL_RULES)
+        case StyleRuleBase::Supports:
+#endif
 #if ENABLE(CSS_DEVICE_ADAPTATION)
         case StyleRuleBase::Viewport:
+#endif
+#if ENABLE(CSS_SHADERS)
+        case StyleRuleBase::Filter:
 #endif
             break;
         }
@@ -512,12 +518,14 @@ void StyleSheetContents::shrinkToFit()
 void StyleSheetContents::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_originalURL);
-    info.addMember(m_encodingFromCharsetRule);
-    info.addMember(m_importRules);
-    info.addMember(m_childRules);
-    info.addMember(m_namespaces);
-    info.addMember(m_clients);
+    info.addMember(m_ownerRule, "ownerRule");
+    info.addMember(m_originalURL, "originalURL");
+    info.addMember(m_encodingFromCharsetRule, "encodingFromCharsetRule");
+    info.addMember(m_importRules, "importRules");
+    info.addMember(m_childRules, "childRules");
+    info.addMember(m_namespaces, "namespaces");
+    info.addMember(m_parserContext, "parserContext");
+    info.addMember(m_clients, "clients");
 }
 
 }

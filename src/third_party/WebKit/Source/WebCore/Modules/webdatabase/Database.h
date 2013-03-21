@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,7 +31,10 @@
 
 #if ENABLE(SQL_DATABASE)
 
-#include "AbstractDatabase.h"
+#include "DatabaseBackendAsync.h"
+#include "DatabaseBase.h"
+#include "DatabaseBasicTypes.h"
+#include "DatabaseError.h"
 #include <wtf/Deque.h>
 #include <wtf/Forward.h>
 #include <wtf/text/WTFString.h>
@@ -39,9 +42,9 @@
 namespace WebCore {
 
 class DatabaseCallback;
-class ScriptExecutionContext;
 class SecurityOrigin;
 class SQLTransaction;
+class SQLTransactionBackend;
 class SQLTransactionCallback;
 class SQLTransactionClient;
 class SQLTransactionCoordinator;
@@ -49,15 +52,11 @@ class SQLTransactionErrorCallback;
 class SQLTransactionWrapper;
 class VoidCallback;
 
-typedef int ExceptionCode;
-
-class Database : public AbstractDatabase {
+class Database : public DatabaseBase, public DatabaseBackendAsync {
 public:
     virtual ~Database();
 
     // Direct support for the DOM API
-    static PassRefPtr<Database> openDatabase(ScriptExecutionContext*, const String& name, const String& expectedVersion, const String& displayName,
-                                             unsigned long estimatedSize, PassRefPtr<DatabaseCallback>, ExceptionCode&);
     virtual String version() const;
     void changeVersion(const String& oldVersion, const String& newVersion, PassRefPtr<SQLTransactionCallback>,
                        PassRefPtr<SQLTransactionErrorCallback>, PassRefPtr<VoidCallback> successCallback);
@@ -65,6 +64,8 @@ public:
     void readTransaction(PassRefPtr<SQLTransactionCallback>, PassRefPtr<SQLTransactionErrorCallback>, PassRefPtr<VoidCallback> successCallback);
 
     // Internal engine support
+    static Database* from(DatabaseBackendAsync*);
+
     Vector<String> tableNames();
 
     virtual SecurityOrigin* securityOrigin() const;
@@ -79,31 +80,24 @@ public:
     unsigned long long maximumSize() const;
 
     void scheduleTransactionCallback(SQLTransaction*);
-    void scheduleTransactionStep(SQLTransaction*, bool immediately = false);
+    void scheduleTransactionStep(SQLTransactionBackend*, bool immediately = false);
 
     SQLTransactionClient* transactionClient() const;
     SQLTransactionCoordinator* transactionCoordinator() const;
 
 private:
-    class DatabaseOpenTask;
-    class DatabaseCloseTask;
-    class DatabaseTransactionTask;
-    class DatabaseTableNamesTask;
+    Database(PassRefPtr<DatabaseBackendContext>, const String& name,
+        const String& expectedVersion, const String& displayName, unsigned long estimatedSize);
+    PassRefPtr<DatabaseBackendAsync> backend();
+    static PassRefPtr<Database> create(ScriptExecutionContext*, PassRefPtr<DatabaseBackend>);
 
-    Database(ScriptExecutionContext*, const String& name, const String& expectedVersion,
-             const String& displayName, unsigned long estimatedSize);
     void runTransaction(PassRefPtr<SQLTransactionCallback>, PassRefPtr<SQLTransactionErrorCallback>,
                         PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionWrapper>, bool readOnly);
-
-    bool openAndVerifyVersion(bool setVersionInNewDatabase, ExceptionCode&, String& errorMessage);
-    virtual bool performOpenAndVerify(bool setVersionInNewDatabase, ExceptionCode&, String& errorMessage);
 
     void inProgressTransactionCompleted();
     void scheduleTransaction();
 
     Vector<String> performGetTableNames();
-
-    static void deliverPendingCallback(void*);
 
     Deque<RefPtr<SQLTransaction> > m_transactionQueue;
     Mutex m_transactionInProgressMutex;
@@ -113,6 +107,10 @@ private:
     RefPtr<SecurityOrigin> m_databaseThreadSecurityOrigin;
 
     bool m_deleted;
+
+    friend class DatabaseManager;
+    friend class DatabaseServer; // FIXME: remove this when the backend has been split out.
+    friend class DatabaseBackendAsync; // FIXME: remove this when the backend has been split out.
 };
 
 } // namespace WebCore

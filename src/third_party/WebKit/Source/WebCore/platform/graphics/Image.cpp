@@ -38,6 +38,7 @@
 #include "SharedBuffer.h"
 #include <math.h>
 #include <wtf/MainThread.h>
+#include <wtf/MemoryObjectInfo.h>
 #include <wtf/StdLibExtras.h>
 
 #if USE(CG)
@@ -69,11 +70,11 @@ bool Image::supportsType(const String& type)
 
 bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
-    m_data = data;
-    if (!m_data.get())
+    m_encodedImageData = data;
+    if (!m_encodedImageData.get())
         return true;
 
-    int length = m_data->size();
+    int length = m_encodedImageData->size();
     if (!length)
         return true;
     
@@ -201,7 +202,8 @@ void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsic
 void Image::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    info.addMember(m_data);
+    memoryObjectInfo->setClassName("Image");
+    info.addMember(m_encodedImageData, "encodedImageData");
     info.addWeakPointer(m_imageObserver);
 }
 

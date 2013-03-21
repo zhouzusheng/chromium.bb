@@ -69,11 +69,20 @@ class LayoutRect;
 class FloatRect;
 class FloatQuad;
 
+#if CPU(X86_64)
+#define TRANSFORMATION_MATRIX_USE_X86_64_SSE2
+#endif
+
 class TransformationMatrix {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-#if CPU(APPLE_ARMV7S)
+
+#if CPU(APPLE_ARMV7S) || defined(TRANSFORMATION_MATRIX_USE_X86_64_SSE2)
+#if COMPILER(MSVC)
+    __declspec(align(16)) typedef double Matrix4[4][4];
+#else
     typedef double Matrix4[4][4] __attribute__((aligned (16)));
+#endif
 #else
     typedef double Matrix4[4][4];
 #endif
@@ -226,7 +235,7 @@ public:
     double f() const { return m_matrix[3][1]; }
     void setF(double f) { m_matrix[3][1] = f; }
 
-    // this = this * mat
+    // this = mat * this.
     TransformationMatrix& multiply(const TransformationMatrix&);
 
     TransformationMatrix& scale(double);

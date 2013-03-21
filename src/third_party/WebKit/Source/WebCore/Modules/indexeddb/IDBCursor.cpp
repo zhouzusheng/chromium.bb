@@ -95,10 +95,7 @@ IDBCursor::~IDBCursor()
 const String& IDBCursor::direction() const
 {
     IDB_TRACE("IDBCursor::direction");
-    ExceptionCode ec = 0;
-    const AtomicString& direction = directionToString(m_direction, ec);
-    ASSERT(!ec);
-    return direction;
+    return directionToString(m_direction);
 }
 
 const ScriptValue& IDBCursor::key() const
@@ -152,11 +149,12 @@ PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value,
         }
     }
 
-    return objectStore->put(IDBObjectStoreBackendInterface::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, ec);
+    return objectStore->put(IDBDatabaseBackendInterface::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, ec);
 }
 
 void IDBCursor::advance(long long count, ExceptionCode& ec)
 {
+    ec = 0;
     IDB_TRACE("IDBCursor::advance");
     if (!m_gotValue) {
         ec = IDBDatabaseException::InvalidStateError;
@@ -180,8 +178,16 @@ void IDBCursor::advance(long long count, ExceptionCode& ec)
     ASSERT(!ec);
 }
 
+void IDBCursor::continueFunction(ScriptExecutionContext* context, const ScriptValue& keyValue, ExceptionCode& ec)
+{
+    DOMRequestState requestState(context);
+    RefPtr<IDBKey> key = scriptValueToIDBKey(&requestState, keyValue);
+    continueFunction(key.release(), ec);
+}
+
 void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
 {
+    ec = 0;
     IDB_TRACE("IDBCursor::continue");
     if (key && !key->isValid()) {
         ec = IDBDatabaseException::DataError;
@@ -223,6 +229,7 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
 
 PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context, ExceptionCode& ec)
 {
+    ec = 0;
     IDB_TRACE("IDBCursor::delete");
     if (!m_transaction->isActive()) {
         ec = IDBDatabaseException::TransactionInactiveError;
@@ -306,7 +313,7 @@ IDBCursor::Direction IDBCursor::stringToDirection(const String& directionString,
     return IDBCursor::NEXT;
 }
 
-const AtomicString& IDBCursor::directionToString(unsigned short direction, ExceptionCode& ec)
+const AtomicString& IDBCursor::directionToString(unsigned short direction)
 {
     switch (direction) {
     case IDBCursor::NEXT:
@@ -322,7 +329,7 @@ const AtomicString& IDBCursor::directionToString(unsigned short direction, Excep
         return IDBCursor::directionPrevUnique();
 
     default:
-        ec = TypeError;
+        ASSERT_NOT_REACHED();
         return IDBCursor::directionNext();
     }
 }

@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "base/metrics/histogram.h"
+#include "base/stringprintf.h"
 #include "ui/base/events/event_utils.h"
 #include "ui/base/keycodes/keyboard_code_conversion.h"
 #include "ui/gfx/point3_f.h"
@@ -53,50 +55,61 @@ gfx::Point CalibratePoint(const gfx::Point& point,
 
 std::string EventTypeName(ui::EventType type) {
 #define RETURN_IF_TYPE(t) if (type == ui::t)  return #t
-  RETURN_IF_TYPE(ET_UNKNOWN);
-  RETURN_IF_TYPE(ET_MOUSE_PRESSED);
-  RETURN_IF_TYPE(ET_MOUSE_DRAGGED);
-  RETURN_IF_TYPE(ET_MOUSE_RELEASED);
-  RETURN_IF_TYPE(ET_MOUSE_MOVED);
-  RETURN_IF_TYPE(ET_MOUSE_ENTERED);
-  RETURN_IF_TYPE(ET_MOUSE_EXITED);
-  RETURN_IF_TYPE(ET_KEY_PRESSED);
-  RETURN_IF_TYPE(ET_KEY_RELEASED);
-  RETURN_IF_TYPE(ET_MOUSEWHEEL);
-  RETURN_IF_TYPE(ET_MOUSE_CAPTURE_CHANGED);
-  RETURN_IF_TYPE(ET_TOUCH_RELEASED);
-  RETURN_IF_TYPE(ET_TOUCH_PRESSED);
-  RETURN_IF_TYPE(ET_TOUCH_MOVED);
-  RETURN_IF_TYPE(ET_TOUCH_STATIONARY);
-  RETURN_IF_TYPE(ET_TOUCH_CANCELLED);
-  RETURN_IF_TYPE(ET_DROP_TARGET_EVENT);
-  RETURN_IF_TYPE(ET_TRANSLATED_KEY_PRESS);
-  RETURN_IF_TYPE(ET_TRANSLATED_KEY_RELEASE);
-
-  RETURN_IF_TYPE(ET_GESTURE_SCROLL_BEGIN);
-  RETURN_IF_TYPE(ET_GESTURE_SCROLL_END);
-  RETURN_IF_TYPE(ET_GESTURE_SCROLL_UPDATE);
-  RETURN_IF_TYPE(ET_GESTURE_TAP);
-  RETURN_IF_TYPE(ET_GESTURE_TAP_DOWN);
-  RETURN_IF_TYPE(ET_GESTURE_TAP_CANCEL);
-  RETURN_IF_TYPE(ET_GESTURE_BEGIN);
-  RETURN_IF_TYPE(ET_GESTURE_END);
-  RETURN_IF_TYPE(ET_GESTURE_DOUBLE_TAP);
-  RETURN_IF_TYPE(ET_GESTURE_TWO_FINGER_TAP);
-  RETURN_IF_TYPE(ET_GESTURE_PINCH_BEGIN);
-  RETURN_IF_TYPE(ET_GESTURE_PINCH_END);
-  RETURN_IF_TYPE(ET_GESTURE_PINCH_UPDATE);
-  RETURN_IF_TYPE(ET_GESTURE_LONG_PRESS);
-  RETURN_IF_TYPE(ET_GESTURE_LONG_TAP);
-  RETURN_IF_TYPE(ET_GESTURE_MULTIFINGER_SWIPE);
-
-  RETURN_IF_TYPE(ET_SCROLL);
-  RETURN_IF_TYPE(ET_SCROLL_FLING_START);
-  RETURN_IF_TYPE(ET_SCROLL_FLING_CANCEL);
-#undef RETURN_IF_TYPE
+#define CASE_TYPE(t) case ui::t:  return #t
+  switch (type) {
+    CASE_TYPE(ET_UNKNOWN);
+    CASE_TYPE(ET_MOUSE_PRESSED);
+    CASE_TYPE(ET_MOUSE_DRAGGED);
+    CASE_TYPE(ET_MOUSE_RELEASED);
+    CASE_TYPE(ET_MOUSE_MOVED);
+    CASE_TYPE(ET_MOUSE_ENTERED);
+    CASE_TYPE(ET_MOUSE_EXITED);
+    CASE_TYPE(ET_KEY_PRESSED);
+    CASE_TYPE(ET_KEY_RELEASED);
+    CASE_TYPE(ET_MOUSEWHEEL);
+    CASE_TYPE(ET_MOUSE_CAPTURE_CHANGED);
+    CASE_TYPE(ET_TOUCH_RELEASED);
+    CASE_TYPE(ET_TOUCH_PRESSED);
+    CASE_TYPE(ET_TOUCH_MOVED);
+    CASE_TYPE(ET_TOUCH_STATIONARY);
+    CASE_TYPE(ET_TOUCH_CANCELLED);
+    CASE_TYPE(ET_DROP_TARGET_EVENT);
+    CASE_TYPE(ET_TRANSLATED_KEY_PRESS);
+    CASE_TYPE(ET_TRANSLATED_KEY_RELEASE);
+    CASE_TYPE(ET_GESTURE_SCROLL_BEGIN);
+    CASE_TYPE(ET_GESTURE_SCROLL_END);
+    CASE_TYPE(ET_GESTURE_SCROLL_UPDATE);
+    CASE_TYPE(ET_GESTURE_TAP);
+    CASE_TYPE(ET_GESTURE_TAP_DOWN);
+    CASE_TYPE(ET_GESTURE_TAP_CANCEL);
+    CASE_TYPE(ET_GESTURE_BEGIN);
+    CASE_TYPE(ET_GESTURE_END);
+    CASE_TYPE(ET_GESTURE_DOUBLE_TAP);
+    CASE_TYPE(ET_GESTURE_TWO_FINGER_TAP);
+    CASE_TYPE(ET_GESTURE_PINCH_BEGIN);
+    CASE_TYPE(ET_GESTURE_PINCH_END);
+    CASE_TYPE(ET_GESTURE_PINCH_UPDATE);
+    CASE_TYPE(ET_GESTURE_LONG_PRESS);
+    CASE_TYPE(ET_GESTURE_LONG_TAP);
+    CASE_TYPE(ET_GESTURE_MULTIFINGER_SWIPE);
+    CASE_TYPE(ET_SCROLL);
+    CASE_TYPE(ET_SCROLL_FLING_START);
+    CASE_TYPE(ET_SCROLL_FLING_CANCEL);
+    case ui::ET_LAST: NOTREACHED(); return std::string();
+    // Don't include default, so that we get an error when new type is added.
+  }
+#undef CASE_TYPE
 
   NOTREACHED();
   return std::string();
+}
+
+bool IsX11SendEventTrue(const base::NativeEvent& event) {
+#if defined(USE_X11)
+  if (event && event->xany.send_event)
+    return true;
+#endif
+  return false;
 }
 
 }  // namespace
@@ -162,8 +175,21 @@ Event::Event(const base::NativeEvent& native_event,
       target_(NULL),
       phase_(EP_PREDISPATCH),
       result_(ER_UNHANDLED) {
+  base::TimeDelta delta = ui::EventTimeForNow() - time_stamp_;
   if (type_ < ET_LAST)
     name_ = EventTypeName(type_);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Latency.Browser",
+                              delta.InMicroseconds(), 0, 1000000, 100);
+  std::string name_for_event =
+      base::StringPrintf("Event.Latency.Browser.%s", name_.c_str());
+  base::HistogramBase* counter_for_type =
+      base::Histogram::FactoryTimeGet(
+          name_for_event,
+          base::TimeDelta::FromMilliseconds(0),
+          base::TimeDelta::FromMilliseconds(1000000),
+          100,
+          base::HistogramBase::kUmaTargetedHistogramFlag);
+  counter_for_type->AddTime(delta);
   InitWithNativeEvent(native_event);
 }
 
@@ -253,8 +279,11 @@ MouseEvent::MouseEvent(EventType type,
                        const gfx::Point& location,
                        const gfx::Point& root_location,
                        int flags)
-    : LocatedEvent(type, location, root_location,
-                   base::Time::NowFromSystemTime() - base::Time(), flags),
+    : LocatedEvent(type,
+                   location,
+                   root_location,
+                   ui::EventTimeForNow(),
+                   flags),
       changed_button_flags_(0) {
   if (this->type() == ET_MOUSE_MOVED && IsAnyButton())
     SetType(ET_MOUSE_DRAGGED);
@@ -296,7 +325,9 @@ bool MouseEvent::IsRepeatedClickEvent(
 int MouseEvent::GetRepeatCount(const MouseEvent& event) {
   int click_count = 1;
   if (last_click_event_) {
-    if (IsRepeatedClickEvent(*last_click_event_, event))
+    if (IsX11SendEventTrue(event.native_event()))
+      click_count = last_click_event_->GetClickCount();
+    else if (IsRepeatedClickEvent(*last_click_event_, event))
       click_count = last_click_event_->GetClickCount() + 1;
     delete last_click_event_;
   }
@@ -455,7 +486,7 @@ KeyEvent::KeyEvent(EventType type,
                    KeyboardCode key_code,
                    int flags,
                    bool is_char)
-    : Event(type, base::Time::NowFromSystemTime() - base::Time(), flags),
+    : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
       is_char_(is_char),
       character_(GetCharacterFromKeyCode(key_code, flags)),
@@ -579,8 +610,11 @@ DropTargetEvent::DropTargetEvent(const OSExchangeData& data,
                                  const gfx::Point& location,
                                  const gfx::Point& root_location,
                                  int source_operations)
-    : LocatedEvent(ET_DROP_TARGET_EVENT, location, root_location,
-                   base::Time::NowFromSystemTime() - base::Time(), 0),
+    : LocatedEvent(ET_DROP_TARGET_EVENT,
+                   location,
+                   root_location,
+                   ui::EventTimeForNow(),
+                   0),
       data_(data),
       source_operations_(source_operations) {
 }
@@ -606,13 +640,22 @@ ScrollEvent::ScrollEvent(const base::NativeEvent& native_event)
 
 ScrollEvent::ScrollEvent(EventType type,
                          const gfx::Point& location,
+                         base::TimeDelta time_stamp,
                          int flags,
                          float x_offset,
-                         float y_offset)
+                         float y_offset,
+                         int finger_count)
     : MouseEvent(type, location, location, flags),
       x_offset_(x_offset),
-      y_offset_(y_offset) {
+      y_offset_(y_offset),
+      finger_count_(finger_count) {
+  set_time_stamp(time_stamp);
   CHECK(IsScrollEvent());
+}
+
+void ScrollEvent::Scale(const float factor) {
+  x_offset_ *= factor;
+  y_offset_ *= factor;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -625,7 +668,11 @@ GestureEvent::GestureEvent(EventType type,
                            base::TimeDelta time_stamp,
                            const GestureEventDetails& details,
                            unsigned int touch_ids_bitfield)
-    : LocatedEvent(type, gfx::Point(x, y), gfx::Point(x, y), time_stamp, flags),
+    : LocatedEvent(type,
+                   gfx::Point(x, y),
+                   gfx::Point(x, y),
+                   time_stamp,
+                   flags | EF_FROM_TOUCH),
       details_(details),
       touch_ids_bitfield_(touch_ids_bitfield) {
 }

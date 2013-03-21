@@ -15,12 +15,31 @@
 
 namespace net {
 
+namespace test {
+class ReliableQuicStreamPeer;
+}  // namespace test
+
 class IPEndPoint;
 class QuicSession;
 
 // All this does right now is send data to subclasses via the sequencer.
 class NET_EXPORT_PRIVATE ReliableQuicStream {
  public:
+  // Visitor receives callbacks from the stream.
+  class Visitor {
+   public:
+    Visitor() {}
+
+    // Called when the stream is closed.
+    virtual void OnClose(ReliableQuicStream* stream) = 0;
+
+   protected:
+    virtual ~Visitor() {}
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(Visitor);
+  };
+
   ReliableQuicStream(QuicStreamId id,
                      QuicSession* session);
 
@@ -30,6 +49,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual bool OnStreamFrame(const QuicStreamFrame& frame);
 
   virtual void OnCanWrite();
+
+  // Called by the session just before the stream is deleted.
+  virtual void OnClose();
 
   // Called when we get a stream reset from the client.
   // The rst will be passed through the sequencer, which will call
@@ -64,10 +86,19 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   const IPEndPoint& GetPeerAddress() const;
 
+  Visitor* visitor() { return visitor_; }
+  void set_visitor(Visitor* visitor) { visitor_ = visitor; }
+
  protected:
-  // TODO(alyssar): document the return value -- whether it can be negative and
-  // how a failure is reported.
-  virtual int WriteData(base::StringPiece data, bool fin);
+  // Returns a pair with the number of bytes consumed from data, and a boolean
+  // indicating if the fin bit was consumed.  This does not indicate the data
+  // has been sent on the wire: it may have been turned into a packet and queued
+  // if the socket was unexpectedly blocked.
+  //
+  // The default implementation always consumed all bytes and any fin, but
+  // this behavior is not guaranteed for subclasses so callers should check the
+  // return value.
+  virtual QuicConsumedData WriteData(base::StringPiece data, bool fin);
 
   // Close the read side of the socket.  Further frames will not be accepted.
   virtual void CloseReadSide();
@@ -79,16 +110,16 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // Sends as much of 'data' to the connection as the connection will consume,
   // and then buffers any remaining data in queued_data_.
-  // Returns the number of bytes consumed or buffered, which should always equal
-  // data.size()
-  int WriteOrBuffer(base::StringPiece data, bool fin);
+  // Returns (data.size(), true) as it always consumed all data: it returns for
+  // convenience to have the same return type as WriteDataInternal.
+  QuicConsumedData WriteOrBuffer(base::StringPiece data, bool fin);
 
   // Sends as much of 'data' to the connection as the connection will consume.
   // Returns the number of bytes consumed by the connection.
-  int WriteDataInternal(base::StringPiece data, bool fin);
+  QuicConsumedData WriteDataInternal(base::StringPiece data, bool fin);
 
  private:
-  friend class ReliableQuicStreamPeer;
+  friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
 
   std::list<string> queued_data_;
@@ -97,6 +128,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   QuicStreamId id_;
   QuicStreamOffset offset_;
   QuicSession* session_;
+  // Optional visitor of this stream to be notified when the stream is closed.
+  Visitor* visitor_;
   // Bytes read and written refer to payload bytes only: they do not include
   // framing, encryption overhead etc.
   uint64 stream_bytes_read_;

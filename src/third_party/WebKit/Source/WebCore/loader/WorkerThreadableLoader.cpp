@@ -107,7 +107,7 @@ WorkerThreadableLoader::MainThreadBridge::~MainThreadBridge()
 void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ScriptExecutionContext* context, MainThreadBridge* thisPtr, PassOwnPtr<CrossThreadResourceRequestData> requestData, ThreadableLoaderOptions options, const String& outgoingReferrer)
 {
     ASSERT(isMainThread());
-    ASSERT(context->isDocument());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
     Document* document = static_cast<Document*>(context);
 
     OwnPtr<ResourceRequest> request(ResourceRequest::adopt(requestData));
@@ -236,6 +236,17 @@ static void workerContextDidFail(ScriptExecutionContext* context, RefPtr<Threada
 void WorkerThreadableLoader::MainThreadBridge::didFail(const ResourceError& error)
 {
     m_loaderProxy.postTaskForModeToWorkerContext(createCallbackTask(&workerContextDidFail, m_workerClientWrapper, error), m_taskMode);
+}
+
+static void workerContextDidFailAccessControlCheck(ScriptExecutionContext* context, PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, const ResourceError& error)
+{
+    ASSERT_UNUSED(context, context->isWorkerContext());
+    workerClientWrapper->didFailAccessControlCheck(error);
+}
+
+void WorkerThreadableLoader::MainThreadBridge::didFailAccessControlCheck(const ResourceError& error)
+{
+    m_loaderProxy.postTaskForModeToWorkerContext(createCallbackTask(&workerContextDidFailAccessControlCheck, m_workerClientWrapper, error), m_taskMode);
 }
 
 static void workerContextDidFailRedirectCheck(ScriptExecutionContext* context, RefPtr<ThreadableLoaderClientWrapper> workerClientWrapper)

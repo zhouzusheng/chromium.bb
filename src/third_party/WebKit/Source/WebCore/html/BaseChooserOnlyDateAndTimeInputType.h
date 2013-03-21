@@ -44,9 +44,6 @@ private:
     void closeDateTimeChooser();
 
     // InputType functions:
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) const OVERRIDE;
-    virtual void updateInnerTextValue() OVERRIDE;
-    void forwardEvent(Event*) OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
     virtual void detach() OVERRIDE;
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
@@ -55,6 +52,7 @@ private:
     virtual void handleKeypressEvent(KeyboardEvent*) OVERRIDE;
     virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
     virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual bool isMouseFocusable() const OVERRIDE;
 
     // DateTimeChooserClient functions:
     virtual void didChooseValue(const String&) OVERRIDE;

@@ -42,6 +42,20 @@ using namespace WebCore;
 
 namespace WebKit {
 
+// FIXME: Remove native validation message things when we finish implementations
+// of all platforms.
+static bool nativeValidationMessageEnabled = false;
+
+void WebRuntimeFeatures::enableNativeValidationMessage(bool enable)
+{
+    nativeValidationMessageEnabled = enable;
+}
+
+bool WebRuntimeFeatures::isNativeValidationMessageEnabled()
+{
+    return nativeValidationMessageEnabled;
+}
+
 void WebRuntimeFeatures::enableDatabase(bool enable)
 {
 #if ENABLE(SQL_DATABASE)
@@ -624,6 +638,24 @@ bool WebRuntimeFeatures::isExperimentalContentSecurityPolicyFeaturesEnabled()
 {
 #if ENABLE(CSP_NEXT)
     return RuntimeEnabledFeatures::experimentalContentSecurityPolicyFeaturesEnabled();
+#else
+    return false;
+#endif
+}
+
+void WebRuntimeFeatures::enableSeamlessIFrames(bool enable)
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    return RuntimeEnabledFeatures::setSeamlessIFramesEnabled(enable);
+#else
+    UNUSED_PARAM(enable);
+#endif
+}
+
+bool WebRuntimeFeatures::areSeamlessIFramesEnabled()
+{
+#if ENABLE(IFRAME_SEAMLESS)
+    return RuntimeEnabledFeatures::seamlessIFramesEnabled();
 #else
     return false;
 #endif

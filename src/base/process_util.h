@@ -197,6 +197,12 @@ BASE_EXPORT FilePath GetProcessExecutablePath(ProcessHandle process);
 // Exposed for testing.
 BASE_EXPORT int ParseProcStatCPU(const std::string& input);
 
+// Get the number of threads of |process| as available in /proc/<pid>/stat.
+// This should be used with care as no synchronization with running threads is
+// done. This is mostly useful to guarantee being single-threaded.
+// Returns 0 on failure.
+BASE_EXPORT int GetNumberOfThreads(ProcessHandle process);
+
 // The maximum allowed value for the OOM score.
 const int kMaxOomScore = 1000;
 
@@ -240,6 +246,9 @@ struct LaunchOptions {
 #if defined(OS_WIN)
                     start_hidden(false), inherit_handles(false), as_user(NULL),
                     empty_desktop_name(false), job_handle(NULL),
+                    stdin_handle(NULL),
+                    stdout_handle(NULL),
+                    stderr_handle(NULL),
                     force_breakaway_from_job_(false)
 #else
                     environ(NULL), fds_to_remap(NULL), maximize_rlimits(NULL),
@@ -262,7 +271,10 @@ struct LaunchOptions {
 #if defined(OS_WIN)
   bool start_hidden;
 
-  // If true, the new process inherits handles from the parent.
+  // If true, the new process inherits handles from the parent. In production
+  // code this flag should be used only when running short-lived, trusted
+  // binaries, because open handles from other libraries and subsystems will
+  // leak to the child process, causing errors such as open socket hangs.
   bool inherit_handles;
 
   // If non-NULL, runs as if the user represented by the token had launched it.
@@ -281,6 +293,14 @@ struct LaunchOptions {
   // be terminated immediately and LaunchProcess() will fail if assignment to
   // the job object fails.
   HANDLE job_handle;
+
+  // Handles for the redirection of stdin, stdout and stderr. The handles must
+  // be inheritable. Caller should either set all three of them or none (i.e.
+  // there is no way to redirect stderr without redirecting stdin). The
+  // |inherit_handles| flag must be set to true when redirecting stdio stream.
+  HANDLE stdin_handle;
+  HANDLE stdout_handle;
+  HANDLE stderr_handle;
 
   // If set to true, ensures that the child process is launched with the
   // CREATE_BREAKAWAY_FROM_JOB flag which allows it to breakout of the parent

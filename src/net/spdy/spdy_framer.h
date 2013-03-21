@@ -170,7 +170,7 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   // When this function returns true the visitor indicates that it accepted
   // all of the data. Returning false indicates that that an unrecoverable
   // error has occurred, such as bad header data or resource exhaustion.
-  virtual bool OnCredentialFrameData(const char* header_data,
+  virtual bool OnCredentialFrameData(const char* credential_data,
                                      size_t len) = 0;
 
   // Called when a data frame header is received. The frame's data
@@ -197,7 +197,8 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   virtual void OnPing(uint32 unique_id) = 0;
 
   // Called when a RST_STREAM frame has been parsed.
-  virtual void OnRstStream(SpdyStreamId stream_id, SpdyStatusCodes status) = 0;
+  virtual void OnRstStream(SpdyStreamId stream_id,
+                           SpdyRstStreamStatus status) = 0;
 
   // Called when a GOAWAY frame has been parsed.
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
@@ -212,6 +213,32 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   virtual void OnControlFrameCompressed(
       const SpdyControlFrame& uncompressed_frame,
       const SpdyControlFrame& compressed_frame) = 0;
+};
+
+// Optionally, and in addition to SpdyFramerVisitorInterface, a class supporting
+// SpdyFramerDebugVisitorInterface may be used in conjunction with SpdyFramer in
+// order to extract debug/internal information about the SpdyFramer as it
+// operates.
+//
+// Most SPDY implementations need not bother with this interface at all.
+class SpdyFramerDebugVisitorInterface {
+ public:
+  virtual ~SpdyFramerDebugVisitorInterface() {}
+
+  // Called after compressing header blocks.
+  // Provides uncompressed and compressed sizes.
+  virtual void OnCompressedHeaderBlock(size_t uncompressed_len,
+                                       size_t compressed_len) {}
+
+  // Called when decompressing header blocks.
+  // Provides uncompressed and compressed sizes.
+  // Called once per incremental decompression. That is to say, if a header
+  // block is decompressed in four chunks, this will result in four calls to
+  // OnDecompressedHeaderBlock() interleaved with four calls to
+  // OnControlFrameHeaderData(). Note that uncompressed_len may be 0 in some
+  // valid cases, even though compressed_len is nonzero.
+  virtual void OnDecompressedHeaderBlock(size_t uncompressed_len,
+                                         size_t compressed_len) {}
 };
 
 class NET_EXPORT_PRIVATE SpdyFramer {
@@ -263,6 +290,15 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // purposes.)
   static const size_t kHeaderDataChunkMaxSize;
 
+  // Serializes a SpdyHeaderBlock.
+  static void WriteHeaderBlock(SpdyFrameBuilder* frame,
+                               const int spdy_version,
+                               const SpdyHeaderBlock* headers);
+
+  // Retrieve serialized length of SpdyHeaderBlock.
+  static size_t GetSerializedLength(const int spdy_version,
+                                    const SpdyHeaderBlock* headers);
+
   // Create a new Framer, provided a SPDY version.
   explicit SpdyFramer(int version);
   virtual ~SpdyFramer();
@@ -273,6 +309,13 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // will be used.
   void set_visitor(SpdyFramerVisitorInterface* visitor) {
     visitor_ = visitor;
+  }
+
+  // Set debug callbacks to be called from the framer. The debug visitor is
+  // completely optional and need not be set in order for normal operation.
+  // If this is called multiple times, only the last visitor will be used.
+  void set_debug_visitor(SpdyFramerDebugVisitorInterface* debug_visitor) {
+    debug_visitor_ = debug_visitor;
   }
 
   // Pass data into the framer for parsing.
@@ -287,17 +330,13 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // Check the state of the framer.
   SpdyError error_code() const { return error_code_; }
   SpdyState state() const { return state_; }
-
-  bool MessageFullyRead() const {
-    return state_ == SPDY_DONE || state_ == SPDY_AUTO_RESET;
-  }
   bool HasError() const { return state_ == SPDY_ERROR; }
 
   // Given a buffer containing a decompressed header block in SPDY
   // serialized format, parse out a SpdyHeaderBlock, putting the results
   // in the given header block.
-  // Returns true if successfully parsed, false otherwise.
-  bool ParseHeaderBlockInBuffer(const char* header_data,
+  // Returns number of bytes consumed if successfully parsed, 0 otherwise.
+  size_t ParseHeaderBlockInBuffer(const char* header_data,
                                 size_t header_length,
                                 SpdyHeaderBlock* block) const;
 
@@ -331,7 +370,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
                                            const SpdyHeaderBlock* headers);
 
   SpdyRstStreamControlFrame* CreateRstStream(SpdyStreamId stream_id,
-                                             SpdyStatusCodes status) const;
+                                             SpdyRstStreamStatus status) const;
 
   // Creates an instance of SpdySettingsControlFrame. The SETTINGS frame is
   // used to communicate name/value pairs relevant to the communication channel.
@@ -515,13 +554,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   size_t UpdateCurrentFrameBuffer(const char** data, size_t* len,
                                   size_t max_bytes);
 
-  // Retrieve serialized length of SpdyHeaderBlock.
-  size_t GetSerializedLength(const SpdyHeaderBlock* headers) const;
-
-  // Serializes a SpdyHeaderBlock.
-  void WriteHeaderBlock(SpdyFrameBuilder* frame,
-                        const SpdyHeaderBlock* headers) const;
-
   void WriteHeaderBlockToZ(const SpdyHeaderBlock* headers,
                            z_stream* out) const;
 
@@ -577,6 +609,7 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   scoped_ptr<z_stream> header_decompressor_;
 
   SpdyFramerVisitorInterface* visitor_;
+  SpdyFramerDebugVisitorInterface* debug_visitor_;
 
   std::string display_protocol_;
 

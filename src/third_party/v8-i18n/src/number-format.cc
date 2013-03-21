@@ -55,7 +55,8 @@ icu::DecimalFormat* NumberFormat::UnpackNumberFormat(
   return NULL;
 }
 
-void NumberFormat::DeleteNumberFormat(v8::Persistent<v8::Value> object,
+void NumberFormat::DeleteNumberFormat(v8::Isolate* isolate,
+                                      v8::Persistent<v8::Value> object,
                                       void* param) {
   v8::Persistent<v8::Object> persistent_object =
       v8::Persistent<v8::Object>::Cast(object);
@@ -67,7 +68,7 @@ void NumberFormat::DeleteNumberFormat(v8::Persistent<v8::Value> object,
   delete UnpackNumberFormat(persistent_object);
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose();
+  persistent_object.Dispose(isolate);
 }
 
 v8::Handle<v8::Value> NumberFormat::JSInternalFormat(
@@ -159,8 +160,9 @@ v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
         v8::String::New("Internal error, wrong parameters.")));
   }
 
+  v8::Isolate* isolate = args.GetIsolate();
   v8::Persistent<v8::ObjectTemplate> number_format_template =
-      Utils::GetTemplate();
+      Utils::GetTemplate(isolate);
 
   // Create an empty object wrapper.
   v8::Local<v8::Object> local_object = number_format_template->NewInstance();
@@ -171,7 +173,7 @@ v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
   }
 
   v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(local_object);
+      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set number formatter as internal field of the resulting JS object.
   icu::DecimalFormat* number_format = InitializeNumberFormat(
@@ -192,7 +194,7 @@ v8::Handle<v8::Value> NumberFormat::JSCreateNumberFormat(
   }
 
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(NULL, DeleteNumberFormat);
+  wrapper.MakeWeak(isolate, NULL, DeleteNumberFormat);
 
   return wrapper;
 }

@@ -89,8 +89,8 @@ static inline void updateLogicalHeightForCell(RenderTableSection::RowStruct& row
 }
 
 
-RenderTableSection::RenderTableSection(Node* node)
-    : RenderBox(node)
+RenderTableSection::RenderTableSection(Element* element)
+    : RenderBox(element)
     , m_cCol(0)
     , m_cRow(0)
     , m_outerBorderStart(0)
@@ -263,7 +263,7 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
 int RenderTableSection::calcRowLogicalHeight()
 {
 #ifndef NDEBUG
-    setNeedsLayoutIsForbidden(true);
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
 #endif
 
     ASSERT(!needsLayout());
@@ -318,31 +318,25 @@ int RenderTableSection::calcRowLogicalHeight()
                 int cellLogicalHeight = cell->logicalHeightForRowSizing();
                 m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[cellStartRow] + cellLogicalHeight);
 
-                // find out the baseline
-                EVerticalAlign va = cell->style()->verticalAlign();
-                if (va == BASELINE || va == TEXT_BOTTOM || va == TEXT_TOP || va == SUPER || va == SUB || va == LENGTH) {
+                // Find out the baseline. The baseline is set on the first row in a rowspan.
+                if (cell->isBaselineAligned()) {
                     LayoutUnit baselinePosition = cell->cellBaselinePosition();
                     if (baselinePosition > cell->borderBefore() + cell->paddingBefore()) {
-                        m_grid[cellStartRow].baseline = max(m_grid[cellStartRow].baseline, baselinePosition - cell->intrinsicPaddingBefore());
-                        baselineDescent = max(baselineDescent, m_rowPos[cellStartRow] + cellLogicalHeight - (baselinePosition - cell->intrinsicPaddingBefore()));
+                        m_grid[cellStartRow].baseline = max(m_grid[cellStartRow].baseline, baselinePosition);
+                        // The descent of a cell that spans multiple rows does not affect the height of the first row it spans, so don't let it
+                        // become the baseline descent applied to the rest of the row. 
+                        if (cell->rowSpan() == 1)
+                            baselineDescent = max(baselineDescent, cellLogicalHeight - (baselinePosition - cell->intrinsicPaddingBefore()));
+                        m_rowPos[cellStartRow + 1] = max<int>(m_rowPos[cellStartRow + 1], m_rowPos[cellStartRow] + m_grid[cellStartRow].baseline + baselineDescent);
                     }
                 }
             }
         }
 
-        // do we have baseline aligned elements?
-        if (m_grid[r].baseline)
-            // increase rowheight if baseline requires
-            m_rowPos[r + 1] = max<int>(m_rowPos[r + 1], m_grid[r].baseline + baselineDescent);
-
         // Add the border-spacing to our final position.
         m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : 0;
         m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r]);
     }
-
-#ifndef NDEBUG
-    setNeedsLayoutIsForbidden(false);
-#endif
 
     ASSERT(!needsLayout());
 
@@ -493,7 +487,7 @@ int RenderTableSection::distributeExtraLogicalHeightToRows(int extraLogicalHeigh
 void RenderTableSection::layoutRows()
 {
 #ifndef NDEBUG
-    setNeedsLayoutIsForbidden(true);
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
 #endif
 
     ASSERT(!needsLayout());
@@ -588,8 +582,7 @@ void RenderTableSection::layoutRows()
                 cell->layoutIfNeeded();
 
                 // If the baseline moved, we may have to update the data for our row. Find out the new baseline.
-                EVerticalAlign va = cell->style()->verticalAlign();
-                if (va == BASELINE || va == TEXT_BOTTOM || va == TEXT_TOP || va == SUPER || va == SUB || va == LENGTH) {
+                if (cell->isBaselineAligned()) {
                     LayoutUnit baseline = cell->cellBaselinePosition();
                     if (baseline > cell->borderBefore() + cell->paddingBefore())
                         m_grid[r].baseline = max(m_grid[r].baseline, baseline);
@@ -638,10 +631,6 @@ void RenderTableSection::layoutRows()
             }
         }
     }
-
-#ifndef NDEBUG
-    setNeedsLayoutIsForbidden(false);
-#endif
 
     ASSERT(!needsLayout());
 
@@ -926,7 +915,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
         popContentsClip(paintInfo, phase, adjustedPaintOffset);
 
     if ((phase == PaintPhaseOutline || phase == PaintPhaseSelfOutline) && style()->visibility() == VISIBLE)
-        paintOutline(paintInfo.context, LayoutRect(adjustedPaintOffset, size()));
+        paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, size()));
 }
 
 static inline bool compareCellPositions(RenderTableCell* elem1, RenderTableCell* elem2)
@@ -1415,7 +1404,8 @@ CollapsedBorderValue& RenderTableSection::cachedCollapsedBorder(const RenderTabl
 RenderTableSection* RenderTableSection::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW_GROUP);
-    RenderTableSection* newSection = new (parent->renderArena()) RenderTableSection(parent->document() /* is anonymous */);
+    RenderTableSection* newSection = new (parent->renderArena()) RenderTableSection(0);
+    newSection->setDocumentForAnonymous(parent->document());
     newSection->setStyle(newStyle.release());
     return newSection;
 }
@@ -1441,24 +1431,25 @@ void RenderTableSection::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) c
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
     RenderBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_children);
-    info.addMember(m_grid);
-    info.addMember(m_rowPos);
-    info.addMember(m_overflowingCells);
-    info.addMember(m_cellsCollapsedBorders);
+    info.addMember(m_children, "children");
+    info.addMember(m_grid, "grid");
+    info.addMember(m_rowPos, "rowPos");
+    info.addMember(m_overflowingCells, "overflowingCells");
+    info.addMember(m_cellsCollapsedBorders, "cellsCollapsedBorders");
 }
 
 void RenderTableSection::RowStruct::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(row);
-    info.addMember(rowRenderer);
+    info.addMember(row, "row");
+    info.addMember(rowRenderer, "rowRenderer");
+    info.addMember(logicalHeight, "logicalHeight");
 }
 
 void RenderTableSection::CellStruct::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(cells);
+    info.addMember(cells, "cells");
 }
 
 } // namespace WebCore

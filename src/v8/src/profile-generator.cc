@@ -66,7 +66,9 @@ int TokenEnumerator::GetTokenId(Object* token) {
   Handle<Object> handle = isolate->global_handles()->Create(token);
   // handle.location() points to a memory cell holding a pointer
   // to a token object in the V8's heap.
-  isolate->global_handles()->MakeWeak(handle.location(), this,
+  isolate->global_handles()->MakeWeak(handle.location(),
+                                      this,
+                                      NULL,
                                       TokenRemovedCallback);
   token_locations_.Add(handle.location());
   token_removed_.Add(false);
@@ -74,11 +76,12 @@ int TokenEnumerator::GetTokenId(Object* token) {
 }
 
 
-void TokenEnumerator::TokenRemovedCallback(v8::Persistent<v8::Value> handle,
+void TokenEnumerator::TokenRemovedCallback(v8::Isolate* isolate,
+                                           v8::Persistent<v8::Value> handle,
                                            void* parameter) {
   reinterpret_cast<TokenEnumerator*>(parameter)->TokenRemoved(
       Utils::OpenHandle(*handle).location());
-  handle.Dispose();
+  handle.Dispose(isolate);
 }
 
 
@@ -112,7 +115,7 @@ const char* StringsStorage::GetCopy(const char* src) {
   OS::StrNCpy(dst, src, len);
   dst[len] = '\0';
   uint32_t hash =
-      HashSequentialString(dst.start(), len, HEAP->HashSeed());
+      StringHasher::HashSequentialString(dst.start(), len, HEAP->HashSeed());
   return AddOrDisposeString(dst.start(), hash);
 }
 
@@ -145,7 +148,7 @@ const char* StringsStorage::GetVFormatted(const char* format, va_list args) {
     DeleteArray(str.start());
     return format;
   }
-  uint32_t hash = HashSequentialString(
+  uint32_t hash = StringHasher::HashSequentialString(
       str.start(), len, HEAP->HashSeed());
   return AddOrDisposeString(str.start(), hash);
 }
@@ -156,8 +159,8 @@ const char* StringsStorage::GetName(String* name) {
     int length = Min(kMaxNameSize, name->length());
     SmartArrayPointer<char> data =
         name->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL, 0, length);
-    uint32_t hash =
-        HashSequentialString(*data, length, name->GetHeap()->HashSeed());
+    uint32_t hash = StringHasher::HashSequentialString(
+        *data, length, name->GetHeap()->HashSeed());
     return AddOrDisposeString(data.Detach(), hash);
   }
   return "";
@@ -1451,9 +1454,9 @@ void HeapObjectsMap::RemoveDeadEntries() {
 SnapshotObjectId HeapObjectsMap::GenerateId(v8::RetainedObjectInfo* info) {
   SnapshotObjectId id = static_cast<SnapshotObjectId>(info->GetHash());
   const char* label = info->GetLabel();
-  id ^= HashSequentialString(label,
-                             static_cast<int>(strlen(label)),
-                             HEAP->HashSeed());
+  id ^= StringHasher::HashSequentialString(label,
+                                           static_cast<int>(strlen(label)),
+                                           HEAP->HashSeed());
   intptr_t element_count = info->GetElementCount();
   if (element_count != -1)
     id ^= ComputeIntegerHash(static_cast<uint32_t>(element_count),
@@ -2708,10 +2711,6 @@ void V8HeapExplorer::TagGlobalObjects() {
   Isolate* isolate = Isolate::Current();
   GlobalObjectsEnumerator enumerator;
   isolate->global_handles()->IterateAllRoots(&enumerator);
-  Handle<String> document_string =
-      isolate->factory()->NewStringFromAscii(CStrVector("document"));
-  Handle<String> url_string =
-      isolate->factory()->NewStringFromAscii(CStrVector("URL"));
   const char** urls = NewArray<const char*>(enumerator.count());
   for (int i = 0, l = enumerator.count(); i < l; ++i) {
     if (global_object_name_resolver_) {
@@ -2720,25 +2719,7 @@ void V8HeapExplorer::TagGlobalObjects() {
       urls[i] = global_object_name_resolver_->GetName(
           Utils::ToLocal(Handle<JSObject>::cast(global_obj)));
     } else {
-      // TODO(yurys): This branch is going to be removed once Chromium migrates
-      // to the new name resolver.
       urls[i] = NULL;
-      HandleScope scope;
-      Handle<JSGlobalObject> global_obj = enumerator.at(i);
-      Object* obj_document;
-      if (global_obj->GetProperty(*document_string)->ToObject(&obj_document) &&
-          obj_document->IsJSObject()) {
-        // FixMe: Workaround: SharedWorker's current Isolate has NULL context.
-        // As result GetProperty(*url_string) will crash.
-        if (!Isolate::Current()->context() && obj_document->IsJSGlobalProxy())
-          continue;
-        JSObject* document = JSObject::cast(obj_document);
-        Object* obj_url;
-        if (document->GetProperty(*url_string)->ToObject(&obj_url) &&
-            obj_url->IsString()) {
-          urls[i] = collection_->names()->GetName(String::cast(obj_url));
-        }
-      }
     }
   }
 
@@ -2848,8 +2829,9 @@ int NativeObjectsExplorer::EstimateObjectsCount() {
 void NativeObjectsExplorer::FillRetainedObjects() {
   if (embedder_queried_) return;
   Isolate* isolate = Isolate::Current();
+  const GCType major_gc_type = kGCTypeMarkSweepCompact;
   // Record objects that are joined into ObjectGroups.
-  isolate->heap()->CallGlobalGCPrologueCallback();
+  isolate->heap()->CallGCPrologueCallbacks(major_gc_type);
   List<ObjectGroup*>* groups = isolate->global_handles()->object_groups();
   for (int i = 0; i < groups->length(); ++i) {
     ObjectGroup* group = groups->at(i);
@@ -2863,7 +2845,7 @@ void NativeObjectsExplorer::FillRetainedObjects() {
     group->info_ = NULL;  // Acquire info object ownership.
   }
   isolate->global_handles()->RemoveObjectGroups();
-  isolate->heap()->CallGlobalGCEpilogueCallback();
+  isolate->heap()->CallGCEpilogueCallbacks(major_gc_type);
   // Record objects that are not in ObjectGroups, but have class ID.
   GlobalHandlesExtractor extractor(this);
   isolate->global_handles()->IterateAllRootsWithClassIds(&extractor);
@@ -2892,6 +2874,7 @@ void NativeObjectsExplorer::FillImplicitReferences() {
           child_entry);
     }
   }
+  isolate->global_handles()->RemoveImplicitRefGroups();
 }
 
 List<HeapObject*>* NativeObjectsExplorer::GetListMaybeDisposeInfo(
@@ -2962,9 +2945,10 @@ class NativeGroupRetainedObjectInfo : public v8::RetainedObjectInfo {
 NativeGroupRetainedObjectInfo* NativeObjectsExplorer::FindOrAddGroupInfo(
     const char* label) {
   const char* label_copy = collection_->names()->GetCopy(label);
-  uint32_t hash = HashSequentialString(label_copy,
-                                       static_cast<int>(strlen(label_copy)),
-                                       HEAP->HashSeed());
+  uint32_t hash = StringHasher::HashSequentialString(
+      label_copy,
+      static_cast<int>(strlen(label_copy)),
+      HEAP->HashSeed());
   HashMap::Entry* entry = native_groups_.Lookup(const_cast<char*>(label_copy),
                                                 hash, true);
   if (entry->value == NULL) {

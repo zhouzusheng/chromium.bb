@@ -791,7 +791,7 @@ static String nodePosition(Node* node)
     Element* body = node->document()->body();
     Node* parent;
     for (Node* n = node; n; n = parent) {
-        parent = n->parentOrHostNode();
+        parent = n->parentOrShadowHostNode();
         if (n != node)
             result.appendLiteral(" of ");
         if (parent) {
@@ -901,12 +901,10 @@ String counterValueForElement(Element* element)
     TextStream stream;
     bool isFirstCounter = true;
     // The counter renderers should be children of :before or :after pseudo-elements.
-    if (RenderObject* renderer = element->renderer()) {
-        if (RenderObject* pseudoElement = renderer->beforePseudoElementRenderer())
-            writeCounterValuesFromChildren(stream, pseudoElement, isFirstCounter);
-        if (RenderObject* pseudoElement = renderer->afterPseudoElementRenderer())
-            writeCounterValuesFromChildren(stream, pseudoElement, isFirstCounter);
-    }
+    if (RenderObject* before = element->pseudoElementRenderer(BEFORE))
+        writeCounterValuesFromChildren(stream, before, isFirstCounter);
+    if (RenderObject* after = element->pseudoElementRenderer(AFTER))
+        writeCounterValuesFromChildren(stream, after, isFirstCounter);
     return stream.release();
 }
 

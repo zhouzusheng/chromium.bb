@@ -285,20 +285,8 @@ EVENT_TYPE(BAD_PROXY_LIST_REPORTED)
 EVENT_TYPE(PROXY_LIST_FALLBACK)
 
 // ------------------------------------------------------------------------
-// Proxy Resolver
+// ProxyResolverV8Tracing
 // ------------------------------------------------------------------------
-
-// Measures the time taken to execute the "myIpAddress()" javascript binding.
-EVENT_TYPE(PAC_JAVASCRIPT_MY_IP_ADDRESS)
-
-// Measures the time taken to execute the "myIpAddressEx()" javascript binding.
-EVENT_TYPE(PAC_JAVASCRIPT_MY_IP_ADDRESS_EX)
-
-// Measures the time taken to execute the "dnsResolve()" javascript binding.
-EVENT_TYPE(PAC_JAVASCRIPT_DNS_RESOLVE)
-
-// Measures the time taken to execute the "dnsResolveEx()" javascript binding.
-EVENT_TYPE(PAC_JAVASCRIPT_DNS_RESOLVE_EX)
 
 // This event is emitted when a javascript error has been triggered by a
 // PAC script. It contains the following event parameters:
@@ -315,6 +303,10 @@ EVENT_TYPE(PAC_JAVASCRIPT_ERROR)
 //      "message": <The string of the alert>,
 //   }
 EVENT_TYPE(PAC_JAVASCRIPT_ALERT)
+
+// ------------------------------------------------------------------------
+// MultiThreadedProxyResolver
+// ------------------------------------------------------------------------
 
 // Measures the time that a proxy resolve request was stalled waiting for a
 // proxy resolver thread to free-up.
@@ -333,7 +325,7 @@ EVENT_TYPE(SUBMITTED_TO_RESOLVER_THREAD)
 // Socket (Shared by stream and datagram sockets)
 // ------------------------------------------------------------------------
 
-// Marks the begin/end of a socket (TCP/SOCKS/SSL/UDP).
+// Marks the begin/end of a socket (TCP/SOCKS/SSL/UDP/"SpdyProxyClientSocket").
 //
 // The BEGIN phase contains the following parameters:
 //
@@ -518,7 +510,9 @@ EVENT_TYPE(SSL_VERIFICATION_MERGED)
 //   }
 EVENT_TYPE(SSL_NSS_ERROR)
 
-// The specified number of bytes were sent on the socket.
+// The specified number of bytes were sent on the socket.  Depending on the
+// source of the event, may be logged either once the data is sent, or when it
+// is queued to be sent.
 // The following parameters are attached:
 //   {
 //     "byte_count": <Number of bytes that were just sent>,
@@ -600,15 +594,15 @@ EVENT_TYPE(UDP_SEND_ERROR)
 // ------------------------------------------------------------------------
 
 // The start/end of a ConnectJob.
-EVENT_TYPE(SOCKET_POOL_CONNECT_JOB)
-
-// The start/end of the ConnectJob::Connect().
 //
 // The BEGIN phase has these parameters:
 //
 //   {
 //     "group_name": <The group name for the socket request.>,
 //   }
+EVENT_TYPE(SOCKET_POOL_CONNECT_JOB)
+
+// The start/end of the ConnectJob::Connect().
 EVENT_TYPE(SOCKET_POOL_CONNECT_JOB_CONNECT)
 
 // This event is logged whenever the ConnectJob gets a new socket
@@ -1205,6 +1199,16 @@ EVENT_TYPE(SPDY_STREAM_UPDATE_RECV_WINDOW)
 EVENT_TYPE(SPDY_STREAM_ERROR)
 
 // ------------------------------------------------------------------------
+// SpdyProxyClientSocket
+// ------------------------------------------------------------------------
+
+EVENT_TYPE(SPDY_PROXY_CLIENT_SESSION)
+// Identifies the SPDY session a source is using.
+//   {
+//     "source_dependency":  <Source identifier for the underlying session>,
+//   }
+
+// ------------------------------------------------------------------------
 // HttpStreamParser
 // ------------------------------------------------------------------------
 
@@ -1399,6 +1403,17 @@ EVENT_TYPE(DNS_TRANSACTION_QUERY)
 //   }
 EVENT_TYPE(DNS_TRANSACTION_ATTEMPT)
 
+// This event is created when DnsTransaction creates a new TCP socket and
+// tries to resolve the fully-qualified name.
+//
+// It has a single parameter:
+//
+//   {
+//     "source_dependency": <Source id of the TCP socket created for the
+//                           attempt>,
+//   }
+EVENT_TYPE(DNS_TRANSACTION_TCP_ATTEMPT)
+
 // This event is created when DnsTransaction receives a matching response.
 //
 // It has the following parameters:
@@ -1561,9 +1576,12 @@ EVENT_TYPE(DOWNLOAD_URL_REQUEST)
 //                     |state_info.force_filename|
 //                     |suggested_filename_|
 //                     the filename specified in the final URL>,
-//     "danger_type": <NOT,FILE,URL,CONTENT,MAYBE_CONTENT>,
-//     "safety_state": <SAFE, DANGEROUS, DANGEROUS_BUT_VALIDATED>,
+//     "danger_type": <NOT_DANGEROUS, DANGEROUS_FILE, DANGEROUS_URL,
+//                     DANGEROUS_CONTENT, MAYBE_DANGEROUS_CONTENT,
+//                     UNCOMMON_CONTENT, USER_VALIDATED, DANGEROUS_HOST>,
 //     "start_offset": <Where to start writing (defaults to 0)>,
+//     "has_user_gesture": <Whether or not we think the user initiated
+//                          the download>
 //   }
 // The END event will occur when the download is interrupted, canceled or
 // completed.
@@ -1571,11 +1589,10 @@ EVENT_TYPE(DOWNLOAD_URL_REQUEST)
 // one of these events.
 EVENT_TYPE(DOWNLOAD_ITEM_ACTIVE)
 
-// This event is created when a download item has been checked by the
-// safe browsing system.
+// This event is created when a download item's danger type
+// has been modified.
 //   {
-//     "danger_type": <NOT,FILE,URL,CONTENT,MAYBE_CONTENT>,
-//     "safety_state": <SAFE, DANGEROUS, DANGEROUS_BUT_VALIDATED>,
+//     "danger_type": <The new danger type.  See above for possible values.>,
 //   }
 EVENT_TYPE(DOWNLOAD_ITEM_SAFETY_STATE_UPDATED)
 

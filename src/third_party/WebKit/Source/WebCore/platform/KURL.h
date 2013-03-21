@@ -227,6 +227,7 @@ public:
 #endif
 
     void reportMemoryUsage(MemoryObjectInfo*) const;
+    bool isSafeToSendToAnotherThread() const;
 
 private:
     void invalidate();
@@ -350,6 +351,11 @@ inline bool KURL::isEmpty() const
 inline bool KURL::isValid() const
 {
     return m_isValid;
+}
+
+inline bool KURL::hasPath() const
+{
+    return m_pathEnd != m_portEnd;
 }
 
 inline bool KURL::hasPort() const

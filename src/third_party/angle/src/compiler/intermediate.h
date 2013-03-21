@@ -183,7 +183,7 @@ enum TOperator {
     EOpVectorTimesScalarAssign,
     EOpMatrixTimesScalarAssign,
     EOpMatrixTimesMatrixAssign,
-    EOpDivAssign,
+    EOpDivAssign
 };
 
 extern const char* getOperatorString(TOperator op);
@@ -269,7 +269,7 @@ protected:
 enum TLoopType {
     ELoopFor,
     ELoopWhile,
-    ELoopDoWhile,
+    ELoopDoWhile
 };
 
 class TIntermLoop : public TIntermNode {
@@ -391,7 +391,7 @@ protected:
 //
 class TIntermBinary : public TIntermOperator {
 public:
-    TIntermBinary(TOperator o) : TIntermOperator(o) {}
+    TIntermBinary(TOperator o) : TIntermOperator(o), addIndexClamp(false) {}
 
     virtual TIntermBinary* getAsBinaryNode() { return this; }
     virtual void traverse(TIntermTraverser*);
@@ -402,9 +402,15 @@ public:
     TIntermTyped* getRight() const { return right; }
     bool promote(TInfoSink&);
 
+    void setAddIndexClamp() { addIndexClamp = true; }
+    bool getAddIndexClamp() { return addIndexClamp; }
+
 protected:
     TIntermTyped* left;
     TIntermTyped* right;
+
+    // If set to true, wrap any EOpIndexIndirect with a clamp to bounds.
+    bool addIndexClamp;
 };
 
 //

@@ -617,13 +617,7 @@ bool StandardFrame::IsExpressionInsideHandler(int n) const {
 }
 
 
-void OptimizedFrame::Iterate(ObjectVisitor* v) const {
-#ifdef DEBUG
-  // Make sure that optimized frames do not contain any stack handlers.
-  StackHandlerIterator it(this, top_handler());
-  ASSERT(it.done());
-#endif
-
+void StandardFrame::IterateCompiledFrame(ObjectVisitor* v) const {
   // Make sure that we're not doing "safe" stack frame iteration. We cannot
   // possibly find pointers in optimized frames in that state.
   ASSERT(!SafeStackFrameIterator::is_active(isolate()));
@@ -649,7 +643,9 @@ void OptimizedFrame::Iterate(ObjectVisitor* v) const {
 
   // Skip saved double registers.
   if (safepoint_entry.has_doubles()) {
-    parameters_base += DoubleRegister::kNumAllocatableRegisters *
+    // Number of doubles not known at snapshot time.
+    ASSERT(!Serializer::enabled());
+    parameters_base += DoubleRegister::NumAllocatableRegisters() *
         kDoubleSize / kPointerSize;
   }
 
@@ -681,14 +677,50 @@ void OptimizedFrame::Iterate(ObjectVisitor* v) const {
     }
   }
 
+  // Visit the return address in the callee and incoming arguments.
+  IteratePc(v, pc_address(), code);
+}
+
+
+void StubFrame::Iterate(ObjectVisitor* v) const {
+  IterateCompiledFrame(v);
+}
+
+
+Code* StubFrame::unchecked_code() const {
+  return static_cast<Code*>(isolate()->heap()->FindCodeObject(pc()));
+}
+
+
+Address StubFrame::GetCallerStackPointer() const {
+  return fp() + ExitFrameConstants::kCallerSPDisplacement;
+}
+
+
+int StubFrame::GetNumberOfIncomingArguments() const {
+  return 0;
+}
+
+
+void OptimizedFrame::Iterate(ObjectVisitor* v) const {
+#ifdef DEBUG
+  // Make sure that optimized frames do not contain any stack handlers.
+  StackHandlerIterator it(this, top_handler());
+  ASSERT(it.done());
+#endif
+
+  IterateCompiledFrame(v);
+
   // Visit the context and the function.
   Object** fixed_base = &Memory::Object_at(
       fp() + JavaScriptFrameConstants::kFunctionOffset);
   Object** fixed_limit = &Memory::Object_at(fp());
   v->VisitPointers(fixed_base, fixed_limit);
+}
 
-  // Visit the return address in the callee and incoming arguments.
-  IteratePc(v, pc_address(), code);
+
+void JavaScriptFrame::SetParameterValue(int index, Object* value) const {
+  Memory::Object_at(GetParameterSlot(index)) = value;
 }
 
 
@@ -1268,6 +1300,42 @@ void InternalFrame::Iterate(ObjectVisitor* v) const {
   // as they never have any arguments.
   IterateExpressions(v);
   IteratePc(v, pc_address(), LookupCode());
+}
+
+
+void StubFailureTrampolineFrame::Iterate(ObjectVisitor* v) const {
+  Object** base = &Memory::Object_at(sp());
+  Object** limit = &Memory::Object_at(fp() +
+                                      kFirstRegisterParameterFrameOffset);
+  v->VisitPointers(base, limit);
+  base = &Memory::Object_at(fp() + StandardFrameConstants::kMarkerOffset);
+  const int offset = StandardFrameConstants::kContextOffset;
+  limit = &Memory::Object_at(fp() + offset) + 1;
+  v->VisitPointers(base, limit);
+  IteratePc(v, pc_address(), LookupCode());
+}
+
+
+Address StubFailureTrampolineFrame::GetCallerStackPointer() const {
+  return fp() + StandardFrameConstants::kCallerSPOffset;
+}
+
+
+Code* StubFailureTrampolineFrame::unchecked_code() const {
+  int i = 0;
+  for (; i <= StubFailureTrampolineStub::kMaxExtraExpressionStackCount; ++i) {
+    Code* trampoline;
+    StubFailureTrampolineStub(i).FindCodeInCache(&trampoline, isolate());
+    ASSERT(trampoline != NULL);
+    Address current_pc = pc();
+    Address code_start = trampoline->instruction_start();
+    Address code_end = code_start + trampoline->instruction_size();
+    if (code_start <= current_pc && current_pc < code_end) {
+      return trampoline;
+    }
+  }
+  UNREACHABLE();
+  return NULL;
 }
 
 

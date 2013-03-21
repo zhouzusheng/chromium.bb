@@ -22,6 +22,7 @@
 #include "compiler/InfoSink.h"
 #include "compiler/SymbolTable.h"
 #include "compiler/VariableInfo.h"
+#include "third_party/compiler/ArrayBoundsClamper.h"
 
 class LongNameMap;
 class TCompiler;
@@ -106,6 +107,8 @@ protected:
     // Get built-in extensions with default behavior.
     const TExtensionBehavior& getExtensionBehavior() const;
 
+    const ArrayBoundsClamper& getArrayBoundsClamper() const;
+    ShArrayIndexClampingStrategy getArrayIndexClampingStrategy() const;
     const BuiltInFunctionEmulator& getBuiltInFunctionEmulator() const;
 
 private:
@@ -120,6 +123,8 @@ private:
     // Built-in extensions with default behavior.
     TExtensionBehavior extensionBehavior;
 
+    ArrayBoundsClamper arrayBoundsClamper;
+    ShArrayIndexClampingStrategy clampingStrategy;
     BuiltInFunctionEmulator builtInFunctionEmulator;
 
     // Results of compilation.

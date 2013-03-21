@@ -9,6 +9,7 @@
 
 #include <cmath>
 
+#include "base/stringprintf.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/vector3d_f.h"
@@ -31,6 +32,48 @@ double TanDegrees(double degrees) {
 
 }  // namespace
 
+Transform::Transform(
+    double col1row1, double col2row1, double col3row1, double col4row1,
+    double col1row2, double col2row2, double col3row2, double col4row2,
+    double col1row3, double col2row3, double col3row3, double col4row3,
+    double col1row4, double col2row4, double col3row4, double col4row4)
+    : matrix_(SkMatrix44::kUninitialized_Constructor)
+{
+  matrix_.setDouble(0, 0, col1row1);
+  matrix_.setDouble(1, 0, col1row2);
+  matrix_.setDouble(2, 0, col1row3);
+  matrix_.setDouble(3, 0, col1row4);
+
+  matrix_.setDouble(0, 1, col2row1);
+  matrix_.setDouble(1, 1, col2row2);
+  matrix_.setDouble(2, 1, col2row3);
+  matrix_.setDouble(3, 1, col2row4);
+
+  matrix_.setDouble(0, 2, col3row1);
+  matrix_.setDouble(1, 2, col3row2);
+  matrix_.setDouble(2, 2, col3row3);
+  matrix_.setDouble(3, 2, col3row4);
+
+  matrix_.setDouble(0, 3, col4row1);
+  matrix_.setDouble(1, 3, col4row2);
+  matrix_.setDouble(2, 3, col4row3);
+  matrix_.setDouble(3, 3, col4row4);
+}
+
+Transform::Transform(
+    double col1row1, double col2row1,
+    double col1row2, double col2row2,
+    double x_translation, double y_translation)
+    : matrix_(SkMatrix44::kIdentity_Constructor)
+{
+  matrix_.setDouble(0, 0, col1row1);
+  matrix_.setDouble(1, 0, col1row2);
+  matrix_.setDouble(0, 1, col2row1);
+  matrix_.setDouble(1, 1, col2row2);
+  matrix_.setDouble(0, 3, x_translation);
+  matrix_.setDouble(1, 3, y_translation);
+}
+
 void Transform::RotateAboutXAxis(double degrees) {
   double radians = degrees * M_PI / 180;
   double cosTheta = std::cos(radians);
@@ -40,7 +83,7 @@ void Transform::RotateAboutXAxis(double degrees) {
                      0, cosTheta, sinTheta,
                      0, -sinTheta, cosTheta);
   } else {
-    SkMatrix44 rot;
+    SkMatrix44 rot(SkMatrix44::kUninitialized_Constructor);
     rot.set3x3(1, 0, 0,
                0, cosTheta, sinTheta,
                0, -sinTheta, cosTheta);
@@ -59,7 +102,7 @@ void Transform::RotateAboutYAxis(double degrees) {
                      0, 1, 0,
                      sinTheta, 0, cosTheta);
   } else {
-    SkMatrix44 rot;
+    SkMatrix44 rot(SkMatrix44::kUninitialized_Constructor);
     rot.set3x3(cosTheta, 0, -sinTheta,
                0, 1, 0,
                sinTheta, 0, cosTheta);
@@ -76,7 +119,7 @@ void Transform::RotateAboutZAxis(double degrees) {
                      -sinTheta, cosTheta, 0,
                      0, 0, 1);
   } else {
-    SkMatrix44 rot;
+    SkMatrix44 rot(SkMatrix44::kUninitialized_Constructor);
     rot.set3x3(cosTheta, sinTheta, 0,
                -sinTheta, cosTheta, 0,
                0, 0, 1);
@@ -91,7 +134,7 @@ void Transform::RotateAbout(const Vector3dF& axis, double degrees) {
                                   SkDoubleToMScalar(axis.z()),
                                   SkDoubleToMScalar(degrees));
   } else {
-    SkMatrix44 rot;
+    SkMatrix44 rot(SkMatrix44::kUninitialized_Constructor);
     rot.setRotateDegreesAbout(SkDoubleToMScalar(axis.x()),
                               SkDoubleToMScalar(axis.y()),
                               SkDoubleToMScalar(axis.z()),
@@ -124,7 +167,7 @@ void Transform::SkewX(double angle_x) {
   if (matrix_.isIdentity())
     matrix_.setDouble(0, 1, TanDegrees(angle_x));
   else {
-    SkMatrix44 skew;
+    SkMatrix44 skew(SkMatrix44::kIdentity_Constructor);
     skew.setDouble(0, 1, TanDegrees(angle_x));
     matrix_.preConcat(skew);
   }
@@ -134,7 +177,7 @@ void Transform::SkewY(double angle_y) {
   if (matrix_.isIdentity())
     matrix_.setDouble(1, 0, TanDegrees(angle_y));
   else {
-    SkMatrix44 skew;
+    SkMatrix44 skew(SkMatrix44::kIdentity_Constructor);
     skew.setDouble(1, 0, TanDegrees(angle_y));
     matrix_.preConcat(skew);
   }
@@ -146,7 +189,7 @@ void Transform::ApplyPerspectiveDepth(double depth) {
   if (matrix_.isIdentity())
     matrix_.setDouble(3, 2, -1.0 / depth);
   else {
-    SkMatrix44 m;
+    SkMatrix44 m(SkMatrix44::kIdentity_Constructor);
     m.setDouble(3, 2, -1.0 / depth);
     matrix_.preConcat(m);
   }
@@ -258,6 +301,16 @@ void Transform::Transpose() {
   matrix_.transpose();
 }
 
+void Transform::FlattenTo2d() {
+  matrix_.setDouble(2, 0, 0.0);
+  matrix_.setDouble(2, 1, 0.0);
+  matrix_.setDouble(0, 2, 0.0);
+  matrix_.setDouble(1, 2, 0.0);
+  matrix_.setDouble(2, 2, 1.0);
+  matrix_.setDouble(3, 2, 0.0);
+  matrix_.setDouble(2, 3, 0.0);
+}
+
 void Transform::TransformPoint(Point& point) const {
   TransformPointInternal(matrix_, point);
 }
@@ -268,7 +321,7 @@ void Transform::TransformPoint(Point3F& point) const {
 
 bool Transform::TransformPointReverse(Point& point) const {
   // TODO(sad): Try to avoid trying to invert the matrix.
-  SkMatrix44 inverse;
+  SkMatrix44 inverse(SkMatrix44::kUninitialized_Constructor);
   if (!matrix_.invert(&inverse))
     return false;
 
@@ -278,7 +331,7 @@ bool Transform::TransformPointReverse(Point& point) const {
 
 bool Transform::TransformPointReverse(Point3F& point) const {
   // TODO(sad): Try to avoid trying to invert the matrix.
-  SkMatrix44 inverse;
+  SkMatrix44 inverse(SkMatrix44::kUninitialized_Constructor);
   if (!matrix_.invert(&inverse))
     return false;
 
@@ -300,7 +353,7 @@ bool Transform::TransformRectReverse(RectF* rect) const {
   if (matrix_.isIdentity())
     return true;
 
-  SkMatrix44 inverse;
+  SkMatrix44 inverse(SkMatrix44::kUninitialized_Constructor);
   if (!matrix_.invert(&inverse))
     return false;
 
@@ -369,6 +422,30 @@ void Transform::TransformPointInternal(const SkMatrix44& xform,
   xform.mapMScalars(p);
 
   point.SetPoint(ToRoundedInt(p[0]), ToRoundedInt(p[1]));
+}
+
+std::string Transform::ToString() const {
+  return base::StringPrintf(
+      "[ %+0.4f %+0.4f %+0.4f %+0.4f  \n"
+      "  %+0.4f %+0.4f %+0.4f %+0.4f  \n"
+      "  %+0.4f %+0.4f %+0.4f %+0.4f  \n"
+      "  %+0.4f %+0.4f %+0.4f %+0.4f ]\n",
+      matrix_.getDouble(0, 0),
+      matrix_.getDouble(0, 1),
+      matrix_.getDouble(0, 2),
+      matrix_.getDouble(0, 3),
+      matrix_.getDouble(1, 0),
+      matrix_.getDouble(1, 1),
+      matrix_.getDouble(1, 2),
+      matrix_.getDouble(1, 3),
+      matrix_.getDouble(2, 0),
+      matrix_.getDouble(2, 1),
+      matrix_.getDouble(2, 2),
+      matrix_.getDouble(2, 3),
+      matrix_.getDouble(3, 0),
+      matrix_.getDouble(3, 1),
+      matrix_.getDouble(3, 2),
+      matrix_.getDouble(3, 3));
 }
 
 }  // namespace gfx

@@ -58,7 +58,6 @@
 #if USE(AVFOUNDATION)
 #include "MediaPlayerPrivateAVFoundationObjC.h"
 #endif
-#define PlatformMediaEngineClassName MediaPlayerPrivateQTKit
 #elif OS(WINCE) && !PLATFORM(QT)
 #include "MediaPlayerPrivateWinCE.h"
 #define PlatformMediaEngineClassName MediaPlayerPrivate
@@ -205,10 +204,16 @@ static void addMediaEngine(CreateMediaEnginePlayer, MediaEngineSupportedTypes, M
 static MediaPlayerFactory* bestMediaEngineForTypeAndCodecs(const String& type, const String& codecs, const String& keySystem, const KURL&, MediaPlayerFactory* current = 0);
 static MediaPlayerFactory* nextMediaEngine(MediaPlayerFactory* current);
 
-static Vector<MediaPlayerFactory*>& installedMediaEngines() 
+enum RequeryEngineOptions { DoNotRequeryEngines, RequeryEngines };
+static Vector<MediaPlayerFactory*>& installedMediaEngines(RequeryEngineOptions requeryFlags = DoNotRequeryEngines )
 {
     DEFINE_STATIC_LOCAL(Vector<MediaPlayerFactory*>, installedEngines, ());
     static bool enginesQueried = false;
+
+    if (requeryFlags == RequeryEngines) {
+        installedEngines.clear();
+        enginesQueried = false;
+    }
 
     if (!enginesQueried) {
         enginesQueried = true;
@@ -221,6 +226,11 @@ static Vector<MediaPlayerFactory*>& installedMediaEngines()
             MediaPlayerPrivateAVFoundationCF::registerMediaEngine(addMediaEngine);
 #endif
         }
+#endif
+
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+        if (Settings::isQTKitEnabled())
+            MediaPlayerPrivateQTKit::registerMediaEngine(addMediaEngine);
 #endif
 
 #if defined(PlatformMediaEngineClassName)
@@ -285,7 +295,7 @@ static MediaPlayerFactory* bestMediaEngineForTypeAndCodecs(const String& type, c
                 current = 0;
             continue;
         }
-#if ENABLE(ENCRYPTED_MEDIA)
+#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
         MediaPlayer::SupportsType engineSupport = engines[ndx]->supportsTypeAndCodecs(type, codecs, keySystem, url);
 #else
         UNUSED_PARAM(keySystem);
@@ -774,7 +784,7 @@ MediaPlayer::SupportsType MediaPlayer::supportsType(const ContentType& contentTy
     UNUSED_PARAM(client);
 #endif
 
-#if ENABLE(ENCRYPTED_MEDIA)
+#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
     return engine->supportsTypeAndCodecs(type, typeCodecs, system, url);
 #else
     ASSERT(system.isEmpty());
@@ -1071,6 +1081,14 @@ bool MediaPlayer::keyNeeded(const String& keySystem, const String& sessionId, co
 }
 #endif
 
+#if ENABLE(ENCRYPTED_MEDIA_V2)
+void MediaPlayer::keyNeeded(Uint8Array* initData)
+{
+    if (m_mediaPlayerClient)
+        m_mediaPlayerClient->mediaPlayerKeyNeeded(this, initData);
+}
+#endif
+
 String MediaPlayer::referrer() const
 {
     if (!m_mediaPlayerClient)
@@ -1140,6 +1158,11 @@ void MediaPlayer::setTextTrackRepresentation(TextTrackRepresentation* representa
     m_private->setTextTrackRepresentation(representation);
 }
 #endif
+
+void MediaPlayer::requeryMediaEngines()
+{
+    installedMediaEngines(RequeryEngines);
+}
 
 }
 

@@ -54,7 +54,7 @@ bool QuicFecGroup::UpdateFec(
   }
   set<QuicPacketSequenceNumber>::const_iterator it = received_packets_.begin();
   while (it != received_packets_.end()) {
-    if ((*it < fec.min_protected_packet_sequence_number) ||
+    if ((*it < fec.fec_group) ||
         (*it >= fec_packet_sequence_number)) {
       DLOG(ERROR) << "FEC group does not cover received packet: " << *it;
       return false;
@@ -64,7 +64,7 @@ bool QuicFecGroup::UpdateFec(
   if (!UpdateParity(fec.redundancy)) {
     return false;
   }
-  min_protected_packet_ = fec.min_protected_packet_sequence_number;
+  min_protected_packet_ = fec.fec_group;
   max_protected_packet_ = fec_packet_sequence_number - 1;
   return true;
 }

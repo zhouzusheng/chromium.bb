@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -34,6 +35,7 @@
 #if ENABLE(VIDEO_TRACK)
 
 #include "EventTarget.h"
+#include "HTMLDivElement.h"
 #include "HTMLElement.h"
 #include "TextTrack.h"
 #include <wtf/PassOwnPtr.h>
@@ -42,7 +44,6 @@
 namespace WebCore {
 
 class DocumentFragment;
-class HTMLDivElement;
 class ScriptExecutionContext;
 class TextTrack;
 class TextTrackCue;
@@ -57,11 +58,11 @@ public:
     }
 
     TextTrackCue* getCue() const;
-    void applyCSSProperties();
+    virtual void applyCSSProperties(const IntSize& videoSize);
 
     static const AtomicString& textTrackCueBoxShadowPseudoId();
 
-private:
+protected:
     TextTrackCueBox(Document*, TextTrackCue*);
 
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
@@ -78,10 +79,15 @@ public:
         return adoptRef(new TextTrackCue(context, start, end, content));
     }
 
+    static const AtomicString& cueShadowPseudoId()
+    {
+        DEFINE_STATIC_LOCAL(const AtomicString, cue, ("cue", AtomicString::ConstructFromLiteral));
+        return cue;
+    }
+
     virtual ~TextTrackCue();
 
-    static const AtomicString& pastNodesShadowPseudoId();
-    static const AtomicString& futureNodesShadowPseudoId();
+    static const AtomicString& allNodesShadowPseudoId();
 
     TextTrack* track() const;
     void setTrack(TextTrack*);
@@ -105,13 +111,13 @@ public:
     void setSnapToLines(bool);
 
     int line() const { return m_linePosition; }
-    void setLine(int, ExceptionCode&);
+    virtual void setLine(int, ExceptionCode&);
 
     int position() const { return m_textPosition; }
-    void setPosition(int, ExceptionCode&);
+    virtual void setPosition(int, ExceptionCode&);
 
     int size() const { return m_cueSize; }
-    void setSize(int, ExceptionCode&);
+    virtual void setSize(int, ExceptionCode&);
 
     const String& align() const;
     void setAlign(const String&, ExceptionCode&);
@@ -119,22 +125,27 @@ public:
     const String& text() const { return m_content; }
     void setText(const String&);
 
+    const String& cueSettings() const { return m_settings; }
     void setCueSettings(const String&);
 
     int cueIndex();
     void invalidateCueIndex();
 
     PassRefPtr<DocumentFragment> getCueAsHTML();
+    PassRefPtr<DocumentFragment> createCueRenderingTree();
 
-    virtual bool dispatchEvent(PassRefPtr<Event>);
-    bool dispatchEvent(PassRefPtr<Event>, ExceptionCode&);
+    using EventTarget::dispatchEvent;
+    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     bool isActive();
     void setIsActive(bool);
 
-    PassRefPtr<TextTrackCueBox> getDisplayTree();
+    PassRefPtr<TextTrackCueBox> getDisplayTree(const IntSize& videoSize);
+    PassRefPtr<HTMLDivElement> element() const { return m_allDocumentNodes; }
+
     void updateDisplayTree(float);
     void removeDisplayTree();
+    void markFutureAndPastNodes(ContainerNode*, double, double);
 
     int calculateComputedLinePosition();
 
@@ -153,6 +164,25 @@ public:
     };
     WritingDirection getWritingDirection() const { return m_writingDirection; }
 
+    enum CueAlignment {
+        Start,
+        Middle,
+        End
+    };
+    CueAlignment getAlignment() const { return m_cueAlignment; }
+
+    virtual bool operator==(const TextTrackCue&) const;
+    virtual bool operator!=(const TextTrackCue& cue) const
+    {
+        return !(*this == cue);
+    }
+    
+    enum CueType {
+        Generic,
+        WebVTT
+    };
+    virtual CueType cueType() const { return WebVTT; }
+
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
@@ -163,9 +193,14 @@ protected:
     virtual EventTargetData* eventTargetData();
     virtual EventTargetData* ensureEventTargetData();
 
-private:
     TextTrackCue(ScriptExecutionContext*, double start, double end, const String& content);
 
+    Document* ownerDocument() { return static_cast<Document*>(m_scriptExecutionContext); }
+
+    virtual PassRefPtr<TextTrackCueBox> createDisplayTree();
+    PassRefPtr<TextTrackCueBox> displayTreeInternal();
+
+private:
     std::pair<double, double> getPositionCoordinates() const;
     void parseSettings(const String&);
 
@@ -184,6 +219,7 @@ private:
     double m_startTime;
     double m_endTime;
     String m_content;
+    String m_settings;
     int m_linePosition;
     int m_computedLinePosition;
     int m_textPosition;
@@ -192,10 +228,9 @@ private:
 
     WritingDirection m_writingDirection;
 
-    enum Alignment { Start, Middle, End };
-    Alignment m_cueAlignment;
+    CueAlignment m_cueAlignment;
 
-    RefPtr<DocumentFragment> m_documentFragment;
+    RefPtr<DocumentFragment> m_webVTTNodeTree;
     TextTrack* m_track;
 
     EventTargetData m_eventTargetData;
@@ -205,9 +240,7 @@ private:
     bool m_pauseOnExit;
     bool m_snapToLines;
 
-    bool m_hasInnerTimestamps;
-    RefPtr<HTMLDivElement> m_pastDocumentNodes;
-    RefPtr<HTMLDivElement> m_futureDocumentNodes;
+    RefPtr<HTMLDivElement> m_allDocumentNodes;
 
     bool m_displayTreeShouldChange;
     RefPtr<TextTrackCueBox> m_displayTree;
@@ -220,6 +253,9 @@ private:
     int m_displaySize;
 
     std::pair<float, float> m_displayPosition;
+
+    void createWebVTTNodeTree();
+    void copyWebVTTNodeToDOMTree(ContainerNode* WebVTTNode, ContainerNode* root);
 };
 
 } // namespace WebCore

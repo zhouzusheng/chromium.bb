@@ -37,7 +37,9 @@
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameView.h"
+#include "PseudoElement.h"
 #include "RenderView.h"
+#include "TransitionEvent.h"
 #include "WebKitAnimationEvent.h"
 #include "WebKitTransitionEvent.h"
 #include <wtf/CurrentTime.h>
@@ -179,10 +181,11 @@ void AnimationControllerPrivate::fireEventsAndUpdateStyle()
     m_eventsToDispatch.clear();
     Vector<EventToDispatch>::const_iterator eventsToDispatchEnd = eventsToDispatch.end();
     for (Vector<EventToDispatch>::const_iterator it = eventsToDispatch.begin(); it != eventsToDispatchEnd; ++it) {
-        if (it->eventType == eventNames().webkitTransitionEndEvent)
-            it->element->dispatchEvent(WebKitTransitionEvent::create(it->eventType, it->name, it->elapsedTime));
+        Element* element = it->element.get();
+        if (it->eventType == eventNames().transitionendEvent)
+            element->dispatchEvent(TransitionEvent::create(it->eventType, it->name, it->elapsedTime, PseudoElement::pseudoElementNameForEvents(element->pseudoId())));
         else
-            it->element->dispatchEvent(WebKitAnimationEvent::create(it->eventType, it->name, it->elapsedTime));
+            element->dispatchEvent(WebKitAnimationEvent::create(it->eventType, it->name, it->elapsedTime));
     }
 
     // call setChanged on all the elements
@@ -317,7 +320,7 @@ void AnimationControllerPrivate::resumeAnimationsForDocument(Document* document)
     updateAnimationTimer();
 }
 
-bool AnimationControllerPrivate::pauseAnimationAtTime(RenderObject* renderer, const String& name, double t)
+bool AnimationControllerPrivate::pauseAnimationAtTime(RenderObject* renderer, const AtomicString& name, double t)
 {
     if (!renderer)
         return false;
@@ -510,10 +513,6 @@ PassRefPtr<RenderStyle> AnimationController::updateAnimations(RenderObject* rend
     if (!renderer->document() || renderer->document()->inPageCache())
         return newStyle;
 
-    // FIXME: We do not animate generated content yet.
-    if (renderer->isPseudoElement())
-        return newStyle;
-
     RenderStyle* oldStyle = renderer->style();
 
     if ((!oldStyle || (!oldStyle->animations() && !oldStyle->transitions())) && (!newStyle->animations() && !newStyle->transitions()))
@@ -527,7 +526,9 @@ PassRefPtr<RenderStyle> AnimationController::updateAnimations(RenderObject* rend
     // against the animations in the style and make sure we're in sync.  If destination values
     // have changed, we reset the animation.  We then do a blend to get new values and we return
     // a new style.
-    ASSERT(renderer->node() && !renderer->isPseudoElement()); // FIXME: We do not animate generated content yet.
+
+    // We don't support anonymous pseudo elements like :first-line or :first-letter.
+    ASSERT(renderer->node());
 
     RefPtr<CompositeAnimation> rendererAnimations = m_data->accessCompositeAnimation(renderer);
     RefPtr<RenderStyle> blendedStyle = rendererAnimations->animate(renderer, oldStyle, newStyle);
@@ -560,7 +561,7 @@ void AnimationController::notifyAnimationStarted(RenderObject*, double startTime
     m_data->receivedStartTimeResponse(startTime);
 }
 
-bool AnimationController::pauseAnimationAtTime(RenderObject* renderer, const String& name, double t)
+bool AnimationController::pauseAnimationAtTime(RenderObject* renderer, const AtomicString& name, double t)
 {
     return m_data->pauseAnimationAtTime(renderer, name, t);
 }

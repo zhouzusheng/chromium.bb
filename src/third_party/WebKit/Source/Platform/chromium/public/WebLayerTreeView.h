@@ -51,11 +51,12 @@ public:
             , showPlatformLayerTree(false)
             , showPaintRects(false)
             , renderVSyncEnabled(true)
-            , lowLatencyRenderingEnabled(false)
+            , renderVSyncNotificationEnabled(false)
             , perTilePaintingEnabled(false)
             , partialSwapEnabled(false)
             , acceleratedAnimationEnabled(true)
             , pageScalePinchZoomEnabled(false)
+            , recordRenderingStats(false)
             , refreshRate(0)
             , defaultTileSize(WebSize(256, 256))
             , maxUntiledLayerSize(WebSize(512, 512))
@@ -68,20 +69,16 @@ public:
         bool showPlatformLayerTree;
         bool showPaintRects;
         bool renderVSyncEnabled;
-        bool lowLatencyRenderingEnabled;
+        bool renderVSyncNotificationEnabled;
         bool perTilePaintingEnabled;
         bool partialSwapEnabled;
         bool acceleratedAnimationEnabled;
         bool pageScalePinchZoomEnabled;
+        bool recordRenderingStats;
         double refreshRate;
         WebSize defaultTileSize;
         WebSize maxUntiledLayerSize;
     };
-
-#define WEBLAYERTREEVIEW_IS_PURE_VIRTUAL
-    // Attempts to initialize this WebLayerTreeView with the given client, root layer, and settings.
-    // If initialization fails, this will return nil.
-    WEBKIT_EXPORT static WebLayerTreeView* create(WebLayerTreeViewClient*, const WebLayer& root, const Settings&);
 
     virtual ~WebLayerTreeView() { }
 
@@ -99,7 +96,7 @@ public:
 
     // View properties ---------------------------------------------------
 
-    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize = WebSize()) = 0;
+    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize) = 0;
     // Gives the viewport size in layer space.
     virtual WebSize layoutViewportSize() const = 0;
     // Gives the viewport size in physical device pixels (may be different
@@ -107,9 +104,8 @@ public:
     // mode).
     virtual WebSize deviceViewportSize() const = 0;
 
-    // Gives the corrected location for an event, accounting for the pinch-zoom transformation
-    // in the compositor.
-    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint&) const = 0;
+    // FIXME: remove this after WebKit roll
+    virtual WebFloatPoint adjustEventPointForPinchZoom(const WebFloatPoint& p) const { return p; }
 
     virtual void setDeviceScaleFactor(float) = 0;
     virtual float deviceScaleFactor() const = 0;
@@ -188,8 +184,14 @@ public:
     // Toggles the paint rects in the HUD layer
     virtual void setShowPaintRects(bool) { }
 
-    // Simulates a lost context. For testing only.
-    virtual void loseCompositorContext(int numTimes) = 0;
+    // Toggles the debug borders on layers
+    virtual void setShowDebugBorders(bool) { }
+
+    // Toggles continuous painting
+    virtual void setContinuousPaintingEnabled(bool) { }
+
+    // FIXME: Remove this.
+    virtual void loseCompositorContext(int numTimes) { }
 };
 
 } // namespace WebKit

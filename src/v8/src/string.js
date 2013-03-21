@@ -257,7 +257,7 @@ function StringReplace(search, replace) {
         return answer;
       } else {
         // We use this hack to detect whether StringReplaceRegExpWithString
-        // found at least one hit.  In that case we need to remove any
+        // found at least one hit. In that case we need to remove any
         // override.
         var saved_subject = lastMatchInfo[LAST_SUBJECT_INDEX];
         lastMatchInfo[LAST_SUBJECT_INDEX] = 0;
@@ -838,6 +838,7 @@ function StringFromCharCode(code) {
     var code = %_Arguments(i);
     if (!%_IsSmi(code)) code = ToNumber(code) & 0xffff;
     if (code < 0) code = code & 0xffff;
+    // TODO(dcarney): Fix for Latin-1.
     if (code > 0x7f) break;
     %_OneByteSeqStringSetChar(one_byte, i, code);
   }

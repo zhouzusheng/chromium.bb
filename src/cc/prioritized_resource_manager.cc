@@ -4,14 +4,13 @@
 
 #include "cc/prioritized_resource_manager.h"
 
+#include <algorithm>
+
 #include "base/debug/trace_event.h"
 #include "base/stl_util.h"
 #include "cc/prioritized_resource.h"
 #include "cc/priority_calculator.h"
 #include "cc/proxy.h"
-#include <algorithm>
-
-using namespace std;
 
 namespace cc {
 
@@ -279,16 +278,8 @@ bool PrioritizedResourceManager::evictBackingsToReduceMemory(size_t limitBytes,
     return true;
 }
 
-void PrioritizedResourceManager::reduceMemory(ResourceProvider* resourceProvider)
+void PrioritizedResourceManager::reduceWastedMemory(ResourceProvider* resourceProvider)
 {
-    DCHECK(m_proxy->isImplThread() && m_proxy->isMainThreadBlocked());
-    evictBackingsToReduceMemory(m_memoryAvailableBytes,
-                                PriorityCalculator::allowEverythingCutoff(),
-                                EvictAnything,
-                                UnlinkBackings,
-                                resourceProvider);
-    DCHECK(memoryUseBytes() <= m_memoryAvailableBytes);
-
     // We currently collect backings from deleted textures for later recycling.
     // However, if we do that forever we will always use the max limit even if
     // we really need very little memory. This should probably be solved by reducing the
@@ -305,14 +296,30 @@ void PrioritizedResourceManager::reduceMemory(ResourceProvider* resourceProvider
         evictBackingsToReduceMemory(memoryUseBytes() - (wastedMemory - tenPercentOfMemory),
                                     PriorityCalculator::allowEverythingCutoff(),
                                     EvictOnlyRecyclable,
-                                    UnlinkBackings,
+                                    DoNotUnlinkBackings,
                                     resourceProvider);
+}
+
+void PrioritizedResourceManager::reduceMemory(ResourceProvider* resourceProvider)
+{
+    DCHECK(m_proxy->isImplThread() && m_proxy->isMainThreadBlocked());
+    evictBackingsToReduceMemory(m_memoryAvailableBytes,
+                                PriorityCalculator::allowEverythingCutoff(),
+                                EvictAnything,
+                                UnlinkBackings,
+                                resourceProvider);
+    DCHECK(memoryUseBytes() <= m_memoryAvailableBytes);
+
+    reduceWastedMemory(resourceProvider);
 }
 
 void PrioritizedResourceManager::clearAllMemory(ResourceProvider* resourceProvider)
 {
     DCHECK(m_proxy->isImplThread() && m_proxy->isMainThreadBlocked());
-    DCHECK(resourceProvider);
+    if (!resourceProvider) {
+        DCHECK(m_backings.empty());
+        return;
+    }
     evictBackingsToReduceMemory(0,
                                 PriorityCalculator::allowEverythingCutoff(),
                                 EvictAnything,
@@ -333,6 +340,17 @@ bool PrioritizedResourceManager::reduceMemoryOnImplThread(size_t limitBytes, int
                                        EvictAnything,
                                        DoNotUnlinkBackings,
                                        resourceProvider);
+}
+
+void PrioritizedResourceManager::reduceWastedMemoryOnImplThread(ResourceProvider* resourceProvider)
+{
+    DCHECK(m_proxy->isImplThread());
+    DCHECK(resourceProvider);
+    // If we are in the process of uploading a new frame then the backings at the very end of
+    // the list are not sorted by priority. Sort them before doing the eviction.
+    if (m_backingsTailNotSorted)
+        sortBackings();
+    reduceWastedMemory(resourceProvider);
 }
 
 void PrioritizedResourceManager::unlinkAndClearEvictedBackings()

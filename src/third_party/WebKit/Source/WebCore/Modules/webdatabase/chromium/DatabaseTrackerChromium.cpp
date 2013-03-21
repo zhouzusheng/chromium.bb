@@ -33,13 +33,15 @@
 
 #if ENABLE(SQL_DATABASE)
 
-#include "AbstractDatabase.h"
+#include "DatabaseBackend.h"
+#include "DatabaseBackendContext.h"
 #include "DatabaseObserver.h"
 #include "QuotaTracker.h"
 #include "ScriptExecutionContext.h"
 #include "SecurityOrigin.h"
 #include "SecurityOriginHash.h"
 #include "SQLiteFileSystem.h"
+#include <wtf/Assertions.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/WTFString.h>
 
@@ -56,9 +58,19 @@ DatabaseTracker::DatabaseTracker(const String&)
     SQLiteFileSystem::registerSQLiteVFS();
 }
 
-bool DatabaseTracker::canEstablishDatabase(ScriptExecutionContext* scriptExecutionContext, const String& name, const String& displayName, unsigned long estimatedSize)
+bool DatabaseTracker::canEstablishDatabase(DatabaseBackendContext* databaseContext, const String& name, const String& displayName, unsigned long estimatedSize, DatabaseError& error)
 {
-    return DatabaseObserver::canEstablishDatabase(scriptExecutionContext, name, displayName, estimatedSize);
+    ScriptExecutionContext* scriptExecutionContext = databaseContext->scriptExecutionContext();
+    bool success = DatabaseObserver::canEstablishDatabase(scriptExecutionContext, name, displayName, estimatedSize);
+    if (!success)
+        error = DatabaseError::GenericSecurityError;
+    return success;
+}
+
+bool DatabaseTracker::retryCanEstablishDatabase(DatabaseBackendContext*, const String&, const String&, unsigned long, DatabaseError&)
+{
+    ASSERT_NOT_REACHED();
+    return false;
 }
 
 void DatabaseTracker::setDatabaseDetails(SecurityOrigin*, const String&, const String&, unsigned long)
@@ -71,9 +83,8 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
     return origin->databaseIdentifier() + "/" + name + "#";
 }
 
-void DatabaseTracker::addOpenDatabase(AbstractDatabase* database)
+void DatabaseTracker::addOpenDatabase(DatabaseBackend* database)
 {
-    ASSERT(database->scriptExecutionContext()->isContextThread());
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
     if (!m_openDatabaseMap)
         m_openDatabaseMap = adoptPtr(new DatabaseOriginMap);
@@ -93,13 +104,11 @@ void DatabaseTracker::addOpenDatabase(AbstractDatabase* database)
     }
 
     databaseSet->add(database);
-
-    DatabaseObserver::databaseOpened(database);
 }
 
 class NotifyDatabaseObserverOnCloseTask : public ScriptExecutionContext::Task {
 public:
-    static PassOwnPtr<NotifyDatabaseObserverOnCloseTask> create(PassRefPtr<AbstractDatabase> database)
+    static PassOwnPtr<NotifyDatabaseObserverOnCloseTask> create(PassRefPtr<DatabaseBackend> database)
     {
         return adoptPtr(new NotifyDatabaseObserverOnCloseTask(database));
     }
@@ -115,15 +124,15 @@ public:
     }
 
 private:
-    NotifyDatabaseObserverOnCloseTask(PassRefPtr<AbstractDatabase> database)
+    NotifyDatabaseObserverOnCloseTask(PassRefPtr<DatabaseBackend> database)
         : m_database(database)
     {
     }
 
-    RefPtr<AbstractDatabase> m_database;
+    RefPtr<DatabaseBackend> m_database;
 };
 
-void DatabaseTracker::removeOpenDatabase(AbstractDatabase* database)
+void DatabaseTracker::removeOpenDatabase(DatabaseBackend* database)
 {
     String originIdentifier = database->securityOrigin()->databaseIdentifier();
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
@@ -151,13 +160,29 @@ void DatabaseTracker::removeOpenDatabase(AbstractDatabase* database)
         }
     }
 
-    if (!database->scriptExecutionContext()->isContextThread())
-        database->scriptExecutionContext()->postTask(NotifyDatabaseObserverOnCloseTask::create(database));
+    ScriptExecutionContext* scriptExecutionContext = database->databaseContext()->scriptExecutionContext();
+    if (!scriptExecutionContext->isContextThread())
+        scriptExecutionContext->postTask(NotifyDatabaseObserverOnCloseTask::create(database));
     else
         DatabaseObserver::databaseClosed(database);
 }
 
-unsigned long long DatabaseTracker::getMaxSizeForDatabase(const AbstractDatabase* database)
+void DatabaseTracker::prepareToOpenDatabase(DatabaseBackend* database)
+{
+    ASSERT(database->databaseContext()->scriptExecutionContext()->isContextThread());
+    DatabaseObserver::databaseOpened(database);
+}
+
+void DatabaseTracker::failedToOpenDatabase(DatabaseBackend* database)
+{
+    ScriptExecutionContext* scriptExecutionContext = database->databaseContext()->scriptExecutionContext();
+    if (!scriptExecutionContext->isContextThread())
+        scriptExecutionContext->postTask(NotifyDatabaseObserverOnCloseTask::create(database));
+    else
+        DatabaseObserver::databaseClosed(database);
+}
+
+unsigned long long DatabaseTracker::getMaxSizeForDatabase(const DatabaseBackend* database)
 {
     unsigned long long spaceAvailable = 0;
     unsigned long long databaseSize = 0;
@@ -167,7 +192,7 @@ unsigned long long DatabaseTracker::getMaxSizeForDatabase(const AbstractDatabase
     return databaseSize + spaceAvailable;
 }
 
-void DatabaseTracker::interruptAllDatabasesForContext(const ScriptExecutionContext* context)
+void DatabaseTracker::interruptAllDatabasesForContext(const DatabaseBackendContext* context)
 {
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
 
@@ -183,7 +208,7 @@ void DatabaseTracker::interruptAllDatabasesForContext(const ScriptExecutionConte
         DatabaseSet* databaseSet = dbNameMapIt->value;
         DatabaseSet::const_iterator end = databaseSet->end();
         for (DatabaseSet::const_iterator it = databaseSet->begin(); it != end; ++it) {
-            if ((*it)->scriptExecutionContext() == context)
+            if ((*it)->databaseContext() == context)
                 (*it)->interrupt();
         }
     }
@@ -191,7 +216,7 @@ void DatabaseTracker::interruptAllDatabasesForContext(const ScriptExecutionConte
 
 class DatabaseTracker::CloseOneDatabaseImmediatelyTask : public ScriptExecutionContext::Task {
 public:
-    static PassOwnPtr<CloseOneDatabaseImmediatelyTask> create(const String& originIdentifier, const String& name, AbstractDatabase* database)
+    static PassOwnPtr<CloseOneDatabaseImmediatelyTask> create(const String& originIdentifier, const String& name, DatabaseBackend* database)
     {
         return adoptPtr(new CloseOneDatabaseImmediatelyTask(originIdentifier, name, database));
     }
@@ -202,7 +227,7 @@ public:
     }
 
 private:
-    CloseOneDatabaseImmediatelyTask(const String& originIdentifier, const String& name, AbstractDatabase* database)
+    CloseOneDatabaseImmediatelyTask(const String& originIdentifier, const String& name, DatabaseBackend* database)
         : m_originIdentifier(originIdentifier.isolatedCopy())
         , m_name(name.isolatedCopy())
         , m_database(database)
@@ -211,7 +236,7 @@ private:
 
     String m_originIdentifier;
     String m_name;
-    AbstractDatabase* m_database;  // Intentionally a raw pointer.
+    DatabaseBackend* m_database; // Intentionally a raw pointer.
 };
 
 void DatabaseTracker::closeDatabasesImmediately(const String& originIdentifier, const String& name) {
@@ -231,10 +256,10 @@ void DatabaseTracker::closeDatabasesImmediately(const String& originIdentifier, 
     // the database in our collection when not on the context thread (which is always the case given
     // current usage).
     for (DatabaseSet::iterator it = databaseSet->begin(); it != databaseSet->end(); ++it)
-        (*it)->scriptExecutionContext()->postTask(CloseOneDatabaseImmediatelyTask::create(originIdentifier, name, *it));
+        (*it)->databaseContext()->scriptExecutionContext()->postTask(CloseOneDatabaseImmediatelyTask::create(originIdentifier, name, *it));
 }
 
-void DatabaseTracker::closeOneDatabaseImmediately(const String& originIdentifier, const String& name, AbstractDatabase* database)
+void DatabaseTracker::closeOneDatabaseImmediately(const String& originIdentifier, const String& name, DatabaseBackend* database)
 {
     // First we have to confirm the 'database' is still in our collection.
     {

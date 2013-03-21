@@ -183,7 +183,7 @@ void SyncableFileSystemOperation::GetMetadata(
   DCHECK(CalledOnValidThread());
   if (!operation_runner_) {
     callback.Run(base::PLATFORM_FILE_ERROR_NOT_FOUND,
-                 base::PlatformFileInfo(), FilePath());
+                 base::PlatformFileInfo(), base::FilePath());
     delete file_system_operation_;
     delete this;
     return;
@@ -314,8 +314,14 @@ void SyncableFileSystemOperation::Cancel(
 
 LocalFileSystemOperation*
 SyncableFileSystemOperation::AsLocalFileSystemOperation() {
-  NOTREACHED();
-  return NULL;
+  // This must be called for nested sub-task operations
+  // where we don't need extra task queueing.
+  // Just return the internal file_system_operation_ and let this
+  // instance goes away when the operation dies.
+  file_system_operation_->set_termination_callback(
+      base::Bind(&SyncableFileSystemOperation::Destruct,
+                 base::Unretained(this)));
+  return file_system_operation_;
 }
 
 void SyncableFileSystemOperation::CreateSnapshotFile(
@@ -324,7 +330,7 @@ void SyncableFileSystemOperation::CreateSnapshotFile(
   DCHECK(CalledOnValidThread());
   if (!operation_runner_) {
     callback.Run(base::PLATFORM_FILE_ERROR_NOT_FOUND,
-                 base::PlatformFileInfo(), FilePath(), NULL);
+                 base::PlatformFileInfo(), base::FilePath(), NULL);
     delete file_system_operation_;
     delete this;
     return;
@@ -385,6 +391,10 @@ void SyncableFileSystemOperation::AbortOperation(
     base::PlatformFileError error) {
   callback.Run(error);
   delete file_system_operation_;
+  delete this;
+}
+
+void SyncableFileSystemOperation::Destruct() {
   delete this;
 }
 

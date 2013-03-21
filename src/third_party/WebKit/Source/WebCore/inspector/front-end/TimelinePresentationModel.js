@@ -41,8 +41,6 @@ WebInspector.TimelinePresentationModel = function()
     this.reset();
 }
 
-WebInspector.TimelinePresentationModel.shortRecordThreshold = 0.015;
-
 WebInspector.TimelinePresentationModel.categories = function()
 {
     if (WebInspector.TimelinePresentationModel._categories)
@@ -264,6 +262,7 @@ WebInspector.TimelinePresentationModel.prototype = {
         this._timerRecords = {};
         this._requestAnimationFrameRecords = {};
         this._timeRecords = {};
+        this._timeRecordStack = [];
         this._frames = [];
         this._minimumRecordTime = -1;
         this._lastInvalidateLayout = {};
@@ -587,7 +586,13 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
         break;
 
     case recordTypes.Time:
-        presentationModel._timeRecords[record.data["message"]] = this;
+        var message = record.data["message"];
+        var oldReference = presentationModel._timeRecords[message];
+        if (oldReference)
+            break;
+        presentationModel._timeRecords[message] = this;
+        if (origin)
+            presentationModel._timeRecordStack.push(this);
         break;
 
     case recordTypes.TimeEnd:
@@ -600,6 +605,22 @@ WebInspector.TimelinePresentationModel.Record = function(presentationModel, reco
             var intervalDuration = this.startTime - timeRecord.startTime;
             this.intervalDuration = intervalDuration;
             timeRecord.intervalDuration = intervalDuration;
+            if (!origin)
+                break;
+            var recordStack = presentationModel._timeRecordStack;
+            recordStack.splice(recordStack.indexOf(timeRecord), 1);
+            for (var index = recordStack.length; index; --index) {
+                var openRecord = recordStack[index - 1];
+                if (openRecord.startTime > timeRecord.startTime)
+                    continue;
+                function compareStartTime(value, record)
+                {
+                    return value < record.startTime ? -1 : 1;
+                }
+                timeRecord.parent.children.splice(timeRecord.parent.children.indexOf(timeRecord));
+                openRecord.children.splice(insertionIndexForObjectInListSortedByFunction(timeRecord.startTime, openRecord.children, compareStartTime), 0, timeRecord);
+                break;
+            }
         }
         break;
 
@@ -653,11 +674,6 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     get cpuTime()
     {
         return this._cpuTime;
-    },
-
-    isLong: function()
-    {
-        return (this._lastChildEndTime - this.startTime) > WebInspector.TimelinePresentationModel.shortRecordThreshold;
     },
 
     /**
@@ -1003,8 +1019,8 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
             break;
         }
 
-        if (typeof details === "string")
-            return this._createSpanWithText(details);
+        if (details && !(details instanceof Node))
+            return this._createSpanWithText("" + details);
 
         return details ? details : null;
     },
@@ -1039,11 +1055,15 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     },
 
     /**
-     * @param {string=} defaultValue
+     * @param {*=} defaultValue
+     * @return {Element|string}
      */
     _linkifyScriptLocation: function(defaultValue)
     {
-        return this.scriptName ? this._linkifyLocation(this.scriptName, this.scriptLine, 0) : defaultValue;
+        if (this.scriptName)
+            return this._linkifyLocation(this.scriptName, this.scriptLine, 0);
+        else
+            return defaultValue ? "" + defaultValue : null;
     },
 
     calculateAggregatedStats: function(categories)

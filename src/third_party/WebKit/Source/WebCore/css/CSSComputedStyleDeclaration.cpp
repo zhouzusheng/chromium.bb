@@ -51,6 +51,7 @@
 #include "FontValue.h"
 #include "HTMLFrameOwnerElement.h"
 #include "Pair.h"
+#include "PseudoElement.h"
 #include "Rect.h"
 #include "RenderBox.h"
 #include "RenderStyle.h"
@@ -164,6 +165,7 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyOpacity,
     CSSPropertyOrphans,
     CSSPropertyOutlineColor,
+    CSSPropertyOutlineOffset,
     CSSPropertyOutlineStyle,
     CSSPropertyOutlineWidth,
     CSSPropertyOverflowWrap,
@@ -196,6 +198,10 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyTextOverflow,
     CSSPropertyTextTransform,
     CSSPropertyTop,
+    CSSPropertyTransitionDelay,
+    CSSPropertyTransitionDuration,
+    CSSPropertyTransitionProperty,
+    CSSPropertyTransitionTimingFunction,
     CSSPropertyUnicodeBidi,
     CSSPropertyVerticalAlign,
     CSSPropertyVisibility,
@@ -224,6 +230,7 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyWebkitBackgroundSize,
 #if ENABLE(CSS_COMPOSITING)
     CSSPropertyWebkitBlendMode,
+    CSSPropertyWebkitBackgroundBlendMode,
 #endif
     CSSPropertyWebkitBorderFit,
     CSSPropertyWebkitBorderHorizontalSpacing,
@@ -274,6 +281,7 @@ static const CSSPropertyID computedProperties[] = {
     CSSPropertyWebkitFontKerning,
     CSSPropertyWebkitFontSmoothing,
     CSSPropertyWebkitFontVariantLigatures,
+    CSSPropertyWebkitGridAutoFlow,
     CSSPropertyWebkitGridColumns,
     CSSPropertyWebkitGridRows,
     CSSPropertyWebkitGridColumn,
@@ -593,7 +601,23 @@ static PassRefPtr<CSSValue> valueForReflection(const StyleReflection* reflection
     else
         offset = zoomAdjustedPixelValue(reflection->offset().value(), style);
 
-    return CSSReflectValue::create(reflection->direction(), offset.release(), valueForNinePieceImage(reflection->mask()));
+    RefPtr<CSSPrimitiveValue> direction;
+    switch (reflection->direction()) {
+    case ReflectionBelow:
+        direction = cssValuePool().createIdentifierValue(CSSValueBelow);
+        break;
+    case ReflectionAbove:
+        direction = cssValuePool().createIdentifierValue(CSSValueAbove);
+        break;
+    case ReflectionLeft:
+        direction = cssValuePool().createIdentifierValue(CSSValueLeft);
+        break;
+    case ReflectionRight:
+        direction = cssValuePool().createIdentifierValue(CSSValueRight);
+        break;
+    }
+
+    return CSSReflectValue::create(direction.release(), offset.release(), valueForNinePieceImage(reflection->mask()));
 }
 
 static PassRefPtr<CSSValueList> createPositionListForLayer(CSSPropertyID propertyID, const FillLayer* layer, const RenderStyle* style)
@@ -1047,6 +1071,27 @@ static PassRefPtr<CSSValue> valueForGridPosition(const GridPosition& position)
 
     return cssValuePool().createValue(position.integerPosition(), CSSPrimitiveValue::CSS_NUMBER);
 }
+static PassRefPtr<CSSValue> createTransitionPropertyValue(const Animation* animation)
+{
+    RefPtr<CSSValue> propertyValue;
+    if (animation->animationMode() == Animation::AnimateNone)
+        propertyValue = cssValuePool().createIdentifierValue(CSSValueNone);
+    else if (animation->animationMode() == Animation::AnimateAll)
+        propertyValue = cssValuePool().createIdentifierValue(CSSValueAll);
+    else
+        propertyValue = cssValuePool().createValue(getPropertyNameString(animation->property()), CSSPrimitiveValue::CSS_STRING);
+    return propertyValue.release();
+}
+static PassRefPtr<CSSValue> getTransitionPropertyValue(const AnimationList* animList)
+{
+    RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+    if (animList) {
+        for (size_t i = 0; i < animList->size(); ++i)
+            list->append(createTransitionPropertyValue(animList->animation(i)));
+    } else
+        list->append(cssValuePool().createIdentifierValue(CSSValueAll));
+    return list.release();
+}
 
 static PassRefPtr<CSSValue> getDelayValue(const AnimationList* animList)
 {
@@ -1074,35 +1119,51 @@ static PassRefPtr<CSSValue> getDurationValue(const AnimationList* animList)
     return list.release();
 }
 
+static PassRefPtr<CSSValue> createTimingFunctionValue(const TimingFunction* timingFunction)
+{
+    if (timingFunction->isCubicBezierTimingFunction()) {
+        const CubicBezierTimingFunction* bezierTimingFunction = static_cast<const CubicBezierTimingFunction*>(timingFunction);
+        if (bezierTimingFunction->timingFunctionPreset() != CubicBezierTimingFunction::Custom) {
+            CSSValueID valueId = CSSValueInvalid;
+            switch (bezierTimingFunction->timingFunctionPreset()) {
+            case CubicBezierTimingFunction::Ease:
+                valueId = CSSValueEase;
+                break;
+            case CubicBezierTimingFunction::EaseIn:
+                valueId = CSSValueEaseIn;
+                break;
+            case CubicBezierTimingFunction::EaseOut:
+                valueId = CSSValueEaseOut;
+                break;
+            case CubicBezierTimingFunction::EaseInOut:
+                valueId = CSSValueEaseInOut;
+                break;
+            default:
+                ASSERT_NOT_REACHED();
+                return 0;
+            }
+            return cssValuePool().createIdentifierValue(valueId);
+        }
+        return CSSCubicBezierTimingFunctionValue::create(bezierTimingFunction->x1(), bezierTimingFunction->y1(), bezierTimingFunction->x2(), bezierTimingFunction->y2());
+    }
+
+    if (timingFunction->isStepsTimingFunction()) {
+        const StepsTimingFunction* stepsTimingFunction = static_cast<const StepsTimingFunction*>(timingFunction);
+        return CSSStepsTimingFunctionValue::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtStart());
+    }
+
+    return CSSLinearTimingFunctionValue::create();
+}
+
 static PassRefPtr<CSSValue> getTimingFunctionValue(const AnimationList* animList)
 {
     RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
     if (animList) {
-        for (size_t i = 0; i < animList->size(); ++i) {
-            const TimingFunction* tf = animList->animation(i)->timingFunction().get();
-            if (tf->isCubicBezierTimingFunction()) {
-                const CubicBezierTimingFunction* ctf = static_cast<const CubicBezierTimingFunction*>(tf);
-                list->append(CSSCubicBezierTimingFunctionValue::create(ctf->x1(), ctf->y1(), ctf->x2(), ctf->y2()));
-            } else if (tf->isStepsTimingFunction()) {
-                const StepsTimingFunction* stf = static_cast<const StepsTimingFunction*>(tf);
-                list->append(CSSStepsTimingFunctionValue::create(stf->numberOfSteps(), stf->stepAtStart()));
-            } else {
-                list->append(CSSLinearTimingFunctionValue::create());
-            }
-        }
-    } else {
+        for (size_t i = 0; i < animList->size(); ++i)
+            list->append(createTimingFunctionValue(animList->animation(i)->timingFunction().get()));
+    } else
         // Note that initialAnimationTimingFunction() is used for both transitions and animations
-        RefPtr<TimingFunction> tf = Animation::initialAnimationTimingFunction();
-        if (tf->isCubicBezierTimingFunction()) {
-            const CubicBezierTimingFunction* ctf = static_cast<const CubicBezierTimingFunction*>(tf.get());
-            list->append(CSSCubicBezierTimingFunctionValue::create(ctf->x1(), ctf->y1(), ctf->x2(), ctf->y2()));
-        } else if (tf->isStepsTimingFunction()) {
-            const StepsTimingFunction* stf = static_cast<const StepsTimingFunction*>(tf.get());
-            list->append(CSSStepsTimingFunctionValue::create(stf->numberOfSteps(), stf->stepAtStart()));
-        } else {
-            list->append(CSSLinearTimingFunctionValue::create());
-        }
-    }
+        list->append(createTimingFunctionValue(Animation::initialAnimationTimingFunction().get()));
     return list.release();
 }
 
@@ -1454,17 +1515,28 @@ static bool isLayoutDependentProperty(CSSPropertyID propertyID)
     }
 }
 
+Node* CSSComputedStyleDeclaration::styledNode() const
+{
+    if (!m_node)
+        return 0;
+    if (m_node->isElementNode()) {
+        if (PseudoElement* element = toElement(m_node.get())->pseudoElement(m_pseudoElementSpecifier))
+            return element;
+    }
+    return m_node.get();
+}
+
 PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropertyID propertyID, EUpdateLayout updateLayout) const
 {
-    Node* node = m_node.get();
-    if (!node)
+    Node* styledNode = this->styledNode();
+    if (!styledNode)
         return 0;
 
     if (updateLayout) {
-        Document* document = m_node->document();
+        Document* document = styledNode->document();
         // FIXME: Some of these cases could be narrowed down or optimized better.
         bool forceFullLayout = isLayoutDependentProperty(propertyID)
-            || node->isInShadowTree()
+            || styledNode->isInShadowTree()
             || (document->styleResolverIfExists() && document->styleResolverIfExists()->hasViewportDependentMediaQueries() && document->ownerElement())
             || document->seamlessParentIFrame();
 
@@ -1472,35 +1544,32 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             document->updateLayoutIgnorePendingStylesheets();
         else {
             bool needsStyleRecalc = document->hasPendingForcedStyleRecalc();
-            for (Node* n = m_node.get(); n && !needsStyleRecalc; n = n->parentNode())
+            for (Node* n = styledNode; n && !needsStyleRecalc; n = n->parentNode())
                 needsStyleRecalc = n->needsStyleRecalc();
             if (needsStyleRecalc)
                 document->updateStyleIfNeeded();
         }
+
+        // The style recalc could have caused the styled node to be discarded or replaced
+        // if it was a PseudoElement so we need to update it.
+        styledNode = this->styledNode();
     }
 
-    RenderObject* renderer = node->renderer();
+    RenderObject* renderer = styledNode->renderer();
 
     RefPtr<RenderStyle> style;
     if (renderer && renderer->isComposited() && AnimationController::supportsAcceleratedAnimationOfProperty(propertyID)) {
         AnimationUpdateBlock animationUpdateBlock(renderer->animation());
         style = renderer->animation()->getAnimatedStyleForRenderer(renderer);
-        if (m_pseudoElementSpecifier) {
+        if (m_pseudoElementSpecifier && !styledNode->isPseudoElement()) {
             // FIXME: This cached pseudo style will only exist if the animation has been run at least once.
             style = style->getCachedPseudoStyle(m_pseudoElementSpecifier);
         }
     } else
-        style = node->computedStyle(m_pseudoElementSpecifier);
+        style = styledNode->computedStyle(styledNode->isPseudoElement() ? NOPSEUDO : m_pseudoElementSpecifier);
 
     if (!style)
         return 0;
-
-    if (renderer) {
-        if (m_pseudoElementSpecifier == AFTER)
-            renderer = renderer->afterPseudoElementRenderer();
-        else if (m_pseudoElementSpecifier == BEFORE)
-            renderer = renderer->beforePseudoElementRenderer();
-    }
 
     propertyID = CSSProperty::resolveDirectionAwareProperty(propertyID, style->direction(), style->writingMode());
 
@@ -1786,8 +1855,9 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             return cssValuePool().createValue(style->alignItems());
         case CSSPropertyWebkitAlignSelf:
             if (style->alignSelf() == AlignAuto) {
-                if (m_node && m_node->parentNode() && m_node->parentNode()->computedStyle())
-                    return cssValuePool().createValue(m_node->parentNode()->computedStyle()->alignItems());
+                Node* parent = styledNode->parentNode();
+                if (parent && parent->computedStyle())
+                    return cssValuePool().createValue(parent->computedStyle()->alignItems());
                 return cssValuePool().createValue(AlignStretch);
             }
             return cssValuePool().createValue(style->alignSelf());
@@ -1810,6 +1880,8 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitOrder:
             return cssValuePool().createValue(style->order(), CSSPrimitiveValue::CSS_NUMBER);
         case CSSPropertyFloat:
+            if (style->display() != NONE && style->hasOutOfFlowPosition())
+                return cssValuePool().createIdentifierValue(CSSValueNone);
             return cssValuePool().createValue(style->floating());
         case CSSPropertyFont: {
             RefPtr<FontValue> computedFont = FontValue::create();
@@ -1849,12 +1921,12 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             }
             return list.release();
         }
-        case CSSPropertyWebkitGridColumns: {
+        case CSSPropertyWebkitGridAutoFlow:
+            return cssValuePool().createValue(style->gridAutoFlow());
+        case CSSPropertyWebkitGridColumns:
             return valueForGridTrackList(style->gridColumns(), style.get(), m_node->document()->renderView());
-        }
-        case CSSPropertyWebkitGridRows: {
+        case CSSPropertyWebkitGridRows:
             return valueForGridTrackList(style->gridRows(), style.get(), m_node->document()->renderView());
-        }
 
         case CSSPropertyWebkitGridColumn:
             return valueForGridPosition(style->gridItemColumn());
@@ -2449,31 +2521,43 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         }
         case CSSPropertyWebkitTransformStyle:
             return cssValuePool().createIdentifierValue((style->transformStyle3D() == TransformStyle3DPreserve3D) ? CSSValuePreserve3d : CSSValueFlat);
+        case CSSPropertyTransitionDelay:
         case CSSPropertyWebkitTransitionDelay:
             return getDelayValue(style->transitions());
+        case CSSPropertyTransitionDuration:
         case CSSPropertyWebkitTransitionDuration:
             return getDurationValue(style->transitions());
-        case CSSPropertyWebkitTransitionProperty: {
-            RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
-            const AnimationList* t = style->transitions();
-            if (t) {
-                for (size_t i = 0; i < t->size(); ++i) {
-                    RefPtr<CSSValue> propertyValue;
-                    const Animation* animation = t->animation(i);
-                    if (animation->animationMode() == Animation::AnimateNone)
-                        propertyValue = cssValuePool().createIdentifierValue(CSSValueNone);
-                    else if (animation->animationMode() == Animation::AnimateAll)
-                        propertyValue = cssValuePool().createIdentifierValue(CSSValueAll);
-                    else
-                        propertyValue = cssValuePool().createValue(getPropertyNameString(animation->property()), CSSPrimitiveValue::CSS_STRING);
-                    list->append(propertyValue);
-                }
-            } else
-                list->append(cssValuePool().createIdentifierValue(CSSValueAll));
-            return list.release();
-        }
+        case CSSPropertyTransitionProperty:
+        case CSSPropertyWebkitTransitionProperty:
+            return getTransitionPropertyValue(style->transitions());
+        case CSSPropertyTransitionTimingFunction:
         case CSSPropertyWebkitTransitionTimingFunction:
             return getTimingFunctionValue(style->transitions());
+        case CSSPropertyTransition:
+        case CSSPropertyWebkitTransition: {
+            const AnimationList* animList = style->transitions();
+            if (animList) {
+                RefPtr<CSSValueList> transitionsList = CSSValueList::createCommaSeparated();
+                for (size_t i = 0; i < animList->size(); ++i) {
+                    RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
+                    const Animation* animation = animList->animation(i);
+                    list->append(createTransitionPropertyValue(animation));
+                    list->append(cssValuePool().createValue(animation->duration(), CSSPrimitiveValue::CSS_S));
+                    list->append(createTimingFunctionValue(animation->timingFunction().get()));
+                    list->append(cssValuePool().createValue(animation->delay(), CSSPrimitiveValue::CSS_S));
+                    transitionsList->append(list);
+                }
+                return transitionsList.release();
+            }
+
+            RefPtr<CSSValueList> list = CSSValueList::createSpaceSeparated();
+            // transition-property default value.
+            list->append(cssValuePool().createIdentifierValue(CSSValueAll));
+            list->append(cssValuePool().createValue(Animation::initialAnimationDuration(), CSSPrimitiveValue::CSS_S));
+            list->append(createTimingFunctionValue(Animation::initialAnimationTimingFunction().get()));
+            list->append(cssValuePool().createValue(Animation::initialAnimationDelay(), CSSPrimitiveValue::CSS_S));
+            return list.release();
+        }
         case CSSPropertyPointerEvents:
             return cssValuePool().createValue(style->pointerEvents());
         case CSSPropertyWebkitColorCorrection:
@@ -2553,6 +2637,18 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
 #if ENABLE(CSS_COMPOSITING)
         case CSSPropertyWebkitBlendMode:
             return cssValuePool().createValue(style->blendMode());
+            
+        case CSSPropertyWebkitBackgroundBlendMode: {
+            const FillLayer* layers = style->backgroundLayers();
+            if (!layers->next())
+                return cssValuePool().createValue(layers->blendMode());
+
+            RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+            for (const FillLayer* currLayer = layers; currLayer; currLayer = currLayer->next())
+                list->append(cssValuePool().createValue(currLayer->blendMode()));
+
+            return list.release();
+        }
 #endif
         case CSSPropertyBackground:
             return getBackgroundShorthandValue();
@@ -2679,7 +2775,6 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitTransformOriginX:
         case CSSPropertyWebkitTransformOriginY:
         case CSSPropertyWebkitTransformOriginZ:
-        case CSSPropertyWebkitTransition:
 #if ENABLE(CSS_EXCLUSIONS)
         case CSSPropertyWebkitWrap:
 #endif
@@ -2852,7 +2947,7 @@ PassRefPtr<StylePropertySet> CSSComputedStyleDeclaration::copyPropertiesInSet(co
 void CSSComputedStyleDeclaration::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_node);
+    info.addMember(m_node, "node");
 }
 
 CSSRule* CSSComputedStyleDeclaration::parentRule() const

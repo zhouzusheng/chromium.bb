@@ -7,6 +7,8 @@
 #include "compiler/OutputGLSLBase.h"
 #include "compiler/debug.h"
 
+#include <cfloat>
+
 namespace
 {
 TString arrayBrackets(const TType& type)
@@ -38,12 +40,14 @@ bool isSingleStatement(TIntermNode* node) {
 }  // namespace
 
 TOutputGLSLBase::TOutputGLSLBase(TInfoSinkBase& objSink,
+                                 ShArrayIndexClampingStrategy clampingStrategy,
                                  ShHashFunction64 hashFunction,
                                  NameMap& nameMap,
                                  TSymbolTable& symbolTable)
     : TIntermTraverser(true, true, true),
       mObjSink(objSink),
       mDeclaringVariables(false),
+      mClampingStrategy(clampingStrategy),
       mHashFunction(hashFunction),
       mNameMap(nameMap),
       mSymbolTable(symbolTable)
@@ -155,7 +159,7 @@ const ConstantUnion* TOutputGLSLBase::writeConstantUnion(const TType& type,
         {
             switch (pConstUnion->getType())
             {
-                case EbtFloat: out << pConstUnion->getFConst(); break;
+                case EbtFloat: out << std::min(FLT_MAX, std::max(-FLT_MAX, pConstUnion->getFConst())); break;
                 case EbtInt: out << pConstUnion->getIConst(); break;
                 case EbtBool: out << pConstUnion->getBConst(); break;
                 default: UNREACHABLE();
@@ -212,15 +216,59 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary* node)
             break;
 
         case EOpIndexDirect:
-        case EOpIndexIndirect:
             writeTriplet(visit, NULL, "[", "]");
+            break;
+        case EOpIndexIndirect:
+            if (node->getAddIndexClamp())
+            {
+                if (visit == InVisit)
+                {
+                    if (mClampingStrategy == SH_CLAMP_WITH_CLAMP_INTRINSIC) {
+                        out << "[int(clamp(float(";
+                    } else {
+                        out << "[webgl_int_clamp(";
+                    }
+                }
+                else if (visit == PostVisit)
+                {
+                    int maxSize;
+                    TIntermTyped *left = node->getLeft();
+                    TType leftType = left->getType();
+
+                    if (left->isArray())
+                    {
+                        // The shader will fail validation if the array length is not > 0.
+                        maxSize = leftType.getArraySize() - 1;
+                    }
+                    else
+                    {
+                        maxSize = leftType.getNominalSize() - 1;
+                    }
+
+                    if (mClampingStrategy == SH_CLAMP_WITH_CLAMP_INTRINSIC) {
+                        out << "), 0.0, float(" << maxSize << ")))]";
+                    } else {
+                        out << ", 0, " << maxSize << ")]";
+                    }
+                }
+            }
+            else
+            {
+                writeTriplet(visit, NULL, "[", "]");
+            }
             break;
         case EOpIndexDirectStruct:
             if (visit == InVisit)
             {
                 out << ".";
                 // TODO(alokp): ASSERT
-                out << hashName(node->getType().getFieldName());
+                TString fieldName = node->getType().getFieldName();
+
+                const TType& structType = node->getLeft()->getType();
+                if (!mSymbolTable.findBuiltIn(structType.getTypeName()))
+                    fieldName = hashName(fieldName);
+
+                out << fieldName;
                 visitChildren = false;
             }
             break;

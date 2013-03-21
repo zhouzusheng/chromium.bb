@@ -494,7 +494,7 @@ def CallLoadTargetBuildFile(global_flags,
             aux_data_out,
             dependencies)
   except Exception, e:
-    print "Exception: ", e
+    print >>sys.stderr, 'Exception: ', e
     return None
 
 
@@ -569,6 +569,12 @@ def LoadTargetBuildFileParallel(build_file_path, data, aux_data,
     parallel_state.condition.acquire()
     while parallel_state.dependencies or parallel_state.pending:
       if parallel_state.error:
+        print >>sys.stderr, (
+            '\n'
+            'Note: an error occurred while running gyp using multiprocessing.\n'
+            'For more verbose output, set GYP_PARALLEL=0 in your environment.\n'
+            'If the error only occurs when GYP_PARALLEL=1, '
+            'please report a bug!')
         break
       if not parallel_state.dependencies:
         parallel_state.condition.wait()
@@ -840,7 +846,7 @@ def ExpandVariables(input, phase, variables, build_file):
       if cached_value is None:
         gyp.DebugOutput(gyp.DEBUG_VARIABLES,
                         "Executing command '%s' in directory '%s'" %
-                        (contents,build_file_dir))
+                        (contents, build_file_dir))
 
         replacement = ''
 
@@ -852,12 +858,17 @@ def ExpandVariables(input, phase, variables, build_file):
           # <!(python modulename param eters). Do this in |build_file_dir|.
           oldwd = os.getcwd()  # Python doesn't like os.open('.'): no fchdir.
           os.chdir(build_file_dir)
+          try:
 
-          parsed_contents = shlex.split(contents)
-          py_module = __import__(parsed_contents[0])
-          replacement = str(py_module.DoMain(parsed_contents[1:])).rstrip()
-
-          os.chdir(oldwd)
+            parsed_contents = shlex.split(contents)
+            try:
+              py_module = __import__(parsed_contents[0])
+            except ImportError as e:
+              raise GypError("Error importing pymod_do_main"
+                             "module (%s): %s" % (parsed_contents[0], e))
+            replacement = str(py_module.DoMain(parsed_contents[1:])).rstrip()
+          finally:
+            os.chdir(oldwd)
           assert replacement != None
         elif command_string:
           raise GypError("Unknown command string '%s' in '%s'." %
@@ -1062,7 +1073,7 @@ def ProcessConditionsInDict(the_dict, phase, variables, build_file):
     except NameError, e:
       gyp.common.ExceptionAppend(e, 'while evaluating condition \'%s\' in %s' %
                                  (cond_expr_expanded, build_file))
-      raise
+      raise GypError(e)
 
     if merge_dict != None:
       # Expand variables and nested conditinals in the merge_dict before
@@ -2548,7 +2559,7 @@ def Load(build_files, variables, includes, depth, generator_input_info, check,
     build_file = os.path.normpath(build_file)
     try:
       if parallel:
-        print >>sys.stderr, 'Using parallel processing (experimental).'
+        print >>sys.stderr, 'Using parallel processing.'
         LoadTargetBuildFileParallel(build_file, data, aux_data,
                                     variables, includes, depth, check)
       else:

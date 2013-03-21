@@ -39,6 +39,7 @@ class RenderBlock;
 class RenderObject;
 class RenderText;
 struct TextAutosizingWindowInfo;
+struct TextAutosizingClusterInfo;
 
 class TextAutosizer {
     WTF_MAKE_NONCOPYABLE(TextAutosizer);
@@ -49,6 +50,7 @@ public:
     virtual ~TextAutosizer();
 
     bool processSubtree(RenderObject* layoutRoot);
+    void recalculateMultipliers();
 
     static float computeAutosizedFontSize(float specifiedSize, float multiplier);
 
@@ -60,20 +62,26 @@ private:
 
     explicit TextAutosizer(Document*);
 
-    void processCluster(RenderBlock* cluster, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
-    void processContainer(float multiplier, RenderBlock* container, const RenderBlock* blockContainingAllText, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
+    void processClusterInternal(TextAutosizingClusterInfo&, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&, float textWidth, bool shouldBeAutosized);
+    void processCluster(TextAutosizingClusterInfo&, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
+    void processCompositeCluster(Vector<TextAutosizingClusterInfo>&, const TextAutosizingWindowInfo&);
+    void processContainer(float multiplier, RenderBlock* container, TextAutosizingClusterInfo&, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
 
     void setMultiplier(RenderObject*, float);
 
     static bool isAutosizingContainer(const RenderObject*);
-    static bool isAutosizingCluster(const RenderBlock*, const RenderBlock* parentBlockContainingAllText);
-    static bool isAutosizingCluster(const RenderObject*);
+    static bool isNarrowDescendant(const RenderBlock*, TextAutosizingClusterInfo& parentClusterInfo);
+    static bool isWiderDescendant(const RenderBlock*, const TextAutosizingClusterInfo& parentClusterInfo);
+    static bool isIndependentDescendant(const RenderBlock*);
+    static bool isAutosizingCluster(const RenderBlock*, TextAutosizingClusterInfo& parentClusterInfo);
 
     static bool containerShouldBeAutosized(const RenderBlock* container);
     static bool containerContainsOneOfTags(const RenderBlock* cluster, const Vector<QualifiedName>& tags);
+    static bool containerIsRowOfLinks(const RenderObject* container);
     static bool contentHeightIsConstrained(const RenderBlock* container);
-    static bool clusterShouldBeAutosized(const RenderBlock* blockContainingAllText, float blockWidth);
-    static void measureDescendantTextWidth(const RenderBlock* container, const RenderBlock* blockContainingAllText, float minTextWidth, float& textWidth);
+    static bool clusterShouldBeAutosized(TextAutosizingClusterInfo&, float blockWidth);
+    static bool compositeClusterShouldBeAutosized(Vector<TextAutosizingClusterInfo>&, float blockWidth);
+    static void measureDescendantTextWidth(const RenderBlock* container, TextAutosizingClusterInfo&, float minTextWidth, float& textWidth);
 
     // Use to traverse the tree of descendants, excluding descendants of containers (but returning the containers themselves).
     static RenderObject* nextInPreOrderSkippingDescendantsOfContainers(const RenderObject*, const RenderObject* stayWithin);
@@ -83,6 +91,11 @@ private:
     // Depending on the traversal direction specified, finds the first or the last leaf text node child that doesn't
     // belong to any cluster.
     static const RenderObject* findFirstTextLeafNotInCluster(const RenderObject*, size_t& depth, TraversalDirection);
+
+    // Returns groups of narrow descendants of a given autosizing cluster. The groups are combined
+    // by the difference between the width of the descendant and the width of the parent cluster's
+    // |blockContainingAllText|.
+    static void getNarrowDescendantsGroupedByWidth(const TextAutosizingClusterInfo& parentClusterInfo, Vector<Vector<TextAutosizingClusterInfo> >&);
 
     Document* m_document;
 };

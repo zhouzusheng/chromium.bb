@@ -24,11 +24,16 @@
 
 #include "ChildNodeList.h"
 #include "DOMSettableTokenList.h"
+#include "HTMLNames.h"
 #include "LiveNodeList.h"
 #include "MutationObserver.h"
 #include "MutationObserverRegistration.h"
+#include "Page.h"
 #include "QualifiedName.h"
 #include "TagNodeList.h"
+#if ENABLE(VIDEO_TRACK)
+#include "TextTrack.h"
+#endif
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
@@ -37,6 +42,7 @@
 
 #if ENABLE(MICRODATA)
 #include "HTMLPropertiesCollection.h"
+#include "MicroDataAttributeTokenList.h"
 #include "MicroDataItemList.h"
 #endif
 
@@ -66,7 +72,9 @@ public:
 
     void removeChildNodeList(ChildNodeList* list)
     {
-        ASSERT_UNUSED(list, m_childNodeList = list);
+        ASSERT(m_childNodeList = list);
+        if (deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(list->ownerNode()))
+            return;
         m_childNodeList = 0;
     }
 
@@ -141,20 +149,26 @@ public:
 
     void removeCacheWithAtomicName(LiveNodeListBase* list, CollectionType collectionType, const AtomicString& name = starAtom)
     {
-        ASSERT_UNUSED(list, list == m_atomicNameCaches.get(namedNodeListKey(collectionType, name)));
+        ASSERT(list == m_atomicNameCaches.get(namedNodeListKey(collectionType, name)));
+        if (deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(list->ownerNode()))
+            return;
         m_atomicNameCaches.remove(namedNodeListKey(collectionType, name));
     }
 
     void removeCacheWithName(LiveNodeListBase* list, CollectionType collectionType, const String& name)
     {
-        ASSERT_UNUSED(list, list == m_nameCaches.get(namedNodeListKey(collectionType, name)));
+        ASSERT(list == m_nameCaches.get(namedNodeListKey(collectionType, name)));
+        if (deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(list->ownerNode()))
+            return;
         m_nameCaches.remove(namedNodeListKey(collectionType, name));
     }
 
     void removeCacheWithQualifiedName(LiveNodeList* list, const AtomicString& namespaceURI, const AtomicString& localName)
     {
         QualifiedName name(nullAtom, localName, namespaceURI);
-        ASSERT_UNUSED(list, list == m_tagNodeListCacheNS.get(name));
+        ASSERT(list == m_tagNodeListCacheNS.get(name));
+        if (deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(list->ownerNode()))
+            return;
         m_tagNodeListCacheNS.remove(name);
     }
 
@@ -220,6 +234,8 @@ private:
         return std::pair<unsigned char, String>(type, name);
     }
 
+    bool deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(Node*);
+
     // FIXME: m_childNodeList should be merged into m_atomicNameCaches or at least be shared with HTMLCollection returned by Element::children
     // but it's tricky because invalidateCaches shouldn't invalidate this cache and adoptTreeScope shouldn't call registerNodeList or unregisterNodeList.
     ChildNodeList* m_childNodeList;
@@ -228,57 +244,58 @@ private:
     TagNodeListCacheNS m_tagNodeListCacheNS;
 };
 
-class NodeRareData : public NodeRareDataBase {
-    WTF_MAKE_NONCOPYABLE(NodeRareData); WTF_MAKE_FAST_ALLOCATED;
+class NodeMutationObserverData {
+    WTF_MAKE_NONCOPYABLE(NodeMutationObserverData); WTF_MAKE_FAST_ALLOCATED;
+public:
+    Vector<OwnPtr<MutationObserverRegistration> > registry;
+    HashSet<MutationObserverRegistration*> transientRegistry;
 
-#if ENABLE(MUTATION_OBSERVERS)
-    struct NodeMutationObserverData {
-        Vector<OwnPtr<MutationObserverRegistration> > m_registry;
-        HashSet<MutationObserverRegistration*> m_transientRegistry;
+    static PassOwnPtr<NodeMutationObserverData> create() { return adoptPtr(new NodeMutationObserverData); }
 
-        static PassOwnPtr<NodeMutationObserverData> create() { return adoptPtr(new NodeMutationObserverData); }
-    };
-#endif
+private:
+    NodeMutationObserverData() { }
+};
 
 #if ENABLE(MICRODATA)
-    struct NodeMicroDataTokenLists {
-        RefPtr<DOMSettableTokenList> m_itemProp;
-        RefPtr<DOMSettableTokenList> m_itemRef;
-        RefPtr<DOMSettableTokenList> m_itemType;
+class NodeMicroDataTokenLists {
+    WTF_MAKE_NONCOPYABLE(NodeMicroDataTokenLists); WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassOwnPtr<NodeMicroDataTokenLists> create() { return adoptPtr(new NodeMicroDataTokenLists); }
 
-        static PassOwnPtr<NodeMicroDataTokenLists> create() { return adoptPtr(new NodeMicroDataTokenLists); }
-    };
-#endif
-
-public:    
-    NodeRareData(Document* document)
-        : NodeRareDataBase(document)
-        , m_tabIndex(0)
-        , m_childIndex(0)
-        , m_tabIndexWasSetExplicitly(false)
-        , m_needsFocusAppearanceUpdateSoonAfterAttach(false)
-        , m_styleAffectedByEmpty(false)
-        , m_isInCanvasSubtree(false)
-#if ENABLE(FULLSCREEN_API)
-        , m_containsFullScreenElement(false)
-#endif
-#if ENABLE(DIALOG_ELEMENT)
-        , m_isInTopLayer(false)
-#endif
-        , m_childrenAffectedByHover(false)
-        , m_childrenAffectedByActive(false)
-        , m_childrenAffectedByDrag(false)
-        , m_childrenAffectedByFirstChildRules(false)
-        , m_childrenAffectedByLastChildRules(false)
-        , m_childrenAffectedByDirectAdjacentRules(false)
-        , m_childrenAffectedByForwardPositionalRules(false)
-        , m_childrenAffectedByBackwardPositionalRules(false)
+    MicroDataAttributeTokenList* itemProp(Node* node) const
     {
+        if (!m_itemProp)
+            m_itemProp = MicroDataAttributeTokenList::create(toElement(node), HTMLNames::itempropAttr);
+        return m_itemProp.get();
     }
 
-    virtual ~NodeRareData()
+    MicroDataAttributeTokenList* itemRef(Node* node) const
     {
+        if (!m_itemRef)
+            m_itemRef = MicroDataAttributeTokenList::create(toElement(node), HTMLNames::itemrefAttr);
+        return m_itemRef.get();
     }
+
+    MicroDataAttributeTokenList* itemType(Node* node) const
+    {
+        if (!m_itemType)
+            m_itemType = MicroDataAttributeTokenList::create(toElement(node), HTMLNames::itemtypeAttr);
+        return m_itemType.get();
+    }
+
+private:
+    NodeMicroDataTokenLists() { }
+
+    mutable RefPtr<MicroDataAttributeTokenList> m_itemProp;
+    mutable RefPtr<MicroDataAttributeTokenList> m_itemRef;
+    mutable RefPtr<MicroDataAttributeTokenList> m_itemType;
+};
+#endif
+
+class NodeRareData : public NodeRareDataBase {
+    WTF_MAKE_NONCOPYABLE(NodeRareData); WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassOwnPtr<NodeRareData> create(RenderObject* renderer) { return adoptPtr(new NodeRareData(renderer)); }
 
     void clearNodeLists() { m_nodeLists.clear(); }
     NodeListsNodeData* nodeLists() const { return m_nodeLists.get(); }
@@ -289,28 +306,13 @@ public:
         return m_nodeLists.get();
     }
 
-    short tabIndex() const { return m_tabIndex; }
-    void setTabIndexExplicitly(short index) { m_tabIndex = index; m_tabIndexWasSetExplicitly = true; }
-    bool tabIndexSetExplicitly() const { return m_tabIndexWasSetExplicitly; }
-    void clearTabIndexExplicitly() { m_tabIndex = 0; m_tabIndexWasSetExplicitly = false; }
-
-#if ENABLE(MUTATION_OBSERVERS)
-    Vector<OwnPtr<MutationObserverRegistration> >* mutationObserverRegistry() { return m_mutationObserverData ? &m_mutationObserverData->m_registry : 0; }
-    Vector<OwnPtr<MutationObserverRegistration> >* ensureMutationObserverRegistry()
+    NodeMutationObserverData* mutationObserverData() { return m_mutationObserverData.get(); }
+    NodeMutationObserverData* ensureMutationObserverData()
     {
         if (!m_mutationObserverData)
             m_mutationObserverData = NodeMutationObserverData::create();
-        return &m_mutationObserverData->m_registry;
+        return m_mutationObserverData.get();
     }
-
-    HashSet<MutationObserverRegistration*>* transientMutationObserverRegistry() { return m_mutationObserverData ? &m_mutationObserverData->m_transientRegistry : 0; }
-    HashSet<MutationObserverRegistration*>* ensureTransientMutationObserverRegistry()
-    {
-        if (!m_mutationObserverData)
-            m_mutationObserverData = NodeMutationObserverData::create();
-        return &m_mutationObserverData->m_transientRegistry;
-    }
-#endif
 
 #if ENABLE(MICRODATA)
     NodeMicroDataTokenLists* ensureMicroDataTokenLists() const
@@ -319,94 +321,52 @@ public:
             m_microDataTokenLists = NodeMicroDataTokenLists::create();
         return m_microDataTokenLists.get();
     }
-
-    DOMSettableTokenList* itemProp() const
-    {
-        if (!ensureMicroDataTokenLists()->m_itemProp)
-            m_microDataTokenLists->m_itemProp = DOMSettableTokenList::create();
-
-        return m_microDataTokenLists->m_itemProp.get();
-    }
-
-    void setItemProp(const String& value)
-    {
-        if (!ensureMicroDataTokenLists()->m_itemProp)
-            m_microDataTokenLists->m_itemProp = DOMSettableTokenList::create();
-
-        m_microDataTokenLists->m_itemProp->setValue(value);
-    }
-
-    DOMSettableTokenList* itemRef() const
-    {
-        if (!ensureMicroDataTokenLists()->m_itemRef)
-            m_microDataTokenLists->m_itemRef = DOMSettableTokenList::create();
-
-        return m_microDataTokenLists->m_itemRef.get();
-    }
-
-    void setItemRef(const String& value)
-    {
-        if (!ensureMicroDataTokenLists()->m_itemRef)
-            m_microDataTokenLists->m_itemRef = DOMSettableTokenList::create();
-
-        m_microDataTokenLists->m_itemRef->setValue(value);
-    }
-
-    DOMSettableTokenList* itemType() const
-    {
-        if (!ensureMicroDataTokenLists()->m_itemType)
-            m_microDataTokenLists->m_itemType = DOMSettableTokenList::create();
-
-        return m_microDataTokenLists->m_itemType.get();
-    }
-
-    void setItemType(const String& value)
-    {
-        if (!ensureMicroDataTokenLists()->m_itemType)
-            m_microDataTokenLists->m_itemType = DOMSettableTokenList::create();
-
-        m_microDataTokenLists->m_itemType->setValue(value);
-    }
 #endif
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+    unsigned connectedSubframeCount() const { return m_connectedFrameCount; }
+    void incrementConnectedSubframeCount(unsigned amount)
+    {
+        m_connectedFrameCount += amount;
+    }
+    void decrementConnectedSubframeCount(unsigned amount)
+    {
+        ASSERT(m_connectedFrameCount);
+        ASSERT(amount <= m_connectedFrameCount);
+        m_connectedFrameCount -= amount;
+    }
+
+    // This member function is intentionally not virtual to avoid adding a vtable pointer.
+    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
-    short m_tabIndex;
-    unsigned short m_childIndex;
-    bool m_tabIndexWasSetExplicitly : 1;
-    bool m_needsFocusAppearanceUpdateSoonAfterAttach : 1;
-    bool m_styleAffectedByEmpty : 1;
-    bool m_isInCanvasSubtree : 1;
-#if ENABLE(FULLSCREEN_API)
-    bool m_containsFullScreenElement : 1;
-#endif
-#if ENABLE(DIALOG_ELEMENT)
-    bool m_isInTopLayer : 1;
-#endif
-    bool m_childrenAffectedByHover : 1;
-    bool m_childrenAffectedByActive : 1;
-    bool m_childrenAffectedByDrag : 1;
-    // Bits for dynamic child matching.
-    // We optimize for :first-child and :last-child. The other positional child selectors like nth-child or
-    // *-child-of-type, we will just give up and re-evaluate whenever children change at all.
-    bool m_childrenAffectedByFirstChildRules : 1;
-    bool m_childrenAffectedByLastChildRules : 1;
-    bool m_childrenAffectedByDirectAdjacentRules : 1;
-    bool m_childrenAffectedByForwardPositionalRules : 1;
-    bool m_childrenAffectedByBackwardPositionalRules : 1;
+    NodeRareData(RenderObject* renderer)
+        : NodeRareDataBase(renderer)
+        , m_connectedFrameCount(0)
+    { }
 
 private:
-    OwnPtr<NodeListsNodeData> m_nodeLists;
+    unsigned m_connectedFrameCount : 10; // Must fit Page::maxNumberOfFrames.
 
-#if ENABLE(MUTATION_OBSERVERS)
+    OwnPtr<NodeListsNodeData> m_nodeLists;
     OwnPtr<NodeMutationObserverData> m_mutationObserverData;
-#endif
 
 #if ENABLE(MICRODATA)
     mutable OwnPtr<NodeMicroDataTokenLists> m_microDataTokenLists;
 #endif
 };
+
+inline bool NodeListsNodeData::deleteThisAndUpdateNodeRareDataIfAboutToRemoveLastList(Node* ownerNode)
+{
+    ASSERT(ownerNode);
+    ASSERT(ownerNode->nodeLists() == this);
+    if ((m_childNodeList ? 1 : 0) + m_atomicNameCaches.size() + m_nameCaches.size() + m_tagNodeListCacheNS.size() != 1)
+        return false;
+    ownerNode->clearNodeLists();
+    return true;
+}
+
+// Ensure the 10 bits reserved for the m_connectedFrameCount cannot overflow
+COMPILE_ASSERT(Page::maxNumberOfFrames < 1024, Frame_limit_should_fit_in_rare_data_count);
 
 } // namespace WebCore
 

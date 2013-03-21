@@ -27,12 +27,14 @@
 
 #include "EditingBoundary.h"
 #include "EventTarget.h"
+#include "FocusDirection.h"
 #include "KURLHash.h"
 #include "LayoutRect.h"
 #include "MutationObserver.h"
 #include "RenderStyleConstants.h"
 #include "ScriptWrappable.h"
 #include "SimulatedClickOptions.h"
+#include "TreeScope.h"
 #include "TreeShared.h"
 #include <wtf/Forward.h>
 #include <wtf/ListHashSet.h>
@@ -85,7 +87,6 @@ class RenderObject;
 class RenderStyle;
 class ShadowRoot;
 class TagNodeList;
-class TreeScope;
 
 #if ENABLE(GESTURE_EVENTS)
 class PlatformGestureEvent;
@@ -115,21 +116,16 @@ public:
     RenderObject* renderer() const { return m_renderer; }
     void setRenderer(RenderObject* renderer) { m_renderer = renderer; }
 
-    TreeScope* treeScope() const { return m_treeScope; }
-    void setTreeScope(TreeScope* scope) { m_treeScope = scope; }
-
-    virtual ~NodeRareDataBase() { }
 protected:
-    NodeRareDataBase(TreeScope* scope)
-        : m_treeScope(scope)
-    {
-    }
+    NodeRareDataBase(RenderObject* renderer)
+        : m_renderer(renderer)
+    { }
+
 private:
     RenderObject* m_renderer;
-    TreeScope* m_treeScope;
 };
 
-class Node : public EventTarget, public ScriptWrappable, public TreeShared<Node, ContainerNode> {
+class Node : public EventTarget, public ScriptWrappable, public TreeShared<Node> {
     friend class Document;
     friend class TreeScope;
     friend class TreeScopeAdopter;
@@ -241,17 +237,20 @@ public:
 
     virtual bool isMediaControlElement() const { return false; }
     virtual bool isMediaControls() const { return false; }
+#if ENABLE(VIDEO_TRACK)
+    virtual bool isWebVTTElement() const { return false; }
+#endif
     bool isStyledElement() const { return getFlag(IsStyledElementFlag); }
     virtual bool isAttributeNode() const { return false; }
     virtual bool isCharacterDataNode() const { return false; }
     virtual bool isFrameOwnerElement() const { return false; }
     virtual bool isPluginElement() const { return false; }
-    virtual bool documentFragmentIsShadowRoot() const;
     virtual bool isInsertionPointNode() const { return false; }
 
     bool isDocumentNode() const;
+    bool isTreeScope() const { return treeScope()->rootNode() == this; }
     bool isDocumentFragment() const { return getFlag(IsDocumentFragmentFlag); }
-    bool isShadowRoot() const { return isDocumentFragment() && documentFragmentIsShadowRoot(); }
+    bool isShadowRoot() const { return isDocumentFragment() && isTreeScope(); }
     bool isInsertionPoint() const { return getFlag(NeedsShadowTreeWalkerFlag) && isInsertionPointNode(); }
 
     bool needsShadowTreeWalker() const;
@@ -269,7 +268,7 @@ public:
     Element* shadowHost() const;
     // If this node is in a shadow tree, returns its shadow host. Otherwise, returns this.
     // Deprecated. Should use shadowHost() and check the return value.
-    Node* shadowAncestorNode() const;
+    Node* deprecatedShadowAncestorNode() const;
     ShadowRoot* containingShadowRoot() const;
     ShadowRoot* youngestShadowRoot() const;
 
@@ -277,9 +276,9 @@ public:
     Node* nonBoundaryShadowTreeRootNode();
 
     // Node's parent, shadow tree host.
-    ContainerNode* parentOrHostNode() const;
-    Element* parentOrHostElement() const;
-    void setParentOrHostNode(ContainerNode*);
+    ContainerNode* parentOrShadowHostNode() const;
+    Element* parentOrShadowHostElement() const;
+    void setParentOrShadowHostNode(ContainerNode*);
     Node* highestAncestor() const;
 
     // Use when it's guaranteed to that shadowHost is 0.
@@ -381,8 +380,10 @@ public:
     bool hasEventTargetData() const { return getFlag(HasEventTargetDataFlag); }
     void setHasEventTargetData(bool flag) { setFlag(flag, HasEventTargetDataFlag); }
 
+#if USE(V8)
     bool isV8CollectableDuringMinorGC() const { return getFlag(V8CollectableDuringMinorGCFlag); }
     void setV8CollectableDuringMinorGC(bool flag) { setFlag(flag, V8CollectableDuringMinorGCFlag); }
+#endif
 
     enum ShouldSetAttached {
         SetAttached,
@@ -391,7 +392,7 @@ public:
     void lazyAttach(ShouldSetAttached = SetAttached);
     void lazyReattach(ShouldSetAttached = SetAttached);
 
-    virtual void setFocus(bool flag = true);
+    virtual void setFocus(bool flag);
     virtual void setActive(bool flag = true, bool pause = false);
     virtual void setHovered(bool flag = true);
 
@@ -467,13 +468,13 @@ public:
         return documentInternal();
     }
 
-    TreeScope* treeScope() const;
+    TreeScope* treeScope() const { return m_treeScope; }
 
     // Returns true if this node is associated with a document and is in its associated document's
     // node tree, false otherwise.
     bool inDocument() const 
     { 
-        ASSERT(m_document || !getFlag(InDocumentFlag));
+        ASSERT(documentInternal() || !getFlag(InDocumentFlag));
         return getFlag(InDocumentFlag);
     }
     bool isInShadowTree() const { return getFlag(IsInShadowTreeFlag); }
@@ -488,7 +489,8 @@ public:
     void checkSetPrefix(const AtomicString& prefix, ExceptionCode&);
     bool isDescendantOf(const Node*) const;
     bool contains(const Node*) const;
-    bool containsIncludingShadowDOM(Node*);
+    bool containsIncludingShadowDOM(const Node*) const;
+    bool containsIncludingHostElements(const Node*) const;
 
     // Used to determine whether range offsets use characters or node indices.
     virtual bool offsetInCharacters() const;
@@ -585,6 +587,7 @@ public:
 
     void invalidateNodeListCachesInAncestors(const QualifiedName* attrName = 0, Element* attributeOwnerElement = 0);
     NodeListsNodeData* nodeLists();
+    void clearNodeLists();
 
     PassRefPtr<NodeList> getElementsByTagName(const AtomicString&);
     PassRefPtr<NodeList> getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName);
@@ -616,7 +619,8 @@ public:
     virtual void postDispatchEventHandler(Event*, void* /*dataFromPreDispatch*/) { }
 
     using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtr<Event>);
+    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+
     void dispatchScopedEvent(PassRefPtr<Event>);
     void dispatchScopedEventDispatchMediator(PassRefPtr<EventDispatchMediator>);
 
@@ -636,7 +640,7 @@ public:
     void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents, SimulatedClickVisualOptions = ShowPressedLook);
     bool dispatchBeforeLoadEvent(const String& sourceURL);
 
-    virtual void dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode);
+    virtual void dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection);
     virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
     virtual void dispatchChangeEvent();
     virtual void dispatchInputEvent();
@@ -648,8 +652,8 @@ public:
     // to event listeners, and prevents DOMActivate events from being sent at all.
     virtual bool disabled() const;
 
-    using TreeShared<Node, ContainerNode>::ref;
-    using TreeShared<Node, ContainerNode>::deref;
+    using TreeShared<Node>::ref;
+    using TreeShared<Node>::deref;
 
     virtual EventTargetData* eventTargetData();
     virtual EventTargetData* ensureEventTargetData();
@@ -661,14 +665,12 @@ public:
     PassRefPtr<PropertyNodeList> propertyNodeList(const String&);
 #endif
 
-#if ENABLE(MUTATION_OBSERVERS)
     void getRegisteredMutationObserversOfType(HashMap<MutationObserver*, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
     void registerMutationObserver(MutationObserver*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     void unregisterMutationObserver(MutationObserverRegistration*);
     void registerTransientMutationObserver(MutationObserverRegistration*);
     void unregisterTransientMutationObserver(MutationObserverRegistration*);
     void notifyMutationObserversNodeWillDetach();
-#endif // ENABLE(MUTATION_OBSERVERS)
 
     virtual void registerScopedHTMLStyleChild();
     virtual void unregisterScopedHTMLStyleChild();
@@ -677,6 +679,12 @@ public:
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     void textRects(Vector<IntRect>&) const;
+
+    unsigned connectedSubframeCount() const;
+    void incrementConnectedSubframeCount(unsigned amount = 1);
+    void decrementConnectedSubframeCount(unsigned amount = 1);
+    void updateAncestorConnectedSubframeCountForRemoval() const;
+    void updateAncestorConnectedSubframeCountForInsertion() const;
 
 private:
     enum NodeFlags {
@@ -712,7 +720,9 @@ private:
         HasCustomCallbacksFlag = 1 << 21,
         HasScopedHTMLStyleChildFlag = 1 << 22,
         HasEventTargetDataFlag = 1 << 23,
+#if USE(V8)
         V8CollectableDuringMinorGCFlag = 1 << 24,
+#endif
         NeedsShadowTreeWalkerFlag = 1 << 25,
         IsInShadowTreeFlag = 1 << 26,
 
@@ -754,9 +764,7 @@ protected:
     virtual void didMoveToNewDocument(Document* oldDocument);
     
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const { }
-    void setTabIndexExplicitly(short);
-    void clearTabIndexExplicitly();
-    
+
     bool hasRareData() const { return getFlag(HasRareDataFlag); }
 
     NodeRareData* rareData() const;
@@ -767,16 +775,14 @@ protected:
 
     void setHasCustomCallbacks() { setFlag(true, HasCustomCallbacksFlag); }
 
-    Document* documentInternal() const { return m_document; }
+    Document* documentInternal() const { return treeScope()->documentScope(); }
+    void setTreeScope(TreeScope* scope) { m_treeScope = scope; }
 
 private:
-    friend class TreeShared<Node, ContainerNode>;
+    friend class TreeShared<Node>;
 
     void removedLastRef();
-
-    // These API should be only used for a tree scope migration.
-    void setTreeScope(TreeScope*);
-    void setDocument(Document*);
+    bool hasTreeSharedParent() const { return !!parentOrShadowHostNode(); }
 
     enum EditableLevel { Editable, RichlyEditable };
     bool rendererIsEditable(EditableLevel, UserSelectAllTreatment = UserSelectAllIsAlwaysNonEditable) const;
@@ -795,8 +801,6 @@ private:
     virtual void refEventTarget();
     virtual void derefEventTarget();
 
-    virtual PassOwnPtr<NodeRareData> createRareData();
-
     virtual RenderStyle* nonRendererStyle() const { return 0; }
 
     virtual const AtomicString& virtualPrefix() const;
@@ -806,21 +810,14 @@ private:
 
     Element* ancestorElement() const;
 
-    // Use Node::parentNode as the consistent way of querying a parent node.
-    // This method is made private to ensure a compiler error on call sites that
-    // don't follow this rule.
-    using TreeShared<Node, ContainerNode>::parent;
-    using TreeShared<Node, ContainerNode>::setParent;
-
     void trackForDebugging();
 
-#if ENABLE(MUTATION_OBSERVERS)
     Vector<OwnPtr<MutationObserverRegistration> >* mutationObserverRegistry();
     HashSet<MutationObserverRegistration*>* transientMutationObserverRegistry();
-#endif
 
     mutable uint32_t m_nodeFlags;
-    Document* m_document;
+    ContainerNode* m_parentOrShadowHostNode;
+    TreeScope* m_treeScope;
     Node* m_previous;
     Node* m_next;
     // When a node has rare data we move the renderer into the rare data.
@@ -855,25 +852,27 @@ inline void addSubresourceURL(ListHashSet<KURL>& urls, const KURL& url)
         urls.add(url);
 }
 
+inline void Node::setParentOrShadowHostNode(ContainerNode* parent)
+{
+    ASSERT(isMainThread());
+    m_parentOrShadowHostNode = parent;
+}
+
+inline ContainerNode* Node::parentOrShadowHostNode() const
+{
+    ASSERT(isMainThreadOrGCThread());
+    return m_parentOrShadowHostNode;
+}
+
 inline ContainerNode* Node::parentNode() const
 {
-    return isShadowRoot() ? 0 : parent();
-}
-
-inline void Node::setParentOrHostNode(ContainerNode* parent)
-{
-    setParent(parent);
-}
-
-inline ContainerNode* Node::parentOrHostNode() const
-{
-    return parent();
+    return isShadowRoot() ? 0 : parentOrShadowHostNode();
 }
 
 inline ContainerNode* Node::parentNodeGuaranteedHostFree() const
 {
     ASSERT(!isShadowRoot());
-    return parentOrHostNode();
+    return parentOrShadowHostNode();
 }
 
 inline void Node::reattach()

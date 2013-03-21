@@ -5,11 +5,11 @@
 #include "web_layer_tree_view_impl.h"
 
 #include "base/command_line.h"
+#include "base/string_number_conversions.h"
 #include "cc/font_atlas.h"
 #include "cc/input_handler.h"
 #include "cc/layer.h"
 #include "cc/layer_tree_host.h"
-#include "cc/switches.h"
 #include "cc/thread.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/WebKit/Source/Platform/chromium/public/WebInputHandler.h"
@@ -50,10 +50,17 @@ bool WebLayerTreeViewImpl::initialize(const WebLayerTreeView::Settings& webSetti
     settings.initialDebugState.showPaintRects = webSettings.showPaintRects;
     settings.initialDebugState.showPlatformLayerTree = webSettings.showPlatformLayerTree;
     settings.initialDebugState.showDebugBorders = webSettings.showDebugBorders;
+    settings.initialDebugState.setRecordRenderingStats(webSettings.recordRenderingStats);
+
     m_layerTreeHost = LayerTreeHost::create(this, settings, implThread.Pass());
     if (!m_layerTreeHost.get())
         return false;
     return true;
+}
+
+cc::LayerTreeHost* WebLayerTreeViewImpl::layer_tree_host() const
+{
+    return m_layerTreeHost.get();
 }
 
 void WebLayerTreeViewImpl::setSurfaceReady()
@@ -73,10 +80,7 @@ void WebLayerTreeViewImpl::clearRootLayer()
 
 void WebLayerTreeViewImpl::setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize)
 {
-    if (!deviceViewportSize.isEmpty())
-        m_layerTreeHost->setViewportSize(layoutViewportSize, deviceViewportSize);
-    else
-        m_layerTreeHost->setViewportSize(layoutViewportSize, layoutViewportSize);
+    m_layerTreeHost->setViewportSize(layoutViewportSize, deviceViewportSize);
 }
 
 WebSize WebLayerTreeViewImpl::layoutViewportSize() const
@@ -91,7 +95,7 @@ WebSize WebLayerTreeViewImpl::deviceViewportSize() const
 
 WebFloatPoint WebLayerTreeViewImpl::adjustEventPointForPinchZoom(const WebFloatPoint& point) const
 {
-    return m_layerTreeHost->adjustEventPointForPinchZoom(point);
+    return point;
 }
 
 void WebLayerTreeViewImpl::setDeviceScaleFactor(const float deviceScaleFactor)
@@ -196,6 +200,20 @@ void WebLayerTreeViewImpl::setShowPaintRects(bool show)
     m_layerTreeHost->setDebugState(debugState);
 }
 
+void WebLayerTreeViewImpl::setShowDebugBorders(bool show)
+{
+    LayerTreeDebugState debugState = m_layerTreeHost->debugState();
+    debugState.showDebugBorders = show;
+    m_layerTreeHost->setDebugState(debugState);
+}
+
+void WebLayerTreeViewImpl::setContinuousPaintingEnabled(bool enabled)
+{
+    LayerTreeDebugState debugState = m_layerTreeHost->debugState();
+    debugState.continuousPainting = enabled;
+    m_layerTreeHost->setDebugState(debugState);
+}
+
 scoped_ptr<FontAtlas> WebLayerTreeViewImpl::createFontAtlas()
 {
     int fontHeight;
@@ -209,11 +227,6 @@ scoped_ptr<FontAtlas> WebLayerTreeViewImpl::createFontAtlas()
         asciiToRectTable[i] = asciiToWebRectTable[i];
 
     return FontAtlas::create(bitmap, asciiToRectTable, fontHeight).Pass();
-}
-
-void WebLayerTreeViewImpl::loseCompositorContext(int numTimes)
-{
-    m_layerTreeHost->loseOutputSurface(numTimes);
 }
 
 void WebLayerTreeViewImpl::willBeginFrame()

@@ -6,6 +6,7 @@
 #define CC_DRAW_QUAD_H_
 
 #include "cc/cc_export.h"
+#include "cc/resource_provider.h"
 #include "cc/shared_quad_state.h"
 
 namespace cc {
@@ -37,7 +38,6 @@ class CC_EXPORT DrawQuad {
   // TODO(danakj): Chromify or remove these SharedQuadState helpers.
   const gfx::Transform& quadTransform() const { return shared_quad_state->content_to_target_transform; }
   gfx::Rect visibleContentRect() const { return shared_quad_state->visible_content_rect; }
-  gfx::Rect clippedRectInTarget() const { return shared_quad_state->clipped_rect_in_target; }
   gfx::Rect clipRect() const { return shared_quad_state->clip_rect; }
   bool isClipped() const { return shared_quad_state->is_clipped; }
   float opacity() const { return shared_quad_state->opacity; }
@@ -70,6 +70,8 @@ class CC_EXPORT DrawQuad {
     return needs_blending || shared_quad_state->opacity < 1.0f ||
         !opaque_rect.Contains(visible_rect);
   }
+
+  virtual void AppendResources(ResourceProvider::ResourceIdArray* resources);
 
  protected:
   DrawQuad();

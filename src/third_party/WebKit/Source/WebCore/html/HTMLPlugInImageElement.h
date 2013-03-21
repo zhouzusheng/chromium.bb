@@ -44,7 +44,7 @@ enum PreferPlugInsForImagesOption {
 };
 
 // Base class for HTMLObjectElement and HTMLEmbedElement
-class HTMLPlugInImageElement : public HTMLPlugInElement, public ImageLoaderClientBase<HTMLPlugInImageElement> {
+class HTMLPlugInImageElement : public HTMLPlugInElement {
 public:
     virtual ~HTMLPlugInImageElement();
 
@@ -108,7 +108,6 @@ private:
     RefPtr<RenderStyle> m_customStyleForPageCache;
     RefPtr<MouseEvent> m_pendingClickEventFromSnapshot;
     DeferrableOneShotTimer<HTMLPlugInImageElement> m_simulatedMouseClickTimer;
-    unsigned m_plugInOriginHash;
 };
 
 } // namespace WebCore

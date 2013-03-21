@@ -43,6 +43,7 @@ class LCodeGen;
 #define LITHIUM_CONCRETE_INSTRUCTION_LIST(V)    \
   V(AccessArgumentsAt)                          \
   V(AddI)                                       \
+  V(Allocate)                                   \
   V(AllocateObject)                             \
   V(ApplyArguments)                             \
   V(ArgumentsElements)                          \
@@ -87,6 +88,7 @@ class LCodeGen;
   V(Deoptimize)                                 \
   V(DivI)                                       \
   V(DoubleToI)                                  \
+  V(DummyUse)                                   \
   V(ElementsKind)                               \
   V(FastLiteral)                                \
   V(FixedArrayBaseLength)                       \
@@ -167,6 +169,7 @@ class LCodeGen;
   V(Throw)                                      \
   V(ToFastProperties)                           \
   V(TransitionElementsKind)                     \
+  V(TrapAllocationMemento)                      \
   V(Typeof)                                     \
   V(TypeofIsAndBranch)                          \
   V(UnaryMathOperation)                         \
@@ -250,7 +253,11 @@ class LInstruction: public ZoneObject {
   void MarkAsCall() { is_call_ = true; }
 
   // Interface to the register allocator and iterators.
-  bool IsMarkedAsCall() const { return is_call_; }
+  bool ClobbersTemps() const { return is_call_; }
+  bool ClobbersRegisters() const { return is_call_; }
+  virtual bool ClobbersDoubleRegisters() const {
+    return is_call_ || !CpuFeatures::IsSupported(SSE2);
+  }
 
   virtual bool HasResult() const = 0;
   virtual LOperand* result() = 0;
@@ -356,6 +363,7 @@ class LGap: public LTemplateInstruction<0, 0, 0> {
 class LInstructionGap: public LGap {
  public:
   explicit LInstructionGap(HBasicBlock* block) : LGap(block) { }
+  virtual bool ClobbersDoubleRegisters() const { return false; }
 
   DECLARE_CONCRETE_INSTRUCTION(InstructionGap, "gap")
 };
@@ -379,6 +387,15 @@ class LGoto: public LTemplateInstruction<0, 0, 0> {
 class LLazyBailout: public LTemplateInstruction<0, 0, 0> {
  public:
   DECLARE_CONCRETE_INSTRUCTION(LazyBailout, "lazy-bailout")
+};
+
+
+class LDummyUse: public LTemplateInstruction<1, 1, 0> {
+ public:
+  explicit LDummyUse(LOperand* value) {
+    inputs_[0] = value;
+  }
+  DECLARE_CONCRETE_INSTRUCTION(DummyUse, "dummy-use")
 };
 
 
@@ -559,6 +576,8 @@ class LDivI: public LTemplateInstruction<1, 2, 1> {
 
   LOperand* left() { return inputs_[0]; }
   LOperand* right() { return inputs_[1]; }
+
+  bool is_flooring() { return hydrogen_value()->IsMathFloorOfDiv(); }
 
   DECLARE_CONCRETE_INSTRUCTION(DivI, "div-i")
   DECLARE_HYDROGEN_ACCESSOR(Div)
@@ -1337,10 +1356,11 @@ class LArithmeticT: public LTemplateInstruction<1, 3, 0> {
 };
 
 
-class LReturn: public LTemplateInstruction<0, 1, 0> {
+class LReturn: public LTemplateInstruction<0, 2, 0> {
  public:
-  explicit LReturn(LOperand* value) {
+  explicit LReturn(LOperand* value, LOperand* context) {
     inputs_[0] = value;
+    inputs_[1] = context;
   }
 
   DECLARE_CONCRETE_INSTRUCTION(Return, "return")
@@ -1438,7 +1458,6 @@ class LLoadKeyed: public LTemplateInstruction<1, 2, 0> {
     inputs_[0] = elements;
     inputs_[1] = key;
   }
-
   LOperand* elements() { return inputs_[0]; }
   LOperand* key() { return inputs_[1]; }
   ElementsKind elements_kind() const {
@@ -1448,11 +1467,19 @@ class LLoadKeyed: public LTemplateInstruction<1, 2, 0> {
     return hydrogen()->is_external();
   }
 
+  virtual bool ClobbersDoubleRegisters() const {
+    return !CpuFeatures::IsSupported(SSE2) &&
+        !IsDoubleOrFloatElementsKind(hydrogen()->elements_kind());
+  }
+
   DECLARE_CONCRETE_INSTRUCTION(LoadKeyed, "load-keyed")
   DECLARE_HYDROGEN_ACCESSOR(LoadKeyed)
 
   virtual void PrintDataTo(StringStream* stream);
   uint32_t additional_index() const { return hydrogen()->index_offset(); }
+  bool key_is_smi() {
+    return hydrogen()->key()->representation().IsTagged();
+  }
 };
 
 
@@ -1618,6 +1645,7 @@ class LThisFunction: public LTemplateInstruction<1, 0, 0> {
 class LContext: public LTemplateInstruction<1, 0, 0> {
  public:
   DECLARE_CONCRETE_INSTRUCTION(Context, "context")
+  DECLARE_HYDROGEN_ACCESSOR(Context)
 };
 
 
@@ -1859,11 +1887,10 @@ class LNumberTagI: public LTemplateInstruction<1, 1, 0> {
 };
 
 
-class LNumberTagU: public LTemplateInstruction<1, 1, 1> {
+class LNumberTagU: public LTemplateInstruction<1, 1, 0> {
  public:
-  explicit LNumberTagU(LOperand* value, LOperand* temp) {
+  explicit LNumberTagU(LOperand* value) {
     inputs_[0] = value;
-    temps_[0] = temp;
   }
 
   LOperand* value() { return inputs_[0]; }
@@ -1883,6 +1910,7 @@ class LNumberTagD: public LTemplateInstruction<1, 1, 1> {
   LOperand* temp() { return temps_[0]; }
 
   DECLARE_CONCRETE_INSTRUCTION(NumberTagD, "number-tag-d")
+  DECLARE_HYDROGEN_ACCESSOR(Change)
 };
 
 
@@ -2068,16 +2096,19 @@ class LStoreKeyedGeneric: public LTemplateInstruction<0, 4, 0> {
 };
 
 
-class LTransitionElementsKind: public LTemplateInstruction<1, 1, 2> {
+class LTransitionElementsKind: public LTemplateInstruction<0, 2, 2> {
  public:
   LTransitionElementsKind(LOperand* object,
+                          LOperand* context,
                           LOperand* new_map_temp,
                           LOperand* temp) {
     inputs_[0] = object;
+    inputs_[1] = context;
     temps_[0] = new_map_temp;
     temps_[1] = temp;
   }
 
+  LOperand* context() { return inputs_[1]; }
   LOperand* object() { return inputs_[0]; }
   LOperand* new_map_temp() { return temps_[0]; }
   LOperand* temp() { return temps_[1]; }
@@ -2090,6 +2121,24 @@ class LTransitionElementsKind: public LTemplateInstruction<1, 1, 2> {
 
   Handle<Map> original_map() { return hydrogen()->original_map(); }
   Handle<Map> transitioned_map() { return hydrogen()->transitioned_map(); }
+  ElementsKind from_kind() { return hydrogen()->from_kind(); }
+  ElementsKind to_kind() { return hydrogen()->to_kind(); }
+};
+
+
+class LTrapAllocationMemento : public LTemplateInstruction<0, 1, 1> {
+ public:
+  LTrapAllocationMemento(LOperand* object,
+                         LOperand* temp) {
+    inputs_[0] = object;
+    temps_[0] = temp;
+  }
+
+  LOperand* object() { return inputs_[0]; }
+  LOperand* temp() { return temps_[0]; }
+
+  DECLARE_CONCRETE_INSTRUCTION(TrapAllocationMemento,
+                               "trap-allocation-memento")
 };
 
 
@@ -2207,8 +2256,10 @@ class LCheckPrototypeMaps: public LTemplateInstruction<1, 0, 1> {
   DECLARE_CONCRETE_INSTRUCTION(CheckPrototypeMaps, "check-prototype-maps")
   DECLARE_HYDROGEN_ACCESSOR(CheckPrototypeMaps)
 
-  Handle<JSObject> prototype() const { return hydrogen()->prototype(); }
-  Handle<JSObject> holder() const { return hydrogen()->holder(); }
+  ZoneList<Handle<JSObject> >* prototypes() const {
+    return hydrogen()->prototypes();
+  }
+  ZoneList<Handle<Map> >* maps() const { return hydrogen()->maps(); }
 };
 
 
@@ -2285,6 +2336,23 @@ class LAllocateObject: public LTemplateInstruction<1, 1, 1> {
 
   DECLARE_CONCRETE_INSTRUCTION(AllocateObject, "allocate-object")
   DECLARE_HYDROGEN_ACCESSOR(AllocateObject)
+};
+
+
+class LAllocate: public LTemplateInstruction<1, 2, 1> {
+ public:
+  LAllocate(LOperand* context, LOperand* size, LOperand* temp) {
+    inputs_[0] = context;
+    inputs_[1] = size;
+    temps_[0] = temp;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+  LOperand* size() { return inputs_[1]; }
+  LOperand* temp() { return temps_[0]; }
+
+  DECLARE_CONCRETE_INSTRUCTION(Allocate, "allocate")
+  DECLARE_HYDROGEN_ACCESSOR(Allocate)
 };
 
 
@@ -2433,8 +2501,9 @@ class LOsrEntry: public LTemplateInstruction<0, 0, 0> {
   // slot, i.e., that must also be restored to the spill slot on OSR entry.
   // NULL if the register has no assigned spill slot.  Indexed by allocation
   // index.
-  LOperand* register_spills_[Register::kNumAllocatableRegisters];
-  LOperand* double_register_spills_[DoubleRegister::kNumAllocatableRegisters];
+  LOperand* register_spills_[Register::kMaxNumAllocatableRegisters];
+  LOperand* double_register_spills_[
+      DoubleRegister::kMaxNumAllocatableRegisters];
 };
 
 
@@ -2598,6 +2667,7 @@ class LChunkBuilder BASE_EMBEDDED {
   // Methods for getting operands for Use / Define / Temp.
   LUnallocated* ToUnallocated(Register reg);
   LUnallocated* ToUnallocated(XMMRegister reg);
+  LUnallocated* ToUnallocated(X87TopOfStackRegister reg);
 
   // Methods for setting up define-use relationships.
   MUST_USE_RESULT LOperand* Use(HValue* value, LUnallocated* operand);
@@ -2658,6 +2728,8 @@ class LChunkBuilder BASE_EMBEDDED {
   template<int I, int T>
       LInstruction* DefineFixedDouble(LTemplateInstruction<1, I, T>* instr,
                                       XMMRegister reg);
+  template<int I, int T>
+      LInstruction* DefineX87TOS(LTemplateInstruction<1, I, T>* instr);
   // Assigns an environment to an instruction.  An instruction which can
   // deoptimize must have an environment.
   LInstruction* AssignEnvironment(LInstruction* instr);

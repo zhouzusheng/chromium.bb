@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "base/file_util_proxy.h"
+#include "base/files/file_util_proxy.h"
 #include "base/platform_file.h"
 #include "webkit/storage/webkit_storage_export.h"
 
@@ -21,11 +21,6 @@ class FileSystemURL;
 // FileSystemFileUtilProxy.  The method should be called on FILE thread.
 class WEBKIT_STORAGE_EXPORT_PRIVATE FileUtilHelper {
  public:
-  static bool PathExists(
-      FileSystemOperationContext* context,
-      FileSystemFileUtil* file_util,
-      const FileSystemURL& url);
-
   static bool DirectoryExists(
       FileSystemOperationContext* context,
       FileSystemFileUtil* file_util,

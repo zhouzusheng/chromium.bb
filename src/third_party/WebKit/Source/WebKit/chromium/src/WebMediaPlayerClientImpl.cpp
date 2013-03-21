@@ -22,6 +22,7 @@
 #include "RenderView.h"
 #include "TimeRanges.h"
 #include "WebAudioSourceProvider.h"
+#include "WebDocument.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
 #include "WebHelperPluginImpl.h"
@@ -100,12 +101,21 @@ WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
     if (m_webMediaPlayer)
         m_webMediaPlayer->setStreamTextureClient(0);
 #endif
-    if (m_helperPlugin)
-        closeHelperPlugin();
+
 #if USE(ACCELERATED_COMPOSITING)
     if (m_videoLayer)
         GraphicsLayerChromium::unregisterContentsLayer(m_videoLayer->layer());
 #endif
+
+    // Explicitly destroy the WebMediaPlayer to allow verification of tear down.
+    m_webMediaPlayer.clear();
+
+    // FIXME(ddorwin): Uncomment the ASSERT and remove the closeHelperPlugin()
+    // call after fixing http://crbug.com/173755.
+    // Ensure the m_webMediaPlayer destroyed any WebHelperPlugin used.
+    // ASSERT(!m_helperPlugin);
+    if (m_helperPlugin)
+        closeHelperPlugin();
 }
 
 void WebMediaPlayerClientImpl::networkStateChanged()
@@ -265,12 +275,6 @@ void WebMediaPlayerClientImpl::keyMessage(const WebString& keySystem, const WebS
 #endif
 }
 
-// FIXME(ddorwin): Remove after rolling WebKit in Chromium and Chromium is updated to use the new signature.
-void WebMediaPlayerClient::keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength)
-{
-    keyMessage(keySystem, sessionId, message, messageLength, WebURL());
-}
-
 void WebMediaPlayerClientImpl::keyNeeded(const WebString& keySystem, const WebString& sessionId, const unsigned char* initData, unsigned initDataLength)
 {
 #if ENABLE(ENCRYPTED_MEDIA)
@@ -287,8 +291,9 @@ void WebMediaPlayerClientImpl::keyNeeded(const WebString& keySystem, const WebSt
 WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginType, WebFrame* frame)
 {
     ASSERT(!m_helperPlugin);
+
     WebViewImpl* webView = static_cast<WebViewImpl*>(frame->view());
-    m_helperPlugin = webView->createHelperPlugin(pluginType);
+    m_helperPlugin = webView->createHelperPlugin(pluginType, frame->document());
     if (!m_helperPlugin)
         return 0;
 

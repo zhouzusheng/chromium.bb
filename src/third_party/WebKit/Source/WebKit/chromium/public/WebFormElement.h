@@ -31,8 +31,8 @@
 #ifndef WebFormElement_h
 #define WebFormElement_h
 
+#include "../../../Platform/chromium/public/WebVector.h"
 #include "WebElement.h"
-#include "platform/WebVector.h"
 
 #if WEBKIT_IMPLEMENTATION
 namespace WebCore { class HTMLFormElement; }
@@ -69,7 +69,12 @@ namespace WebKit {
         WEBKIT_EXPORT void getNamedElements(const WebString&, WebVector<WebNode>&);
         WEBKIT_EXPORT void getFormControlElements(WebVector<WebFormControlElement>&) const;
 
-        enum AutocompleteResult { AutocompleteResultSuccess, AutocompleteResultError };
+        enum AutocompleteResult {
+            AutocompleteResultSuccess,
+            AutocompleteResultErrorDisabled,
+            AutocompleteResultErrorCancel,
+            AutocompleteResultErrorInvalid,
+        };
         WEBKIT_EXPORT void finishRequestAutocomplete(WebFormElement::AutocompleteResult);
 
 #if WEBKIT_IMPLEMENTATION

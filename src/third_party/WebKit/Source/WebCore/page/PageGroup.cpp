@@ -451,9 +451,9 @@ bool PageGroup::userHasCaptionPreferences()
     return captionPreferences()->userPrefersCaptions();
 }
 
-float PageGroup::captionFontSizeScale()
+float PageGroup::captionFontSizeScale(bool& important)
 {
-    return captionPreferences()->captionFontSizeScale();
+    return captionPreferences()->captionFontSizeScale(important);
 }
 
 #endif

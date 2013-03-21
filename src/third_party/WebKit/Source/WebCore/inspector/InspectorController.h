@@ -51,10 +51,12 @@ class InspectorBackendDispatcher;
 class InspectorBaseAgentInterface;
 class InspectorClient;
 class InspectorDOMAgent;
+class InspectorDOMDebuggerAgent;
 class InspectorDebuggerAgent;
 class InspectorFrontend;
 class InspectorFrontendChannel;
 class InspectorFrontendClient;
+class InspectorMemoryAgent;
 class InspectorOverlay;
 class InspectorPageAgent;
 class InspectorProfilerAgent;
@@ -123,6 +125,8 @@ public:
     void willProcessTask();
     void didProcessTask();
 
+    HashMap<String, size_t> processMemoryDistribution() const;
+
 private:
     InspectorController(Page*, InspectorClient*);
 
@@ -131,15 +135,17 @@ private:
 
     RefPtr<InstrumentingAgents> m_instrumentingAgents;
     OwnPtr<InjectedScriptManager> m_injectedScriptManager;
-    OwnPtr<InspectorState> m_state;
+    OwnPtr<InspectorCompositeState> m_state;
     OwnPtr<InspectorOverlay> m_overlay;
 
     InspectorAgent* m_inspectorAgent;
     InspectorDOMAgent* m_domAgent;
     InspectorResourceAgent* m_resourceAgent;
     InspectorPageAgent* m_pageAgent;
+    InspectorMemoryAgent* m_memoryAgent;
 #if ENABLE(JAVASCRIPT_DEBUGGER)
     InspectorDebuggerAgent* m_debuggerAgent;
+    InspectorDOMDebuggerAgent* m_domDebuggerAgent;
     InspectorProfilerAgent* m_profilerAgent;
 #endif
 

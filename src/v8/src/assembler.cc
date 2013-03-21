@@ -692,8 +692,10 @@ RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask) {
 #ifdef ENABLE_DISASSEMBLER
 const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
   switch (rmode) {
-    case RelocInfo::NONE:
-      return "no reloc";
+    case RelocInfo::NONE32:
+      return "no reloc 32";
+    case RelocInfo::NONE64:
+      return "no reloc 64";
     case RelocInfo::EMBEDDED_OBJECT:
       return "embedded object";
     case RelocInfo::CONSTRUCT_CALL:
@@ -816,7 +818,8 @@ void RelocInfo::Verify() {
     case INTERNAL_REFERENCE:
     case CONST_POOL:
     case DEBUG_BREAK_SLOT:
-    case NONE:
+    case NONE32:
+    case NONE64:
       break;
     case NUMBER_OF_MODES:
       UNREACHABLE();
@@ -1375,6 +1378,11 @@ ExternalReference ExternalReference::page_flags(Page* page) {
 }
 
 
+ExternalReference ExternalReference::ForDeoptEntry(Address entry) {
+  return ExternalReference(entry);
+}
+
+
 // Helper function to compute x^y, where y is known to be an
 // integer. Uses binary decomposition to limit the number of
 // multiplications; see the discussion in "Hacker's Delight" by Henry
@@ -1395,7 +1403,8 @@ double power_double_int(double x, int y) {
 
 
 double power_double_double(double x, double y) {
-#ifdef __MINGW64_VERSION_MAJOR
+#if defined(__MINGW64_VERSION_MAJOR) && \
+    (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
   // MinGW64 has a custom implementation for pow.  This handles certain
   // special cases that are different.
   if ((x == 0.0 || isinf(x)) && isfinite(y)) {

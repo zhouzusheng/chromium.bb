@@ -206,7 +206,7 @@ class BASE_EXPORT TraceLog {
   void SetDisabled();
   // Helper method to enable/disable tracing for all categories.
   void SetEnabled(bool enabled);
-  bool IsEnabled() { return enabled_; }
+  bool IsEnabled() { return !!enable_count_; }
 
 #if defined(OS_ANDROID)
   static void InitATrace();
@@ -359,7 +359,6 @@ class BASE_EXPORT TraceLog {
                     const char** arg_names,
                     const unsigned char* arg_types,
                     const unsigned long long* arg_values);
-  void AddClockSyncMetadataEvents();
   static void ApplyATraceEnabledFlag(unsigned char* category_enabled);
 #endif
 
@@ -367,7 +366,7 @@ class BASE_EXPORT TraceLog {
   // synchronization.
   // This lock protects TraceLog member accesses from arbitrary threads.
   Lock lock_;
-  bool enabled_;
+  int enable_count_;
   NotificationCallback notification_callback_;
   std::vector<TraceEvent> logged_events_;
   std::vector<std::string> included_categories_;

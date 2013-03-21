@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
+#include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/sync_socket.h"
 #include "base/time.h"
@@ -100,7 +101,6 @@ class PPB_Broker_Impl;
 class PPB_Flash_Menu_Impl;
 class PPB_ImageData_Impl;
 class PPB_TCPSocket_Private_Impl;
-class PPB_UDPSocket_Private_Impl;
 
 // Virtual interface that the browser implements to implement features for
 // PPAPI plugins.
@@ -154,6 +154,8 @@ class PluginDelegate {
     // regular instance shutdown so the out-of-process code can clean up its
     // tracking information.
     virtual void RemoveInstance(PP_Instance instance) = 0;
+
+    virtual base::ProcessId GetPeerProcessId() = 0;
   };
 
   // Represents an image. This is to allow the browser layer to supply a correct
@@ -390,7 +392,7 @@ class PluginDelegate {
   // Creates a replacement plug-in that is shown when the plug-in at |file_path|
   // couldn't be loaded.
   virtual WebKit::WebPlugin* CreatePluginReplacement(
-      const FilePath& file_path) = 0;
+      const base::FilePath& file_path) = 0;
 
   // The caller will own the pointer returned from this.
   virtual PlatformImage2D* CreateImage2D(int width, int height) = 0;
@@ -458,7 +460,7 @@ class PluginDelegate {
   // Sends an async IPC to open a local file.
   typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
       AsyncOpenFileCallback;
-  virtual bool AsyncOpenFile(const FilePath& path,
+  virtual bool AsyncOpenFile(const base::FilePath& path,
                              int flags,
                              const AsyncOpenFileCallback& callback) = 0;
 
@@ -516,7 +518,7 @@ class PluginDelegate {
 
   // Synchronously returns the platform file path for a filesystem URL.
   virtual void SyncGetFileSystemPlatformPath(const GURL& url,
-                                             FilePath* platform_path) = 0;
+                                             base::FilePath* platform_path) = 0;
 
   // Returns a MessageLoopProxy instance associated with the message loop
   // of the file thread in this renderer.
@@ -544,21 +546,6 @@ class PluginDelegate {
   virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
   virtual void RegisterTCPSocket(PPB_TCPSocket_Private_Impl* socket,
                                  uint32 socket_id) = 0;
-
-  // For PPB_UDPSocket_Private.
-  virtual uint32 UDPSocketCreate() = 0;
-  virtual void UDPSocketSetBoolSocketFeature(PPB_UDPSocket_Private_Impl* socket,
-                                             uint32 socket_id,
-                                             int32_t name,
-                                             bool value) = 0;
-  virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
-                             uint32 socket_id,
-                             const PP_NetAddress_Private& addr) = 0;
-  virtual void UDPSocketRecvFrom(uint32 socket_id, int32_t num_bytes) = 0;
-  virtual void UDPSocketSendTo(uint32 socket_id,
-                               const std::string& buffer,
-                               const PP_NetAddress_Private& addr) = 0;
-  virtual void UDPSocketClose(uint32 socket_id) = 0;
 
   // For PPB_TCPServerSocket_Private.
   virtual void TCPServerSocketListen(PP_Resource socket_resource,
@@ -671,11 +658,6 @@ class PluginDelegate {
   // Stop enumerating devices of the specified |request_id|. The |request_id|
   // is the return value of EnumerateDevicesCallback.
   virtual void StopEnumerateDevices(int request_id) = 0;
-
-  // Returns restrictions on local data handled by the plug-in.
-  virtual PP_FlashLSORestrictions GetLocalDataRestrictions(
-      const GURL& document_url,
-      const GURL& plugin_url) = 0;
 };
 
 }  // namespace ppapi

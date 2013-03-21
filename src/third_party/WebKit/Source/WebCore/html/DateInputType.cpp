@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
+#if ENABLE(INPUT_TYPE_DATE)
 #include "DateInputType.h"
 
-#if ENABLE(INPUT_TYPE_DATE)
 #include "DateComponents.h"
 #include "DateTimeFieldsState.h"
 #include "HTMLInputElement.h"
@@ -59,6 +59,11 @@ inline DateInputType::DateInputType(HTMLInputElement* element)
 PassOwnPtr<InputType> DateInputType::create(HTMLInputElement* element)
 {
     return adoptPtr(new DateInputType(element));
+}
+
+void DateInputType::attach()
+{
+    observeFeatureIfVisible(FeatureObserver::InputTypeDate);
 }
 
 const AtomicString& DateInputType::formControlType() const
@@ -113,8 +118,10 @@ void DateInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters&
 {
     layoutParameters.dateTimeFormat = layoutParameters.locale.dateFormat();
     layoutParameters.fallbackDateTimeFormat = ASCIILiteral("yyyy-MM-dd");
-    layoutParameters.minimumYear = fullYear(element()->fastGetAttribute(minAttr));
-    layoutParameters.maximumYear = fullYear(element()->fastGetAttribute(maxAttr));
+    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+        layoutParameters.minimum = DateComponents();
+    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+        layoutParameters.maximum = DateComponents();
     layoutParameters.placeholderForDay = placeholderForDayOfMonthField();
     layoutParameters.placeholderForMonth = placeholderForMonthField();
     layoutParameters.placeholderForYear = placeholderForYearField();

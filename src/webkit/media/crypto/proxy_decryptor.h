@@ -8,16 +8,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "media/base/decryptor.h"
-
-namespace base {
-class MessageLoopProxy;
-}
-
-namespace media {
-class DecryptorClient;
-}
 
 namespace WebKit {
 class WebFrame;
@@ -30,11 +23,14 @@ namespace webkit_media {
 // forwards decryptor calls to it.
 // TODO(xhwang): Currently we don't support run-time switching among decryptor
 // objects. Fix this when needed.
-class ProxyDecryptor : public media::Decryptor {
+class ProxyDecryptor {
  public:
-  ProxyDecryptor(media::DecryptorClient* decryptor_client,
-                 WebKit::WebMediaPlayerClient* web_media_player_client,
-                 WebKit::WebFrame* web_frame);
+  ProxyDecryptor(WebKit::WebMediaPlayerClient* web_media_player_client,
+                 WebKit::WebFrame* web_frame,
+                 const media::KeyAddedCB& key_added_cb,
+                 const media::KeyErrorCB& key_error_cb,
+                 const media::KeyMessageCB& key_message_cb,
+                 const media::NeedKeyCB& need_key_cb);
   virtual ~ProxyDecryptor();
 
   // Requests the ProxyDecryptor to notify the decryptor when it's ready through
@@ -43,39 +39,15 @@ class ProxyDecryptor : public media::Decryptor {
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
-  // media::Decryptor implementation.
-  virtual bool GenerateKeyRequest(const std::string& key_system,
-                                  const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) OVERRIDE;
-  virtual void AddKey(const std::string& key_system,
-                      const uint8* key,
-                      int key_length,
-                      const uint8* init_data,
-                      int init_data_length,
-                      const std::string& session_id) OVERRIDE;
-  virtual void CancelKeyRequest(const std::string& key_system,
-                                const std::string& session_id) OVERRIDE;
-  virtual void RegisterKeyAddedCB(StreamType stream_type,
-                                  const KeyAddedCB& key_added_cb) OVERRIDE;
-  virtual void Decrypt(StreamType stream_type,
-                       const scoped_refptr<media::DecoderBuffer>& encrypted,
-                       const DecryptCB& decrypt_cb) OVERRIDE;
-  virtual void CancelDecrypt(StreamType stream_type) OVERRIDE;
-  virtual void InitializeAudioDecoder(
-      scoped_ptr<media::AudioDecoderConfig> config,
-      const DecoderInitCB& init_cb) OVERRIDE;
-  virtual void InitializeVideoDecoder(
-      scoped_ptr<media::VideoDecoderConfig> config,
-      const DecoderInitCB& init_cb) OVERRIDE;
-  virtual void DecryptAndDecodeAudio(
-      const scoped_refptr<media::DecoderBuffer>& encrypted,
-      const AudioDecodeCB& audio_decode_cb) OVERRIDE;
-  virtual void DecryptAndDecodeVideo(
-      const scoped_refptr<media::DecoderBuffer>& encrypted,
-      const VideoDecodeCB& video_decode_cb) OVERRIDE;
-  virtual void ResetDecoder(StreamType stream_type) OVERRIDE;
-  virtual void DeinitializeDecoder(StreamType stream_type) OVERRIDE;
+  bool GenerateKeyRequest(const std::string& key_system,
+                          const std::string& type,
+                          const uint8* init_data, int init_data_length);
+  void AddKey(const std::string& key_system,
+              const uint8* key, int key_length,
+              const uint8* init_data, int init_data_length,
+              const std::string& session_id);
+  void CancelKeyRequest(const std::string& key_system,
+                        const std::string& session_id);
 
  private:
   // Helper functions to create decryptors to handle the given |key_system|.
@@ -83,12 +55,31 @@ class ProxyDecryptor : public media::Decryptor {
       const std::string& key_system);
   scoped_ptr<media::Decryptor> CreateDecryptor(const std::string& key_system);
 
-  // DecryptorClient through which key events are fired.
-  media::DecryptorClient* client_;
+  // Callbacks for firing key events.
+  void KeyAdded(const std::string& key_system, const std::string& session_id);
+  void KeyError(const std::string& key_system,
+                const std::string& session_id,
+                media::Decryptor::KeyError error_code,
+                int system_code);
+  void KeyMessage(const std::string& key_system,
+                  const std::string& session_id,
+                  const std::string& message,
+                  const std::string& default_url);
+  void NeedKey(const std::string& key_system,
+               const std::string& session_id,
+               const std::string& type,
+               scoped_array<uint8> init_data, int init_data_size);
 
   // Needed to create the PpapiDecryptor.
   WebKit::WebMediaPlayerClient* web_media_player_client_;
   WebKit::WebFrame* web_frame_;
+  bool did_create_helper_plugin_;
+
+  // Callbacks for firing key events.
+  media::KeyAddedCB key_added_cb_;
+  media::KeyErrorCB key_error_cb_;
+  media::KeyMessageCB key_message_cb_;
+  media::NeedKeyCB need_key_cb_;
 
   // Protects the |decryptor_|. Note that |decryptor_| itself should be thread
   // safe as per the Decryptor interface.
@@ -99,6 +90,8 @@ class ProxyDecryptor : public media::Decryptor {
   // The real decryptor that does decryption for the ProxyDecryptor.
   // This pointer is protected by the |lock_|.
   scoped_ptr<media::Decryptor> decryptor_;
+
+  base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyDecryptor);
 };

@@ -61,7 +61,7 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
     Vector< Handle<Object> > args,
     Handle<String> stack_trace,
     Handle<JSArray> stack_frames) {
-  Handle<String> type_handle = FACTORY->LookupAsciiSymbol(type);
+  Handle<String> type_handle = FACTORY->LookupUtf8Symbol(type);
   Handle<FixedArray> arguments_elements =
       FACTORY->NewFixedArray(args.length());
   for (int i = 0; i < args.length(); i++) {
@@ -130,15 +130,19 @@ void MessageHandler::ReportMessage(Isolate* isolate,
     }
   } else {
     for (int i = 0; i < global_length; i++) {
-      HandleScope scope;
+      HandleScope scope(isolate);
       if (global_listeners.get(i)->IsUndefined()) continue;
-      Handle<Foreign> callback_obj(Foreign::cast(global_listeners.get(i)));
+      v8::NeanderObject listener(JSObject::cast(global_listeners.get(i)));
+      Handle<Foreign> callback_obj(Foreign::cast(listener.get(0)));
       v8::MessageCallback callback =
           FUNCTION_CAST<v8::MessageCallback>(callback_obj->foreign_address());
+      Handle<Object> callback_data(listener.get(1), isolate);
       {
         // Do not allow exceptions to propagate.
         v8::TryCatch try_catch;
-        callback(api_message_obj, api_exception_obj);
+        callback(api_message_obj, callback_data->IsUndefined()
+                                      ? api_exception_obj
+                                      : v8::Utils::ToLocal(callback_data));
       }
       if (isolate->has_scheduled_exception()) {
         isolate->clear_scheduled_exception();
@@ -149,7 +153,8 @@ void MessageHandler::ReportMessage(Isolate* isolate,
 
 
 Handle<String> MessageHandler::GetMessage(Handle<Object> data) {
-  Handle<String> fmt_str = FACTORY->LookupAsciiSymbol("FormatMessage");
+  Handle<String> fmt_str =
+      FACTORY->LookupOneByteSymbol(STATIC_ASCII_VECTOR("FormatMessage"));
   Handle<JSFunction> fun =
       Handle<JSFunction>(
           JSFunction::cast(
@@ -168,7 +173,7 @@ Handle<String> MessageHandler::GetMessage(Handle<Object> data) {
                          &caught_exception);
 
   if (caught_exception || !result->IsString()) {
-    return FACTORY->LookupAsciiSymbol("<error>");
+    return FACTORY->LookupOneByteSymbol(STATIC_ASCII_VECTOR("<error>"));
   }
   Handle<String> result_string = Handle<String>::cast(result);
   // A string that has been obtained from JS code in this way is

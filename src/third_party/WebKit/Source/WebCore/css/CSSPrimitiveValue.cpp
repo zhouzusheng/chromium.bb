@@ -93,6 +93,7 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue::CSS_VW:
     case CSSPrimitiveValue::CSS_VH:
     case CSSPrimitiveValue::CSS_VMIN:
+    case CSSPrimitiveValue::CSS_VMAX:
         return true;
     case CSSPrimitiveValue::CSS_ATTR:
     case CSSPrimitiveValue::CSS_COUNTER:
@@ -159,6 +160,7 @@ static CSSPrimitiveValue::UnitCategory unitCategory(CSSPrimitiveValue::UnitTypes
     case CSSPrimitiveValue::CSS_VW:
     case CSSPrimitiveValue::CSS_VH:
     case CSSPrimitiveValue::CSS_VMIN:
+    case CSSPrimitiveValue::CSS_VMAX:
         return CSSPrimitiveValue::UViewportPercentageLength;
 #if ENABLE(CSS_IMAGE_RESOLUTION) || ENABLE(RESOLUTION_MEDIA_QUERY)
     case CSSPrimitiveValue::CSS_DPPX:
@@ -307,6 +309,10 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length)
             m_primitiveUnitType = CSS_VMIN;
             m_value.num = length.viewportPercentageLength();
             break;
+        case ViewportPercentageMax:
+            m_primitiveUnitType = CSS_VMAX;
+            m_value.num = length.viewportPercentageLength();
+            break;
         case Calculated:
         case Relative:
         case Undefined:
@@ -436,6 +442,7 @@ void CSSPrimitiveValue::cleanup()
     case CSS_VW:
     case CSS_VH:
     case CSS_VMIN:
+    case CSS_VMAX:
     case CSS_DPPX:
     case CSS_DPI:
     case CSS_DPCM:
@@ -1099,6 +1106,9 @@ String CSSPrimitiveValue::customCssText() const
         case CSS_VMIN:
             text = formatNumber(m_value.num, "vmin");
             break;
+        case CSS_VMAX:
+            text = formatNumber(m_value.num, "vmax");
+            break;
 #if ENABLE(CSS_VARIABLES)
         case CSS_VARIABLE_NAME:
             text = "-webkit-var(" + String(m_value.string) + ")";
@@ -1165,6 +1175,9 @@ Length CSSPrimitiveValue::viewportPercentageLength()
         break;
     case CSS_VMIN:
         viewportLength = Length(getDoubleValue(), ViewportPercentageMin);
+        break;
+    case CSS_VMAX:
+        viewportLength = Length(getDoubleValue(), ViewportPercentageMax);
         break;
     default:
         break;
@@ -1233,6 +1246,7 @@ PassRefPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() const
     case CSS_VW:
     case CSS_VH:
     case CSS_VMIN:
+    case CSS_VMAX:
 #if ENABLE(CSS_IMAGE_RESOLUTION) || ENABLE(RESOLUTION_MEDIA_QUERY)
     case CSS_DPPX:
     case CSS_DPI:
@@ -1274,30 +1288,30 @@ void CSSPrimitiveValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObje
     case CSS_VARIABLE_NAME:
 #endif
         // FIXME: detect other cases when m_value is StringImpl*
-        info.addMember(m_value.string);
+        info.addMember(m_value.string, "value.string");
         break;
     case CSS_COUNTER:
-        info.addMember(m_value.counter);
+        info.addMember(m_value.counter, "value.counter");
         break;
     case CSS_RECT:
-        info.addMember(m_value.rect);
+        info.addMember(m_value.rect, "value.rect");
         break;
     case CSS_QUAD:
-        info.addMember(m_value.quad);
+        info.addMember(m_value.quad, "value.quad");
         break;
     case CSS_PAIR:
-        info.addMember(m_value.pair);
+        info.addMember(m_value.pair, "value.pair");
         break;
 #if ENABLE(DASHBOARD_SUPPORT)
     case CSS_DASHBOARD_REGION:
-        info.addMember(m_value.region);
+        info.addMember(m_value.region, "value.region");
         break;
 #endif
     case CSS_SHAPE:
-        info.addMember(m_value.shape);
+        info.addMember(m_value.shape, "value.shape");
         break;
     case CSS_CALC:
-        info.addMember(m_value.calc);
+        info.addMember(m_value.calc, "value.calc");
         break;
     default:
         break;

@@ -69,10 +69,10 @@ CSSStyleDeclaration* CSSStyleRule::style() const
 String CSSStyleRule::generateSelectorText() const
 {
     StringBuilder builder;
-    for (CSSSelector* s = m_styleRule->selectorList().first(); s; s = CSSSelectorList::next(s)) {
-        if (s != m_styleRule->selectorList().first())
+    for (const CSSSelector* selector = m_styleRule->selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
+        if (selector != m_styleRule->selectorList().first())
             builder.append(", ");
-        builder.append(s->selectorText());
+        builder.append(selector->selectorText());
     }
     return builder.toString();
 }
@@ -96,7 +96,7 @@ void CSSStyleRule::setSelectorText(const String& selectorText)
     CSSParser p(parserContext());
     CSSSelectorList selectorList;
     p.parseSelector(selectorText, selectorList);
-    if (!selectorList.first())
+    if (!selectorList.isValid())
         return;
 
     CSSStyleSheet::RuleMutationScope mutationScope(this);
@@ -125,7 +125,7 @@ String CSSStyleRule::cssText() const
 void CSSStyleRule::reattach(StyleRuleBase* rule)
 {
     ASSERT(rule);
-    ASSERT(rule->isStyleRule());
+    ASSERT_WITH_SECURITY_IMPLICATION(rule->isStyleRule());
     m_styleRule = static_cast<StyleRule*>(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_styleRule->mutableProperties());
@@ -135,8 +135,8 @@ void CSSStyleRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
 {
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
     CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_styleRule);
-    info.addMember(m_propertiesCSSOMWrapper);
+    info.addMember(m_styleRule, "styleRule");
+    info.addMember(m_propertiesCSSOMWrapper, "propertiesCSSOMWrapper");
 }
 
 } // namespace WebCore

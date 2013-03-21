@@ -7,20 +7,14 @@
 #include "base/bind.h"
 #include "cc/video_layer.h"
 #include "webkit/compositor_bindings/web_layer_impl.h"
+#include "webkit/compositor_bindings/web_to_ccvideo_frame_provider.h"
 #include "webkit/media/webvideoframe_impl.h"
 
 namespace WebKit {
 
-WebVideoLayer* WebVideoLayer::create(WebVideoFrameProvider* provider)
-{
-    return new WebVideoLayerImpl(provider);
-}
-
-WebVideoLayerImpl::WebVideoLayerImpl(WebVideoFrameProvider* provider)
-    : m_layer(new WebLayerImpl(
-        cc::VideoLayer::create(
-            provider,
-            base::Bind(webkit_media::WebVideoFrameImpl::toVideoFrame))))
+WebVideoLayerImpl::WebVideoLayerImpl(WebVideoFrameProvider* web_provider)
+    : m_providerAdapter(webkit::WebToCCVideoFrameProvider::Create(web_provider))
+    , m_layer(new WebLayerImpl(cc::VideoLayer::create(m_providerAdapter.get())))
 {
 }
 

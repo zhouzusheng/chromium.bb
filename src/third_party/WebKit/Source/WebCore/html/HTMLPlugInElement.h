@@ -25,7 +25,7 @@
 
 #include "HTMLFrameOwnerElement.h"
 #include "Image.h"
-#include "ImageLoaderClient.h"
+
 #include "ScriptInstance.h"
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
@@ -59,6 +59,8 @@ public:
     virtual void updateSnapshot(PassRefPtr<Image>) { }
     virtual void dispatchPendingMouseClick() { }
 
+    unsigned plugInOriginHash() const { return m_plugInOriginHash; }
+
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* getNPObject();
 #endif
@@ -78,14 +80,18 @@ protected:
     virtual void detach();
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
-    bool m_inBeforeLoadEventHandler;
     // Subclasses should use guardedDispatchBeforeLoadEvent instead of calling dispatchBeforeLoadEvent directly.
     bool guardedDispatchBeforeLoadEvent(const String& sourceURL);
 
+    bool m_inBeforeLoadEventHandler;
+
+    unsigned m_plugInOriginHash;
+
 private:
     bool dispatchBeforeLoadEvent(const String& sourceURL); // Not implemented, generates a compile error if subclasses call this by mistake.
+
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     virtual void defaultEventHandler(Event*);
 
@@ -94,7 +100,6 @@ private:
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isPluginElement() const;
 
-private:
     mutable ScriptInstance m_instance;
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* m_NPObject;

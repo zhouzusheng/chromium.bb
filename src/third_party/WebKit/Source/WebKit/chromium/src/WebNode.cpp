@@ -217,6 +217,11 @@ WebNodeList WebNode::getElementsByTagName(const WebString& tag) const
     return WebNodeList(m_private->getElementsByTagName(tag));
 }
 
+WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) const
+{
+    return WebElement(m_private->querySelector(tag, ec));
+}
+
 WebElement WebNode::rootEditableElement() const
 {
     return WebElement(m_private->rootEditableElement());
@@ -254,6 +259,14 @@ WebPluginContainer* WebNode::pluginContainer() const
         }
     }
     return 0;
+}
+
+WebElement WebNode::shadowHost() const
+{
+    if (isNull())
+        return WebElement();
+    const Node* coreNode = constUnwrap<Node>();
+    return WebElement(coreNode->shadowHost());
 }
 
 WebNode::WebNode(const PassRefPtr<Node>& node)

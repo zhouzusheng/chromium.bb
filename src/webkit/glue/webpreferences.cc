@@ -7,15 +7,15 @@
 #include "base/basictypes.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "unicode/uchar.h"
+#include "third_party/icu/public/common/unicode/uchar.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebNetworkStateNotifier;
@@ -56,6 +56,7 @@ WebPreferences::WebPreferences()
       java_enabled(true),
       allow_scripts_to_close_windows(false),
       uses_page_cache(false),
+      page_cache_supports_plugins(false),
       remote_fonts_enabled(true),
       javascript_can_access_clipboard(false),
       xss_auditor_enabled(true),
@@ -76,6 +77,7 @@ WebPreferences::WebPreferences()
       experimental_webgl_enabled(false),
       flash_3d_enabled(true),
       flash_stage3d_enabled(false),
+      flash_stage3d_baseline_enabled(false),
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
@@ -85,13 +87,13 @@ WebPreferences::WebPreferences()
       accelerated_compositing_for_overflow_scroll_enabled(false),
       accelerated_compositing_for_scrollable_frames_enabled(false),
       composited_scrolling_for_frames_enabled(false),
+      mock_scrollbars_enabled(false),
       show_paint_rects(false),
       render_vsync_enabled(true),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
       accelerated_compositing_enabled(false),
       force_compositing_mode(false),
-      fixed_position_compositing_enabled(false),
       accelerated_compositing_for_3d_transforms_enabled(false),
       accelerated_compositing_for_animation_enabled(false),
       accelerated_compositing_for_video_enabled(false),
@@ -125,24 +127,29 @@ WebPreferences::WebPreferences()
       fixed_position_creates_stacking_context(false),
       sync_xhr_in_documents_enabled(true),
       deferred_image_decoding_enabled(false),
+      should_respect_image_orientation(false),
       number_of_cpu_cores(1),
 #if defined(OS_MACOSX)
       editing_behavior(EDITING_BEHAVIOR_MAC),
 #elif defined(OS_WIN)
       editing_behavior(EDITING_BEHAVIOR_WIN),
+#elif defined(OS_ANDROID)
+      editing_behavior(EDITING_BEHAVIOR_ANDROID),
 #elif defined(OS_POSIX)
       editing_behavior(EDITING_BEHAVIOR_UNIX),
 #else
       editing_behavior(EDITING_BEHAVIOR_MAC),
 #endif
+      supports_multiple_windows(true),
+      viewport_enabled(false),
+      record_rendering_stats(false),
       cookie_enabled(true)
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),
       font_scale_factor(1.0f),
       force_enable_zoom(false),
-      user_gesture_required_for_media_playback(true),
-      supports_multiple_windows(true)
+      user_gesture_required_for_media_playback(true)
 #endif
 {
   standard_font_family_map[kCommonScript] =
@@ -293,6 +300,7 @@ void WebPreferences::Apply(WebView* web_view) const {
     settings->setUserStyleSheetLocation(WebURL());
   settings->setAuthorAndUserStylesEnabled(author_and_user_styles_enabled);
   settings->setUsesPageCache(uses_page_cache);
+  settings->setPageCacheSupportsPlugins(page_cache_supports_plugins);
   settings->setDownloadableBinaryFontsEnabled(remote_fonts_enabled);
   settings->setJavaScriptCanAccessClipboard(javascript_can_access_clipboard);
   settings->setXSSAuditorEnabled(xss_auditor_enabled);
@@ -366,6 +374,9 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setCompositedScrollingForFramesEnabled(
       composited_scrolling_for_frames_enabled);
 
+  // Uses the mock theme engine for scrollbars.
+  settings->setMockScrollbarsEnabled(mock_scrollbars_enabled);
+
   // Display the current compositor tree as overlay if requested on
   // the command line
   settings->setShowPlatformLayerTree(show_composited_layer_tree);
@@ -374,16 +385,14 @@ void WebPreferences::Apply(WebView* web_view) const {
   // overlay of rects, if requested on the command line.
   settings->setShowPaintRects(show_paint_rects);
 
+  // Record rendering stats for benchmarks.
+  settings->setRecordRenderingStats(record_rendering_stats);
+
   // Set whether to throttle framerate to Vsync.
   settings->setRenderVSyncEnabled(render_vsync_enabled);
 
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
-
-  // Enable compositing for fixed position elements if requested
-  // on the command line.
-  settings->setAcceleratedCompositingForFixedPositionEnabled(
-      fixed_position_compositing_enabled);
 
   // Enable gpu-accelerated 2d canvas if requested on the command line.
   settings->setAccelerated2dCanvasEnabled(accelerated_2d_canvas_enabled);
@@ -465,9 +474,15 @@ void WebPreferences::Apply(WebView* web_view) const {
       fixed_position_creates_stacking_context);
 
   settings->setDeferredImageDecodingEnabled(deferred_image_decoding_enabled);
+  settings->setShouldRespectImageOrientation(should_respect_image_orientation);
 
+  settings->setUnsafePluginPastingEnabled(false);
   settings->setEditingBehavior(
       static_cast<WebSettings::EditingBehavior>(editing_behavior));
+
+  settings->setSupportsMultipleWindows(supports_multiple_windows);
+
+  settings->setViewportEnabled(viewport_enabled);
 
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
@@ -478,7 +493,6 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setDoubleTapToZoomEnabled(true);
   settings->setMediaPlaybackRequiresUserGesture(
       user_gesture_required_for_media_playback);
-  settings->setSupportsMultipleWindows(supports_multiple_windows);
 #endif
 
   WebNetworkStateNotifier::setOnLine(is_online);
@@ -495,5 +509,8 @@ COMPILE_ASSERT_MATCHING_ENUMS(
     WebPreferences::EDITING_BEHAVIOR_WIN, WebSettings::EditingBehaviorWin);
 COMPILE_ASSERT_MATCHING_ENUMS(
     WebPreferences::EDITING_BEHAVIOR_UNIX, WebSettings::EditingBehaviorUnix);
+COMPILE_ASSERT_MATCHING_ENUMS(
+    WebPreferences::EDITING_BEHAVIOR_ANDROID,
+    WebSettings::EditingBehaviorAndroid);
 
 }  // namespace webkit_glue

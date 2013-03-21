@@ -75,7 +75,7 @@ static void ToInterleavedInternal(const AudioBus* source, int start_frame,
   int channels = source->channels();
   for (int ch = 0; ch < channels; ++ch) {
     const float* channel_data = source->channel(ch);
-    for (int i = start_frame, offset = ch; i < frames;
+    for (int i = start_frame, offset = ch; i < start_frame + frames;
          ++i, offset += channels) {
       float v = channel_data[i];
       Fixed sample = v * (v < 0 ? -kMinValue : kMaxValue);
@@ -90,10 +90,9 @@ static void ToInterleavedInternal(const AudioBus* source, int start_frame,
   }
 }
 
-static void ValidateConfig(int channels, int frames) {
+static void ValidateConfig(size_t channels, int frames) {
   CHECK_GT(frames, 0);
-  CHECK_GT(channels, 0);
-  CHECK_LE(channels, limits::kMaxChannels);
+  CHECK_LE(channels, static_cast<size_t>(limits::kMaxChannels));
 }
 
 static void CheckOverflow(int start_frame, int frames, int total_frames) {

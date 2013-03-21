@@ -32,9 +32,11 @@
 #if ENABLE(VIDEO)
 #include "MediaControlElements.h"
 
+#include "CaptionUserPreferences.h"
 #include "DOMTokenList.h"
 #include "EventNames.h"
 #include "EventTarget.h"
+#include "ExceptionCodePlaceholder.h"
 #include "FloatConversion.h"
 #include "Frame.h"
 #include "GraphicsContext.h"
@@ -171,8 +173,7 @@ void MediaControlPanelElement::setPosition(const LayoutPoint& position)
     setInlineStyleProperty(CSSPropertyMarginLeft, 0.0, CSSPrimitiveValue::CSS_PX);
     setInlineStyleProperty(CSSPropertyMarginTop, 0.0, CSSPrimitiveValue::CSS_PX);
 
-    ExceptionCode ignored;
-    classList()->add("dragged", ignored);
+    classList()->add("dragged", IGNORE_EXCEPTION);
 }
 
 void MediaControlPanelElement::resetPosition()
@@ -182,8 +183,7 @@ void MediaControlPanelElement::resetPosition()
     removeInlineStyleProperty(CSSPropertyMarginLeft);
     removeInlineStyleProperty(CSSPropertyMarginTop);
 
-    ExceptionCode ignored;
-    classList()->remove("dragged", ignored);
+    classList()->remove("dragged", IGNORE_EXCEPTION);
 
     m_cumulativeDragOffset.setX(0);
     m_cumulativeDragOffset.setY(0);
@@ -383,8 +383,6 @@ void MediaControlStatusDisplayElement::update()
     if (newStateToDisplay == m_stateBeingDisplayed)
         return;
 
-    ExceptionCode e;
-
     if (m_stateBeingDisplayed == Nothing)
         show();
     else if (newStateToDisplay == Nothing)
@@ -394,13 +392,13 @@ void MediaControlStatusDisplayElement::update()
 
     switch (m_stateBeingDisplayed) {
     case Nothing:
-        setInnerText("", e);
+        setInnerText("", IGNORE_EXCEPTION);
         break;
     case Loading:
-        setInnerText(mediaElementLoadingStateText(), e);
+        setInnerText(mediaElementLoadingStateText(), IGNORE_EXCEPTION);
         break;
     case LiveBroadcast:
-        setInnerText(mediaElementLiveBroadcastStateText(), e);
+        setInnerText(mediaElementLiveBroadcastStateText(), IGNORE_EXCEPTION);
         break;
     }
 }
@@ -425,7 +423,7 @@ PassRefPtr<MediaControlPanelMuteButtonElement> MediaControlPanelMuteButtonElemen
     ASSERT(controls);
 
     RefPtr<MediaControlPanelMuteButtonElement> button = adoptRef(new MediaControlPanelMuteButtonElement(document, controls));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -454,7 +452,7 @@ MediaControlVolumeSliderMuteButtonElement::MediaControlVolumeSliderMuteButtonEle
 PassRefPtr<MediaControlVolumeSliderMuteButtonElement> MediaControlVolumeSliderMuteButtonElement::create(Document* document)
 {
     RefPtr<MediaControlVolumeSliderMuteButtonElement> button = adoptRef(new MediaControlVolumeSliderMuteButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -475,7 +473,7 @@ MediaControlPlayButtonElement::MediaControlPlayButtonElement(Document* document)
 PassRefPtr<MediaControlPlayButtonElement> MediaControlPlayButtonElement::create(Document* document)
 {
     RefPtr<MediaControlPlayButtonElement> button = adoptRef(new MediaControlPlayButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -514,7 +512,7 @@ MediaControlOverlayPlayButtonElement::MediaControlOverlayPlayButtonElement(Docum
 PassRefPtr<MediaControlOverlayPlayButtonElement> MediaControlOverlayPlayButtonElement::create(Document* document)
 {
     RefPtr<MediaControlOverlayPlayButtonElement> button = adoptRef(new MediaControlOverlayPlayButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -554,7 +552,7 @@ MediaControlSeekForwardButtonElement::MediaControlSeekForwardButtonElement(Docum
 PassRefPtr<MediaControlSeekForwardButtonElement> MediaControlSeekForwardButtonElement::create(Document* document)
 {
     RefPtr<MediaControlSeekForwardButtonElement> button = adoptRef(new MediaControlSeekForwardButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -575,7 +573,7 @@ MediaControlSeekBackButtonElement::MediaControlSeekBackButtonElement(Document* d
 PassRefPtr<MediaControlSeekBackButtonElement> MediaControlSeekBackButtonElement::create(Document* document)
 {
     RefPtr<MediaControlSeekBackButtonElement> button = adoptRef(new MediaControlSeekBackButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -596,7 +594,7 @@ MediaControlRewindButtonElement::MediaControlRewindButtonElement(Document* docum
 PassRefPtr<MediaControlRewindButtonElement> MediaControlRewindButtonElement::create(Document* document)
 {
     RefPtr<MediaControlRewindButtonElement> button = adoptRef(new MediaControlRewindButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -604,8 +602,7 @@ PassRefPtr<MediaControlRewindButtonElement> MediaControlRewindButtonElement::cre
 void MediaControlRewindButtonElement::defaultEventHandler(Event* event)
 {
     if (event->type() == eventNames().clickEvent) {
-        ExceptionCode ignoredCode;
-        mediaController()->setCurrentTime(max(0.0f, mediaController()->currentTime() - 30), ignoredCode);
+        mediaController()->setCurrentTime(max(0.0f, mediaController()->currentTime() - 30), IGNORE_EXCEPTION);
         event->setDefaultHandled();
     }
     HTMLInputElement::defaultEventHandler(event);
@@ -627,7 +624,7 @@ MediaControlReturnToRealtimeButtonElement::MediaControlReturnToRealtimeButtonEle
 PassRefPtr<MediaControlReturnToRealtimeButtonElement> MediaControlReturnToRealtimeButtonElement::create(Document* document)
 {
     RefPtr<MediaControlReturnToRealtimeButtonElement> button = adoptRef(new MediaControlReturnToRealtimeButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     button->hide();
     return button.release();
@@ -666,7 +663,7 @@ PassRefPtr<MediaControlToggleClosedCaptionsButtonElement> MediaControlToggleClos
     ASSERT(controls);
 
     RefPtr<MediaControlToggleClosedCaptionsButtonElement> button = adoptRef(new MediaControlToggleClosedCaptionsButtonElement(document, controls));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     button->hide();
     return button.release();
@@ -803,8 +800,8 @@ void MediaControlClosedCaptionsTrackListElement::updateDisplay()
         rebuildTrackListMenu();
     
     bool captionsVisible = mediaElement->closedCaptionsVisible();
-    for (unsigned i = 0, length = menuItems.size(); i < length; ++i) {
-        RefPtr<Element> trackItem = menuItems[i];
+    for (unsigned i = 0, length = m_menuItems.size(); i < length; ++i) {
+        RefPtr<Element> trackItem = m_menuItems[i];
         int trackIndex = trackListIndexForElement(trackItem.get());
         if (trackIndex != HTMLMediaElement::textTracksIndexNotFound()) {
             if (trackIndex == HTMLMediaElement::textTracksOffIndex()) {
@@ -826,12 +823,35 @@ void MediaControlClosedCaptionsTrackListElement::updateDisplay()
 #endif
 }
 
+#if ENABLE(VIDEO_TRACK)
+static void insertTextTrackMenuItemIntoSortedContainer(RefPtr<Element>& item, RefPtr<Element>& container)
+{
+    // The container will always have the "Off" entry already present and it
+    // should remain at the start of the list.
+    ASSERT(container->childNodeCount() > 0);
+    ASSERT(item->childNodeCount() == 1); // Each item should have a single text node child for the label.
+    String itemLabel = toText(item->firstChild())->wholeText();
+
+    // This is an insertion sort :( However, there shouldn't be a horrible number of text track items.
+    for (int i = 1, numChildNodes = container->childNodeCount(); i < numChildNodes; ++i) {
+        Node* child = container->childNode(i);
+        ASSERT(child->childNodeCount() == 1); // Each item should have a single text node child for the label.
+        String childLabel = toText(child->firstChild())->wholeText();
+        if (codePointCompareLessThan(itemLabel, childLabel)) {
+            container->insertBefore(item, child);
+            return;
+        }
+    }
+    container->appendChild(item);
+}
+#endif
+
 void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
 {
 #if ENABLE(VIDEO_TRACK)
     // Remove any existing content.
     removeChildren();
-    menuItems.clear();
+    m_menuItems.clear();
 
     m_trackListHasChanged = false;
 
@@ -848,35 +868,20 @@ void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
         return;
 
     Document* doc = document();
+    CaptionUserPreferences* captionsUserPreferences = doc->page()->group().captionPreferences();
 
-    RefPtr<Element> captionsSection = doc->createElement(sectionTag, ASSERT_NO_EXCEPTION);
     RefPtr<Element> captionsHeader = doc->createElement(h3Tag, ASSERT_NO_EXCEPTION);
-    captionsHeader->appendChild(doc->createTextNode("Closed Captions"));
-    captionsSection->appendChild(captionsHeader);
-    RefPtr<Element> captionsList = doc->createElement(ulTag, ASSERT_NO_EXCEPTION);
-
-    RefPtr<Element> subtitlesSection = doc->createElement(sectionTag, ASSERT_NO_EXCEPTION);
-    RefPtr<Element> subtitlesHeader = doc->createElement(h3Tag, ASSERT_NO_EXCEPTION);
-    subtitlesHeader->appendChild(doc->createTextNode("Subtitles"));
-    subtitlesSection->appendChild(subtitlesHeader);
-    RefPtr<Element> subtitlesList = doc->createElement(ulTag, ASSERT_NO_EXCEPTION);
+    captionsHeader->appendChild(doc->createTextNode(textTrackSubtitlesText()));
+    appendChild(captionsHeader);
+    RefPtr<Element> captionsMenuList = doc->createElement(ulTag, ASSERT_NO_EXCEPTION);
 
     RefPtr<Element> trackItem;
 
     trackItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
-    trackItem->appendChild(doc->createTextNode("Off"));
+    trackItem->appendChild(doc->createTextNode(textTrackOffText()));
     trackItem->setAttribute(trackIndexAttributeName(), textTracksOffAttrValue, ASSERT_NO_EXCEPTION);
-    captionsList->appendChild(trackItem);
-    menuItems.append(trackItem);
-
-    trackItem = doc->createElement(liTag, ASSERT_NO_EXCEPTION);
-    trackItem->appendChild(doc->createTextNode("Off"));
-    trackItem->setAttribute(trackIndexAttributeName(), textTracksOffAttrValue, ASSERT_NO_EXCEPTION);
-    subtitlesList->appendChild(trackItem);
-    menuItems.append(trackItem);
-
-    bool hasCaptions = false;
-    bool hasSubtitles = false;
+    captionsMenuList->appendChild(trackItem);
+    m_menuItems.append(trackItem);
 
     for (unsigned i = 0, length = trackList->length(); i < length; ++i) {
         TextTrack* track = trackList->item(i);
@@ -888,31 +893,16 @@ void MediaControlClosedCaptionsTrackListElement::rebuildTrackListMenu()
         // should always be in sync.
         trackItem->setAttribute(trackIndexAttributeName(), String::number(i), ASSERT_NO_EXCEPTION);
 
-        AtomicString labelText = track->label();
-        if (labelText.isNull() || labelText.isEmpty())
-            labelText = displayNameForLanguageLocale(track->language());
-        if (labelText.isNull() || labelText.isEmpty())
-            labelText = "No Label";
+        if (captionsUserPreferences)
+            trackItem->appendChild(doc->createTextNode(captionsUserPreferences->displayNameForTrack(track)));
+        else
+            trackItem->appendChild(doc->createTextNode(track->label()));
 
-        if (track->kind() == track->captionsKeyword()) {
-            hasCaptions = true;
-            captionsList->appendChild(trackItem);
-        }
-        if (track->kind() == track->subtitlesKeyword()) {
-            hasSubtitles = true;
-            subtitlesList->appendChild(trackItem);
-        }
-        trackItem->appendChild(doc->createTextNode(labelText));
-        menuItems.append(trackItem);
+        insertTextTrackMenuItemIntoSortedContainer(trackItem, captionsMenuList);
+        m_menuItems.append(trackItem);
     }
 
-    captionsSection->appendChild(captionsList);
-    subtitlesSection->appendChild(subtitlesList);
-
-    if (hasCaptions)
-        appendChild(captionsSection);
-    if (hasSubtitles)
-        appendChild(subtitlesSection);
+    appendChild(captionsMenuList);
 
     updateDisplay();
 #endif
@@ -931,7 +921,7 @@ PassRefPtr<MediaControlTimelineElement> MediaControlTimelineElement::create(Docu
     ASSERT(controls);
 
     RefPtr<MediaControlTimelineElement> timeline = adoptRef(new MediaControlTimelineElement(document, controls));
-    timeline->createShadowSubtree();
+    timeline->ensureUserAgentShadowRoot();
     timeline->setType("range");
     timeline->setAttribute(precisionAttr, "float");
     return timeline.release();
@@ -958,10 +948,8 @@ void MediaControlTimelineElement::defaultEventHandler(Event* event)
         return;
 
     float time = narrowPrecisionToFloat(value().toDouble());
-    if (event->type() == eventNames().inputEvent && time != mediaController()->currentTime()) {
-        ExceptionCode ec;
-        mediaController()->setCurrentTime(time, ec);
-    }
+    if (event->type() == eventNames().inputEvent && time != mediaController()->currentTime())
+        mediaController()->setCurrentTime(time, IGNORE_EXCEPTION);
 
     RenderSlider* slider = toRenderSlider(renderer());
     if (slider && slider->inDragMode())
@@ -1003,7 +991,7 @@ MediaControlPanelVolumeSliderElement::MediaControlPanelVolumeSliderElement(Docum
 PassRefPtr<MediaControlPanelVolumeSliderElement> MediaControlPanelVolumeSliderElement::create(Document* document)
 {
     RefPtr<MediaControlPanelVolumeSliderElement> slider = adoptRef(new MediaControlPanelVolumeSliderElement(document));
-    slider->createShadowSubtree();
+    slider->ensureUserAgentShadowRoot();
     slider->setType("range");
     slider->setAttribute(precisionAttr, "float");
     slider->setAttribute(maxAttr, "1");
@@ -1026,7 +1014,7 @@ MediaControlFullscreenVolumeSliderElement::MediaControlFullscreenVolumeSliderEle
 PassRefPtr<MediaControlFullscreenVolumeSliderElement> MediaControlFullscreenVolumeSliderElement::create(Document* document)
 {
     RefPtr<MediaControlFullscreenVolumeSliderElement> slider = adoptRef(new MediaControlFullscreenVolumeSliderElement(document));
-    slider->createShadowSubtree();
+    slider->ensureUserAgentShadowRoot();
     slider->setType("range");
     slider->setAttribute(precisionAttr, "float");
     slider->setAttribute(maxAttr, "1");
@@ -1049,7 +1037,7 @@ MediaControlFullscreenButtonElement::MediaControlFullscreenButtonElement(Documen
 PassRefPtr<MediaControlFullscreenButtonElement> MediaControlFullscreenButtonElement::create(Document* document)
 {
     RefPtr<MediaControlFullscreenButtonElement> button = adoptRef(new MediaControlFullscreenButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     button->hide();
     return button.release();
@@ -1098,7 +1086,7 @@ MediaControlFullscreenVolumeMinButtonElement::MediaControlFullscreenVolumeMinBut
 PassRefPtr<MediaControlFullscreenVolumeMinButtonElement> MediaControlFullscreenVolumeMinButtonElement::create(Document* document)
 {
     RefPtr<MediaControlFullscreenVolumeMinButtonElement> button = adoptRef(new MediaControlFullscreenVolumeMinButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -1129,7 +1117,7 @@ MediaControlFullscreenVolumeMaxButtonElement::MediaControlFullscreenVolumeMaxBut
 PassRefPtr<MediaControlFullscreenVolumeMaxButtonElement> MediaControlFullscreenVolumeMaxButtonElement::create(Document* document)
 {
     RefPtr<MediaControlFullscreenVolumeMaxButtonElement> button = adoptRef(new MediaControlFullscreenVolumeMaxButtonElement(document));
-    button->createShadowSubtree();
+    button->ensureUserAgentShadowRoot();
     button->setType("button");
     return button.release();
 }
@@ -1195,12 +1183,11 @@ MediaControlTextTrackContainerElement::MediaControlTextTrackContainerElement(Doc
     , m_fontSize(0)
 {
 }
-    
+
 void MediaControlTextTrackContainerElement::createSubtrees(Document* document)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, cue, ("cue", AtomicString::ConstructFromLiteral));
     m_cueContainer = HTMLElement::create(spanTag, document);
-    m_cueContainer->setPseudo(cue);
+    m_cueContainer->setPseudo(TextTrackCue::cueShadowPseudoId());
     appendChild(m_cueContainer, ASSERT_NO_EXCEPTION, false);
 }
 
@@ -1224,12 +1211,16 @@ const AtomicString& MediaControlTextTrackContainerElement::shadowPseudoId() cons
 
 void MediaControlTextTrackContainerElement::updateDisplay()
 {
-    HTMLMediaElement* mediaElement = toParentMediaElement(this);
+    if (!mediaController()->closedCaptionsVisible()) {
+        m_cueContainer->removeChildren();
+        return;
+    }
 
+    HTMLMediaElement* mediaElement = toParentMediaElement(this);
     // 1. If the media element is an audio element, or is another playback
     // mechanism with no rendering area, abort these steps. There is nothing to
     // render.
-    if (!mediaElement->isVideo())
+    if (!mediaElement || !mediaElement->isVideo())
         return;
 
     // 2. Let video be the media element or other playback mechanism.
@@ -1277,8 +1268,7 @@ void MediaControlTextTrackContainerElement::updateDisplay()
         if (!cue->track() || !cue->track()->isRendered())
             continue;
 
-        RefPtr<TextTrackCueBox> displayBox = cue->getDisplayTree();
-
+        RefPtr<TextTrackCueBox> displayBox = cue->getDisplayTree(m_videoDisplaySize.size());
         if (displayBox->hasChildNodes() && !contains(static_cast<Node*>(displayBox.get())))
             // Note: the display tree of a cue is removed when the active flag of the cue is unset.
             m_cueContainer->appendChild(displayBox, ASSERT_NO_EXCEPTION, false);
@@ -1308,7 +1298,7 @@ void MediaControlTextTrackContainerElement::updateDisplay()
     }
 }
 
-void MediaControlTextTrackContainerElement::updateSizes()
+void MediaControlTextTrackContainerElement::updateSizes(bool forceUpdate)
 {
     HTMLMediaElement* mediaElement = toParentMediaElement(this);
     if (!mediaElement)
@@ -1327,7 +1317,7 @@ void MediaControlTextTrackContainerElement::updateSizes()
         videoBox = toRenderVideo(mediaElement->renderer())->videoBox();
     }
 
-    if (m_videoDisplaySize == videoBox)
+    if (!forceUpdate && m_videoDisplaySize == videoBox)
         return;
     m_videoDisplaySize = videoBox;
 
@@ -1338,10 +1328,11 @@ void MediaControlTextTrackContainerElement::updateSizes()
 
     float smallestDimension = std::min(m_videoDisplaySize.size().height(), m_videoDisplaySize.size().width());
 
-    float fontSize = smallestDimension * (document()->page()->group().captionFontSizeScale());
+    bool important;
+    float fontSize = smallestDimension * (document()->page()->group().captionFontSizeScale(important));
     if (fontSize != m_fontSize) {
         m_fontSize = fontSize;
-        setInlineStyleProperty(CSSPropertyFontSize, String::number(fontSize) + "px");
+        setInlineStyleProperty(CSSPropertyFontSize, String::number(fontSize) + "px", important);
     }
 }
 

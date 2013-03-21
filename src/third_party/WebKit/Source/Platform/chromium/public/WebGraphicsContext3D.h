@@ -37,8 +37,6 @@
 #include "WebNonCopyable.h"
 #include "WebString.h"
 
-#define USE_WGC3D_TYPES
-
 struct GrGLInterface;
 
 namespace WebKit {
@@ -239,6 +237,9 @@ public:
     virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture) { return 0; }
     // Destroys the stream for the given texture.
     virtual void destroyStreamTextureCHROMIUM(WebGLId texture) { }
+
+    // GL_CHROMIUM_lose_context
+    virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other) { }
 
     // The entry points below map directly to the OpenGL ES 2.0 API.
     // See: http://www.khronos.org/registry/gles/
@@ -471,7 +472,8 @@ public:
     virtual void asyncTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint level, WGC3Denum internalformat, WGC3Dsizei width, WGC3Dsizei height, WGC3Dint border, WGC3Denum format, WGC3Denum type, const void* pixels) { }
     virtual void asyncTexSubImage2DCHROMIUM(WGC3Denum target, WGC3Dint level, WGC3Dint xoffset, WGC3Dint yoffset, WGC3Dsizei width, WGC3Dsizei height, WGC3Denum format, WGC3Denum type, const void* pixels) { }
 
-    GrGLInterface* createGrGLInterface();
+    // FIXME: Make implementations of this class override this method instead and then remove onCreateGrGLInterface().
+    virtual GrGLInterface* createGrGLInterface() { return onCreateGrGLInterface(); }
 
 protected:
     virtual GrGLInterface* onCreateGrGLInterface() { return 0; }

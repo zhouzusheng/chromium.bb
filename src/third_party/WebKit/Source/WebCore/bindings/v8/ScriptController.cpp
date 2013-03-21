@@ -102,7 +102,8 @@ bool ScriptController::canAccessFromCurrentOrigin(Frame *frame)
 ScriptController::ScriptController(Frame* frame)
     : m_frame(frame)
     , m_sourceURL(0)
-    , m_windowShell(V8DOMWindowShell::create(frame, mainThreadNormalWorld()))
+    , m_isolate(v8::Isolate::GetCurrent())
+    , m_windowShell(V8DOMWindowShell::create(frame, mainThreadNormalWorld(), m_isolate))
     , m_paused(false)
 #if ENABLE(NETSCAPE_PLUGIN_API)
     , m_wrappedWindowScriptNPObject(0)
@@ -262,7 +263,7 @@ v8::Local<v8::Value> ScriptController::compileAndRunScript(const ScriptSourceCod
         tryCatch.SetVerbose(true);
 
         // Compile the script.
-        v8::Handle<v8::String> code = deprecatedV8String(source.source());
+        v8::Handle<v8::String> code = v8String(source.source(), m_isolate);
 #if PLATFORM(CHROMIUM)
         TRACE_EVENT_BEGIN0("v8", "v8.compile");
 #endif
@@ -270,7 +271,7 @@ v8::Local<v8::Value> ScriptController::compileAndRunScript(const ScriptSourceCod
 
         // NOTE: For compatibility with WebCore, ScriptSourceCode's line starts at
         // 1, whereas v8 starts at 0.
-        v8::Handle<v8::Script> script = ScriptSourceCode::compileScript(code, source.url(), source.startPosition(), scriptData.get());
+        v8::Handle<v8::Script> script = ScriptSourceCode::compileScript(code, source.url(), source.startPosition(), scriptData.get(), m_isolate);
 #if PLATFORM(CHROMIUM)
         TRACE_EVENT_END0("v8", "v8.compile");
         TRACE_EVENT0("v8", "v8.run");
@@ -357,7 +358,7 @@ V8DOMWindowShell* ScriptController::windowShell(DOMWrapperWorld* world)
         if (iter != m_isolatedWorlds.end())
             shell = iter->value.get();
         else {
-            OwnPtr<V8DOMWindowShell> isolatedWorldShell = V8DOMWindowShell::create(m_frame, world);
+            OwnPtr<V8DOMWindowShell> isolatedWorldShell = V8DOMWindowShell::create(m_frame, world, m_isolate);
             shell = isolatedWorldShell.get();
             m_isolatedWorlds.set(world->worldId(), isolatedWorldShell.release());
         }
@@ -417,7 +418,7 @@ void ScriptController::evaluateInIsolatedWorld(int worldID, const Vector<ScriptS
 
 bool ScriptController::shouldBypassMainWorldContentSecurityPolicy()
 {
-    if (DOMWrapperWorld* world = worldForEnteredContextIfIsolated())
+    if (DOMWrapperWorld* world = worldForEnteredContext())
         return world->isolatedWorldHasContentSecurityPolicy();
     return false;
 }
@@ -445,7 +446,7 @@ v8::Local<v8::Context> ScriptController::currentWorldContext()
         return contextForWorld(this, mainThreadNormalWorld());
 
     v8::Handle<v8::Context> context = v8::Context::GetEntered();
-    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolated(context);
+    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::getWorld(context);
     if (!isolatedWorld)
         return contextForWorld(this, mainThreadNormalWorld());
 
@@ -491,7 +492,7 @@ void ScriptController::bindToWindowObject(Frame* frame, const String& key, NPObj
 
     // Attach to the global object.
     v8::Handle<v8::Object> global = v8Context->Global();
-    global->Set(deprecatedV8String(key), value);
+    global->Set(v8String(key, v8Context->GetIsolate()), value);
 }
 
 bool ScriptController::haveInterpreter() const
@@ -514,7 +515,7 @@ void ScriptController::disableEval(const String& errorMessage)
     v8::HandleScope handleScope;
     v8::Handle<v8::Context> v8Context = m_windowShell->context();
     v8Context->AllowCodeGenerationFromStrings(false);
-    v8Context->SetErrorMessageForCodeGenerationFromStrings(deprecatedV8String(errorMessage));
+    v8Context->SetErrorMessageForCodeGenerationFromStrings(v8String(errorMessage, v8Context->GetIsolate()));
 }
 
 PassScriptInstance ScriptController::createScriptInstanceForWidget(Widget* widget)
@@ -615,7 +616,7 @@ static NPObject* createScriptObject(Frame* frame)
 
     v8::Context::Scope scope(v8Context);
     DOMWindow* window = frame->document()->domWindow();
-    v8::Handle<v8::Value> global = toV8(window);
+    v8::Handle<v8::Value> global = toV8(window, v8::Handle<v8::Object>(), v8Context->GetIsolate());
     ASSERT(global->IsObject());
     return npCreateV8ScriptObject(0, v8::Handle<v8::Object>::Cast(global), window);
 }
@@ -655,7 +656,7 @@ NPObject* ScriptController::createScriptObjectForPluginElement(HTMLPlugInElement
     v8::Context::Scope scope(v8Context);
 
     DOMWindow* window = m_frame->document()->domWindow();
-    v8::Handle<v8::Value> v8plugin = toV8(static_cast<HTMLEmbedElement*>(plugin));
+    v8::Handle<v8::Value> v8plugin = toV8(static_cast<HTMLEmbedElement*>(plugin), v8::Handle<v8::Object>(), v8Context->GetIsolate());
     if (!v8plugin->IsObject())
         return createNoScriptObject();
 

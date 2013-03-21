@@ -59,7 +59,7 @@ def GritSourceFiles():
     grit_src = [os.path.join(root, f) for f in filenames
                 if f.endswith('.py')]
     files.extend(grit_src)
-  return files
+  return sorted(files)
 
 
 def Inputs(filename, defines, ids_file):

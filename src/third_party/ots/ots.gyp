@@ -12,7 +12,7 @@
   'targets': [
     {
       'target_name': 'ots',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         '<@(ots_sources)',
       ],
@@ -27,6 +27,11 @@
       'dependencies': [
         '../zlib/zlib.gyp:zlib',
       ],
+      # TODO(jschuh): http://crbug.com/167187
+      'msvs_disabled_warnings': [
+        4267,
+        4334,
+      ],      
     },
   ],
 }

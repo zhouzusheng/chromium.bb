@@ -31,17 +31,13 @@
 #ifndef WebWidget_h
 #define WebWidget_h
 
+#include "../../../Platform/chromium/public/WebCanvas.h"
+#include "../../../Platform/chromium/public/WebCommon.h"
+#include "../../../Platform/chromium/public/WebRect.h"
+#include "../../../Platform/chromium/public/WebSize.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
-#include "platform/WebCanvas.h"
-#include "platform/WebCommon.h"
-#include "platform/WebRect.h"
-#include "platform/WebSize.h"
-
-#define WEBKIT_HAS_NEW_FULLSCREEN_API 1
-#define WEBWIDGET_HAS_SETCOMPOSITORSURFACEREADY 1
-#define WEBWIDGET_HAS_PAINT_OPTIONS 1
 
 namespace WebKit {
 
@@ -133,25 +129,12 @@ public:
 
     // Indicates that the compositing surface associated with this WebWidget is
     // ready to use.
-    virtual void setCompositorSurfaceReady() = 0;
-
-    // Returns this widget's WebLayerTreeView if compositing is active, nil
-    // otherwise.
-    virtual WebLayerTreeView* layerTreeView() { return 0; }
+    virtual void setCompositorSurfaceReady() { }
 
     // Temporary method for the embedder to notify the WebWidget that the widget
     // has taken damage, e.g. due to a window expose. This method will be
     // removed when the WebWidget inversion patch lands --- http://crbug.com/112837
     virtual void setNeedsRedraw() { }
-
-    // Temporary method for the embedder to check for throttled input. When this
-    // is true, the WebWidget is indicating that it would prefer to not receive
-    // additional input events until
-    // WebWidgetClient::didBecomeReadyForAdditionalInput is called.
-    //
-    // This method will be removed when the WebWidget inversion patch lands ---
-    // http://crbug.com/112837
-    virtual bool isInputThrottled() const { return false; }
 
     // Called to inform the WebWidget of a change in theme.
     // Implementors that cache rendered copies of widgets need to re-render
@@ -215,6 +198,10 @@ public:
     // If the selection range is empty, it returns false.
     virtual bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const { return false; }
 
+    // Returns true if the selection range is nonempty and its anchor is first
+    // (i.e its anchor is its start).
+    virtual bool isSelectionAnchorFirst() const { return false; }
+
     // Fetch the current selection range of this WebWidget. If there is no
     // selection, it will output a 0-length range with the location at the
     // caret. Returns true and fills the out-paramters on success; returns false
@@ -227,6 +214,10 @@ public:
     // Returns true if the WebWidget uses GPU accelerated compositing
     // to render its contents.
     virtual bool isAcceleratedCompositingActive() const { return false; }
+
+    // The WebLayerTreeView initialized on this WebWidgetClient will be going away and
+    // is no longer safe to access.
+    virtual void willCloseLayerTreeView() { }
 
     // Calling WebWidgetClient::requestPointerLock() will result in one
     // return call to didAcquirePointerLock() or didNotAcquirePointerLock().
@@ -250,11 +241,6 @@ public:
     // Cancels the effect of instrumentBeginFrame() in case there were no events
     // following the call to instrumentBeginFrame().
     virtual void instrumentCancelFrame() { }
-
-    // Fills in a WebRenderingStats struct containing information about rendering, e.g. count of frames rendered, time spent painting.
-    // This call is relatively expensive in threaded compositing mode, as it blocks on the compositor thread.
-    // It is safe to call in software mode, but will only give stats for rendering done in compositing mode.
-    virtual void renderingStats(WebRenderingStats&) const { }
 
     // The page background color. Can be used for filling in areas without
     // content.

@@ -36,7 +36,9 @@ class DateFormat {
 
   // Release memory we allocated for the DateFormat once the JS object that
   // holds the pointer gets garbage collected.
-  static void DeleteDateFormat(v8::Persistent<v8::Value> object, void* param);
+  static void DeleteDateFormat(v8::Isolate* isolate,
+                               v8::Persistent<v8::Value> object,
+                               void* param);
 
   // Formats date and returns corresponding string.
   static v8::Handle<v8::Value> JSInternalFormat(const v8::Arguments& args);

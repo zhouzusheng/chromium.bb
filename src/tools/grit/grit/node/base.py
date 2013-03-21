@@ -434,6 +434,29 @@ class Node(object):
       return [self.attrs['name']]
     return []
 
+  @staticmethod
+  def EvaluateExpression(expr, defs, target_platform, extra_variables=None):
+    '''Worker for EvaluateCondition (below) and conditions in XTB files.'''
+    def pp_ifdef(symbol):
+      return symbol in defs
+    def pp_if(symbol):
+      return symbol in defs and defs[symbol]
+    variable_map = {
+        'defs' : defs,
+        'os': target_platform,
+        'is_linux': target_platform.startswith('linux'),
+        'is_macosx': target_platform == 'darwin',
+        'is_win': target_platform in ('cygwin', 'win32'),
+        'is_posix': (target_platform in ('darwin', 'linux2', 'linux3', 'sunos5')
+                     or 'bsd' in target_platform),
+        'pp_ifdef' : pp_ifdef,
+        'pp_if' : pp_if,
+    }
+    if extra_variables:
+      for key in extra_variables:
+        variable_map[key] = extra_variables[key]
+    return eval(expr, {}, variable_map)
+
   def EvaluateCondition(self, expr):
     '''Returns true if and only if the Python expression 'expr' evaluates
     to true.
@@ -454,24 +477,13 @@ class Node(object):
     lang = getattr(root, 'output_language', '')
     context = getattr(root, 'output_context', '')
     defs = getattr(root, 'defines', {})
-    def pp_ifdef(symbol):
-      return symbol in defs
-    def pp_if(symbol):
-      return symbol in defs and defs[symbol]
-    variable_map = {
+    target_platform = getattr(root, 'target_platform', '')
+    extra_variables = {
         'lang' : lang,
         'context' : context,
-        'defs' : defs,
-        'os': sys.platform,
-        'is_linux': sys.platform.startswith('linux'),
-        'is_macosx': sys.platform == 'darwin',
-        'is_win': sys.platform in ('cygwin', 'win32'),
-        'is_posix': (sys.platform in ('darwin', 'linux2', 'linux3', 'sunos5')
-                     or 'bsd' in sys.platform),
-        'pp_ifdef' : pp_ifdef,
-        'pp_if' : pp_if,
     }
-    return eval(expr, {}, variable_map)
+    return Node.EvaluateExpression(
+        expr, defs, target_platform, extra_variables)
 
   def OnlyTheseTranslations(self, languages):
     '''Turns off loading of translations for languages not in the provided list.

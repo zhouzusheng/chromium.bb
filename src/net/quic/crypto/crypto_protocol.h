@@ -6,18 +6,21 @@
 #define NET_QUIC_CRYPTO_CRYPTO_PROTOCOL_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_piece.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_time.h"
 
 namespace net {
 
 typedef uint32 CryptoTag;
-typedef std::map<CryptoTag, base::StringPiece> CryptoTagValueMap;
+typedef std::map<CryptoTag, std::string> CryptoTagValueMap;
 typedef std::vector<CryptoTag> CryptoTagVector;
+// An intermediate format of a handshake message that's convenient for a
+// CryptoFramer to serialize from or parse into.
 struct NET_EXPORT_PRIVATE CryptoHandshakeMessage {
   CryptoHandshakeMessage();
   ~CryptoHandshakeMessage();
@@ -36,11 +39,79 @@ struct NET_EXPORT_PRIVATE CryptoHandshakeMessage {
 const CryptoTag kCHLO = MAKE_TAG('C', 'H', 'L', 'O');  // Client hello
 const CryptoTag kSHLO = MAKE_TAG('S', 'H', 'L', 'O');  // Server hello
 
+// Key exchange methods
+const CryptoTag kP256 = MAKE_TAG('P', '2', '5', '6');  // ECDH, Curve P-256
+const CryptoTag kC255 = MAKE_TAG('C', '2', '5', '5');  // ECDH, Curve25519
+
 // AEAD algorithms
 const CryptoTag kNULL = MAKE_TAG('N', 'U', 'L', 'L');  // null algorithm
 const CryptoTag kAESH = MAKE_TAG('A', 'E', 'S', 'H');  // AES128 + SHA256
+const CryptoTag kAESG = MAKE_TAG('A', 'E', 'S', 'G');  // AES128 + GCM
+
+// Congestion control feedback types
+const CryptoTag kQBIC = MAKE_TAG('Q', 'B', 'I', 'C');  // TCP cubic
+const CryptoTag kINAR = MAKE_TAG('I', 'N', 'A', 'R');  // Inter arrival
+
+// Client hello tags
+const CryptoTag kVERS = MAKE_TAG('V', 'E', 'R', 'S');  // Version
+const CryptoTag kNONC = MAKE_TAG('N', 'O', 'N', 'C');  // The connection nonce
+const CryptoTag kSSID = MAKE_TAG('S', 'S', 'I', 'D');  // Session ID
+const CryptoTag kKEXS = MAKE_TAG('K', 'E', 'X', 'S');  // Key exchange methods
+const CryptoTag kAEAD = MAKE_TAG('A', 'E', 'A', 'D');  // Authenticated
+                                                       // encryption algorithms
+const CryptoTag kCGST = MAKE_TAG('C', 'G', 'S', 'T');  // Congestion control
+                                                       // feedback types
+const CryptoTag kICSL = MAKE_TAG('I', 'C', 'S', 'L');  // Idle connection state
+                                                       // lifetime
+const CryptoTag kKATO = MAKE_TAG('K', 'A', 'T', 'O');  // Keepalive timeout
+const CryptoTag kSNI = MAKE_TAG('S', 'N', 'I', '\0');  // Server name
+                                                       // indication
+const CryptoTag kPUBS = MAKE_TAG('P', 'U', 'B', 'S');  // Public key values
 
 const size_t kMaxEntries = 16;  // Max number of entries in a message.
+
+const size_t kNonceSize = 32;  // Size in bytes of the connection nonce.
+
+// Crypto configuration settings.
+struct NET_EXPORT_PRIVATE QuicCryptoConfig {
+  // Initializes the members to 0 or empty values.
+  QuicCryptoConfig();
+  ~QuicCryptoConfig();
+
+  // Sets the members to client-side or server-side default values.
+  void SetClientDefaults();
+  void SetServerDefaults();
+
+  // Protocol version
+  uint16 version;
+  // Key exchange methods
+  CryptoTagVector key_exchange;
+  // Authenticated encryption with associated data (AEAD) algorithms
+  CryptoTagVector aead;
+  // Congestion control feedback types
+  CryptoTagVector congestion_control;
+  // Idle connection state lifetime
+  QuicTime::Delta idle_connection_state_lifetime;
+  // Keepalive timeout, or 0 to turn off keepalive probes
+  QuicTime::Delta keepalive_timeout;
+};
+
+// Parameters negotiated by the crypto handshake.
+struct NET_EXPORT_PRIVATE QuicCryptoNegotiatedParams {
+  // Initializes the members to 0 or empty values.
+  QuicCryptoNegotiatedParams();
+  ~QuicCryptoNegotiatedParams();
+
+  // Sets the members to the values that would be negotiated from the default
+  // client-side and server-side configuration settings.
+  void SetDefaults();
+
+  uint16 version;
+  CryptoTag key_exchange;
+  CryptoTag aead;
+  CryptoTag congestion_control;
+  QuicTime::Delta idle_connection_state_lifetime;
+};
 
 }  // namespace net
 

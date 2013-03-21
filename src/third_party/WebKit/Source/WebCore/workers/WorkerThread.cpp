@@ -53,18 +53,22 @@
 
 namespace WebCore {
 
-static Mutex& threadCountMutex()
+static Mutex& threadSetMutex()
 {
     AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
     return mutex;
 }
 
-unsigned WorkerThread::m_threadCount = 0;
+static HashSet<WorkerThread*>& workerThreads()
+{
+    DEFINE_STATIC_LOCAL(HashSet<WorkerThread*>, threads, ());
+    return threads;
+}
 
 unsigned WorkerThread::workerThreadCount()
 {
-    MutexLocker lock(threadCountMutex());
-    return m_threadCount;
+    MutexLocker lock(threadSetMutex());
+    return workerThreads().size();
 }
 
 struct WorkerThreadStartupData {
@@ -114,15 +118,15 @@ WorkerThread::WorkerThread(const KURL& scriptURL, const String& userAgent, const
     , m_notificationClient(0)
 #endif
 {
-    MutexLocker lock(threadCountMutex());
-    m_threadCount++;
+    MutexLocker lock(threadSetMutex());
+    workerThreads().add(this);
 }
 
 WorkerThread::~WorkerThread()
 {
-    MutexLocker lock(threadCountMutex());
-    ASSERT(m_threadCount > 0);
-    m_threadCount--;
+    MutexLocker lock(threadSetMutex());
+    ASSERT(workerThreads().contains(this));
+    workerThreads().remove(this);
 }
 
 bool WorkerThread::start()
@@ -203,7 +207,7 @@ public:
 
     virtual void performTask(ScriptExecutionContext *context)
     {
-        ASSERT(context->isWorkerContext());
+        ASSERT_WITH_SECURITY_IMPLICATION(context->isWorkerContext());
         WorkerContext* workerContext = static_cast<WorkerContext*>(context);
 #if ENABLE(INSPECTOR)
         workerContext->clearInspector();
@@ -224,7 +228,7 @@ public:
 
     virtual void performTask(ScriptExecutionContext *context)
     {
-        ASSERT(context->isWorkerContext());
+        ASSERT_WITH_SECURITY_IMPLICATION(context->isWorkerContext());
         WorkerContext* workerContext = static_cast<WorkerContext*>(context);
 
 #if ENABLE(SQL_DATABASE)
@@ -271,6 +275,19 @@ void WorkerThread::stop()
         return;
     }
     m_runLoop.terminate();
+}
+
+class ReleaseFastMallocFreeMemoryTask : public ScriptExecutionContext::Task {
+    virtual void performTask(ScriptExecutionContext*) OVERRIDE { WTF::releaseFastMallocFreeMemory(); }
+};
+
+void WorkerThread::releaseFastMallocFreeMemoryInAllThreads()
+{
+    MutexLocker lock(threadSetMutex());
+    HashSet<WorkerThread*>& threads = workerThreads();
+    HashSet<WorkerThread*>::iterator end = threads.end();
+    for (HashSet<WorkerThread*>::iterator it = threads.begin(); it != end; ++it)
+        (*it)->runLoop().postTask(adoptPtr(new ReleaseFastMallocFreeMemoryTask));
 }
 
 } // namespace WebCore

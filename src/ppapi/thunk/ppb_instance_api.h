@@ -12,7 +12,6 @@
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_size.h"
-#include "ppapi/c/pp_time.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_gamepad.h"
@@ -85,16 +84,10 @@ class PPB_Instance_API {
   virtual void SelectedFindResultChanged(PP_Instance instance,
                                          int32_t index) = 0;
 
-  // Font.
-  virtual PP_Var GetFontFamilies(PP_Instance instance) = 0;
-
   // Fullscreen.
   virtual PP_Bool SetFullscreen(PP_Instance instance,
                                 PP_Bool fullscreen) = 0;
   virtual PP_Bool GetScreenSize(PP_Instance instance, PP_Size* size) = 0;
-
-  // Flash (Deprecated for Flash_Functions).
-  virtual PPB_Flash_API* GetFlashAPI() = 0;
 
   // This is an implementation-only function which grabs an instance of a
   // "singleton resource". These are used to implement instance interfaces
@@ -110,8 +103,6 @@ class PPB_Instance_API {
                                               uint32_t event_classes) = 0;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) = 0;
-  virtual void ClosePendingUserGesture(PP_Instance instance,
-                                       PP_TimeTicks timestamp) = 0;
 
   // Messaging.
   virtual void PostMessage(PP_Instance instance, PP_Var message) = 0;

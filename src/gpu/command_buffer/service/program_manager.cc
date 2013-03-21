@@ -22,6 +22,7 @@
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/program_cache.h"
+#include "third_party/re2/re2/re2.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -149,6 +150,29 @@ void ProgramManager::ProgramInfo::Reset() {
   attrib_location_to_index_map_.clear();
 }
 
+std::string ProgramManager::ProgramInfo::ProcessLogInfo(
+    const std::string& log) {
+  std::string output;
+  re2::StringPiece input(log);
+  std::string prior_log;
+  std::string hashed_name;
+  while (RE2::Consume(&input,
+                      "(.*)(webgl_[0123456789abcdefABCDEF]+)",
+                      &prior_log,
+                      &hashed_name)) {
+    output += prior_log;
+
+    const std::string* original_name =
+        GetOriginalNameFromHashedName(hashed_name);
+    if (original_name)
+      output += *original_name;
+    else
+      output += hashed_name;
+  }
+
+  return output + input.as_string();
+}
+
 void ProgramManager::ProgramInfo::UpdateLogInfo() {
   GLint max_len = 0;
   glGetProgramiv(service_id_, GL_INFO_LOG_LENGTH, &max_len);
@@ -161,7 +185,8 @@ void ProgramManager::ProgramInfo::UpdateLogInfo() {
   glGetProgramInfoLog(service_id_, max_len, &len, temp.get());
   DCHECK(max_len == 0 || len < max_len);
   DCHECK(len == 0 || temp[len] == '\0');
-  set_log_info(std::string(temp.get(), len).c_str());
+  std::string log(temp.get(), len);
+  set_log_info(ProcessLogInfo(log).c_str());
 }
 
 void ProgramManager::ProgramInfo::ClearUniforms(
@@ -688,6 +713,20 @@ const std::string* ProgramManager::ProgramInfo::GetAttribMappedName(
           shader_info->GetAttribMappedName(original_name);
       if (mapped_name)
         return mapped_name;
+    }
+  }
+  return NULL;
+}
+
+const std::string* ProgramManager::ProgramInfo::GetOriginalNameFromHashedName(
+    const std::string& hashed_name) const {
+  for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+    ShaderManager::ShaderInfo* shader_info = attached_shaders_[ii].get();
+    if (shader_info) {
+      const std::string* original_name =
+          shader_info->GetOriginalNameFromHashedName(hashed_name);
+      if (original_name)
+        return original_name;
     }
   }
   return NULL;

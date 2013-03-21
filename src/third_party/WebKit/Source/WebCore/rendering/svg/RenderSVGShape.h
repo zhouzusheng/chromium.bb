@@ -114,7 +114,7 @@ private:
 
     virtual void layout();
     virtual void paint(PaintInfo&, const LayoutPoint&);
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction);
 
@@ -149,13 +149,13 @@ private:
 
 inline RenderSVGShape* toRenderSVGShape(RenderObject* object)
 {
-    ASSERT(!object || object->isSVGShape());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
     return static_cast<RenderSVGShape*>(object);
 }
 
 inline const RenderSVGShape* toRenderSVGShape(const RenderObject* object)
 {
-    ASSERT(!object || object->isSVGShape());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
     return static_cast<const RenderSVGShape*>(object);
 }
 

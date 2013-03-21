@@ -44,7 +44,6 @@ namespace WebCore {
 
 v8::Handle<v8::Value> V8MessageEvent::dataAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.MessageEvent.data");
     MessageEvent* event = V8MessageEvent::toNative(info.Holder());
 
     v8::Handle<v8::Value> result;
@@ -59,8 +58,8 @@ v8::Handle<v8::Value> V8MessageEvent::dataAccessorGetter(v8::Local<v8::String> n
     }
 
     case MessageEvent::DataTypeSerializedScriptValue:
-        if (SerializedScriptValue* serializedValue = event->dataAsSerializedScriptValue())
-            result = serializedValue->deserialize(event->ports(), info.GetIsolate());
+        if (RefPtr<SerializedScriptValue> serializedValue = event->dataAsSerializedScriptValue())
+            result = serializedValue->deserialize(info.GetIsolate(), event->ports());
         else
             result = v8Null(info.GetIsolate());
         break;
@@ -72,11 +71,11 @@ v8::Handle<v8::Value> V8MessageEvent::dataAccessorGetter(v8::Local<v8::String> n
     }
 
     case MessageEvent::DataTypeBlob:
-        result = toV8(event->dataAsBlob(), info.Holder(), info.GetIsolate());
+        result = toV8Fast(event->dataAsBlob(), info, event);
         break;
 
     case MessageEvent::DataTypeArrayBuffer:
-        result = toV8(event->dataAsArrayBuffer(), info.Holder(), info.GetIsolate());
+        result = toV8Fast(event->dataAsArrayBuffer(), info, event);
         break;
     }
 
@@ -89,7 +88,6 @@ v8::Handle<v8::Value> V8MessageEvent::dataAccessorGetter(v8::Local<v8::String> n
 
 v8::Handle<v8::Value> V8MessageEvent::portsAccessorGetter(v8::Local<v8::String> name, const v8::AccessorInfo& info)
 {
-    INC_STATS("DOM.MessageEvent.ports");
     MessageEvent* event = V8MessageEvent::toNative(info.Holder());
 
     MessagePortArray* ports = event->ports();
@@ -100,14 +98,13 @@ v8::Handle<v8::Value> V8MessageEvent::portsAccessorGetter(v8::Local<v8::String> 
 
     v8::Local<v8::Array> portArray = v8::Array::New(portsCopy.size());
     for (size_t i = 0; i < portsCopy.size(); ++i)
-        portArray->Set(v8Integer(i, info.GetIsolate()), toV8(portsCopy[i].get(), info.Holder(), info.GetIsolate()));
+        portArray->Set(v8Integer(i, info.GetIsolate()), toV8Fast(portsCopy[i].get(), info, event));
 
     return portArray;
 }
 
 v8::Handle<v8::Value> V8MessageEvent::initMessageEventCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.MessageEvent.initMessageEvent");
     MessageEvent* event = V8MessageEvent::toNative(args.Holder());
     String typeArg = toWebCoreString(args[0]);
     bool canBubbleArg = args[1]->BooleanValue();
@@ -119,7 +116,7 @@ v8::Handle<v8::Value> V8MessageEvent::initMessageEventCallback(const v8::Argumen
     DOMWindow* sourceArg = 0;
     if (args[6]->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(args[6]);
-        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate());
+        v8::Handle<v8::Object> window = wrapper->FindInstanceInPrototypeChain(V8DOMWindow::GetTemplate(args.GetIsolate()));
         if (!window.IsEmpty())
             sourceArg = V8DOMWindow::toNative(window);
     }
@@ -136,7 +133,6 @@ v8::Handle<v8::Value> V8MessageEvent::initMessageEventCallback(const v8::Argumen
 
 v8::Handle<v8::Value> V8MessageEvent::webkitInitMessageEventCallback(const v8::Arguments& args)
 {
-    INC_STATS("DOM.MessageEvent.webkitInitMessageEvent");
     return initMessageEventCallback(args);
 }
 

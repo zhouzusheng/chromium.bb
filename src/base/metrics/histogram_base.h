@@ -10,10 +10,15 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
+
+class Pickle;
+class PickleIterator;
 
 namespace base {
 
 class DictionaryValue;
+class HistogramBase;
 class HistogramSamples;
 class ListValue;
 
@@ -31,6 +36,15 @@ enum BASE_EXPORT HistogramType {
 };
 
 std::string HistogramTypeToString(HistogramType type);
+
+// Create or find existing histogram that matches the pickled info.
+// Returns NULL if the pickled data has problems.
+BASE_EXPORT_PRIVATE HistogramBase* DeserializeHistogramInfo(
+    PickleIterator* iter);
+
+// Create or find existing histogram and add the samples from pickle.
+// Silently returns when seeing any data problem in the pickle.
+BASE_EXPORT void DeserializeHistogramAndAddSamples(PickleIterator* iter);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -56,7 +70,7 @@ class BASE_EXPORT HistogramBase {
     kHexRangePrintingFlag = 0x8000,
   };
 
-  HistogramBase(const std::string& name);
+  explicit HistogramBase(const std::string& name);
   virtual ~HistogramBase();
 
   std::string histogram_name() const { return histogram_name_; }
@@ -69,13 +83,25 @@ class BASE_EXPORT HistogramBase {
   virtual HistogramType GetHistogramType() const = 0;
 
   // Whether the histogram has construction arguments as parameters specified.
-  // For histograms that don't have the concept of minimum, maximum or
-  // bucket_count, this function always returns false.
+  // For histograms that don't have the concept of |minimum|, |maximum| or
+  // |bucket_count|, this function always returns false.
   virtual bool HasConstructionArguments(Sample minimum,
                                         Sample maximum,
                                         size_t bucket_count) const = 0;
 
   virtual void Add(Sample value) = 0;
+
+  // 2 convenient functions that call Add(Sample).
+  void AddTime(const TimeDelta& time);
+  void AddBoolean(bool value);
+
+  virtual void AddSamples(const HistogramSamples& samples) = 0;
+  virtual bool AddSamplesFromPickle(PickleIterator* iter) = 0;
+
+  // Serialize the histogram info into |pickle|.
+  // Note: This only serializes the construction arguments of the histogram, but
+  // does not serialize the samples.
+  bool SerializeInfo(Pickle* pickle) const;
 
   // Snapshot the current complete set of sample data.
   // Override with atomic/locked snapshot if needed.
@@ -91,6 +117,9 @@ class BASE_EXPORT HistogramBase {
   void WriteJSON(std::string* output) const;
 
 protected:
+  // Subclasses should implement this function to make SerializeInfo work.
+  virtual bool SerializeInfoImpl(Pickle* pickle) const = 0;
+
   // Writes information about the construction parameters in |params|.
   virtual void GetParameters(DictionaryValue* params) const = 0;
 

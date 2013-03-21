@@ -51,6 +51,7 @@ class WebBlobRegistry;
 class WebClipboard;
 class WebCompositorSupport;
 class WebCookieJar;
+class WebDiscardableMemory;
 class WebFileSystem;
 class WebFileUtilities;
 class WebFlingAnimator;
@@ -66,13 +67,14 @@ class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
 class WebSocketStreamHandle;
 class WebStorageNamespace;
+class WebUnitTestSupport;
 class WebThemeEngine;
 class WebThread;
 class WebURL;
 class WebURLLoader;
 class WebWorkerRunLoop;
-struct WebLocalizedString;
 struct WebFloatPoint;
+struct WebLocalizedString;
 struct WebSize;
 
 class Platform {
@@ -112,6 +114,12 @@ public:
 
     virtual double audioHardwareSampleRate() { return 0; }
     virtual size_t audioHardwareBufferSize() { return 0; }
+
+    // Creates a device for audio I/O.
+    // Pass in (numberOfInputChannels > 0) if live/local audio input is desired.
+    virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
+
+    // FIXME: remove deprecated API once chromium switches over to new method.
     virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
 
 
@@ -212,9 +220,28 @@ public:
     // false on platform specific error conditions.
     virtual bool processMemorySizesInBytes(size_t* privateBytes, size_t* sharedBytes) { return false; }
 
+    // A callback interface for requestProcessMemorySizes
+    class ProcessMemorySizesCallback {
+    public:
+        virtual ~ProcessMemorySizesCallback() { }
+        virtual void dataReceived(size_t privateBytes, size_t sharedBytes) = 0;
+    };
+
+    // Requests private and shared usage, in bytes. Private bytes is the amount of
+    // memory currently allocated to this process that cannot be shared.
+    // The callback ownership is passed to the callee.
+    virtual void requestProcessMemorySizes(ProcessMemorySizesCallback* requestCallback) { }
+
     // Reports number of bytes used by memory allocator for internal needs.
     // Returns true if the size has been reported, or false otherwise.
     virtual bool memoryAllocatorWasteInBytes(size_t*) { return false; }
+
+    // Allocates discardable memory. May return 0, even if the platform supports
+    // discardable memory. If nonzero, however, then the WebDiscardableMmeory is
+    // returned in an locked state. You may use its underlying data() member
+    // directly, taking care to unlock it when you are ready to let it become
+    // discardable.
+    virtual WebDiscardableMemory* allocateAndLockDiscardableMemory(size_t bytes) { return 0; }
 
 
     // Message Ports -------------------------------------------------------
@@ -332,6 +359,13 @@ public:
 
     // Callable from a background WebKit thread.
     virtual void callOnMainThread(void (*func)(void*), void* context) { }
+
+
+    // Testing -------------------------------------------------------------
+
+#define HAVE_WEBUNITTESTSUPPORT 1
+    // Get a pointer to testing support interfaces. Will not be available in production builds.
+    virtual WebUnitTestSupport* unitTestSupport() { return 0; }
 
 
     // Tracing -------------------------------------------------------------

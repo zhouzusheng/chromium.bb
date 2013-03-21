@@ -37,7 +37,8 @@ class BreakIterator {
 
   // Release memory we allocated for the BreakIterator once the JS object that
   // holds the pointer gets garbage collected.
-  static void DeleteBreakIterator(v8::Persistent<v8::Value> object,
+  static void DeleteBreakIterator(v8::Isolate* isolate,
+                                  v8::Persistent<v8::Value> object,
 				  void* param);
 
   // Assigns new text to the iterator.

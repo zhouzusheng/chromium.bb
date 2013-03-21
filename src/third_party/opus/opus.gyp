@@ -7,9 +7,9 @@
     'use_system_opus%': 0,
     'conditions': [
       ['OS=="android"', {
-        'use_opus_floating_point%': 0,
+        'use_opus_fixed_point%': 1,
       }, {
-        'use_opus_floating_point%': 1,
+        'use_opus_fixed_point%': 0,
       }],
     ],
   },
@@ -22,7 +22,6 @@
           'defines': [
             'OPUS_BUILD',
             'OPUS_EXPORT=',
-            'WORDS_BIGENDIAN',
           ],
           'include_dirs': [
             'src/celt',
@@ -263,7 +262,7 @@
                 4305,  # Disable truncation warning in celt/pitch.c .
               ],
             }],
-            ['use_opus_floating_point==1', {
+            ['use_opus_fixed_point==0', {
               'include_dirs': [
                 'src/silk/float',
               ],
@@ -321,10 +320,20 @@
             'cflags': [
               '<!@(pkg-config --cflags opus)',
             ],
-            'defines': [
-              'USE_SYSTEM_OPUS',
+          },
+          'variables': {
+            'headers_root_path': 'src/include',
+            'header_filenames': [
+              'opus_custom.h',
+              'opus_defines.h',
+              'opus_multistream.h',
+              'opus_types.h',
+              'opus.h',
             ],
           },
+          'includes': [
+            '../../build/shim_headers.gypi',
+          ],
           'link_settings': {
             'ldflags': [
               '<!@(pkg-config --libs-only-L --libs-only-other opus)',

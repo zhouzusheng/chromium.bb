@@ -51,7 +51,7 @@
 
 namespace WebCore {
 
-InspectorInputAgent::InspectorInputAgent(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState, Page* page)
+InspectorInputAgent::InspectorInputAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, Page* page)
     : InspectorBaseAgent<InspectorInputAgent>("Input", instrumentingAgents, inspectorState)
     , m_page(page)
 {
@@ -107,6 +107,8 @@ void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& t
         return;
     }
 
+    int convertedModifiers = modifiers ? *modifiers : 0;
+
     MouseButton convertedButton = NoButton;
     if (button) {
         if (*button == "left")
@@ -125,7 +127,7 @@ void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& t
     // assume the origin is in the top-left of the window. Convert.
     IntPoint convertedPoint = m_page->mainFrame()->view()->convertToContainingWindow(IntPoint(x, y));
     IntPoint globalPoint = m_page->chrome()->rootViewToScreen(IntRect(IntPoint(x, y), IntSize(0, 0))).location();
-    int convertedModifiers = modifiers ? *modifiers : 0;
+
     PlatformMouseEvent event(
         convertedPoint,
         globalPoint,

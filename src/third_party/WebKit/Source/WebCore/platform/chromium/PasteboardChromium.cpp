@@ -87,8 +87,7 @@ void Pasteboard::setSelectionMode(bool selectionMode)
 void Pasteboard::writeSelection(Range* selectedRange, bool canSmartCopyOrDelete, Frame* frame)
 {
     String html = createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
-    ExceptionCode ec = 0;
-    KURL url = selectedRange->startContainer(ec)->document()->url();
+    KURL url = selectedRange->startContainer()->document()->url();
     String plainText = frame->editor()->selectedText();
 #if OS(WINDOWS)
     replaceNewlinesWithWindowsStyleNewlines(plainText);
@@ -182,16 +181,13 @@ PassRefPtr<DocumentFragment> Pasteboard::documentFragment(Frame* frame, PassRefP
     WebKit::WebClipboard::Buffer buffer = m_selectionMode ? WebKit::WebClipboard::BufferSelection : WebKit::WebClipboard::BufferStandard;
 
     if (WebKit::Platform::current()->clipboard()->isFormatAvailable(WebKit::WebClipboard::FormatHTML, buffer)) {
-        WebKit::WebString markup;
         unsigned fragmentStart = 0;
         unsigned fragmentEnd = 0;
         WebKit::WebURL url;
-        markup = WebKit::Platform::current()->clipboard()->readHTML(buffer, &url, &fragmentStart, &fragmentEnd);
+        WebKit::WebString markup = WebKit::Platform::current()->clipboard()->readHTML(buffer, &url, &fragmentStart, &fragmentEnd);
         if (!markup.isEmpty()) {
-          RefPtr<DocumentFragment> fragment =
-              createFragmentFromMarkupWithContext(frame->document(), markup, fragmentStart, fragmentEnd, KURL(url), DisallowScriptingContent);
-          if (fragment)
-              return fragment.release();
+            if (RefPtr<DocumentFragment> fragment = createFragmentFromMarkupWithContext(frame->document(), markup, fragmentStart, fragmentEnd, KURL(url), DisallowScriptingAndPluginContentIfNeeded))
+                return fragment.release();
         }
     }
 
@@ -199,10 +195,7 @@ PassRefPtr<DocumentFragment> Pasteboard::documentFragment(Frame* frame, PassRefP
         String markup = WebKit::Platform::current()->clipboard()->readPlainText(buffer);
         if (!markup.isEmpty()) {
             chosePlainText = true;
-
-            RefPtr<DocumentFragment> fragment =
-                createFragmentFromText(context.get(), markup);
-            if (fragment)
+            if (RefPtr<DocumentFragment> fragment = createFragmentFromText(context.get(), markup))
                 return fragment.release();
         }
     }

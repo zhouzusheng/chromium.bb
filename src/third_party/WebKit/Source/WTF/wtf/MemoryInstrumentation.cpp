@@ -49,9 +49,9 @@ MemoryInstrumentation::~MemoryInstrumentation()
 {
 }
 
-void MemoryInstrumentation::reportEdge(MemoryObjectInfo* ownerObjectInfo, const void* target, const char* name)
+void MemoryInstrumentation::reportEdge(const void* target, const char* name, MemberType memberType)
 {
-    m_client->reportEdge(ownerObjectInfo->reportedPointer(), target, name);
+    m_client->reportEdge(target, name, memberType);
 }
 
 MemoryObjectType MemoryInstrumentation::getObjectType(MemoryObjectInfo* objectInfo)
@@ -59,17 +59,12 @@ MemoryObjectType MemoryInstrumentation::getObjectType(MemoryObjectInfo* objectIn
     return objectInfo->objectType();
 }
 
-void MemoryInstrumentation::callReportObjectInfo(MemoryObjectInfo* memoryObjectInfo, const void* pointer, MemoryObjectType objectType, size_t objectSize)
-{
-    memoryObjectInfo->reportObjectInfo(pointer, objectType, objectSize);
-}
-
-void MemoryInstrumentation::reportLinkToBuffer(const void* owner, const void* buffer, MemoryObjectType ownerObjectType, size_t size, const char* nodeName, const char* edgeName)
+void MemoryInstrumentation::reportLinkToBuffer(const void* buffer, MemoryObjectType ownerObjectType, size_t size, const char* className, const char* edgeName)
 {
     MemoryObjectInfo memoryObjectInfo(this, ownerObjectType, 0);
     memoryObjectInfo.reportObjectInfo(buffer, ownerObjectType, size);
-    memoryObjectInfo.setName(nodeName);
-    m_client->reportLeaf(owner, memoryObjectInfo, edgeName);
+    memoryObjectInfo.setClassName(className);
+    m_client->reportLeaf(memoryObjectInfo, edgeName);
 }
 
 MemoryInstrumentation::WrapperBase::WrapperBase(MemoryObjectType objectType, const void* pointer)
@@ -84,19 +79,30 @@ MemoryInstrumentation::WrapperBase::WrapperBase(MemoryObjectType objectType, con
 
 void MemoryInstrumentation::WrapperBase::process(MemoryInstrumentation* memoryInstrumentation)
 {
+    processPointer(memoryInstrumentation, false);
+}
+
+void MemoryInstrumentation::WrapperBase::processPointer(MemoryInstrumentation* memoryInstrumentation, bool isRoot)
+{
     MemoryObjectInfo memoryObjectInfo(memoryInstrumentation, m_ownerObjectType, m_pointer);
+    if (isRoot)
+        memoryObjectInfo.markAsRoot();
     callReportMemoryUsage(&memoryObjectInfo);
 
     const void* realAddress = memoryObjectInfo.reportedPointer();
     ASSERT(realAddress);
-    if (realAddress != m_pointer) {
-        memoryInstrumentation->m_client->reportBaseAddress(m_pointer, realAddress);
-        if (!memoryObjectInfo.firstVisit())
-            return;
+
+    if (memoryObjectInfo.firstVisit()) {
+        memoryInstrumentation->countObjectSize(realAddress, memoryObjectInfo.objectType(), memoryObjectInfo.objectSize());
+        memoryInstrumentation->m_client->reportNode(memoryObjectInfo);
     }
-    memoryInstrumentation->countObjectSize(realAddress, memoryObjectInfo.objectType(), memoryObjectInfo.objectSize());
-    memoryInstrumentation->m_client->reportNode(memoryObjectInfo);
-    if (!memoryObjectInfo.customAllocation() && !memoryInstrumentation->checkCountedObject(realAddress)) {
+
+    if (realAddress != m_pointer)
+        memoryInstrumentation->m_client->reportBaseAddress(m_pointer, realAddress);
+
+    if (memoryObjectInfo.firstVisit()
+        && !memoryObjectInfo.customAllocation()
+        && !memoryInstrumentation->checkCountedObject(realAddress)) {
 #if DEBUG_POINTER_INSTRUMENTATION
         fputs("Unknown object counted:\n", stderr);
         WTFPrintBacktrace(m_callStack, m_callStackSize);
@@ -107,27 +113,82 @@ void MemoryInstrumentation::WrapperBase::process(MemoryInstrumentation* memoryIn
 void MemoryInstrumentation::WrapperBase::processRootObjectRef(MemoryInstrumentation* memoryInstrumentation)
 {
     MemoryObjectInfo memoryObjectInfo(memoryInstrumentation, m_ownerObjectType, m_pointer);
+    memoryObjectInfo.markAsRoot();
     callReportMemoryUsage(&memoryObjectInfo);
 
     ASSERT(m_pointer == memoryObjectInfo.reportedPointer());
     memoryInstrumentation->m_client->reportNode(memoryObjectInfo);
 }
 
-void MemoryClassInfo::init(const void* objectAddress, MemoryObjectType objectType, size_t actualSize)
+#if COMPILER(MSVC)
+static const char* className(const char* functionName, char* buffer, const int maxLength)
 {
-    m_memoryObjectInfo->reportObjectInfo(objectAddress, objectType, actualSize);
+    // MSVC generates names like this: 'WTF::FN<class WebCore::SharedBuffer>::fn'
+    static const char prefix[] = "WTF::FN<";
+    ASSERT(!strncmp(functionName, prefix, sizeof(prefix) - 1));
+    const char* begin = strchr(functionName, ' ');
+    if (!begin) { // Fallback.
+        strncpy(buffer, functionName, maxLength);
+        buffer[maxLength - 1] = 0;
+        return buffer;
+    }
+    const char* end = strrchr(begin, '>');
+    ASSERT(end);
+    int length = end - begin;
+    length = length < maxLength ? length : maxLength - 1;
+    memcpy(buffer, begin, length);
+    buffer[length] = 0;
+    return buffer;
+}
+#else
+static const char* className(const char* functionName, char* buffer, const int maxLength)
+{
+#if COMPILER(CLANG)
+    static const char prefix[] = "[T =";
+#elif COMPILER(GCC)
+    static const char prefix[] = "[with T =";
+#else
+    static const char prefix[] = "T =";
+#endif
+    const char* begin = strstr(functionName, prefix);
+    if (!begin) { // Fallback.
+        strncpy(buffer, functionName, maxLength);
+        buffer[maxLength - 1] = 0;
+        return buffer;
+    }
+    begin += sizeof(prefix);
+    const char* end = strchr(begin, ']');
+    ASSERT(end);
+    int length = end - begin;
+    length = length < maxLength ? length : maxLength - 1;
+    memcpy(buffer, begin, length);
+    buffer[length] = 0;
+    return buffer;
+}
+#endif
+
+void MemoryClassInfo::callReportObjectInfo(MemoryObjectInfo* memoryObjectInfo, const void* objectAddress, const char* stringWithClassName, MemoryObjectType objectType, size_t actualSize)
+{
+    memoryObjectInfo->reportObjectInfo(objectAddress, objectType, actualSize);
+    char buffer[256];
+    memoryObjectInfo->setClassName(className(stringWithClassName, buffer, sizeof(buffer)));
+}
+
+void MemoryClassInfo::init(const void* objectAddress, const char* stringWithClassName, MemoryObjectType objectType, size_t actualSize)
+{
+    callReportObjectInfo(m_memoryObjectInfo, objectAddress, stringWithClassName, objectType, actualSize);
     m_memoryInstrumentation = m_memoryObjectInfo->memoryInstrumentation();
     m_objectType = m_memoryObjectInfo->objectType();
     m_skipMembers = !m_memoryObjectInfo->firstVisit();
 }
 
-void MemoryClassInfo::addRawBuffer(const void* buffer, size_t size, const char* nodeName, const char* edgeName)
+void MemoryClassInfo::addRawBuffer(const void* buffer, size_t size, const char* className, const char* edgeName)
 {
     if (!m_skipMembers)
-        m_memoryInstrumentation->addRawBuffer(m_memoryObjectInfo->reportedPointer(), buffer, m_objectType, size, nodeName, edgeName);
+        m_memoryInstrumentation->addRawBuffer(buffer, m_objectType, size, className, edgeName);
 }
 
-void MemoryClassInfo::addPrivateBuffer(size_t size, MemoryObjectType ownerObjectType, const char* nodeName, const char* edgeName)
+void MemoryClassInfo::addPrivateBuffer(size_t size, MemoryObjectType ownerObjectType, const char* className, const char* edgeName)
 {
     if (!size)
         return;
@@ -136,7 +197,7 @@ void MemoryClassInfo::addPrivateBuffer(size_t size, MemoryObjectType ownerObject
     if (!ownerObjectType)
         ownerObjectType = m_objectType;
     m_memoryInstrumentation->countObjectSize(0, ownerObjectType, size);
-    m_memoryInstrumentation->reportLinkToBuffer(m_memoryObjectInfo->reportedPointer(), 0, ownerObjectType, size, nodeName, edgeName);
+    m_memoryInstrumentation->reportLinkToBuffer(0, ownerObjectType, size, className, edgeName);
 }
 
 void MemoryClassInfo::setCustomAllocation(bool customAllocation)

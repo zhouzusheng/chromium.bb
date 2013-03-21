@@ -93,7 +93,7 @@ inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndC
 
 inline SliderThumbElement* toSliderThumbElement(Node* node)
 {
-    ASSERT(!node || node->isHTMLElement());
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
     return static_cast<SliderThumbElement*>(node);
 }
 
@@ -106,7 +106,7 @@ HTMLElement* sliderTrackElementOf(Node*);
 
 class RenderSliderThumb : public RenderBlock {
 public:
-    RenderSliderThumb(Node*);
+    RenderSliderThumb(SliderThumbElement*);
     void updateAppearance(RenderStyle* parentStyle);
 
 private:

@@ -77,13 +77,13 @@ public:
         bool m_defaultValue; // Needs to be traked as a part of the signature since it can be changed dynamically.
     };
 
-    static const AtomicString& supplementName();
+    static const char* supplementName();
     static ContextFeaturesCache* from(Document*);
 
     Entry& entryFor(ContextFeatures::FeatureType type)
     {
         size_t index = static_cast<size_t>(type);
-        ASSERT(index < ContextFeatures::FeatureTypeSize);
+        ASSERT_WITH_SECURITY_IMPLICATION(index < ContextFeatures::FeatureTypeSize);
         return m_entries[index];
     }
 
@@ -94,10 +94,9 @@ private:
     Entry m_entries[ContextFeatures::FeatureTypeSize];
 };
 
-const AtomicString& ContextFeaturesCache::supplementName()
+const char* ContextFeaturesCache::supplementName()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("ContextFeaturesCache"));
-    return name;
+    return "ContextFeaturesCache";
 }
 
 ContextFeaturesCache* ContextFeaturesCache::from(Document* document)

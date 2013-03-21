@@ -52,7 +52,10 @@ namespace internal {
 class PositionStack  {
  public:
   explicit PositionStack(bool* ok) : top_(NULL), ok_(ok) {}
-  ~PositionStack() { ASSERT(!*ok_ || is_empty()); }
+  ~PositionStack() {
+    ASSERT(!*ok_ || is_empty());
+    USE(ok_);
+  }
 
   class Element  {
    public:
@@ -254,8 +257,8 @@ Handle<String> Parser::LookupSymbol(int symbol_id) {
   if (static_cast<unsigned>(symbol_id)
       >= static_cast<unsigned>(symbol_cache_.length())) {
     if (scanner().is_literal_ascii()) {
-      return isolate()->factory()->LookupAsciiSymbol(
-          scanner().literal_ascii_string());
+      return isolate()->factory()->LookupOneByteSymbol(
+          Vector<const uint8_t>::cast(scanner().literal_ascii_string()));
     } else {
       return isolate()->factory()->LookupTwoByteSymbol(
           scanner().literal_utf16_string());
@@ -275,8 +278,8 @@ Handle<String> Parser::LookupCachedSymbol(int symbol_id) {
   Handle<String> result = symbol_cache_.at(symbol_id);
   if (result.is_null()) {
     if (scanner().is_literal_ascii()) {
-      result = isolate()->factory()->LookupAsciiSymbol(
-          scanner().literal_ascii_string());
+      result = isolate()->factory()->LookupOneByteSymbol(
+          Vector<const uint8_t>::cast(scanner().literal_ascii_string()));
     } else {
       result = isolate()->factory()->LookupTwoByteSymbol(
           scanner().literal_utf16_string());
@@ -1429,7 +1432,7 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
     case Token::IDENTIFIER: {
       Handle<String> name = ParseIdentifier(CHECK_OK);
       // Handle 'module' as a context-sensitive keyword.
-      if (!name->IsEqualTo(CStrVector("module"))) {
+      if (!name->IsOneByteEqualTo(STATIC_ASCII_VECTOR("module"))) {
         names.Add(name, zone());
         while (peek() == Token::COMMA) {
           Consume(Token::COMMA);
@@ -3006,6 +3009,7 @@ Expression* Parser::ParseAssignmentExpression(bool accept_IN, bool* ok) {
   // side expression.  We could report this as a syntax error here but
   // for compatibility with JSC we choose to report the error at
   // runtime.
+  // TODO(ES5): Should change parsing for spec conformance.
   if (expression == NULL || !expression->IsValidLeftHandSide()) {
     Handle<String> type =
         isolate()->factory()->invalid_lhs_in_assignment_symbol();
@@ -3988,7 +3992,7 @@ ObjectLiteral::Property* Parser::ParseObjectLiteralGetSet(bool is_getter,
       next == Token::STRING || is_keyword) {
     Handle<String> name;
     if (is_keyword) {
-      name = isolate_->factory()->LookupAsciiSymbol(Token::String(next));
+      name = isolate_->factory()->LookupUtf8Symbol(Token::String(next));
     } else {
       name = GetSymbol(CHECK_OK);
     }
@@ -4710,7 +4714,7 @@ void Parser::ExpectContextualKeyword(const char* keyword, bool* ok) {
   if (!*ok) return;
   Handle<String> symbol = GetSymbol(ok);
   if (!*ok) return;
-  if (!symbol->IsEqualTo(CStrVector(keyword))) {
+  if (!symbol->IsUtf8EqualTo(CStrVector(keyword))) {
     *ok = false;
     ReportUnexpectedToken(scanner().current_token());
   }

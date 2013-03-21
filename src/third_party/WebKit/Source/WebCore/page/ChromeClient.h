@@ -42,6 +42,10 @@
 #include <wtf/UnusedParam.h>
 #include <wtf/Vector.h>
 
+#if ENABLE(SQL_DATABASE)
+#include "DatabaseDetails.h"
+#endif
+
 #ifndef __OBJC__
 class NSMenu;
 class NSResponder;
@@ -184,7 +188,7 @@ public:
     virtual bool shouldRubberBandInDirection(ScrollDirection) const = 0;
 
 #if ENABLE(SQL_DATABASE)
-    virtual void exceededDatabaseQuota(Frame*, const String& databaseName) = 0;
+    virtual void exceededDatabaseQuota(Frame*, const String& databaseName, DatabaseDetails) = 0;
 #endif
 
     // Callback invoked when the application cache fails to save a cache object
@@ -271,6 +275,7 @@ public:
         CanvasTrigger = 1 << 3,
         AnimationTrigger = 1 << 4,
         FilterTrigger = 1 << 5,
+        ScrollableInnerFrameTrigger = 1 << 6,
         AllTriggers = 0xFFFFFFFF
     };
     typedef unsigned CompositingTriggerFlags;
@@ -369,6 +374,12 @@ public:
     virtual bool isEmptyChromeClient() const { return false; }
 
     virtual PassRefPtr<Image> plugInStartLabelImage(RenderSnapshottedPlugIn::LabelSize) const { return 0; }
+    virtual String plugInStartLabelTitle() const { return String(); }
+    virtual String plugInStartLabelSubtitle() const { return String(); }
+    virtual String plugInExtraStyleSheet() const { return String(); }
+
+    // FIXME: Port should return true using heuristic based on scrollable(RenderBox).
+    virtual bool shouldAutoscrollForDragAndDrop(RenderBox*) const { return false; }
 
 protected:
     virtual ~ChromeClient() { }

@@ -152,8 +152,9 @@ namespace WebCore {
     String AXListMarkerText();
     String AXImageMapText();
     String AXHeadingText();
-    String AXDefinitionListTermText();
-    String AXDefinitionListDefinitionText();
+    String AXDefinitionText();
+    String AXDescriptionListTermText();
+    String AXDescriptionListDetailText();
     String AXFooterRoleDescriptionText();
     String AXFileUploadButtonText();
 #if PLATFORM(MAC)
@@ -262,6 +263,15 @@ namespace WebCore {
 #endif
 
     String clickToExitFullScreenText();
+
+#if ENABLE(VIDEO_TRACK)
+    String textTrackSubtitlesText();
+    String textTrackOffText();
+    String textTrackNoLabelText();
+#endif
+
+    String snapshottedPlugInLabelTitle();
+    String snapshottedPlugInLabelSubtitle();
 
 #if !PLATFORM(CHROMIUM)
 #define WEB_UI_STRING(string, description) WebCore::localizedString(string)

@@ -34,6 +34,7 @@
 #if ENABLE(INSPECTOR)
 
 #include "InspectorBaseAgent.h"
+#include "InspectorFrontend.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -52,22 +53,30 @@ class InspectorMemoryAgent : public InspectorBaseAgent<InspectorMemoryAgent>, pu
 public:
     typedef Vector<OwnPtr<InspectorBaseAgentInterface> > InspectorAgents;
 
-    static PassOwnPtr<InspectorMemoryAgent> create(InstrumentingAgents* instrumentingAgents, InspectorClient* client, InspectorState* state, Page* page)
+    static PassOwnPtr<InspectorMemoryAgent> create(InstrumentingAgents* instrumentingAgents, InspectorClient* client, InspectorCompositeState* state, Page* page)
     {
         return adoptPtr(new InspectorMemoryAgent(instrumentingAgents, client, state, page));
     }
     virtual ~InspectorMemoryAgent();
 
-    virtual void getDOMNodeCount(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Memory::DOMGroup> >& domGroups, RefPtr<TypeBuilder::Memory::StringStatistics>& strings);
-    virtual void getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<TypeBuilder::Memory::MemoryBlock>& processMemory, RefPtr<InspectorObject>& graph);
+    virtual void getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners);
+    virtual void getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<TypeBuilder::Memory::MemoryBlock>& processMemory);
 
     virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
+    void getProcessMemoryDistributionMap(HashMap<String, size_t>* memoryInfo);
+
+    virtual void setFrontend(InspectorFrontend*);
+    virtual void clearFrontend();
+
 private:
-    InspectorMemoryAgent(InstrumentingAgents*, InspectorClient*, InspectorState*, Page*);
+    InspectorMemoryAgent(InstrumentingAgents*, InspectorClient*, InspectorCompositeState*, Page*);
+
+    void getProcessMemoryDistributionImpl(bool reportGraph, HashMap<String, size_t>* memoryInfo);
 
     InspectorClient* m_inspectorClient;
     Page* m_page;
+    InspectorFrontend::Memory* m_frontend;
 };
 
 } // namespace WebCore

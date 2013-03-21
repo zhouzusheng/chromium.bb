@@ -14,13 +14,13 @@
 #include "base/string_number_conversions.h"
 #include "base/string_piece.h"
 #include "base/string_split.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "unicode/datefmt.h"
-#include "unicode/dtfmtsym.h"
-#include "unicode/uchar.h"
+#include "third_party/icu/public/common/unicode/uchar.h"
+#include "third_party/icu/public/i18n/unicode/datefmt.h"
+#include "third_party/icu/public/i18n/unicode/dtfmtsym.h"
 
 using base::StringPiece16;
 
@@ -34,7 +34,7 @@ std::string FtpUtil::UnixFilePathToVMS(const std::string& unix_path) {
   if (unix_path.empty())
     return std::string();
 
-  StringTokenizer tokenizer(unix_path, "/");
+  base::StringTokenizer tokenizer(unix_path, "/");
   std::vector<std::string> tokens;
   while (tokenizer.GetNext())
     tokens.push_back(tokenizer.token());

@@ -5,8 +5,9 @@
 #include "cc/scrollbar_geometry_fixed_thumb.h"
 
 #include <cmath>
-#include <public/WebRect.h>
-#include <public/WebScrollbar.h>
+
+#include "third_party/WebKit/Source/Platform/chromium/public/WebRect.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebScrollbar.h"
 
 using WebKit::WebRect;
 using WebKit::WebScrollbar;
@@ -21,16 +22,6 @@ scoped_ptr<ScrollbarGeometryFixedThumb> ScrollbarGeometryFixedThumb::create(scop
 
 ScrollbarGeometryFixedThumb::~ScrollbarGeometryFixedThumb()
 {
-}
-
-void ScrollbarGeometryFixedThumb::update(WebScrollbar* scrollbar)
-{
-    int length = ScrollbarGeometryStub::thumbLength(scrollbar);
-
-    if (scrollbar->orientation() == WebScrollbar::Horizontal)
-        m_thumbSize = gfx::Size(length, scrollbar->size().height);
-    else
-        m_thumbSize = gfx::Size(scrollbar->size().width, length);
 }
 
 WebScrollbarThemeGeometry* ScrollbarGeometryFixedThumb::clone() const

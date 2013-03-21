@@ -9,7 +9,7 @@
 #include "GrDrawState.h"
 #include "GrGpu.h"
 
-#include "SkStroke.h"
+#include "SkStrokeRec.h"
 
 // TODO: try to remove this #include
 #include "GrContext.h"
@@ -22,7 +22,7 @@ SkXfermode::Mode op_to_mode(SkRegion::Op op) {
 
     static const SkXfermode::Mode modeMap[] = {
         SkXfermode::kDstOut_Mode,   // kDifference_Op
-        SkXfermode::kMultiply_Mode, // kIntersect_Op
+        SkXfermode::kModulate_Mode, // kIntersect_Op
         SkXfermode::kSrcOver_Mode,  // kUnion_Op
         SkXfermode::kXor_Mode,      // kXOR_Op
         SkXfermode::kClear_Mode,    // kReverseDifference_Op
@@ -55,24 +55,24 @@ void GrSWMaskHelper::draw(const GrRect& rect, SkRegion::Op op,
 /**
  * Draw a single path element of the clip stack into the accumulation bitmap
  */
-void GrSWMaskHelper::draw(const SkPath& path, const SkStroke& stroke, SkRegion::Op op,
+void GrSWMaskHelper::draw(const SkPath& path, const SkStrokeRec& stroke, SkRegion::Op op,
                           bool antiAlias, uint8_t alpha) {
 
     SkPaint paint;
-    SkScalar width = stroke.getWidthIfStroked();
-    if (0 == width) {
+    if (stroke.isHairlineStyle()) {
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(SK_Scalar1);
     } else {
-        if (stroke.getDoFill()) {
+        if (stroke.isFillStyle()) {
             paint.setStyle(SkPaint::kFill_Style);
         } else {
             paint.setStyle(SkPaint::kStroke_Style);
             paint.setStrokeJoin(stroke.getJoin());
             paint.setStrokeCap(stroke.getCap());
-            paint.setStrokeWidth(width);
+            paint.setStrokeWidth(stroke.getWidth());
         }
     }
+
     SkXfermode* mode = SkXfermode::Create(op_to_mode(op));
 
     paint.setXfermode(mode);
@@ -159,7 +159,7 @@ void GrSWMaskHelper::toTexture(GrTexture *texture, uint8_t alpha) {
  */
 GrTexture* GrSWMaskHelper::DrawPathMaskToTexture(GrContext* context,
                                                  const SkPath& path,
-                                                 const SkStroke& stroke,
+                                                 const SkStrokeRec& stroke,
                                                  const GrIRect& resultBounds,
                                                  bool antiAlias,
                                                  SkMatrix* matrix) {
@@ -197,8 +197,7 @@ void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
         kPathMaskStage = GrPaint::kTotalStages,
     };
     GrAssert(!drawState->isStageEnabled(kPathMaskStage));
-    drawState->stage(kPathMaskStage)->reset();
-    drawState->createTextureEffect(kPathMaskStage, texture);
+    drawState->createTextureEffect(kPathMaskStage, texture, SkMatrix::I());
     SkScalar w = SkIntToScalar(rect.width());
     SkScalar h = SkIntToScalar(rect.height());
     GrRect maskRect = GrRect::MakeWH(w / texture->width(),
@@ -214,4 +213,3 @@ void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
     target->drawRect(dstRect, NULL, srcRects, NULL);
     drawState->disableStage(kPathMaskStage);
 }
-

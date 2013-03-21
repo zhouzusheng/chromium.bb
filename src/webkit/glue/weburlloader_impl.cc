@@ -20,15 +20,15 @@
 #include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPLoadInfo.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebHTTPLoadInfo.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoadTiming.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoadTiming.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "webkit/base/file_path_string_conversions.h"
 #include "webkit/glue/ftp_directory_listing_response_delegate.h"
 #include "webkit/glue/multipart_response_delegate.h"
@@ -246,10 +246,14 @@ void PopulateURLResponse(
   // TODO(jungshik): Figure out the actual value of the referrer charset and
   // pass it to GetSuggestedFilename.
   std::string value;
-  if (headers->EnumerateHeader(NULL, "content-disposition", &value)) {
-    response->setSuggestedFileName(
-        net::GetSuggestedFilename(url, value, "", "", "", std::string()));
-  }
+  headers->EnumerateHeader(NULL, "content-disposition", &value);
+  response->setSuggestedFileName(
+      net::GetSuggestedFilename(url,
+                                value,
+                                std::string(),  // referrer_charset
+                                std::string(),  // suggested_name
+                                std::string(),  // mime_type
+                                std::string()));  // default_name
 
   Time time_val;
   if (headers->GetLastModifiedValue(&time_val))
@@ -287,26 +291,27 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
       WebKitPlatformSupportImpl* platform);
 
   // ResourceLoaderBridge::Peer methods:
-  virtual void OnUploadProgress(uint64 position, uint64 size);
+  virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
   virtual bool OnReceivedRedirect(
       const GURL& new_url,
       const ResourceResponseInfo& info,
       bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies);
-  virtual void OnReceivedResponse(const ResourceResponseInfo& info);
-  virtual void OnDownloadedData(int len);
+      GURL* new_first_party_for_cookies) OVERRIDE;
+  virtual void OnReceivedResponse(const ResourceResponseInfo& info) OVERRIDE;
+  virtual void OnDownloadedData(int len) OVERRIDE;
   virtual void OnReceivedData(const char* data,
                               int data_length,
-                              int encoded_data_length);
-  virtual void OnReceivedCachedMetadata(const char* data, int len);
-  virtual void OnCompletedRequest(int error_code,
-                                  bool was_ignored_by_handler,
-                                  const std::string& security_info,
-                                  const base::TimeTicks& completion_time);
+                              int encoded_data_length) OVERRIDE;
+  virtual void OnReceivedCachedMetadata(const char* data, int len) OVERRIDE;
+  virtual void OnCompletedRequest(
+      int error_code,
+      bool was_ignored_by_handler,
+      const std::string& security_info,
+      const base::TimeTicks& completion_time) OVERRIDE;
 
  private:
   friend class base::RefCounted<Context>;
-  ~Context() {}
+  virtual ~Context() {}
 
   // We can optimize the handling of data URLs in most cases.
   bool CanHandleDataURL(const GURL& url) const;
@@ -428,6 +433,7 @@ void WebURLLoaderImpl::Context::Start(
   request_info.requestor_pid = request.requestorProcessID();
   request_info.request_type =
       ResourceType::FromTargetType(request.targetType());
+  request_info.priority = request.priority();
   request_info.appcache_host_id = request.appCacheHostID();
   request_info.routing_id = request.requestorID();
   request_info.download_to_file = request.downloadToFile();

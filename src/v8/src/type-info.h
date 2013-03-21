@@ -227,10 +227,11 @@ class CompareOperation;
 class CompilationInfo;
 class CountOperation;
 class Expression;
+class ForInStatement;
+class ICStub;
 class Property;
 class SmallMapList;
 class UnaryOperation;
-class ForInStatement;
 
 
 class TypeFeedbackOracle: public ZoneObject {
@@ -242,9 +243,9 @@ class TypeFeedbackOracle: public ZoneObject {
 
   bool LoadIsMonomorphicNormal(Property* expr);
   bool LoadIsUninitialized(Property* expr);
-  bool LoadIsMegamorphicWithTypeInfo(Property* expr);
+  bool LoadIsPolymorphic(Property* expr);
   bool StoreIsMonomorphicNormal(TypeFeedbackId ast_id);
-  bool StoreIsMegamorphicWithTypeInfo(TypeFeedbackId ast_id);
+  bool StoreIsPolymorphic(TypeFeedbackId ast_id);
   bool CallIsMonomorphic(Call* expr);
   bool CallNewIsMonomorphic(CallNew* expr);
   bool ObjectLiteralStoreIsMonomorphic(ObjectLiteral::Property* prop);
@@ -280,6 +281,7 @@ class TypeFeedbackOracle: public ZoneObject {
   Handle<Map> GetObjectLiteralStoreMap(ObjectLiteral::Property* prop);
 
   bool LoadIsBuiltin(Property* expr, Builtins::Name id);
+  bool LoadIsStub(Property* expr, ICStub* stub);
 
   // TODO(1571) We can't use ToBooleanStub::Types as the return value because
   // of various cylces in our headers. Death to tons of implementations in

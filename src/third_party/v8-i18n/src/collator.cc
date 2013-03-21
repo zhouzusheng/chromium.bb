@@ -47,7 +47,9 @@ icu::Collator* Collator::UnpackCollator(v8::Handle<v8::Object> obj) {
   return NULL;
 }
 
-void Collator::DeleteCollator(v8::Persistent<v8::Value> object, void* param) {
+void Collator::DeleteCollator(v8::Isolate* isolate,
+                              v8::Persistent<v8::Value> object,
+                              void* param) {
   v8::Persistent<v8::Object> persistent_object =
       v8::Persistent<v8::Object>::Cast(object);
 
@@ -58,7 +60,7 @@ void Collator::DeleteCollator(v8::Persistent<v8::Value> object, void* param) {
   delete UnpackCollator(persistent_object);
 
   // Then dispose of the persistent handle to JS object.
-  persistent_object.Dispose();
+  persistent_object.Dispose(isolate);
 }
 
 // Throws a JavaScript exception.
@@ -116,8 +118,9 @@ v8::Handle<v8::Value> Collator::JSCreateCollator(
         v8::String::New("Internal error, wrong parameters.")));
   }
 
+  v8::Isolate* isolate = args.GetIsolate();
   v8::Persistent<v8::ObjectTemplate> intl_collator_template =
-      Utils::GetTemplate();
+      Utils::GetTemplate(isolate);
 
   // Create an empty object wrapper.
   v8::Local<v8::Object> local_object = intl_collator_template->NewInstance();
@@ -128,7 +131,7 @@ v8::Handle<v8::Value> Collator::JSCreateCollator(
   }
 
   v8::Persistent<v8::Object> wrapper =
-      v8::Persistent<v8::Object>::New(local_object);
+      v8::Persistent<v8::Object>::New(isolate, local_object);
 
   // Set collator as internal field of the resulting JS object.
   icu::Collator* collator = InitializeCollator(
@@ -150,7 +153,7 @@ v8::Handle<v8::Value> Collator::JSCreateCollator(
   }
 
   // Make object handle weak so we can delete iterator once GC kicks in.
-  wrapper.MakeWeak(NULL, DeleteCollator);
+  wrapper.MakeWeak(isolate, NULL, DeleteCollator);
 
   return wrapper;
 }

@@ -41,7 +41,8 @@ namespace WebCore {
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, instanceCounter, ("WebCoreSVGElementInstance"));
 
 SVGElementInstance::SVGElementInstance(SVGUseElement* correspondingUseElement, SVGUseElement* directUseElement, PassRefPtr<SVGElement> originalElement)
-    : m_correspondingUseElement(correspondingUseElement)
+    : m_parentInstance(0)
+    , m_correspondingUseElement(correspondingUseElement)
     , m_directUseElement(directUseElement)
     , m_element(originalElement)
     , m_previousSibling(0)
@@ -100,7 +101,7 @@ void SVGElementInstance::detach()
     m_directUseElement = 0;
     m_correspondingUseElement = 0;
 
-    removeAllChildrenInContainer<SVGElementInstance, SVGElementInstance>(this);
+    removeDetachedChildrenInContainer<SVGElementInstance, SVGElementInstance>(this);
 }
 
 PassRefPtr<SVGElementInstanceList> SVGElementInstance::childNodes()
@@ -185,9 +186,7 @@ bool SVGElementInstance::dispatchEvent(PassRefPtr<Event> event)
 
 EventTargetData* SVGElementInstance::eventTargetData()
 {
-    // EventTarget would use these methods if we were actually using its add/removeEventListener logic.
-    // As we're forwarding those calls to the correspondingElement(), no one should ever call this function.
-    ASSERT_NOT_REACHED();
+    // Since no event listeners are added to an SVGElementInstance, we don't have eventTargetData.
     return 0;
 }
 

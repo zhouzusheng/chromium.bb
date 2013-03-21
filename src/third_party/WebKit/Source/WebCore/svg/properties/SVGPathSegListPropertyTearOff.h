@@ -57,6 +57,7 @@ public:
     void removeItemFromList(size_t itemIndex, bool shouldSynchronizeWrappers)
     {
         ASSERT(m_values);
+        ASSERT_WITH_SECURITY_IMPLICATION(itemIndex < m_values->size());
 
         m_values->remove(itemIndex);
 

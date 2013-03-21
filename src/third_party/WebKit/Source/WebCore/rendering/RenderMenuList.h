@@ -75,7 +75,8 @@ private:
 
     virtual const char* renderName() const { return "RenderMenuList"; }
 
-    virtual void computePreferredLogicalWidths();
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
+    virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -140,7 +141,7 @@ private:
 
 inline RenderMenuList* toRenderMenuList(RenderObject* object)
 {
-    ASSERT(!object || object->isMenuList());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isMenuList());
     return static_cast<RenderMenuList*>(object);
 }
 

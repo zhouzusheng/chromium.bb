@@ -10,9 +10,13 @@
 
 namespace cc {
 
-Scheduler::Scheduler(SchedulerClient* client, scoped_ptr<FrameRateController> frameRateController)
-    : m_client(client)
+Scheduler::Scheduler(SchedulerClient* client,
+                     scoped_ptr<FrameRateController> frameRateController,
+                     const SchedulerSettings& schedulerSettings)
+    : m_settings(schedulerSettings)
+    , m_client(client)
     , m_frameRateController(frameRateController.Pass())
+    , m_stateMachine(schedulerSettings)
     , m_insideProcessScheduledActions(false)
 {
     DCHECK(m_client);
@@ -43,6 +47,12 @@ void Scheduler::setCanDraw(bool canDraw)
     processScheduledActions();
 }
 
+void Scheduler::setHasPendingTree(bool hasPendingTree)
+{
+    m_stateMachine.setHasPendingTree(hasPendingTree);
+    processScheduledActions();
+}
+
 void Scheduler::setNeedsCommit()
 {
     m_stateMachine.setNeedsCommit();
@@ -59,6 +69,12 @@ void Scheduler::setNeedsForcedCommit()
 void Scheduler::setNeedsRedraw()
 {
     m_stateMachine.setNeedsRedraw();
+    processScheduledActions();
+}
+
+void Scheduler::didSwapUseIncompleteTile()
+{
+    m_stateMachine.didSwapUseIncompleteTile();
     processScheduledActions();
 }
 
@@ -91,6 +107,11 @@ void Scheduler::beginFrameAborted()
 void Scheduler::setMaxFramesPending(int maxFramesPending)
 {
     m_frameRateController->setMaxFramesPending(maxFramesPending);
+}
+
+int Scheduler::maxFramesPending() const
+{
+    return m_frameRateController->maxFramesPending();
 }
 
 void Scheduler::setSwapBuffersCompleteSupported(bool supported)
@@ -161,6 +182,12 @@ void Scheduler::processScheduledActions()
             break;
         case SchedulerStateMachine::ACTION_COMMIT:
             m_client->scheduledActionCommit();
+            break;
+        case SchedulerStateMachine::ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS:
+            m_client->scheduledActionCheckForCompletedTileUploads();
+            break;
+        case SchedulerStateMachine::ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED:
+            m_client->scheduledActionActivatePendingTreeIfNeeded();
             break;
         case SchedulerStateMachine::ACTION_DRAW_IF_POSSIBLE: {
             ScheduledActionDrawAndSwapResult result = m_client->scheduledActionDrawAndSwapIfPossible();

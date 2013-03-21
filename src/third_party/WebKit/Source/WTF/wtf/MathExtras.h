@@ -294,6 +294,11 @@ inline bool isWithinIntRange(float x)
     return x > static_cast<float>(std::numeric_limits<int>::min()) && x < static_cast<float>(std::numeric_limits<int>::max());
 }
 
+template<typename T> inline bool hasOneBitSet(T value)
+{
+    return !((value - 1) & value) && value;
+}
+
 template<typename T> inline bool hasZeroOrOneBitsSet(T value)
 {
     return !((value - 1) & value);
@@ -302,6 +307,16 @@ template<typename T> inline bool hasZeroOrOneBitsSet(T value)
 template<typename T> inline bool hasTwoOrMoreBitsSet(T value)
 {
     return !hasZeroOrOneBitsSet(value);
+}
+
+template <typename T> inline unsigned getLSBSet(T value)
+{
+    unsigned result = 0;
+
+    while (value >>= 1)
+        ++result;
+
+    return result;
 }
 
 template<typename T> inline T timesThreePlusOneDividedByTwo(T value)
@@ -347,6 +362,28 @@ using std::wtf_isnan;
 #endif
 #endif
 
+#if COMPILER(MINGW64) && (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
+inline double wtf_pow(double x, double y)
+{
+    // MinGW-w64 has a custom implementation for pow.
+    // This handles certain special cases that are different.
+    if ((x == 0.0 || isinf(x)) && isfinite(y)) {
+        double f;
+        if (modf(y, &f) != 0.0)
+            return ((x == 0.0) ^ (y > 0.0)) ? std::numeric_limits<double>::infinity() : 0.0;
+    }
+
+    if (x == 2.0) {
+        int yInt = static_cast<int>(y);
+        if (y == yInt)
+            return ldexp(1.0, yInt);
+    }
+
+    return pow(x, y);
+}
+#define pow(x, y) wtf_pow(x, y)
+#endif // COMPILER(MINGW64) && (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
+
 
 // decompose 'number' to its sign, exponent, and mantissa components.
 // The result is interpreted as:
@@ -391,5 +428,22 @@ inline void doubleToInteger(double d, unsigned long long& value)
         }
     }
 }
+
+namespace WTF {
+
+// From http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+inline uint32_t roundUpToPowerOfTwo(uint32_t v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
+}
+
+} // namespace WTF
 
 #endif // #ifndef WTF_MathExtras_h

@@ -30,7 +30,6 @@
 #include "CSSParser.h"
 #include "ContentDistributor.h"
 #include "ContentSelectorQuery.h"
-#include "ElementShadow.h"
 #include "HTMLNames.h"
 #include "QualifiedName.h"
 #include "RuntimeEnabledFeatures.h"
@@ -52,6 +51,8 @@ const QualifiedName& HTMLContentElement::contentTagName(Document*)
 #endif
 }
 
+#if ENABLE(SHADOW_DOM)
+
 PassRefPtr<HTMLContentElement> HTMLContentElement::create(Document* document)
 {
     return adoptRef(new HTMLContentElement(contentTagName(document), document));
@@ -71,6 +72,15 @@ HTMLContentElement::HTMLContentElement(const QualifiedName& name, Document* docu
 
 HTMLContentElement::~HTMLContentElement()
 {
+}
+
+InsertionPoint::MatchType HTMLContentElement::matchTypeFor(Node*)
+{
+    if (select().isNull() || select().isEmpty())
+        return AlwaysMatches;
+    if (!isSelectValid())
+        return NeverMatches;
+    return HasToMatchSelector;
 }
 
 const AtomicString& HTMLContentElement::select() const
@@ -100,19 +110,17 @@ void HTMLContentElement::ensureSelectParsed()
 void HTMLContentElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == selectAttr) {
-        if (ShadowRoot* root = containingShadowRoot()) {
-            root->owner()->setShouldCollectSelectFeatureSet();
-            root->owner()->invalidateDistribution();
-        }
+        if (ShadowRoot* root = containingShadowRoot())
+            root->owner()->willAffectSelector();
         m_shouldParseSelectorList = true;
     } else
         InsertionPoint::parseAttribute(name, value);
 }
 
-static bool validateSubSelector(CSSSelector* selector)
+static bool validateSubSelector(const CSSSelector* selector)
 {
     switch (selector->m_match) {
-    case CSSSelector::None:
+    case CSSSelector::Tag:
     case CSSSelector::Id:
     case CSSSelector::Class:
     case CSSSelector::Exact:
@@ -154,15 +162,15 @@ static bool validateSubSelector(CSSSelector* selector)
     }
 }
 
-static bool validateSelector(CSSSelector* selector)
+static bool validateSelector(const CSSSelector* selector)
 {
     ASSERT(selector);
 
     if (!validateSubSelector(selector))
         return false;
 
-    CSSSelector* prevSubSelector = selector;
-    CSSSelector* subSelector = selector->tagHistory();
+    const CSSSelector* prevSubSelector = selector;
+    const CSSSelector* subSelector = selector->tagHistory();
 
     while (subSelector) {
         if (prevSubSelector->relation() != CSSSelector::SubSelector)
@@ -184,10 +192,10 @@ bool HTMLContentElement::validateSelect() const
     if (select().isNull() || select().isEmpty())
         return true;
 
-    if (!m_selectorList.first())
+    if (!m_selectorList.isValid())
         return false;
 
-    for (CSSSelector* selector = m_selectorList.first(); selector; selector = m_selectorList.next(selector)) {
+    for (const CSSSelector* selector = m_selectorList.first(); selector; selector = m_selectorList.next(selector)) {
         if (!validateSelector(selector))
             return false;
     }
@@ -195,5 +203,18 @@ bool HTMLContentElement::validateSelect() const
     return true;
 }
 
+#else
+
+PassRefPtr<HTMLContentElement> HTMLContentElement::create(Document* document)
+{
+    return adoptRef(new HTMLContentElement(contentTagName(document), document));
+}
+
+HTMLContentElement::HTMLContentElement(const QualifiedName& tagName, Document* document)
+    : InsertionPoint(tagName, document)
+{ }
+
+#endif // if ENABLE(SHADOW_DOM)
 
 }
+

@@ -28,7 +28,6 @@
 #include "net/proxy/proxy_resolver.h"
 #include "net/proxy/proxy_script_decider.h"
 #include "net/proxy/proxy_script_fetcher.h"
-#include "net/proxy/sync_host_resolver_bridge.h"
 #include "net/url_request/url_request_context.h"
 
 #if defined(OS_WIN)
@@ -195,12 +194,6 @@ class ProxyResolverNull : public ProxyResolver {
     return LOAD_STATE_IDLE;
   }
 
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
   virtual void CancelSetPacScript() OVERRIDE {
     NOTREACHED();
   }
@@ -234,12 +227,6 @@ class ProxyResolverFromPacString : public ProxyResolver {
   }
 
   virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE {
-    NOTREACHED();
-    return LOAD_STATE_IDLE;
-  }
-
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE {
     NOTREACHED();
     return LOAD_STATE_IDLE;
   }
@@ -418,6 +405,15 @@ class ProxyService::InitProxyResolver {
   ProxyResolverScriptData* script_data() {
     DCHECK_EQ(STATE_NONE, next_state_);
     return script_data_.get();
+  }
+
+  LoadState GetLoadState() const {
+    if (next_state_ == STATE_DECIDE_PROXY_SCRIPT_COMPLETE) {
+      // In addition to downloading, this state may also include the stall time
+      // after network change events (kDelayAfterNetworkChangesMs).
+      return LOAD_STATE_DOWNLOADING_PROXY_SCRIPT;
+    }
+    return LOAD_STATE_RESOLVING_PROXY_FOR_URL;
   }
 
  private:
@@ -724,10 +720,10 @@ class ProxyService::PacRequest
     : public base::RefCounted<ProxyService::PacRequest> {
  public:
     PacRequest(ProxyService* service,
-             const GURL& url,
-             ProxyInfo* results,
-             const net::CompletionCallback& user_callback,
-             const BoundNetLog& net_log)
+               const GURL& url,
+               ProxyInfo* results,
+               const net::CompletionCallback& user_callback,
+               const BoundNetLog& net_log)
       : service_(service),
         user_callback_(user_callback),
         results_(results),
@@ -748,6 +744,7 @@ class ProxyService::PacRequest
 
     config_id_ = service_->config_.id();
     config_source_ = service_->config_.source();
+    proxy_resolve_start_time_ = TimeTicks::Now();
 
     return resolver()->GetProxyForURL(
         url_, results_,
@@ -808,6 +805,8 @@ class ProxyService::PacRequest
     results_->config_id_ = config_id_;
     results_->config_source_ = config_source_;
     results_->did_use_pac_script_ = true;
+    results_->proxy_resolve_start_time_ = proxy_resolve_start_time_;
+    results_->proxy_resolve_end_time_ = TimeTicks::Now();
 
     // Reset the state associated with in-progress-resolve.
     resolve_job_ = NULL;
@@ -856,6 +855,9 @@ class ProxyService::PacRequest
   ProxyConfig::ID config_id_;  // The config id when the resolve was started.
   ProxyConfigSource config_source_;  // The source of proxy settings.
   BoundNetLog net_log_;
+  // Time when the PAC is started.  Cached here since resetting ProxyInfo also
+  // clears the proxy times.
+  TimeTicks proxy_resolve_start_time_;
 };
 
 // ProxyService ---------------------------------------------------------------
@@ -870,6 +872,7 @@ ProxyService::ProxyService(ProxyConfigService* config_service,
       stall_proxy_auto_config_delay_(TimeDelta::FromMilliseconds(
           kDelayAfterNetworkChangesMs)) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
+  NetworkChangeNotifier::AddDNSObserver(this);
   ResetConfigService(config_service);
 }
 
@@ -1025,6 +1028,7 @@ int ProxyService::TryToCompleteSynchronously(const GURL& url,
 
 ProxyService::~ProxyService() {
   NetworkChangeNotifier::RemoveIPAddressObserver(this);
+  NetworkChangeNotifier::RemoveDNSObserver(this);
   config_service_->RemoveObserver(this);
 
   // Cancel any inprogress requests.
@@ -1212,6 +1216,8 @@ void ProxyService::CancelPacRequest(PacRequest* req) {
 
 LoadState ProxyService::GetLoadState(const PacRequest* req) const {
   CHECK(req);
+  if (current_state_ == STATE_WAITING_FOR_INIT_PROXY_RESOLVER)
+    return init_proxy_resolver_->GetLoadState();
   return req->GetLoadState();
 }
 
@@ -1488,6 +1494,10 @@ void ProxyService::OnIPAddressChanged() {
   State previous_state = ResetProxyConfig(false);
   if (previous_state != STATE_NONE)
     ApplyProxyConfigIfAvailable();
+}
+
+void ProxyService::OnDNSChanged() {
+  OnIPAddressChanged();
 }
 
 SyncProxyServiceHelper::SyncProxyServiceHelper(MessageLoop* io_message_loop,

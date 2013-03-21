@@ -5,6 +5,11 @@
 {
   'variables': {
     'conditions': [
+      ['inside_chromium_build==0', {
+        'webkit_src_dir': '../../../../..',
+      },{
+        'webkit_src_dir': '../../third_party/WebKit',
+      }],
       ['OS == "android" or OS == "ios"', {
         # Android and iOS don't use ffmpeg.
         'use_ffmpeg%': 0,
@@ -29,10 +34,12 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/media/media.gyp:media',
         '<(DEPTH)/media/media.gyp:shared_memory_support',
         '<(DEPTH)/media/media.gyp:yuv_convert',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
+        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'sources': [
         'android/audio_decoder_android.cc',
@@ -75,11 +82,15 @@
         'simple_video_frame_provider.h',
         'video_frame_provider.cc',
         'video_frame_provider.h',
+        'webaudiosourceprovider_impl.cc',
+        'webaudiosourceprovider_impl.h',
         'webmediaplayer_delegate.h',
         'webmediaplayer_impl.cc',
         'webmediaplayer_impl.h',
         'webmediaplayer_ms.cc',
         'webmediaplayer_ms.h',
+        'webmediaplayer_params.cc',
+        'webmediaplayer_params.h',
         'webmediaplayer_proxy.cc',
         'webmediaplayer_proxy.h',
         'webmediaplayer_util.cc',
@@ -113,6 +124,8 @@
           ],
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'clearkeycdm',
@@ -159,11 +172,18 @@
         }, {  # 'os_posix != 1 or OS == "mac"'
           'type': 'shared_library',
         }],
+        ['OS == "mac"', {
+          'xcode_settings': {
+            'DYLIB_INSTALL_NAME_BASE': '@loader_path',
+          },
+        }]
       ],
       'defines': ['CDM_IMPLEMENTATION'],
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/media/media.gyp:media',
+        # Include the following for media::AudioBus.
+        '<(DEPTH)/media/media.gyp:shared_memory_support',
       ],
       'sources': [
         'crypto/ppapi/cdm_video_decoder.cc',
@@ -173,7 +193,7 @@
       ],
     },
     {
-      'target_name': 'clearkeycdmplugin',
+      'target_name': 'clearkeycdmadapter',
       'type': 'none',
       'dependencies': [
         '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp',
@@ -209,6 +229,15 @@
               '-Wl,-exported_symbol,_PPP_InitializeModule',
               '-Wl,-exported_symbol,_PPP_ShutdownModule'
             ]},
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)/clearkeycdmadapter.plugin/Contents/MacOS/',
+              'files': [
+                '<(PRODUCT_DIR)/libclearkeycdm.dylib',
+                '<(PRODUCT_DIR)/ffmpegsumo.so'
+              ]
+            }
+          ]
         }],
       ],
     }

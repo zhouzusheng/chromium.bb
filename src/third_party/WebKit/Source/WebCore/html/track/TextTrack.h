@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 Google Inc. All rights reserved.
- * Copyright (C) 2011, 2012 Apple Inc.  All rights reserved.
+ * Copyright (C) 2011, 2012, 2013 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -84,11 +84,8 @@ public:
     static const AtomicString& hiddenKeyword();
     static const AtomicString& showingKeyword();
 
-    virtual AtomicString mode() const;
+    AtomicString mode() const { return m_mode; }
     virtual void setMode(const AtomicString&);
-
-    bool showingByDefault() const { return m_showingByDefault; }
-    void setShowingByDefault(bool showing) { m_showingByDefault = showing; }
 
     enum ReadinessState { NotLoaded = 0, Loading = 1, Loaded = 2, FailedToLoad = 3 };
     ReadinessState readinessState() const { return m_readinessState; }
@@ -102,6 +99,7 @@ public:
 
     void addCue(PassRefPtr<TextTrackCue>);
     void removeCue(TextTrackCue*, ExceptionCode&);
+    bool hasCue(TextTrackCue*);
 
     void cueWillChange(TextTrackCue*);
     void cueDidChange(TextTrackCue*);
@@ -110,6 +108,8 @@ public:
 
     enum TextTrackType { TrackElement, AddTrack, InBand };
     TextTrackType trackType() const { return m_trackType; }
+
+    virtual bool isClosedCaptions() const { return false; }
 
     int trackIndex();
     void invalidateTrackIndex();
@@ -122,6 +122,8 @@ public:
 
     virtual bool isDefault() const { return false; }
     virtual void setIsDefault(bool) { }
+
+    void removeAllCues();
 
 protected:
     TextTrack(ScriptExecutionContext*, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType);
@@ -140,7 +142,6 @@ private:
     ReadinessState m_readinessState;
     int m_trackIndex;
     int m_renderedTrackIndex;
-    bool m_showingByDefault;
     bool m_hasBeenConfigured;
 };
 

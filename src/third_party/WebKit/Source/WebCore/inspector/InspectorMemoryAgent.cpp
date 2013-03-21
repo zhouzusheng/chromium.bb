@@ -66,11 +66,6 @@
 #include <wtf/text/StringImpl.h>
 #include <wtf/text/WTFString.h>
 
-using WebCore::TypeBuilder::Memory::DOMGroup;
-using WebCore::TypeBuilder::Memory::ListenerCount;
-using WebCore::TypeBuilder::Memory::NodeCount;
-using WebCore::TypeBuilder::Memory::StringStatistics;
-
 // Use a type alias instead of 'using' here which would cause a conflict on Mac.
 typedef WebCore::TypeBuilder::Memory::MemoryBlock InspectorMemoryBlock;
 typedef WebCore::TypeBuilder::Array<InspectorMemoryBlock> InspectorMemoryBlocks;
@@ -81,11 +76,11 @@ namespace {
 
 class MemoryUsageStatsGenerator {
 public:
-    MemoryUsageStatsGenerator(MemoryInstrumentationClientImpl* client) : m_client(client) { }
+    MemoryUsageStatsGenerator() { }
 
-    void dump(InspectorMemoryBlocks* children)
+    void dump(const TypeNameToSizeMap& sizesMap, InspectorMemoryBlocks* children)
     {
-        m_sizesMap = m_client->sizesMap();
+        m_sizesMap = sizesMap;
 
         // FIXME: We filter out Rendering type because the coverage is not good enough at the moment
         // and report RenderArena size instead.
@@ -109,7 +104,6 @@ public:
         while (index < objectTypes.size())
             index = buildObjectForIndex(index, objectTypes, children);
 
-        addMemoryInstrumentationDebugData(children);
     }
 
 private:
@@ -147,235 +141,7 @@ private:
         return index;
     }
 
-    void addMemoryInstrumentationDebugData(InspectorMemoryBlocks* children)
-    {
-        if (m_client->checkInstrumentedObjects()) {
-            RefPtr<InspectorMemoryBlock> totalInstrumented = InspectorMemoryBlock::create().setName("InstrumentedObjectsCount");
-            totalInstrumented->setSize(m_client->totalCountedObjects());
-
-            RefPtr<InspectorMemoryBlock> incorrectlyInstrumented = InspectorMemoryBlock::create().setName("InstrumentedButNotAllocatedObjectsCount");
-            incorrectlyInstrumented->setSize(m_client->totalObjectsNotInAllocatedSet());
-
-            children->addItem(totalInstrumented);
-            children->addItem(incorrectlyInstrumented);
-        }
-    }
-
-    MemoryInstrumentationClientImpl* m_client;
     TypeNameToSizeMap m_sizesMap;
-};
-
-String nodeName(Node* node)
-{
-    if (node->document()->isXHTMLDocument())
-         return node->nodeName();
-    return node->nodeName().lower();
-}
-
-typedef HashSet<StringImpl*, PtrHash<StringImpl*> > StringImplIdentitySet;
-
-class CharacterDataStatistics {
-    WTF_MAKE_NONCOPYABLE(CharacterDataStatistics);
-public:
-    CharacterDataStatistics() : m_characterDataSize(0) { }
-
-    void collectCharacterData(Node* node)
-    {
-        if (!node->isCharacterDataNode())
-            return;
-
-        CharacterData* characterData = static_cast<CharacterData*>(node);
-        StringImpl* dataImpl = characterData->dataImpl();
-        if (m_domStringImplSet.contains(dataImpl))
-            return;
-        m_domStringImplSet.add(dataImpl);
-
-        m_characterDataSize += dataImpl->sizeInBytes();
-    }
-
-    bool contains(StringImpl* s) { return m_domStringImplSet.contains(s); }
-
-    int characterDataSize() { return m_characterDataSize; }
-
-private:
-    StringImplIdentitySet m_domStringImplSet;
-    int m_characterDataSize;
-};
-
-class DOMTreeStatistics {
-    WTF_MAKE_NONCOPYABLE(DOMTreeStatistics);
-public:
-    DOMTreeStatistics(Node* rootNode, CharacterDataStatistics& characterDataStatistics)
-        : m_totalNodeCount(0)
-        , m_characterDataStatistics(characterDataStatistics)
-    {
-        collectTreeStatistics(rootNode);
-    }
-
-    int totalNodeCount() { return m_totalNodeCount; }
-
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::Memory::NodeCount> > nodeCount()
-    {
-        RefPtr<TypeBuilder::Array<TypeBuilder::Memory::NodeCount> > childrenStats = TypeBuilder::Array<TypeBuilder::Memory::NodeCount>::create();
-        for (HashMap<String, int>::iterator it = m_nodeNameToCount.begin(); it != m_nodeNameToCount.end(); ++it) {
-            RefPtr<NodeCount> nodeCount = NodeCount::create().setNodeName(it->key)
-                                                             .setCount(it->value);
-            childrenStats->addItem(nodeCount);
-        }
-        return childrenStats.release();
-    }
-
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::Memory::ListenerCount> > listenerCount()
-    {
-        RefPtr<TypeBuilder::Array<TypeBuilder::Memory::ListenerCount> > listenerStats = TypeBuilder::Array<TypeBuilder::Memory::ListenerCount>::create();
-        for (HashMap<AtomicString, int>::iterator it = m_eventTypeToCount.begin(); it != m_eventTypeToCount.end(); ++it) {
-            RefPtr<ListenerCount> listenerCount = ListenerCount::create().setType(it->key)
-                                                                         .setCount(it->value);
-            listenerStats->addItem(listenerCount);
-        }
-        return listenerStats.release();
-    }
-
-private:
-    void collectTreeStatistics(Node* rootNode)
-    {
-        Node* currentNode = rootNode;
-        collectListenersInfo(rootNode);
-        while ((currentNode = NodeTraversal::next(currentNode, rootNode))) {
-            ++m_totalNodeCount;
-            collectNodeStatistics(currentNode);
-        }
-    }
-    void collectNodeStatistics(Node* node)
-    {
-        m_characterDataStatistics.collectCharacterData(node);
-        collectNodeNameInfo(node);
-        collectListenersInfo(node);
-    }
-
-    void collectNodeNameInfo(Node* node)
-    {
-        String name = nodeName(node);
-        int currentCount = m_nodeNameToCount.get(name);
-        m_nodeNameToCount.set(name, currentCount + 1);
-    }
-
-    void collectListenersInfo(Node* node)
-    {
-        EventTargetData* d = node->eventTargetData();
-        if (!d)
-            return;
-        EventListenerMap& eventListenerMap = d->eventListenerMap;
-        if (eventListenerMap.isEmpty())
-            return;
-        Vector<AtomicString> eventNames = eventListenerMap.eventTypes();
-        for (Vector<AtomicString>::iterator it = eventNames.begin(); it != eventNames.end(); ++it) {
-            AtomicString name = *it;
-            EventListenerVector* listeners = eventListenerMap.find(name);
-            int count = 0;
-            for (EventListenerVector::iterator j = listeners->begin(); j != listeners->end(); ++j) {
-                if (j->listener->type() == EventListener::JSEventListenerType)
-                    ++count;
-            }
-            if (count)
-                m_eventTypeToCount.set(name, m_eventTypeToCount.get(name) + count);
-        }
-    }
-
-    int m_totalNodeCount;
-    HashMap<AtomicString, int> m_eventTypeToCount;
-    HashMap<String, int> m_nodeNameToCount;
-    CharacterDataStatistics& m_characterDataStatistics;
-};
-
-class CounterVisitor : public WrappedNodeVisitor, public ExternalStringVisitor {
-public:
-    CounterVisitor(Page* page)
-        : m_page(page)
-        , m_domGroups(TypeBuilder::Array<TypeBuilder::Memory::DOMGroup>::create())
-        , m_jsExternalStringSize(0)
-        , m_sharedStringSize(0) { }
-
-    TypeBuilder::Array<TypeBuilder::Memory::DOMGroup>* domGroups() { return m_domGroups.get(); }
-
-    PassRefPtr<StringStatistics> strings()
-    {
-        RefPtr<StringStatistics> stringStatistics = StringStatistics::create()
-            .setDom(m_characterDataStatistics.characterDataSize())
-            .setJs(m_jsExternalStringSize)
-            .setShared(m_sharedStringSize);
-        return stringStatistics.release();
-    }
-
-    virtual void visitNode(Node* node)
-    {
-        if (node->document()->frame() && m_page != node->document()->frame()->page())
-            return;
-
-        Node* rootNode = node;
-        while (rootNode->parentNode())
-            rootNode = rootNode->parentNode();
-
-        if (m_roots.contains(rootNode))
-            return;
-        m_roots.add(rootNode);
-
-        DOMTreeStatistics domTreeStats(rootNode, m_characterDataStatistics);
-
-        RefPtr<DOMGroup> domGroup = DOMGroup::create()
-            .setSize(domTreeStats.totalNodeCount())
-            .setTitle(rootNode->nodeType() == Node::ELEMENT_NODE ? elementTitle(static_cast<Element*>(rootNode)) : rootNode->nodeName())
-            .setNodeCount(domTreeStats.nodeCount())
-            .setListenerCount(domTreeStats.listenerCount());
-        if (rootNode->nodeType() == Node::DOCUMENT_NODE)
-            domGroup->setDocumentURI(static_cast<Document*>(rootNode)->documentURI());
-
-        m_domGroups->addItem(domGroup);
-    }
-
-    virtual void visitJSExternalString(StringImpl* string)
-    {
-        int size = string->sizeInBytes();
-        m_jsExternalStringSize += size;
-        if (m_characterDataStatistics.contains(string))
-            m_sharedStringSize += size;
-    }
-
-private:
-    String elementTitle(Element* element)
-    {
-        StringBuilder result;
-        result.append(nodeName(element));
-
-        const AtomicString& idValue = element->getIdAttribute();
-        String idString;
-        if (!idValue.isNull() && !idValue.isEmpty()) {
-            result.append("#");
-            result.append(idValue);
-        }
-
-        HashSet<AtomicString> usedClassNames;
-        if (element->hasClass() && element->isStyledElement()) {
-            const SpaceSplitString& classNamesString = static_cast<StyledElement*>(element)->classNames();
-            size_t classNameCount = classNamesString.size();
-            for (size_t i = 0; i < classNameCount; ++i) {
-                const AtomicString& className = classNamesString[i];
-                if (usedClassNames.contains(className))
-                    continue;
-                usedClassNames.add(className);
-                result.append(".");
-                result.append(className);
-            }
-        }
-        return result.toString();
-    }
-
-    HashSet<Node*> m_roots;
-    Page* m_page;
-    RefPtr<TypeBuilder::Array<TypeBuilder::Memory::DOMGroup> > m_domGroups;
-    CharacterDataStatistics m_characterDataStatistics;
-    int m_jsExternalStringSize;
-    int m_sharedStringSize;
 };
 
 class ExternalStringsRoot : public ExternalStringVisitor {
@@ -388,12 +154,13 @@ public:
         m_memoryClassInfo = &info;
         ScriptProfiler::visitExternalStrings(const_cast<ExternalStringsRoot*>(this));
         m_memoryClassInfo = 0;
+        info.ignoreMember(m_memoryClassInfo);
     }
 
 private:
     virtual void visitJSExternalString(StringImpl* string)
     {
-        m_memoryClassInfo->addMember(string);
+        m_memoryClassInfo->addMember(string, "externalString");
     }
 
     mutable MemoryClassInfo* m_memoryClassInfo;
@@ -409,12 +176,13 @@ public:
         m_memoryClassInfo = &info;
         ScriptProfiler::visitExternalArrays(const_cast<ExternalArraysRoot*>(this));
         m_memoryClassInfo = 0;
+        info.ignoreMember(m_memoryClassInfo);
     }
 
 private:
     virtual void visitJSExternalArray(ArrayBufferView* arrayBufferView)
     {
-        m_memoryClassInfo->addMember(arrayBufferView);
+        m_memoryClassInfo->addMember(arrayBufferView, "externalArray");
     }
 
     mutable MemoryClassInfo* m_memoryClassInfo;
@@ -426,21 +194,11 @@ InspectorMemoryAgent::~InspectorMemoryAgent()
 {
 }
 
-void InspectorMemoryAgent::getDOMNodeCount(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Memory::DOMGroup> >& domGroups, RefPtr<TypeBuilder::Memory::StringStatistics>& strings)
+void InspectorMemoryAgent::getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners)
 {
-    CounterVisitor counterVisitor(m_page);
-    ScriptProfiler::visitNodeWrappers(&counterVisitor);
-
-    // Make sure all documents reachable from the main frame are accounted.
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        if (Document* doc = frame->document())
-            counterVisitor.visitNode(doc);
-    }
-
-    ScriptProfiler::visitExternalStrings(&counterVisitor);
-
-    domGroups = counterVisitor.domGroups();
-    strings = counterVisitor.strings();
+    *documents = InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
+    *nodes = InspectorCounters::counterValue(InspectorCounters::NodeCounter);
+    *jsEventListeners = ThreadLocalInspectorCounters::current().counterValue(ThreadLocalInspectorCounters::JSEventListenerCounter);
 }
 
 static void reportJSHeapInfo(WTF::MemoryInstrumentationClient& memoryInstrumentationClient)
@@ -525,48 +283,35 @@ static void collectDomTreeInfo(MemoryInstrumentationImpl& memoryInstrumentation,
     domTreesIterator.visitMemoryCache();
 }
 
-static void addPlatformComponentsInfo(PassRefPtr<InspectorMemoryBlocks> children)
+static void addPlatformComponentsInfo(TypeNameToSizeMap* memoryInfo)
 {
     Vector<MemoryUsageSupport::ComponentInfo> components;
     MemoryUsageSupport::memoryUsageByComponents(components);
-    for (Vector<MemoryUsageSupport::ComponentInfo>::iterator it = components.begin(); it != components.end(); ++it) {
-        RefPtr<InspectorMemoryBlock> block = InspectorMemoryBlock::create().setName(it->m_name);
-        block->setSize(it->m_sizeInBytes);
-        children->addItem(block);
+    for (Vector<MemoryUsageSupport::ComponentInfo>::iterator it = components.begin(); it != components.end(); ++it)
+        memoryInfo->add(it->m_name, it->m_sizeInBytes);
+}
+
+static void addMemoryInstrumentationDebugData(MemoryInstrumentationClientImpl* client, TypeNameToSizeMap* memoryInfo)
+{
+    if (client->checkInstrumentedObjects()) {
+        memoryInfo->add("InstrumentedObjectsCount", client->totalCountedObjects());
+        memoryInfo->add("InstrumentedButNotAllocatedObjectsCount", client->totalObjectsNotInAllocatedSet());
     }
 }
 
-void InspectorMemoryAgent::getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<InspectorMemoryBlock>& processMemory, RefPtr<InspectorObject>& graph)
+void InspectorMemoryAgent::getProcessMemoryDistributionMap(TypeNameToSizeMap* memoryInfo)
 {
-    OwnPtr<HeapGraphSerializer> graphSerializer;
-    if (reportGraph)
-        graphSerializer = adoptPtr(new HeapGraphSerializer());
-    MemoryInstrumentationClientImpl memoryInstrumentationClient(graphSerializer.get());
-    m_inspectorClient->getAllocatedObjects(memoryInstrumentationClient.allocatedObjects());
-    MemoryInstrumentationImpl memoryInstrumentation(&memoryInstrumentationClient);
+    getProcessMemoryDistributionImpl(false, memoryInfo);
+}
 
-    reportJSHeapInfo(memoryInstrumentationClient);
-    reportRenderTreeInfo(memoryInstrumentationClient, m_page);
-    collectDomTreeInfo(memoryInstrumentation, m_page); // FIXME: collect for all pages?
+void InspectorMemoryAgent::getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<InspectorMemoryBlock>& processMemory)
+{
+    TypeNameToSizeMap memoryInfo;
+    getProcessMemoryDistributionImpl(reportGraph && *reportGraph, &memoryInfo);
 
-    PlatformMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
-    WebCoreMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
-
+    MemoryUsageStatsGenerator statsGenerator;
     RefPtr<InspectorMemoryBlocks> children = InspectorMemoryBlocks::create();
-    addPlatformComponentsInfo(children);
-
-    memoryInstrumentation.addRootObject(this);
-    memoryInstrumentation.addRootObject(memoryInstrumentation);
-    memoryInstrumentation.addRootObject(memoryInstrumentationClient);
-    if (graphSerializer) {
-        memoryInstrumentation.addRootObject(graphSerializer.get());
-        graph = graphSerializer->serialize();
-    }
-
-    m_inspectorClient->dumpUncountedAllocatedObjects(memoryInstrumentationClient.countedObjects());
-
-    MemoryUsageStatsGenerator statsGenerator(&memoryInstrumentationClient);
-    statsGenerator.dump(children.get());
+    statsGenerator.dump(memoryInfo, children.get());
 
     processMemory = InspectorMemoryBlock::create().setName(WebCoreMemoryTypes::ProcessPrivateMemory);
     processMemory->setChildren(children);
@@ -582,14 +327,57 @@ void InspectorMemoryAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo)
     MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Inspector);
     InspectorBaseAgent<InspectorMemoryAgent>::reportMemoryUsage(memoryObjectInfo);
     info.addWeakPointer(m_inspectorClient);
-    info.addMember(m_page);
+    info.addMember(m_page, "page");
 }
 
-InspectorMemoryAgent::InspectorMemoryAgent(InstrumentingAgents* instrumentingAgents, InspectorClient* client, InspectorState* state, Page* page)
+void InspectorMemoryAgent::getProcessMemoryDistributionImpl(bool reportGraph, TypeNameToSizeMap* memoryInfo)
+{
+    OwnPtr<HeapGraphSerializer> graphSerializer;
+    if (reportGraph)
+        graphSerializer = adoptPtr(new HeapGraphSerializer(m_frontend));
+    MemoryInstrumentationClientImpl memoryInstrumentationClient(graphSerializer.get());
+    m_inspectorClient->getAllocatedObjects(memoryInstrumentationClient.allocatedObjects());
+    MemoryInstrumentationImpl memoryInstrumentation(&memoryInstrumentationClient);
+
+    reportJSHeapInfo(memoryInstrumentationClient);
+    reportRenderTreeInfo(memoryInstrumentationClient, m_page);
+    collectDomTreeInfo(memoryInstrumentation, m_page); // FIXME: collect for all pages?
+
+    PlatformMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
+    WebCoreMemoryInstrumentation::reportStaticMembersMemoryUsage(&memoryInstrumentation);
+
+    memoryInstrumentation.addRootObject(this);
+    memoryInstrumentation.addRootObject(memoryInstrumentation);
+    memoryInstrumentation.addRootObject(memoryInstrumentationClient);
+    if (graphSerializer) {
+        memoryInstrumentation.addRootObject(graphSerializer.get());
+        graphSerializer->finish();
+    }
+
+    m_inspectorClient->dumpUncountedAllocatedObjects(memoryInstrumentationClient.countedObjects());
+
+    *memoryInfo = memoryInstrumentationClient.sizesMap();
+    addPlatformComponentsInfo(memoryInfo);
+    addMemoryInstrumentationDebugData(&memoryInstrumentationClient, memoryInfo);
+}
+
+InspectorMemoryAgent::InspectorMemoryAgent(InstrumentingAgents* instrumentingAgents, InspectorClient* client, InspectorCompositeState* state, Page* page)
     : InspectorBaseAgent<InspectorMemoryAgent>("Memory", instrumentingAgents, state)
     , m_inspectorClient(client)
     , m_page(page)
+    , m_frontend(0)
 {
+}
+
+void InspectorMemoryAgent::setFrontend(InspectorFrontend* frontend)
+{
+    ASSERT(!m_frontend);
+    m_frontend = frontend->memory();
+}
+
+void InspectorMemoryAgent::clearFrontend()
+{
+    m_frontend = 0;
 }
 
 } // namespace WebCore

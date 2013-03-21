@@ -10,14 +10,15 @@
 #include "SkFlattenableBuffers.h"
 #include "SkShader.h"
 #include "SkUnPreMultiply.h"
+#include "SkString.h"
 
 SK_DEFINE_INST_COUNT(SkColorFilter)
 
-bool SkColorFilter::asColorMode(SkColor* color, SkXfermode::Mode* mode) {
+bool SkColorFilter::asColorMode(SkColor* color, SkXfermode::Mode* mode) const {
     return false;
 }
 
-bool SkColorFilter::asColorMatrix(SkScalar matrix[20]) {
+bool SkColorFilter::asColorMatrix(SkScalar matrix[20]) const {
     return false;
 }
 
@@ -25,7 +26,7 @@ bool SkColorFilter::asComponentTable(SkBitmap*) const {
     return false;
 }
 
-void SkColorFilter::filterSpan16(const uint16_t s[], int count, uint16_t d[]) {
+void SkColorFilter::filterSpan16(const uint16_t s[], int count, uint16_t d[]) const {
     SkASSERT(this->getFlags() & SkColorFilter::kHasFilter16_Flag);
     SkDEBUGFAIL("missing implementation of SkColorFilter::filterSpan16");
 
@@ -34,13 +35,13 @@ void SkColorFilter::filterSpan16(const uint16_t s[], int count, uint16_t d[]) {
     }
 }
 
-SkColor SkColorFilter::filterColor(SkColor c) {
+SkColor SkColorFilter::filterColor(SkColor c) const {
     SkPMColor dst, src = SkPreMultiplyColor(c);
     this->filterSpan(&src, 1, &dst);
     return SkUnPreMultiply::PMColorToColor(dst);
 }
 
-GrEffect* SkColorFilter::asNewEffect(GrContext*) const {
+GrEffectRef* SkColorFilter::asNewEffect(GrContext*) const {
     return NULL;
 }
 
@@ -117,3 +118,17 @@ void SkFilterShader::shadeSpan16(int x, int y, uint16_t result[], int count) {
     fFilter->filterSpan16(result, count, result);
 }
 
+#ifdef SK_DEVELOPER
+void SkFilterShader::toString(SkString* str) const {
+    str->append("SkFilterShader: (");
+
+    str->append("Shader: ");
+    fShader->toString(str);
+    str->append(" Filter: ");
+    // TODO: add "fFilter->toString(str);" once SkColorFilter::toString is added
+
+    this->INHERITED::toString(str);
+
+    str->append(")");
+}
+#endif

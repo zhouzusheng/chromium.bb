@@ -6,6 +6,9 @@
 
 #include "base/logging.h"
 #include "skia/ext/refptr.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperation.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebFilterOperations.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebGraphicsContext3D.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
@@ -13,9 +16,6 @@
 #include "third_party/skia/include/gpu/SkGpuDevice.h"
 #include "third_party/skia/include/gpu/SkGrPixelRef.h"
 #include "ui/gfx/size_f.h"
-#include <public/WebFilterOperation.h>
-#include <public/WebFilterOperations.h>
-#include <public/WebGraphicsContext3D.h>
 
 namespace cc {
 
@@ -23,15 +23,19 @@ namespace {
 
 void getBrightnessMatrix(float amount, SkScalar matrix[20])
 {
+    // Spec implementation
+    // (http://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#brightnessEquivalent)
+    // <feFunc[R|G|B] type="linear" slope="[amount]">
     memset(matrix, 0, 20 * sizeof(SkScalar));
-    //    Old implementation, a la the draft spec, a straight-up scale,
-    //    representing <feFunc[R|G|B] type="linear" slope="[amount]">
-    //    (See http://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#brightnessEquivalent)
-    // matrix[0] = matrix[6] = matrix[12] = amount;
-    // matrix[18] = 1;
-    //    New implementation, a translation in color space, representing
-    //    <feFunc[R|G|B] type="linear" intercept="[amount]"/>
-    //    (See https://www.w3.org/Bugs/Public/show_bug.cgi?id=15647)
+    matrix[0] = matrix[6] = matrix[12] = amount;
+    matrix[18] = 1;
+}
+
+void getSaturatingBrightnessMatrix(float amount, SkScalar matrix[20])
+{
+    // Legacy implementation used by internal clients.
+    // <feFunc[R|G|B] type="linear" intercept="[amount]"/>
+    memset(matrix, 0, 20 * sizeof(SkScalar));
     matrix[0] = matrix[6] = matrix[12] = matrix[18] = 1;
     matrix[4] = matrix[9] = matrix[14] = amount * 255;
 }
@@ -198,6 +202,10 @@ bool getColorMatrix(const WebKit::WebFilterOperation& op, SkScalar matrix[20])
         getBrightnessMatrix(op.amount(), matrix);
         return true;
     }
+    case WebKit::WebFilterOperation::FilterTypeSaturatingBrightness: {
+        getSaturatingBrightnessMatrix(op.amount(), matrix);
+        return true;
+    }
     case WebKit::WebFilterOperation::FilterTypeContrast: {
         getContrastMatrix(op.amount(), matrix);
         return true;
@@ -242,12 +250,12 @@ public:
         , m_currentTexture(0)
     {
         // Wrap the source texture in a Ganesh platform texture.
-        GrPlatformTextureDesc platformTextureDescription;
-        platformTextureDescription.fWidth = size.width();
-        platformTextureDescription.fHeight = size.height();
-        platformTextureDescription.fConfig = kSkia8888_GrPixelConfig;
-        platformTextureDescription.fTextureHandle = textureId;
-        skia::RefPtr<GrTexture> texture = skia::AdoptRef(grContext->createPlatformTexture(platformTextureDescription));
+        GrBackendTextureDesc backendTextureDescription;
+        backendTextureDescription.fWidth = size.width();
+        backendTextureDescription.fHeight = size.height();
+        backendTextureDescription.fConfig = kSkia8888_GrPixelConfig;
+        backendTextureDescription.fTextureHandle = textureId;
+        skia::RefPtr<GrTexture> texture = skia::AdoptRef(grContext->wrapBackendTexture(backendTextureDescription));
         // Place the platform texture inside an SkBitmap.
         m_source.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
         skia::RefPtr<SkGrPixelRef> pixelRef = skia::AdoptRef(new SkGrPixelRef(texture.get()));
@@ -352,6 +360,7 @@ WebKit::WebFilterOperations RenderSurfaceFilters::optimize(const WebKit::WebFilt
             newList.append(op);
             break;
         case WebKit::WebFilterOperation::FilterTypeBrightness:
+        case WebKit::WebFilterOperation::FilterTypeSaturatingBrightness:
         case WebKit::WebFilterOperation::FilterTypeContrast:
         case WebKit::WebFilterOperation::FilterTypeGrayscale:
         case WebKit::WebFilterOperation::FilterTypeSepia:
@@ -426,6 +435,7 @@ SkBitmap RenderSurfaceFilters::apply(const WebKit::WebFilterOperations& filters,
             break;
         }
         case WebKit::WebFilterOperation::FilterTypeBrightness:
+        case WebKit::WebFilterOperation::FilterTypeSaturatingBrightness:
         case WebKit::WebFilterOperation::FilterTypeContrast:
         case WebKit::WebFilterOperation::FilterTypeGrayscale:
         case WebKit::WebFilterOperation::FilterTypeSepia:

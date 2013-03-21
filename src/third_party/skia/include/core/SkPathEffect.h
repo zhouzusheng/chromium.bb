@@ -11,90 +11,13 @@
 #define SkPathEffect_DEFINED
 
 #include "SkFlattenable.h"
-#include "SkPaint.h"
 #include "SkPath.h"
 #include "SkPoint.h"
 #include "SkRect.h"
+#include "SkStrokeRec.h"
 #include "SkTDArray.h"
 
 class SkPath;
-
-class SkStrokeRec {
-public:
-    enum InitStyle {
-        kHairline_InitStyle,
-        kFill_InitStyle
-    };
-    SkStrokeRec(InitStyle style);
-
-    SkStrokeRec(const SkStrokeRec&);
-    explicit SkStrokeRec(const SkPaint&);
-
-    enum Style {
-        kHairline_Style,
-        kFill_Style,
-        kStroke_Style,
-        kStrokeAndFill_Style
-    };
-
-    Style getStyle() const;
-    SkScalar getWidth() const { return fWidth; }
-    SkScalar getMiter() const { return fMiterLimit; }
-    SkPaint::Cap getCap() const { return fCap; }
-    SkPaint::Join getJoin() const { return fJoin; }
-
-    bool isHairlineStyle() const {
-        return kHairline_Style == this->getStyle();
-    }
-
-    bool isFillStyle() const {
-        return kFill_Style == this->getStyle();
-    }
-
-    void setFillStyle();
-    void setHairlineStyle();
-    /**
-     *  Specify the strokewidth, and optionally if you want stroke + fill.
-     *  Note, if width==0, then this request is taken to mean:
-     *      strokeAndFill==true -> new style will be Fill
-     *      strokeAndFill==false -> new style will be Hairline
-     */
-    void setStrokeStyle(SkScalar width, bool strokeAndFill = false);
-
-    void setStrokeParams(SkPaint::Cap cap, SkPaint::Join join, SkScalar miterLimit) {
-        fCap = cap;
-        fJoin = join;
-        fMiterLimit = miterLimit;
-    }
-
-    /**
-     *  Returns true if this specifes any thick stroking, i.e. applyToPath()
-     *  will return true.
-     */
-    bool needToApply() const {
-        Style style = this->getStyle();
-        return (kStroke_Style == style) || (kStrokeAndFill_Style == style);
-    }
-
-    /**
-     *  Apply these stroke parameters to the src path, returning the result
-     *  in dst.
-     *
-     *  If there was no change (i.e. style == hairline or fill) this returns
-     *  false and dst is unchanged. Otherwise returns true and the result is
-     *  stored in dst.
-     *
-     *  src and dst may be the same path.
-     */
-    bool applyToPath(SkPath* dst, const SkPath& src) const;
-
-private:
-    SkScalar        fWidth;
-    SkScalar        fMiterLimit;
-    SkPaint::Cap    fCap;
-    SkPaint::Join   fJoin;
-    bool            fStrokeAndFill;
-};
 
 /** \class SkPathEffect
 
@@ -125,13 +48,14 @@ public:
      *  If this method returns true, the caller will apply (as needed) the
      *  resulting stroke-rec to dst and then draw.
      */
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) = 0;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect* cullR) const = 0;
 
     /**
      *  Compute a conservative bounds for its effect, given the src bounds.
      *  The baseline implementation just assigns src to dst.
      */
-    virtual void computeFastBounds(SkRect* dst, const SkRect& src);
+    virtual void computeFastBounds(SkRect* dst, const SkRect& src) const;
 
     /** \class PointData
 
@@ -164,12 +88,14 @@ public:
         };
 
         uint32_t           fFlags;      // flags that impact the drawing of the points
-        // TODO: consider replacing the TDArray with either SkData or a ptr/len field
         SkPoint*           fPoints;     // the center point of each generated point
         int                fNumPoints;  // number of points in fPoints
         SkVector           fSize;       // the size to draw the points
         SkRect             fClipRect;   // clip required to draw the points (if kUseClip is set)
         SkPath             fPath;       // 'stamp' to be used at each point (if kUsePath is set)
+
+        SkPath             fFirst;      // If not empty, contains geometry for first point
+        SkPath             fLast;       // If not empty, contains geometry for last point
     };
 
     /**
@@ -177,7 +103,8 @@ public:
      *  optionally return the points in 'results'.
      */
     virtual bool asPoints(PointData* results, const SkPath& src,
-                          const SkStrokeRec&, const SkMatrix&) const;
+                          const SkStrokeRec&, const SkMatrix&,
+                          const SkRect* cullR) const;
 
 protected:
     SkPathEffect(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
@@ -227,7 +154,8 @@ public:
     SkComposePathEffect(SkPathEffect* outer, SkPathEffect* inner)
         : INHERITED(outer, inner) {}
 
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkComposePathEffect)
 
@@ -257,7 +185,8 @@ public:
     SkSumPathEffect(SkPathEffect* first, SkPathEffect* second)
         : INHERITED(first, second) {}
 
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkSumPathEffect)
 
@@ -273,4 +202,3 @@ private:
 };
 
 #endif
-

@@ -37,6 +37,7 @@
 #include "ContextMenuItem.h"
 #include "ContextMenuController.h"
 #include "ContextMenuProvider.h"
+#include "DOMFileSystem.h"
 #include "Element.h"
 #include "Frame.h"
 #include "FrameLoader.h"
@@ -268,6 +269,9 @@ void InspectorFrontendHost::sendMessageToBackend(const String& message)
 #if ENABLE(CONTEXT_MENUS)
 void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMenuItem>& items)
 {
+    if (!event)
+        return;
+
     ASSERT(m_frontendPage);
     ScriptState* frontendScriptState = scriptStateFromPage(debuggerWorld(), m_frontendPage);
     ScriptObject frontendApiObject;
@@ -293,6 +297,39 @@ String InspectorFrontendHost::loadResourceSynchronously(const String& url)
     m_frontendPage->mainFrame()->loader()->loadResourceSynchronously(request, DoNotAllowStoredCredentials, error, response, data);
     return String(data.data(), data.size());
 }
+
+bool InspectorFrontendHost::supportsFileSystems()
+{
+    if (m_client)
+        return m_client->supportsFileSystems();
+    return false;
+}
+
+void InspectorFrontendHost::requestFileSystems()
+{
+    if (m_client)
+        m_client->requestFileSystems();
+}
+
+void InspectorFrontendHost::addFileSystem()
+{
+    if (m_client)
+        m_client->addFileSystem();
+}
+
+void InspectorFrontendHost::removeFileSystem(const String& fileSystemPath)
+{
+    if (m_client)
+        m_client->removeFileSystem(fileSystemPath);
+}
+
+#if ENABLE(FILE_SYSTEM)
+PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String& fileSystemName, const String& rootURL)
+{
+    ScriptExecutionContext* context = m_frontendPage->mainFrame()->document();
+    return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL), AsyncFileSystem::create());
+}
+#endif
 
 bool InspectorFrontendHost::isUnderTest()
 {

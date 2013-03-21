@@ -82,6 +82,16 @@ bool WebAccessibilityObject::accessibilityEnabled()
     return AXObjectCache::accessibilityEnabled();
 }
 
+void WebAccessibilityObject::startCachingComputedObjectAttributesUntilTreeMutates()
+{
+    m_private->axObjectCache()->startCachingComputedObjectAttributesUntilTreeMutates();
+}
+
+void WebAccessibilityObject::stopCachingComputedObjectAttributes()
+{
+    m_private->axObjectCache()->stopCachingComputedObjectAttributes();
+}
+
 bool WebAccessibilityObject::isDetached() const
 {
     if (m_private.isNull())
@@ -490,6 +500,22 @@ bool WebAccessibilityObject::canvasHasFallbackContent() const
     return m_private->canvasHasFallbackContent();
 }
 
+WebPoint WebAccessibilityObject::clickPoint() const
+{
+    if (isDetached())
+        return WebPoint();
+
+    return WebPoint(m_private->clickPoint());
+}
+
+void WebAccessibilityObject::colorValue(int& r, int& g, int& b) const
+{
+    if (isDetached())
+        return;
+
+    m_private->colorValue(r, g, b);
+}
+
 double WebAccessibilityObject::estimatedLoadingProgress() const
 {
     if (isDetached())
@@ -690,6 +716,9 @@ WebString WebAccessibilityObject::title() const
 WebAccessibilityObject WebAccessibilityObject::titleUIElement() const
 {
     if (isDetached())
+        return WebAccessibilityObject();
+
+    if (!m_private->exposesTitleUIElement())
         return WebAccessibilityObject();
 
     return WebAccessibilityObject(m_private->titleUIElement());

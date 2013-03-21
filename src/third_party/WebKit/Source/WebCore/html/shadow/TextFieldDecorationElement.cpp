@@ -54,6 +54,8 @@ TextFieldDecorator::~TextFieldDecorator()
 
 // TextFieldDecorationElement ----------------------------------------------------------------
 
+// FIXME: This class is only used in Chromium, and has no layout tests!!
+
 TextFieldDecorationElement::TextFieldDecorationElement(Document* document, TextFieldDecorator* decorator)
     : HTMLDivElement(HTMLNames::divTag, document)
     , m_textFieldDecorator(decorator)
@@ -89,8 +91,13 @@ static inline void getDecorationRootAndDecoratedRoot(HTMLInputElement* input, Sh
     }
     if (newRoot)
         newRoot->removeChild(newRoot->firstChild());
-    else
-        newRoot = ShadowRoot::create(input, ShadowRoot::UserAgentShadowRoot, ASSERT_NO_EXCEPTION).get();
+    else {
+        // FIXME: This interacts really badly with author shadow roots because now
+        // we can interleave user agent and author shadow roots on the element meaning
+        // input.shadowRoot may be inaccessible if the browser has decided to decorate
+        // the input.
+        newRoot = input->ensureShadow()->addShadowRoot(input, ShadowRoot::UserAgentShadowRoot);
+    }
     decorationRoot = newRoot;
     decoratedRoot = existingRoot;
 }
@@ -109,8 +116,9 @@ void TextFieldDecorationElement::decorate(HTMLInputElement* input, bool visible)
     box->setInlineStyleProperty(CSSPropertyWebkitBoxAlign, CSSValueCenter);
     ASSERT(existingRoot->childNodeCount() == 1);
     toHTMLElement(existingRoot->firstChild())->setInlineStyleProperty(CSSPropertyWebkitBoxFlex, 1.0, CSSPrimitiveValue::CSS_NUMBER);
+#if ENABLE(SHADOW_DOM)
     box->appendChild(HTMLShadowElement::create(HTMLNames::shadowTag, input->document()));
-
+#endif
     setInlineStyleProperty(CSSPropertyDisplay, visible ? CSSValueBlock : CSSValueNone);
     box->appendChild(this);
 }

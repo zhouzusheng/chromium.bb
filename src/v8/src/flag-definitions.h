@@ -158,6 +158,8 @@ DEFINE_implication(harmony_observation, harmony_collections)
 // Flags for experimental implementation features.
 DEFINE_bool(packed_arrays, true, "optimizes arrays that have no holes")
 DEFINE_bool(smi_only_arrays, true, "tracks arrays with only smi values")
+DEFINE_bool(compiled_transitions, false, "use optimizing compiler to "
+            "generate array elements transition stubs")
 DEFINE_bool(clever_optimizations,
             true,
             "Optimize object size, Array shift, DOM strings and string +")
@@ -194,6 +196,8 @@ DEFINE_bool(trace_all_uses, false, "trace all use positions")
 DEFINE_bool(trace_range, false, "trace range analysis")
 DEFINE_bool(trace_gvn, false, "trace global value numbering")
 DEFINE_bool(trace_representation, false, "trace representation types")
+DEFINE_bool(trace_track_allocation_sites, false,
+            "trace the tracking of allocation sites")
 DEFINE_bool(stress_pointer_maps, false, "pointer map for every instruction")
 DEFINE_bool(stress_environments, false, "environment for every instruction")
 DEFINE_int(deopt_every_n_times,
@@ -203,13 +207,17 @@ DEFINE_bool(trap_on_deopt, false, "put a break point before deoptimizing")
 DEFINE_bool(deoptimize_uncommon_cases, true, "deoptimize uncommon cases")
 DEFINE_bool(polymorphic_inlining, true, "polymorphic inlining")
 DEFINE_bool(use_osr, true, "use on-stack replacement")
+DEFINE_bool(idefs, false, "use informative definitions")
 DEFINE_bool(array_bounds_checks_elimination, true,
             "perform array bounds checks elimination")
 DEFINE_bool(array_index_dehoisting, true,
             "perform array index dehoisting")
 DEFINE_bool(dead_code_elimination, true, "use dead code elimination")
 DEFINE_bool(trace_dead_code_elimination, false, "trace dead code elimination")
-
+DEFINE_bool(unreachable_code_elimination, false,
+            "eliminate unreachable code (hidden behind soft deopts)")
+DEFINE_bool(track_allocation_sites, true,
+            "Use allocation site info to reduce transitions")
 DEFINE_bool(trace_osr, false, "trace on-stack replacement")
 DEFINE_int(stress_runs, 0, "number of stress runs")
 DEFINE_bool(optimize_closures, true, "optimize closures")
@@ -298,8 +306,12 @@ DEFINE_bool(enable_movw_movt, false,
             "instruction pairs (ARM only)")
 DEFINE_bool(enable_unaligned_accesses, true,
             "enable unaligned accesses for ARMv7 (ARM only)")
+DEFINE_bool(enable_32dregs, true,
+            "enable use of d16-d31 registers on ARM - this requires VFP3")
 DEFINE_bool(enable_fpu, true,
             "enable use of MIPS FPU instructions if available (MIPS only)")
+DEFINE_bool(enable_vldr_imm, false,
+            "enable use of constant pools for double immediate (ARM only)")
 
 // bootstrapper.cc
 DEFINE_string(expose_natives_as, NULL, "expose natives in global object")
@@ -332,7 +344,9 @@ DEFINE_bool(trace_opt_stats, false, "trace lazy optimization statistics")
 DEFINE_bool(opt, true, "use adaptive optimizations")
 DEFINE_bool(always_opt, false, "always try to optimize functions")
 DEFINE_bool(prepare_always_opt, false, "prepare for turning on always opt")
-DEFINE_bool(trace_deopt, false, "trace deoptimization")
+DEFINE_bool(trace_deopt, false, "trace optimize function deoptimization")
+DEFINE_bool(trace_stub_failures, false,
+            "trace deoptimization of generated code stubs")
 
 // compiler.cc
 DEFINE_int(min_preparse_length, 1024,
@@ -393,6 +407,8 @@ DEFINE_bool(trace_external_memory, false,
             "it is adjusted.")
 DEFINE_bool(collect_maps, true,
             "garbage collect maps from which no objects can be reached")
+DEFINE_bool(weak_embedded_maps_in_optimized_code, false,
+            "make maps embedded in optimized code weak")
 DEFINE_bool(flush_code, true,
             "flush code that we expect not to use again (during full gc)")
 DEFINE_bool(flush_code_incrementally, true,
@@ -406,6 +422,12 @@ DEFINE_bool(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_bool(track_gc_object_stats, false,
             "track object counts and memory usage")
+DEFINE_bool(parallel_sweeping, false, "enable parallel sweeping")
+DEFINE_bool(concurrent_sweeping, false, "enable concurrent sweeping")
+DEFINE_int(sweeper_threads, 1,
+           "number of parallel and concurrent sweeping threads")
+DEFINE_bool(parallel_marking, false, "enable parallel marking")
+DEFINE_int(marking_threads, 1, "number of parallel marking threads")
 #ifdef VERIFY_HEAP
 DEFINE_bool(verify_heap, false, "verify heap pointers before and after GC")
 #endif
@@ -415,12 +437,6 @@ DEFINE_bool(use_idle_notification, true,
             "Use idle notification to reduce memory footprint.")
 // ic.cc
 DEFINE_bool(use_ic, true, "use inline caching")
-
-#ifdef LIVE_OBJECT_LIST
-// liveobjectlist.cc
-DEFINE_string(lol_workdir, NULL, "path for lol temp files")
-DEFINE_bool(verify_lol, false, "perform debugging verification for lol")
-#endif
 
 // macro-assembler-ia32.cc
 DEFINE_bool(native_code_counters, false,

@@ -27,6 +27,7 @@
 #include "ElementShadow.h"
 #include "EventListener.h"
 #include "EventNames.h"
+#include "ExceptionCodePlaceholder.h"
 #include "MutationEvent.h"
 #include "NodeRenderingContext.h"
 #include "RenderSVGInline.h"
@@ -53,7 +54,7 @@ END_REGISTER_ANIMATED_PROPERTIES
 PassRefPtr<SVGTRefElement> SVGTRefElement::create(const QualifiedName& tagName, Document* document)
 {
     RefPtr<SVGTRefElement> element = adoptRef(new SVGTRefElement(tagName, document));
-    element->createShadowSubtree();
+    element->ensureUserAgentShadowRoot();
     return element.release();
 }
 
@@ -143,11 +144,6 @@ SVGTRefElement::~SVGTRefElement()
     m_targetListener->detach();
 }
 
-void SVGTRefElement::createShadowSubtree()
-{
-    ShadowRoot::create(this, ShadowRoot::UserAgentShadowRoot, ASSERT_NO_EXCEPTION);
-}
-
 void SVGTRefElement::updateReferencedText(Element* target)
 {
     String textContent;
@@ -170,12 +166,11 @@ void SVGTRefElement::detachTarget()
     m_targetListener->detach();
 
     String emptyContent;
-    ExceptionCode ignore = 0;
 
     ASSERT(shadow());
     Node* container = shadow()->oldestShadowRoot()->firstChild();
     if (container)
-        container->setTextContent(emptyContent, ignore);
+        container->setTextContent(emptyContent, IGNORE_EXCEPTION);
 
     if (!inDocument())
         return;

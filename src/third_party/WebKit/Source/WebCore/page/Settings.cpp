@@ -35,11 +35,13 @@
 #include "Frame.h"
 #include "FrameTree.h"
 #include "FrameView.h"
+#include "HTMLMediaElement.h"
 #include "HistoryItem.h"
 #include "Page.h"
 #include "PageCache.h"
 #include "ResourceHandle.h"
 #include "StorageMap.h"
+#include "TextAutosizer.h"
 #include <limits>
 
 using namespace std;
@@ -93,6 +95,10 @@ bool Settings::gShouldPaintNativeControls = true;
 bool Settings::gAVFoundationEnabled = false;
 #endif
 
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+bool Settings::gQTKitEnabled = true;
+#endif
+
 bool Settings::gMockScrollbarsEnabled = false;
 bool Settings::gUsesOverlayScrollbars = false;
 
@@ -107,7 +113,8 @@ bool Settings::gShouldRespectPriorityInCSSAttributeSetters = false;
 // NOTEs
 //  1) EditingMacBehavior comprises Tiger, Leopard, SnowLeopard and iOS builds, as well QtWebKit and Chromium when built on Mac;
 //  2) EditingWindowsBehavior comprises Win32 and WinCE builds, as well as QtWebKit and Chromium when built on Windows;
-//  3) EditingUnixBehavior comprises all unix-based systems, but Darwin/MacOS (and then abusing the terminology);
+//  3) EditingUnixBehavior comprises all unix-based systems, but Darwin/MacOS/Android (and then abusing the terminology);
+//  4) EditingAndroidBehavior comprises Android builds.
 // 99) MacEditingBehavior is used a fallback.
 static EditingBehaviorType editingBehaviorTypeForPlatform()
 {
@@ -116,6 +123,8 @@ static EditingBehaviorType editingBehaviorTypeForPlatform()
     EditingMacBehavior
 #elif OS(WINDOWS)
     EditingWindowsBehavior
+#elif OS(ANDROID)
+    EditingAndroidBehavior
 #elif OS(UNIX)
     EditingUnixBehavior
 #else
@@ -126,6 +135,11 @@ static EditingBehaviorType editingBehaviorTypeForPlatform()
 }
 
 static const double defaultIncrementalRenderingSuppressionTimeoutInSeconds = 5;
+#if USE(UNIFIED_TEXT_CHECKING)
+static const double defaultUnifiedTextCheckerEnabled = true;
+#else
+static const double defaultUnifiedTextCheckerEnabled = false;
+#endif
 
 Settings::Settings(Page* page)
     : m_page(0)
@@ -174,11 +188,6 @@ Settings::Settings(Page* page)
     , m_showTiledScrollingIndicator(false)
     , m_tiledBackingStoreEnabled(false)
     , m_dnsPrefetchingEnabled(false)
-#if USE(UNIFIED_TEXT_CHECKING)
-    , m_unifiedTextCheckerEnabled(true)
-#else
-    , m_unifiedTextCheckerEnabled(false)
-#endif
 #if ENABLE(SMOOTH_SCROLLING)
     , m_scrollAnimatorEnabled(true)
 #endif
@@ -186,6 +195,7 @@ Settings::Settings(Page* page)
     , m_touchEventEmulationEnabled(false)
 #endif
     , m_scrollingPerformanceLoggingEnabled(false)
+    , m_aggressiveTileRetentionEnabled(false)
     , m_setImageLoadingSettingsTimer(this, &Settings::imageLoadingSettingsTimerFired)
 {
     // A Frame may not have been created yet, so we initialize the AtomicString
@@ -354,6 +364,11 @@ void Settings::setTextAutosizingWindowSizeOverride(const IntSize& textAutosizing
 void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
 {
     m_textAutosizingFontScaleFactor = fontScaleFactor;
+
+    // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext())
+        frame->document()->textAutosizer()->recalculateMultipliers();
+
     m_page->setNeedsRecalcStyleInAllFrames();
 }
 
@@ -634,12 +649,39 @@ void Settings::setTiledBackingStoreEnabled(bool enabled)
 #endif
 }
 
+#if USE(AVFOUNDATION)
+void Settings::setAVFoundationEnabled(bool enabled)
+{
+    if (gAVFoundationEnabled == enabled)
+        return;
+
+    gAVFoundationEnabled = enabled;
+    HTMLMediaElement::requeryMediaEngines();
+}
+#endif
+
+#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+void Settings::setQTKitEnabled(bool enabled)
+{
+    if (gQTKitEnabled == enabled)
+        return;
+
+    gQTKitEnabled = enabled;
+    HTMLMediaElement::requeryMediaEngines();
+}
+#endif
+
 void Settings::setScrollingPerformanceLoggingEnabled(bool enabled)
 {
     m_scrollingPerformanceLoggingEnabled = enabled;
 
     if (m_page->mainFrame() && m_page->mainFrame()->view())
         m_page->mainFrame()->view()->setScrollingPerformanceLoggingEnabled(enabled);
+}
+    
+void Settings::setAggressiveTileRetentionEnabled(bool enabled)
+{
+    m_aggressiveTileRetentionEnabled = enabled;
 }
 
 void Settings::setMockScrollbarsEnabled(bool flag)

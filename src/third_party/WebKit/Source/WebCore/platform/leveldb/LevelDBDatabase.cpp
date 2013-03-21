@@ -43,6 +43,21 @@
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 
+#if PLATFORM(CHROMIUM)
+#include <env_idb.h>
+#endif
+
+#if !PLATFORM(CHROMIUM)
+namespace leveldb {
+
+static Env* IDBEnv()
+{
+    return leveldb::Env::Default();
+}
+
+}
+#endif
+
 namespace WebCore {
 
 static leveldb::Slice makeSlice(const Vector<char>& value)
@@ -118,6 +133,8 @@ static leveldb::Status openDB(leveldb::Comparator* comparator, leveldb::Env* env
     options.comparator = comparator;
     options.create_if_missing = true;
     options.paranoid_checks = true;
+    // 20 max_open_files is the minimum LevelDB allows.
+    options.max_open_files = 20;
     options.env = env;
 
     return leveldb::DB::Open(options, path.utf8().data(), db);
@@ -126,6 +143,7 @@ static leveldb::Status openDB(leveldb::Comparator* comparator, leveldb::Env* env
 bool LevelDBDatabase::destroy(const String& fileName)
 {
     leveldb::Options options;
+    options.env = leveldb::IDBEnv();
     const leveldb::Status s = leveldb::DestroyDB(fileName.utf8().data(), options);
     return s.ok();
 }
@@ -135,7 +153,7 @@ PassOwnPtr<LevelDBDatabase> LevelDBDatabase::open(const String& fileName, const 
     OwnPtr<ComparatorAdapter> comparatorAdapter = adoptPtr(new ComparatorAdapter(comparator));
 
     leveldb::DB* db;
-    const leveldb::Status s = openDB(comparatorAdapter.get(), leveldb::Env::Default(), fileName, &db);
+    const leveldb::Status s = openDB(comparatorAdapter.get(), leveldb::IDBEnv(), fileName, &db);
 
     if (!s.ok()) {
         LOG_ERROR("Failed to open LevelDB database from %s: %s", fileName.ascii().data(), s.ToString().c_str());
@@ -153,7 +171,7 @@ PassOwnPtr<LevelDBDatabase> LevelDBDatabase::open(const String& fileName, const 
 PassOwnPtr<LevelDBDatabase> LevelDBDatabase::openInMemory(const LevelDBComparator* comparator)
 {
     OwnPtr<ComparatorAdapter> comparatorAdapter = adoptPtr(new ComparatorAdapter(comparator));
-    OwnPtr<leveldb::Env> inMemoryEnv = adoptPtr(leveldb::NewMemEnv(leveldb::Env::Default()));
+    OwnPtr<leveldb::Env> inMemoryEnv = adoptPtr(leveldb::NewMemEnv(leveldb::IDBEnv()));
 
     leveldb::DB* db;
     const leveldb::Status s = openDB(comparatorAdapter.get(), inMemoryEnv.get(), String(), &db);

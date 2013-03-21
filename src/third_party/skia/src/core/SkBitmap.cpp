@@ -701,7 +701,7 @@ bool SkBitmap::ComputeIsOpaque(const SkBitmap& bm) {
             if (!table) {
                 return false;
             }
-            SkPMColor c = ~0;
+            SkPMColor c = (SkPMColor)~0;
             for (int i = bm.getColorTable()->count() - 1; i >= 0; --i) {
                 c &= table[i];
             }
@@ -724,7 +724,7 @@ bool SkBitmap::ComputeIsOpaque(const SkBitmap& bm) {
             return true;
         } break;
         case SkBitmap::kARGB_8888_Config: {
-            SkPMColor c = ~0;
+            SkPMColor c = (SkPMColor)~0;
             for (int y = 0; y < height; ++y) {
                 const SkPMColor* row = bm.getAddr32(0, y);
                 for (int x = 0; x < width; ++x) {
@@ -828,10 +828,6 @@ void SkBitmap::eraseARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b) const {
 
 #define SUB_OFFSET_FAILURE  ((size_t)-1)
 
-// Declare these non-static so they can be tested by GpuBitmapCopyTest.
-size_t getSubOffset(const SkBitmap& bm, int x, int y);
-bool getUpperLeftFromOffset(const SkBitmap& bm, int* x, int* y);
-
 /**
  *  Based on the Config and rowBytes() of bm, return the offset into an SkPixelRef of the pixel at
  *  (x, y).
@@ -839,7 +835,7 @@ bool getUpperLeftFromOffset(const SkBitmap& bm, int* x, int* y);
  *  Also note that (x, y) may be outside the range of (0 - width(), 0 - height()), so long as it is
  *  within the bounds of the SkPixelRef being used.
  */
-size_t getSubOffset(const SkBitmap& bm, int x, int y) {
+static size_t getSubOffset(const SkBitmap& bm, int x, int y) {
     switch (bm.getConfig()) {
         case SkBitmap::kA8_Config:
         case SkBitmap:: kIndex8_Config:
@@ -868,7 +864,7 @@ size_t getSubOffset(const SkBitmap& bm, int x, int y) {
  *  upper left corner of bm relative to its SkPixelRef.
  *  x and y must be non-NULL.
  */
-bool getUpperLeftFromOffset(const SkBitmap& bm, int* x, int* y) {
+static bool getUpperLeftFromOffset(const SkBitmap& bm, int* x, int* y) {
     SkASSERT(x != NULL && y != NULL);
     const size_t offset = bm.pixelRefOffset();
     if (0 == offset) {
@@ -1636,5 +1632,45 @@ void SkBitmap::validate() const {
         }
     }
 #endif
+}
+#endif
+
+#ifdef SK_DEVELOPER
+void SkBitmap::toString(SkString* str) const {
+
+    static const char* gConfigNames[kConfigCount] = {
+        "NONE", "A1", "A8", "INDEX8", "565", "4444", "8888", "RLE"
+    };
+
+    str->appendf("bitmap: ((%d, %d) %s", this->width(), this->height(),
+                 gConfigNames[this->config()]);
+
+    str->append(" (");
+    if (this->isOpaque()) {
+        str->append("opaque");
+    } else {
+        str->append("transparent");
+    }
+    if (this->isImmutable()) {
+        str->append(", immutable");
+    } else {
+        str->append(", not-immutable");
+    }
+    str->append(")");
+
+    SkPixelRef* pr = this->pixelRef();
+    if (NULL == pr) {
+        // show null or the explicit pixel address (rare)
+        str->appendf(" pixels:%p", this->getPixels());
+    } else {
+        const char* uri = pr->getURI();
+        if (NULL != uri) {
+            str->appendf(" uri:\"%s\"", uri);
+        } else {
+            str->appendf(" pixelref:%p", pr);
+        }
+    }
+
+    str->append(")");
 }
 #endif

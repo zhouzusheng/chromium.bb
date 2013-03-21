@@ -18,32 +18,41 @@
 
 namespace net {
 
+namespace test {
+class FixRateSenderPeer;
+}  // namespace test
+
 class NET_EXPORT_PRIVATE FixRateSender : public SendAlgorithmInterface {
  public:
   explicit FixRateSender(const QuicClock* clock);
 
   // Start implementation of SendAlgorithmInterface.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& feedback) OVERRIDE;
+      const QuicCongestionFeedbackFrame& feedback,
+      const SentPacketsMap& sent_packets) OVERRIDE;
   virtual void OnIncomingAck(QuicPacketSequenceNumber acked_sequence_number,
-                             size_t acked_bytes,
+                             QuicByteCount acked_bytes,
                              QuicTime::Delta rtt) OVERRIDE;
   virtual void OnIncomingLoss(int number_of_lost_packets) OVERRIDE;
   virtual void SentPacket(QuicPacketSequenceNumber equence_number,
-                          size_t bytes,
-                          bool retransmit) OVERRIDE;
-  virtual QuicTime::Delta TimeUntilSend(bool retransmit) OVERRIDE;
-  virtual size_t AvailableCongestionWindow() OVERRIDE;
-  virtual int BandwidthEstimate() OVERRIDE;
+                          QuicByteCount bytes,
+                          bool is_retransmission) OVERRIDE;
+  virtual QuicTime::Delta TimeUntilSend(bool is_retransmission) OVERRIDE;
+  virtual QuicBandwidth BandwidthEstimate() OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:
-  size_t CongestionWindow();
+  friend class test::FixRateSenderPeer;
 
-  uint32 bitrate_in_bytes_per_s_;
+  QuicByteCount AvailableCongestionWindow();
+  QuicByteCount CongestionWindow();
+
+  QuicBandwidth bitrate_;
   LeakyBucket fix_rate_leaky_bucket_;
   PacedSender paced_sender_;
-  size_t bytes_in_flight_;
+  QuicByteCount data_in_flight_;
+
+  DISALLOW_COPY_AND_ASSIGN(FixRateSender);
 };
 
 }  // namespace net

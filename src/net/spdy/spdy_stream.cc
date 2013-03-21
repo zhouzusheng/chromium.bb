@@ -73,8 +73,7 @@ SpdyStream::SpdyStream(SpdySession* session,
       net_log_(net_log),
       send_bytes_(0),
       recv_bytes_(0),
-      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE),
-      domain_bound_cert_request_handle_(NULL) {
+      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE) {
 }
 
 class SpdyStream::SpdyStreamIOBufferProducer
@@ -273,7 +272,7 @@ void SpdyStream::IncreaseSendWindowSize(int32 delta_window_size) {
         "Received WINDOW_UPDATE [delta: %d] for stream %d overflows "
         "send_window_size_ [current: %d]", delta_window_size, stream_id_,
         send_window_size_);
-    session_->ResetStream(stream_id_, FLOW_CONTROL_ERROR, desc);
+    session_->ResetStream(stream_id_, RST_STREAM_FLOW_CONTROL_ERROR, desc);
     return;
   }
 
@@ -348,7 +347,7 @@ void SpdyStream::DecreaseRecvWindowSize(int32 delta_window_size) {
   // a negative |recv_window_size_|, if we do, it's a client side bug, so we use
   // PROTOCOL_ERROR for lack of a better error code.
   if (recv_window_size_ < 0) {
-    session_->ResetStream(stream_id_, PROTOCOL_ERROR,
+    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
                           "Negative recv window size");
     NOTREACHED();
   }
@@ -398,7 +397,7 @@ int SpdyStream::OnResponseReceived(const SpdyHeaderBlock& response) {
        it != response.end(); ++it) {
     // Disallow uppercase headers.
     if (ContainsUpperAscii(it->first)) {
-      session_->ResetStream(stream_id_, PROTOCOL_ERROR,
+      session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
                             "Upper case characters in header: " + it->first);
       response_status_ = ERR_SPDY_PROTOCOL_ERROR;
       return ERR_SPDY_PROTOCOL_ERROR;
@@ -406,7 +405,7 @@ int SpdyStream::OnResponseReceived(const SpdyHeaderBlock& response) {
   }
 
   if ((*response_).find("transfer-encoding") != (*response_).end()) {
-    session_->ResetStream(stream_id_, PROTOCOL_ERROR,
+    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
                          "Received transfer-encoding header");
     return ERR_SPDY_PROTOCOL_ERROR;
   }
@@ -434,7 +433,7 @@ int SpdyStream::OnHeaders(const SpdyHeaderBlock& headers) {
 
     // Disallow uppercase headers.
     if (ContainsUpperAscii(it->first)) {
-      session_->ResetStream(stream_id_, PROTOCOL_ERROR,
+      session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
                             "Upper case characters in header: " + it->first);
       response_status_ = ERR_SPDY_PROTOCOL_ERROR;
       return ERR_SPDY_PROTOCOL_ERROR;
@@ -444,7 +443,7 @@ int SpdyStream::OnHeaders(const SpdyHeaderBlock& headers) {
   }
 
   if ((*response_).find("transfer-encoding") != (*response_).end()) {
-    session_->ResetStream(stream_id_, PROTOCOL_ERROR,
+    session_->ResetStream(stream_id_, RST_STREAM_PROTOCOL_ERROR,
                          "Received transfer-encoding header");
     return ERR_SPDY_PROTOCOL_ERROR;
   }
@@ -556,9 +555,9 @@ void SpdyStream::Cancel() {
 
   cancelled_ = true;
   if (session_->IsStreamActive(stream_id_))
-    session_->ResetStream(stream_id_, CANCEL, "");
+    session_->ResetStream(stream_id_, RST_STREAM_CANCEL, "");
   else if (stream_id_ == 0)
-    session_->CloseCreatedStream(this, CANCEL);
+    session_->CloseCreatedStream(this, RST_STREAM_CANCEL);
 }
 
 void SpdyStream::Close() {

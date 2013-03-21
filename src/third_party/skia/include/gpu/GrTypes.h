@@ -307,33 +307,8 @@ enum GrPixelConfig {
     #error "SK_*32_SHIFT values must correspond to GL_BGRA or GL_RGBA format."
 #endif
 
-// This alias is deprecated and will be removed.
-static const GrPixelConfig kSkia8888_PM_GrPixelConfig = kSkia8888_GrPixelConfig;
-
-// Returns true if the pixel config has 8bit r,g,b,a components in that byte
-// order
-static inline bool GrPixelConfigIsRGBA8888(GrPixelConfig config) {
-    switch (config) {
-        case kRGBA_8888_GrPixelConfig:
-            return true;
-        default:
-            return false;
-    }
-}
-
-// Returns true if the pixel config has 8bit b,g,r,a components in that byte
-// order
-static inline bool GrPixelConfigIsBGRA8888(GrPixelConfig config) {
-    switch (config) {
-        case kBGRA_8888_GrPixelConfig:
-            return true;
-        default:
-            return false;
-    }
-}
-
 // Returns true if the pixel config is 32 bits per pixel
-static inline bool GrPixelConfigIs32Bit(GrPixelConfig config) {
+static inline bool GrPixelConfigIs8888(GrPixelConfig config) {
     switch (config) {
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -425,6 +400,18 @@ enum {
     kGrColorTableSize = 256 * 4 //sizeof(GrColor)
 };
 
+/**
+ * Some textures will be stored such that the upper and left edges of the content meet at the
+ * the origin (in texture coord space) and for other textures the lower and left edges meet at
+ * the origin. kDefault_GrSurfaceOrigin sets textures to TopLeft, and render targets
+ * to BottomLeft.
+ */
+
+enum GrSurfaceOrigin {
+    kDefault_GrSurfaceOrigin,         // DEPRECATED; to be removed
+    kTopLeft_GrSurfaceOrigin,
+    kBottomLeft_GrSurfaceOrigin,
+};
 
 /**
  * Describes a texture to be created.
@@ -432,6 +419,7 @@ enum {
 struct GrTextureDesc {
     GrTextureDesc()
     : fFlags(kNone_GrTextureFlags)
+    , fOrigin(kDefault_GrSurfaceOrigin)
     , fWidth(0)
     , fHeight(0)
     , fConfig(kUnknown_GrPixelConfig)
@@ -439,6 +427,7 @@ struct GrTextureDesc {
     }
 
     GrTextureFlags         fFlags;  //!< bitfield of TextureFlags
+    GrSurfaceOrigin        fOrigin; //!< origin of the texture
     int                    fWidth;  //!< Width of the texture
     int                    fHeight; //!< Height of the texture
 
@@ -459,44 +448,55 @@ struct GrTextureDesc {
 };
 
 /**
- * GrCacheData holds user-provided cache-specific data. It is used in
- * combination with the GrTextureDesc to construct a cache key for texture
- * resources.
+ * GrCacheID is used create and find cached GrResources (e.g. GrTextures). The ID has two parts:
+ * the domain and the key. Domains simply allow multiple clients to use 0-based indices as their
+ * cache key without colliding. The key uniquely identifies a GrResource within the domain.
+ * Users of the cache must obtain a domain via GenerateDomain().
  */
-struct GrCacheData {
-    /*
-     * Scratch textures should all have this value as their fClientCacheID
-     */
-    static const uint64_t kScratch_CacheID = 0xBBBBBBBB;
+struct GrCacheID {
+public:
+    typedef uint8_t  Domain;
+
+    struct Key {
+        union {
+            uint8_t  fData8[16];
+            uint32_t fData32[4];
+            uint64_t fData64[2];
+        };
+    };
 
     /**
-      * Resources in the "scratch" domain can be used by any domain. All
-      * scratch textures will have this as their domain.
-      */
-    static const uint8_t kScratch_ResourceDomain = 0;
+     * A default cache ID is invalid; a set method must be called before the object is used.
+     */
+    GrCacheID() { fDomain = kInvalid_Domain; }
 
-
-    // No default constructor is provided since, if you are creating one
-    // of these, you should definitely have a key (or be using the scratch
-    // key).
-    GrCacheData(uint64_t key)
-    : fClientCacheID(key)
-    , fResourceDomain(kScratch_ResourceDomain) {
+    /**
+     * Initialize the cache ID to a domain and key.
+     */
+    GrCacheID(Domain domain, const Key& key) {
+        GrAssert(kInvalid_Domain != domain);
+        this->reset(domain, key);
     }
 
-    /**
-     * A user-provided texture ID. It should be unique to the texture data and
-     * does not need to take into account the width or height. Two textures
-     * with the same ID but different dimensions will not collide. This field
-     * is only relevant for textures that will be cached.
-     */
-    uint64_t               fClientCacheID;
+    void reset(Domain domain, const Key& key) {
+        fDomain = domain;
+        memcpy(&fKey, &key, sizeof(Key));
+    }
 
-    /**
-     * Allows cache clients to cluster their textures inside domains (e.g.,
-     * alpha clip masks). Only relevant for cached textures.
-     */
-    uint8_t                fResourceDomain;
+    /** Has this been initialized to a valid domain */
+    bool isValid() const { return kInvalid_Domain != fDomain; }
+
+    const Key& getKey() const { GrAssert(this->isValid()); return fKey; }
+    Domain getDomain() const { GrAssert(this->isValid()); return fDomain; }
+
+    /** Creates a new unique ID domain. */
+    static Domain GenerateDomain();
+
+private:
+    Key             fKey;
+    Domain          fDomain;
+
+    static const Domain kInvalid_Domain = 0;
 };
 
 /**
@@ -585,6 +585,7 @@ GR_MAKE_BITFIELD_OPS(GrBackendTextureFlags)
 struct GrBackendTextureDesc {
     GrBackendTextureDesc() { memset(this, 0, sizeof(*this)); }
     GrBackendTextureFlags           fFlags;
+    GrSurfaceOrigin                 fOrigin;
     int                             fWidth;         //<! width in pixels
     int                             fHeight;        //<! height in pixels
     GrPixelConfig                   fConfig;        //<! color format
@@ -617,6 +618,7 @@ struct GrBackendRenderTargetDesc {
     int                             fWidth;         //<! width in pixels
     int                             fHeight;        //<! height in pixels
     GrPixelConfig                   fConfig;        //<! color format
+    GrSurfaceOrigin                 fOrigin;        //<! pixel origin
     /**
      * The number of samples per pixel. Gr uses this to influence decisions
      * about applying other forms of anti-aliasing.
@@ -634,26 +636,5 @@ struct GrBackendRenderTargetDesc {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-// Legacy names that will be kept until WebKit can be updated.
-
-typedef GrBackend GrEngine;
-static const GrBackend kOpenGL_Shaders_GrEngine = kOpenGL_GrBackend;
-
-typedef GrBackendContext GrPlatform3DContext;
-
-typedef GrBackendObject GrPlatform3DObject;
-
-typedef GrBackendTextureFlags GrPlatformTextureFlags;
-static const GrBackendTextureFlags kNone_GrPlatformTextureFlag = kNone_GrBackendTextureFlag;
-static const GrBackendTextureFlags kRenderTarget_GrPlatformTextureFlag = kRenderTarget_GrBackendTextureFlag;
-
-typedef GrBackendTextureDesc GrPlatformTextureDesc;
-
-typedef GrBackendRenderTargetDesc GrPlatformRenderTargetDesc;
-
-///////////////////////////////////////////////////////////////////////////////
-
-// this is included only to make it easy to use this debugging facility
-#include "GrInstanceCounter.h"
 
 #endif

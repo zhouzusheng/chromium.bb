@@ -22,6 +22,11 @@ namespace net {
 
 class QuicCryptoStream;
 class ReliableQuicStream;
+class VisitorShim;
+
+namespace test {
+class QuicSessionPeer;
+}  // namespace test
 
 class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
  public:
@@ -41,8 +46,14 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual bool OnCanWrite() OVERRIDE;
 
   // Called by streams when they want to write data to the peer.
-  virtual int WriteData(QuicStreamId id, base::StringPiece data,
-                        QuicStreamOffset offset, bool fin);
+  // Returns a pair with the number of bytes consumed from data, and a boolean
+  // indicating if the fin bit was consumed.  This does not indicate the data
+  // has been sent on the wire: it may have been turned into a packet and queued
+  // if the socket was unexpectedly blocked.
+  virtual QuicConsumedData WriteData(QuicStreamId id,
+                                     base::StringPiece data,
+                                     QuicStreamOffset offset,
+                                     bool fin);
   // Called by streams when they want to close the stream in both directions.
   void SendRstStream(QuicStreamId id,
                      QuicErrorCode error,
@@ -69,12 +80,13 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   const IPEndPoint& peer_address() const {
     return connection_->peer_address();
   }
+  QuicGuid guid() const { return connection_->guid(); }
 
   QuicPacketCreator::Options* options() { return connection()->options(); }
 
   // Returns the number of currently open streams, including those which have
   // been implicitly created.
-  virtual size_t GetNumOpenStreams();
+  virtual size_t GetNumOpenStreams() const;
 
   void MarkWriteBlocked(QuicStreamId id);
 
@@ -92,7 +104,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual QuicCryptoStream* GetCryptoStream() = 0;
 
   // Adds 'stream' to the active stream map.
-  void ActivateStream(ReliableQuicStream* stream);
+  virtual void ActivateStream(ReliableQuicStream* stream);
 
   // Returns the stream id for a new stream.
   QuicStreamId GetNextStreamId();
@@ -103,14 +115,35 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     return max_open_streams_;
   }
 
+ protected:
+  // This is called after every call other than OnConnectionClose from the
+  // QuicConnectionVisitor to allow post-processing once the work has been done.
+  // In this case, it deletes streams given that it's safe to do so (no other
+  // opterations are being done on the streams at this time)
+  virtual void PostProcessAfterData();
+
+  base::hash_map<QuicStreamId, ReliableQuicStream*>* streams() {
+    return &stream_map_;
+  }
+  std::vector<ReliableQuicStream*>* closed_streams() {
+    return &closed_streams_;
+  }
+
  private:
-  friend class QuicSessionPeer;
+  friend class test::QuicSessionPeer;
+  friend class VisitorShim;
 
   typedef base::hash_map<QuicStreamId, ReliableQuicStream*> ReliableStreamMap;
 
   ReliableQuicStream* GetStream(const QuicStreamId stream_id);
 
   scoped_ptr<QuicConnection> connection_;
+
+  // A shim to stand between the connection and the session, to handle stream
+  // deletions.
+  scoped_ptr<VisitorShim> visitor_shim_;
+
+  std::vector<ReliableQuicStream*> closed_streams_;
 
   // Returns the maximum number of streams this connection can open.
   const size_t max_open_streams_;

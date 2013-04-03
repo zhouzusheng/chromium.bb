@@ -485,7 +485,7 @@ GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoi
     if (firstBox && firstBox != lastBox) {
         // Now fill in any gaps on the line that occurred between two selected elements.
         LayoutUnit lastLogicalLeft = firstBox->logicalRight();
-        bool isPreviousBoxSelected = firstBox->selectionState() != RenderObject::SelectionNone;
+        bool isPreviousBoxSelected = firstBox->selectionState() != RenderObject::SelectionNone && !firstBox->renderer()->isListMarker();
         for (InlineBox* box = firstBox->nextLeafChild(); box; box = box->nextLeafChild()) {
             if (box->selectionState() != RenderObject::SelectionNone) {
                 LayoutRect logicalRect(lastLogicalLeft, selTop, box->logicalLeft() - lastLogicalLeft, selHeight);
@@ -501,7 +501,7 @@ GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoi
             }
             if (box == lastBox)
                 break;
-            isPreviousBoxSelected = box->selectionState() != RenderObject::SelectionNone;
+            isPreviousBoxSelected = box->selectionState() != RenderObject::SelectionNone && !box->renderer()->isListMarker();
         }
     }
 

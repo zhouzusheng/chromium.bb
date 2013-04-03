@@ -61,6 +61,7 @@ public:
     void makeContextWeak(v8::Handle<v8::Context>);
     void setIsolatedWorldField(v8::Handle<v8::Context>);
 
+    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
     static void assertContextHasCorrectPrototype(v8::Handle<v8::Context>);
     static DOMWrapperWorld* getWorld(v8::Handle<v8::Context> context)
     {

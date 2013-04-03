@@ -67,10 +67,15 @@ DOMWrapperWorld* mainThreadNormalWorld()
     return cachedNormalWorld.get();
 }
 
-void DOMWrapperWorld::assertContextHasCorrectPrototype(v8::Handle<v8::Context> context)
+bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context)
 {
     ASSERT(isMainThread());
-    ASSERT(V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info));
+    return V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8DOMWindow::info);
+}
+
+void DOMWrapperWorld::assertContextHasCorrectPrototype(v8::Handle<v8::Context> context)
+{
+    ASSERT(contextHasCorrectPrototype(context));
 }
 
 static void isolatedWorldWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Value> object, void* parameter)

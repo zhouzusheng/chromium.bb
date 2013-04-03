@@ -1027,7 +1027,9 @@ void ThreadProxy::initializeRendererOnImplThread(CompletionEvent* completion, bo
         m_schedulerOnImplThread->setSwapBuffersCompleteSupported(
                 capabilities->usingSwapCompleteCallback);
 
-        int maxFramesPending = FrameRateController::kDefaultMaxFramesPending;
+        int maxFramesPending = m_layerTreeHostImpl->outputSurface()->Capabilities().max_frames_pending;
+        if (maxFramesPending <= 0)
+            maxFramesPending = FrameRateController::kDefaultMaxFramesPending;
         if (m_layerTreeHostImpl->outputSurface()->Capabilities().has_parent_compositor)
             maxFramesPending = 1;
         m_schedulerOnImplThread->setMaxFramesPending(maxFramesPending);
@@ -1137,7 +1139,8 @@ void ThreadProxy::renewTreePriority()
 {
     bool smoothnessTakesPriority =
         m_layerTreeHostImpl->pinchGestureActive() ||
-        m_layerTreeHostImpl->currentlyScrollingLayer();
+        m_layerTreeHostImpl->currentlyScrollingLayer() ||
+        m_layerTreeHostImpl->pageScaleAnimationActive();
 
     // Update expiration time if smoothness currently takes priority.
     if (smoothnessTakesPriority) {

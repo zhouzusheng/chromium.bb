@@ -206,9 +206,6 @@ UsePosition* LiveRange::NextRegisterPosition(LifetimePosition start) {
 
 
 bool LiveRange::CanBeSpilled(LifetimePosition pos) {
-  // TODO(kmillikin): Comment. Now.
-  if (pos.Value() <= Start().Value() && HasRegisterAssigned()) return false;
-
   // We cannot spill a live range that has a use requiring a register
   // at the current or the immediate next position.
   UsePosition* use_pos = NextRegisterPosition(pos);
@@ -842,8 +839,9 @@ void LAllocator::MeetConstraintsBetween(LInstruction* first,
         ASSERT(!cur_input->IsUsedAtStart());
 
         LUnallocated* input_copy = cur_input->CopyUnconstrained(zone());
-        cur_input->set_virtual_register(GetVirtualRegister());
+        int vreg = GetVirtualRegister();
         if (!AllocationOk()) return;
+        cur_input->set_virtual_register(vreg);
 
         if (RequiredRegisterKind(input_copy->virtual_register()) ==
             DOUBLE_REGISTERS) {
@@ -1917,12 +1915,6 @@ void LAllocator::AllocateBlockedReg(LiveRange* current) {
   if (pos.Value() < register_use->pos().Value()) {
     // All registers are blocked before the first use that requires a register.
     // Spill starting part of live range up to that use.
-    //
-    // Corner case: the first use position is equal to the start of the range.
-    // In this case we have nothing to spill and SpillBetween will just return
-    // this range to the list of unhandled ones. This will lead to the infinite
-    // loop.
-    ASSERT(current->Start().Value() < register_use->pos().Value());
     SpillBetween(current, current->Start(), register_use->pos());
     return;
   }
@@ -1933,6 +1925,7 @@ void LAllocator::AllocateBlockedReg(LiveRange* current) {
     LiveRange* tail = SplitBetween(current,
                                    current->Start(),
                                    block_pos[reg].InstructionStart());
+    if (!AllocationOk()) return;
     AddToUnhandledSorted(tail);
   }
 
@@ -1963,6 +1956,7 @@ void LAllocator::SplitAndSpillIntersecting(LiveRange* current) {
       } else {
         SpillBetween(range, split_pos, next_pos->pos());
       }
+      if (!AllocationOk()) return;
       ActiveToHandled(range);
       --i;
     }
@@ -1981,6 +1975,7 @@ void LAllocator::SplitAndSpillIntersecting(LiveRange* current) {
           next_intersection = Min(next_intersection, next_pos->pos());
           SpillBetween(range, split_pos, next_intersection);
         }
+        if (!AllocationOk()) return;
         InactiveToHandled(range);
         --i;
       }
@@ -2006,8 +2001,9 @@ LiveRange* LAllocator::SplitRangeAt(LiveRange* range, LifetimePosition pos) {
   ASSERT(pos.IsInstructionStart() ||
          !chunk_->instructions()->at(pos.InstructionIndex())->IsControl());
 
-  LiveRange* result = LiveRangeFor(GetVirtualRegister());
+  int vreg = GetVirtualRegister();
   if (!AllocationOk()) return NULL;
+  LiveRange* result = LiveRangeFor(vreg);
   range->SplitAt(pos, result, zone_);
   return result;
 }
@@ -2072,7 +2068,7 @@ void LAllocator::SpillAfter(LiveRange* range, LifetimePosition pos) {
 void LAllocator::SpillBetween(LiveRange* range,
                               LifetimePosition start,
                               LifetimePosition end) {
-  ASSERT(start.Value() < end.Value());
+  CHECK(start.Value() < end.Value());
   LiveRange* second_part = SplitRangeAt(range, start);
   if (!AllocationOk()) return;
 
@@ -2084,6 +2080,7 @@ void LAllocator::SpillBetween(LiveRange* range,
         second_part,
         second_part->Start().InstructionEnd(),
         end.PrevInstruction().InstructionEnd());
+    if (!AllocationOk()) return;
 
     ASSERT(third_part != second_part);
 

@@ -90,6 +90,7 @@ public:
 
     const String& path() const { return m_path; }
     const String& name() const { return m_name; }
+    const String& blpPath() const { return m_path; }
 
     // This may return NaN (which is converted to null Date in javascript layer) if getFileModificationTime() platform call has failed or the information is not available.
     double lastModifiedDate() const;

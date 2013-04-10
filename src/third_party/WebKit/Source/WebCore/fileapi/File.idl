@@ -29,6 +29,7 @@
     JSNoStaticTables
 ] interface File : Blob {
     readonly attribute DOMString name;
+    readonly attribute DOMString blpPath;
 #if !defined(LANGUAGE_GOBJECT) || !LANGUAGE_GOBJECT
     readonly attribute Date lastModifiedDate;
 #endif

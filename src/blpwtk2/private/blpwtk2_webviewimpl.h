@@ -120,6 +120,16 @@ class WebViewImpl : public WebView,
     // it needs to do.
     virtual void CloseContents(content::WebContents* source) OVERRIDE;
 
+    // Asks permission to use the camera and/or microphone. If permission is
+    // granted, a call should be made to |callback| with the devices. If the
+    // request is denied, a call should be made to |callback| with an empty list
+    // of devices. |request| has the details of the request (e.g. which of audio
+    // and/or video devices are requested, and lists of available devices).
+    virtual void RequestMediaAccessPermission(
+        content::WebContents* web_contents,
+        const content::MediaStreamRequest& request,
+        const content::MediaResponseCallback& callback) OVERRIDE;
+
   private:
     scoped_ptr<content::WebContents> d_webContents;
     scoped_ptr<WebFrameImpl> d_mainFrame;

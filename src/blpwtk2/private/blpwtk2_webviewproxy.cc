@@ -282,6 +282,13 @@ void WebViewProxy::showContextMenu(WebView* source, const ContextMenuParams& par
         base::Bind(&WebViewProxy::proxyShowContextMenu, this, params));
 }
 
+void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaRequest)
+{
+    DCHECK(source == d_impl);
+    d_proxyDispatcher->PostTask(FROM_HERE,
+        base::Bind(&WebViewProxy::proxyHandleMediaRequest, this, mediaRequest));
+}
+
 void WebViewProxy::implInit(gfx::NativeView parent,
                             content::BrowserContext* browserContext,
                             int hostAffinity,
@@ -446,6 +453,13 @@ void WebViewProxy::proxyShowContextMenu(const ContextMenuParams& params)
 {
     if (d_delegate && !d_wasDestroyed)
         d_delegate->showContextMenu(this, params);
+}
+
+void WebViewProxy::proxyHandleMediaRequest(MediaRequest* request)
+{
+    if (d_delegate && !d_wasDestroyed){
+        d_delegate->handleMediaRequest(this, request);
+    }
 }
 
 }  // close namespace blpwtk2

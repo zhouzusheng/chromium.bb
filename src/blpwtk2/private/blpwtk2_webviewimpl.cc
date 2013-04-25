@@ -24,13 +24,16 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
+#include <blpwtk2_mediarequestimpl.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop.h>
+#include <content/public/browser/content_browser_client.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -38,6 +41,7 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_view.h>
 #include <content/public/browser/site_instance.h>
+#include <content/public/common/content_client.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/Source/WebKit/chromium/public/WebView.h>
 
@@ -384,6 +388,25 @@ void WebViewImpl::CloseContents(content::WebContents* source)
     }
 
     d_delegate->destroyView(this);
+}
+
+void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_contents,
+                                               const content::MediaStreamRequest& request,
+                                               const content::MediaResponseCallback& callback)
+{
+    if (d_delegate) {
+        MediaObserverImpl* mediaObserver = static_cast<MediaObserverImpl*>(
+            content::GetContentClient()->browser()->GetMediaObserver());
+        content::MediaStreamDevices devices;
+        if (content::IsAudioMediaType(request.audio_type)) {
+            devices.insert(devices.end(), mediaObserver->getAudioDevices().begin(),  mediaObserver->getAudioDevices().end());
+        }
+        if (content::IsVideoMediaType(request.video_type)) {
+            devices.insert(devices.end(), mediaObserver->getVideoDevices().begin(),  mediaObserver->getVideoDevices().end());
+        }
+        MediaRequest* mediaRequest = new MediaRequestImpl(devices, callback);
+        d_delegate->handleMediaRequest(this, mediaRequest);
+    }
 }
 
 }  // close namespace blpwtk2

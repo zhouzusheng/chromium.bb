@@ -99,6 +99,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     virtual void focusAfter(WebView* source) OVERRIDE;
     virtual void focused(WebView* source) OVERRIDE;
     virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
+    virtual void handleMediaRequest(WebView* source, MediaRequest* request) OVERRIDE;
 
   private:
     // only RefCountedThreadSafe should be able to delete this object
@@ -135,6 +136,7 @@ class WebViewProxy : public base::RefCountedThreadSafe<WebViewProxy>,
     void proxyFocusAfter();
     void proxyFocused();
     void proxyShowContextMenu(const ContextMenuParams& params);
+    void proxyHandleMediaRequest(MediaRequest* request);
 
     WebViewImpl* d_impl;
     MessageLoop* d_implDispatcher;

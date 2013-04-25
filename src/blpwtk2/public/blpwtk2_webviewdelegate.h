@@ -31,6 +31,7 @@ class ContextMenuParams;
 class NewViewParams;
 class StringRef;
 class WebView;
+class MediaRequest;
 
 // This class can be implemented by the application to receive notifications
 // for various events pertaining to a particular WebView.  The delegate is
@@ -86,6 +87,12 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // (for example, Copy/Paste etc).
     virtual void showContextMenu(WebView* source,
                                  const ContextMenuParams& params) {}
+
+    // Invoked when a request has been made to access user's media devices
+    // such as the camera or the microphone. The specified 'request' contains
+    // information on the devices that are available.
+    virtual void handleMediaRequest(WebView* source,
+                                    MediaRequest* request) {}
 };
 
 }  // close namespace blpwtk2

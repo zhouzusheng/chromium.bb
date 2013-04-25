@@ -291,6 +291,31 @@ public:
                        0, d_mainWnd, NULL);
         DestroyMenu(menu);
     }
+
+    virtual void handleMediaRequest(blpwtk2::WebView* source, blpwtk2::MediaRequest* request) OVERRIDE
+    {
+        assert(source == d_webView);
+        assert (request);
+        OutputDebugStringA("DELEGATE: handleMedaiRequest\n");
+
+        // Grant access to the first audio and first video devices if they exist.
+        int* deviceIndices = new int[2];
+        bool audioFound = false, videoFound = false;
+        int index = 0;
+        for (int i = 0; i < request->deviceCount(); ++i) {
+            if (!audioFound && request->deviceType(i) == blpwtk2::MediaRequest::DEVICE_TYPE_AUDIO){
+                deviceIndices[index++] = i;
+                audioFound = true;
+            }
+            if (!videoFound && request->deviceType(i) == blpwtk2::MediaRequest::DEVICE_TYPE_VIDEO){
+                deviceIndices[index++] = i;
+                videoFound = true;
+            }
+        }
+        request->grantAccess(deviceIndices, index);
+
+        delete[] deviceIndices;
+    }
 };
 std::set<Shell*> Shell::s_shells;
 

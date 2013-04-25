@@ -35,6 +35,8 @@ namespace net {
 
 namespace blpwtk2 {
 
+class MediaObserverImpl;
+
 // This is our implementation of the content::ContentBrowserClient interface.
 // This interface allows us to add hooks to the "browser" portion of the
 // content module.  This is created as part of the startup process of
@@ -73,7 +75,11 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
         content::BrowserContext* browserContext,
         content::ProtocolHandlerMap* protocolHandlers) OVERRIDE;
 
+    virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
+
   private:
+    scoped_ptr<MediaObserverImpl> d_mediaObserver;
+
     DISALLOW_COPY_AND_ASSIGN(ContentBrowserClientImpl);
 };
 

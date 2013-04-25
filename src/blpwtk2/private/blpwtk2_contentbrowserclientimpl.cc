@@ -24,6 +24,7 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
 
@@ -151,6 +152,14 @@ net::URLRequestContextGetter* ContentBrowserClientImpl::CreateRequestContext(
     }
 
     return contextImpl->requestContextGetter();
+}
+
+content::MediaObserver* ContentBrowserClientImpl::GetMediaObserver()
+{
+    if (!d_mediaObserver.get()) {
+        d_mediaObserver.reset(new MediaObserverImpl());
+    }
+    return d_mediaObserver.get();
 }
 
 }  // close namespace blpwtk2

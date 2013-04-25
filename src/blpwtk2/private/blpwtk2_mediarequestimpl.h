@@ -20,24 +20,36 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
+#ifndef INCLUDED_BLPWTK2_MEDIAREQUESTIMPL_H
+#define INCLUDED_BLPWTK2_MEDIAREQUESTIMPL_H
 
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_webnode.h>
-#include <blpwtk2_webelement.h>
-#include <blpwtk2_webdocument.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_httptransaction.h>
-#include <blpwtk2_httptransactionhandler.h>
-#include <blpwtk2_newviewparams.h>
 #include <blpwtk2_mediarequest.h>
 
-#endif  // INCLUDED_BLPWTK2_H
+#include <base/compiler_specific.h>
+#include <content/public/browser/web_contents_delegate.h>
 
+namespace blpwtk2 {
 
+// This class is our implementation of the blpwtk2::MediaRequest interface.
+class MediaRequestImpl : public MediaRequest {
+
+public:
+    MediaRequestImpl(const content::MediaStreamDevices& devices,
+                     const content::MediaResponseCallback& callback);
+    virtual ~MediaRequestImpl();
+
+    virtual int deviceCount() const OVERRIDE;
+    virtual StringRef deviceName(int index) const OVERRIDE;
+    virtual MediaRequest::DeviceType deviceType(int index) const OVERRIDE;
+    virtual void grantAccess(int *deviceIndices, int deviceCount) OVERRIDE;
+
+private:
+    content::MediaStreamDevices d_mediaStreamDevices;
+    content::MediaResponseCallback d_mediaResponseCallback;
+
+    DISALLOW_COPY_AND_ASSIGN(MediaRequestImpl);
+};
+
+} // close namespace blpwtk2
+
+#endif //INCLUDED_BLPWTK2_MEDIAREQUESTIMPL_H

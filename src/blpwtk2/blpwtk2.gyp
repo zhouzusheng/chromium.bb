@@ -106,6 +106,8 @@
         'public/blpwtk2_mediarequest.h',
         'public/blpwtk2_newviewparams.cc',
         'public/blpwtk2_newviewparams.h',
+        'public/blpwtk2_refcountedobject.cc',
+        'public/blpwtk2_refcountedobject.h',
         'private/blpwtk2_resourcecontextimpl.cc',
         'private/blpwtk2_resourcecontextimpl.h',
         'private/blpwtk2_urlrequestcontextgetterimpl.cc',

@@ -27,6 +27,7 @@
 #include <blpwtk2_statics.h>
 #include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewimpl.h>
+#include <blpwtk2_mediarequestimpl.h>
 
 #include <base/bind.h>
 #include <base/message_loop.h>
@@ -285,8 +286,10 @@ void WebViewProxy::showContextMenu(WebView* source, const ContextMenuParams& par
 void WebViewProxy::handleMediaRequest(WebView* source, MediaRequest* mediaRequest)
 {
     DCHECK(source == d_impl);
+    DCHECK(mediaRequest);
     d_proxyDispatcher->PostTask(FROM_HERE,
-        base::Bind(&WebViewProxy::proxyHandleMediaRequest, this, mediaRequest));
+        base::Bind(&WebViewProxy::proxyHandleMediaRequest, this,
+                    make_scoped_refptr(static_cast<MediaRequestImpl*>(mediaRequest))));
 }
 
 void WebViewProxy::implInit(gfx::NativeView parent,

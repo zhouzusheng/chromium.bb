@@ -78,7 +78,18 @@ void MediaRequestImpl::grantAccess(int *deviceIndices, int deviceCount)
         devices.push_back(d_mediaStreamDevices[index]);
     }
     d_mediaResponseCallback.Run(devices);
-    delete this;
+}
+
+void MediaRequestImpl::addRef()
+{
+    // calling base::RefCountedThreadSafe::AddRef()
+    AddRef();
+}
+
+void MediaRequestImpl::release()
+{
+    // calling base::RefCountedThreadSafe::Release()
+    Release();
 }
 
 } // close namespace blpwtk2

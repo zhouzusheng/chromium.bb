@@ -26,22 +26,45 @@
 #include <blpwtk2_mediarequest.h>
 
 #include <base/compiler_specific.h>
+#include <base/memory/ref_counted.h>
 #include <content/public/browser/web_contents_delegate.h>
 
 namespace blpwtk2 {
 
 // This class is our implementation of the blpwtk2::MediaRequest interface.
-class MediaRequestImpl : public MediaRequest {
+// Note that this is a reference counted object. Users should call addRef()
+// to obtain ownership of the object, and call release() when they don't need
+// it any more.
+class MediaRequestImpl : public MediaRequest,
+                         public base::RefCountedThreadSafe<MediaRequestImpl> {
 
 public:
+    // Constructor does NOT call addRef().
+    // Users should call addRef() themselves to gain ownership of the object,
+    // and call release() when they don't need it any more.
     MediaRequestImpl(const content::MediaStreamDevices& devices,
                      const content::MediaResponseCallback& callback);
-    virtual ~MediaRequestImpl();
+
+    /////// MediaRequest overrides
 
     virtual int deviceCount() const OVERRIDE;
+
     virtual StringRef deviceName(int index) const OVERRIDE;
+
     virtual MediaRequest::DeviceType deviceType(int index) const OVERRIDE;
+
     virtual void grantAccess(int *deviceIndices, int deviceCount) OVERRIDE;
+
+    /////// RefCountedObject overrides
+
+    virtual void addRef() OVERRIDE;
+
+    virtual void release() OVERRIDE;
+
+private:
+    // only RefCountedThreadSafe should be able to delete this object
+    friend class base::RefCountedThreadSafe<MediaRequestImpl>;
+    ~MediaRequestImpl();
 
 private:
     content::MediaStreamDevices d_mediaStreamDevices;

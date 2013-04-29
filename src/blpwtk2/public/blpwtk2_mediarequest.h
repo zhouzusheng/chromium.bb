@@ -23,6 +23,8 @@
 #ifndef INCLUDED_BLPWTK2_MEDIAREQUEST_H
 #define INCLUDED_BLPWTK2_MEDIAREQUEST_H
 
+#include <blpwtk2_refcountedobject.h>
+
 namespace blpwtk2 {
 
 class StringRef;
@@ -33,16 +35,13 @@ class StringRef;
 // WebViewDelegate::handleMediaRequest(), where the application can retrieve
 // the list of available media devices, ask the user for permission and grant
 // access if wished.
-class MediaRequest {
-
-public:
+class MediaRequest : public RefCountedObject {
+  public:
     enum DeviceType {
         DEVICE_TYPE_UNKNOWN,
         DEVICE_TYPE_AUDIO,
         DEVICE_TYPE_VIDEO
     };
-
-    virtual ~MediaRequest() = 0;
 
     // Returns media device count.
     virtual int deviceCount() const = 0;
@@ -58,10 +57,10 @@ public:
 
     // Grants permission to use the devices, whose ids are pointed to by the
     // specified 'deviceIndices' pointer.
-    // Note that the MediaRequest object gets destroyed after this call,
-    // therefore it should not be used in any way.
     virtual void grantAccess(int *deviceIndices, int deviceCount) = 0;
 
+  protected:
+    virtual ~MediaRequest();
 };
 
 } // close namespace blpwtk2

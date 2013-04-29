@@ -298,6 +298,8 @@ public:
         assert (request);
         OutputDebugStringA("DELEGATE: handleMedaiRequest\n");
 
+        request->addRef();
+
         // Grant access to the first audio and first video devices if they exist.
         int* deviceIndices = new int[2];
         bool audioFound = false, videoFound = false;
@@ -315,6 +317,7 @@ public:
         request->grantAccess(deviceIndices, index);
 
         delete[] deviceIndices;
+        request->release();
     }
 };
 std::set<Shell*> Shell::s_shells;

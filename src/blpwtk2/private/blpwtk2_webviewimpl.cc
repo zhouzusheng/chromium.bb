@@ -404,8 +404,8 @@ void WebViewImpl::RequestMediaAccessPermission(content::WebContents* web_content
         if (content::IsVideoMediaType(request.video_type)) {
             devices.insert(devices.end(), mediaObserver->getVideoDevices().begin(),  mediaObserver->getVideoDevices().end());
         }
-        MediaRequest* mediaRequest = new MediaRequestImpl(devices, callback);
-        d_delegate->handleMediaRequest(this, mediaRequest);
+        scoped_refptr<MediaRequestImpl> refPtr(new MediaRequestImpl(devices, callback));
+        d_delegate->handleMediaRequest(this, refPtr.get());
     }
 }
 

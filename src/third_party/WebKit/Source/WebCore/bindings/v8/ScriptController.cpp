@@ -447,6 +447,9 @@ v8::Local<v8::Context> ScriptController::currentWorldContext()
         return contextForWorld(this, mainThreadNormalWorld());
 
     v8::Handle<v8::Context> context = v8::Context::GetEntered();
+    if (!DOMWrapperWorld::contextHasCorrectPrototype(context))
+        return contextForWorld(this, mainThreadNormalWorld());
+
     DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(context);
     if (!isolatedWorld)
         return contextForWorld(this, mainThreadNormalWorld());

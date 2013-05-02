@@ -489,6 +489,8 @@ namespace WebCore {
         v8::Handle<v8::Context> context = v8::Context::GetEntered();
         if (context.IsEmpty())
             return 0;
+        if (!DOMWrapperWorld::contextHasCorrectPrototype(context))
+            return 0;
         return DOMWrapperWorld::isolatedWorld(context);
     }
 
